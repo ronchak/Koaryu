@@ -1,0 +1,79 @@
+from fastapi import APIRouter, Depends, Query
+from typing import Optional
+from supabase import Client
+from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
+from app.schemas.belt import (
+    BeltLadderCreate, BeltLadderResponse,
+    BeltRankCreate, BeltRankUpdate, BeltRankResponse,
+    PromoteStudent, PromotionResponse,
+    EligibilityEntry,
+)
+from app.services.belt_service import BeltService
+
+router = APIRouter(prefix="/belts", tags=["belts"])
+
+
+@router.get("/ladders", response_model=list[BeltLadderResponse])
+async def list_ladders(
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).list_ladders(studio_id)
+
+
+@router.post("/ladders", response_model=BeltLadderResponse, status_code=201)
+async def create_ladder(
+    data: BeltLadderCreate,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).create_ladder(data, studio_id, user_id)
+
+
+@router.post("/ladders/{ladder_id}/ranks", response_model=BeltRankResponse, status_code=201)
+async def create_rank(
+    ladder_id: str,
+    data: BeltRankCreate,
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).create_rank(ladder_id, data, studio_id)
+
+
+@router.patch("/ranks/{rank_id}", response_model=BeltRankResponse)
+async def update_rank(
+    rank_id: str,
+    data: BeltRankUpdate,
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).update_rank(rank_id, data, studio_id)
+
+
+@router.delete("/ranks/{rank_id}", status_code=204)
+async def delete_rank(
+    rank_id: str,
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    await BeltService(supabase).delete_rank(rank_id, studio_id)
+
+
+@router.get("/eligibility", response_model=list[EligibilityEntry])
+async def get_eligibility(
+    ladder_id: Optional[str] = Query(None),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).get_eligibility(studio_id, ladder_id)
+
+
+@router.post("/promote", response_model=PromotionResponse, status_code=201)
+async def promote_student(
+    data: PromoteStudent,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).promote_student(data, studio_id, user_id)
