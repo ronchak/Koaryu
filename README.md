@@ -6,6 +6,8 @@
 
 Koaryu blends "Koa" (Hawaiian for warrior) with "Ryu" (Japanese for flow / school of martial arts). A flat-rate vertical SaaS that replaces spreadsheets and overpriced legacy tools with purpose-built software for student management, belt progression, scheduling, billing, and retention.
 
+My first paid job in high school was in a martial arts studio, and I saw firsthand just how suffocating CRM software for Martial Arts was, sometimes costing more than $150-$200 a month. In fact, the absolute cheapest purpose built software for martial arts studios I could find was still $49 a month. I think we can do better (or at the very least, way cheaper).
+
 ## Architecture
 
 ```
