@@ -206,6 +206,8 @@ export interface BeltRank {
   min_classes: number;
   min_months: number;
   requires_approval: boolean;
+  is_tip: boolean;
+  tip_color_hex?: string;
   created_at: string;
 }
 

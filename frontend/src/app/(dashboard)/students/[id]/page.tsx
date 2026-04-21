@@ -1,12 +1,14 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { StatusBadge } from "@/components/students/status-badge";
+import { StudentForm } from "@/components/students/student-form";
 import { Button } from "@/components/ui/button";
-import { MOCK_STUDENTS } from "@/lib/mock-data";
-import { ArrowLeft, Mail, Phone, MapPin, User } from "lucide-react";
+import { useStore } from "@/lib/store";
+import type { StudentCreate } from "@/types";
+import { ArrowLeft, Mail, Phone, User, Pencil } from "lucide-react";
 
 function formatDate(d?: string) {
   if (!d) return "—";
@@ -35,12 +37,13 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
 export default function StudentDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const store = useStore();
   const id = params.id as string;
+  const [showEdit, setShowEdit] = useState(false);
 
-  // In preview mode, look up from mock data
   const student = useMemo(
-    () => MOCK_STUDENTS.find((s) => s.id === id),
-    [id]
+    () => store.students.find((s) => s.id === id),
+    [store.students, id]
   );
 
   if (!student) {
@@ -63,18 +66,39 @@ export default function StudentDetailPage() {
   const fullName = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
   const primaryGuardian = student.guardians.find((g) => g.is_primary_contact) ?? student.guardians[0];
 
+  function handleEdit(data: StudentCreate) {
+    if (!student) return;
+    store.updateStudent(id, {
+      legal_first_name: data.legal_first_name,
+      legal_last_name: data.legal_last_name,
+      preferred_name: data.preferred_name,
+      date_of_birth: data.date_of_birth,
+      email: data.email,
+      phone: data.phone,
+      address_line1: data.address_line1,
+      address_city: data.address_city,
+      address_state: data.address_state,
+      address_zip: data.address_zip,
+      emergency_contact_name: data.emergency_contact_name,
+      emergency_contact_phone: data.emergency_contact_phone,
+      emergency_contact_relation: data.emergency_contact_relation,
+      status: data.status || student.status,
+      membership_start_date: data.membership_start_date,
+      notes: data.notes,
+      tags: data.tags,
+    });
+    setShowEdit(false);
+  }
+
   return (
     <>
-      <Header title={fullName} description={`Student profile`}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push("/students")}
-        >
+      <Header title={fullName} description="Student profile">
+        <Button variant="ghost" size="sm" onClick={() => router.push("/students")}>
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to students
         </Button>
-        <Button variant="secondary" size="sm">
+        <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}>
+          <Pencil className="w-3.5 h-3.5" />
           Edit
         </Button>
       </Header>
@@ -84,7 +108,6 @@ export default function StudentDetailPage() {
 
           {/* Left col — summary card */}
           <div className="col-span-1 space-y-4">
-            {/* Avatar + name */}
             <div className="bg-surface border border-border rounded-[6px] p-5 text-center">
               <div className="w-16 h-16 rounded-full bg-surface-raised border border-border flex items-center justify-center mx-auto mb-3">
                 <span className="text-2xl font-semibold text-text-secondary">
@@ -105,7 +128,6 @@ export default function StudentDetailPage() {
               )}
             </div>
 
-            {/* Quick stats */}
             <div className="bg-surface border border-border rounded-[6px] p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted text-xs">Age</span>
@@ -115,22 +137,14 @@ export default function StudentDetailPage() {
                 <span className="text-muted text-xs">Member since</span>
                 <span className="text-text-primary font-mono text-xs">{formatDate(student.membership_start_date)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted text-xs">Belt rank</span>
-                <span className="text-text-primary font-mono text-xs">—</span>
-              </div>
             </div>
 
-            {/* Tags */}
             {student.tags.length > 0 && (
               <div className="bg-surface border border-border rounded-[6px] p-4">
                 <p className="text-xs font-medium text-text-secondary mb-2">Tags</p>
                 <div className="flex flex-wrap gap-1.5">
                   {student.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
-                    >
+                    <span key={tag} className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary">
                       {tag}
                     </span>
                   ))}
@@ -141,8 +155,6 @@ export default function StudentDetailPage() {
 
           {/* Right col — detail sections */}
           <div className="col-span-2 space-y-4">
-
-            {/* Contact Info */}
             <section className="bg-surface border border-border rounded-[6px] p-5">
               <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
                 <Mail className="w-3.5 h-3.5 text-muted" />
@@ -160,7 +172,6 @@ export default function StudentDetailPage() {
               />
             </section>
 
-            {/* Emergency Contact */}
             <section className="bg-surface border border-border rounded-[6px] p-5">
               <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
                 <Phone className="w-3.5 h-3.5 text-muted" />
@@ -171,50 +182,56 @@ export default function StudentDetailPage() {
               <InfoRow label="Relation" value={student.emergency_contact_relation} />
             </section>
 
-            {/* Guardian (minors only) */}
             {student.is_minor && primaryGuardian && (
               <section className="bg-surface border border-border rounded-[6px] p-5">
                 <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
                   <User className="w-3.5 h-3.5 text-muted" />
                   Primary Guardian
                 </h3>
-                <InfoRow
-                  label="Name"
-                  value={`${primaryGuardian.first_name} ${primaryGuardian.last_name}`}
-                />
+                <InfoRow label="Name" value={`${primaryGuardian.first_name} ${primaryGuardian.last_name}`} />
                 <InfoRow label="Email" value={primaryGuardian.email} />
                 <InfoRow label="Phone" value={primaryGuardian.phone} />
                 <InfoRow label="Relation" value={primaryGuardian.relation} />
               </section>
             )}
 
-            {/* Notes */}
             {student.notes && (
               <section className="bg-surface border border-border rounded-[6px] p-5">
                 <h3 className="text-sm font-medium text-text-primary mb-3">Notes</h3>
                 <p className="text-sm text-text-secondary leading-relaxed">{student.notes}</p>
               </section>
             )}
-
-            {/* Placeholder tabs for future phases */}
-            <section className="bg-surface border border-border rounded-[6px] p-5">
-              <div className="flex gap-4 border-b border-border -mt-1 mb-4">
-                {["Attendance", "Billing", "Promotions"].map((tab) => (
-                  <button
-                    key={tab}
-                    className="text-xs text-muted pb-3 border-b-2 border-transparent cursor-not-allowed"
-                  >
-                    {tab} <span className="opacity-50">(Phase {tab === "Attendance" ? "3" : tab === "Billing" ? "6" : "4"})</span>
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-muted text-center py-4">
-                Available in a future phase.
-              </p>
-            </section>
           </div>
         </div>
       </div>
+
+      {/* Edit modal */}
+      {showEdit && (
+        <StudentForm
+          onSubmit={handleEdit}
+          onClose={() => setShowEdit(false)}
+          isLoading={false}
+          initialData={{
+            legal_first_name: student.legal_first_name,
+            legal_last_name: student.legal_last_name,
+            preferred_name: student.preferred_name,
+            date_of_birth: student.date_of_birth,
+            email: student.email,
+            phone: student.phone,
+            address_line1: student.address_line1,
+            address_city: student.address_city,
+            address_state: student.address_state,
+            address_zip: student.address_zip,
+            emergency_contact_name: student.emergency_contact_name,
+            emergency_contact_phone: student.emergency_contact_phone,
+            emergency_contact_relation: student.emergency_contact_relation,
+            status: student.status,
+            membership_start_date: student.membership_start_date,
+            notes: student.notes,
+            tags: student.tags,
+          }}
+        />
+      )}
     </>
   );
 }

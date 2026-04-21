@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { useStore } from "@/lib/store";
 import type { CsvImportResult } from "@/types";
 import {
   Upload,
@@ -107,6 +108,7 @@ function autoMap(headers: string[]): Record<string, string> {
 
 export default function ImportPage() {
   const router = useRouter();
+  const store = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [stage, setStage] = useState<Stage>("upload");
@@ -191,18 +193,17 @@ export default function ImportPage() {
 
   function handleImport() {
     setIsLoading(true);
-    // In preview mode, simulate the import
-    setTimeout(() => {
-      setImportResult({
-        total_rows: rows.length,
-        valid_rows: validationResult?.valid_rows || 0,
-        error_rows: validationResult?.error_rows || 0,
-        errors: validationResult?.errors || [],
-        imported_count: validationResult?.valid_rows || 0,
-      });
-      setIsLoading(false);
-      setStage("done");
-    }, 800);
+    // Actually import the valid rows via the store
+    const importedCount = store.importStudents(rows, mapping);
+    setImportResult({
+      total_rows: rows.length,
+      valid_rows: validationResult?.valid_rows || 0,
+      error_rows: validationResult?.error_rows || 0,
+      errors: validationResult?.errors || [],
+      imported_count: importedCount,
+    });
+    setIsLoading(false);
+    setStage("done");
   }
 
   const STAGE_STEPS: { id: Stage; label: string }[] = [

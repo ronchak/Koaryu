@@ -3,17 +3,15 @@
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Sidebar } from "@/components/sidebar";
+import { StoreProvider, useStore } from "@/lib/store";
 import { useEffect, useState } from "react";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function DashboardInner({ children }: { children: React.ReactNode }) {
   const [userEmail, setUserEmail] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
   const router = useRouter();
   const supabase = createClient();
+  const { studioName } = useStore();
 
   useEffect(() => {
     async function getUser() {
@@ -24,12 +22,12 @@ export default function DashboardLayout({
           setUserName(user.user_metadata?.full_name || "");
         }
       } catch {
-        // Preview mode — no live Supabase connection
-        setUserName("Preview Mode");
+        // No live Supabase connection — use studio name
+        setUserName(studioName || "Koaryu");
       }
     }
     getUser();
-  }, [supabase]);
+  }, [supabase, studioName]);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -44,11 +42,21 @@ export default function DashboardLayout({
         userName={userName}
         onSignOut={handleSignOut}
       />
-
-      {/* Main content area — offset by sidebar width */}
       <main className="flex-1 ml-[240px] flex flex-col min-h-screen">
         {children}
       </main>
     </div>
+  );
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <StoreProvider>
+      <DashboardInner>{children}</DashboardInner>
+    </StoreProvider>
   );
 }

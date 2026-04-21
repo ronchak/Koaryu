@@ -28,6 +28,8 @@ class BeltRankCreate(BaseModel):
     min_classes: int = 0
     min_months: int = 0
     requires_approval: bool = False
+    is_tip: bool = False
+    tip_color_hex: Optional[str] = None
 
 
 class BeltRankUpdate(BaseModel):
@@ -37,6 +39,8 @@ class BeltRankUpdate(BaseModel):
     min_classes: Optional[int] = None
     min_months: Optional[int] = None
     requires_approval: Optional[bool] = None
+    is_tip: Optional[bool] = None
+    tip_color_hex: Optional[str] = None
 
 
 class BeltRankResponse(BaseModel):
@@ -49,6 +53,8 @@ class BeltRankResponse(BaseModel):
     min_classes: int
     min_months: int
     requires_approval: bool
+    is_tip: bool = False
+    tip_color_hex: Optional[str] = None
     created_at: str
 
 

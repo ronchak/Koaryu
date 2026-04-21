@@ -6,8 +6,8 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
+import { useStore } from "@/lib/store";
 import type { Student, StudentStatus, StudentCreate } from "@/types";
-import { MOCK_STUDENT_LIST } from "@/lib/mock-data";
 import {
   UserPlus,
   Upload,
@@ -62,7 +62,8 @@ function SortIcon({
 
 export default function StudentsPage() {
   const router = useRouter();
-  const [students, setStudents] = useState<Student[]>(MOCK_STUDENT_LIST.items);
+  const store = useStore();
+  const students = store.students;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -137,28 +138,7 @@ export default function StudentsPage() {
 
   async function handleAddStudent(data: StudentCreate) {
     setIsAdding(true);
-    // In preview mode: just prepend a mock record
-    const newStudent: Student = {
-      id: `mock-${Date.now()}`,
-      studio_id: "mock-studio",
-      ...data,
-      legal_first_name: data.legal_first_name,
-      legal_last_name: data.legal_last_name,
-      status: (data.status as StudentStatus) || "active",
-      tags: data.tags || [],
-      guardians: (data.guardians || []).map((g, i) => ({
-        id: `g-new-${i}`,
-        first_name: g.first_name,
-        last_name: g.last_name,
-        email: g.email,
-        phone: g.phone,
-        relation: g.relation,
-        is_primary_contact: g.is_primary_contact ?? true,
-      })),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    setStudents((prev) => [newStudent, ...prev]);
+    store.addStudent(data);
     setIsAdding(false);
     setShowForm(false);
   }

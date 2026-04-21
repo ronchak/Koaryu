@@ -3,8 +3,8 @@
 import { useState, useMemo } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { MOCK_SESSIONS, MOCK_CLASS_TEMPLATES, MOCK_ATTENDANCE, MOCK_STUDENTS } from "@/lib/mock-data";
-import type { ClassSession, AttendanceRecord, AttendanceStatus } from "@/types";
+import { useStore } from "@/lib/store";
+import type { ClassSession, AttendanceStatus } from "@/types";
 import {
   Calendar,
   Clock,
@@ -52,12 +52,18 @@ const STATUS_ICON: Record<AttendanceStatus, React.ReactNode> = {
 };
 
 export default function SchedulePage() {
+  const store = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>("week");
-  const [sessions] = useState<ClassSession[]>(MOCK_SESSIONS);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(MOCK_ATTENDANCE);
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [showAddClass, setShowAddClass] = useState(false);
+
+  // Add class form state
+  const [newClassName, setNewClassName] = useState("");
+  const [newClassDay, setNewClassDay] = useState(0);
+  const [newClassStart, setNewClassStart] = useState("18:00");
+  const [newClassEnd, setNewClassEnd] = useState("19:30");
+  const [newClassCapacity, setNewClassCapacity] = useState("");
 
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
   const today = dateStr(new Date());
@@ -65,22 +71,22 @@ export default function SchedulePage() {
   // Group sessions by date for week view
   const sessionsByDate = useMemo(() => {
     const map: Record<string, ClassSession[]> = {};
-    sessions.forEach((s) => {
+    store.sessions.forEach((s) => {
       if (!map[s.date]) map[s.date] = [];
       map[s.date].push(s);
     });
     return map;
-  }, [sessions]);
+  }, [store.sessions]);
 
   // Group templates by day
   const templatesByDay = useMemo(() => {
-    const map: Record<number, typeof MOCK_CLASS_TEMPLATES> = {};
-    MOCK_CLASS_TEMPLATES.forEach((t) => {
+    const map: Record<number, typeof store.templates> = {};
+    store.templates.forEach((t) => {
       if (!map[t.day_of_week]) map[t.day_of_week] = [];
       map[t.day_of_week].push(t);
     });
     return map;
-  }, []);
+  }, [store.templates]);
 
   function navigateWeek(dir: number) {
     const d = new Date(currentDate);
@@ -88,45 +94,38 @@ export default function SchedulePage() {
     setCurrentDate(d);
   }
 
-  // Get attendance for a session
   function getSessionAttendance(sessionId: string) {
-    return attendance.filter((a) => a.session_id === sessionId);
+    return store.attendance.filter((a) => a.session_id === sessionId);
   }
 
-  // Toggle student check-in
-  function toggleCheckIn(sessionId: string, studentId: string, name: string) {
-    setAttendance((prev) => {
-      const existing = prev.find(
-        (a) => a.session_id === sessionId && a.student_id === studentId
-      );
-      if (existing) {
-        // Cycle: present → late → absent → remove
-        const cycle: AttendanceStatus[] = ["present", "late", "absent"];
-        const idx = cycle.indexOf(existing.status);
-        if (idx === cycle.length - 1) {
-          return prev.filter((a) => a !== existing);
-        }
-        return prev.map((a) =>
-          a === existing ? { ...a, status: cycle[idx + 1] } : a
-        );
-      }
-      // New check-in
-      return [
-        ...prev,
-        {
-          id: `att-${Date.now()}`,
-          studio_id: "mock-studio",
-          session_id: sessionId,
-          student_id: studentId,
-          status: "present" as AttendanceStatus,
-          checked_in_at: new Date().toISOString(),
-          student_name: name,
-        },
-      ];
+  function handleCreateClass() {
+    if (!newClassName.trim()) return;
+
+    // Create a session for the next occurrence of the selected day
+    const targetDay = newClassDay;
+    const now = new Date();
+    const diff = (targetDay - now.getDay() + 7) % 7;
+    const sessionDate = new Date(now);
+    sessionDate.setDate(now.getDate() + (diff === 0 ? 0 : diff));
+
+    store.addSession({
+      name: newClassName.trim(),
+      date: dateStr(sessionDate),
+      start_time: newClassStart,
+      end_time: newClassEnd,
+      capacity: newClassCapacity ? parseInt(newClassCapacity) : undefined,
     });
+
+    // Reset form
+    setNewClassName("");
+    setNewClassDay(0);
+    setNewClassStart("18:00");
+    setNewClassEnd("19:30");
+    setNewClassCapacity("");
+    setShowAddClass(false);
   }
 
-  const activeStudents = MOCK_STUDENTS.filter((s) => s.status === "active" || s.status === "trialing");
+  const activeStudents = store.students.filter((s) => s.status === "active" || s.status === "trialing");
 
   return (
     <>
@@ -185,7 +184,6 @@ export default function SchedulePage() {
         {view === "week" && (
           <div className="flex-1 overflow-x-auto">
             <div className="grid grid-cols-7 min-w-[900px]">
-              {/* Day headers */}
               {weekDates.map((d, i) => {
                 const ds = dateStr(d);
                 const isToday = ds === today;
@@ -197,25 +195,18 @@ export default function SchedulePage() {
                     }`}
                   >
                     <p className="text-xs text-muted">{DAY_NAMES[i]}</p>
-                    <p
-                      className={`text-lg font-mono ${
-                        isToday ? "text-accent font-bold" : "text-text-primary"
-                      }`}
-                    >
+                    <p className={`text-lg font-mono ${isToday ? "text-accent font-bold" : "text-text-primary"}`}>
                       {d.getDate()}
                     </p>
                   </div>
                 );
               })}
 
-              {/* Day cells */}
               {weekDates.map((d, i) => {
                 const ds = dateStr(d);
                 const isToday = ds === today;
                 const daySessions = sessionsByDate[ds] || [];
                 const dayTemplates = templatesByDay[d.getDay()] || [];
-                // Show sessions if exist, otherwise show templates as upcoming
-                const items = daySessions.length > 0 ? daySessions : [];
 
                 return (
                   <div
@@ -224,37 +215,28 @@ export default function SchedulePage() {
                       isToday ? "bg-accent/[0.02]" : ""
                     }`}
                   >
-                    {items.map((session) => (
+                    {daySessions.map((session) => (
                       <button
                         key={session.id}
                         onClick={() => setSelectedSession(session)}
                         className="w-full text-left mb-1.5 p-2 bg-surface-raised border border-border rounded-[6px] hover:border-accent/50 transition-colors cursor-pointer"
                       >
-                        <p className="text-xs font-medium text-text-primary truncate">
-                          {session.name}
-                        </p>
+                        <p className="text-xs font-medium text-text-primary truncate">{session.name}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] text-muted font-mono">
-                            {formatTime(session.start_time)}
-                          </span>
+                          <span className="text-[10px] text-muted font-mono">{formatTime(session.start_time)}</span>
                           <span className="text-[10px] text-text-secondary flex items-center gap-0.5">
                             <Users className="w-2.5 h-2.5" />
-                            {session.attendance_count}
+                            {getSessionAttendance(session.id).filter(a => a.status !== "absent").length}
                             {session.capacity && `/${session.capacity}`}
                           </span>
                         </div>
                       </button>
                     ))}
-                    {items.length === 0 && dayTemplates.length > 0 && (
+                    {daySessions.length === 0 && dayTemplates.length > 0 && (
                       dayTemplates.map((t) => (
-                        <div
-                          key={t.id}
-                          className="w-full mb-1.5 p-2 border border-dashed border-border rounded-[6px] opacity-50"
-                        >
+                        <div key={t.id} className="w-full mb-1.5 p-2 border border-dashed border-border rounded-[6px] opacity-50">
                           <p className="text-xs text-muted truncate">{t.name}</p>
-                          <span className="text-[10px] text-muted font-mono">
-                            {formatTime(t.start_time)}
-                          </span>
+                          <span className="text-[10px] text-muted font-mono">{formatTime(t.start_time)}</span>
                         </div>
                       ))
                     )}
@@ -269,11 +251,7 @@ export default function SchedulePage() {
         {view === "day" && (
           <div className="flex-1 p-8">
             <h2 className="text-sm font-medium text-text-primary mb-4">
-              {currentDate.toLocaleDateString("en-US", {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-              })}
+              {currentDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
             </h2>
             {(() => {
               const ds = dateStr(currentDate);
@@ -282,9 +260,7 @@ export default function SchedulePage() {
                 return (
                   <div className="text-center py-12">
                     <Calendar className="w-6 h-6 text-muted mx-auto mb-2" />
-                    <p className="text-sm text-text-secondary">
-                      No sessions scheduled for this day.
-                    </p>
+                    <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>
                   </div>
                 );
               }
@@ -306,7 +282,7 @@ export default function SchedulePage() {
                         <div className="flex items-center gap-2 text-text-secondary">
                           <Users className="w-3.5 h-3.5" />
                           <span className="text-sm font-mono">
-                            {session.attendance_count}
+                            {getSessionAttendance(session.id).filter(a => a.status !== "absent").length}
                             {session.capacity && `/${session.capacity}`}
                           </span>
                         </div>
@@ -323,128 +299,108 @@ export default function SchedulePage() {
       {/* Session detail / attendance modal */}
       {selectedSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setSelectedSession(null)}
-          />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setSelectedSession(null)} />
           <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-lg max-h-[80vh] overflow-y-auto">
-            {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div>
-                <h2 className="text-base font-semibold text-text-primary">
-                  {selectedSession.name}
-                </h2>
+                <h2 className="text-base font-semibold text-text-primary">{selectedSession.name}</h2>
                 <p className="text-xs text-muted font-mono mt-0.5">
-                  {formatTime(selectedSession.start_time)} –{" "}
-                  {formatTime(selectedSession.end_time)}
+                  {formatTime(selectedSession.start_time)} – {formatTime(selectedSession.end_time)}
                 </p>
               </div>
-              <button
-                onClick={() => setSelectedSession(null)}
-                className="p-1 text-muted hover:text-text-primary cursor-pointer"
-              >
+              <button onClick={() => setSelectedSession(null)} className="p-1 text-muted hover:text-text-primary cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Roster */}
             <div className="p-5">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-text-secondary">
-                  Roster — tap to check in
-                </p>
+                <p className="text-xs font-medium text-text-secondary">Roster — tap to check in</p>
                 <p className="text-xs text-muted font-mono">
                   {getSessionAttendance(selectedSession.id).filter((a) => a.status !== "absent").length}
                   {selectedSession.capacity && `/${selectedSession.capacity}`} checked in
                 </p>
               </div>
 
-              <div className="space-y-1">
-                {activeStudents.map((student) => {
-                  const att = attendance.find(
-                    (a) =>
-                      a.session_id === selectedSession.id &&
-                      a.student_id === student.id
-                  );
-                  const name = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
-                  return (
-                    <button
-                      key={student.id}
-                      onClick={() =>
-                        toggleCheckIn(selectedSession.id, student.id, name)
-                      }
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-[6px] transition-colors cursor-pointer ${
-                        att
-                          ? att.status === "present"
-                            ? "bg-success/10 border border-success/20"
-                            : att.status === "late"
-                            ? "bg-warning/10 border border-warning/20"
-                            : att.status === "absent"
-                            ? "bg-danger/10 border border-danger/20"
-                            : "bg-surface-raised border border-border"
-                          : "bg-surface border border-border hover:bg-surface-raised"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-full bg-surface-raised border border-border flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px] font-medium text-text-secondary">
-                            {student.legal_first_name[0]}
-                            {student.legal_last_name[0]}
-                          </span>
-                        </div>
-                        <span className="text-sm text-text-primary">{name}</span>
-                        {student.is_minor && (
-                          <span className="text-[10px] text-muted">Minor</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {att && (
-                          <>
-                            {STATUS_ICON[att.status]}
-                            <span
-                              className={`text-xs capitalize ${
-                                att.status === "present"
-                                  ? "text-success"
-                                  : att.status === "late"
-                                  ? "text-warning"
-                                  : att.status === "absent"
-                                  ? "text-danger"
-                                  : "text-muted"
-                              }`}
-                            >
-                              {att.status}
+              {activeStudents.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users className="w-5 h-5 text-muted mx-auto mb-2" />
+                  <p className="text-xs text-muted">No active students. Add students first to take attendance.</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {activeStudents.map((student) => {
+                    const att = store.attendance.find(
+                      (a) => a.session_id === selectedSession.id && a.student_id === student.id
+                    );
+                    const name = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
+                    return (
+                      <button
+                        key={student.id}
+                        onClick={() => store.toggleCheckIn(selectedSession.id, student.id, name)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-[6px] transition-colors cursor-pointer ${
+                          att
+                            ? att.status === "present"
+                              ? "bg-success/10 border border-success/20"
+                              : att.status === "late"
+                              ? "bg-warning/10 border border-warning/20"
+                              : att.status === "absent"
+                              ? "bg-danger/10 border border-danger/20"
+                              : "bg-surface-raised border border-border"
+                            : "bg-surface border border-border hover:bg-surface-raised"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-6 h-6 rounded-full bg-surface-raised border border-border flex items-center justify-center flex-shrink-0">
+                            <span className="text-[10px] font-medium text-text-secondary">
+                              {student.legal_first_name[0]}{student.legal_last_name[0]}
                             </span>
-                          </>
-                        )}
-                        {!att && (
-                          <span className="text-xs text-muted">Tap to check in</span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                          </div>
+                          <span className="text-sm text-text-primary">{name}</span>
+                          {student.is_minor && <span className="text-[10px] text-muted">Minor</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {att && (
+                            <>
+                              {STATUS_ICON[att.status]}
+                              <span className={`text-xs capitalize ${
+                                att.status === "present" ? "text-success"
+                                : att.status === "late" ? "text-warning"
+                                : att.status === "absent" ? "text-danger"
+                                : "text-muted"
+                              }`}>{att.status}</span>
+                            </>
+                          )}
+                          {!att && <span className="text-xs text-muted">Tap to check in</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Add class placeholder modal */}
+      {/* Add class modal */}
       {showAddClass && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowAddClass(false)} />
           <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-base font-semibold text-text-primary">Add recurring class</h2>
+              <h2 className="text-base font-semibold text-text-primary">Add class session</h2>
               <button onClick={() => setShowAddClass(false)} className="text-muted hover:text-text-primary cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm text-text-secondary font-medium">Class name</label>
+                <label className="text-sm text-text-secondary font-medium">Class name *</label>
                 <input
                   type="text"
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
                   placeholder="e.g. Adult Gi Fundamentals"
                   className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 />
@@ -452,7 +408,11 @@ export default function SchedulePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm text-text-secondary font-medium">Day</label>
-                  <select className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none">
+                  <select
+                    value={newClassDay}
+                    onChange={(e) => setNewClassDay(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+                  >
                     {FULL_DAY_NAMES.map((d, i) => (
                       <option key={i} value={i}>{d}</option>
                     ))}
@@ -462,6 +422,8 @@ export default function SchedulePage() {
                   <label className="text-sm text-text-secondary font-medium">Capacity</label>
                   <input
                     type="number"
+                    value={newClassCapacity}
+                    onChange={(e) => setNewClassCapacity(e.target.value)}
                     placeholder="30"
                     className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   />
@@ -472,7 +434,8 @@ export default function SchedulePage() {
                   <label className="text-sm text-text-secondary font-medium">Start time</label>
                   <input
                     type="time"
-                    defaultValue="18:00"
+                    value={newClassStart}
+                    onChange={(e) => setNewClassStart(e.target.value)}
                     className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
@@ -480,18 +443,15 @@ export default function SchedulePage() {
                   <label className="text-sm text-text-secondary font-medium">End time</label>
                   <input
                     type="time"
-                    defaultValue="19:30"
+                    value={newClassEnd}
+                    onChange={(e) => setNewClassEnd(e.target.value)}
                     className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="ghost" size="sm" onClick={() => setShowAddClass(false)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" size="sm" onClick={() => setShowAddClass(false)}>
-                  Create class
-                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setShowAddClass(false)}>Cancel</Button>
+                <Button variant="primary" size="sm" onClick={handleCreateClass}>Create class</Button>
               </div>
             </div>
           </div>

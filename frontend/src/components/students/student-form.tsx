@@ -7,44 +7,47 @@ import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 
 interface StudentFormProps {
-  onSubmit: (data: StudentCreate) => Promise<void>;
+  onSubmit: (data: StudentCreate) => Promise<void> | void;
   onClose: () => void;
   isLoading?: boolean;
+  initialData?: Partial<StudentCreate>;
 }
 
 type FormTab = "info" | "contact" | "guardian";
 
-export function StudentForm({ onSubmit, onClose, isLoading }: StudentFormProps) {
+export function StudentForm({ onSubmit, onClose, isLoading, initialData }: StudentFormProps) {
+  const isEdit = !!initialData;
   const [tab, setTab] = useState<FormTab>("info");
   const [error, setError] = useState("");
 
   // Basic info
-  const [legalFirst, setLegalFirst] = useState("");
-  const [legalLast, setLegalLast] = useState("");
-  const [preferredName, setPreferredName] = useState("");
-  const [dob, setDob] = useState("");
-  const [status, setStatus] = useState<string>("active");
-  const [membershipStart, setMembershipStart] = useState("");
-  const [notes, setNotes] = useState("");
-  const [tags, setTags] = useState("");
+  const [legalFirst, setLegalFirst] = useState(initialData?.legal_first_name || "");
+  const [legalLast, setLegalLast] = useState(initialData?.legal_last_name || "");
+  const [preferredName, setPreferredName] = useState(initialData?.preferred_name || "");
+  const [dob, setDob] = useState(initialData?.date_of_birth || "");
+  const [status, setStatus] = useState<string>(initialData?.status || "active");
+  const [membershipStart, setMembershipStart] = useState(initialData?.membership_start_date || "");
+  const [notes, setNotes] = useState(initialData?.notes || "");
+  const [tags, setTags] = useState(initialData?.tags?.join(", ") || "");
 
   // Contact
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [addressLine1, setAddressLine1] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [zip, setZip] = useState("");
-  const [emergencyName, setEmergencyName] = useState("");
-  const [emergencyPhone, setEmergencyPhone] = useState("");
-  const [emergencyRelation, setEmergencyRelation] = useState("");
+  const [email, setEmail] = useState(initialData?.email || "");
+  const [phone, setPhone] = useState(initialData?.phone || "");
+  const [addressLine1, setAddressLine1] = useState(initialData?.address_line1 || "");
+  const [city, setCity] = useState(initialData?.address_city || "");
+  const [state, setState] = useState(initialData?.address_state || "");
+  const [zip, setZip] = useState(initialData?.address_zip || "");
+  const [emergencyName, setEmergencyName] = useState(initialData?.emergency_contact_name || "");
+  const [emergencyPhone, setEmergencyPhone] = useState(initialData?.emergency_contact_phone || "");
+  const [emergencyRelation, setEmergencyRelation] = useState(initialData?.emergency_contact_relation || "");
 
   // Guardian
-  const [guardianFirst, setGuardianFirst] = useState("");
-  const [guardianLast, setGuardianLast] = useState("");
-  const [guardianEmail, setGuardianEmail] = useState("");
-  const [guardianPhone, setGuardianPhone] = useState("");
-  const [guardianRelation, setGuardianRelation] = useState("");
+  const g0 = initialData?.guardians?.[0];
+  const [guardianFirst, setGuardianFirst] = useState(g0?.first_name || "");
+  const [guardianLast, setGuardianLast] = useState(g0?.last_name || "");
+  const [guardianEmail, setGuardianEmail] = useState(g0?.email || "");
+  const [guardianPhone, setGuardianPhone] = useState(g0?.phone || "");
+  const [guardianRelation, setGuardianRelation] = useState(g0?.relation || "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -114,7 +117,7 @@ export function StudentForm({ onSubmit, onClose, isLoading }: StudentFormProps) 
       <div className="relative w-full max-w-[560px] bg-surface border border-border rounded-[6px] shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h2 className="text-base font-semibold text-text-primary">Add student</h2>
+          <h2 className="text-base font-semibold text-text-primary">{isEdit ? "Edit student" : "Add student"}</h2>
           <button
             onClick={onClose}
             className="text-muted hover:text-text-secondary transition-colors cursor-pointer"
@@ -347,7 +350,7 @@ export function StudentForm({ onSubmit, onClose, isLoading }: StudentFormProps) 
                 Cancel
               </Button>
               <Button type="submit" variant="primary" size="sm" isLoading={isLoading}>
-                Add student
+                {isEdit ? "Save changes" : "Add student"}
               </Button>
             </div>
           </div>

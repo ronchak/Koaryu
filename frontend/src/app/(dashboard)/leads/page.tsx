@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { MOCK_LEADS } from "@/lib/mock-data";
+import { useStore } from "@/lib/store";
 import type { Lead, LeadStage, LeadSource } from "@/types";
 import {
   UserPlus,
@@ -63,7 +63,8 @@ function timeAgo(d: string) {
 }
 
 export default function LeadsPage() {
-  const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS);
+  const store = useStore();
+  const leads = store.leads;
   const [showAddLead, setShowAddLead] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showLost, setShowLost] = useState(false);
@@ -93,32 +94,12 @@ export default function LeadsPage() {
 
   function handleDrop(stage: LeadStage) {
     if (!draggedLead) return;
-    setLeads((prev) =>
-      prev.map((l) => (l.id === draggedLead ? { ...l, stage, updated_at: new Date().toISOString() } : l))
-    );
+    store.updateLead(draggedLead, { stage });
     setDraggedLead(null);
   }
 
   function handleAddLead(data: Partial<Lead>) {
-    const newLead: Lead = {
-      id: `lead-${Date.now()}`,
-      studio_id: "mock-studio",
-      first_name: data.first_name || "",
-      last_name: data.last_name || "",
-      email: data.email,
-      phone: data.phone,
-      source: (data.source as LeadSource) || "walk_in",
-      stage: "inquiry",
-      program_interest: data.program_interest,
-      is_minor: data.is_minor || false,
-      guardian_name: data.guardian_name,
-      guardian_email: data.guardian_email,
-      guardian_phone: data.guardian_phone,
-      notes: data.notes,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    setLeads((prev) => [newLead, ...prev]);
+    store.addLead(data);
     setShowAddLead(false);
   }
 
@@ -282,11 +263,7 @@ export default function LeadsPage() {
                   value={selectedLead.stage}
                   onChange={(e) => {
                     const newStage = e.target.value as LeadStage;
-                    setLeads((prev) =>
-                      prev.map((l) =>
-                        l.id === selectedLead.id ? { ...l, stage: newStage } : l
-                      )
-                    );
+                    store.updateLead(selectedLead.id, { stage: newStage });
                     setSelectedLead({ ...selectedLead, stage: newStage });
                   }}
                   className="w-full px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
@@ -376,11 +353,7 @@ export default function LeadsPage() {
                     variant="primary"
                     size="sm"
                     onClick={() => {
-                      setLeads((prev) =>
-                        prev.map((l) =>
-                          l.id === selectedLead.id ? { ...l, stage: "enrolled" as LeadStage } : l
-                        )
-                      );
+                      store.updateLead(selectedLead.id, { stage: "enrolled" as LeadStage });
                       setSelectedLead(null);
                     }}
                   >
@@ -392,11 +365,7 @@ export default function LeadsPage() {
                     variant="danger"
                     size="sm"
                     onClick={() => {
-                      setLeads((prev) =>
-                        prev.map((l) =>
-                          l.id === selectedLead.id ? { ...l, stage: "closed_lost" as LeadStage, lost_reason: "other" } : l
-                        )
-                      );
+                      store.updateLead(selectedLead.id, { stage: "closed_lost" as LeadStage, lost_reason: "other" });
                       setSelectedLead(null);
                     }}
                   >

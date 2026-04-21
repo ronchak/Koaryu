@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function updateSession(request: NextRequest) {
   // Dev preview mode: bypass auth entirely so mock data pages are accessible
   if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
-    return NextResponse.next({ request });
+    return NextResponse.next();
   }
 
   let supabaseResponse = NextResponse.next({
