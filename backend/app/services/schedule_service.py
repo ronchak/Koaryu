@@ -6,6 +6,11 @@ from app.schemas.schedule import (
     ClassSessionCreate, ClassSessionResponse,
     AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
 )
+from app.services.studio_scope import (
+    ensure_optional_studio_record,
+    ensure_staff_user_in_studio,
+    ensure_studio_record,
+)
 
 
 class ScheduleService:
@@ -30,6 +35,19 @@ class ScheduleService:
         self, data: ClassTemplateCreate, studio_id: str, actor_id: str
     ) -> ClassTemplateResponse:
         row = data.model_dump()
+        ensure_staff_user_in_studio(
+            self.supabase,
+            row.get("instructor_id"),
+            studio_id,
+            "Instructor not found in this studio",
+        )
+        ensure_optional_studio_record(
+            self.supabase,
+            "programs",
+            row.get("program_id"),
+            studio_id,
+            "Program not found",
+        )
         row["studio_id"] = studio_id
         result = self.supabase.table("class_templates").insert(row).execute()
         if not result.data:
@@ -52,6 +70,19 @@ class ScheduleService:
         update_dict = data.model_dump(exclude_none=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
+        ensure_staff_user_in_studio(
+            self.supabase,
+            update_dict.get("instructor_id"),
+            studio_id,
+            "Instructor not found in this studio",
+        )
+        ensure_optional_studio_record(
+            self.supabase,
+            "programs",
+            update_dict.get("program_id"),
+            studio_id,
+            "Program not found",
+        )
         result = (
             self.supabase.table("class_templates")
             .update(update_dict)
@@ -97,6 +128,7 @@ class ScheduleService:
                 self.supabase.table("attendance")
                 .select("id", count="exact")
                 .eq("session_id", r["id"])
+                .eq("studio_id", studio_id)
                 .neq("status", "absent")
                 .execute()
             )
@@ -110,6 +142,26 @@ class ScheduleService:
         self, data: ClassSessionCreate, studio_id: str
     ) -> ClassSessionResponse:
         row = data.model_dump()
+        ensure_optional_studio_record(
+            self.supabase,
+            "class_templates",
+            row.get("template_id"),
+            studio_id,
+            "Class template not found",
+        )
+        ensure_staff_user_in_studio(
+            self.supabase,
+            row.get("instructor_id"),
+            studio_id,
+            "Instructor not found in this studio",
+        )
+        ensure_optional_studio_record(
+            self.supabase,
+            "programs",
+            row.get("program_id"),
+            studio_id,
+            "Program not found",
+        )
         row["studio_id"] = studio_id
         result = self.supabase.table("class_sessions").insert(row).execute()
         if not result.data:
@@ -141,6 +193,7 @@ class ScheduleService:
                 self.supabase.table("class_sessions")
                 .select("id")
                 .eq("template_id", t.id)
+                .eq("studio_id", studio_id)
                 .eq("date", str(session_date))
                 .execute()
             )
@@ -188,6 +241,21 @@ class ScheduleService:
     async def check_in(
         self, data: AttendanceCheckIn, studio_id: str, actor_id: str
     ) -> AttendanceResponse:
+        ensure_studio_record(
+            self.supabase,
+            "class_sessions",
+            data.session_id,
+            studio_id,
+            "Class session not found",
+        )
+        ensure_studio_record(
+            self.supabase,
+            "students",
+            data.student_id,
+            studio_id,
+            "Student not found",
+        )
+
         row = data.model_dump()
         row["studio_id"] = studio_id
         row["checked_in_by"] = actor_id

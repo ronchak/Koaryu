@@ -25,6 +25,8 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
   const [legalLast, setLegalLast] = useState(initialData?.legal_last_name || "");
   const [preferredName, setPreferredName] = useState(initialData?.preferred_name || "");
   const [dob, setDob] = useState(initialData?.date_of_birth || "");
+  const [holdStart, setHoldStart] = useState(initialData?.hold_start_date || "");
+  const [holdEnd, setHoldEnd] = useState(initialData?.hold_end_date || "");
   const [status, setStatus] = useState<string>(initialData?.status || "active");
   const [membershipStart, setMembershipStart] = useState(initialData?.membership_start_date || "");
   const [notes, setNotes] = useState(initialData?.notes || "");
@@ -59,11 +61,25 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
       return;
     }
 
+    if (holdEnd && !holdStart) {
+      setError("Add a hold start date before setting a hold end date.");
+      setTab("info");
+      return;
+    }
+
+    if (holdStart && holdEnd && holdEnd < holdStart) {
+      setError("Hold end date cannot be before the hold start date.");
+      setTab("info");
+      return;
+    }
+
     const data: StudentCreate = {
       legal_first_name: legalFirst.trim(),
       legal_last_name: legalLast.trim(),
       preferred_name: preferredName.trim() || undefined,
       date_of_birth: dob || undefined,
+      hold_start_date: holdStart || undefined,
+      hold_end_date: holdEnd || undefined,
       status: status as StudentCreate["status"],
       membership_start_date: membershipStart || undefined,
       notes: notes.trim() || undefined,
@@ -183,6 +199,28 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
                     value={membershipStart}
                     onChange={(e) => setMembershipStart(e.target.value)}
                   />
+                </div>
+                <div className="rounded-[6px] border border-border bg-surface-raised/50 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-text-secondary mb-3">
+                    Hold / Vacation
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="Hold start"
+                      type="date"
+                      value={holdStart}
+                      onChange={(e) => setHoldStart(e.target.value)}
+                    />
+                    <Input
+                      label="Hold end"
+                      type="date"
+                      value={holdEnd}
+                      onChange={(e) => setHoldEnd(e.target.value)}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    Students on an active hold are excluded from inactivity alerts until the hold ends.
+                  </p>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm text-text-secondary font-medium">Status</label>

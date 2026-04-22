@@ -1,38 +1,22 @@
-from jose import jwt, JWTError
 from fastapi import HTTPException, status
-from app.core.config import get_settings
+from app.db.supabase import get_supabase_client
 
 
-def decode_jwt(token: str) -> dict:
+def get_user_id_from_token(token: str) -> str:
     """
-    Decode and validate a Supabase JWT token.
-    Returns the payload dict with user info.
+    Extract user_id from a validated JWT token using the Supabase client.
+    This avoids local algorithm mismatch issues (like ES256 vs HS256) by
+    having the official Supabase Gotrue instance validate the token natively.
     """
-    settings = get_settings()
-
     try:
-        payload = jwt.decode(
-            token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-        return payload
-    except JWTError as e:
+        # get_user with a token explicitly fetches and verifies the user session
+        res = get_supabase_client().auth.get_user(token)
+        if not res or not res.user:
+            raise ValueError("Token is invalid or user not found")
+        return res.user.id
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-
-def get_user_id_from_token(token: str) -> str:
-    """Extract user_id (sub) from a validated JWT token."""
-    payload = decode_jwt(token)
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token missing user identifier",
-        )
-    return user_id

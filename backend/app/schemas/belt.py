@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -7,6 +7,13 @@ from typing import Optional
 class BeltLadderCreate(BaseModel):
     name: str
     program_id: Optional[str] = None
+    sub_rank_term: str = "Stripe"
+
+
+class BeltLadderUpdate(BaseModel):
+    name: Optional[str] = None
+    program_id: Optional[str] = None
+    sub_rank_term: Optional[str] = None
 
 
 class BeltLadderResponse(BaseModel):
@@ -14,9 +21,10 @@ class BeltLadderResponse(BaseModel):
     studio_id: str
     name: str
     program_id: Optional[str] = None
+    sub_rank_term: str = "Stripe"
     created_at: str
     updated_at: str
-    ranks: list["BeltRankResponse"] = []
+    ranks: list["BeltRankResponse"] = Field(default_factory=list)
 
 
 # ---- Belt Rank ----
@@ -58,6 +66,15 @@ class BeltRankResponse(BaseModel):
     created_at: str
 
 
+class BeltRankSyncItem(BeltRankCreate):
+    id: Optional[str] = None
+
+
+class BeltLadderSyncRequest(BaseModel):
+    sub_rank_term: Optional[str] = None
+    ranks: list[BeltRankSyncItem] = Field(default_factory=list)
+
+
 # ---- Promotion ----
 
 class PromoteStudent(BaseModel):
@@ -86,8 +103,10 @@ class PromotionResponse(BaseModel):
 class EligibilityEntry(BaseModel):
     student_id: str
     student_name: str
+    current_rank_id: Optional[str] = None
     current_rank_name: Optional[str] = None
     current_rank_color: Optional[str] = None
+    next_rank_id: Optional[str] = None
     next_rank_name: Optional[str] = None
     next_rank_color: Optional[str] = None
     classes_since_promo: int = 0

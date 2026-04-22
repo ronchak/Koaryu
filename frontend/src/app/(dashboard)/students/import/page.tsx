@@ -4,8 +4,9 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
 import { useStore } from "@/lib/store";
-import type { CsvImportResult } from "@/types";
+import type { CsvImportResult, CsvParseResponse } from "@/types";
 import {
   Upload,
   ArrowLeft,
@@ -106,6 +107,10 @@ function autoMap(headers: string[]): Record<string, string> {
   return mapping;
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Something went wrong. Please try again.";
+}
+
 export default function ImportPage() {
   const router = useRouter();
   const store = useStore();
@@ -115,95 +120,175 @@ export default function ImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [rowCount, setRowCount] = useState(0);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [validationResult, setValidationResult] =
     useState<CsvImportResult | null>(null);
   const [importResult, setImportResult] = useState<CsvImportResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  function resetImportState() {
+    setStage("upload");
+    setFile(null);
+    setHeaders([]);
+    setRows([]);
+    setRowCount(0);
+    setMapping({});
+    setValidationResult(null);
+    setImportResult(null);
+    setErrorMessage(null);
+  }
 
   async function handleFile(f: File) {
-    if (!f.name.endsWith(".csv")) {
+    if (!f.name.toLowerCase().endsWith(".csv")) {
       alert("Please upload a .csv file.");
       return;
     }
-    setFile(f);
     setIsLoading(true);
-    const parsed = await mockParseCSV(f);
-    setHeaders(parsed.headers);
-    setRows(parsed.rows);
-    setMapping(autoMap(parsed.headers));
-    setIsLoading(false);
-    setStage("map");
+    setErrorMessage(null);
+    setValidationResult(null);
+    setImportResult(null);
+
+    try {
+      if (store.isPreviewMode) {
+        const parsed = await mockParseCSV(f);
+        setFile(f);
+        setHeaders(parsed.headers);
+        setRows(parsed.rows);
+        setRowCount(parsed.rows.length);
+        setMapping(autoMap(parsed.headers));
+      } else {
+        if (!store.token) {
+          throw new Error("You need to be signed in before importing students.");
+        }
+
+        const formData = new FormData();
+        formData.append("file", f);
+
+        const parsed = await api.postForm<CsvParseResponse>(
+          "/students/import/parse",
+          formData,
+          store.token
+        );
+
+        setFile(f);
+        setHeaders(parsed.headers);
+        setRows(parsed.preview_rows);
+        setRowCount(parsed.total_rows);
+        setMapping(parsed.auto_mapping);
+      }
+
+      setStage("map");
+    } catch (error) {
+      resetImportState();
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
     const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    if (f) void handleFile(f);
   }
 
-  function handleValidate() {
+  async function handleValidate() {
     setIsLoading(true);
-    // Client-side validation (mirrors backend logic)
-    const errors: CsvImportResult["errors"] = [];
-    let valid = 0;
-    rows.forEach((row, i) => {
-      const rowErrors: string[] = [];
-      const mapped: Record<string, string> = {};
-      Object.entries(mapping).forEach(([col, field]) => {
-        if (field) mapped[field] = row[col] || "";
-      });
+    setErrorMessage(null);
 
-      if (!mapped["legal_first_name"])
-        rowErrors.push("Missing required field: first name");
-      if (!mapped["legal_last_name"])
-        rowErrors.push("Missing required field: last name");
+    try {
+      if (store.isPreviewMode) {
+        const errors: CsvImportResult["errors"] = [];
+        let valid = 0;
 
-      const validStatuses = ["active", "trialing", "inactive", "paused", "canceled"];
-      if (mapped["status"] && !validStatuses.includes(mapped["status"].toLowerCase())) {
-        rowErrors.push(
-          `Invalid status "${mapped["status"]}". Must be: ${validStatuses.join(", ")}`
-        );
-      }
+        rows.forEach((row, i) => {
+          const rowErrors: string[] = [];
+          const mapped: Record<string, string> = {};
+          Object.entries(mapping).forEach(([col, field]) => {
+            if (field) mapped[field] = row[col] || "";
+          });
 
-      if (rowErrors.length > 0) {
-        errors.push({
-          row_number: i + 2,
-          data: mapped,
-          errors: rowErrors,
-          is_valid: false,
+          if (!mapped["legal_first_name"])
+            rowErrors.push("Missing required field: first name");
+          if (!mapped["legal_last_name"])
+            rowErrors.push("Missing required field: last name");
+
+          const validStatuses = ["active", "trialing", "inactive", "paused", "canceled"];
+          if (mapped["status"] && !validStatuses.includes(mapped["status"].toLowerCase())) {
+            rowErrors.push(
+              `Invalid status "${mapped["status"]}". Must be: ${validStatuses.join(", ")}`
+            );
+          }
+
+          if (rowErrors.length > 0) {
+            errors.push({
+              row_number: i + 2,
+              data: mapped,
+              errors: rowErrors,
+              is_valid: false,
+            });
+          } else {
+            valid++;
+          }
+        });
+
+        setValidationResult({
+          total_rows: rows.length,
+          valid_rows: valid,
+          error_rows: errors.length,
+          errors,
+          imported_count: 0,
         });
       } else {
-        valid++;
-      }
-    });
+        if (!file) {
+          throw new Error("Choose a CSV file before validating.");
+        }
+        if (!store.token) {
+          throw new Error("You need to be signed in before importing students.");
+        }
 
-    setValidationResult({
-      total_rows: rows.length,
-      valid_rows: valid,
-      error_rows: errors.length,
-      errors,
-      imported_count: 0,
-    });
-    setIsLoading(false);
-    setStage("preview");
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const result = await api.postForm<CsvImportResult>(
+          `/students/import/validate?mapping=${encodeURIComponent(JSON.stringify(mapping))}`,
+          formData,
+          store.token
+        );
+
+        setValidationResult(result);
+      }
+
+      setStage("preview");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  function handleImport() {
+  async function handleImport() {
+    if (!file) {
+      setErrorMessage("Choose a CSV file before importing.");
+      return;
+    }
+
     setIsLoading(true);
-    // Actually import the valid rows via the store
-    const importedCount = store.importStudents(rows, mapping);
-    setImportResult({
-      total_rows: rows.length,
-      valid_rows: validationResult?.valid_rows || 0,
-      error_rows: validationResult?.error_rows || 0,
-      errors: validationResult?.errors || [],
-      imported_count: importedCount,
-    });
-    setIsLoading(false);
-    setStage("done");
+    setErrorMessage(null);
+
+    try {
+      const result = await store.importStudents(file, rows, mapping);
+      setImportResult(result);
+      setStage("done");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   const STAGE_STEPS: { id: Stage; label: string }[] = [
@@ -214,6 +299,16 @@ export default function ImportPage() {
   ];
 
   const stageIndex = STAGE_STEPS.findIndex((s) => s.id === stage);
+  const importedCount = importResult?.imported_count ?? 0;
+  const importedAllValidatedRows =
+    importedCount > 0 && importResult?.valid_rows === importedCount;
+  const doneTitle = importResult
+    ? importedCount === 0
+      ? "No students were imported"
+      : importedAllValidatedRows
+      ? "Import complete"
+      : "Import finished with issues"
+    : "Import complete";
 
   return (
     <>
@@ -263,6 +358,12 @@ export default function ImportPage() {
             ))}
           </div>
 
+          {errorMessage && (
+            <div className="mb-6 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3">
+              <p className="text-sm text-danger">{errorMessage}</p>
+            </div>
+          )}
+
           {/* ---- Stage: Upload ---- */}
           {stage === "upload" && (
             <div>
@@ -294,7 +395,7 @@ export default function ImportPage() {
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) handleFile(f);
+                    if (f) void handleFile(f);
                   }}
                 />
               </div>
@@ -338,12 +439,9 @@ export default function ImportPage() {
               <div className="flex items-center gap-3 mb-5">
                 <FileText className="w-4 h-4 text-text-secondary" />
                 <p className="text-sm text-text-primary font-medium">{file?.name}</p>
-                <span className="text-xs text-muted font-mono">{rows.length} rows</span>
+                <span className="text-xs text-muted font-mono">{rowCount} rows</span>
                 <button
-                  onClick={() => {
-                    setFile(null);
-                    setStage("upload");
-                  }}
+                  onClick={resetImportState}
                   className="ml-auto text-muted hover:text-text-secondary cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -410,7 +508,7 @@ export default function ImportPage() {
                   isLoading={isLoading}
                   onClick={handleValidate}
                 >
-                  Validate {rows.length} rows
+                  Validate {rowCount} rows
                   <ChevronRight className="w-3.5 h-3.5" />
                 </Button>
               </div>
@@ -509,17 +607,29 @@ export default function ImportPage() {
           {/* ---- Stage: Done ---- */}
           {stage === "done" && importResult && (
             <div className="text-center py-10">
-              <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-6 h-6 text-success" />
+              <div
+                className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                  importedAllValidatedRows ? "bg-success/10" : "bg-danger/10"
+                }`}
+              >
+                {importedAllValidatedRows ? (
+                  <CheckCircle className="w-6 h-6 text-success" />
+                ) : (
+                  <AlertCircle className="w-6 h-6 text-danger" />
+                )}
               </div>
               <h2 className="text-xl font-semibold text-text-primary mb-2">
-                Import complete
+                {doneTitle}
               </h2>
               <p className="text-sm text-text-secondary mb-1">
-                <span className="text-success font-mono font-bold">
-                  {importResult.imported_count}
+                <span className={`font-mono font-bold ${importedCount > 0 ? "text-success" : "text-danger"}`}>
+                  {importedCount}
                 </span>{" "}
-                students imported successfully.
+                of{" "}
+                <span className="font-mono font-bold text-text-primary">
+                  {importResult.valid_rows}
+                </span>{" "}
+                validated rows were imported.
               </p>
               {importResult.error_rows > 0 && (
                 <p className="text-sm text-text-secondary">
@@ -527,18 +637,16 @@ export default function ImportPage() {
                   rows were skipped due to errors.
                 </p>
               )}
+              {importResult.valid_rows > importedCount && (
+                <p className="text-sm text-text-secondary mt-1">
+                  Some rows passed validation but were not imported by the backend. Review the CSV and try again.
+                </p>
+              )}
               <div className="flex gap-3 justify-center mt-8">
                 <Button
                   variant="secondary"
                   size="md"
-                  onClick={() => {
-                    setStage("upload");
-                    setFile(null);
-                    setHeaders([]);
-                    setRows([]);
-                    setValidationResult(null);
-                    setImportResult(null);
-                  }}
+                  onClick={resetImportState}
                 >
                   Import another file
                 </Button>

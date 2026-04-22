@@ -4,6 +4,16 @@ from app.core.config import get_settings
 from app.api.v1.router import router as v1_router
 
 settings = get_settings()
+allowed_origins = {settings.FRONTEND_URL}
+
+if settings.FRONTEND_URL.startswith("http://localhost:"):
+    allowed_origins.add(
+        settings.FRONTEND_URL.replace("http://localhost:", "http://127.0.0.1:")
+    )
+elif settings.FRONTEND_URL.startswith("http://127.0.0.1:"):
+    allowed_origins.add(
+        settings.FRONTEND_URL.replace("http://127.0.0.1:", "http://localhost:")
+    )
 
 app = FastAPI(
     title="Koaryu API",
@@ -16,7 +26,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=sorted(allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,3 +39,8 @@ app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 @app.get("/")
 async def root():
     return {"name": "Koaryu API", "version": "1.0.0"}
+
+
+@app.get("/health")
+async def root_health():
+    return {"status": "ok", "version": "1.0.0", "service": "koaryu-api"}

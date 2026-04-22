@@ -31,6 +31,8 @@ class StudentCreate(BaseModel):
     legal_last_name: str
     preferred_name: Optional[str] = None
     date_of_birth: Optional[date] = None
+    hold_start_date: Optional[date] = None
+    hold_end_date: Optional[date] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     address_line1: Optional[str] = None
@@ -54,6 +56,8 @@ class StudentUpdate(BaseModel):
     legal_last_name: Optional[str] = None
     preferred_name: Optional[str] = None
     date_of_birth: Optional[date] = None
+    hold_start_date: Optional[date] = None
+    hold_end_date: Optional[date] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     address_line1: Optional[str] = None
@@ -78,6 +82,8 @@ class StudentResponse(BaseModel):
     preferred_name: Optional[str] = None
     date_of_birth: Optional[str] = None
     is_minor: Optional[bool] = None
+    hold_start_date: Optional[str] = None
+    hold_end_date: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     address_line1: Optional[str] = None

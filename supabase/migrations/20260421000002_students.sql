@@ -24,9 +24,7 @@ CREATE TABLE students (
 
     -- Demographics
     date_of_birth DATE,
-    is_minor BOOLEAN GENERATED ALWAYS AS (
-        date_of_birth IS NOT NULL AND date_of_birth > (CURRENT_DATE - INTERVAL '18 years')
-    ) STORED,
+    is_minor BOOLEAN DEFAULT false,
 
     -- Contact
     email TEXT,
@@ -63,6 +61,17 @@ CREATE TABLE students (
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE OR REPLACE FUNCTION set_student_is_minor()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.is_minor := COALESCE(
+        NEW.date_of_birth > ((CURRENT_DATE - INTERVAL '18 years')::date),
+        false
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Guardians (parent / emergency contacts for minors)
 CREATE TABLE guardians (
@@ -168,3 +177,8 @@ CREATE TRIGGER set_students_updated_at
     BEFORE UPDATE ON students
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_students_is_minor
+    BEFORE INSERT OR UPDATE ON students
+    FOR EACH ROW
+    EXECUTE FUNCTION set_student_is_minor();

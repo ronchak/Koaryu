@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     SUPABASE_URL: str = "https://placeholder.supabase.co"
-    SUPABASE_KEY: str = "placeholder-key"
+    SUPABASE_SERVICE_ROLE_KEY: str = "placeholder-key"
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
     FRONTEND_URL: str = "http://localhost:4000"
     ENVIRONMENT: str = "development"
@@ -14,9 +14,11 @@ class Settings(BaseSettings):
     # API
     API_V1_PREFIX: str = "/api/v1"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+        "extra": "ignore"
+    }
 
 
 @lru_cache()

@@ -56,6 +56,8 @@ export interface Student {
   preferred_name?: string;
   date_of_birth?: string;
   is_minor?: boolean;
+  hold_start_date?: string | null;
+  hold_end_date?: string | null;
   email?: string;
   phone?: string;
   address_line1?: string;
@@ -89,6 +91,8 @@ export interface StudentCreate {
   legal_last_name: string;
   preferred_name?: string;
   date_of_birth?: string;
+  hold_start_date?: string | null;
+  hold_end_date?: string | null;
   email?: string;
   phone?: string;
   address_line1?: string;
@@ -191,6 +195,7 @@ export interface BeltLadder {
   studio_id: string;
   name: string;
   program_id?: string;
+  sub_rank_term: string;
   created_at: string;
   updated_at: string;
   ranks: BeltRank[];
@@ -214,8 +219,10 @@ export interface BeltRank {
 export interface EligibilityEntry {
   student_id: string;
   student_name: string;
+  current_rank_id?: string;
   current_rank_name?: string;
   current_rank_color?: string;
+  next_rank_id?: string;
   next_rank_name?: string;
   next_rank_color?: string;
   classes_since_promo: number;
@@ -263,10 +270,10 @@ export interface Lead {
   guardian_email?: string;
   guardian_phone?: string;
   assigned_staff_id?: string;
-  follow_up_date?: string;
+  follow_up_date?: string | null;
   lost_reason?: LostReason;
   notes?: string;
-  converted_student_id?: string;
+  converted_student_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -280,4 +287,3 @@ export interface LeadActivity {
   created_by?: string;
   created_at: string;
 }
-

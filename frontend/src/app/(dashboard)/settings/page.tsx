@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/store";
@@ -8,13 +8,43 @@ import { Save, Check } from "lucide-react";
 
 export default function SettingsPage() {
   const store = useStore();
+  const isPreviewMode = store.isPreviewMode;
   const [name, setName] = useState(store.studioName);
+  const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const savedTimeoutRef = useRef<number | null>(null);
 
-  function handleSave() {
-    store.setStudioName(name.trim() || "My Studio");
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  async function handleSave() {
+    const nextName = name.trim();
+
+    if (!nextName) {
+      setError("Studio name is required");
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    setSaved(false);
+
+    try {
+      await store.setStudioName(nextName);
+      setName(nextName);
+      setSaved(true);
+
+      if (savedTimeoutRef.current) {
+        window.clearTimeout(savedTimeoutRef.current);
+      }
+
+      savedTimeoutRef.current = window.setTimeout(() => {
+        setSaved(false);
+        savedTimeoutRef.current = null;
+      }, 2000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save settings");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -37,11 +67,12 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleSave}>
+                <Button variant="primary" size="sm" onClick={handleSave} isLoading={isSaving}>
                   {saved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                  {saved ? "Saved" : "Save"}
+                  {saved ? "Saved" : isSaving ? "Saving..." : "Save"}
                 </Button>
                 {saved && <span className="text-xs text-success">Settings updated</span>}
+                {error && <span className="text-xs text-danger">{error}</span>}
               </div>
             </div>
           </section>
@@ -57,23 +88,31 @@ export default function SettingsPage() {
           {/* Data section */}
           <section className="bg-surface border border-border rounded-[6px] p-5">
             <h3 className="text-sm font-medium text-text-primary mb-1">Data Management</h3>
-            <p className="text-xs text-muted mb-3">
-              Your data is currently stored in your browser&apos;s local storage. It will persist between sessions but is not backed up.
-            </p>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => {
-                if (confirm("This will clear ALL local data and reset to sample data. Continue?")) {
-                  Object.keys(localStorage).forEach(key => {
-                    if (key.startsWith("koaryu:")) localStorage.removeItem(key);
-                  });
-                  window.location.reload();
-                }
-              }}
-            >
-              Reset all data
-            </Button>
+            {isPreviewMode ? (
+              <>
+                <p className="text-xs text-muted mb-3">
+                  Preview data is stored in your browser&apos;s local storage so you can demo the app without a live backend.
+                </p>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm("This will clear ALL local preview data and reset to sample data. Continue?")) {
+                      Object.keys(localStorage).forEach(key => {
+                        if (key.startsWith("koaryu:")) localStorage.removeItem(key);
+                      });
+                      window.location.reload();
+                    }
+                  }}
+                >
+                  Reset preview data
+                </Button>
+              </>
+            ) : (
+              <p className="text-xs text-muted">
+                Live data is stored in Supabase and synced through the API for your current studio.
+              </p>
+            )}
           </section>
         </div>
       </div>

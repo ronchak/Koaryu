@@ -190,13 +190,14 @@ type RankFormData = {
   tip_color_hex: string; min_classes: number; min_months: number; requires_approval: boolean;
 };
 
-function RankFormModal({ initial, onSave, onClose, title, subRankTerm, forceTip }: {
+function RankFormModal({ initial, onSave, onClose, title, subRankTerm, forceTip, lockType }: {
   initial?: Partial<RankFormData>;
   onSave: (data: RankFormData) => void;
   onClose: () => void;
   title: string;
   subRankTerm: string;
   forceTip?: boolean;
+  lockType?: boolean;
 }) {
   const [form, setForm] = useState<RankFormData>({
     name: initial?.name ?? "",
@@ -237,7 +238,7 @@ function RankFormModal({ initial, onSave, onClose, title, subRankTerm, forceTip 
           </div>
 
           {/* Type toggle — hidden when forceTip is set (adding a sub-rank from the belt's row) */}
-          {forceTip === undefined && (
+          {forceTip === undefined && !lockType && (
             <div>
               <label className="block text-xs text-text-secondary font-medium mb-1.5">Rank type</label>
               <div className="flex gap-2">
@@ -260,6 +261,12 @@ function RankFormModal({ initial, onSave, onClose, title, subRankTerm, forceTip 
                   : "A major rank milestone (e.g. Blue Belt)."}
               </p>
             </div>
+          )}
+
+          {lockType && (
+            <p className="text-xs text-muted">
+              Rank type is locked after creation. Add a new belt or {subRankTerm.toLowerCase()} instead of converting this one in place.
+            </p>
           )}
 
           <ColorPicker
@@ -355,13 +362,13 @@ export default function BeltTrackerPage() {
   const store = useStore();
   const [tab, setTab] = useState<Tab>("eligibility");
 
-  // Flat ranks array is the single source of truth — from store
-  const [ranks, setRanks] = useState<BeltRank[]>([...store.beltRanks]);
+  // Draft state is only used once the user starts editing.
+  const [draftRanks, setDraftRanks] = useState<BeltRank[]>([]);
   const eligibility = store.eligibility;
   const ladderName = store.ladderName;
 
   // Per-studio configurable sub-rank terminology
-  const [subRankTerm, setSubRankTerm] = useState(store.subRankTerm);
+  const [draftSubRankTerm, setDraftSubRankTerm] = useState(store.subRankTerm);
   const [editingTerm, setEditingTerm] = useState(false);
   const [termDraft, setTermDraft] = useState(store.subRankTerm);
 
@@ -370,14 +377,18 @@ export default function BeltTrackerPage() {
 
   // Drag state — belt group level
   const dragGroupIdx = useRef<number | null>(null);
+  const [draggingGroupIdx, setDraggingGroupIdx] = useState<number | null>(null);
   const [dragOverGroupIdx, setDragOverGroupIdx] = useState<number | null>(null);
 
   // Drag state — tip level (within a group)
   const dragTip = useRef<{ gIdx: number; tIdx: number } | null>(null);
+  const [draggingTip, setDraggingTip] = useState<{ gIdx: number; tIdx: number } | null>(null);
   const [dragOverTip, setDragOverTip] = useState<{ gIdx: number; tIdx: number } | null>(null);
 
   // Dirty tracking
   const [dirty, setDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Modal states
   const [addBeltModal, setAddBeltModal] = useState(false);
@@ -387,15 +398,27 @@ export default function BeltTrackerPage() {
 
   // Promote modal
   const [promoteEntry, setPromoteEntry] = useState<EligibilityEntry | null>(null);
+  const [promotionNotes, setPromotionNotes] = useState("");
+  const [promotionError, setPromotionError] = useState<string | null>(null);
+  const [isPromoting, setIsPromoting] = useState(false);
 
   // ── Derived state ──────────────────────────────────────────────────────────
+  const ranks = dirty ? draftRanks : store.beltRanks;
+  const subRankTerm = dirty ? draftSubRankTerm : store.subRankTerm;
   const groups = groupRanks(ranks);
   const editRank = editRankId ? ranks.find(r => r.id === editRankId) : null;
   const deleteRank = deleteRankId ? ranks.find(r => r.id === deleteRankId) : null;
 
+  const updateRanks = useCallback((updater: (current: BeltRank[]) => BeltRank[]) => {
+    setSaveError(null);
+    setDraftRanks((currentDraft) => updater(dirty ? currentDraft : ranks));
+    setDirty(true);
+  }, [dirty, ranks]);
+
   // ── Belt group DnD ──────────────────────────────────────────────────────────
   const onBeltDragStart = useCallback((gIdx: number, e: React.DragEvent) => {
     dragGroupIdx.current = gIdx;
+    setDraggingGroupIdx(gIdx);
     e.dataTransfer.effectAllowed = "move";
   }, []);
 
@@ -408,20 +431,22 @@ export default function BeltTrackerPage() {
     const from = dragGroupIdx.current;
     if (from === null || from === dropGIdx) {
       dragGroupIdx.current = null;
+      setDraggingGroupIdx(null);
       setDragOverGroupIdx(null);
       return;
     }
     const newGroups = [...groups];
     const [moved] = newGroups.splice(from, 1);
     newGroups.splice(dropGIdx, 0, moved);
-    setRanks(flattenGroups(newGroups.map(g => ({ ...g, collapsed: false }))));
+    updateRanks(() => flattenGroups(newGroups.map(g => ({ ...g, collapsed: false }))));
     dragGroupIdx.current = null;
+    setDraggingGroupIdx(null);
     setDragOverGroupIdx(null);
-    setDirty(true);
-  }, [groups]);
+  }, [groups, updateRanks]);
 
   const onBeltDragEnd = useCallback(() => {
     dragGroupIdx.current = null;
+    setDraggingGroupIdx(null);
     setDragOverGroupIdx(null);
   }, []);
 
@@ -429,6 +454,7 @@ export default function BeltTrackerPage() {
   const onTipDragStart = useCallback((gIdx: number, tIdx: number, e: React.DragEvent) => {
     e.stopPropagation(); // don't trigger belt drag
     dragTip.current = { gIdx, tIdx };
+    setDraggingTip({ gIdx, tIdx });
     e.dataTransfer.effectAllowed = "move";
   }, []);
 
@@ -442,6 +468,7 @@ export default function BeltTrackerPage() {
     const from = dragTip.current;
     if (!from || (from.gIdx === dropGIdx && from.tIdx === dropTIdx)) {
       dragTip.current = null;
+      setDraggingTip(null);
       setDragOverTip(null);
       return;
     }
@@ -453,14 +480,15 @@ export default function BeltTrackerPage() {
       tips.splice(dropTIdx, 0, moved);
     }
     // Cross-group tip moves not supported (tips belong to their belt)
-    setRanks(flattenGroups(newGroups));
+    updateRanks(() => flattenGroups(newGroups));
     dragTip.current = null;
+    setDraggingTip(null);
     setDragOverTip(null);
-    setDirty(true);
-  }, [groups]);
+  }, [groups, updateRanks]);
 
   const onTipDragEnd = useCallback(() => {
     dragTip.current = null;
+    setDraggingTip(null);
     setDragOverTip(null);
   }, []);
 
@@ -473,9 +501,8 @@ export default function BeltTrackerPage() {
       min_months: data.min_months, requires_approval: data.requires_approval,
       display_order: ranks.length, created_at: new Date().toISOString(),
     };
-    setRanks(prev => [...prev, newRank]);
+    updateRanks((currentRanks) => [...currentRanks, newRank]);
     setAddBeltModal(false);
-    setDirty(true);
   }
 
   function handleAddTip(gIdx: number, data: RankFormData) {
@@ -490,32 +517,46 @@ export default function BeltTrackerPage() {
       display_order: 0, created_at: new Date().toISOString(),
     };
     newGroups[gIdx].tips.push(newTip);
-    setRanks(flattenGroups(newGroups));
+    updateRanks(() => flattenGroups(newGroups));
     setAddTipForGroup(null);
-    setDirty(true);
   }
 
   function handleEdit(data: RankFormData) {
     if (!editRankId) return;
-    setRanks(prev => prev.map(r =>
+    updateRanks((currentRanks) => currentRanks.map(r =>
       r.id === editRankId
-        ? { ...r, name: data.name, color_hex: data.color_hex, is_tip: data.is_tip,
-            tip_color_hex: data.is_tip ? data.tip_color_hex : undefined,
+        ? { ...r, name: data.name, color_hex: data.color_hex,
+            tip_color_hex: r.is_tip ? data.tip_color_hex : undefined,
             min_classes: data.min_classes, min_months: data.min_months,
             requires_approval: data.requires_approval }
         : r
     ));
     setEditRankId(null);
-    setDirty(true);
   }
 
   function handleDelete() {
     if (!deleteRankId) return;
-    setRanks(prev =>
-      prev.filter(r => r.id !== deleteRankId).map((r, i) => ({ ...r, display_order: i }))
-    );
+    updateRanks((currentRanks) => {
+      const targetIndex = currentRanks.findIndex((rank) => rank.id === deleteRankId);
+      if (targetIndex === -1) {
+        return currentRanks;
+      }
+
+      const targetRank = currentRanks[targetIndex];
+      const idsToDelete = new Set<string>([deleteRankId]);
+      if (!targetRank.is_tip) {
+        let nextIndex = targetIndex + 1;
+        while (nextIndex < currentRanks.length && currentRanks[nextIndex].is_tip) {
+          idsToDelete.add(currentRanks[nextIndex].id);
+          nextIndex += 1;
+        }
+      }
+
+      return currentRanks
+        .filter((rank) => !idsToDelete.has(rank.id))
+        .map((rank, index) => ({ ...rank, display_order: index }));
+    });
     setDeleteRankId(null);
-    setDirty(true);
   }
 
   function toggleCollapse(id: string) {
@@ -524,6 +565,47 @@ export default function BeltTrackerPage() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  async function handleSaveRanks() {
+    setSaveError(null);
+    setIsSaving(true);
+    try {
+      await store.setBeltRanks(ranks, { subRankTerm });
+      setDirty(false);
+    } catch (error) {
+      console.error("Failed to save belt ranks", error);
+      setSaveError("Could not save ladder changes. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleConfirmPromotion() {
+    if (!promoteEntry) return;
+
+    const targetRankId = promoteEntry.next_rank_id;
+    if (!targetRankId) {
+      setPromotionError("Could not determine the next rank for this promotion.");
+      return;
+    }
+
+    setIsPromoting(true);
+    setPromotionError(null);
+    try {
+      await store.promoteStudent(
+        promoteEntry.student_id,
+        targetRankId,
+        promotionNotes.trim() || undefined
+      );
+      setPromoteEntry(null);
+      setPromotionNotes("");
+    } catch (error) {
+      console.error("Failed to promote student", error);
+      setPromotionError("Could not record the promotion. Please try again.");
+    } finally {
+      setIsPromoting(false);
+    }
   }
 
   // ── Eligibility list ────────────────────────────────────────────────────────
@@ -632,7 +714,15 @@ export default function BeltTrackerPage() {
                         </td>
                         <td className="px-4 py-3">
                           {allMet && (
-                            <Button variant="primary" size="sm" onClick={() => setPromoteEntry(entry)}>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                setPromotionError(null);
+                                setPromotionNotes("");
+                                setPromoteEntry(entry);
+                              }}
+                            >
                               <ChevronUp className="w-3 h-3" />Promote
                             </Button>
                           )}
@@ -666,7 +756,11 @@ export default function BeltTrackerPage() {
                     {editingTerm ? (
                       <form onSubmit={(e) => {
                         e.preventDefault();
-                        setSubRankTerm(termDraft.trim() || "Stripe");
+                        const nextTerm = termDraft.trim() || "Stripe";
+                        setSaveError(null);
+                        setDraftSubRankTerm(nextTerm);
+                        setTermDraft(nextTerm);
+                        setDirty(nextTerm !== store.subRankTerm || dirty);
                         setEditingTerm(false);
                       }} className="flex items-center gap-1">
                         <input
@@ -693,8 +787,13 @@ export default function BeltTrackerPage() {
 
                 <div className="flex items-center gap-2">
                   {dirty && (
-                    <Button variant="primary" size="sm" onClick={() => { store.setBeltRanks(ranks); store.setSubRankTerm(subRankTerm); setDirty(false); }}>
-                      <Save className="w-3.5 h-3.5" />Save order
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isSaving}
+                      onClick={handleSaveRanks}
+                    >
+                      <Save className="w-3.5 h-3.5" />{isSaving ? "Saving..." : "Save order"}
                     </Button>
                   )}
                   <Button variant="secondary" size="sm" onClick={() => setAddBeltModal(true)}>
@@ -702,6 +801,12 @@ export default function BeltTrackerPage() {
                   </Button>
                 </div>
               </div>
+
+              {saveError && (
+                <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                  {saveError}
+                </div>
+              )}
 
               <p className="text-xs text-muted mb-4 flex items-center gap-1.5">
                 <GripVertical className="w-3 h-3" />
@@ -712,8 +817,8 @@ export default function BeltTrackerPage() {
               <div className="space-y-2">
                 {groups.map((group, gIdx) => {
                   const isCollapsed = collapsed.has(group.belt.id);
-                  const isDraggingThisGroup = dragGroupIdx.current === gIdx;
-                  const isDropTarget = dragOverGroupIdx === gIdx && dragGroupIdx.current !== gIdx;
+                  const isDraggingThisGroup = draggingGroupIdx === gIdx;
+                  const isDropTarget = dragOverGroupIdx === gIdx && draggingGroupIdx !== gIdx;
 
                   return (
                     <div
@@ -794,9 +899,9 @@ export default function BeltTrackerPage() {
                           )}
 
                           {group.tips.map((tip, tIdx) => {
-                            const isTipDragging = dragTip.current?.gIdx === gIdx && dragTip.current?.tIdx === tIdx;
+                            const isTipDragging = draggingTip?.gIdx === gIdx && draggingTip?.tIdx === tIdx;
                             const isTipOver = dragOverTip?.gIdx === gIdx && dragOverTip?.tIdx === tIdx
-                              && !(dragTip.current?.gIdx === gIdx && dragTip.current?.tIdx === tIdx);
+                              && !(draggingTip?.gIdx === gIdx && draggingTip?.tIdx === tIdx);
 
                             return (
                               <div
@@ -900,6 +1005,7 @@ export default function BeltTrackerPage() {
             min_classes: editRank.min_classes, min_months: editRank.min_months,
             requires_approval: editRank.requires_approval,
           }}
+          lockType
           onSave={handleEdit}
           onClose={() => setEditRankId(null)}
         />
@@ -919,25 +1025,44 @@ export default function BeltTrackerPage() {
               <p className="text-sm text-text-primary font-medium">{promoteEntry.student_name}</p>
               <div className="flex items-center gap-2 mt-2">
                 {promoteEntry.current_rank_name && promoteEntry.current_rank_color && (() => {
-                  const r = ranks.find(r => r.name === promoteEntry.current_rank_name);
+                  const r = ranks.find((rank) => rank.id === promoteEntry.current_rank_id);
                   return <RankBadge name={promoteEntry.current_rank_name} color={promoteEntry.current_rank_color} isTip={r?.is_tip} tipColor={r?.tip_color_hex} />;
                 })()}
                 <span className="text-muted">→</span>
                 {promoteEntry.next_rank_name && promoteEntry.next_rank_color && (() => {
-                  const r = ranks.find(r => r.name === promoteEntry.next_rank_name);
+                  const r = ranks.find((rank) => rank.id === promoteEntry.next_rank_id);
                   return <RankBadge name={promoteEntry.next_rank_name} color={promoteEntry.next_rank_color} isTip={r?.is_tip} tipColor={r?.tip_color_hex} />;
                 })()}
               </div>
             </div>
             <div className="flex flex-col gap-1.5 mb-4">
               <label className="text-sm text-text-secondary font-medium">Notes (optional)</label>
-              <textarea rows={2} placeholder="e.g. Excellent guard work"
+              <textarea
+                rows={2}
+                value={promotionNotes}
+                onChange={(event) => setPromotionNotes(event.target.value)}
+                placeholder="e.g. Excellent guard work"
                 className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none" />
             </div>
+            {promotionError && (
+              <p className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {promotionError}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setPromoteEntry(null)}>Cancel</Button>
-              <Button variant="primary" size="sm" onClick={() => setPromoteEntry(null)}>
-                <Award className="w-3.5 h-3.5" />Confirm promotion
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setPromoteEntry(null);
+                  setPromotionError(null);
+                  setPromotionNotes("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" disabled={isPromoting} onClick={handleConfirmPromotion}>
+                <Award className="w-3.5 h-3.5" />{isPromoting ? "Promoting..." : "Confirm promotion"}
               </Button>
             </div>
           </div>

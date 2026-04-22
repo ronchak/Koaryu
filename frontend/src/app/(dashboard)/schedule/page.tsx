@@ -53,10 +53,15 @@ const STATUS_ICON: Record<AttendanceStatus, React.ReactNode> = {
 
 export default function SchedulePage() {
   const store = useStore();
+  const { attendance, sessions, students, templates } = store;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>("week");
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [showAddClass, setShowAddClass] = useState(false);
+  const [isCreatingClass, setIsCreatingClass] = useState(false);
+  const [createClassError, setCreateClassError] = useState<string | null>(null);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [pendingAttendanceId, setPendingAttendanceId] = useState<string | null>(null);
 
   // Add class form state
   const [newClassName, setNewClassName] = useState("");
@@ -71,22 +76,22 @@ export default function SchedulePage() {
   // Group sessions by date for week view
   const sessionsByDate = useMemo(() => {
     const map: Record<string, ClassSession[]> = {};
-    store.sessions.forEach((s) => {
+    sessions.forEach((s) => {
       if (!map[s.date]) map[s.date] = [];
       map[s.date].push(s);
     });
     return map;
-  }, [store.sessions]);
+  }, [sessions]);
 
   // Group templates by day
   const templatesByDay = useMemo(() => {
-    const map: Record<number, typeof store.templates> = {};
-    store.templates.forEach((t) => {
+    const map: Record<number, typeof templates> = {};
+    templates.forEach((t) => {
       if (!map[t.day_of_week]) map[t.day_of_week] = [];
       map[t.day_of_week].push(t);
     });
     return map;
-  }, [store.templates]);
+  }, [templates]);
 
   function navigateWeek(dir: number) {
     const d = new Date(currentDate);
@@ -95,10 +100,10 @@ export default function SchedulePage() {
   }
 
   function getSessionAttendance(sessionId: string) {
-    return store.attendance.filter((a) => a.session_id === sessionId);
+    return attendance.filter((a) => a.session_id === sessionId);
   }
 
-  function handleCreateClass() {
+  async function handleCreateClass() {
     if (!newClassName.trim()) return;
 
     // Create a session for the next occurrence of the selected day
@@ -108,29 +113,58 @@ export default function SchedulePage() {
     const sessionDate = new Date(now);
     sessionDate.setDate(now.getDate() + (diff === 0 ? 0 : diff));
 
-    store.addSession({
-      name: newClassName.trim(),
-      date: dateStr(sessionDate),
-      start_time: newClassStart,
-      end_time: newClassEnd,
-      capacity: newClassCapacity ? parseInt(newClassCapacity) : undefined,
-    });
+    setCreateClassError(null);
+    setIsCreatingClass(true);
+    try {
+      await store.addSession({
+        name: newClassName.trim(),
+        date: dateStr(sessionDate),
+        start_time: newClassStart,
+        end_time: newClassEnd,
+        capacity: newClassCapacity ? parseInt(newClassCapacity) : undefined,
+      });
 
-    // Reset form
-    setNewClassName("");
-    setNewClassDay(0);
-    setNewClassStart("18:00");
-    setNewClassEnd("19:30");
-    setNewClassCapacity("");
-    setShowAddClass(false);
+      // Reset form
+      setNewClassName("");
+      setNewClassDay(0);
+      setNewClassStart("18:00");
+      setNewClassEnd("19:30");
+      setNewClassCapacity("");
+      setShowAddClass(false);
+    } catch (error) {
+      console.error("Failed to create class", error);
+      setCreateClassError("Could not create this class. Please try again.");
+    } finally {
+      setIsCreatingClass(false);
+    }
   }
 
-  const activeStudents = store.students.filter((s) => s.status === "active" || s.status === "trialing");
+  async function handleToggleAttendance(sessionId: string, studentId: string, name: string) {
+    setAttendanceError(null);
+    setPendingAttendanceId(studentId);
+    try {
+      await store.toggleCheckIn(sessionId, studentId, name);
+    } catch (error) {
+      console.error("Failed to update attendance", error);
+      setAttendanceError("Could not update attendance. Please try again.");
+    } finally {
+      setPendingAttendanceId(null);
+    }
+  }
+
+  const activeStudents = students.filter((s) => s.status === "active" || s.status === "trialing");
 
   return (
     <>
       <Header title="Schedule" description="Class schedule and attendance.">
-        <Button variant="primary" size="sm" onClick={() => setShowAddClass(true)}>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            setCreateClassError(null);
+            setShowAddClass(true);
+          }}
+        >
           <Plus className="w-3.5 h-3.5" />
           Add class
         </Button>
@@ -218,7 +252,10 @@ export default function SchedulePage() {
                     {daySessions.map((session) => (
                       <button
                         key={session.id}
-                        onClick={() => setSelectedSession(session)}
+                        onClick={() => {
+                          setAttendanceError(null);
+                          setSelectedSession(session);
+                        }}
                         className="w-full text-left mb-1.5 p-2 bg-surface-raised border border-border rounded-[6px] hover:border-accent/50 transition-colors cursor-pointer"
                       >
                         <p className="text-xs font-medium text-text-primary truncate">{session.name}</p>
@@ -269,7 +306,10 @@ export default function SchedulePage() {
                   {daySessions.map((session) => (
                     <button
                       key={session.id}
-                      onClick={() => setSelectedSession(session)}
+                      onClick={() => {
+                        setAttendanceError(null);
+                        setSelectedSession(session);
+                      }}
                       className="w-full text-left p-4 bg-surface border border-border rounded-[6px] hover:border-accent/50 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center justify-between">
@@ -314,6 +354,12 @@ export default function SchedulePage() {
             </div>
 
             <div className="p-5">
+              {attendanceError && (
+                <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                  {attendanceError}
+                </div>
+              )}
+
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-medium text-text-secondary">Roster — tap to check in</p>
                 <p className="text-xs text-muted font-mono">
@@ -330,14 +376,17 @@ export default function SchedulePage() {
               ) : (
                 <div className="space-y-1">
                   {activeStudents.map((student) => {
-                    const att = store.attendance.find(
+                    const att = attendance.find(
                       (a) => a.session_id === selectedSession.id && a.student_id === student.id
                     );
                     const name = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
                     return (
                       <button
                         key={student.id}
-                        onClick={() => store.toggleCheckIn(selectedSession.id, student.id, name)}
+                        disabled={pendingAttendanceId === student.id}
+                        onClick={async () => {
+                          await handleToggleAttendance(selectedSession.id, student.id, name);
+                        }}
                         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-[6px] transition-colors cursor-pointer ${
                           att
                             ? att.status === "present"
@@ -348,7 +397,7 @@ export default function SchedulePage() {
                               ? "bg-danger/10 border border-danger/20"
                               : "bg-surface-raised border border-border"
                             : "bg-surface border border-border hover:bg-surface-raised"
-                        }`}
+                        } disabled:cursor-not-allowed disabled:opacity-60`}
                       >
                         <div className="flex items-center gap-2.5">
                           <div className="w-6 h-6 rounded-full bg-surface-raised border border-border flex items-center justify-center flex-shrink-0">
@@ -386,21 +435,38 @@ export default function SchedulePage() {
       {/* Add class modal */}
       {showAddClass && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setShowAddClass(false)} />
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => {
+              if (!isCreatingClass) setShowAddClass(false);
+            }}
+          />
           <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-base font-semibold text-text-primary">Add class session</h2>
-              <button onClick={() => setShowAddClass(false)} className="text-muted hover:text-text-primary cursor-pointer">
+              <button
+                onClick={() => {
+                  if (!isCreatingClass) setShowAddClass(false);
+                }}
+                disabled={isCreatingClass}
+                className="text-muted hover:text-text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-4">
+              {createClassError && (
+                <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                  {createClassError}
+                </div>
+              )}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm text-text-secondary font-medium">Class name *</label>
                 <input
                   type="text"
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
+                  disabled={isCreatingClass}
                   placeholder="e.g. Adult Gi Fundamentals"
                   className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 />
@@ -411,6 +477,7 @@ export default function SchedulePage() {
                   <select
                     value={newClassDay}
                     onChange={(e) => setNewClassDay(parseInt(e.target.value))}
+                    disabled={isCreatingClass}
                     className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
                   >
                     {FULL_DAY_NAMES.map((d, i) => (
@@ -424,6 +491,7 @@ export default function SchedulePage() {
                     type="number"
                     value={newClassCapacity}
                     onChange={(e) => setNewClassCapacity(e.target.value)}
+                    disabled={isCreatingClass}
                     placeholder="30"
                     className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   />
@@ -436,6 +504,7 @@ export default function SchedulePage() {
                     type="time"
                     value={newClassStart}
                     onChange={(e) => setNewClassStart(e.target.value)}
+                    disabled={isCreatingClass}
                     className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
@@ -445,13 +514,28 @@ export default function SchedulePage() {
                     type="time"
                     value={newClassEnd}
                     onChange={(e) => setNewClassEnd(e.target.value)}
+                    disabled={isCreatingClass}
                     className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="ghost" size="sm" onClick={() => setShowAddClass(false)}>Cancel</Button>
-                <Button variant="primary" size="sm" onClick={handleCreateClass}>Create class</Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isCreatingClass}
+                  onClick={() => setShowAddClass(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={isCreatingClass}
+                  onClick={handleCreateClass}
+                >
+                  {isCreatingClass ? "Saving..." : "Create class"}
+                </Button>
               </div>
             </div>
           </div>

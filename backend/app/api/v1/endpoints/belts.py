@@ -3,7 +3,7 @@ from typing import Optional
 from supabase import Client
 from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
 from app.schemas.belt import (
-    BeltLadderCreate, BeltLadderResponse,
+    BeltLadderCreate, BeltLadderUpdate, BeltLadderSyncRequest, BeltLadderResponse,
     BeltRankCreate, BeltRankUpdate, BeltRankResponse,
     PromoteStudent, PromotionResponse,
     EligibilityEntry,
@@ -11,6 +11,15 @@ from app.schemas.belt import (
 from app.services.belt_service import BeltService
 
 router = APIRouter(prefix="/belts", tags=["belts"])
+
+
+@router.get("/ranks", response_model=list[BeltRankResponse])
+async def list_ranks(
+    ladder_id: Optional[str] = Query(None),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).list_ranks(studio_id, ladder_id)
 
 
 @router.get("/ladders", response_model=list[BeltLadderResponse])
@@ -29,6 +38,28 @@ async def create_ladder(
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).create_ladder(data, studio_id, user_id)
+
+
+@router.patch("/ladders/{ladder_id}", response_model=BeltLadderResponse)
+async def update_ladder(
+    ladder_id: str,
+    data: BeltLadderUpdate,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).update_ladder(ladder_id, data, studio_id, user_id)
+
+
+@router.post("/ladders/{ladder_id}/sync", response_model=BeltLadderResponse)
+async def sync_ladder(
+    ladder_id: str,
+    data: BeltLadderSyncRequest,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).sync_ladder(ladder_id, data, studio_id, user_id)
 
 
 @router.post("/ladders/{ladder_id}/ranks", response_model=BeltRankResponse, status_code=201)

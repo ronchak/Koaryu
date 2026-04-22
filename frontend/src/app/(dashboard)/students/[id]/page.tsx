@@ -1,18 +1,19 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/store";
-import type { StudentCreate } from "@/types";
+import { api } from "@/lib/api";
+import type { Student, StudentCreate } from "@/types";
 import { ArrowLeft, Mail, Phone, User, Pencil } from "lucide-react";
 
 function formatDate(d?: string) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -34,17 +35,98 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
   );
 }
 
+function isCurrentHold(student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">) {
+  const today = new Date().toISOString().split("T")[0];
+
+  if (student.status === "paused") {
+    return true;
+  }
+
+  if (!student.hold_start_date || student.hold_start_date > today) {
+    return false;
+  }
+
+  if (!student.hold_end_date) {
+    return true;
+  }
+
+  return student.hold_end_date >= today;
+}
+
 export default function StudentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const store = useStore();
   const id = params.id as string;
   const [showEdit, setShowEdit] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hydratedStudent, setHydratedStudent] = useState<Student | null>(null);
+  const [isLoadingStudent, setIsLoadingStudent] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const student = useMemo(
+  const listStudent = useMemo(
     () => store.students.find((s) => s.id === id),
     [store.students, id]
   );
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadStudent() {
+      if (store.isPreviewMode || !store.token) {
+        if (mounted) {
+          setHydratedStudent(null);
+          setLoadError(null);
+        }
+        return;
+      }
+
+      if (listStudent && listStudent.guardians.length > 0) {
+        if (mounted) {
+          setHydratedStudent(null);
+          setLoadError(null);
+        }
+        return;
+      }
+
+      setIsLoadingStudent(true);
+      setLoadError(null);
+
+      try {
+        const result = await api.get<Student>(`/students/${id}`, store.token);
+        if (mounted) {
+          setHydratedStudent(result);
+        }
+      } catch (error) {
+        if (mounted) {
+          setLoadError(error instanceof Error ? error.message : "Failed to load student");
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingStudent(false);
+        }
+      }
+    }
+
+    void loadStudent();
+
+    return () => {
+      mounted = false;
+    };
+  }, [id, listStudent, store.isPreviewMode, store.token]);
+
+  const student = hydratedStudent ?? listStudent;
+
+  if (!student && isLoadingStudent) {
+    return (
+      <>
+        <Header title="Loading student" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      </>
+    );
+  }
 
   if (!student) {
     return (
@@ -55,9 +137,11 @@ export default function StudentDetailPage() {
           </Button>
         </Header>
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-text-secondary">
-            This student doesn&apos;t exist or has been deleted.
-          </p>
+          <div className="text-center">
+            <p className="text-sm text-text-secondary">
+              {loadError || "This student doesn&apos;t exist or has been deleted."}
+            </p>
+          </div>
         </div>
       </>
     );
@@ -66,28 +150,41 @@ export default function StudentDetailPage() {
   const fullName = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
   const primaryGuardian = student.guardians.find((g) => g.is_primary_contact) ?? student.guardians[0];
 
-  function handleEdit(data: StudentCreate) {
+  async function handleEdit(data: StudentCreate) {
     if (!student) return;
-    store.updateStudent(id, {
-      legal_first_name: data.legal_first_name,
-      legal_last_name: data.legal_last_name,
-      preferred_name: data.preferred_name,
-      date_of_birth: data.date_of_birth,
-      email: data.email,
-      phone: data.phone,
-      address_line1: data.address_line1,
-      address_city: data.address_city,
-      address_state: data.address_state,
-      address_zip: data.address_zip,
-      emergency_contact_name: data.emergency_contact_name,
-      emergency_contact_phone: data.emergency_contact_phone,
-      emergency_contact_relation: data.emergency_contact_relation,
-      status: data.status || student.status,
-      membership_start_date: data.membership_start_date,
-      notes: data.notes,
-      tags: data.tags,
-    });
-    setShowEdit(false);
+    setIsSaving(true);
+    try {
+      await store.updateStudent(id, {
+        legal_first_name: data.legal_first_name,
+        legal_last_name: data.legal_last_name,
+        preferred_name: data.preferred_name,
+        date_of_birth: data.date_of_birth,
+        hold_start_date: data.hold_start_date ?? null,
+        hold_end_date: data.hold_end_date ?? null,
+        email: data.email,
+        phone: data.phone,
+        address_line1: data.address_line1,
+        address_city: data.address_city,
+        address_state: data.address_state,
+        address_zip: data.address_zip,
+        emergency_contact_name: data.emergency_contact_name,
+        emergency_contact_phone: data.emergency_contact_phone,
+        emergency_contact_relation: data.emergency_contact_relation,
+        status: data.status || student.status,
+        membership_start_date: data.membership_start_date,
+        notes: data.notes,
+        tags: data.tags,
+      });
+
+      if (!store.isPreviewMode && store.token) {
+        const freshStudent = await api.get<Student>(`/students/${id}`, store.token);
+        setHydratedStudent(freshStudent);
+      }
+
+      setShowEdit(false);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -123,6 +220,9 @@ export default function StudentDetailPage() {
               <div className="mt-3">
                 <StatusBadge status={student.status} />
               </div>
+              {isCurrentHold(student) && (
+                <p className="text-xs text-warning mt-2">Currently on hold</p>
+              )}
               {student.is_minor && (
                 <p className="text-xs text-warning mt-2">Minor</p>
               )}
@@ -137,6 +237,14 @@ export default function StudentDetailPage() {
                 <span className="text-muted text-xs">Member since</span>
                 <span className="text-text-primary font-mono text-xs">{formatDate(student.membership_start_date)}</span>
               </div>
+              {(student.hold_start_date || student.hold_end_date) && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted text-xs">Hold window</span>
+                  <span className="text-text-primary font-mono text-xs">
+                    {student.hold_start_date ? formatDate(student.hold_start_date) : "—"} to {student.hold_end_date ? formatDate(student.hold_end_date) : "Open"}
+                  </span>
+                </div>
+              )}
             </div>
 
             {student.tags.length > 0 && (
@@ -182,6 +290,18 @@ export default function StudentDetailPage() {
               <InfoRow label="Relation" value={student.emergency_contact_relation} />
             </section>
 
+            {(student.hold_start_date || student.hold_end_date || student.status === "paused") && (
+              <section className="bg-surface border border-border rounded-[6px] p-5">
+                <h3 className="text-sm font-medium text-text-primary mb-4">Hold / Vacation</h3>
+                <InfoRow
+                  label="Status"
+                  value={isCurrentHold(student) ? "Currently on hold" : "Hold scheduled / ended"}
+                />
+                <InfoRow label="Hold start" value={student.hold_start_date ? formatDate(student.hold_start_date) : undefined} />
+                <InfoRow label="Hold end" value={student.hold_end_date ? formatDate(student.hold_end_date) : "Open-ended"} />
+              </section>
+            )}
+
             {student.is_minor && primaryGuardian && (
               <section className="bg-surface border border-border rounded-[6px] p-5">
                 <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
@@ -210,7 +330,7 @@ export default function StudentDetailPage() {
         <StudentForm
           onSubmit={handleEdit}
           onClose={() => setShowEdit(false)}
-          isLoading={false}
+          isLoading={isSaving}
           initialData={{
             legal_first_name: student.legal_first_name,
             legal_last_name: student.legal_last_name,
@@ -227,8 +347,18 @@ export default function StudentDetailPage() {
             emergency_contact_relation: student.emergency_contact_relation,
             status: student.status,
             membership_start_date: student.membership_start_date,
+            hold_start_date: student.hold_start_date,
+            hold_end_date: student.hold_end_date,
             notes: student.notes,
             tags: student.tags,
+            guardians: student.guardians.map((guardian) => ({
+              first_name: guardian.first_name,
+              last_name: guardian.last_name,
+              email: guardian.email,
+              phone: guardian.phone,
+              relation: guardian.relation,
+              is_primary_contact: guardian.is_primary_contact,
+            })),
           }}
         />
       )}

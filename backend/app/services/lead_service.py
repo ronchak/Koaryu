@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 from supabase import Client
 from fastapi import HTTPException
@@ -6,6 +7,7 @@ from app.schemas.lead import (
     LeadActivityCreate, LeadActivityResponse,
     LeadConvert,
 )
+from app.services.studio_scope import ensure_optional_studio_record, ensure_staff_user_in_studio
 
 
 VALID_STAGES = {"inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled", "closed_lost"}
@@ -36,6 +38,12 @@ class LeadService:
         self, data: LeadCreate, studio_id: str, actor_id: str
     ) -> LeadResponse:
         row = data.model_dump()
+        ensure_staff_user_in_studio(
+            self.supabase,
+            row.get("assigned_staff_id"),
+            studio_id,
+            "Assigned staff member not found in this studio",
+        )
         row["studio_id"] = studio_id
         result = self.supabase.table("leads").insert(row).execute()
         if not result.data:
@@ -77,9 +85,15 @@ class LeadService:
     async def update_lead(
         self, lead_id: str, data: LeadUpdate, studio_id: str, actor_id: str
     ) -> LeadResponse:
-        update_dict = data.model_dump(exclude_none=True)
+        update_dict = data.model_dump(exclude_unset=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
+        ensure_staff_user_in_studio(
+            self.supabase,
+            update_dict.get("assigned_staff_id"),
+            studio_id,
+            "Assigned staff member not found in this studio",
+        )
 
         # Log stage change
         if "stage" in update_dict:
@@ -120,6 +134,7 @@ class LeadService:
     async def add_activity(
         self, lead_id: str, data: LeadActivityCreate, studio_id: str, actor_id: str
     ) -> LeadActivityResponse:
+        await self.get_lead(lead_id, studio_id)
         row = data.model_dump()
         row["studio_id"] = studio_id
         row["lead_id"] = lead_id
@@ -134,6 +149,15 @@ class LeadService:
     ) -> LeadResponse:
         """Convert a lead into a student record."""
         lead = await self.get_lead(lead_id, studio_id)
+        ensure_optional_studio_record(
+            self.supabase,
+            "programs",
+            data.program_id,
+            studio_id,
+            "Program not found",
+        )
+        if lead.converted_student_id:
+            raise HTTPException(status_code=409, detail="Lead has already been converted to a student")
         if lead.stage == "enrolled":
             raise HTTPException(status_code=409, detail="Lead already enrolled")
 
@@ -145,8 +169,9 @@ class LeadService:
             "email": lead.email,
             "phone": lead.phone,
             "status": data.status,
-            "membership_start_date": data.membership_start_date,
+            "membership_start_date": data.membership_start_date or str(date.today()),
             "program_id": data.program_id,
+            "notes": lead.notes,
             "tags": ["converted-lead"],
         }
         student_result = self.supabase.table("students").insert(student_data).execute()
@@ -175,10 +200,16 @@ class LeadService:
                 }).execute()
 
         # Update lead
-        self.supabase.table("leads").update({
+        lead_update_result = self.supabase.table("leads").update({
             "stage": "enrolled",
             "converted_student_id": student_id,
-        }).eq("id", lead_id).execute()
+            "follow_up_date": None,
+        }).eq("id", lead_id).eq("studio_id", studio_id).execute()
+        if not lead_update_result.data:
+            raise HTTPException(
+                status_code=500,
+                detail="Student was created but the lead could not be marked enrolled",
+            )
 
         # Activity log
         self.supabase.table("lead_activities").insert({

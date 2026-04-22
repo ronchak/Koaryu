@@ -20,7 +20,7 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({
@@ -40,21 +40,73 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-
-  // Auth routes (login, signup) — allow if not logged in, redirect to dashboard if logged in
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
+  const isOnboardingRoute = pathname.startsWith("/onboarding");
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
 
-  if (isAuthRoute && user) {
+  function redirectTo(path: string) {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = path;
     return NextResponse.redirect(url);
   }
 
-  // Protected routes — redirect to login if not logged in
-  if (!isAuthRoute && pathname !== "/onboarding" && !user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+  if (!user) {
+    if (isAuthRoute) {
+      return supabaseResponse;
+    }
+    return redirectTo("/login");
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    return redirectTo("/login");
+  }
+
+  let studioId: string | null = null;
+
+  if (apiBaseUrl) {
+    try {
+      const authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        cache: "no-store",
+      });
+
+      if (authMeResponse.status === 401 || authMeResponse.status === 403) {
+        return redirectTo("/login");
+      }
+
+      if (!authMeResponse.ok) {
+        throw new Error(`/auth/me returned ${authMeResponse.status}`);
+      }
+
+      const authProfile = (await authMeResponse.json()) as {
+        studio_id?: string | null;
+      };
+
+      studioId = authProfile.studio_id ?? null;
+    } catch (error) {
+      console.error("Failed to resolve current user's studio in middleware", error);
+      return supabaseResponse;
+    }
+  }
+
+  const hasStudio = Boolean(studioId);
+
+  if (isAuthRoute) {
+    return redirectTo(hasStudio ? "/" : "/onboarding");
+  }
+
+  if (isOnboardingRoute && hasStudio) {
+    return redirectTo("/");
+  }
+
+  if (!isOnboardingRoute && !hasStudio) {
+    return redirectTo("/onboarding");
   }
 
   return supabaseResponse;

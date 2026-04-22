@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
+import { buildStudentInactivityRows } from "@/lib/student-insights";
 import { useStore } from "@/lib/store";
-import type { Student, StudentStatus, StudentCreate } from "@/types";
+import type { Student, StudentCreate } from "@/types";
 import {
   UserPlus,
   Upload,
@@ -62,8 +63,10 @@ function SortIcon({
 
 export default function StudentsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const store = useStore();
   const students = store.students;
+  const inactivityThreshold = Number(searchParams.get("inactiveDays") || "") || null;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -71,6 +74,14 @@ export default function StudentsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const inactivityRows = useMemo(
+    () => buildStudentInactivityRows(store.students, store.sessions, store.attendance),
+    [store.attendance, store.sessions, store.students]
+  );
+  const inactivityByStudentId = useMemo(
+    () => new Map(inactivityRows.map((row) => [row.student.id, row.daysInactive])),
+    [inactivityRows]
+  );
 
   // ---- Filter & Sort ----
   const filtered = useMemo(() => {
@@ -91,6 +102,10 @@ export default function StudentsPage() {
       list = list.filter((s) => s.status === statusFilter);
     }
 
+    if (inactivityThreshold) {
+      list = list.filter((student) => (inactivityByStudentId.get(student.id) || 0) >= inactivityThreshold);
+    }
+
     list.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "name") {
@@ -109,7 +124,7 @@ export default function StudentsPage() {
     });
 
     return list;
-  }, [students, search, statusFilter, sortKey, sortDir]);
+  }, [students, search, statusFilter, inactivityThreshold, inactivityByStudentId, sortKey, sortDir]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -123,7 +138,11 @@ export default function StudentsPage() {
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   }
@@ -138,9 +157,12 @@ export default function StudentsPage() {
 
   async function handleAddStudent(data: StudentCreate) {
     setIsAdding(true);
-    store.addStudent(data);
-    setIsAdding(false);
-    setShowForm(false);
+    try {
+      await store.addStudent(data);
+      setShowForm(false);
+    } finally {
+      setIsAdding(false);
+    }
   }
 
   const allSelected =
@@ -168,6 +190,27 @@ export default function StudentsPage() {
       </Header>
 
       <div className="flex-1 flex flex-col">
+        {inactivityThreshold && (
+          <div className="px-8 pt-4">
+            <div className="flex items-center justify-between rounded-[6px] border border-warning/20 bg-warning/5 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-text-primary">
+                  Showing students inactive for {inactivityThreshold}+ days
+                </p>
+                <p className="text-xs text-muted mt-0.5">
+                  Current holds are excluded automatically from this list.
+                </p>
+              </div>
+              <button
+                onClick={() => router.push("/students")}
+                className="text-xs text-accent hover:text-accent-hover"
+              >
+                Clear filter
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Toolbar */}
         <div className="flex items-center gap-3 px-8 py-4 border-b border-border">
           {/* Search */}
@@ -283,6 +326,11 @@ export default function StudentsPage() {
                       />
                     </span>
                   </th>
+                  {inactivityThreshold && (
+                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+                      Days inactive
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -365,6 +413,11 @@ export default function StudentsPage() {
                       <td className="px-4 py-3 text-text-secondary font-mono text-xs">
                         {formatDate(student.membership_start_date)}
                       </td>
+                      {inactivityThreshold && (
+                        <td className="px-4 py-3 text-text-secondary font-mono text-xs">
+                          {inactivityByStudentId.get(student.id) || 0}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

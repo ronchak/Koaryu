@@ -468,6 +468,7 @@ export const MOCK_BELT_LADDER: BeltLadder = {
   id: "ladder-1",
   studio_id: "mock-studio",
   name: "Kids Martial Arts",
+  sub_rank_term: "Stripe",
   created_at: "2024-01-01T00:00:00Z",
   updated_at: "2024-01-01T00:00:00Z",
   ranks: MOCK_BELT_RANKS,
@@ -641,4 +642,3 @@ export const MOCK_LEADS: Lead[] = [
     updated_at: "2025-04-10T15:00:00Z",
   },
 ];
-

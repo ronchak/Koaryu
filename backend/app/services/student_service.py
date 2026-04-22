@@ -1,5 +1,6 @@
 import csv
 import io
+from datetime import date, datetime, timezone
 from typing import Optional
 from supabase import Client
 from fastapi import HTTPException, status
@@ -8,6 +9,7 @@ from app.schemas.student import (
     GuardianCreate, GuardianResponse, CsvImportRow, CsvImportResult,
     BulkTagUpdate, BulkStatusUpdate,
 )
+from app.services.studio_scope import ensure_optional_studio_record
 
 VALID_STATUSES = {"active", "trialing", "inactive", "paused", "canceled"}
 
@@ -52,6 +54,47 @@ class StudentService:
 
     # ---- Helpers ----
 
+    def _is_minor_from_date_of_birth(self, date_of_birth: Optional[date]) -> bool:
+        if not date_of_birth:
+            return False
+
+        today = datetime.now(timezone.utc).date()
+        age = today.year - date_of_birth.year
+        if (today.month, today.day) < (date_of_birth.month, date_of_birth.day):
+            age -= 1
+        return age < 18
+
+    def _prepare_student_write(self, payload: dict, *, set_default_is_minor: bool) -> dict:
+        if payload.get("tags") is None:
+            payload["tags"] = []
+
+        date_of_birth = payload.get("date_of_birth")
+        if isinstance(date_of_birth, str) and date_of_birth:
+            date_of_birth = date.fromisoformat(date_of_birth)
+            payload["date_of_birth"] = date_of_birth
+        if date_of_birth:
+            payload["is_minor"] = self._is_minor_from_date_of_birth(date_of_birth)
+            payload["date_of_birth"] = str(date_of_birth)
+        elif set_default_is_minor:
+            payload["is_minor"] = False
+
+        if payload.get("membership_start_date"):
+            if isinstance(payload["membership_start_date"], str):
+                payload["membership_start_date"] = date.fromisoformat(payload["membership_start_date"])
+            payload["membership_start_date"] = str(payload["membership_start_date"])
+
+        if payload.get("hold_start_date"):
+            if isinstance(payload["hold_start_date"], str):
+                payload["hold_start_date"] = date.fromisoformat(payload["hold_start_date"])
+            payload["hold_start_date"] = str(payload["hold_start_date"])
+
+        if payload.get("hold_end_date"):
+            if isinstance(payload["hold_end_date"], str):
+                payload["hold_end_date"] = date.fromisoformat(payload["hold_end_date"])
+            payload["hold_end_date"] = str(payload["hold_end_date"])
+
+        return payload
+
     def _fetch_guardians_for_student(self, student_id: str) -> list[GuardianResponse]:
         result = (
             self.supabase.table("student_guardians")
@@ -76,8 +119,12 @@ class StudentService:
 
     def _row_to_response(self, row: dict) -> StudentResponse:
         guardians = self._fetch_guardians_for_student(row["id"])
-        return StudentResponse(
+        normalized_row = {
             **{k: v for k, v in row.items() if k != "deleted_at"},
+            "tags": row.get("tags") or [],
+        }
+        return StudentResponse(
+            **normalized_row,
             guardians=guardians,
         )
 
@@ -113,8 +160,12 @@ class StudentService:
 
         items = []
         for row in result.data or []:
-            items.append(StudentResponse(
+            normalized_row = {
                 **{k: v for k, v in row.items() if k not in ("deleted_at",)},
+                "tags": row.get("tags") or [],
+            }
+            items.append(StudentResponse(
+                **normalized_row,
                 guardians=[],
             ))
 
@@ -141,12 +192,15 @@ class StudentService:
     ) -> StudentResponse:
         guardians_data = data.guardians
         student_dict = data.model_dump(exclude={"guardians"})
+        ensure_optional_studio_record(
+            self.supabase,
+            "programs",
+            student_dict.get("program_id"),
+            studio_id,
+            "Program not found",
+        )
         student_dict["studio_id"] = studio_id
-        # Convert date to string for supabase
-        if student_dict.get("date_of_birth"):
-            student_dict["date_of_birth"] = str(student_dict["date_of_birth"])
-        if student_dict.get("membership_start_date"):
-            student_dict["membership_start_date"] = str(student_dict["membership_start_date"])
+        student_dict = self._prepare_student_write(student_dict, set_default_is_minor=True)
 
         result = self.supabase.table("students").insert(student_dict).execute()
         if not result.data:
@@ -199,14 +253,18 @@ class StudentService:
     async def update_student(
         self, student_id: str, data: StudentUpdate, studio_id: str, actor_id: str
     ) -> StudentResponse:
-        update_dict = data.model_dump(exclude_none=True)
+        update_dict = data.model_dump(exclude_unset=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
+        ensure_optional_studio_record(
+            self.supabase,
+            "programs",
+            update_dict.get("program_id"),
+            studio_id,
+            "Program not found",
+        )
 
-        if "date_of_birth" in update_dict and update_dict["date_of_birth"]:
-            update_dict["date_of_birth"] = str(update_dict["date_of_birth"])
-        if "membership_start_date" in update_dict and update_dict["membership_start_date"]:
-            update_dict["membership_start_date"] = str(update_dict["membership_start_date"])
+        update_dict = self._prepare_student_write(update_dict, set_default_is_minor=False)
 
         result = (
             self.supabase.table("students")
@@ -232,7 +290,6 @@ class StudentService:
     async def soft_delete_student(
         self, student_id: str, studio_id: str, actor_id: str
     ) -> None:
-        from datetime import datetime, timezone
         result = (
             self.supabase.table("students")
             .update({"deleted_at": datetime.now(timezone.utc).isoformat()})
@@ -273,7 +330,7 @@ class StudentService:
             new_tags = list(
                 set(current_tags + data.tags_to_add) - set(data.tags_to_remove)
             )
-            self.supabase.table("students").update({"tags": new_tags}).eq("id", sid).execute()
+            self.supabase.table("students").update({"tags": new_tags}).eq("id", sid).eq("studio_id", studio_id).execute()
             updated += 1
         return updated
 
@@ -336,6 +393,8 @@ class StudentService:
                 row_errors.append("Missing required field: last name")
 
             # Status validation
+            if mapped.get("status") and isinstance(mapped["status"], str):
+                mapped["status"] = mapped["status"].lower()
             if mapped.get("status") and mapped["status"] not in VALID_STATUSES:
                 row_errors.append(
                     f"Invalid status '{mapped['status']}'. Must be one of: {', '.join(VALID_STATUSES)}"
@@ -390,7 +449,9 @@ class StudentService:
             if isinstance(mapped.get("tags"), str):
                 mapped["tags"] = [t.strip() for t in (mapped["tags"] or "").split(",") if t.strip()]
             else:
-                mapped.setdefault("tags", [])
+                mapped["tags"] = mapped.get("tags") or []
+            if isinstance(mapped.get("status"), str):
+                mapped["status"] = mapped["status"].lower()
 
             # Pull guardian fields out before inserting student
             guardian_name = mapped.pop("guardian_name", None)
@@ -398,34 +459,54 @@ class StudentService:
             guardian_phone = mapped.pop("guardian_phone", None)
             guardian_relation = mapped.pop("guardian_relation", None)
 
+            ensure_optional_studio_record(
+                self.supabase,
+                "programs",
+                mapped.get("program_id"),
+                studio_id,
+                "Program not found",
+            )
             mapped["studio_id"] = studio_id
+            mapped = self._prepare_student_write(mapped, set_default_is_minor=True)
             try:
                 s_result = self.supabase.table("students").insert(mapped).execute()
-                if s_result.data:
-                    student_id = s_result.data[0]["id"]
-                    imported += 1
+                if not s_result.data:
+                    raise RuntimeError("Failed to create student")
 
-                    # If guardian info present, create guardian record
-                    if guardian_name:
-                        parts = guardian_name.split(" ", 1)
-                        g_first = parts[0]
-                        g_last = parts[1] if len(parts) > 1 else ""
-                        g_result = self.supabase.table("guardians").insert({
-                            "studio_id": studio_id,
-                            "first_name": g_first,
-                            "last_name": g_last,
-                            "email": guardian_email,
-                            "phone": guardian_phone,
-                            "relation": guardian_relation,
-                            "is_primary_contact": True,
+                student_id = s_result.data[0]["id"]
+                imported += 1
+
+                # If guardian info present, create guardian record
+                if guardian_name:
+                    parts = guardian_name.split(" ", 1)
+                    g_first = parts[0]
+                    g_last = parts[1] if len(parts) > 1 else ""
+                    g_result = self.supabase.table("guardians").insert({
+                        "studio_id": studio_id,
+                        "first_name": g_first,
+                        "last_name": g_last,
+                        "email": guardian_email,
+                        "phone": guardian_phone,
+                        "relation": guardian_relation,
+                        "is_primary_contact": True,
+                    }).execute()
+                    if g_result.data:
+                        self.supabase.table("student_guardians").insert({
+                            "student_id": student_id,
+                            "guardian_id": g_result.data[0]["id"],
                         }).execute()
-                        if g_result.data:
-                            self.supabase.table("student_guardians").insert({
-                                "student_id": student_id,
-                                "guardian_id": g_result.data[0]["id"],
-                            }).execute()
-            except Exception:
-                pass  # Silently skip rows that fail DB insertion
+            except Exception as exc:
+                validation.errors.append(CsvImportRow(
+                    row_number=i,
+                    data={**mapped, **({} if not guardian_name else {
+                        "guardian_name": guardian_name,
+                        "guardian_email": guardian_email,
+                        "guardian_phone": guardian_phone,
+                        "guardian_relation": guardian_relation,
+                    })},
+                    errors=[str(exc) or "Failed to import this row"],
+                    is_valid=False,
+                ))
 
         self.supabase.table("audit_logs").insert({
             "studio_id": studio_id,
@@ -436,5 +517,6 @@ class StudentService:
             "metadata": {"imported": imported, "total": len(rows)},
         }).execute()
 
+        validation.error_rows = len(validation.errors)
         validation.imported_count = imported
         return validation
