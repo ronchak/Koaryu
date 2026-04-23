@@ -108,6 +108,81 @@ class BeltService:
         )
         return [self._build_ladder_response(row) for row in (result.data or [])]
 
+    async def list_promotions(
+        self,
+        studio_id: str,
+        student_id: Optional[str] = None,
+    ) -> list[PromotionResponse]:
+        query = (
+            self.supabase.table("promotions")
+            .select("*")
+            .eq("studio_id", studio_id)
+            .order("promoted_at", desc=True)
+        )
+        if student_id:
+            query = query.eq("student_id", student_id)
+
+        result = query.execute()
+        promotion_rows = result.data or []
+
+        if not promotion_rows:
+            return []
+
+        student_ids = sorted(
+            {
+                row["student_id"]
+                for row in promotion_rows
+                if row.get("student_id")
+            }
+        )
+        rank_ids = sorted(
+            {
+                rank_id
+                for row in promotion_rows
+                for rank_id in (row.get("from_rank_id"), row.get("to_rank_id"))
+                if rank_id
+            }
+        )
+
+        students_by_id: dict[str, str] = {}
+        ranks_by_id: dict[str, str] = {}
+
+        if student_ids:
+            students_result = (
+                self.supabase.table("students")
+                .select("id, legal_first_name, legal_last_name, preferred_name")
+                .in_("id", student_ids)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
+            students_by_id = {
+                row["id"]: f'{row.get("preferred_name") or row.get("legal_first_name") or ""} {row.get("legal_last_name") or ""}'.strip()
+                for row in (students_result.data or [])
+            }
+
+        if rank_ids:
+            ranks_result = (
+                self.supabase.table("belt_ranks")
+                .select("id, name")
+                .in_("id", rank_ids)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
+            ranks_by_id = {
+                row["id"]: row["name"]
+                for row in (ranks_result.data or [])
+            }
+
+        return [
+            PromotionResponse(
+                **row,
+                student_name=students_by_id.get(row["student_id"]),
+                from_rank_name=ranks_by_id.get(row.get("from_rank_id")),
+                to_rank_name=ranks_by_id.get(row["to_rank_id"]),
+            )
+            for row in promotion_rows
+        ]
+
     async def create_ladder(
         self, data: BeltLadderCreate, studio_id: str, actor_id: str
     ) -> BeltLadderResponse:

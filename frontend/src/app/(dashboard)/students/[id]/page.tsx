@@ -8,12 +8,21 @@ import { StudentForm } from "@/components/students/student-form";
 import { Button } from "@/components/ui/button";
 import { useConfigStore, useStudentStore } from "@/lib/store";
 import { api } from "@/lib/api";
-import type { Student, StudentCreate } from "@/types";
-import { AlertTriangle, ArrowLeft, Mail, Phone, User, Pencil, Trash2 } from "lucide-react";
+import type { BeltLadder, BeltRank, Promotion, Student, StudentCreate } from "@/types";
+import { AlertTriangle, ArrowLeft, Award, Mail, Phone, User, Pencil, Trash2 } from "lucide-react";
 
 function formatDate(d?: string) {
   if (!d) return "—";
   return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(d?: string) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -34,6 +43,45 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
     </div>
   );
 }
+
+function RankBadge({
+  name,
+  colorHex,
+  isTip,
+  tipColorHex,
+}: {
+  name: string;
+  colorHex?: string;
+  isTip?: boolean;
+  tipColorHex?: string;
+}) {
+  const normalized = colorHex?.toLowerCase();
+  const isWhite = !normalized || normalized === "#ffffff" || normalized === "#f5f5f5";
+  const background = colorHex || "#FFFFFF";
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] text-xs font-medium ${
+        isWhite ? "text-text-primary border border-border" : "text-white"
+      }`}
+      style={{ backgroundColor: isWhite ? "transparent" : background }}
+    >
+      <span
+        className="w-2 h-2 rounded-full border border-white/30"
+        style={{ backgroundColor: background }}
+      />
+      {name}
+      {isTip && tipColorHex ? (
+        <span
+          className="w-1.5 h-3 rounded-sm flex-shrink-0"
+          style={{ backgroundColor: tipColorHex }}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+type RankWithContext = BeltRank & { ladderName: string };
 
 function isCurrentHold(student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">) {
   const today = new Date().toISOString().split("T")[0];
@@ -64,6 +112,10 @@ export default function StudentDetailPage() {
   const [hydratedStudent, setHydratedStudent] = useState<Student | null>(null);
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [beltLadders, setBeltLadders] = useState<BeltLadder[]>([]);
+  const [promotionHistory, setPromotionHistory] = useState<Promotion[]>([]);
+  const [isLoadingBeltData, setIsLoadingBeltData] = useState(false);
+  const [beltLoadError, setBeltLoadError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -119,7 +171,62 @@ export default function StudentDetailPage() {
     };
   }, [id, isPreviewMode, listStudent, token]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadBeltData() {
+      if (isPreviewMode || !token) {
+        if (mounted) {
+          setBeltLadders([]);
+          setPromotionHistory([]);
+          setBeltLoadError(null);
+        }
+        return;
+      }
+
+      setIsLoadingBeltData(true);
+      setBeltLoadError(null);
+
+      try {
+        const [laddersResult, promotionsResult] = await Promise.all([
+          api.get<BeltLadder[]>("/belts/ladders", token),
+          api.get<Promotion[]>(`/belts/promotions?student_id=${encodeURIComponent(id)}`, token),
+        ]);
+
+        if (!mounted) return;
+
+        setBeltLadders(laddersResult);
+        setPromotionHistory(promotionsResult);
+      } catch (error) {
+        if (mounted) {
+          setBeltLoadError(
+            error instanceof Error ? error.message : "Failed to load belt history"
+          );
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingBeltData(false);
+        }
+      }
+    }
+
+    void loadBeltData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [id, isPreviewMode, token]);
+
   const student = hydratedStudent ?? listStudent;
+  const rankById = useMemo(() => {
+    const entries = beltLadders.flatMap((ladder) =>
+      ladder.ranks.map((rank) => [
+        rank.id,
+        { ...rank, ladderName: ladder.name } satisfies RankWithContext,
+      ] as const)
+    );
+    return new Map<string, RankWithContext>(entries);
+  }, [beltLadders]);
 
   if (!student && isLoadingStudent) {
     return (
@@ -153,6 +260,21 @@ export default function StudentDetailPage() {
 
   const fullName = `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
   const primaryGuardian = student.guardians.find((g) => g.is_primary_contact) ?? student.guardians[0];
+  const currentRank = student.current_belt_rank_id
+    ? rankById.get(student.current_belt_rank_id)
+    : undefined;
+  const currentLadder = currentRank
+    ? beltLadders.find((ladder) => ladder.id === currentRank.ladder_id)
+    : beltLadders.find((ladder) => ladder.program_id && ladder.program_id === student.program_id);
+  const currentLadderRanks = currentLadder?.ranks || [];
+  const currentRankIndex = currentRank
+    ? currentLadderRanks.findIndex((rank) => rank.id === currentRank.id)
+    : -1;
+  const nextRank =
+    currentRankIndex >= 0 && currentRankIndex < currentLadderRanks.length - 1
+      ? currentLadderRanks[currentRankIndex + 1]
+      : undefined;
+  const latestPromotion = promotionHistory[0];
 
   async function handleEdit(data: StudentCreate) {
     if (!student) return;
@@ -308,6 +430,59 @@ export default function StudentDetailPage() {
               )}
             </div>
 
+            <div className="bg-surface border border-border rounded-[6px] p-4 space-y-3">
+              <div>
+                <p className="text-xs font-medium text-text-secondary mb-2">Current belt</p>
+                {currentRank ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <RankBadge
+                      name={currentRank.name}
+                      colorHex={currentRank.color_hex}
+                      isTip={currentRank.is_tip}
+                      tipColorHex={currentRank.tip_color_hex}
+                    />
+                    <span className="text-xs text-muted">{currentRank.ladderName}</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-text-secondary">No rank assigned</p>
+                )}
+              </div>
+
+              <div className="flex justify-between text-sm">
+                <span className="text-muted text-xs">Next rank</span>
+                <span className="text-text-primary text-xs">
+                  {nextRank ? (
+                    <RankBadge
+                      name={nextRank.name}
+                      colorHex={nextRank.color_hex}
+                      isTip={nextRank.is_tip}
+                      tipColorHex={nextRank.tip_color_hex}
+                    />
+                  ) : currentRank ? "Top of ladder" : "—"}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-sm">
+                <span className="text-muted text-xs">Last promotion</span>
+                <span className="text-text-primary font-mono text-xs">
+                  {formatDateTime(latestPromotion?.promoted_at)}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-sm">
+                <span className="text-muted text-xs">Recorded promotions</span>
+                <span className="text-text-primary font-mono text-xs">
+                  {promotionHistory.length}
+                </span>
+              </div>
+
+              {beltLoadError ? (
+                <p className="text-xs text-warning">{beltLoadError}</p>
+              ) : isLoadingBeltData ? (
+                <p className="text-xs text-muted">Loading belt history…</p>
+              ) : null}
+            </div>
+
             {student.tags.length > 0 && (
               <div className="bg-surface border border-border rounded-[6px] p-4">
                 <p className="text-xs font-medium text-text-secondary mb-2">Tags</p>
@@ -339,6 +514,91 @@ export default function StudentDetailPage() {
                     .join(", ") || undefined
                 }
               />
+            </section>
+
+            <section className="bg-surface border border-border rounded-[6px] p-5">
+              <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
+                <Award className="w-3.5 h-3.5 text-muted" />
+                Belt & Promotion History
+              </h3>
+
+              {beltLoadError ? (
+                <p className="text-sm text-warning">{beltLoadError}</p>
+              ) : isLoadingBeltData ? (
+                <p className="text-sm text-text-secondary">Loading belt and promotion history…</p>
+              ) : promotionHistory.length === 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-text-secondary">
+                    No promotion history has been recorded yet.
+                  </p>
+                  {currentRank ? (
+                    <p className="text-xs text-muted">
+                      Current rank is still tracked as{" "}
+                      <span className="inline-flex align-middle">
+                        <RankBadge
+                          name={currentRank.name}
+                          colorHex={currentRank.color_hex}
+                          isTip={currentRank.is_tip}
+                          tipColorHex={currentRank.tip_color_hex}
+                        />
+                      </span>
+                      {" "}on the {currentRank.ladderName} ladder.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {promotionHistory.map((promotion) => {
+                    const fromRank = promotion.from_rank_id
+                      ? rankById.get(promotion.from_rank_id)
+                      : undefined;
+                    const toRank = rankById.get(promotion.to_rank_id);
+
+                    return (
+                      <div
+                        key={promotion.id}
+                        className="rounded-[6px] border border-border bg-surface-raised/40 px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {fromRank ? (
+                                <RankBadge
+                                  name={promotion.from_rank_name || fromRank.name}
+                                  colorHex={fromRank.color_hex}
+                                  isTip={fromRank.is_tip}
+                                  tipColorHex={fromRank.tip_color_hex}
+                                />
+                              ) : (
+                                <span className="text-xs text-muted">Unranked</span>
+                              )}
+                              <span className="text-xs text-muted">→</span>
+                              {toRank ? (
+                                <RankBadge
+                                  name={promotion.to_rank_name || toRank.name}
+                                  colorHex={toRank.color_hex}
+                                  isTip={toRank.is_tip}
+                                  tipColorHex={toRank.tip_color_hex}
+                                />
+                              ) : (
+                                <span className="text-xs text-text-primary">{promotion.to_rank_name || "Rank updated"}</span>
+                              )}
+                            </div>
+                            {promotion.notes ? (
+                              <p className="text-sm text-text-secondary leading-relaxed">
+                                {promotion.notes}
+                              </p>
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-muted font-mono">
+                            {formatDateTime(promotion.promoted_at)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <section className="bg-surface border border-border rounded-[6px] p-5">

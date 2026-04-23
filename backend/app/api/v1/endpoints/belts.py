@@ -100,6 +100,15 @@ async def get_eligibility(
     return await BeltService(supabase).get_eligibility(studio_id, ladder_id)
 
 
+@router.get("/promotions", response_model=list[PromotionResponse])
+async def list_promotions(
+    student_id: Optional[str] = Query(None),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).list_promotions(studio_id, student_id)
+
+
 @router.post("/promote", response_model=PromotionResponse, status_code=201)
 async def promote_student(
     data: PromoteStudent,
