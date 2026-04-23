@@ -1,10 +1,14 @@
-from fastapi import Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import Depends, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.security import get_user_id_from_token
 from app.db.supabase import get_supabase_client
+from app.services.studio_scope import resolve_staff_role_for_user
 from supabase import Client
 
 security = HTTPBearer()
+ACTIVE_STUDIO_COOKIE = "koaryu-active-studio"
 
 
 async def get_current_user_id(
@@ -22,26 +26,25 @@ async def get_supabase() -> Client:
     return get_supabase_client()
 
 
+async def get_requested_studio_id(
+    request: Request,
+    studio_id_header: Optional[str] = Header(None, alias="X-Studio-Id"),
+) -> Optional[str]:
+    if studio_id_header:
+        return studio_id_header
+    return request.cookies.get(ACTIVE_STUDIO_COOKIE)
+
+
 async def get_current_studio_id(
     user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> str:
     """
     FastAPI dependency that resolves the studio_id for the current user.
-    Looks up the user's staff_role record.
+    Prefers an explicitly requested studio when present and validates that the
+    user belongs to it. Falls back to a deterministic membership when the
+    request does not yet carry active studio state.
     """
-    result = (
-        supabase.table("staff_roles")
-        .select("studio_id")
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-    )
-
-    if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No studio found for this user. Complete onboarding first.",
-        )
-
-    return result.data[0]["studio_id"]
+    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+    return membership["studio_id"]

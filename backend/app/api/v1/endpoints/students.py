@@ -1,15 +1,35 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header
 from typing import Optional
 from supabase import Client
 from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
-    CsvImportResult, BulkTagUpdate, BulkStatusUpdate,
+    CsvImportRequest, CsvImportResult, BulkTagUpdate, BulkStatusUpdate,
 )
 from app.services.student_service import StudentService
 import json
 
 router = APIRouter(prefix="/students", tags=["students"])
+
+
+def parse_import_request(
+    *,
+    payload: Optional[str],
+    mapping: Optional[str],
+    options: Optional[str],
+) -> CsvImportRequest:
+    if payload:
+        return CsvImportRequest.model_validate(json.loads(payload))
+
+    if mapping:
+        request_payload = {
+            "mapping": json.loads(mapping),
+        }
+        if options:
+            request_payload["options"] = json.loads(options)
+        return CsvImportRequest.model_validate(request_payload)
+
+    raise HTTPException(status_code=400, detail="Missing import payload")
 
 
 @router.get("", response_model=StudentListResponse)
@@ -119,7 +139,9 @@ async def parse_csv_headers(
 @router.post("/import/validate", response_model=CsvImportResult)
 async def validate_csv_import(
     file: UploadFile = File(...),
-    mapping: str = Query(..., description="JSON string of {csv_col: koaryu_field}"),
+    payload: Optional[str] = Form(None, description="JSON string containing mapping and import options"),
+    mapping: Optional[str] = Query(None, description="Legacy JSON string of {csv_col: koaryu_field}"),
+    options: Optional[str] = Query(None, description="Legacy JSON string of import options"),
     supabase: Client = Depends(get_supabase),
     studio_id: str = Depends(get_current_studio_id),
 ):
@@ -128,16 +150,19 @@ async def validate_csv_import(
     service = StudentService(supabase)
     _, rows = service.parse_csv(content)
     try:
-        col_mapping: dict = json.loads(mapping)
+        request = parse_import_request(payload=payload, mapping=mapping, options=options)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid mapping JSON")
-    return service.validate_import_rows(rows, col_mapping)
+        raise HTTPException(status_code=400, detail="Invalid import payload")
+    return service.validate_import_rows(rows, request.mapping, request.options, studio_id)
 
 
 @router.post("/import/execute", response_model=CsvImportResult)
 async def execute_csv_import(
     file: UploadFile = File(...),
-    mapping: str = Query(..., description="JSON string of {csv_col: koaryu_field}"),
+    payload: Optional[str] = Form(None, description="JSON string containing mapping and import options"),
+    mapping: Optional[str] = Query(None, description="Legacy JSON string of {csv_col: koaryu_field}"),
+    options: Optional[str] = Query(None, description="Legacy JSON string of import options"),
+    request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
@@ -147,7 +172,14 @@ async def execute_csv_import(
     service = StudentService(supabase)
     _, rows = service.parse_csv(content)
     try:
-        col_mapping: dict = json.loads(mapping)
+        request = parse_import_request(payload=payload, mapping=mapping, options=options)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid mapping JSON")
-    return await service.execute_import(rows, col_mapping, studio_id, user_id)
+        raise HTTPException(status_code=400, detail="Invalid import payload")
+    return await service.execute_import(
+        rows,
+        request.mapping,
+        request.options,
+        studio_id,
+        user_id,
+        request.idempotency_key or request_idempotency_key,
+    )

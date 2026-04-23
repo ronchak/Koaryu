@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { Fragment, useState, useRef, useCallback, useMemo } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { useStore } from "@/lib/store";
+import { useBeltStore } from "@/lib/store";
 import type { BeltRank, EligibilityEntry } from "@/types";
 import {
   Award,
@@ -359,13 +359,15 @@ function DeleteConfirm({ name, onConfirm, onCancel }: {
 // Main Page
 // ══════════════════════════════════════════════════════════════════════════════
 export default function BeltTrackerPage() {
-  const store = useStore();
+  const store = useBeltStore();
   const [tab, setTab] = useState<Tab>("eligibility");
+  const beltLadders = store.beltLadders;
+  const currentLadderId = store.currentLadderId;
+  const eligibility = store.eligibility;
+  const ladderName = store.ladderName;
 
   // Draft state is only used once the user starts editing.
   const [draftRanks, setDraftRanks] = useState<BeltRank[]>([]);
-  const eligibility = store.eligibility;
-  const ladderName = store.ladderName;
 
   // Per-studio configurable sub-rank terminology
   const [draftSubRankTerm, setDraftSubRankTerm] = useState(store.subRankTerm);
@@ -389,6 +391,9 @@ export default function BeltTrackerPage() {
   const [dirty, setDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [ladderError, setLadderError] = useState<string | null>(null);
+  const [isSwitchingLadder, setIsSwitchingLadder] = useState(false);
+  const [collapsedEligibilityGroups, setCollapsedEligibilityGroups] = useState<Set<string>>(new Set());
 
   // Modal states
   const [addBeltModal, setAddBeltModal] = useState(false);
@@ -403,17 +408,83 @@ export default function BeltTrackerPage() {
   const [isPromoting, setIsPromoting] = useState(false);
 
   // ── Derived state ──────────────────────────────────────────────────────────
-  const ranks = dirty ? draftRanks : store.beltRanks;
+  const ladderRanks = dirty ? draftRanks : store.beltRanks;
+  const eligibilityRanks = store.beltRanks;
   const subRankTerm = dirty ? draftSubRankTerm : store.subRankTerm;
-  const groups = groupRanks(ranks);
-  const editRank = editRankId ? ranks.find(r => r.id === editRankId) : null;
-  const deleteRank = deleteRankId ? ranks.find(r => r.id === deleteRankId) : null;
+  const groups = groupRanks(ladderRanks);
+  const currentLadder = beltLadders.find((ladder) => ladder.id === currentLadderId) ?? null;
+  const editRank = editRankId ? ladderRanks.find(r => r.id === editRankId) : null;
+  const deleteRank = deleteRankId ? ladderRanks.find(r => r.id === deleteRankId) : null;
+  const rankById = useMemo(
+    () => new Map(eligibilityRanks.map((rank) => [rank.id, rank])),
+    [eligibilityRanks]
+  );
+
+  const eligibilityGroups = useMemo(() => {
+    const rankOrder = new Map(eligibilityRanks.map((rank, index) => [rank.id, index]));
+    const groupsByKey = new Map<string, {
+      key: string;
+      label: string;
+      color?: string;
+      rank?: BeltRank;
+      sortIndex: number;
+      entries: EligibilityEntry[];
+    }>();
+
+    const compareEntries = (left: EligibilityEntry, right: EligibilityEntry) => {
+      const leftReady = left.classes_met && left.time_met ? 1 : 0;
+      const rightReady = right.classes_met && right.time_met ? 1 : 0;
+      if (leftReady !== rightReady) {
+        return rightReady - leftReady;
+      }
+
+      const leftProgress = (left.classes_required ? left.classes_since_promo / left.classes_required : 1)
+        + (left.days_required ? left.days_at_rank / left.days_required : 1);
+      const rightProgress = (right.classes_required ? right.classes_since_promo / right.classes_required : 1)
+        + (right.days_required ? right.days_at_rank / right.days_required : 1);
+      if (leftProgress !== rightProgress) {
+        return rightProgress - leftProgress;
+      }
+
+      return left.student_name.localeCompare(right.student_name);
+    };
+
+    for (const entry of eligibility) {
+      const key = entry.current_rank_id ?? "unranked";
+      if (!groupsByKey.has(key)) {
+        const rank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
+        groupsByKey.set(key, {
+          key,
+          label: entry.current_rank_name ?? "Unranked",
+          color: entry.current_rank_color,
+          rank,
+          sortIndex: entry.current_rank_id ? (rankOrder.get(entry.current_rank_id) ?? Number.MAX_SAFE_INTEGER) : -1,
+          entries: [],
+        });
+      }
+
+      groupsByKey.get(key)?.entries.push(entry);
+    }
+
+    return Array.from(groupsByKey.values())
+      .map((group) => ({
+        ...group,
+        entries: [...group.entries].sort(compareEntries),
+      }))
+      .sort((left, right) => {
+        if (left.sortIndex !== right.sortIndex) {
+          return left.sortIndex - right.sortIndex;
+        }
+        return left.label.localeCompare(right.label);
+      });
+  }, [eligibility, eligibilityRanks, rankById]);
 
   const updateRanks = useCallback((updater: (current: BeltRank[]) => BeltRank[]) => {
     setSaveError(null);
-    setDraftRanks((currentDraft) => updater(dirty ? currentDraft : ranks));
+    setLadderError(null);
+    setDraftRanks((currentDraft) => updater(dirty ? currentDraft : ladderRanks));
     setDirty(true);
-  }, [dirty, ranks]);
+  }, [dirty, ladderRanks]);
 
   // ── Belt group DnD ──────────────────────────────────────────────────────────
   const onBeltDragStart = useCallback((gIdx: number, e: React.DragEvent) => {
@@ -495,11 +566,11 @@ export default function BeltTrackerPage() {
   // ── CRUD ────────────────────────────────────────────────────────────────────
   function handleAddBelt(data: RankFormData) {
     const newRank: BeltRank = {
-      id: localId(), ladder_id: "ladder-1", studio_id: "studio-1",
+      id: localId(), ladder_id: currentLadderId || "ladder-1", studio_id: "studio-1",
       name: data.name, color_hex: data.color_hex, is_tip: false,
       tip_color_hex: undefined, min_classes: data.min_classes,
       min_months: data.min_months, requires_approval: data.requires_approval,
-      display_order: ranks.length, created_at: new Date().toISOString(),
+      display_order: ladderRanks.length, created_at: new Date().toISOString(),
     };
     updateRanks((currentRanks) => [...currentRanks, newRank]);
     setAddBeltModal(false);
@@ -509,7 +580,7 @@ export default function BeltTrackerPage() {
     // Insert the new tip after the last tip in this group
     const newGroups = groups.map(g => ({ ...g, tips: [...g.tips] }));
     const newTip: BeltRank = {
-      id: localId(), ladder_id: "ladder-1", studio_id: "studio-1",
+      id: localId(), ladder_id: currentLadderId || "ladder-1", studio_id: "studio-1",
       name: data.name, color_hex: newGroups[gIdx].belt.color_hex,
       is_tip: true, tip_color_hex: data.tip_color_hex,
       min_classes: data.min_classes, min_months: data.min_months,
@@ -571,7 +642,7 @@ export default function BeltTrackerPage() {
     setSaveError(null);
     setIsSaving(true);
     try {
-      await store.setBeltRanks(ranks, { subRankTerm });
+      await store.setBeltRanks(ladderRanks, { subRankTerm });
       setDirty(false);
     } catch (error) {
       console.error("Failed to save belt ranks", error);
@@ -579,6 +650,45 @@ export default function BeltTrackerPage() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function handleDiscardChanges() {
+    setDraftRanks(store.beltRanks);
+    setDraftSubRankTerm(store.subRankTerm);
+    setTermDraft(store.subRankTerm);
+    setDirty(false);
+    setSaveError(null);
+    setLadderError(null);
+  }
+
+  async function handleSelectLadder(nextLadderId: string) {
+    if (!nextLadderId || nextLadderId === currentLadderId) {
+      return;
+    }
+
+    setIsSwitchingLadder(true);
+    setLadderError(null);
+    try {
+      await store.setCurrentLadder(nextLadderId);
+      setCollapsedEligibilityGroups(new Set());
+    } catch (error) {
+      console.error("Failed to switch belt ladder", error);
+      setLadderError("Could not switch ladders right now. Please try again.");
+    } finally {
+      setIsSwitchingLadder(false);
+    }
+  }
+
+  function toggleEligibilityGroup(groupKey: string) {
+    setCollapsedEligibilityGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
   }
 
   async function handleConfirmPromotion() {
@@ -607,16 +717,6 @@ export default function BeltTrackerPage() {
       setIsPromoting(false);
     }
   }
-
-  // ── Eligibility list ────────────────────────────────────────────────────────
-  const sorted = [...eligibility].sort((a, b) => {
-    const aR = a.classes_met && a.time_met ? 1 : 0;
-    const bR = b.classes_met && b.time_met ? 1 : 0;
-    if (aR !== bR) return bR - aR;
-    const aP = a.classes_required ? a.classes_since_promo / a.classes_required : 0;
-    const bP = b.classes_required ? b.classes_since_promo / b.classes_required : 0;
-    return bP - aP;
-  });
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -655,16 +755,49 @@ export default function BeltTrackerPage() {
               {t.label}
             </button>
           ))}
-          <span className="ml-auto text-xs text-muted">{ladderName}</span>
+          <div className="ml-auto flex items-center gap-3">
+            {beltLadders.length > 1 ? (
+              <div className="flex flex-col items-end gap-1">
+                <label className="text-[11px] uppercase tracking-[0.12em] text-muted">Ladder</label>
+                <select
+                  value={currentLadderId ?? ""}
+                  onChange={(event) => void handleSelectLadder(event.target.value)}
+                  disabled={dirty || isSwitchingLadder}
+                  className="min-w-44 rounded-[6px] border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {beltLadders.map((ladder) => (
+                    <option key={ladder.id} value={ladder.id}>
+                      {ladder.name}
+                    </option>
+                  ))}
+                </select>
+                {dirty && (
+                  <p className="text-[11px] text-warning">Save or discard changes before switching ladders.</p>
+                )}
+              </div>
+            ) : (
+              <span className="text-xs text-muted">{ladderName}</span>
+            )}
+          </div>
         </div>
 
         {/* ── Eligibility Tab ──────────────────────────────────────────── */}
         {tab === "eligibility" && (
           <div className="flex-1 overflow-x-auto">
-            {sorted.length === 0 ? (
+            {ladderError && (
+              <div className="mx-8 mt-6 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {ladderError}
+              </div>
+            )}
+
+            {eligibilityGroups.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <Award className="w-8 h-8 text-muted mb-3" />
-                <p className="text-sm text-text-secondary">No active students to evaluate.</p>
+                <p className="text-sm text-text-secondary">
+                  {currentLadder
+                    ? `No active students matched the ${currentLadder.name} ladder yet.`
+                    : "No active students to evaluate."}
+                </p>
               </div>
             ) : (
               <table className="w-full text-sm">
@@ -680,54 +813,122 @@ export default function BeltTrackerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((entry) => {
-                    const allMet = entry.classes_met && entry.time_met;
-                    const cRank = ranks.find(r => r.name === entry.current_rank_name);
-                    const nRank = ranks.find(r => r.name === entry.next_rank_name);
+                  {eligibilityGroups.map((group) => {
+                    const isCollapsed = collapsedEligibilityGroups.has(group.key);
+                    const eligibleCount = group.entries.filter(
+                      (entry) => entry.classes_met && entry.time_met && !entry.needs_approval
+                    ).length;
+                    const approvalCount = group.entries.filter(
+                      (entry) => entry.classes_met && entry.time_met && entry.needs_approval
+                    ).length;
+
                     return (
-                      <tr key={entry.student_id} className="border-b border-border hover:bg-surface-raised/50 transition-colors">
-                        <td className="px-6 py-3">
-                          <p className="font-medium text-text-primary">{entry.student_name}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          {entry.current_rank_name && entry.current_rank_color
-                            ? <RankBadge name={entry.current_rank_name} color={entry.current_rank_color} isTip={cRank?.is_tip} tipColor={cRank?.tip_color_hex} />
-                            : <span className="text-xs text-muted">Unranked</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          {entry.next_rank_name && entry.next_rank_color
-                            ? <RankBadge name={entry.next_rank_name} color={entry.next_rank_color} isTip={nRank?.is_tip} tipColor={nRank?.tip_color_hex} />
-                            : <span className="text-xs text-muted">—</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <ProgressBar current={entry.classes_since_promo} required={entry.classes_required} met={entry.classes_met} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <ProgressBar current={entry.days_at_rank} required={entry.days_required} met={entry.time_met} />
-                        </td>
-                        <td className="px-4 py-3">
-                          {allMet
-                            ? entry.needs_approval
-                              ? <span className="flex items-center gap-1 text-xs text-warning"><AlertTriangle className="w-3 h-3" />Needs approval</span>
-                              : <span className="flex items-center gap-1 text-xs text-success"><Check className="w-3 h-3" />Eligible</span>
-                            : <span className="flex items-center gap-1 text-xs text-muted"><Clock className="w-3 h-3" />In progress</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          {allMet && (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setPromotionError(null);
-                                setPromotionNotes("");
-                                setPromoteEntry(entry);
-                              }}
+                      <Fragment key={group.key}>
+                        <tr className="border-b border-border bg-surface-raised/60">
+                          <td colSpan={7} className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleEligibilityGroup(group.key)}
+                              className="flex w-full items-center justify-between gap-4 text-left cursor-pointer"
                             >
-                              <ChevronUp className="w-3 h-3" />Promote
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
+                              <div className="flex items-center gap-3">
+                                {isCollapsed
+                                  ? <ChevronRight className="w-4 h-4 text-muted" />
+                                  : <ChevronDown className="w-4 h-4 text-muted" />}
+                                {group.rank && group.color
+                                  ? (
+                                    <RankBadge
+                                      name={group.label}
+                                      color={group.color}
+                                      isTip={group.rank.is_tip}
+                                      tipColor={group.rank.tip_color_hex}
+                                    />
+                                  )
+                                  : (
+                                    <span className="inline-flex items-center rounded-[4px] border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
+                                      {group.label}
+                                    </span>
+                                  )}
+                                <span className="text-xs text-muted">
+                                  {group.entries.length} student{group.entries.length === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs">
+                                {eligibleCount > 0 && (
+                                  <span className="text-success">{eligibleCount} eligible</span>
+                                )}
+                                {approvalCount > 0 && (
+                                  <span className="text-warning">{approvalCount} need approval</span>
+                                )}
+                              </div>
+                            </button>
+                          </td>
+                        </tr>
+                        {!isCollapsed && group.entries.map((entry) => {
+                          const allMet = entry.classes_met && entry.time_met;
+                          const currentRank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
+                          const nextRank = entry.next_rank_id ? rankById.get(entry.next_rank_id) : undefined;
+                          return (
+                            <tr key={entry.student_id} className="border-b border-border hover:bg-surface-raised/50 transition-colors">
+                              <td className="px-6 py-3">
+                                <p className="font-medium text-text-primary">{entry.student_name}</p>
+                              </td>
+                              <td className="px-4 py-3">
+                                {entry.current_rank_name && entry.current_rank_color
+                                  ? (
+                                    <RankBadge
+                                      name={entry.current_rank_name}
+                                      color={entry.current_rank_color}
+                                      isTip={currentRank?.is_tip}
+                                      tipColor={currentRank?.tip_color_hex}
+                                    />
+                                  )
+                                  : <span className="text-xs text-muted">Unranked</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                {entry.next_rank_name && entry.next_rank_color
+                                  ? (
+                                    <RankBadge
+                                      name={entry.next_rank_name}
+                                      color={entry.next_rank_color}
+                                      isTip={nextRank?.is_tip}
+                                      tipColor={nextRank?.tip_color_hex}
+                                    />
+                                  )
+                                  : <span className="text-xs text-muted">—</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                <ProgressBar current={entry.classes_since_promo} required={entry.classes_required} met={entry.classes_met} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <ProgressBar current={entry.days_at_rank} required={entry.days_required} met={entry.time_met} />
+                              </td>
+                              <td className="px-4 py-3">
+                                {allMet
+                                  ? entry.needs_approval
+                                    ? <span className="flex items-center gap-1 text-xs text-warning"><AlertTriangle className="w-3 h-3" />Needs approval</span>
+                                    : <span className="flex items-center gap-1 text-xs text-success"><Check className="w-3 h-3" />Eligible</span>
+                                  : <span className="flex items-center gap-1 text-xs text-muted"><Clock className="w-3 h-3" />In progress</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                {allMet && (
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => {
+                                      setPromotionError(null);
+                                      setPromotionNotes("");
+                                      setPromoteEntry(entry);
+                                    }}
+                                  >
+                                    <ChevronUp className="w-3 h-3" />Promote
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -744,9 +945,9 @@ export default function BeltTrackerPage() {
               {/* Config header */}
               <div className="flex items-start justify-between mb-5">
                 <div>
-                  <h2 className="text-sm font-semibold text-text-primary">{ladderName}</h2>
+                  <h2 className="text-sm font-semibold text-text-primary">{currentLadder?.name || ladderName}</h2>
                   <p className="text-xs text-muted mt-0.5">
-                    {groups.length} belts · {ranks.filter(r => r.is_tip).length} {subRankTerm.toLowerCase()}s total
+                    {groups.length} belts · {ladderRanks.filter(r => r.is_tip).length} {subRankTerm.toLowerCase()}s total
                   </p>
 
                   {/* Editable sub-rank term */}
@@ -788,6 +989,16 @@ export default function BeltTrackerPage() {
                 <div className="flex items-center gap-2">
                   {dirty && (
                     <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={isSaving}
+                      onClick={handleDiscardChanges}
+                    >
+                      Discard
+                    </Button>
+                  )}
+                  {dirty && (
+                    <Button
                       variant="primary"
                       size="sm"
                       disabled={isSaving}
@@ -801,6 +1012,12 @@ export default function BeltTrackerPage() {
                   </Button>
                 </div>
               </div>
+
+              {ladderError && (
+                <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                  {ladderError}
+                </div>
+              )}
 
               {saveError && (
                 <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
@@ -1023,14 +1240,14 @@ export default function BeltTrackerPage() {
             <h2 className="text-base font-semibold text-text-primary mb-4">Confirm Promotion</h2>
             <div className="bg-surface border border-border rounded-[6px] p-4 mb-4">
               <p className="text-sm text-text-primary font-medium">{promoteEntry.student_name}</p>
-              <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-2 mt-2">
                 {promoteEntry.current_rank_name && promoteEntry.current_rank_color && (() => {
-                  const r = ranks.find((rank) => rank.id === promoteEntry.current_rank_id);
+                  const r = promoteEntry.current_rank_id ? rankById.get(promoteEntry.current_rank_id) : undefined;
                   return <RankBadge name={promoteEntry.current_rank_name} color={promoteEntry.current_rank_color} isTip={r?.is_tip} tipColor={r?.tip_color_hex} />;
                 })()}
                 <span className="text-muted">→</span>
                 {promoteEntry.next_rank_name && promoteEntry.next_rank_color && (() => {
-                  const r = ranks.find((rank) => rank.id === promoteEntry.next_rank_id);
+                  const r = promoteEntry.next_rank_id ? rankById.get(promoteEntry.next_rank_id) : undefined;
                   return <RankBadge name={promoteEntry.next_rank_name} color={promoteEntry.next_rank_color} isTip={r?.is_tip} tipColor={r?.tip_color_hex} />;
                 })()}
               </div>

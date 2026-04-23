@@ -6,10 +6,10 @@ import { Header } from "@/components/header";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
 import { Button } from "@/components/ui/button";
-import { useStore } from "@/lib/store";
+import { useConfigStore, useStudentStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import type { Student, StudentCreate } from "@/types";
-import { ArrowLeft, Mail, Phone, User, Pencil } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Mail, Phone, User, Pencil, Trash2 } from "lucide-react";
 
 function formatDate(d?: string) {
   if (!d) return "—";
@@ -56,24 +56,28 @@ function isCurrentHold(student: Pick<Student, "status" | "hold_start_date" | "ho
 export default function StudentDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const store = useStore();
+  const { isPreviewMode, token } = useConfigStore();
+  const { students, updateStudent, deleteStudents } = useStudentStore();
   const id = params.id as string;
   const [showEdit, setShowEdit] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hydratedStudent, setHydratedStudent] = useState<Student | null>(null);
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const listStudent = useMemo(
-    () => store.students.find((s) => s.id === id),
-    [store.students, id]
+    () => students.find((s) => s.id === id),
+    [students, id]
   );
 
   useEffect(() => {
     let mounted = true;
 
     async function loadStudent() {
-      if (store.isPreviewMode || !store.token) {
+      if (isPreviewMode || !token) {
         if (mounted) {
           setHydratedStudent(null);
           setLoadError(null);
@@ -93,7 +97,7 @@ export default function StudentDetailPage() {
       setLoadError(null);
 
       try {
-        const result = await api.get<Student>(`/students/${id}`, store.token);
+        const result = await api.get<Student>(`/students/${id}`, token);
         if (mounted) {
           setHydratedStudent(result);
         }
@@ -113,7 +117,7 @@ export default function StudentDetailPage() {
     return () => {
       mounted = false;
     };
-  }, [id, listStudent, store.isPreviewMode, store.token]);
+  }, [id, isPreviewMode, listStudent, token]);
 
   const student = hydratedStudent ?? listStudent;
 
@@ -154,7 +158,7 @@ export default function StudentDetailPage() {
     if (!student) return;
     setIsSaving(true);
     try {
-      await store.updateStudent(id, {
+      await updateStudent(id, {
         legal_first_name: data.legal_first_name,
         legal_last_name: data.legal_last_name,
         preferred_name: data.preferred_name,
@@ -176,14 +180,27 @@ export default function StudentDetailPage() {
         tags: data.tags,
       });
 
-      if (!store.isPreviewMode && store.token) {
-        const freshStudent = await api.get<Student>(`/students/${id}`, store.token);
+      if (!isPreviewMode && token) {
+        const freshStudent = await api.get<Student>(`/students/${id}`, token);
         setHydratedStudent(freshStudent);
       }
 
       setShowEdit(false);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleDeleteStudent() {
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await deleteStudents([id]);
+      router.push("/students");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Failed to delete student.");
+      setIsDeleting(false);
     }
   }
 
@@ -198,10 +215,54 @@ export default function StudentDetailPage() {
           <Pencil className="w-3.5 h-3.5" />
           Edit
         </Button>
+        <Button variant="danger" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+          <Trash2 className="w-3.5 h-3.5" />
+          Delete
+        </Button>
       </Header>
 
       <div className="flex-1 p-8">
         <div className="max-w-3xl grid grid-cols-3 gap-6">
+          {(showDeleteConfirm || deleteError) && (
+            <div className="col-span-3 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
+                    <p className="text-sm font-medium text-text-primary">Delete this student?</p>
+                  </div>
+                  <p className="text-xs text-muted mt-1">
+                    This removes {fullName} from the active roster and cannot be undone from the UI.
+                  </p>
+                  {deleteError ? (
+                    <p className="text-xs text-danger mt-2">{deleteError}</p>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setDeleteError(null);
+                    }}
+                    disabled={isDeleting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    isLoading={isDeleting}
+                    onClick={handleDeleteStudent}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Left col — summary card */}
           <div className="col-span-1 space-y-4">

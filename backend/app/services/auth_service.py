@@ -1,12 +1,20 @@
+from typing import Optional
+
+from fastapi import HTTPException, status
 from supabase import Client
 from app.schemas.auth import UserProfile, AuthResponse
+from app.services.studio_scope import list_staff_roles_for_user
 
 
 class AuthService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
 
-    async def get_user_profile(self, user_id: str) -> AuthResponse:
+    async def get_user_profile(
+        self,
+        user_id: str,
+        requested_studio_id: Optional[str] = None,
+    ) -> AuthResponse:
         """Get user profile with studio association."""
 
         # Get user from Supabase Auth
@@ -23,19 +31,28 @@ class AuthService:
         )
 
         # Get staff role (studio association)
-        staff_result = (
-            self.supabase.table("staff_roles")
-            .select("studio_id, role")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-
         studio_id = None
         role = None
-        if staff_result.data:
-            studio_id = staff_result.data[0]["studio_id"]
-            role = staff_result.data[0]["role"]
+        memberships = list_staff_roles_for_user(self.supabase, user_id)
+        membership = None
+
+        if requested_studio_id:
+            membership = next(
+                (item for item in memberships if item["studio_id"] == requested_studio_id),
+                None,
+            )
+            if membership is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have access to the requested studio.",
+                )
+
+        if membership is None and memberships:
+            membership = memberships[0]
+
+        if membership:
+            studio_id = membership["studio_id"]
+            role = membership["role"]
 
         return AuthResponse(
             user=user_profile,

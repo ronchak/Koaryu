@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 import "./globals.css";
 
 const inter = Inter({
@@ -14,10 +15,39 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const appTitle = `${APP_NAME} — Martial Arts Studio OS`;
+const appDescription =
+  `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more — built for how dojos actually operate.`;
+
 export const metadata: Metadata = {
-  title: "Koaryu — Martial Arts Studio OS",
-  description:
-    "The daily operating system for independent martial arts studios. Student CRM, belt progression, scheduling, billing, and more — built for how dojos actually operate.",
+  applicationName: APP_NAME,
+  title: appTitle,
+  description: appDescription,
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    shortcut: [{ url: "/favicon.ico" }],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  openGraph: {
+    type: "website",
+    title: appTitle,
+    description: appDescription,
+    siteName: APP_NAME,
+  },
+  twitter: {
+    card: "summary",
+    title: appTitle,
+    description: appDescription,
+  },
+};
+
+export const viewport: Viewport = {
+  colorScheme: "dark",
+  themeColor: "#0B0D10",
 };
 
 export default function RootLayout({

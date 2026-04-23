@@ -2,16 +2,17 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { clearActiveStudioIdCookie, clearStudioStateCookie } from "@/lib/studio-state-cookie";
 import { Sidebar } from "@/components/sidebar";
-import { StoreProvider, useStore } from "@/lib/store";
+import { StoreProvider, useStudioStore } from "@/lib/store";
 import { useEffect, useState } from "react";
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const [userEmail, setUserEmail] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
   const router = useRouter();
-  const supabase = createClient();
-  const { studioName } = useStore();
+  const [supabase] = useState(() => createClient());
+  const { studioName } = useStudioStore();
 
   useEffect(() => {
     async function getUser() {
@@ -30,6 +31,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   }, [supabase, studioName]);
 
   async function handleSignOut() {
+    clearStudioStateCookie();
+    clearActiveStudioIdCookie();
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();

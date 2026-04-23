@@ -2,7 +2,13 @@
 
 import { Header } from "@/components/header";
 import { buildStudentInactivityRows, isStudentOnHoldNow } from "@/lib/student-insights";
-import { useStore } from "@/lib/store";
+import {
+  useBeltStore,
+  useLeadStore,
+  useScheduleStore,
+  useStudentStore,
+  useStudioStore,
+} from "@/lib/store";
 import {
   Award,
   Calendar,
@@ -63,22 +69,26 @@ function StatCard({
 }
 
 export default function DashboardPage() {
-  const store = useStore();
+  const { studioName } = useStudioStore();
+  const { students } = useStudentStore();
+  const { leads } = useLeadStore();
+  const { sessions, attendance } = useScheduleStore();
+  const { beltRanks, subRankTerm } = useBeltStore();
   const today = new Date().toISOString().split("T")[0];
 
-  const totalStudents = store.students.length;
-  const activeStudents = store.students.filter(
+  const totalStudents = students.length;
+  const activeStudents = students.filter(
     (student) => student.status === "active" || student.status === "trialing"
   ).length;
-  const trialingStudents = store.students.filter(
+  const trialingStudents = students.filter(
     (student) => student.status === "trialing"
   ).length;
 
-  const activeLeads = store.leads.filter(
+  const activeLeads = leads.filter(
     (lead) => lead.stage !== "closed_lost" && lead.stage !== "enrolled"
   ).length;
-  const enrolledLeads = store.leads.filter((lead) => lead.stage === "enrolled").length;
-  const dueTodayLeads = store.leads.filter(
+  const enrolledLeads = leads.filter((lead) => lead.stage === "enrolled").length;
+  const dueTodayLeads = leads.filter(
     (lead) =>
       lead.stage !== "closed_lost" &&
       lead.stage !== "enrolled" &&
@@ -86,16 +96,16 @@ export default function DashboardPage() {
       lead.follow_up_date <= today
   ).length;
 
-  const todaySessions = store.sessions.filter((session) => session.date === today).length;
-  const beltCount = store.beltRanks.filter((rank) => !rank.is_tip).length;
+  const todaySessions = sessions.filter((session) => session.date === today).length;
+  const beltCount = beltRanks.filter((rank) => !rank.is_tip).length;
 
   const inactivityRows = buildStudentInactivityRows(
-    store.students,
-    store.sessions,
-    store.attendance,
+    students,
+    sessions,
+    attendance,
     today
   );
-  const onHoldStudents = store.students.filter((student) => isStudentOnHoldNow(student, today)).length;
+  const onHoldStudents = students.filter((student) => isStudentOnHoldNow(student, today)).length;
   const watch14 = inactivityRows.filter((row) => row.daysInactive >= 14).length;
   const watch30 = inactivityRows.filter((row) => row.daysInactive >= 30).length;
   const watch45 = inactivityRows.filter((row) => row.daysInactive >= 45).length;
@@ -107,7 +117,7 @@ export default function DashboardPage() {
     <>
       <Header
         title="Dashboard"
-        description={store.studioName || "Your studio at a glance."}
+        description={studioName || "Your studio at a glance."}
       />
       <div className="flex-1 p-8">
         <div className="max-w-5xl">
@@ -144,7 +154,7 @@ export default function DashboardPage() {
               icon={Award}
               label="Belt Ranks"
               value={beltCount}
-              sub={`${store.beltRanks.filter((rank) => rank.is_tip).length} ${store.subRankTerm.toLowerCase()}s configured`}
+              sub={`${beltRanks.filter((rank) => rank.is_tip).length} ${subRankTerm.toLowerCase()}s configured`}
               href="/belt-tracker"
               accent="#22C55E"
             />
@@ -256,7 +266,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {store.students.length > 0 && (
+          {students.length > 0 && (
             <div className="bg-surface border border-border rounded-[6px] p-5 mt-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-text-primary">Recent Students</h3>
@@ -265,7 +275,7 @@ export default function DashboardPage() {
                 </Link>
               </div>
               <div className="space-y-2">
-                {store.students.slice(0, 5).map((student) => (
+                {students.slice(0, 5).map((student) => (
                   <Link
                     key={student.id}
                     href={`/students/${student.id}`}

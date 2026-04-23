@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { clearActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -29,7 +30,7 @@ export default function SignupPage() {
       return;
     }
 
-    const { error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -43,6 +44,11 @@ export default function SignupPage() {
       setError(authError.message);
       setIsLoading(false);
       return;
+    }
+
+    if (data.session) {
+      setStudioStateCookie(data.session.user.id, false);
+      clearActiveStudioIdCookie();
     }
 
     // After signup, redirect to onboarding to create their studio

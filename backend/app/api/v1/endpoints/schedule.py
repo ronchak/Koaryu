@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from typing import Literal
 from typing import Optional
 from supabase import Client
 from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
@@ -36,19 +37,21 @@ async def create_template(
 async def update_template(
     template_id: str,
     data: ClassTemplateUpdate,
+    user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).update_template(template_id, data, studio_id)
+    return await ScheduleService(supabase).update_template(template_id, data, studio_id, user_id)
 
 
 @router.delete("/templates/{template_id}", status_code=204)
 async def delete_template(
     template_id: str,
+    user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    await ScheduleService(supabase).delete_template(template_id, studio_id)
+    await ScheduleService(supabase).delete_template(template_id, studio_id, user_id)
 
 
 # ---- Sessions ----
@@ -66,10 +69,22 @@ async def list_sessions(
 @router.post("/sessions", response_model=ClassSessionResponse, status_code=201)
 async def create_session(
     data: ClassSessionCreate,
+    user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).create_session(data, studio_id)
+    return await ScheduleService(supabase).create_session(data, studio_id, user_id)
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: str,
+    scope: Literal["session", "future_series"] = Query("session"),
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    await ScheduleService(supabase).delete_session(session_id, studio_id, user_id, scope)
 
 
 @router.post("/sessions/generate-week", response_model=list[ClassSessionResponse])

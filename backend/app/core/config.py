@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     model_config = {
-        "env_file": ".env",
+        "env_file": str(Path(__file__).resolve().parents[2] / ".env"),
         "case_sensitive": True,
         "extra": "ignore"
     }

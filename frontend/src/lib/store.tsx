@@ -1,15 +1,24 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
+import {
+  clearActiveStudioIdCookie,
+  clearStudioStateCookie,
+  setActiveStudioIdCookie,
+  setStudioStateCookie,
+} from "@/lib/studio-state-cookie";
 import type {
   Student, StudentCreate, StudentStatus,
+  BulkStudentTagUpdateRequest, BulkStudentTagUpdateResponse,
+  BulkStudentStatusUpdateRequest, BulkStudentStatusUpdateResponse,
   Lead, LeadSource,
   BeltRank, BeltLadder,
-  ClassSession, ClassTemplate, AttendanceRecord, AttendanceStatus,
-  CsvImportResult, EligibilityEntry, Promotion,
+  ClassSession, ClassSessionCreate, ClassSessionDeleteScope,
+  ClassTemplate, ClassTemplateCreate, AttendanceRecord, AttendanceStatus,
+  CsvImportOptions, CsvImportRequest, CsvImportResult, EligibilityEntry, Promotion,
 } from "@/types";
 import {
   MOCK_STUDENTS,
@@ -20,9 +29,29 @@ import {
   MOCK_ELIGIBILITY,
   MOCK_LEADS,
 } from "@/lib/mock-data";
+import { parseCalendarDate, toCalendarDateKey } from "@/lib/schedule-calendar";
 
 interface AuthProfileResponse {
   studio_id: string | null;
+}
+
+interface StudentListPageResponse {
+  items: Student[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+interface BootstrapResponse {
+  auth: AuthProfileResponse;
+  studio_name?: string | null;
+  studio: {
+    name: string;
+  } | null;
+  students: Student[];
+  leads: Lead[];
+  belt_ladders: BeltLadder[];
+  primary_belt_ladder: BeltLadder | null;
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
@@ -58,6 +87,160 @@ function localId() {
   return "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+function normalizeStudentIds(studentIds: string[]): string[] {
+  return Array.from(
+    new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean))
+  );
+}
+
+function normalizeTags(tags: string[]): string[] {
+  return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean)));
+}
+
+function applyAddedTagsToStudents(
+  studentList: Student[],
+  studentIds: string[],
+  tagsToAdd: string[]
+): Student[] {
+  const studentIdSet = new Set(studentIds);
+  const now = new Date().toISOString();
+
+  return studentList.map((student) => {
+    if (!studentIdSet.has(student.id)) {
+      return student;
+    }
+
+    return {
+      ...student,
+      tags: Array.from(new Set([...(student.tags || []), ...tagsToAdd])),
+      updated_at: now,
+    };
+  });
+}
+
+function applyStatusToStudents(
+  studentList: Student[],
+  studentIds: string[],
+  status: StudentStatus
+): Student[] {
+  const studentIdSet = new Set(studentIds);
+  const now = new Date().toISOString();
+
+  return studentList.map((student) => {
+    if (!studentIdSet.has(student.id)) {
+      return student;
+    }
+
+    return {
+      ...student,
+      status,
+      updated_at: now,
+    };
+  });
+}
+
+function compareSessions(a: ClassSession, b: ClassSession) {
+  const dateCompare = a.date.localeCompare(b.date);
+  if (dateCompare !== 0) {
+    return dateCompare;
+  }
+  return a.start_time.localeCompare(b.start_time);
+}
+
+function mergeSessionsForRange(
+  current: ClassSession[],
+  fetched: ClassSession[],
+  startDate: string,
+  endDate: string
+): ClassSession[] {
+  return [
+    ...current.filter((session) => session.date < startDate || session.date > endDate),
+    ...fetched,
+  ].sort(compareSessions);
+}
+
+function mergeAttendanceForSessions(
+  current: AttendanceRecord[],
+  fetched: AttendanceRecord[],
+  replacedSessionIds: string[]
+): AttendanceRecord[] {
+  const replaced = new Set(replacedSessionIds);
+  return [
+    ...current.filter((record) => !replaced.has(record.session_id)),
+    ...fetched,
+  ];
+}
+
+function updateSessionAttendanceCount(
+  sessionList: ClassSession[],
+  sessionId: string,
+  delta: number
+): ClassSession[] {
+  if (delta === 0) {
+    return sessionList;
+  }
+
+  return sessionList.map((session) =>
+    session.id === sessionId
+      ? {
+          ...session,
+          attendance_count: Math.max(0, session.attendance_count + delta),
+        }
+      : session
+  );
+}
+
+function toAttendanceCountDelta(
+  previousStatus: AttendanceStatus | null,
+  nextStatus: AttendanceStatus | null
+) {
+  const previousCount = previousStatus && previousStatus !== "absent" ? 1 : 0;
+  const nextCount = nextStatus && nextStatus !== "absent" ? 1 : 0;
+  return nextCount - previousCount;
+}
+
+function selectBeltLadder(
+  ladders: BeltLadder[],
+  preferredLadderId?: string | null
+): BeltLadder | null {
+  if (preferredLadderId) {
+    const matched = ladders.find((ladder) => ladder.id === preferredLadderId);
+    if (matched) {
+      return matched;
+    }
+  }
+
+  return ladders[0] ?? null;
+}
+
+function sortBeltLadders(ladders: BeltLadder[]): BeltLadder[] {
+  return [...ladders].sort((left, right) => left.created_at.localeCompare(right.created_at));
+}
+
+function upsertBeltLadder(ladders: BeltLadder[], nextLadder: BeltLadder): BeltLadder[] {
+  const next = ladders.filter((ladder) => ladder.id !== nextLadder.id);
+  next.push(nextLadder);
+  return sortBeltLadders(next);
+}
+
+function getPreviewTemplateSessionDates(template: ClassTemplate): string[] {
+  const start = parseCalendarDate(template.start_date);
+  const end = template.end_date ? parseCalendarDate(template.end_date) : parseCalendarDate(template.start_date);
+  if (!template.end_date) {
+    end.setDate(end.getDate() + 84);
+  }
+
+  const dates: string[] = [];
+  const current = new Date(start);
+  while (current <= end) {
+    if (current.getDay() === template.day_of_week) {
+      dates.push(toCalendarDateKey(current));
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
 // ── Context shape ────────────────────────────────────────────────────────────
 interface StoreContextValue {
   // Config
@@ -66,10 +249,26 @@ interface StoreContextValue {
 
   // Students
   students: Student[];
+  studentsLoaded: boolean;
+  studentsLoadError: string | null;
   addStudent: (data: StudentCreate) => Promise<Student>;
   updateStudent: (id: string, data: Partial<Student>) => Promise<void>;
   deleteStudents: (ids: string[]) => Promise<void>;
-  importStudents: (file: File, rows: Record<string, string>[], mapping: Record<string, string>) => Promise<CsvImportResult>;
+  bulkAddTagsToStudents: (
+    studentIds: string[],
+    tags: string[]
+  ) => Promise<BulkStudentTagUpdateResponse>;
+  bulkUpdateStudentStatus: (
+    studentIds: string[],
+    status: StudentStatus
+  ) => Promise<BulkStudentStatusUpdateResponse>;
+  importStudents: (
+    file: File,
+    rows: Record<string, string>[],
+    mapping: Record<string, string>,
+    options: CsvImportOptions,
+    request?: { importKey?: string }
+  ) => Promise<CsvImportResult>;
   refreshStudents: () => Promise<Student[]>;
 
   // Leads
@@ -81,7 +280,10 @@ interface StoreContextValue {
   convertLeadToStudent: (leadId: string) => Promise<{ lead: Lead; studentId: string | null }>;
 
   // Belt Tracker
+  beltLadders: BeltLadder[];
   beltRanks: BeltRank[];
+  currentLadderId: string | null;
+  setCurrentLadder: (ladderId: string) => Promise<void>;
   setBeltRanks: (ranks: BeltRank[], options?: { subRankTerm?: string }) => Promise<void>;
   ladderName: string;
   setLadderName: (name: string) => void;
@@ -92,7 +294,11 @@ interface StoreContextValue {
 
   // Schedule
   sessions: ClassSession[];
-  addSession: (data: Partial<ClassSession>) => Promise<void>;
+  addSession: (data: ClassSessionCreate) => Promise<void>;
+  addTemplate: (data: ClassTemplateCreate) => Promise<ClassTemplate>;
+  deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
+  refreshScheduleRange: (startDate: string, endDate: string) => Promise<ClassSession[]>;
+  refreshSessionAttendance: (sessionId: string) => Promise<AttendanceRecord[]>;
   templates: ClassTemplate[];
   attendance: AttendanceRecord[];
   toggleCheckIn: (sessionId: string, studentId: string, name: string) => Promise<void>;
@@ -102,12 +308,105 @@ interface StoreContextValue {
   setStudioName: (name: string) => Promise<void>;
 }
 
-const StoreContext = createContext<StoreContextValue | null>(null);
+type ConfigStoreContextValue = Pick<StoreContextValue, "isPreviewMode" | "token">;
+type StudentsStoreContextValue = Pick<
+  StoreContextValue,
+  | "studentsLoaded"
+  | "studentsLoadError"
+  | "students"
+  | "addStudent"
+  | "updateStudent"
+  | "deleteStudents"
+  | "bulkAddTagsToStudents"
+  | "bulkUpdateStudentStatus"
+  | "importStudents"
+  | "refreshStudents"
+>;
+type LeadsStoreContextValue = Pick<
+  StoreContextValue,
+  | "leads"
+  | "addLead"
+  | "updateLead"
+  | "deleteLead"
+  | "refreshLeads"
+  | "convertLeadToStudent"
+>;
+type BeltsStoreContextValue = Pick<
+  StoreContextValue,
+  | "beltLadders"
+  | "beltRanks"
+  | "currentLadderId"
+  | "setCurrentLadder"
+  | "setBeltRanks"
+  | "ladderName"
+  | "setLadderName"
+  | "subRankTerm"
+  | "setSubRankTerm"
+  | "eligibility"
+  | "promoteStudent"
+>;
+type ScheduleStoreContextValue = Pick<
+  StoreContextValue,
+  | "sessions"
+  | "addSession"
+  | "addTemplate"
+  | "deleteSession"
+  | "refreshScheduleRange"
+  | "refreshSessionAttendance"
+  | "templates"
+  | "attendance"
+  | "toggleCheckIn"
+>;
+type StudioStoreContextValue = Pick<StoreContextValue, "studioName" | "setStudioName">;
+
+const ConfigStoreContext = createContext<ConfigStoreContextValue | null>(null);
+const StudentsStoreContext = createContext<StudentsStoreContextValue | null>(null);
+const LeadsStoreContext = createContext<LeadsStoreContextValue | null>(null);
+const BeltsStoreContext = createContext<BeltsStoreContextValue | null>(null);
+const ScheduleStoreContext = createContext<ScheduleStoreContextValue | null>(null);
+const StudioStoreContext = createContext<StudioStoreContextValue | null>(null);
+
+function useRequiredContext<T>(context: React.Context<T | null>, name: string): T {
+  const value = useContext(context);
+  if (!value) {
+    throw new Error(`${name} must be used within StoreProvider`);
+  }
+  return value;
+}
+
+export function useConfigStore(): ConfigStoreContextValue {
+  return useRequiredContext(ConfigStoreContext, "useConfigStore");
+}
+
+export function useStudentStore(): StudentsStoreContextValue {
+  return useRequiredContext(StudentsStoreContext, "useStudentStore");
+}
+
+export function useLeadStore(): LeadsStoreContextValue {
+  return useRequiredContext(LeadsStoreContext, "useLeadStore");
+}
+
+export function useBeltStore(): BeltsStoreContextValue {
+  return useRequiredContext(BeltsStoreContext, "useBeltStore");
+}
+
+export function useScheduleStore(): ScheduleStoreContextValue {
+  return useRequiredContext(ScheduleStoreContext, "useScheduleStore");
+}
+
+export function useStudioStore(): StudioStoreContextValue {
+  return useRequiredContext(StudioStoreContext, "useStudioStore");
+}
 
 export function useStore(): StoreContextValue {
-  const ctx = useContext(StoreContext);
-  if (!ctx) throw new Error("useStore must be used within StoreProvider");
-  return ctx;
+  return {
+    ...useConfigStore(),
+    ...useStudentStore(),
+    ...useLeadStore(),
+    ...useBeltStore(),
+    ...useScheduleStore(),
+    ...useStudioStore(),
+  };
 }
 
 // ── Provider ─────────────────────────────────────────────────────────────────
@@ -122,21 +421,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [students, setStudents] = useState<Student[]>(() =>
     isPreviewMode ? load(KEYS.students, MOCK_STUDENTS) : []
   );
+  const [studentsLoaded, setStudentsLoaded] = useState(isPreviewMode);
+  const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
+  const studentsRef = useRef<Student[]>(students);
+  const studentsRevisionRef = useRef(0);
   const [leads, setLeads] = useState<Lead[]>(() =>
     isPreviewMode ? load(KEYS.leads, MOCK_LEADS) : []
   );
+  const leadsRef = useRef<Lead[]>(leads);
+  const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
+    isPreviewMode ? [MOCK_BELT_LADDER] : []
+  );
+  const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
     isPreviewMode ? load(KEYS.beltRanks, MOCK_BELT_LADDER.ranks) : []
   );
+  const beltRanksRef = useRef<BeltRank[]>(beltRanks);
+  const refreshBeltsRef = useRef<((preferredLadderId?: string | null) => Promise<void>) | null>(null);
   const [sessions, setSessions] = useState<ClassSession[]>(() =>
     isPreviewMode ? load(KEYS.sessions, MOCK_SESSIONS) : []
   );
+  const sessionsRef = useRef<ClassSession[]>(sessions);
   const [templates, setTemplates] = useState<ClassTemplate[]>(() =>
     isPreviewMode ? load(KEYS.templates, MOCK_CLASS_TEMPLATES) : []
   );
+  const templatesRef = useRef<ClassTemplate[]>(templates);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() =>
     isPreviewMode ? load(KEYS.attendance, MOCK_ATTENDANCE) : []
   );
+  const attendanceRef = useRef<AttendanceRecord[]>(attendance);
   const [studioName, setStudioNameState] = useState(() =>
     isPreviewMode ? load(KEYS.studioName, "My Studio") : ""
   );
@@ -146,112 +459,283 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [ladderName, setLadderNameState] = useState(() =>
     isPreviewMode ? load(KEYS.ladderName, "Brazilian Jiu-Jitsu") : ""
   );
+  const [currentLadderId, setCurrentLadderIdState] = useState<string | null>(null);
   const currentLadderIdRef = useRef<string | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityEntry[]>(() =>
     isPreviewMode ? MOCK_ELIGIBILITY : []
   );
+  const eligibilityRef = useRef<EligibilityEntry[]>(eligibility);
 
   const updateCurrentLadderId = useCallback((nextLadderId: string | null) => {
+    setCurrentLadderIdState(nextLadderId);
     currentLadderIdRef.current = nextLadderId;
   }, []);
 
-  const applyPrimaryLadder = useCallback((primaryLadder?: BeltLadder | null) => {
-    updateCurrentLadderId(primaryLadder?.id ?? null);
-    setLadderNameState(primaryLadder?.name || "");
-    setSubRankTermState(primaryLadder?.sub_rank_term || "Stripe");
-    setBeltRanksState(primaryLadder?.ranks || []);
+  const applyLadderSelection = useCallback((ladders: BeltLadder[], preferredLadderId?: string | null) => {
+    const orderedLadders = sortBeltLadders(ladders);
+    const selectedLadder = selectBeltLadder(
+      orderedLadders,
+      preferredLadderId ?? currentLadderIdRef.current
+    );
+
+    setBeltLaddersState(orderedLadders);
+    updateCurrentLadderId(selectedLadder?.id ?? null);
+    setLadderNameState(selectedLadder?.name || "");
+    setSubRankTermState(selectedLadder?.sub_rank_term || "Stripe");
+    setBeltRanksState(selectedLadder?.ranks || []);
+
+    return selectedLadder;
   }, [updateCurrentLadderId]);
+
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
+
+  const commitStudents = useCallback(
+    (next: Student[] | ((current: Student[]) => Student[])) => {
+      setStudentsLoaded(true);
+      setStudentsLoadError(null);
+      setStudents((current) => {
+        const resolved = typeof next === "function"
+          ? (next as (current: Student[]) => Student[])(current)
+          : next;
+        studentsRevisionRef.current += 1;
+        return resolved;
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    leadsRef.current = leads;
+  }, [leads]);
+
+  useEffect(() => {
+    beltLaddersRef.current = beltLadders;
+  }, [beltLadders]);
+
+  useEffect(() => {
+    beltRanksRef.current = beltRanks;
+  }, [beltRanks]);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    templatesRef.current = templates;
+  }, [templates]);
+
+  useEffect(() => {
+    attendanceRef.current = attendance;
+  }, [attendance]);
+
+  useEffect(() => {
+    eligibilityRef.current = eligibility;
+  }, [eligibility]);
+
+  const resetLiveStudioState = useCallback(() => {
+    setStudioNameState("");
+    commitStudents([]);
+    setStudentsLoaded(true);
+    setStudentsLoadError(null);
+    setLeads([]);
+    setBeltLaddersState([]);
+    updateCurrentLadderId(null);
+    setLadderNameState("");
+    setSubRankTermState("Stripe");
+    setBeltRanksState([]);
+    setSessions([]);
+    setTemplates([]);
+    setAttendance([]);
+    setEligibility([]);
+  }, [commitStudents, updateCurrentLadderId]);
+
+  const fetchAllStudents = useCallback(async (
+    authToken: string,
+    options?: { timeoutMs?: number | null }
+  ): Promise<Student[]> => {
+    const pageSize = 200;
+    let page = 1;
+    let total = Number.POSITIVE_INFINITY;
+    const collected: Student[] = [];
+
+    while (collected.length < total) {
+      const result = await api.get<StudentListPageResponse>(
+        `/students?page=${page}&page_size=${pageSize}`,
+        authToken,
+        options
+      );
+
+      collected.push(...result.items);
+      total = result.total;
+
+      if (result.items.length < pageSize) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return collected;
+  }, []);
 
   // Authentication and Data Fetching
   useEffect(() => {
     let mounted = true;
 
     async function initializeLive() {
+      const studentsRevisionAtStart = studentsRevisionRef.current;
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
 
       if (!session) {
+        clearStudioStateCookie();
+        clearActiveStudioIdCookie();
+        resetLiveStudioState();
         setHydrated(true);
         return;
       }
 
       setToken(session.access_token);
+      setHydrated(true);
 
       try {
-        const authProfile = await api.get<AuthProfileResponse>("/auth/me", session.access_token);
+        const authProfile = await api.get<AuthProfileResponse>(
+          "/auth/me",
+          session.access_token,
+          { omitStudioHeader: true }
+        );
+        if (!mounted) return;
+
+        setStudioStateCookie(session.user.id, Boolean(authProfile.studio_id));
+        if (authProfile.studio_id) {
+          setActiveStudioIdCookie(authProfile.studio_id);
+        } else {
+          clearActiveStudioIdCookie();
+        }
 
         if (!authProfile.studio_id) {
           if (mounted) {
-            setStudioNameState("");
-            setStudents([]);
-            setLeads([]);
-            updateCurrentLadderId(null);
-            setBeltRanksState([]);
-            setSessions([]);
-            setTemplates([]);
-            setAttendance([]);
-            setEligibility([]);
+            resetLiveStudioState();
             router.replace("/onboarding");
           }
           return;
         }
 
-        const [
-          studioRes,
-          studentsRes,
-          leadsRes,
-          beltLaddersRes,
-          templatesRes,
-          eligibilityRes,
-        ] = await Promise.all([
-          api.get<{ name: string }>("/studios/current", session.access_token),
-          api.get<{ items: Student[] }>("/students?page_size=200", session.access_token),
-          api.get<Lead[]>("/leads", session.access_token),
-          api.get<BeltLadder[]>("/belts/ladders", session.access_token),
-          api.get<ClassTemplate[]>("/schedule/templates", session.access_token).catch(() => []),
-          api.get<EligibilityEntry[]>("/belts/eligibility", session.access_token).catch(() => []),
-        ]);
+        let criticalData: BootstrapResponse;
 
-        const start = new Date();
-        start.setDate(start.getDate() - 30);
-        const end = new Date();
-        end.setDate(end.getDate() + 60);
-        const sessionsRes = await api.get<ClassSession[]>(
-          `/schedule/sessions?start_date=${start.toISOString().split("T")[0]}&end_date=${end.toISOString().split("T")[0]}`,
-          session.access_token
-        ).catch(() => []);
+        try {
+          criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap", session.access_token);
+        } catch (bootstrapError) {
+          const [
+            studioRes,
+            studentsRes,
+            leadsRes,
+            beltLaddersRes,
+          ] = await Promise.all([
+            api.get<{ name: string }>("/studios/current", session.access_token),
+            fetchAllStudents(session.access_token, { timeoutMs: 30000 }),
+            api.get<Lead[]>("/leads", session.access_token),
+            api.get<BeltLadder[]>("/belts/ladders", session.access_token),
+          ]);
 
-        const attendanceGroups = await Promise.all(
-          sessionsRes.map((sessionItem) =>
-            api
-              .get<AttendanceRecord[]>(
-                `/schedule/sessions/${sessionItem.id}/attendance`,
-                session.access_token
-              )
-              .catch(() => [])
-          )
-        );
+          criticalData = {
+            auth: authProfile,
+            studio: studioRes,
+            students: studentsRes,
+            leads: leadsRes,
+            belt_ladders: beltLaddersRes,
+            primary_belt_ladder: beltLaddersRes[0] ?? null,
+          };
+
+          if (bootstrapError instanceof Error && !/404|API error: 404/.test(bootstrapError.message)) {
+            console.warn("Falling back to legacy dashboard bootstrap", bootstrapError);
+          }
+        }
 
         if (mounted) {
-          const primaryLadder = beltLaddersRes[0];
-          setStudioNameState(studioRes.name);
-          setStudents(studentsRes.items);
-          setLeads(leadsRes);
-          applyPrimaryLadder(primaryLadder);
-          setSessions(sessionsRes);
-          setTemplates(templatesRes);
-          setAttendance(attendanceGroups.flat());
-          setEligibility(eligibilityRes);
+          setStudioNameState(criticalData.studio_name || criticalData.studio?.name || "");
+          if (studentsRevisionRef.current === studentsRevisionAtStart) {
+            commitStudents(criticalData.students);
+          }
+          setLeads(criticalData.leads);
+          applyLadderSelection(
+            criticalData.belt_ladders.length > 0
+              ? criticalData.belt_ladders
+              : criticalData.primary_belt_ladder
+                ? [criticalData.primary_belt_ladder]
+                : [],
+            criticalData.primary_belt_ladder?.id ?? null
+          );
         }
+
+        void (async () => {
+          const [templatesRes, beltLaddersRes] = await Promise.all([
+            api.get<ClassTemplate[]>("/schedule/templates", session.access_token).catch(() => []),
+            api.get<BeltLadder[]>("/belts/ladders", session.access_token).catch(() => []),
+          ]);
+          const selectedLadder = selectBeltLadder(
+            beltLaddersRes,
+            currentLadderIdRef.current
+          );
+          const eligibilityRes = selectedLadder
+            ? await api
+                .get<EligibilityEntry[]>(
+                  `/belts/eligibility?ladder_id=${encodeURIComponent(selectedLadder.id)}`,
+                  session.access_token
+                )
+                .catch(() => [])
+            : [];
+
+          const start = new Date();
+          start.setDate(start.getDate() - 30);
+          const end = new Date();
+          end.setDate(end.getDate() + 60);
+
+          const sessionsRes = await api.get<ClassSession[]>(
+            `/schedule/sessions?start_date=${start.toISOString().split("T")[0]}&end_date=${end.toISOString().split("T")[0]}`,
+            session.access_token
+          ).catch(() => []);
+
+          const attendanceGroups = await Promise.all(
+            sessionsRes.map((sessionItem) =>
+              api
+                .get<AttendanceRecord[]>(
+                  `/schedule/sessions/${sessionItem.id}/attendance`,
+                  session.access_token
+                )
+                .catch(() => [])
+            )
+          );
+
+          if (!mounted) {
+            return;
+          }
+
+          setTemplates(templatesRes);
+          applyLadderSelection(
+            beltLaddersRes,
+            selectedLadder?.id ?? currentLadderIdRef.current
+          );
+          setEligibility(eligibilityRes);
+          setSessions(sessionsRes);
+          setAttendance(attendanceGroups.flat());
+        })().catch((error) => {
+          console.error("Failed to load deferred dashboard data", error);
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (mounted && /Complete onboarding first|No studio found/i.test(message)) {
           router.replace("/onboarding");
           return;
         }
+        if (mounted) {
+          setStudentsLoadError(
+            error instanceof Error ? error.message : "Failed to load the student roster."
+          );
+        }
         console.error("Failed to load initial data", error);
-      } finally {
-        if (mounted) setHydrated(true);
       }
     }
 
@@ -266,6 +750,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setToken(session.access_token);
       } else {
         setToken(null);
+        clearStudioStateCookie();
+        clearActiveStudioIdCookie();
       }
     });
 
@@ -273,29 +759,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyPrimaryLadder, isPreviewMode, router, supabase, updateCurrentLadderId]);
+  }, [applyLadderSelection, commitStudents, fetchAllStudents, isPreviewMode, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
-  function persistStudents(next: Student[]) {
-    setStudents(next);
+  const persistStudents = useCallback((next: Student[]) => {
+    commitStudents(next);
     if (isPreviewMode) save(KEYS.students, next);
-  }
-  function persistLeads(next: Lead[]) {
+  }, [commitStudents, isPreviewMode]);
+
+  const persistLeads = useCallback((next: Lead[]) => {
     setLeads(next);
     if (isPreviewMode) save(KEYS.leads, next);
-  }
-  function persistBeltRanks(next: BeltRank[]) {
+  }, [isPreviewMode]);
+
+  const persistBeltRanks = useCallback((next: BeltRank[]) => {
     setBeltRanksState(next);
     if (isPreviewMode) save(KEYS.beltRanks, next);
-  }
-  function persistSessions(next: ClassSession[]) {
+  }, [isPreviewMode]);
+
+  const persistTemplates = useCallback((next: ClassTemplate[]) => {
+    setTemplates(next);
+    if (isPreviewMode) save(KEYS.templates, next);
+  }, [isPreviewMode]);
+
+  const persistSessions = useCallback((next: ClassSession[]) => {
     setSessions(next);
     if (isPreviewMode) save(KEYS.sessions, next);
-  }
-  function persistAttendance(next: AttendanceRecord[]) {
+  }, [isPreviewMode]);
+
+  const persistAttendance = useCallback((next: AttendanceRecord[]) => {
     setAttendance(next);
     if (isPreviewMode) save(KEYS.attendance, next);
-  }
+  }, [isPreviewMode]);
 
   // ── Students ──
   const addStudent = useCallback(async (data: StudentCreate): Promise<Student> => {
@@ -335,31 +830,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      persistStudents([newStudent, ...students]);
+      persistStudents([newStudent, ...studentsRef.current]);
       return newStudent;
     } else {
       if (!token) throw new Error("Not authenticated");
       const res = await api.post<Student>("/students", data, token);
-      setStudents([res, ...students]);
+      commitStudents((current) => [res, ...current]);
       return res;
     }
-  }, [students, isPreviewMode, token]);
+  }, [commitStudents, isPreviewMode, persistStudents, studentsRef, token]);
 
   const updateStudent = useCallback(async (id: string, data: Partial<Student>) => {
     if (isPreviewMode) {
-      const next = students.map(s => s.id === id ? { ...s, ...data, updated_at: new Date().toISOString() } : s);
+      const next = studentsRef.current.map(s => s.id === id ? { ...s, ...data, updated_at: new Date().toISOString() } : s);
       persistStudents(next);
     } else {
       if (!token) throw new Error("Not authenticated");
       const res = await api.patch<Student>(`/students/${id}`, data, token);
-      setStudents(students.map(s => s.id === id ? res : s));
+      commitStudents((current) => current.map((student) => student.id === id ? res : student));
     }
-  }, [students, isPreviewMode, token]);
+  }, [commitStudents, isPreviewMode, persistStudents, studentsRef, token]);
 
   const deleteStudents = useCallback(async (ids: string[]) => {
     if (isPreviewMode) {
       const idSet = new Set(ids);
-      const next = students.filter(s => !idSet.has(s.id));
+      const next = studentsRef.current.filter(s => !idSet.has(s.id));
       persistStudents(next);
     } else {
       if (!token) throw new Error("Not authenticated");
@@ -367,15 +862,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await api.delete(`/students/${id}`, token);
       }
       const idSet = new Set(ids);
-      setStudents(students.filter(s => !idSet.has(s.id)));
+      commitStudents((current) => current.filter((student) => !idSet.has(student.id)));
     }
-  }, [students, isPreviewMode, token]);
+  }, [commitStudents, isPreviewMode, persistStudents, studentsRef, token]);
 
-  const importStudents = useCallback(async (file: File, rows: Record<string, string>[], mapping: Record<string, string>): Promise<CsvImportResult> => {
+  const importStudents = useCallback(async (
+    file: File,
+    rows: Record<string, string>[],
+    mapping: Record<string, string>,
+    options: CsvImportOptions,
+    request?: { importKey?: string }
+  ): Promise<CsvImportResult> => {
     if (isPreviewMode) {
       const newStudents: Student[] = [];
-      const errors: CsvImportResult["errors"] = [];
+      const issueRows: CsvImportResult["rows"] = [];
+      const warnings: CsvImportResult["warnings"] = [];
       let validRows = 0;
+      let normalizedStatusCount = 0;
 
       for (const [index, row] of rows.entries()) {
         const mapped: Record<string, string> = {};
@@ -384,30 +887,63 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
 
         const validStatuses: StudentStatus[] = ["active", "trialing", "inactive", "paused", "canceled"];
-        const rawStatus = (mapped.status || "").toLowerCase();
-        const rowErrors: string[] = [];
+        const rawStatus = (mapped.status || "").trim().toLowerCase();
+        const rowIssues: CsvImportResult["rows"][number]["issues"] = [];
+        let normalizedStatus = rawStatus;
 
-        if (!mapped.legal_first_name) rowErrors.push("Missing required field: first name");
-        if (!mapped.legal_last_name) rowErrors.push("Missing required field: last name");
-        if (mapped.status && !validStatuses.includes(rawStatus as StudentStatus)) {
-          rowErrors.push(
-            `Invalid status "${mapped.status}". Must be: ${validStatuses.join(", ")}`
-          );
+        if (!mapped.legal_first_name) {
+          rowIssues.push({
+            code: "missing_first_name",
+            severity: "error",
+            field: "legal_first_name",
+            message: "Missing required field: first name",
+          });
+        }
+        if (!mapped.legal_last_name) {
+          rowIssues.push({
+            code: "missing_last_name",
+            severity: "error",
+            field: "legal_last_name",
+            message: "Missing required field: last name",
+          });
+        }
+        if (mapped.status && options.status_alias_mode === "normalize" && rawStatus === "overdue") {
+          normalizedStatus = "paused";
+          mapped.status = normalizedStatus;
+          normalizedStatusCount += 1;
+          rowIssues.push({
+            code: "normalized_status",
+            severity: "warning",
+            field: "status",
+            value: row.status,
+            message: `Status "${row.status}" will be imported as "paused".`,
+          });
+        } else if (mapped.status && !validStatuses.includes(rawStatus as StudentStatus)) {
+          rowIssues.push({
+            code: "invalid_status",
+            severity: "error",
+            field: "status",
+            value: row.status,
+            message: `Invalid status "${mapped.status}". Must be one of: ${validStatuses.join(", ")}`,
+          });
         }
 
-        if (rowErrors.length > 0) {
-          errors.push({
+        const isValid = !rowIssues.some((issue) => issue.severity === "error");
+
+        if (rowIssues.length > 0) {
+          issueRows.push({
             row_number: index + 2,
             data: mapped,
-            errors: rowErrors,
-            is_valid: false,
+            issues: rowIssues,
+            is_valid: isValid,
           });
-          continue;
         }
 
+        if (!isValid) continue;
+
         validRows += 1;
-        const status: StudentStatus = validStatuses.includes(rawStatus as StudentStatus)
-          ? (rawStatus as StudentStatus)
+        const status: StudentStatus = validStatuses.includes(normalizedStatus as StudentStatus)
+          ? (normalizedStatus as StudentStatus)
           : "active";
 
         const tags = mapped.tags ? mapped.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
@@ -433,6 +969,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           emergency_contact_relation: mapped.emergency_contact_relation || undefined,
           status,
           membership_start_date: mapped.membership_start_date || new Date().toISOString().split("T")[0],
+          program_id: mapped.program_id || undefined,
+          current_belt_rank_id: mapped.current_belt_rank_id || undefined,
           notes: mapped.notes || undefined,
           tags,
           guardians: [],
@@ -440,55 +978,251 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           updated_at: new Date().toISOString(),
         });
       }
+      if (normalizedStatusCount > 0) {
+        warnings.push({
+          code: "normalized_status",
+          message: "Some student statuses will be normalized during import.",
+          severity: "warning",
+          row_numbers: issueRows
+            .filter((item) => item.issues.some((issue) => issue.code === "normalized_status"))
+            .map((item) => item.row_number),
+          field: "status",
+          values: ["overdue"],
+        });
+      }
       if (newStudents.length > 0) {
-        persistStudents([...newStudents, ...students]);
+        persistStudents([...newStudents, ...studentsRef.current]);
       }
       return {
         total_rows: rows.length,
         valid_rows: validRows,
-        error_rows: errors.length,
-        errors,
+        error_rows: issueRows.filter((item) => !item.is_valid).length,
+        rows: issueRows,
+        warnings,
+        setup_issues: [],
+        actions_available: {
+          can_create_missing_programs: false,
+          can_create_missing_belts: false,
+          can_import_without_unresolved_belt: false,
+        },
+        created_programs: [],
+        created_ladders: [],
+        created_belts: [],
+        imported_without_belt_count: 0,
+        normalized_status_count: normalizedStatusCount,
         imported_count: newStudents.length,
       };
     } else {
       if (!token) throw new Error("Not authenticated");
 
+      const importKey = request?.importKey?.trim();
       const formData = new FormData();
+      const requestPayload: CsvImportRequest = {
+        mapping,
+        options,
+        ...(importKey ? {
+          import_key: importKey,
+          idempotency_key: importKey,
+        } : {}),
+      };
+
       formData.append("file", file);
+      formData.append("payload", JSON.stringify(requestPayload));
+      if (importKey) {
+        formData.append("import_key", importKey);
+        formData.append("idempotency_key", importKey);
+      }
 
       const result = await api.postForm<CsvImportResult>(
-        `/students/import/execute?mapping=${encodeURIComponent(JSON.stringify(mapping))}`,
+        "/students/import/execute",
         formData,
-        token
+        token,
+        {
+          timeoutMs: null,
+          headers: importKey ? {
+            "Idempotency-Key": importKey,
+            "X-Import-Key": importKey,
+          } : undefined,
+          networkErrorMessage:
+            "The connection dropped before Koaryu could confirm whether this import finished. Do not start a brand-new import yet. Wait a moment, then retry with this same file and option set so the same import key is reused.",
+        }
       );
 
-      if (result.imported_count > 0) {
-        const refreshedStudents = await api
-          .get<{ items: Student[] }>("/students?page_size=200", token)
-          .catch(() => null);
+      const shouldRefreshStudents = true;
+      const shouldRefreshBelts =
+        result.imported_count > 0 ||
+        result.reused_result ||
+        result.created_programs.length > 0 ||
+        result.created_ladders.length > 0 ||
+        result.created_belts.length > 0;
 
-        if (refreshedStudents) {
-          setStudents(refreshedStudents.items);
+      try {
+        const refreshOperations: Promise<unknown>[] = [];
+
+        if (shouldRefreshStudents) {
+          refreshOperations.push(
+            fetchAllStudents(token, { timeoutMs: 30000 }).then((refreshedStudents) => {
+              commitStudents(refreshedStudents);
+            })
+          );
         }
+
+        if (shouldRefreshBelts) {
+          refreshOperations.push(refreshBeltsRef.current?.() ?? Promise.resolve());
+        }
+
+        await Promise.all(refreshOperations);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to refresh students after import.";
+        setStudentsLoadError(message);
+        throw new Error(
+          `The import finished, but Koaryu could not refresh the Students list afterward. ${message}`
+        );
       }
 
       return result;
     }
-  }, [students, isPreviewMode, token]);
+  }, [commitStudents, fetchAllStudents, isPreviewMode, persistStudents, studentsRef, token]);
 
   const refreshStudents = useCallback(async (): Promise<Student[]> => {
     if (isPreviewMode) {
-      return students;
+      return studentsRef.current;
     }
 
     if (!token) {
       throw new Error("Not authenticated");
     }
 
-    const result = await api.get<{ items: Student[] }>("/students?page_size=200", token);
-    setStudents(result.items);
-    return result.items;
-  }, [isPreviewMode, students, token]);
+    try {
+      const nextStudents = await fetchAllStudents(token, { timeoutMs: 30000 });
+      commitStudents(nextStudents);
+      return nextStudents;
+    } catch (error) {
+      setStudentsLoadError(
+        error instanceof Error ? error.message : "Failed to load students."
+      );
+      throw error;
+    }
+  }, [commitStudents, fetchAllStudents, isPreviewMode, token]);
+
+  const bulkAddTagsToStudents = useCallback(async (
+    studentIds: string[],
+    tags: string[]
+  ): Promise<BulkStudentTagUpdateResponse> => {
+    const normalizedStudentIds = normalizeStudentIds(studentIds);
+    const normalizedTags = normalizeTags(tags);
+
+    if (normalizedStudentIds.length === 0) {
+      throw new Error("Select at least one student.");
+    }
+
+    if (normalizedTags.length === 0) {
+      throw new Error("Enter at least one tag.");
+    }
+
+    const payload: BulkStudentTagUpdateRequest = {
+      student_ids: normalizedStudentIds,
+      tags_to_add: normalizedTags,
+      tags_to_remove: [],
+    };
+
+    if (isPreviewMode) {
+      const selectedIdSet = new Set(normalizedStudentIds);
+      const nextStudents = applyAddedTagsToStudents(
+        studentsRef.current,
+        normalizedStudentIds,
+        normalizedTags
+      );
+      persistStudents(nextStudents);
+
+      return {
+        updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,
+      };
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    let response: BulkStudentTagUpdateResponse;
+    try {
+      response = await api.post<BulkStudentTagUpdateResponse>(
+        "/students/bulk/tags",
+        payload,
+        token
+      );
+    } catch (error) {
+      try {
+        await refreshStudents();
+      } catch (refreshError) {
+        console.error("Failed to refresh students after bulk tag update error", refreshError);
+      }
+      throw error;
+    }
+
+    try {
+      await refreshStudents();
+    } catch (error) {
+      console.error("Failed to refresh students after bulk tag update", error);
+      commitStudents((current) => applyAddedTagsToStudents(current, normalizedStudentIds, normalizedTags));
+    }
+
+    return response;
+  }, [commitStudents, isPreviewMode, persistStudents, refreshStudents, studentsRef, token]);
+
+  const bulkUpdateStudentStatus = useCallback(async (
+    studentIds: string[],
+    status: StudentStatus
+  ): Promise<BulkStudentStatusUpdateResponse> => {
+    const normalizedStudentIds = normalizeStudentIds(studentIds);
+
+    if (normalizedStudentIds.length === 0) {
+      throw new Error("Select at least one student.");
+    }
+
+    const payload: BulkStudentStatusUpdateRequest = {
+      student_ids: normalizedStudentIds,
+      status,
+    };
+
+    if (isPreviewMode) {
+      const selectedIdSet = new Set(normalizedStudentIds);
+      persistStudents(applyStatusToStudents(studentsRef.current, normalizedStudentIds, status));
+
+      return {
+        updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,
+      };
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    let response: BulkStudentStatusUpdateResponse;
+    try {
+      response = await api.post<BulkStudentStatusUpdateResponse>(
+        "/students/bulk/status",
+        payload,
+        token
+      );
+    } catch (error) {
+      try {
+        await refreshStudents();
+      } catch (refreshError) {
+        console.error("Failed to refresh students after bulk status update error", refreshError);
+      }
+      throw error;
+    }
+
+    try {
+      await refreshStudents();
+    } catch (error) {
+      console.error("Failed to refresh students after bulk status update", error);
+      commitStudents((current) => applyStatusToStudents(current, normalizedStudentIds, status));
+    }
+
+    return response;
+  }, [commitStudents, isPreviewMode, persistStudents, refreshStudents, studentsRef, token]);
 
   // ── Leads ──
   const addLead = useCallback(async (data: Partial<Lead>) => {
@@ -511,38 +1245,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      persistLeads([newLead, ...leads]);
+      persistLeads([newLead, ...leadsRef.current]);
     } else {
       if (!token) throw new Error("Not authenticated");
       const res = await api.post<Lead>("/leads", data, token);
-      setLeads([res, ...leads]);
+      setLeads((current) => [res, ...current]);
     }
-  }, [leads, isPreviewMode, token]);
+  }, [isPreviewMode, leadsRef, persistLeads, token]);
 
   const updateLead = useCallback(async (id: string, data: Partial<Lead>) => {
     if (isPreviewMode) {
-      const next = leads.map(l => l.id === id ? { ...l, ...data, updated_at: new Date().toISOString() } : l);
+      const next = leadsRef.current.map(l => l.id === id ? { ...l, ...data, updated_at: new Date().toISOString() } : l);
       persistLeads(next);
     } else {
       if (!token) throw new Error("Not authenticated");
       const res = await api.patch<Lead>(`/leads/${id}`, data, token);
-      setLeads(leads.map(l => l.id === id ? res : l));
+      setLeads((current) => current.map((lead) => lead.id === id ? res : lead));
     }
-  }, [leads, isPreviewMode, token]);
+  }, [isPreviewMode, leadsRef, persistLeads, token]);
 
   const deleteLead = useCallback(async (id: string) => {
     if (isPreviewMode) {
-      persistLeads(leads.filter(l => l.id !== id));
+      persistLeads(leadsRef.current.filter(l => l.id !== id));
     } else {
       if (!token) throw new Error("Not authenticated");
       await api.delete(`/leads/${id}`, token);
-      setLeads(leads.filter(l => l.id !== id));
+      setLeads((current) => current.filter((lead) => lead.id !== id));
     }
-  }, [leads, isPreviewMode, token]);
+  }, [isPreviewMode, leadsRef, persistLeads, token]);
 
   const refreshLeads = useCallback(async (): Promise<Lead[]> => {
     if (isPreviewMode) {
-      return leads;
+      return leadsRef.current;
     }
 
     if (!token) {
@@ -552,9 +1286,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const result = await api.get<Lead[]>("/leads", token);
     setLeads(result);
     return result;
-  }, [isPreviewMode, leads, token]);
+  }, [isPreviewMode, token]);
 
-  const refreshBelts = useCallback(async () => {
+  const fetchEligibilityForLadder = useCallback(async (ladderId?: string | null): Promise<EligibilityEntry[]> => {
+    if (isPreviewMode) {
+      return MOCK_ELIGIBILITY;
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    if (!ladderId) {
+      return [];
+    }
+
+    return api.get<EligibilityEntry[]>(
+      `/belts/eligibility?ladder_id=${encodeURIComponent(ladderId)}`,
+      token
+    );
+  }, [isPreviewMode, token]);
+
+  const refreshBelts = useCallback(async (preferredLadderId?: string | null) => {
     if (isPreviewMode) {
       return;
     }
@@ -563,21 +1316,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       throw new Error("Not authenticated");
     }
 
-    const [beltLaddersRes, eligibilityRes] = await Promise.all([
-      api.get<BeltLadder[]>("/belts/ladders", token),
-      api.get<EligibilityEntry[]>("/belts/eligibility", token).catch(() => []),
-    ]);
-    const primaryLadder = beltLaddersRes[0];
-
-    applyPrimaryLadder(primaryLadder);
+    const beltLaddersRes = await api.get<BeltLadder[]>("/belts/ladders", token);
+    const selectedLadder = applyLadderSelection(
+      beltLaddersRes,
+      preferredLadderId ?? currentLadderIdRef.current
+    );
+    const eligibilityRes = selectedLadder
+      ? await fetchEligibilityForLadder(selectedLadder.id).catch(() => [])
+      : [];
     setEligibility(eligibilityRes);
-  }, [applyPrimaryLadder, isPreviewMode, token]);
+  }, [applyLadderSelection, fetchEligibilityForLadder, isPreviewMode, token]);
+  useEffect(() => {
+    refreshBeltsRef.current = refreshBelts;
+  }, [refreshBelts]);
+
+  const setCurrentLadder = useCallback(async (ladderId: string) => {
+    if (isPreviewMode) {
+      const selectedLadder = applyLadderSelection(beltLaddersRef.current, ladderId);
+      if (selectedLadder) {
+        setEligibility(MOCK_ELIGIBILITY);
+      }
+      return;
+    }
+
+    const selectedLadder = applyLadderSelection(beltLaddersRef.current, ladderId);
+    if (!selectedLadder) {
+      await (refreshBeltsRef.current?.(ladderId) ?? Promise.resolve());
+      return;
+    }
+
+    const refreshedEligibility = await fetchEligibilityForLadder(selectedLadder.id).catch(
+      (error) => {
+        setEligibility([]);
+        throw error;
+      }
+    );
+    setEligibility(refreshedEligibility);
+  }, [applyLadderSelection, fetchEligibilityForLadder, isPreviewMode]);
 
   const ensureCurrentLadder = useCallback(async (termOverride?: string) => {
     if (isPreviewMode) {
+      const selectedPreviewLadder = selectBeltLadder(
+        beltLaddersRef.current,
+        currentLadderIdRef.current
+      );
       return {
-        id: "mock-ladder",
-        sub_rank_term: termOverride || subRankTerm,
+        id: selectedPreviewLadder?.id || "mock-ladder",
+        sub_rank_term: termOverride || selectedPreviewLadder?.sub_rank_term || subRankTerm,
       };
     }
 
@@ -593,13 +1378,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     const existingLadders = await api.get<BeltLadder[]>("/belts/ladders", token);
-    const existingPrimaryLadder = existingLadders[0];
+    const existingSelectedLadder = applyLadderSelection(existingLadders);
 
-    if (existingPrimaryLadder) {
-      applyPrimaryLadder(existingPrimaryLadder);
+    if (existingSelectedLadder) {
       return {
-        id: existingPrimaryLadder.id,
-        sub_rank_term: existingPrimaryLadder.sub_rank_term || "Stripe",
+        id: existingSelectedLadder.id,
+        sub_rank_term: existingSelectedLadder.sub_rank_term || "Stripe",
       };
     }
 
@@ -612,15 +1396,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       token
     );
 
-    applyPrimaryLadder(created);
+    applyLadderSelection([created], created.id);
     return {
       id: created.id,
       sub_rank_term: created.sub_rank_term || termOverride || "Stripe",
     };
-  }, [applyPrimaryLadder, isPreviewMode, ladderName, subRankTerm, token]);
+  }, [applyLadderSelection, isPreviewMode, ladderName, subRankTerm, token]);
 
   const convertLeadToStudent = useCallback(async (leadId: string) => {
-    const lead = leads.find((item) => item.id === leadId);
+    const lead = leadsRef.current.find((item) => item.id === leadId);
     if (!lead) {
       throw new Error("Lead not found");
     }
@@ -684,8 +1468,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         updated_at: now,
       };
 
-      persistStudents([newStudent, ...students]);
-      persistLeads(leads.map((item) => (item.id === leadId ? updatedLead : item)));
+      persistStudents([newStudent, ...studentsRef.current]);
+      persistLeads(leadsRef.current.map((item) => (item.id === leadId ? updatedLead : item)));
 
       return {
         lead: updatedLead,
@@ -707,7 +1491,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       token
     );
 
-    setLeads(leads.map((item) => (item.id === leadId ? result : item)));
+    setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
     try {
       await refreshStudents();
     } catch (error) {
@@ -718,12 +1502,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lead: result,
       studentId: result.converted_student_id ?? null,
     };
-  }, [isPreviewMode, leads, persistLeads, refreshStudents, students, token]);
+  }, [isPreviewMode, leadsRef, persistLeads, persistStudents, refreshStudents, studentsRef, token]);
 
   // ── Belt tracker ──
   const setBeltRanks = useCallback(async (ranks: BeltRank[], options?: { subRankTerm?: string }) => {
     if (isPreviewMode) {
+      const selectedPreviewLadder = selectBeltLadder(
+        beltLaddersRef.current,
+        currentLadderIdRef.current
+      );
+      const nextSubRankTerm = options?.subRankTerm?.trim() || selectedPreviewLadder?.sub_rank_term || subRankTerm;
       persistBeltRanks(ranks);
+      const nextPreviewLadder: BeltLadder = {
+        ...(selectedPreviewLadder || MOCK_BELT_LADDER),
+        id: selectedPreviewLadder?.id || "mock-ladder",
+        name: selectedPreviewLadder?.name || ladderName || MOCK_BELT_LADDER.name,
+        sub_rank_term: nextSubRankTerm,
+        ranks,
+      };
+      applyLadderSelection([nextPreviewLadder], nextPreviewLadder.id);
     } else {
       const desiredSubRankTerm = options?.subRankTerm?.trim() || undefined;
       const ladder = await ensureCurrentLadder(desiredSubRankTerm);
@@ -748,14 +1545,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         syncPayload,
         token || undefined
       );
-      applyPrimaryLadder(syncedLadder);
+      const nextLadders = upsertBeltLadder(beltLaddersRef.current, syncedLadder);
+      applyLadderSelection(nextLadders, syncedLadder.id);
 
-      const refreshedEligibility = await api
-        .get<EligibilityEntry[]>("/belts/eligibility", token || undefined)
-        .catch(() => eligibility);
+      const refreshedEligibility = await fetchEligibilityForLadder(syncedLadder.id)
+        .catch(() => eligibilityRef.current);
       setEligibility(refreshedEligibility);
     }
-  }, [applyPrimaryLadder, eligibility, ensureCurrentLadder, isPreviewMode, token]);
+  }, [applyLadderSelection, ensureCurrentLadder, fetchEligibilityForLadder, isPreviewMode, ladderName, persistBeltRanks, subRankTerm, token]);
 
   const setLadderName = useCallback((name: string) => {
     setLadderNameState(name);
@@ -766,7 +1563,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const nextTerm = term.trim() || "Stripe";
 
     if (isPreviewMode) {
+      const selectedPreviewLadder = selectBeltLadder(
+        beltLaddersRef.current,
+        currentLadderIdRef.current
+      );
       setSubRankTermState(nextTerm);
+      if (selectedPreviewLadder) {
+        applyLadderSelection(
+          upsertBeltLadder(beltLaddersRef.current, {
+            ...selectedPreviewLadder,
+            sub_rank_term: nextTerm,
+          }),
+          selectedPreviewLadder.id
+        );
+      }
       save(KEYS.subRankTerm, nextTerm);
       return;
     }
@@ -779,24 +1589,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         token || undefined
       );
     }
-    await refreshBelts();
-  }, [ensureCurrentLadder, isPreviewMode, refreshBelts, token]);
+    await refreshBelts(ladder.id);
+  }, [applyLadderSelection, ensureCurrentLadder, isPreviewMode, refreshBelts, token]);
 
   const promoteStudent = useCallback(async (studentId: string, toRankId: string, notes?: string) => {
     if (isPreviewMode) {
-      const student = students.find((item) => item.id === studentId);
+      const student = studentsRef.current.find((item) => item.id === studentId);
       if (!student) {
         throw new Error("Student not found");
       }
 
-      const targetRank = beltRanks.find((rank) => rank.id === toRankId);
+      const targetRank = beltRanksRef.current.find((rank) => rank.id === toRankId);
       if (!targetRank) {
         throw new Error("Target rank not found");
       }
 
       const now = new Date().toISOString();
       persistStudents(
-        students.map((item) =>
+        studentsRef.current.map((item) =>
           item.id === studentId
             ? { ...item, current_belt_rank_id: toRankId, updated_at: now }
             : item
@@ -813,7 +1623,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         notes,
         promoted_at: now,
         student_name: student.preferred_name || `${student.legal_first_name} ${student.legal_last_name}`,
-        from_rank_name: beltRanks.find((rank) => rank.id === student.current_belt_rank_id)?.name,
+        from_rank_name: beltRanksRef.current.find((rank) => rank.id === student.current_belt_rank_id)?.name,
         to_rank_name: targetRank.name,
       };
     }
@@ -832,12 +1642,140 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       token
     );
 
-    await Promise.all([refreshStudents(), refreshBelts()]);
+    await Promise.all([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
     return result;
-  }, [beltRanks, isPreviewMode, persistStudents, refreshBelts, refreshStudents, students, token]);
+  }, [beltRanksRef, isPreviewMode, persistStudents, refreshBelts, refreshStudents, studentsRef, token]);
 
   // ── Schedule ──
-  const addSession = useCallback(async (data: Partial<ClassSession>) => {
+  const refreshScheduleRange = useCallback(async (startDate: string, endDate: string): Promise<ClassSession[]> => {
+    if (isPreviewMode) {
+      return sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate);
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const rangeSessions = await api.get<ClassSession[]>(
+      `/schedule/sessions?start_date=${startDate}&end_date=${endDate}`,
+      token
+    );
+    let replacedSessionIds = Array.from(
+      new Set(rangeSessions.map((session) => session.id))
+    );
+
+    setSessions((current) => {
+      replacedSessionIds = Array.from(
+        new Set([
+          ...current
+            .filter((session) => session.date >= startDate && session.date <= endDate)
+            .map((session) => session.id),
+          ...rangeSessions.map((session) => session.id),
+        ])
+      );
+      return mergeSessionsForRange(current, rangeSessions, startDate, endDate);
+    });
+    void Promise.all(
+      rangeSessions.map((sessionItem) =>
+        api
+          .get<AttendanceRecord[]>(
+            `/schedule/sessions/${sessionItem.id}/attendance`,
+            token
+          )
+          .catch(() => [])
+      )
+    ).then((groups) => {
+      setAttendance((current) =>
+        mergeAttendanceForSessions(current, groups.flat(), replacedSessionIds)
+      );
+    });
+    return rangeSessions;
+  }, [isPreviewMode, token]);
+
+  const refreshSessionAttendance = useCallback(async (sessionId: string): Promise<AttendanceRecord[]> => {
+    if (isPreviewMode) {
+      return attendanceRef.current.filter((record) => record.session_id === sessionId);
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const records = await api.get<AttendanceRecord[]>(
+      `/schedule/sessions/${sessionId}/attendance`,
+      token
+    );
+    setAttendance((current) => mergeAttendanceForSessions(current, records, [sessionId]));
+    return records;
+  }, [isPreviewMode, token]);
+
+  const addTemplate = useCallback(async (data: ClassTemplateCreate): Promise<ClassTemplate> => {
+    if (isPreviewMode) {
+      const startDate = data.start_date || new Date().toISOString().split("T")[0];
+      const newTemplate: ClassTemplate = {
+        id: localId(),
+        studio_id: "mock-studio",
+        name: data.name,
+        day_of_week: data.day_of_week,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        start_date: startDate,
+        end_date: data.end_date,
+        instructor_id: data.instructor_id,
+        program_id: data.program_id,
+        capacity: data.capacity,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      persistTemplates([...templatesRef.current, newTemplate]);
+
+      const existingKeys = new Set(
+        sessionsRef.current
+          .filter((session) => session.template_id)
+          .map((session) => `${session.template_id}:${session.date}`)
+      );
+      const generatedSessions = getPreviewTemplateSessionDates(newTemplate)
+        .filter((dateValue) => !existingKeys.has(`${newTemplate.id}:${dateValue}`))
+        .map((dateValue) => ({
+          id: localId(),
+          studio_id: "mock-studio",
+          template_id: newTemplate.id,
+          name: newTemplate.name,
+          date: dateValue,
+          start_time: newTemplate.start_time,
+          end_time: newTemplate.end_time,
+          instructor_id: newTemplate.instructor_id,
+          program_id: newTemplate.program_id,
+          capacity: newTemplate.capacity,
+          status: "scheduled" as const,
+          created_at: new Date().toISOString(),
+          attendance_count: 0,
+        }));
+      if (generatedSessions.length > 0) {
+        persistSessions([...sessionsRef.current, ...generatedSessions].sort(compareSessions));
+      }
+      return newTemplate;
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const res = await api.post<ClassTemplate>("/schedule/templates", data, token);
+    setTemplates((current) =>
+      [...current, res].sort((left, right) => {
+        const dayCompare = left.day_of_week - right.day_of_week;
+        if (dayCompare !== 0) {
+          return dayCompare;
+        }
+        return left.start_time.localeCompare(right.start_time);
+      })
+    );
+    return res;
+  }, [isPreviewMode, persistSessions, persistTemplates, sessionsRef, templatesRef, token]);
+
+  const addSession = useCallback(async (data: ClassSessionCreate) => {
     if (isPreviewMode) {
       const newSession: ClassSession = {
         id: localId(),
@@ -851,33 +1789,123 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
         attendance_count: 0,
       };
-      persistSessions([...sessions, newSession]);
+      persistSessions([...sessionsRef.current, newSession].sort(compareSessions));
     } else {
       if (!token) throw new Error("Not authenticated");
       const res = await api.post<ClassSession>("/schedule/sessions", data, token);
-      setSessions([...sessions, res]);
+      setSessions((current) => [...current, res].sort(compareSessions));
     }
-  }, [sessions, isPreviewMode, token]);
+  }, [isPreviewMode, persistSessions, sessionsRef, token]);
+
+  const deleteSession = useCallback(async (sessionId: string, scope: ClassSessionDeleteScope = "session") => {
+    const sessionToDelete = sessionsRef.current.find((session) => session.id === sessionId);
+    if (!sessionToDelete) {
+      throw new Error("Class session not found");
+    }
+
+    if (isPreviewMode) {
+      if (scope === "future_series" && sessionToDelete.template_id) {
+        const templateId = sessionToDelete.template_id;
+        persistTemplates(
+          templatesRef.current.map((template) =>
+            template.id === templateId
+              ? {
+                  ...template,
+                  is_active: false,
+                  end_date: sessionToDelete.date,
+                  updated_at: new Date().toISOString(),
+                }
+              : template
+          )
+        );
+        persistSessions(
+          sessionsRef.current.filter(
+            (session) =>
+              session.template_id !== templateId || session.date < sessionToDelete.date
+          )
+        );
+        return;
+      }
+
+      persistSessions(sessionsRef.current.filter((session) => session.id !== sessionId));
+      persistAttendance(attendanceRef.current.filter((record) => record.session_id !== sessionId));
+      return;
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const query = scope === "future_series" ? "?scope=future_series" : "";
+    await api.delete(`/schedule/sessions/${sessionId}${query}`, token);
+
+    if (scope === "future_series" && sessionToDelete.template_id) {
+      const templateId = sessionToDelete.template_id;
+      const removedSessionIds = new Set(
+        sessionsRef.current
+          .filter(
+            (session) =>
+              session.template_id === templateId && session.date >= sessionToDelete.date
+          )
+          .map((session) => session.id)
+      );
+      setTemplates((current) =>
+        current.map((template) =>
+          template.id === templateId
+            ? {
+                ...template,
+                is_active: false,
+                end_date: sessionToDelete.date,
+              }
+            : template
+        )
+      );
+      setSessions((current) =>
+        current.filter(
+          (session) =>
+            session.template_id !== templateId || session.date < sessionToDelete.date
+        )
+      );
+      setAttendance((current) =>
+        current.filter((record) => !removedSessionIds.has(record.session_id))
+      );
+      return;
+    }
+
+    setSessions((current) => current.filter((session) => session.id !== sessionId));
+    setAttendance((current) => current.filter((record) => record.session_id !== sessionId));
+  }, [attendanceRef, isPreviewMode, persistAttendance, persistSessions, persistTemplates, sessionsRef, templatesRef, token]);
 
   const toggleCheckIn = useCallback(async (sessionId: string, studentId: string, name: string) => {
     if (isPreviewMode) {
-      const existing = attendance.find(
+      const existing = attendanceRef.current.find(
         a => a.session_id === sessionId && a.student_id === studentId
       );
       let next: AttendanceRecord[];
       if (existing) {
         const cycle: AttendanceStatus[] = ["present", "late", "absent"];
         const idx = cycle.indexOf(existing.status);
+        const previousStatus = existing.status;
+        let nextStatusForCount: AttendanceStatus | null = previousStatus;
         if (idx === cycle.length - 1) {
-          next = attendance.filter(a => a !== existing);
+          next = attendanceRef.current.filter(a => a !== existing);
+          nextStatusForCount = null;
         } else {
-          next = attendance.map(a =>
+          next = attendanceRef.current.map(a =>
             a === existing ? { ...a, status: cycle[idx + 1] } : a
           );
+          nextStatusForCount = cycle[idx + 1];
         }
+        setSessions((current) =>
+          updateSessionAttendanceCount(
+            current,
+            sessionId,
+            toAttendanceCountDelta(previousStatus, nextStatusForCount)
+          )
+        );
       } else {
         next = [
-          ...attendance,
+          ...attendanceRef.current,
           {
             id: localId(),
             studio_id: "mock-studio",
@@ -888,39 +1916,94 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             student_name: name,
           },
         ];
+        setSessions((current) =>
+          updateSessionAttendanceCount(
+            current,
+            sessionId,
+            toAttendanceCountDelta(null, "present")
+          )
+        );
       }
       persistAttendance(next);
     } else {
       if (!token) throw new Error("Not authenticated");
 
       const cycle: AttendanceStatus[] = ["present", "late", "absent"];
-      const existing = attendance.find(
+      const existing = attendanceRef.current.find(
         (record) => record.session_id === sessionId && record.student_id === studentId
       );
+      const previousStatus = existing?.status ?? null;
       const currentIndex = existing ? cycle.indexOf(existing.status) : -1;
       const nextStatus = cycle[(currentIndex + 1 + cycle.length) % cycle.length];
-      const res = await api.post<AttendanceRecord>(
-        "/schedule/attendance",
-        {
-          session_id: sessionId,
-          student_id: studentId,
-          status: nextStatus,
-        },
-        token
-      );
+      const optimisticRecord: AttendanceRecord = existing
+        ? { ...existing, status: nextStatus }
+        : {
+            id: `optimistic-${sessionId}-${studentId}`,
+            studio_id: "",
+            session_id: sessionId,
+            student_id: studentId,
+            status: nextStatus,
+            checked_in_at: new Date().toISOString(),
+            student_name: name,
+          };
 
       setAttendance((current) => {
         const next = current.filter(
           (record) => !(record.session_id === sessionId && record.student_id === studentId)
         );
-        next.push({
-          ...res,
-          student_name: existing?.student_name || name,
-        });
+        next.push(optimisticRecord);
         return next;
       });
+      setSessions((current) =>
+        updateSessionAttendanceCount(
+          current,
+          sessionId,
+          toAttendanceCountDelta(previousStatus, nextStatus)
+        )
+      );
+
+      try {
+        const res = await api.post<AttendanceRecord>(
+          "/schedule/attendance",
+          {
+            session_id: sessionId,
+            student_id: studentId,
+            status: nextStatus,
+          },
+          token
+        );
+
+        setAttendance((current) => {
+          const next = current.filter(
+            (record) => !(record.session_id === sessionId && record.student_id === studentId)
+          );
+          next.push({
+            ...res,
+            student_name: existing?.student_name || name,
+          });
+          return next;
+        });
+      } catch (error) {
+        setAttendance((current) => {
+          const next = current.filter(
+            (record) => !(record.session_id === sessionId && record.student_id === studentId)
+          );
+          if (existing) {
+            next.push(existing);
+          }
+          return next;
+        });
+        setSessions((current) =>
+          updateSessionAttendanceCount(
+            current,
+            sessionId,
+            toAttendanceCountDelta(nextStatus, previousStatus)
+          )
+        );
+        throw error;
+      }
     }
-  }, [attendance, isPreviewMode, token]);
+  }, [attendanceRef, isPreviewMode, persistAttendance, token]);
 
   // ── Studio ──
   const setStudioName = useCallback(async (name: string) => {
@@ -934,23 +2017,57 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [isPreviewMode, token]);
 
-  // ── Value ──
-  const value: StoreContextValue = {
+  // ── Context values ──
+  const configValue = useMemo<ConfigStoreContextValue>(() => ({
     isPreviewMode,
     token,
+  }), [isPreviewMode, token]);
+
+  const studentsValue = useMemo<StudentsStoreContextValue>(() => ({
+    studentsLoaded,
+    studentsLoadError,
     students,
     addStudent,
     updateStudent,
     deleteStudents,
+    bulkAddTagsToStudents,
+    bulkUpdateStudentStatus,
     importStudents,
     refreshStudents,
+  }), [
+    studentsLoaded,
+    studentsLoadError,
+    addStudent,
+    bulkAddTagsToStudents,
+    bulkUpdateStudentStatus,
+    deleteStudents,
+    importStudents,
+    refreshStudents,
+    students,
+    updateStudent,
+  ]);
+
+  const leadsValue = useMemo<LeadsStoreContextValue>(() => ({
     leads,
     addLead,
     updateLead,
     deleteLead,
     refreshLeads,
     convertLeadToStudent,
+  }), [
+    addLead,
+    convertLeadToStudent,
+    deleteLead,
+    leads,
+    refreshLeads,
+    updateLead,
+  ]);
+
+  const beltsValue = useMemo<BeltsStoreContextValue>(() => ({
+    beltLadders,
     beltRanks,
+    currentLadderId,
+    setCurrentLadder,
     setBeltRanks,
     ladderName,
     setLadderName,
@@ -958,14 +2075,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSubRankTerm,
     eligibility,
     promoteStudent,
+  }), [
+    beltLadders,
+    beltRanks,
+    currentLadderId,
+    eligibility,
+    ladderName,
+    setCurrentLadder,
+    promoteStudent,
+    setBeltRanks,
+    setLadderName,
+    setSubRankTerm,
+    subRankTerm,
+  ]);
+
+  const scheduleValue = useMemo<ScheduleStoreContextValue>(() => ({
     sessions,
     addSession,
+    addTemplate,
+    deleteSession,
+    refreshScheduleRange,
+    refreshSessionAttendance,
     templates,
     attendance,
     toggleCheckIn,
+  }), [
+    addSession,
+    addTemplate,
+    attendance,
+    deleteSession,
+    refreshScheduleRange,
+    refreshSessionAttendance,
+    sessions,
+    templates,
+    toggleCheckIn,
+  ]);
+
+  const studioValue = useMemo<StudioStoreContextValue>(() => ({
     studioName,
     setStudioName,
-  };
+  }), [setStudioName, studioName]);
 
   if (!hydrated) {
     return (
@@ -976,8 +2125,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <StoreContext.Provider value={value}>
-      {children}
-    </StoreContext.Provider>
+    <ConfigStoreContext.Provider value={configValue}>
+      <StudentsStoreContext.Provider value={studentsValue}>
+        <LeadsStoreContext.Provider value={leadsValue}>
+          <BeltsStoreContext.Provider value={beltsValue}>
+            <ScheduleStoreContext.Provider value={scheduleValue}>
+              <StudioStoreContext.Provider value={studioValue}>
+                {children}
+              </StudioStoreContext.Provider>
+            </ScheduleStoreContext.Provider>
+          </BeltsStoreContext.Provider>
+        </LeadsStoreContext.Provider>
+      </StudentsStoreContext.Provider>
+    </ConfigStoreContext.Provider>
   );
 }

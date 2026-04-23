@@ -117,21 +117,109 @@ export interface StudentCreate {
   }[];
 }
 
+export interface BulkStudentTagUpdateRequest {
+  student_ids: string[];
+  tags_to_add: string[];
+  tags_to_remove?: string[];
+}
+
+export interface BulkStudentTagUpdateResponse {
+  updated: number;
+}
+
+export interface BulkStudentStatusUpdateRequest {
+  student_ids: string[];
+  status: StudentStatus;
+}
+
+export interface BulkStudentStatusUpdateResponse {
+  updated: number;
+}
+
 // ---- CSV Import ----
 
 export interface CsvImportRow {
   row_number: number;
-  data: Record<string, string>;
-  errors: string[];
+  data: Record<string, unknown>;
+  issues: CsvImportIssue[];
   is_valid: boolean;
+}
+
+export interface CsvImportIssue {
+  code: string;
+  message: string;
+  severity: "error" | "warning";
+  field?: string;
+  value?: string;
+  suggested_action?: string;
+}
+
+export interface CsvImportWarning {
+  code: string;
+  message: string;
+  severity: "warning";
+  row_numbers: number[];
+  field?: string;
+  values: string[];
+  suggested_action?: string;
+}
+
+export interface CsvImportSetupIssue {
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+  row_numbers: number[];
+  values: string[];
+  suggested_action?: string;
+}
+
+export interface CsvImportActionOptions {
+  can_create_missing_programs: boolean;
+  can_create_missing_belts: boolean;
+  can_import_without_unresolved_belt: boolean;
+  belt_tracker_href?: string;
+}
+
+export interface CsvImportOptions {
+  create_missing_programs: boolean;
+  create_missing_belts: boolean;
+  import_without_unresolved_belt: boolean;
+  status_alias_mode: "strict" | "normalize";
+}
+
+export interface CsvImportRequest {
+  mapping: Record<string, string>;
+  options: CsvImportOptions;
+  import_key?: string;
+  idempotency_key?: string;
 }
 
 export interface CsvImportResult {
   total_rows: number;
   valid_rows: number;
   error_rows: number;
-  errors: CsvImportRow[];
+  rows: CsvImportRow[];
+  errors?: CsvImportRow[];
+  warnings: CsvImportWarning[];
+  setup_issues: CsvImportSetupIssue[];
+  actions_available: CsvImportActionOptions;
+  created_programs: string[];
+  created_ladders: string[];
+  created_belts: string[];
+  imported_without_belt_count: number;
+  normalized_status_count: number;
   imported_count: number;
+  idempotency_key?: string;
+  reused_result?: boolean;
+  execution_status?: "completed" | "completed_with_warnings" | "reused";
+  non_critical_errors?: string[];
+}
+
+export interface CsvMappingSuggestion {
+  field: string;
+  confidence?: number;
+  reason?: string;
+  sample_values?: string[];
 }
 
 export interface CsvParseResponse {
@@ -139,6 +227,9 @@ export interface CsvParseResponse {
   auto_mapping: Record<string, string>;
   preview_rows: Record<string, string>[];
   total_rows: number;
+  mapping_suggestions?: Record<string, CsvMappingSuggestion>;
+  warnings?: CsvImportIssue[];
+  required_fields?: string[];
 }
 
 // ---- Schedule (Phase 3) ----
@@ -150,12 +241,38 @@ export interface ClassTemplate {
   day_of_week: number; // 0=Sunday
   start_time: string;
   end_time: string;
+  start_date: string;
+  end_date?: string;
   instructor_id?: string;
   program_id?: string;
   capacity?: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ClassTemplateCreate {
+  name: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  start_date?: string;
+  end_date?: string;
+  instructor_id?: string;
+  program_id?: string;
+  capacity?: number;
+}
+
+export interface ClassSessionCreate {
+  template_id?: string;
+  name: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  instructor_id?: string;
+  program_id?: string;
+  capacity?: number;
+  notes?: string;
 }
 
 export interface ClassSession {
@@ -187,6 +304,8 @@ export interface AttendanceRecord {
   checked_in_by?: string;
   student_name?: string;
 }
+
+export type ClassSessionDeleteScope = "session" | "future_series";
 
 // ---- Belt Tracker (Phase 4) ----
 

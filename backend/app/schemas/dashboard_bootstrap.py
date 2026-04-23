@@ -1,0 +1,25 @@
+from pydantic import BaseModel, Field
+from typing import Optional
+
+from app.schemas.auth import AuthResponse
+from app.schemas.belt import BeltLadderResponse
+from app.schemas.lead import LeadResponse
+from app.schemas.student import StudentResponse
+
+
+class DashboardBootstrapStudioSummary(BaseModel):
+    id: str
+    name: str
+    slug: str
+    timezone: str
+    logo_url: Optional[str] = None
+
+
+class DashboardBootstrapResponse(BaseModel):
+    auth: AuthResponse
+    studio: Optional[DashboardBootstrapStudioSummary] = None
+    studio_name: Optional[str] = None
+    students: list[StudentResponse] = Field(default_factory=list)
+    leads: list[LeadResponse] = Field(default_factory=list)
+    belt_ladders: list[BeltLadderResponse] = Field(default_factory=list)
+    primary_belt_ladder: Optional[BeltLadderResponse] = None

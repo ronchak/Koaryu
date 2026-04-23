@@ -119,6 +119,21 @@ class BeltService:
             studio_id,
             "Program not found",
         )
+        if row.get("program_id"):
+            existing = (
+                self.supabase.table("belt_ladders")
+                .select("*, belt_ranks(*)")
+                .eq("studio_id", studio_id)
+                .eq("program_id", row["program_id"])
+                .order("created_at")
+                .execute()
+            )
+            existing_rows = existing.data or []
+            if existing_rows:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This program already has a belt ladder. Edit the existing ladder instead of creating another one.",
+                )
         row["studio_id"] = studio_id
         result = self.supabase.table("belt_ladders").insert(row).execute()
         if not result.data:
@@ -160,6 +175,21 @@ class BeltService:
             studio_id,
             "Program not found",
         )
+        if update_dict.get("program_id"):
+            existing = (
+                self.supabase.table("belt_ladders")
+                .select("id")
+                .eq("studio_id", studio_id)
+                .eq("program_id", update_dict["program_id"])
+                .neq("id", ladder_id)
+                .order("created_at")
+                .execute()
+            )
+            if existing.data:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This program already has a belt ladder. Edit the existing ladder instead of assigning a second ladder to the same program.",
+                )
 
         result = (
             self.supabase.table("belt_ladders")
@@ -288,32 +318,69 @@ class BeltService:
         self, studio_id: str, ladder_id: Optional[str] = None
     ) -> list[EligibilityEntry]:
         """Compute promotion eligibility for all active students."""
-        # Get all ranks in order
-        rank_query = (
+        ladders_result = (
+            self.supabase.table("belt_ladders")
+            .select("id, name, program_id")
+            .eq("studio_id", studio_id)
+            .order("created_at")
+            .execute()
+        )
+        ladder_rows = ladders_result.data or []
+        ladder_meta = {
+            row["id"]: row
+            for row in ladder_rows
+            if row.get("id")
+        }
+
+        if ladder_id and ladder_id not in ladder_meta:
+            raise HTTPException(status_code=404, detail="Belt ladder not found")
+
+        ranks_result = (
             self.supabase.table("belt_ranks")
             .select("*")
             .eq("studio_id", studio_id)
+            .order("ladder_id")
             .order("display_order")
+            .execute()
         )
-        if ladder_id:
-            rank_query = rank_query.eq("ladder_id", ladder_id)
-        ranks_result = rank_query.execute()
         ranks = ranks_result.data or []
 
-        if not ranks:
+        if not ladder_meta or not ranks:
             return []
 
-        # Build rank lookup and next-rank map
-        rank_map = {r["id"]: r for r in ranks}
-        next_rank_map: dict[str, dict] = {}
-        for i, r in enumerate(ranks):
-            if i + 1 < len(ranks):
-                next_rank_map[r["id"]] = ranks[i + 1]
+        ranks_by_ladder: dict[str, list[dict[str, Any]]] = {}
+        rank_map: dict[str, dict[str, Any]] = {}
+        ladders_by_program: dict[str, list[str]] = {}
+        unscoped_ladder_ids: list[str] = []
+
+        for ladder_key, ladder in ladder_meta.items():
+            program_id = ladder.get("program_id")
+            if program_id:
+                ladders_by_program.setdefault(program_id, []).append(ladder_key)
+            else:
+                unscoped_ladder_ids.append(ladder_key)
+
+        for rank in ranks:
+            rank_id = rank.get("id")
+            rank_ladder_id = rank.get("ladder_id")
+            if not rank_id or not rank_ladder_id or rank_ladder_id not in ladder_meta:
+                continue
+            rank_map[rank_id] = rank
+            ranks_by_ladder.setdefault(rank_ladder_id, []).append(rank)
+
+        if ladder_id and ladder_id not in ranks_by_ladder:
+            return []
+
+        next_rank_map_by_ladder: dict[str, dict[str, dict[str, Any]]] = {}
+        for rank_ladder_id, ladder_ranks in ranks_by_ladder.items():
+            next_rank_map_by_ladder[rank_ladder_id] = {}
+            for index, rank in enumerate(ladder_ranks[:-1]):
+                next_rank_map_by_ladder[rank_ladder_id][rank["id"]] = ladder_ranks[index + 1]
 
         # Get active students with belt ranks
         students_result = (
             self.supabase.table("students")
-            .select("id, legal_first_name, legal_last_name, preferred_name, current_belt_rank_id")
+            .select("id, legal_first_name, legal_last_name, preferred_name, membership_start_date, program_id, current_belt_rank_id")
             .eq("studio_id", studio_id)
             .eq("status", "active")
             .is_("deleted_at", "null")
@@ -322,14 +389,63 @@ class BeltService:
 
         entries = []
         now = datetime.now(timezone.utc)
+        selected_ladder = ladder_meta.get(ladder_id) if ladder_id else None
+        studio_has_single_ladder = len(ladder_meta) == 1
 
         for s in students_result.data or []:
             current_rank_id = s.get("current_belt_rank_id")
             current_rank = rank_map.get(current_rank_id) if current_rank_id else None
+            current_ladder_id = current_rank.get("ladder_id") if current_rank else None
+            student_program_id = s.get("program_id")
+
+            target_ladder_id: Optional[str] = None
+
+            if ladder_id:
+                if current_ladder_id:
+                    if current_ladder_id != ladder_id:
+                        continue
+                    target_ladder_id = ladder_id
+                elif selected_ladder and selected_ladder.get("program_id"):
+                    if student_program_id != selected_ladder.get("program_id"):
+                        continue
+                    target_ladder_id = ladder_id
+                elif studio_has_single_ladder:
+                    target_ladder_id = ladder_id
+                elif student_program_id:
+                    continue
+                elif len(unscoped_ladder_ids) == 1 and unscoped_ladder_ids[0] == ladder_id:
+                    target_ladder_id = ladder_id
+                else:
+                    continue
+            else:
+                if current_ladder_id:
+                    target_ladder_id = current_ladder_id
+                elif student_program_id:
+                    program_ladders = ladders_by_program.get(student_program_id, [])
+                    if len(program_ladders) == 1:
+                        target_ladder_id = program_ladders[0]
+                    else:
+                        continue
+                elif studio_has_single_ladder:
+                    target_ladder_id = next(iter(ladder_meta))
+                elif len(unscoped_ladder_ids) == 1:
+                    target_ladder_id = unscoped_ladder_ids[0]
+                else:
+                    continue
+
+            if not target_ladder_id:
+                continue
+
+            ladder_ranks = ranks_by_ladder.get(target_ladder_id, [])
+            if not ladder_ranks:
+                continue
+
+            if current_rank and current_rank.get("ladder_id") != target_ladder_id:
+                current_rank = None
 
             # If no rank, the next rank is the first one
             if not current_rank:
-                next_rank = ranks[0] if ranks else None
+                next_rank = ladder_ranks[0]
                 if not next_rank:
                     continue
                 entries.append(EligibilityEntry(
@@ -352,7 +468,7 @@ class BeltService:
                 ))
                 continue
 
-            next_rank = next_rank_map.get(current_rank_id)
+            next_rank = next_rank_map_by_ladder.get(target_ladder_id, {}).get(current_rank_id)
             if not next_rank:
                 continue  # Already at highest rank
 
@@ -373,20 +489,26 @@ class BeltService:
             # Count classes attended since last promotion
             att_query = (
                 self.supabase.table("attendance")
-                .select("id", count="exact")
+                .select("id, class_sessions!inner(program_id)", count="exact")
                 .eq("student_id", s["id"])
                 .eq("studio_id", studio_id)
                 .neq("status", "absent")
             )
+            ladder_program_id = (ladder_meta.get(target_ladder_id) or {}).get("program_id")
+            if ladder_program_id:
+                att_query = att_query.eq("class_sessions.program_id", ladder_program_id)
             if last_promo_date:
                 att_query = att_query.gte("checked_in_at", last_promo_date)
             att_result = att_query.execute()
             classes_since = att_result.count or 0
 
             # Days at current rank
-            if last_promo_date:
-                promo_dt = datetime.fromisoformat(last_promo_date.replace("Z", "+00:00"))
-                days_at = (now - promo_dt).days
+            anchor_date = last_promo_date or s.get("membership_start_date")
+            if anchor_date:
+                promo_dt = datetime.fromisoformat(anchor_date.replace("Z", "+00:00"))
+                if promo_dt.tzinfo is None:
+                    promo_dt = promo_dt.replace(tzinfo=timezone.utc)
+                days_at = max(0, (now - promo_dt).days)
             else:
                 days_at = 0
 
@@ -422,18 +544,33 @@ class BeltService:
     async def promote_student(
         self, data: PromoteStudent, studio_id: str, actor_id: str
     ) -> PromotionResponse:
-        ensure_studio_record(
-            self.supabase,
-            "belt_ranks",
-            data.to_rank_id,
-            studio_id,
-            "Target belt rank not found",
+        target_rank_result = (
+            self.supabase.table("belt_ranks")
+            .select("id, ladder_id")
+            .eq("id", data.to_rank_id)
+            .eq("studio_id", studio_id)
+            .single()
+            .execute()
         )
+        if not target_rank_result.data:
+            raise HTTPException(status_code=404, detail="Target belt rank not found")
+        target_rank = target_rank_result.data
 
-        # Get current rank
+        target_ladder_result = (
+            self.supabase.table("belt_ladders")
+            .select("id, program_id")
+            .eq("id", target_rank["ladder_id"])
+            .eq("studio_id", studio_id)
+            .single()
+            .execute()
+        )
+        if not target_ladder_result.data:
+            raise HTTPException(status_code=404, detail="Belt ladder not found")
+        target_ladder = target_ladder_result.data
+
         student_result = (
             self.supabase.table("students")
-            .select("current_belt_rank_id")
+            .select("program_id, current_belt_rank_id")
             .eq("id", data.student_id)
             .eq("studio_id", studio_id)
             .single()
@@ -442,7 +579,60 @@ class BeltService:
         if not student_result.data:
             raise HTTPException(status_code=404, detail="Student not found")
 
+        student_program_id = student_result.data.get("program_id")
         from_rank_id = student_result.data.get("current_belt_rank_id")
+        current_rank = None
+        if from_rank_id:
+            current_rank_result = (
+                self.supabase.table("belt_ranks")
+                .select("id, ladder_id")
+                .eq("id", from_rank_id)
+                .eq("studio_id", studio_id)
+                .single()
+                .execute()
+            )
+            current_rank = current_rank_result.data
+            if not current_rank:
+                raise HTTPException(status_code=404, detail="Current belt rank not found")
+            if current_rank["ladder_id"] != target_rank["ladder_id"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Promotions must stay within the student's current belt ladder.",
+                )
+        elif target_ladder.get("program_id") and student_program_id and target_ladder["program_id"] != student_program_id:
+            raise HTTPException(
+                status_code=400,
+                detail="This student does not belong to the selected program ladder.",
+            )
+
+        ladder_ranks_result = (
+            self.supabase.table("belt_ranks")
+            .select("id")
+            .eq("studio_id", studio_id)
+            .eq("ladder_id", target_rank["ladder_id"])
+            .order("display_order")
+            .execute()
+        )
+        ladder_rank_ids = [rank["id"] for rank in (ladder_ranks_result.data or []) if rank.get("id")]
+        if not ladder_rank_ids:
+            raise HTTPException(status_code=400, detail="The selected ladder has no ranks configured.")
+
+        if from_rank_id:
+            try:
+                current_index = ladder_rank_ids.index(from_rank_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="The student's current rank is not part of the selected ladder.") from exc
+            expected_next_rank_id = ladder_rank_ids[current_index + 1] if current_index + 1 < len(ladder_rank_ids) else None
+            if expected_next_rank_id != data.to_rank_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Students can only be promoted to the next rank in their current ladder.",
+                )
+        elif ladder_rank_ids[0] != data.to_rank_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Unranked students can only be assigned the first rank in the selected ladder.",
+            )
 
         # Create promotion record
         promo = {

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Header } from "@/components/header";
-import { useStore } from "@/lib/store";
+import { useLeadStore, useScheduleStore } from "@/lib/store";
 import type { LeadSource, LeadStage } from "@/types";
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
 
@@ -78,7 +78,8 @@ function MetricCard({
 }
 
 export default function ReportsPage() {
-  const store = useStore();
+  const { leads } = useLeadStore();
+  const { attendance, sessions } = useScheduleStore();
   const today = new Date().toISOString().split("T")[0];
   const lookbackStart = subtractDays(today, 29);
 
@@ -92,14 +93,14 @@ export default function ReportsPage() {
       closed_lost: 0,
     };
 
-    for (const lead of store.leads) {
+    for (const lead of leads) {
       counts[lead.stage] += 1;
     }
 
     return counts;
-  }, [store.leads]);
+  }, [leads]);
 
-  const totalLeads = store.leads.length;
+  const totalLeads = leads.length;
   const enrolledLeads = leadStageCounts.enrolled;
   const activePipelineLeads = totalLeads - leadStageCounts.closed_lost;
   const funnelRows = (["inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled"] as LeadStage[])
@@ -114,26 +115,26 @@ export default function ReportsPage() {
     () =>
       (Object.keys(LEAD_SOURCE_LABELS) as LeadSource[])
         .map((source) => {
-          const leads = store.leads.filter((lead) => lead.source === source);
-          const enrolled = leads.filter((lead) => lead.stage === "enrolled").length;
+          const leadsForSource = leads.filter((lead) => lead.source === source);
+          const enrolled = leadsForSource.filter((lead) => lead.stage === "enrolled").length;
 
           return {
             source,
             label: LEAD_SOURCE_LABELS[source],
-            total: leads.length,
-            active: leads.filter((lead) => lead.stage !== "closed_lost").length,
+            total: leadsForSource.length,
+            active: leadsForSource.filter((lead) => lead.stage !== "closed_lost").length,
             enrolled,
-            conversionRate: leads.length > 0 ? enrolled / leads.length : null,
+            conversionRate: leadsForSource.length > 0 ? enrolled / leadsForSource.length : null,
           };
         })
         .sort((a, b) => b.total - a.total),
-    [store.leads]
+    [leads]
   );
 
   const attendanceBySession = useMemo(() => {
     const counts = new Map<string, number>();
 
-    for (const record of store.attendance) {
+    for (const record of attendance) {
       if (record.status === "absent") {
         continue;
       }
@@ -142,10 +143,10 @@ export default function ReportsPage() {
     }
 
     return counts;
-  }, [store.attendance]);
+  }, [attendance]);
 
   const sessionRows = useMemo(() => {
-    return store.sessions
+    return sessions
       .filter(
         (session) =>
           session.status !== "canceled" &&
@@ -169,7 +170,7 @@ export default function ReportsPage() {
 
         return b.date.localeCompare(a.date);
       });
-  }, [attendanceBySession, lookbackStart, store.sessions, today]);
+  }, [attendanceBySession, lookbackStart, sessions, today]);
 
   const totalAttendance = sessionRows.reduce((sum, session) => sum + session.attendees, 0);
   const totalCapacity = sessionRows.reduce(
@@ -182,9 +183,9 @@ export default function ReportsPage() {
   const utilizationRate = totalCapacity > 0 ? totalAttendance / totalCapacity : null;
   const averageAttendance = sessionRows.length > 0 ? totalAttendance / sessionRows.length : 0;
   const uniqueAttendees = new Set(
-    store.attendance
+    attendance
       .filter((record) => {
-        const session = store.sessions.find((candidate) => candidate.id === record.session_id);
+        const session = sessions.find((candidate) => candidate.id === record.session_id);
         if (!session || record.status === "absent") {
           return false;
         }

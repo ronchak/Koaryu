@@ -1,0 +1,11 @@
+{
+  "name": "koaryu",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "sh -c 'cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001'",
+    "dev:up": "sh ./scripts/dev-up.sh",
+    "dev:down": "sh ./scripts/dev-down.sh",
+    "dev:health": "sh -c 'curl -fsS http://localhost:4000 >/dev/null && curl -fsS http://127.0.0.1:8001/docs >/dev/null && echo \"Koaryu is up on 4000/8001\"'"
+  }
+}

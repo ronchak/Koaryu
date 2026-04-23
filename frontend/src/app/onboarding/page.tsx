@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { APP_TAGLINE } from "@/lib/constants";
+import { setActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
+import type { Studio } from "@/types";
 
 const TIMEZONES = [
   "America/New_York",
@@ -50,11 +52,13 @@ export default function OnboardingPage() {
         return;
       }
 
-      await api.post(
+      const studio = await api.post<Studio>(
         "/studios",
         { name: studioName, timezone },
         session.access_token
       );
+      setStudioStateCookie(session.user.id, true);
+      setActiveStudioIdCookie(studio.id);
 
       router.push("/");
       router.refresh();

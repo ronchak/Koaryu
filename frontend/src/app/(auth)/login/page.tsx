@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { api } from "@/lib/api";
+import { clearActiveStudioIdCookie, setActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -30,7 +32,7 @@ export default function LoginPage() {
       return;
     }
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -41,8 +43,36 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
-    router.refresh();
+    const session = data.session;
+    if (!session) {
+      setError("Signed in, but no session was returned. Please try again.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const authProfile = await api.get<{ studio_id: string | null }>(
+        "/auth/me",
+        session.access_token,
+        { omitStudioHeader: true }
+      );
+      const hasStudio = Boolean(authProfile.studio_id);
+      setStudioStateCookie(session.user.id, hasStudio);
+      if (authProfile.studio_id) {
+        setActiveStudioIdCookie(authProfile.studio_id);
+      } else {
+        clearActiveStudioIdCookie();
+      }
+      router.push(hasStudio ? "/" : "/onboarding");
+      router.refresh();
+    } catch (postLoginError) {
+      const message =
+        postLoginError instanceof Error
+          ? postLoginError.message
+          : "Signed in, but failed to load your studio.";
+      setError(message);
+      setIsLoading(false);
+    }
   }
 
   async function handleMagicLink(e: React.FormEvent) {
@@ -61,7 +91,7 @@ export default function LoginPage() {
     const { error: authError } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 

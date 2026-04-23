@@ -3,13 +3,13 @@
 import { useRef, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { useStore } from "@/lib/store";
+import { useConfigStore, useStudioStore } from "@/lib/store";
 import { Save, Check } from "lucide-react";
 
 export default function SettingsPage() {
-  const store = useStore();
-  const isPreviewMode = store.isPreviewMode;
-  const [name, setName] = useState(store.studioName);
+  const { isPreviewMode } = useConfigStore();
+  const { studioName, setStudioName } = useStudioStore();
+  const [name, setName] = useState(studioName);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -28,7 +28,7 @@ export default function SettingsPage() {
     setSaved(false);
 
     try {
-      await store.setStudioName(nextName);
+      await setStudioName(nextName);
       setName(nextName);
       setSaved(true);
 

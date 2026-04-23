@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { useStore } from "@/lib/store";
+import { useConfigStore, useLeadStore } from "@/lib/store";
 import type { Lead, LeadSource, LeadStage } from "@/types";
 import {
   Calendar,
@@ -106,24 +106,49 @@ function getFollowUpStatusLabel(date: string, today: string) {
 }
 
 export default function LeadsPage() {
-  const store = useStore();
   const router = useRouter();
-  const leads = store.leads;
+  const { isPreviewMode, token } = useConfigStore();
+  const {
+    leads: baseLeads,
+    addLead,
+    updateLead,
+    convertLeadToStudent,
+  } = useLeadStore();
   const today = todayDateString();
 
   const [showAddLead, setShowAddLead] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [showLost, setShowLost] = useState(false);
   const [draggedLead, setDraggedLead] = useState<string | null>(null);
+  const [dropTargetStage, setDropTargetStage] = useState<LeadStage | null>(null);
   const [isAddingLead, setIsAddingLead] = useState(false);
   const [addLeadError, setAddLeadError] = useState<string | null>(null);
   const [pendingLeadId, setPendingLeadId] = useState<string | null>(null);
   const [leadActionError, setLeadActionError] = useState<string | null>(null);
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
+  const [optimisticLeads, setOptimisticLeads] = useState<Record<string, Lead>>({});
+
+  const leads = useMemo(() => {
+    const merged = new Map<string, Lead>();
+
+    baseLeads.forEach((lead) => {
+      merged.set(lead.id, lead);
+    });
+
+    Object.entries(optimisticLeads).forEach(([leadId, optimisticLead]) => {
+      merged.set(leadId, optimisticLead);
+    });
+
+    return Array.from(merged.values());
+  }, [baseLeads, optimisticLeads]);
 
   const selectedLead = useMemo(
     () => leads.find((lead) => lead.id === selectedLeadId) ?? null,
     [leads, selectedLeadId]
+  );
+  const draggedLeadRecord = useMemo(
+    () => leads.find((lead) => lead.id === draggedLead) ?? null,
+    [draggedLead, leads]
   );
 
   const leadsByStage = useMemo(() => {
@@ -194,12 +219,77 @@ export default function LeadsPage() {
     }
   }
 
+  function clearDragState() {
+    setDraggedLead(null);
+    setDropTargetStage(null);
+  }
+
+  function beginOptimisticLeadUpdate(lead: Lead, updates: Partial<Lead>) {
+    const optimisticLead = {
+      ...lead,
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+
+    setOptimisticLeads((current) => ({
+      ...current,
+      [lead.id]: optimisticLead,
+    }));
+
+    return () => {
+      setOptimisticLeads((current) => {
+        if (!(lead.id in current)) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[lead.id];
+        return next;
+      });
+    };
+  }
+
+  function handleCardDragStart(event: DragEvent<HTMLDivElement>, leadId: string) {
+    setDraggedLead(leadId);
+    setDropTargetStage(null);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", leadId);
+  }
+
+  function handleStageDragOver(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
+    if (!draggedLeadRecord) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+
+    if (dropTargetStage !== stage) {
+      setDropTargetStage(stage);
+    }
+  }
+
+  function handleStageDragLeave(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+
+    if (dropTargetStage === stage) {
+      setDropTargetStage(null);
+    }
+  }
+
   async function handleConvertLead(lead: Lead) {
     setLeadActionError(null);
     setPendingLeadId(lead.id);
+    const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, {
+      stage: "enrolled",
+      follow_up_date: null,
+    });
 
     try {
-      const { studentId } = await store.convertLeadToStudent(lead.id);
+      const { studentId } = await convertLeadToStudent(lead.id);
       setSelectedLeadId(null);
 
       if (studentId) {
@@ -213,8 +303,9 @@ export default function LeadsPage() {
           : "Could not convert this lead into a student."
       );
     } finally {
+      rollbackOptimisticLead();
       setPendingLeadId(null);
-      setDraggedLead(null);
+      clearDragState();
     }
   }
 
@@ -223,7 +314,7 @@ export default function LeadsPage() {
     setIsAddingLead(true);
 
     try {
-      await store.addLead(data);
+      await addLead(data);
       setShowAddLead(false);
     } catch (error) {
       console.error("Failed to add lead", error);
@@ -240,9 +331,10 @@ export default function LeadsPage() {
   ) {
     setLeadActionError(null);
     setPendingLeadId(lead.id);
+    const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, updates);
 
     try {
-      await store.updateLead(lead.id, updates);
+      await updateLead(lead.id, updates);
       if (options?.closeAfterSuccess) {
         setSelectedLeadId(null);
       }
@@ -254,7 +346,9 @@ export default function LeadsPage() {
           : "Could not save lead changes. Please try again."
       );
     } finally {
+      rollbackOptimisticLead();
       setPendingLeadId(null);
+      clearDragState();
     }
   }
 
@@ -270,12 +364,18 @@ export default function LeadsPage() {
     });
   }
 
-  async function handleDrop(stage: LeadStage) {
-    if (!draggedLead) return;
+  async function handleDrop(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
+    event.preventDefault();
 
-    const lead = leads.find((candidate) => candidate.id === draggedLead);
+    const droppedLeadId = event.dataTransfer.getData("text/plain") || draggedLead;
+    if (!droppedLeadId) {
+      clearDragState();
+      return;
+    }
+
+    const lead = leads.find((candidate) => candidate.id === droppedLeadId);
     if (!lead || lead.stage === stage) {
-      setDraggedLead(null);
+      clearDragState();
       return;
     }
 
@@ -285,11 +385,10 @@ export default function LeadsPage() {
     }
 
     await handleLeadUpdate(lead, { stage });
-    setDraggedLead(null);
   }
 
   async function logFollowUpActivity(leadId: string, description: string) {
-    if (store.isPreviewMode || !store.token) {
+    if (isPreviewMode || !token) {
       return;
     }
 
@@ -299,7 +398,7 @@ export default function LeadsPage() {
         activity_type: "follow_up",
         description,
       },
-      store.token
+      token
     );
   }
 
@@ -316,10 +415,13 @@ export default function LeadsPage() {
   async function handleMarkContacted(lead: Lead, advanceStage: boolean) {
     setLeadActionError(null);
     setPendingLeadId(lead.id);
+    const nextStage = advanceStage ? getNextStage(lead.stage) : null;
+    const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, {
+      stage: nextStage ?? lead.stage,
+      follow_up_date: null,
+    });
 
     try {
-      const nextStage = advanceStage ? getNextStage(lead.stage) : null;
-
       await logFollowUpActivity(
         lead.id,
         advanceStage && nextStage
@@ -328,7 +430,7 @@ export default function LeadsPage() {
       );
 
       if (advanceStage && nextStage === "enrolled") {
-        const { studentId } = await store.convertLeadToStudent(lead.id);
+        const { studentId } = await convertLeadToStudent(lead.id);
         setSelectedLeadId(null);
         if (studentId) {
           router.push(`/students/${studentId}`);
@@ -336,7 +438,7 @@ export default function LeadsPage() {
         return;
       }
 
-      await store.updateLead(lead.id, {
+      await updateLead(lead.id, {
         stage: nextStage ?? lead.stage,
         follow_up_date: null,
       });
@@ -352,6 +454,7 @@ export default function LeadsPage() {
           : "Could not complete that follow-up action."
       );
     } finally {
+      rollbackOptimisticLead();
       setPendingLeadId(null);
     }
   }
@@ -532,14 +635,22 @@ export default function LeadsPage() {
           <div className="flex gap-4 min-w-max h-full">
             {PIPELINE_STAGES.map((stage) => {
               const stageLeads = leadsByStage[stage.id] || [];
+              const canDropIntoStage = draggedLeadRecord?.stage !== undefined
+                && draggedLeadRecord.stage !== stage.id;
+              const isDropActive = canDropIntoStage && dropTargetStage === stage.id;
 
               return (
                 <div
                   key={stage.id}
-                  className="w-72 flex flex-col"
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => {
-                    void handleDrop(stage.id);
+                  className={`w-80 flex flex-col rounded-[8px] border p-2 transition-colors ${
+                    isDropActive
+                      ? "border-accent/50 bg-accent/5"
+                      : "border-transparent"
+                  }`}
+                  onDragOver={(event) => handleStageDragOver(event, stage.id)}
+                  onDragLeave={(event) => handleStageDragLeave(event, stage.id)}
+                  onDrop={(event) => {
+                    void handleDrop(event, stage.id);
                   }}
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -554,13 +665,33 @@ export default function LeadsPage() {
                   </div>
 
                   <div
-                    className={`flex-1 space-y-2 p-2 rounded-[6px] border-t-2 ${stage.color} bg-surface/50 min-h-[200px]`}
+                    className={`flex-1 space-y-2 rounded-[6px] border-t-2 p-3 transition-colors ${stage.color} ${
+                      isDropActive ? "bg-accent/10" : "bg-surface/50"
+                    } min-h-[280px]`}
+                    onDragOver={(event) => handleStageDragOver(event, stage.id)}
+                    onDragLeave={(event) => handleStageDragLeave(event, stage.id)}
+                    onDrop={(event) => {
+                      void handleDrop(event, stage.id);
+                    }}
                   >
+                    {canDropIntoStage && (
+                      <div
+                        className={`rounded-[6px] border border-dashed px-3 py-2 text-xs transition-colors ${
+                          isDropActive
+                            ? "border-accent/60 bg-accent/10 text-accent"
+                            : "border-border bg-surface-raised/40 text-muted"
+                        }`}
+                      >
+                        Drop here to move this lead to {stage.label.toLowerCase()}.
+                      </div>
+                    )}
+
                     {stageLeads.map((lead) => (
                       <div
                         key={lead.id}
                         draggable
-                        onDragStart={() => setDraggedLead(lead.id)}
+                        onDragStart={(event) => handleCardDragStart(event, lead.id)}
+                        onDragEnd={clearDragState}
                         onClick={() => {
                           setLeadActionError(null);
                           setSelectedLeadId(lead.id);

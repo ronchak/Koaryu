@@ -1,0 +1,334 @@
+"use client";
+
+import { useMemo } from "react";
+import { CalendarClock, Layers3, Users } from "lucide-react";
+
+import type { ClassSession, ClassTemplate } from "@/types";
+import {
+  MONTH_DAY_NAMES,
+  buildEntriesForDate,
+  buildMonthGrid,
+  formatMonthLabel,
+  formatMonthRange,
+  formatScheduleTime,
+  getConflictingSessionIds,
+  groupSessionsByDate,
+  groupTemplatesByDay,
+  isDateInMonth,
+  parseCalendarDate,
+  toCalendarDateKey,
+  type MonthScheduleEntry,
+} from "@/lib/schedule-calendar";
+
+export interface MonthScheduleViewProps {
+  month: Date;
+  sessions: ClassSession[];
+  templates?: ClassTemplate[];
+  selectedDate?: Date | string | null;
+  today?: Date;
+  maxVisibleEntries?: number;
+  showHeader?: boolean;
+  showTemplatePlaceholders?: boolean;
+  className?: string;
+  onDayClick?: (date: Date) => void;
+  onEntryClick?: (entry: MonthScheduleEntry) => void;
+  onMoreClick?: (date: Date, hiddenEntries: MonthScheduleEntry[]) => void;
+}
+
+function getSelectedDateKey(selectedDate?: Date | string | null) {
+  if (!selectedDate) {
+    return null;
+  }
+
+  return typeof selectedDate === "string"
+    ? toCalendarDateKey(parseCalendarDate(selectedDate))
+    : toCalendarDateKey(selectedDate);
+}
+
+function getEntryKey(entry: MonthScheduleEntry) {
+  return entry.kind === "session"
+    ? `session-${entry.session.id}`
+    : `template-${entry.template.id}-${entry.dateKey}`;
+}
+
+function getSessionMeta(session: ClassSession) {
+  if (session.capacity && session.attendance_count > 0) {
+    return `${session.attendance_count}/${session.capacity}`;
+  }
+
+  if (session.capacity) {
+    return `Cap ${session.capacity}`;
+  }
+
+  if (session.attendance_count > 0) {
+    return `${session.attendance_count} in`;
+  }
+
+  return session.status.replace("_", " ");
+}
+
+export function MonthScheduleView({
+  month,
+  sessions,
+  templates = [],
+  selectedDate,
+  today = new Date(),
+  maxVisibleEntries = 3,
+  showHeader = true,
+  showTemplatePlaceholders = false,
+  className = "",
+  onDayClick,
+  onEntryClick,
+  onMoreClick,
+}: MonthScheduleViewProps) {
+  const monthDays = useMemo(() => buildMonthGrid(month), [month]);
+  const todayKey = toCalendarDateKey(today);
+  const selectedDateKey = getSelectedDateKey(selectedDate);
+
+  const sessionsByDate = useMemo(() => groupSessionsByDate(sessions), [sessions]);
+  const templatesByDay = useMemo(() => groupTemplatesByDay(templates), [templates]);
+
+  const monthlySessionCount = useMemo(
+    () =>
+      sessions.filter(
+        (session) => parseCalendarDate(session.date).getMonth() === month.getMonth()
+          && parseCalendarDate(session.date).getFullYear() === month.getFullYear()
+      ).length,
+    [month, sessions]
+  );
+
+  const monthlyTemplateGapCount = useMemo(() => {
+    if (!showTemplatePlaceholders) {
+      return 0;
+    }
+
+    return monthDays.reduce((count, date) => {
+      if (!isDateInMonth(date, month)) {
+        return count;
+      }
+
+      return (
+        count +
+        buildEntriesForDate({
+          date,
+          sessionsByDate,
+          templatesByDay,
+          showTemplatePlaceholders: true,
+        }).filter((entry) => entry.kind === "template").length
+      );
+    }, 0);
+  }, [month, monthDays, sessionsByDate, showTemplatePlaceholders, templatesByDay]);
+
+  return (
+    <div className={`rounded-[10px] border border-border bg-surface ${className}`}>
+      {showHeader && (
+        <div className="flex flex-col gap-3 border-b border-border px-4 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted">Month View</p>
+            <h2 className="mt-1 text-lg font-semibold text-text-primary">{formatMonthLabel(month)}</h2>
+            <p className="mt-1 text-xs text-text-secondary">{formatMonthRange(month)}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1">
+              <CalendarClock className="h-3.5 w-3.5" />
+              {monthlySessionCount} scheduled
+            </span>
+            {showTemplatePlaceholders && monthlyTemplateGapCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1">
+                <Layers3 className="h-3.5 w-3.5" />
+                {monthlyTemplateGapCount} uncovered templates
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[980px]">
+          <div className="grid grid-cols-7 border-b border-border bg-surface-raised/60">
+            {MONTH_DAY_NAMES.map((dayName) => (
+              <div key={dayName} className="border-r border-border px-3 py-2 last:border-r-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted">{dayName}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7">
+            {monthDays.map((date) => {
+              const dateKey = toCalendarDateKey(date);
+              const inCurrentMonth = isDateInMonth(date, month);
+              const isToday = dateKey === todayKey;
+              const isSelected = dateKey === selectedDateKey;
+              const entries = buildEntriesForDate({
+                date,
+                sessionsByDate,
+                templatesByDay,
+                showTemplatePlaceholders,
+              });
+              const visibleEntries = entries.slice(0, maxVisibleEntries);
+              const hiddenEntries = entries.slice(maxVisibleEntries);
+              const sessionCount = entries.filter((entry) => entry.kind === "session").length;
+              const templateCount = entries.length - sessionCount;
+              const daySessions = (sessionsByDate.get(dateKey) ?? []);
+              const conflictingSessionIds = getConflictingSessionIds(daySessions);
+              const conflictCount = conflictingSessionIds.size;
+
+              return (
+                <div
+                  key={dateKey}
+                  className={`group relative flex min-h-[156px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors last:border-r-0 hover:bg-surface-raised/50 ${
+                    inCurrentMonth ? "bg-surface" : "bg-[#0F1318] text-text-secondary"
+                  } ${isSelected ? "ring-1 ring-inset ring-accent" : ""} ${
+                    isToday ? "bg-accent/[0.06]" : ""
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onDayClick?.(date)}
+                    aria-label={`Open ${date.toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}`}
+                    className="absolute inset-0 rounded-[inherit]"
+                  />
+
+                  <div className="relative z-10 mb-2 flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${
+                          isToday
+                            ? "bg-accent text-[#0B0D10]"
+                            : inCurrentMonth
+                            ? "bg-surface-raised text-text-primary"
+                            : "bg-transparent text-muted"
+                        }`}
+                      >
+                        {date.getDate()}
+                      </span>
+                      <div className="flex flex-col">
+                        <span className={`text-[10px] uppercase tracking-[0.18em] ${inCurrentMonth ? "text-muted" : "text-[#4E5764]"}`}>
+                          {date.toLocaleDateString("en-US", { month: "short" })}
+                        </span>
+                        {isToday && <span className="text-[10px] font-medium text-accent">Today</span>}
+                      </div>
+                    </div>
+
+                    {(sessionCount > 0 || templateCount > 0) && (
+                      <div className="flex flex-col items-end gap-1">
+                        {sessionCount > 0 && (
+                          <span className="rounded-full bg-surface-raised px-2 py-0.5 text-[10px] font-medium text-text-primary">
+                            {sessionCount} {sessionCount === 1 ? "class" : "classes"}
+                          </span>
+                        )}
+                        {conflictCount > 0 && (
+                          <span className="rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">
+                            {conflictCount} conflict{conflictCount === 1 ? "" : "s"}
+                          </span>
+                        )}
+                        {templateCount > 0 && (
+                          <span className="rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted">
+                            {templateCount} pending
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative z-10 flex flex-1 flex-col gap-1.5">
+                    {visibleEntries.length === 0 && (
+                      <div className="mt-2 rounded-[8px] border border-dashed border-border/80 px-2 py-2 text-[11px] text-muted">
+                        No scheduled classes
+                      </div>
+                    )}
+
+                    {visibleEntries.map((entry) => {
+                      if (entry.kind === "session") {
+                        return (
+                          <button
+                            key={getEntryKey(entry)}
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEntryClick?.(entry);
+                            }}
+                            className={`flex items-start gap-2 rounded-[8px] border px-2 py-1.5 text-left hover:bg-[#1B2129] ${
+                              conflictingSessionIds.has(entry.session.id)
+                                ? "border-danger/30 bg-danger/5 hover:border-danger/50"
+                                : "border-border bg-surface-raised hover:border-accent/50"
+                            }`}
+                          >
+                            <div className="min-w-[50px] text-[10px] font-medium text-muted">
+                              {formatScheduleTime(entry.session.start_time)}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[11px] font-medium text-text-primary">{entry.session.name}</p>
+                              <div className="mt-1 flex items-center gap-2 text-[10px] text-text-secondary">
+                                <span className="capitalize">{getSessionMeta(entry.session)}</span>
+                                {conflictingSessionIds.has(entry.session.id) && (
+                                  <span className="text-danger">Overlaps</span>
+                                )}
+                                {entry.session.capacity && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Users className="h-3 w-3" />
+                                    {entry.session.capacity}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={getEntryKey(entry)}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEntryClick?.(entry);
+                          }}
+                          className="flex items-start gap-2 rounded-[8px] border border-dashed border-border bg-transparent px-2 py-1.5 text-left opacity-80 hover:border-accent/40 hover:bg-surface-raised/40"
+                        >
+                          <div className="min-w-[50px] text-[10px] font-medium text-muted">
+                            {formatScheduleTime(entry.template.start_time)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[11px] text-text-secondary">{entry.template.name}</p>
+                            <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-muted">Template slot</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    {hiddenEntries.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (onMoreClick) {
+                            onMoreClick(date, hiddenEntries);
+                            return;
+                          }
+
+                          onDayClick?.(date);
+                        }}
+                        className="mt-auto rounded-[8px] border border-border px-2 py-1.5 text-left text-[11px] font-medium text-accent hover:bg-accent/10"
+                      >
+                        +{hiddenEntries.length} more
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export type { MonthScheduleEntry };

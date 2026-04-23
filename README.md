@@ -26,7 +26,7 @@ Frontend environment variables:
 
 - `NEXT_PUBLIC_SUPABASE_URL`: your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: the public anon key used by the browser and SSR middleware
-- `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://localhost:8000/api/v1`
+- `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://localhost:8001/api/v1`
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): when `true`, bypasses live auth/data bootstrapping and serves preview/demo data only
 
 Backend environment variables:
@@ -40,7 +40,7 @@ Backend environment variables:
 Local defaults in this repo assume:
 
 - frontend at `http://localhost:4000`
-- backend at `http://localhost:8000`
+- backend at `http://localhost:8001`
 
 ## Getting Started
 
@@ -49,6 +49,21 @@ Local defaults in this repo assume:
 - Node.js 18+
 - Python 3.11+
 - A Supabase project (free tier works)
+
+### One-command local startup
+
+From the repo root:
+
+```bash
+npm run dev:up
+```
+
+That starts:
+
+- frontend at `http://localhost:4000`
+- backend at `http://127.0.0.1:8001`
+
+If you prefer to run each service manually, use the commands below.
 
 ### Frontend
 
@@ -69,7 +84,7 @@ cp .env.example .env
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8001
 ```
 
 ### Database
