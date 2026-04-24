@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { toLocalDateKey } from "@/lib/date";
 import { useScheduleStore, useStudentStore } from "@/lib/store";
 import type { ClassSession, ClassTemplate } from "@/types";
 import { ClassFormModal, type ClassFormSubmitPayload } from "@/components/schedule/class-form-modal";
@@ -30,7 +31,7 @@ function formatTime(value: string) {
 }
 
 function dateStr(date: Date) {
-  return date.toISOString().split("T")[0];
+  return toLocalDateKey(date);
 }
 
 function getWeekDates(base: Date): Date[] {
@@ -89,6 +90,7 @@ export default function SchedulePage() {
   const [pendingAttendanceId, setPendingAttendanceId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteInFlight, setDeleteInFlight] = useState<ScheduleSessionDeleteScope | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const visibleRange = useMemo(() => {
     if (view === "day") {
@@ -250,6 +252,11 @@ export default function SchedulePage() {
         }
       }
       setShowAddClass(false);
+      setActionMessage(
+        payload.kind === "single_session"
+          ? "Class added to the schedule."
+          : "Recurring class created and visible sessions refreshed."
+      );
     } catch (error) {
       console.error("Failed to create class", error);
       setCreateClassError(
@@ -287,6 +294,7 @@ export default function SchedulePage() {
         scope === "series" ? "future_series" : "session"
       );
       setSelectedSession(null);
+      setActionMessage(scope === "series" ? "Recurring class series removed." : "Class removed from the schedule.");
     } catch (error) {
       console.error("Failed to delete session", error);
       setDeleteError(
@@ -362,6 +370,14 @@ export default function SchedulePage() {
           <div className="px-8 pt-4">
             <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
               {scheduleLoadError}
+            </div>
+          </div>
+        ) : null}
+
+        {actionMessage ? (
+          <div className="px-8 pt-4">
+            <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+              {actionMessage}
             </div>
           </div>
         ) : null}
@@ -484,6 +500,18 @@ export default function SchedulePage() {
               <div className="text-center py-12">
                 <Calendar className="w-6 h-6 text-muted mx-auto mb-2" />
                 <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setCreateClassError(null);
+                    setShowAddClass(true);
+                  }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add class
+                </Button>
               </div>
             ) : (
               <div className="space-y-3">

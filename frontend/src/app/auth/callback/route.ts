@@ -4,7 +4,10 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const nextPath = requestUrl.searchParams.get("next") || "/";
+  const requestedNextPath = requestUrl.searchParams.get("next") || "/";
+  const nextPath = requestedNextPath.startsWith("/") && !requestedNextPath.startsWith("//")
+    ? requestedNextPath
+    : "/";
 
   let response = NextResponse.redirect(new URL(nextPath, requestUrl.origin));
 

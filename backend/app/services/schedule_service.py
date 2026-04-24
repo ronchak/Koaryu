@@ -30,6 +30,43 @@ class ScheduleService:
             ) from exc
 
     @staticmethod
+    def _parse_query_date(value: str, field_name: str) -> date:
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field_name} must be in YYYY-MM-DD format",
+            ) from exc
+
+    @staticmethod
+    def _normalize_session_ids(session_ids: Optional[list[str]]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in session_ids or []:
+            for raw_session_id in value.split(","):
+                session_id = raw_session_id.strip()
+                if session_id and session_id not in seen:
+                    normalized.append(session_id)
+                    seen.add(session_id)
+        return normalized
+
+    @staticmethod
+    def _attendance_response_from_row(row: dict) -> AttendanceResponse:
+        data = {
+            k: v
+            for k, v in row.items()
+            if k not in {"students", "class_sessions"}
+        }
+        student = row.get("students", {}) or {}
+        first_name = student.get("preferred_name") or student.get("legal_first_name", "")
+        name = f"{first_name} {student.get('legal_last_name', '')}"
+        return AttendanceResponse(
+            **data,
+            student_name=name.strip(),
+        )
+
+    @staticmethod
     def _studio_weekday(value: date) -> int:
         # Python: Monday=0 ... Sunday=6. Koaryu schema: Sunday=0 ... Saturday=6.
         return (value.weekday() + 1) % 7
@@ -466,15 +503,58 @@ class ScheduleService:
             .eq("studio_id", studio_id)
             .execute()
         )
-        items = []
-        for r in result.data or []:
-            student = r.pop("students", {}) or {}
-            name = f"{student.get('preferred_name') or student.get('legal_first_name', '')} {student.get('legal_last_name', '')}"
-            items.append(AttendanceResponse(
-                **{k: v for k, v in r.items()},
-                student_name=name.strip(),
-            ))
-        return items
+        return [self._attendance_response_from_row(row) for row in result.data or []]
+
+    async def list_attendance(
+        self,
+        studio_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        session_ids: Optional[list[str]] = None,
+    ) -> list[AttendanceResponse]:
+        normalized_session_ids = self._normalize_session_ids(session_ids)
+        if normalized_session_ids:
+            result = (
+                self.supabase.table("attendance")
+                .select("*, students(legal_first_name, legal_last_name, preferred_name)")
+                .eq("studio_id", studio_id)
+                .in_("session_id", normalized_session_ids)
+                .order("session_id")
+                .order("checked_in_at")
+                .execute()
+            )
+            return [self._attendance_response_from_row(row) for row in result.data or []]
+
+        if not start_date or not end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide session_ids or both start_date and end_date",
+            )
+
+        start = self._parse_query_date(start_date, "start_date")
+        end = self._parse_query_date(end_date, "end_date")
+        if end < start:
+            raise HTTPException(
+                status_code=400,
+                detail="end_date cannot be before start_date",
+            )
+
+        result = (
+            self.supabase.table("attendance")
+            .select(
+                "*, students(legal_first_name, legal_last_name, preferred_name), "
+                "class_sessions!inner(studio_id, date, deleted_at)"
+            )
+            .eq("studio_id", studio_id)
+            .eq("class_sessions.studio_id", studio_id)
+            .is_("class_sessions.deleted_at", "null")
+            .gte("class_sessions.date", start_date)
+            .lte("class_sessions.date", end_date)
+            .order("session_id")
+            .order("checked_in_at")
+            .execute()
+        )
+        return [self._attendance_response_from_row(row) for row in result.data or []]
 
     async def check_in(
         self, data: AttendanceCheckIn, studio_id: str, actor_id: str
@@ -507,6 +587,18 @@ class ScheduleService:
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to record attendance")
         return AttendanceResponse(**result.data[0])
+
+    async def clear_attendance(
+        self,
+        session_id: str,
+        student_id: str,
+        studio_id: str,
+    ) -> None:
+        self.supabase.table("attendance").delete() \
+            .eq("studio_id", studio_id) \
+            .eq("session_id", session_id) \
+            .eq("student_id", student_id) \
+            .execute()
 
     async def bulk_check_in(
         self, data: AttendanceBulkCheckIn, studio_id: str, actor_id: str

@@ -1,5 +1,5 @@
 import json
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from datetime import datetime, timezone
 from supabase import Client
 from fastapi import HTTPException
@@ -112,6 +112,7 @@ class BeltService:
         self,
         studio_id: str,
         student_id: Optional[str] = None,
+        include_names: bool = True,
     ) -> list[PromotionResponse]:
         query = (
             self.supabase.table("promotions")
@@ -127,6 +128,9 @@ class BeltService:
 
         if not promotion_rows:
             return []
+
+        if not include_names:
+            return [PromotionResponse(**row) for row in promotion_rows]
 
         student_ids = sorted(
             {
@@ -389,6 +393,150 @@ class BeltService:
 
     # ---- Eligibility ----
 
+    @staticmethod
+    def _chunked(values: list[str], size: int = 100) -> list[list[str]]:
+        return [values[index:index + size] for index in range(0, len(values), size)]
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> datetime:
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    def _fetch_paged(
+        self,
+        query_factory: Callable[[], Any],
+        page_size: int = 1000,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            result = query_factory().range(offset, offset + page_size - 1).execute()
+            batch = result.data or []
+            rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        return rows
+
+    def _fetch_latest_promotions_by_student(
+        self,
+        studio_id: str,
+        student_ids: list[str],
+    ) -> dict[str, Optional[str]]:
+        latest_promotions: dict[str, Optional[str]] = {}
+        unique_student_ids = sorted(set(student_ids))
+
+        for student_id_chunk in self._chunked(unique_student_ids):
+            promotion_rows = self._fetch_paged(
+                lambda student_id_chunk=student_id_chunk: (
+                    self.supabase.table("promotions")
+                    .select("student_id, promoted_at")
+                    .eq("studio_id", studio_id)
+                    .in_("student_id", student_id_chunk)
+                    .order("promoted_at", desc=True)
+                )
+            )
+            for row in promotion_rows:
+                student_id = row.get("student_id")
+                promoted_at = row.get("promoted_at")
+                if student_id and student_id not in latest_promotions:
+                    latest_promotions[student_id] = promoted_at
+
+        return latest_promotions
+
+    def _fetch_attendance_counts_by_student(
+        self,
+        studio_id: str,
+        eligibility_contexts: list[dict[str, Any]],
+        latest_promotions_by_student: dict[str, Optional[str]],
+        ladder_meta: dict[str, dict[str, Any]],
+    ) -> dict[str, int]:
+        contexts_by_student = {
+            context["student"]["id"]: context
+            for context in eligibility_contexts
+            if context.get("student", {}).get("id")
+        }
+        student_ids = sorted(contexts_by_student)
+        attendance_counts = {student_id: 0 for student_id in student_ids}
+        if not student_ids:
+            return attendance_counts
+
+        parsed_promotion_dates = {
+            student_id: self._parse_datetime(promoted_at)
+            for student_id, promoted_at in latest_promotions_by_student.items()
+            if student_id in contexts_by_student and promoted_at
+        }
+        student_ids_with_promotions = [
+            student_id for student_id in student_ids if student_id in parsed_promotion_dates
+        ]
+        student_ids_without_promotions = [
+            student_id for student_id in student_ids if student_id not in parsed_promotion_dates
+        ]
+
+        def build_attendance_query(student_id_chunk: list[str], lower_bound: Optional[str] = None) -> Any:
+            query = (
+                self.supabase.table("attendance")
+                .select("student_id, checked_in_at, class_sessions!inner(program_id)")
+                .eq("studio_id", studio_id)
+                .in_("student_id", student_id_chunk)
+                .neq("status", "absent")
+            )
+            if lower_bound:
+                query = query.gte("checked_in_at", lower_bound)
+            return query
+
+        def process_attendance_rows(attendance_rows: list[dict[str, Any]]) -> None:
+            for row in attendance_rows:
+                student_id = row.get("student_id")
+                context = contexts_by_student.get(student_id)
+                if not student_id or not context:
+                    continue
+
+                promotion_date = parsed_promotion_dates.get(student_id)
+                if promotion_date:
+                    checked_in_at = row.get("checked_in_at")
+                    if not checked_in_at or self._parse_datetime(checked_in_at) < promotion_date:
+                        continue
+
+                ladder_program_id = (
+                    ladder_meta.get(context["target_ladder_id"]) or {}
+                ).get("program_id")
+                class_session = row.get("class_sessions") or {}
+                if isinstance(class_session, list):
+                    class_session = class_session[0] if class_session else {}
+                if ladder_program_id and class_session.get("program_id") != ladder_program_id:
+                    continue
+
+                attendance_counts[student_id] += 1
+
+        for student_id_chunk in self._chunked(student_ids_without_promotions):
+            process_attendance_rows(
+                self._fetch_paged(
+                    lambda student_id_chunk=student_id_chunk: build_attendance_query(student_id_chunk)
+                )
+            )
+
+        if student_ids_with_promotions:
+            lower_bound = min(
+                parsed_promotion_dates[student_id]
+                for student_id in student_ids_with_promotions
+            ).isoformat()
+            for student_id_chunk in self._chunked(student_ids_with_promotions):
+                process_attendance_rows(
+                    self._fetch_paged(
+                        lambda student_id_chunk=student_id_chunk, lower_bound=lower_bound: (
+                            build_attendance_query(student_id_chunk, lower_bound)
+                        )
+                    )
+                )
+
+        return attendance_counts
+
     async def get_eligibility(
         self, studio_id: str, ladder_id: Optional[str] = None
     ) -> list[EligibilityEntry]:
@@ -462,7 +610,7 @@ class BeltService:
             .execute()
         )
 
-        entries = []
+        eligibility_contexts: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc)
         selected_ladder = ladder_meta.get(ladder_id) if ladder_id else None
         studio_has_single_ladder = len(ladder_meta) == 1
@@ -523,6 +671,54 @@ class BeltService:
                 next_rank = ladder_ranks[0]
                 if not next_rank:
                     continue
+                eligibility_contexts.append({
+                    "student": s,
+                    "target_ladder_id": target_ladder_id,
+                    "current_rank_id": None,
+                    "current_rank": None,
+                    "next_rank": next_rank,
+                })
+                continue
+
+            next_rank = next_rank_map_by_ladder.get(target_ladder_id, {}).get(current_rank_id)
+            if not next_rank:
+                continue  # Already at highest rank
+
+            eligibility_contexts.append({
+                "student": s,
+                "target_ladder_id": target_ladder_id,
+                "current_rank_id": current_rank_id,
+                "current_rank": current_rank,
+                "next_rank": next_rank,
+            })
+
+        ranked_contexts = [
+            context for context in eligibility_contexts if context.get("current_rank")
+        ]
+        ranked_student_ids = [
+            context["student"]["id"]
+            for context in ranked_contexts
+            if context.get("student", {}).get("id")
+        ]
+        latest_promotions_by_student = self._fetch_latest_promotions_by_student(
+            studio_id,
+            ranked_student_ids,
+        )
+        attendance_counts_by_student = self._fetch_attendance_counts_by_student(
+            studio_id,
+            ranked_contexts,
+            latest_promotions_by_student,
+            ladder_meta,
+        )
+
+        entries = []
+        for context in eligibility_contexts:
+            s = context["student"]
+            current_rank = context["current_rank"]
+            next_rank = context["next_rank"]
+            current_rank_id = context["current_rank_id"]
+
+            if not current_rank:
                 entries.append(EligibilityEntry(
                     student_id=s["id"],
                     student_name=f"{s.get('preferred_name') or s['legal_first_name']} {s['legal_last_name']}",
@@ -543,47 +739,14 @@ class BeltService:
                 ))
                 continue
 
-            next_rank = next_rank_map_by_ladder.get(target_ladder_id, {}).get(current_rank_id)
-            if not next_rank:
-                continue  # Already at highest rank
-
-            # Count attendance since last promotion
-            promo_result = (
-                self.supabase.table("promotions")
-                .select("promoted_at")
-                .eq("student_id", s["id"])
-                .eq("studio_id", studio_id)
-                .order("promoted_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            last_promo_date = None
-            if promo_result.data:
-                last_promo_date = promo_result.data[0]["promoted_at"]
-
-            # Count classes attended since last promotion
-            att_query = (
-                self.supabase.table("attendance")
-                .select("id, class_sessions!inner(program_id)", count="exact")
-                .eq("student_id", s["id"])
-                .eq("studio_id", studio_id)
-                .neq("status", "absent")
-            )
-            ladder_program_id = (ladder_meta.get(target_ladder_id) or {}).get("program_id")
-            if ladder_program_id:
-                att_query = att_query.eq("class_sessions.program_id", ladder_program_id)
-            if last_promo_date:
-                att_query = att_query.gte("checked_in_at", last_promo_date)
-            att_result = att_query.execute()
-            classes_since = att_result.count or 0
+            last_promo_date = latest_promotions_by_student.get(s["id"])
+            classes_since = attendance_counts_by_student.get(s["id"], 0)
 
             # Days at current rank
             anchor_date = last_promo_date or s.get("membership_start_date")
             if anchor_date:
-                promo_dt = datetime.fromisoformat(anchor_date.replace("Z", "+00:00"))
-                if promo_dt.tzinfo is None:
-                    promo_dt = promo_dt.replace(tzinfo=timezone.utc)
-                days_at = max(0, (now - promo_dt).days)
+                anchor_dt = self._parse_datetime(anchor_date)
+                days_at = max(0, (now - anchor_dt).days)
             else:
                 days_at = 0
 

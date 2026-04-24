@@ -149,7 +149,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     try {
-      let authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
+      const authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },

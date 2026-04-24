@@ -4,16 +4,22 @@ import { useRef, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { useConfigStore, useStudioStore } from "@/lib/store";
-import { Save, Check } from "lucide-react";
+import { Save, Check, RotateCcw } from "lucide-react";
 
 export default function SettingsPage() {
   const { isPreviewMode } = useConfigStore();
-  const { studioName, setStudioName } = useStudioStore();
-  const [name, setName] = useState(studioName);
+  const { studioName, setStudioName, resetDemoData } = useStudioStore();
+  const [nameDraft, setNameDraft] = useState("");
+  const [hasEditedName, setHasEditedName] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isResettingDemo, setIsResettingDemo] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [demoResetMessage, setDemoResetMessage] = useState("");
+  const [demoResetError, setDemoResetError] = useState("");
   const savedTimeoutRef = useRef<number | null>(null);
+  const demoResetTimeoutRef = useRef<number | null>(null);
+  const name = hasEditedName ? nameDraft : studioName;
 
   async function handleSave() {
     const nextName = name.trim();
@@ -29,7 +35,8 @@ export default function SettingsPage() {
 
     try {
       await setStudioName(nextName);
-      setName(nextName);
+      setNameDraft(nextName);
+      setHasEditedName(false);
       setSaved(true);
 
       if (savedTimeoutRef.current) {
@@ -47,6 +54,34 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleDemoReset() {
+    setIsResettingDemo(true);
+    setDemoResetError("");
+    setDemoResetMessage("");
+
+    try {
+      const result = await resetDemoData();
+      setNameDraft(result.studio_name);
+      setHasEditedName(false);
+      setDemoResetMessage(
+        `Demo reset: ${result.counts.students} students, ${result.counts.leads} leads, ${result.counts.class_sessions} classes.`
+      );
+
+      if (demoResetTimeoutRef.current) {
+        window.clearTimeout(demoResetTimeoutRef.current);
+      }
+
+      demoResetTimeoutRef.current = window.setTimeout(() => {
+        setDemoResetMessage("");
+        demoResetTimeoutRef.current = null;
+      }, 3500);
+    } catch (err: unknown) {
+      setDemoResetError(err instanceof Error ? err.message : "Failed to reset demo data");
+    } finally {
+      setIsResettingDemo(false);
+    }
+  }
+
   return (
     <>
       <Header title="Settings" description="Studio configuration and preferences." />
@@ -61,7 +96,10 @@ export default function SettingsPage() {
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setHasEditedName(true);
+                    setNameDraft(e.target.value);
+                  }}
                   placeholder="My Studio"
                   className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 />
@@ -87,32 +125,25 @@ export default function SettingsPage() {
 
           {/* Data section */}
           <section className="bg-surface border border-border rounded-[6px] p-5">
-            <h3 className="text-sm font-medium text-text-primary mb-1">Data Management</h3>
-            {isPreviewMode ? (
-              <>
-                <p className="text-xs text-muted mb-3">
-                  Preview data is stored in your browser&apos;s local storage so you can demo the app without a live backend.
-                </p>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => {
-                    if (confirm("This will clear ALL local preview data and reset to sample data. Continue?")) {
-                      Object.keys(localStorage).forEach(key => {
-                        if (key.startsWith("koaryu:")) localStorage.removeItem(key);
-                      });
-                      window.location.reload();
-                    }
-                  }}
-                >
-                  Reset preview data
-                </Button>
-              </>
-            ) : (
-              <p className="text-xs text-muted">
-                Live data is stored in Supabase and synced through the API for your current studio.
-              </p>
-            )}
+            <h3 className="text-sm font-medium text-text-primary mb-1">Demo Data</h3>
+            <p className="text-xs text-muted mb-3">
+              {isPreviewMode
+                ? "Restore the browser preview dataset to a polished demo state."
+                : "Restore the current studio to the polished demo dataset."}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleDemoReset}
+                isLoading={isResettingDemo}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                {isResettingDemo ? "Resetting..." : "Reset demo studio"}
+              </Button>
+              {demoResetMessage && <span className="text-xs text-success">{demoResetMessage}</span>}
+              {demoResetError && <span className="text-xs text-danger">{demoResetError}</span>}
+            </div>
           </section>
         </div>
       </div>

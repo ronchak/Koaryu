@@ -363,32 +363,101 @@ class StudentService:
 
         return payload
 
-    def _fetch_guardians_for_student(self, student_id: str) -> list[GuardianResponse]:
+    def _guardian_row_to_response(self, guardian_row: dict) -> GuardianResponse:
+        return GuardianResponse(**{
+            "id": guardian_row["id"],
+            "first_name": guardian_row["first_name"],
+            "last_name": guardian_row["last_name"],
+            "email": guardian_row.get("email"),
+            "phone": guardian_row.get("phone"),
+            "relation": guardian_row.get("relation"),
+            "is_primary_contact": guardian_row.get("is_primary_contact", False),
+        })
+
+    def _guardian_from_link_row(self, row: dict) -> Optional[GuardianResponse]:
+        if not isinstance(row, dict):
+            return None
+        guardian = row.get("guardians") or {}
+        if not guardian:
+            return None
+        return self._guardian_row_to_response(guardian)
+
+    def _fetch_guardians_for_students(
+        self,
+        student_ids: list[str],
+    ) -> dict[str, list[GuardianResponse]]:
+        ordered_student_ids = list(dict.fromkeys(student_ids))
+        guardians_by_student_id: dict[str, list[GuardianResponse]] = {
+            student_id: []
+            for student_id in ordered_student_ids
+        }
+        if not ordered_student_ids:
+            return guardians_by_student_id
+
         result = (
             self.supabase.table("student_guardians")
-            .select("guardian_id, guardians(*)")
-            .eq("student_id", student_id)
+            .select("student_id, guardian_id, guardians(*)")
+            .in_("student_id", ordered_student_ids)
             .execute()
         )
-        guards = []
         for row in result.data or []:
-            g = row.get("guardians") or {}
-            if g:
-                guards.append(GuardianResponse(**{
-                    "id": g["id"],
-                    "first_name": g["first_name"],
-                    "last_name": g["last_name"],
-                    "email": g.get("email"),
-                    "phone": g.get("phone"),
-                    "relation": g.get("relation"),
-                    "is_primary_contact": g.get("is_primary_contact", False),
-                }))
-        return guards
+            student_id = row.get("student_id")
+            if student_id not in guardians_by_student_id:
+                continue
+            guardian = self._guardian_from_link_row(row)
+            if guardian:
+                guardians_by_student_id[student_id].append(guardian)
 
-    def _row_to_response(self, row: dict) -> StudentResponse:
-        guardians = self._fetch_guardians_for_student(row["id"])
+        return guardians_by_student_id
+
+    def _fetch_guardians_for_student(self, student_id: str) -> list[GuardianResponse]:
+        return self._fetch_guardians_for_students([student_id]).get(student_id, [])
+
+    def _embedded_guardians_from_row(self, row: dict) -> Optional[list[GuardianResponse]]:
+        if "student_guardians" not in row:
+            return None
+
+        link_rows = row.get("student_guardians") or []
+        if isinstance(link_rows, dict):
+            link_rows = [link_rows]
+
+        guardians = []
+        for link_row in link_rows:
+            guardian = self._guardian_from_link_row(link_row)
+            if guardian:
+                guardians.append(guardian)
+        return guardians
+
+    def _rows_to_responses(self, rows: list[dict]) -> list[StudentResponse]:
+        guardians_by_student_id = self._fetch_guardians_for_students([
+            row["id"]
+            for row in rows
+            if row.get("id")
+        ])
+        return [
+            self._row_to_response(
+                row,
+                guardians=guardians_by_student_id.get(row.get("id"), []),
+            )
+            for row in rows
+        ]
+
+    def _row_to_response(
+        self,
+        row: dict,
+        guardians: Optional[list[GuardianResponse]] = None,
+    ) -> StudentResponse:
+        if guardians is None:
+            guardians = self._embedded_guardians_from_row(row)
+        if guardians is None:
+            guardians = self._fetch_guardians_for_student(row["id"])
+
         normalized_row = {
-            **{k: v for k, v in row.items() if k != "deleted_at"},
+            **{
+                k: v
+                for k, v in row.items()
+                if k not in ("deleted_at", "student_guardians")
+            },
             "tags": row.get("tags") or [],
         }
         return StudentResponse(
@@ -1896,16 +1965,7 @@ class StudentService:
 
         result = query.execute()
 
-        items = []
-        for row in result.data or []:
-            normalized_row = {
-                **{k: v for k, v in row.items() if k not in ("deleted_at",)},
-                "tags": row.get("tags") or [],
-            }
-            items.append(StudentResponse(
-                **normalized_row,
-                guardians=[],
-            ))
+        items = self._rows_to_responses(result.data or [])
 
         # Search filtering (simple — will be enhanced with full-text in Phase 8)
         if search:

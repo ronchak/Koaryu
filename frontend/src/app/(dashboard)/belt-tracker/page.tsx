@@ -22,6 +22,7 @@ import {
   ChevronDown,
   ChevronRight,
   Layers,
+  Users,
 } from "lucide-react";
 
 type Tab = "eligibility" | "ladder";
@@ -392,6 +393,7 @@ export default function BeltTrackerPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [ladderError, setLadderError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isSwitchingLadder, setIsSwitchingLadder] = useState(false);
   const [collapsedEligibilityGroups, setCollapsedEligibilityGroups] = useState<Set<string>>(new Set());
 
@@ -482,6 +484,7 @@ export default function BeltTrackerPage() {
   const updateRanks = useCallback((updater: (current: BeltRank[]) => BeltRank[]) => {
     setSaveError(null);
     setLadderError(null);
+    setActionMessage(null);
     setDraftRanks((currentDraft) => updater(dirty ? currentDraft : ladderRanks));
     setDirty(true);
   }, [dirty, ladderRanks]);
@@ -644,6 +647,7 @@ export default function BeltTrackerPage() {
     try {
       await store.setBeltRanks(ladderRanks, { subRankTerm });
       setDirty(false);
+      setActionMessage("Belt ladder saved.");
     } catch (error) {
       console.error("Failed to save belt ranks", error);
       setSaveError("Could not save ladder changes. Please try again.");
@@ -659,6 +663,7 @@ export default function BeltTrackerPage() {
     setDirty(false);
     setSaveError(null);
     setLadderError(null);
+    setActionMessage(null);
   }
 
   async function handleSelectLadder(nextLadderId: string) {
@@ -708,6 +713,7 @@ export default function BeltTrackerPage() {
         targetRankId,
         promotionNotes.trim() || undefined
       );
+      setActionMessage(`${promoteEntry.student_name} promoted to ${promoteEntry.next_rank_name}.`);
       setPromoteEntry(null);
       setPromotionNotes("");
     } catch (error) {
@@ -781,6 +787,14 @@ export default function BeltTrackerPage() {
           </div>
         </div>
 
+        {actionMessage ? (
+          <div className="px-8 pt-4">
+            <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+              {actionMessage}
+            </div>
+          </div>
+        ) : null}
+
         {/* ── Eligibility Tab ──────────────────────────────────────────── */}
         {tab === "eligibility" && (
           <div className="flex-1 overflow-x-auto">
@@ -798,6 +812,16 @@ export default function BeltTrackerPage() {
                     ? `No active students matched the ${currentLadder.name} ladder yet.`
                     : "No active students to evaluate."}
                 </p>
+                <div className="mt-4 flex items-center gap-3">
+                  <Button variant="secondary" size="sm" onClick={() => setTab("ladder")}>
+                    <Settings className="w-3.5 h-3.5" />
+                    Configure ladder
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={() => window.location.assign("/students")}>
+                    <Users className="w-3.5 h-3.5" />
+                    View students
+                  </Button>
+                </div>
               </div>
             ) : (
               <table className="w-full text-sm">
@@ -1176,6 +1200,10 @@ export default function BeltTrackerPage() {
                   <div className="flex flex-col items-center justify-center py-10 text-center text-muted border border-dashed border-border rounded-[6px]">
                     <Tag className="w-6 h-6 mb-2" />
                     <p className="text-sm">No belts yet. Add your first belt to get started.</p>
+                    <Button variant="secondary" size="sm" className="mt-4" onClick={() => setAddBeltModal(true)}>
+                      <Plus className="w-3.5 h-3.5" />
+                      Add belt
+                    </Button>
                   </div>
                 )}
               </div>

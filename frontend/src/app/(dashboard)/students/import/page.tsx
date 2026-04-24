@@ -239,18 +239,17 @@ function mockParseCSV(file: File): Promise<{ headers: string[]; rows: Record<str
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = (event.target?.result as string) || "";
-      const lines = text.trim().split("\n");
-      if (lines.length === 0) {
+      const parsedRows = parseCsvText(text);
+      if (parsedRows.length === 0) {
         resolve({ headers: [], rows: [] });
         return;
       }
 
-      const headers = lines[0].split(",").map((value) => value.replace(/"/g, "").trim());
-      const rows = lines.slice(1).map((line) => {
-        const values = line.split(",").map((value) => value.replace(/"/g, "").trim());
+      const headers = parsedRows[0].map((value) => value.trim());
+      const rows = parsedRows.slice(1).map((values) => {
         const row: Record<string, string> = {};
         headers.forEach((header, index) => {
-          row[header] = values[index] || "";
+          row[header] = values[index]?.trim() || "";
         });
         return row;
       });
@@ -259,6 +258,56 @@ function mockParseCSV(file: File): Promise<{ headers: string[]; rows: Record<str
     };
     reader.readAsText(file);
   });
+}
+
+function parseCsvText(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const nextChar = text[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && nextChar === "\"") {
+        value += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      row.push(value);
+      value = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") {
+        index += 1;
+      }
+      row.push(value);
+      if (row.some((cell) => cell.trim())) {
+        rows.push(row);
+      }
+      row = [];
+      value = "";
+      continue;
+    }
+
+    value += char;
+  }
+
+  row.push(value);
+  if (row.some((cell) => cell.trim())) {
+    rows.push(row);
+  }
+
+  return rows;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -320,6 +369,7 @@ function buildPreviewValidationResult(
 
     const issues: CsvImportResult["rows"][number]["issues"] = [];
     const rawStatus = typeof mapped.status === "string" ? mapped.status.trim().toLowerCase() : "";
+    const statusValue = typeof mapped.status === "string" ? mapped.status : "";
 
     if (!mapped.legal_first_name) {
       issues.push({
@@ -345,16 +395,16 @@ function buildPreviewValidationResult(
         code: "normalized_status",
         severity: "warning",
         field: "status",
-        value: row.status,
-        message: `Status "${row.status}" will be imported as "paused".`,
+        value: statusValue,
+        message: `Status "${statusValue}" will be imported as "paused".`,
       });
     } else if (rawStatus && !validStatuses.includes(rawStatus)) {
       issues.push({
         code: "invalid_status",
         severity: "error",
         field: "status",
-        value: row.status,
-        message: `Invalid status "${row.status}". Must be one of: ${validStatuses.join(", ")}`,
+        value: statusValue,
+        message: `Invalid status "${statusValue}". Must be one of: ${validStatuses.join(", ")}`,
       });
     }
 
@@ -927,7 +977,16 @@ export default function ImportPage() {
               </div>
 
               <div className="mt-6 bg-surface border border-border rounded-[6px] p-4">
-                <p className="text-xs font-medium text-text-secondary mb-2">Expected columns (minimum required)</p>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium text-text-secondary">Expected columns (minimum required)</p>
+                  <a
+                    href="/demo-students.csv"
+                    download
+                    className="text-xs text-accent hover:text-accent-hover"
+                  >
+                    Download demo CSV
+                  </a>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {["First Name", "Last Name"].map((column) => (
                     <span

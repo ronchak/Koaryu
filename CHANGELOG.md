@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added migration guidance for tenant-hardening and the `staff_roles` RLS recursion fix.
 - Added repair migrations `20260421000013` through `20260421000015` to harden the atomic belt ladder sync RPC for already-linked Supabase projects.
 - Added a targeted end-to-end regression proof for atomic belt ladder syncing in `frontend/e2e/atomic-belt-ladder.spec.ts`.
+- Added demo-readiness tooling and data, including a one-click demo reset path, polished demo CSV, and clearer demo seed coverage for students, leads, belts, schedules, and promotion history.
+- Added bulk schedule attendance reads and supporting database indexes so schedule range loads no longer fan out into one attendance request per session.
+- Added promotion-history and eligibility indexes for faster student profile and belt tracker reads.
 
 ### Changed
 - Re-architected belt progression mock data to a "Kids Martial Arts" curriculum with white/yellow/orange/purple/blue/green/brown/black belts and tips.
@@ -24,8 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented deployment/demo caveats for shared Supabase dev projects, including public-signup email rate limits and the need to prepare example CSV/demo data for live demos.
 - Hardened `sync_belt_ladder_ranks` so the atomic ladder save path no longer fails on PL/pgSQL identifier ambiguity and continues to return the full ladder state after sync.
 - Locked the live belt ladder save flow to the atomic `/belts/ladders/{id}/sync` contract instead of depending on multi-request rank replacement behavior.
+- Optimized dashboard bootstrap so critical studio, auth, roster, leads, and belt data are committed before dashboard children render.
+- Batched student guardian hydration in roster and dashboard bootstrap responses, removing per-student guardian lookups.
+- Reworked belt eligibility calculation to use set-based promotion and attendance reads instead of per-student queries.
+- Optimized student profiles by caching and de-duplicating promotion-history requests, avoiding unnecessary detail refetches for students without guardians, and using the store's belt ladder data when available.
+- Reduced render-time work across dashboard, students, reports, and schedule views by memoizing derived rows/counts and narrowing broad UI transitions.
+- Improved student list refresh behavior so freshly bootstrapped rosters are not immediately refetched unless the bootstrap payload may be partial.
 
 ### Verified
 - Confirmed health endpoints, fresh-account onboarding, redirect behavior, and multi-studio isolation in the local Supabase-backed development environment.
 - Verified a fresh-user browser flow creates a ladder and persists the first belt through a single atomic sync request.
 - Verified authenticated repeated sync calls preserve existing rank IDs, add new ranks safely, and roll back cleanly when invalid payloads are submitted.
+- Verified the performance pass with frontend lint, TypeScript, production build, backend compile/import smoke tests, diff whitespace checks, and local dev health checks.
+- Confirmed runtime request shape now uses one promotion-history request per student profile load and one bulk attendance request per schedule range.

@@ -67,6 +67,20 @@ function getSessionMeta(session: ClassSession) {
   return session.status.replace("_", " ");
 }
 
+interface MonthScheduleDay {
+  date: Date;
+  dateKey: string;
+  inCurrentMonth: boolean;
+  visibleEntries: MonthScheduleEntry[];
+  hiddenEntries: MonthScheduleEntry[];
+  sessionCount: number;
+  templateCount: number;
+  conflictingSessionIds: Set<string>;
+  conflictCount: number;
+  ariaLabel: string;
+  monthLabel: string;
+}
+
 export function MonthScheduleView({
   month,
   sessions,
@@ -82,19 +96,60 @@ export function MonthScheduleView({
   onMoreClick,
 }: MonthScheduleViewProps) {
   const monthDays = useMemo(() => buildMonthGrid(month), [month]);
-  const todayKey = toCalendarDateKey(today);
-  const selectedDateKey = getSelectedDateKey(selectedDate);
+  const todayKey = useMemo(() => toCalendarDateKey(today), [today]);
+  const selectedDateKey = useMemo(() => getSelectedDateKey(selectedDate), [selectedDate]);
+  const monthKey = useMemo(
+    () => `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`,
+    [month]
+  );
 
   const sessionsByDate = useMemo(() => groupSessionsByDate(sessions), [sessions]);
   const templatesByDay = useMemo(() => groupTemplatesByDay(templates), [templates]);
 
   const monthlySessionCount = useMemo(
+    () => sessions.reduce((count, session) => count + (session.date.startsWith(monthKey) ? 1 : 0), 0),
+    [monthKey, sessions]
+  );
+
+  const calendarDays = useMemo<MonthScheduleDay[]>(
     () =>
-      sessions.filter(
-        (session) => parseCalendarDate(session.date).getMonth() === month.getMonth()
-          && parseCalendarDate(session.date).getFullYear() === month.getFullYear()
-      ).length,
-    [month, sessions]
+      monthDays.map((date) => {
+        const dateKey = toCalendarDateKey(date);
+        const entries = buildEntriesForDate({
+          date,
+          sessionsByDate,
+          templatesByDay,
+          showTemplatePlaceholders,
+        });
+        const visibleEntries = entries.slice(0, maxVisibleEntries);
+        const hiddenEntries = entries.slice(maxVisibleEntries);
+        const sessionCount = entries.reduce(
+          (count, entry) => count + (entry.kind === "session" ? 1 : 0),
+          0
+        );
+        const daySessions = sessionsByDate.get(dateKey) ?? [];
+        const conflictingSessionIds = getConflictingSessionIds(daySessions);
+
+        return {
+          date,
+          dateKey,
+          inCurrentMonth: isDateInMonth(date, month),
+          visibleEntries,
+          hiddenEntries,
+          sessionCount,
+          templateCount: entries.length - sessionCount,
+          conflictingSessionIds,
+          conflictCount: conflictingSessionIds.size,
+          ariaLabel: `Open ${date.toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          })}`,
+          monthLabel: date.toLocaleDateString("en-US", { month: "short" }),
+        };
+      }),
+    [maxVisibleEntries, month, monthDays, sessionsByDate, showTemplatePlaceholders, templatesByDay]
   );
 
   const monthlyTemplateGapCount = useMemo(() => {
@@ -102,22 +157,11 @@ export function MonthScheduleView({
       return 0;
     }
 
-    return monthDays.reduce((count, date) => {
-      if (!isDateInMonth(date, month)) {
-        return count;
-      }
-
-      return (
-        count +
-        buildEntriesForDate({
-          date,
-          sessionsByDate,
-          templatesByDay,
-          showTemplatePlaceholders: true,
-        }).filter((entry) => entry.kind === "template").length
-      );
-    }, 0);
-  }, [month, monthDays, sessionsByDate, showTemplatePlaceholders, templatesByDay]);
+    return calendarDays.reduce(
+      (count, day) => count + (day.inCurrentMonth ? day.templateCount : 0),
+      0
+    );
+  }, [calendarDays, showTemplatePlaceholders]);
 
   return (
     <div className={`rounded-[10px] border border-border bg-surface ${className}`}>
@@ -155,43 +199,22 @@ export function MonthScheduleView({
           </div>
 
           <div className="grid grid-cols-7">
-            {monthDays.map((date) => {
-              const dateKey = toCalendarDateKey(date);
-              const inCurrentMonth = isDateInMonth(date, month);
-              const isToday = dateKey === todayKey;
-              const isSelected = dateKey === selectedDateKey;
-              const entries = buildEntriesForDate({
-                date,
-                sessionsByDate,
-                templatesByDay,
-                showTemplatePlaceholders,
-              });
-              const visibleEntries = entries.slice(0, maxVisibleEntries);
-              const hiddenEntries = entries.slice(maxVisibleEntries);
-              const sessionCount = entries.filter((entry) => entry.kind === "session").length;
-              const templateCount = entries.length - sessionCount;
-              const daySessions = (sessionsByDate.get(dateKey) ?? []);
-              const conflictingSessionIds = getConflictingSessionIds(daySessions);
-              const conflictCount = conflictingSessionIds.size;
-
+            {calendarDays.map((day) => {
+              const isToday = day.dateKey === todayKey;
+              const isSelected = day.dateKey === selectedDateKey;
               return (
                 <div
-                  key={dateKey}
+                  key={day.dateKey}
                   className={`group relative flex min-h-[156px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors last:border-r-0 hover:bg-surface-raised/50 ${
-                    inCurrentMonth ? "bg-surface" : "bg-[#0F1318] text-text-secondary"
+                    day.inCurrentMonth ? "bg-surface" : "bg-[#0F1318] text-text-secondary"
                   } ${isSelected ? "ring-1 ring-inset ring-accent" : ""} ${
                     isToday ? "bg-accent/[0.06]" : ""
                   }`}
                 >
                   <button
                     type="button"
-                    onClick={() => onDayClick?.(date)}
-                    aria-label={`Open ${date.toLocaleDateString("en-US", {
-                      weekday: "long",
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}`}
+                    onClick={() => onDayClick?.(day.date)}
+                    aria-label={day.ariaLabel}
                     className="absolute inset-0 rounded-[inherit]"
                   />
 
@@ -201,36 +224,36 @@ export function MonthScheduleView({
                         className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${
                           isToday
                             ? "bg-accent text-[#0B0D10]"
-                            : inCurrentMonth
+                            : day.inCurrentMonth
                             ? "bg-surface-raised text-text-primary"
                             : "bg-transparent text-muted"
                         }`}
                       >
-                        {date.getDate()}
+                        {day.date.getDate()}
                       </span>
                       <div className="flex flex-col">
-                        <span className={`text-[10px] uppercase tracking-[0.18em] ${inCurrentMonth ? "text-muted" : "text-[#4E5764]"}`}>
-                          {date.toLocaleDateString("en-US", { month: "short" })}
+                        <span className={`text-[10px] uppercase tracking-[0.18em] ${day.inCurrentMonth ? "text-muted" : "text-[#4E5764]"}`}>
+                          {day.monthLabel}
                         </span>
                         {isToday && <span className="text-[10px] font-medium text-accent">Today</span>}
                       </div>
                     </div>
 
-                    {(sessionCount > 0 || templateCount > 0) && (
+                    {(day.sessionCount > 0 || day.templateCount > 0) && (
                       <div className="flex flex-col items-end gap-1">
-                        {sessionCount > 0 && (
+                        {day.sessionCount > 0 && (
                           <span className="rounded-full bg-surface-raised px-2 py-0.5 text-[10px] font-medium text-text-primary">
-                            {sessionCount} {sessionCount === 1 ? "class" : "classes"}
+                            {day.sessionCount} {day.sessionCount === 1 ? "class" : "classes"}
                           </span>
                         )}
-                        {conflictCount > 0 && (
+                        {day.conflictCount > 0 && (
                           <span className="rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">
-                            {conflictCount} conflict{conflictCount === 1 ? "" : "s"}
+                            {day.conflictCount} conflict{day.conflictCount === 1 ? "" : "s"}
                           </span>
                         )}
-                        {templateCount > 0 && (
+                        {day.templateCount > 0 && (
                           <span className="rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted">
-                            {templateCount} pending
+                            {day.templateCount} pending
                           </span>
                         )}
                       </div>
@@ -238,13 +261,13 @@ export function MonthScheduleView({
                   </div>
 
                   <div className="relative z-10 flex flex-1 flex-col gap-1.5">
-                    {visibleEntries.length === 0 && (
+                    {day.visibleEntries.length === 0 && (
                       <div className="mt-2 rounded-[8px] border border-dashed border-border/80 px-2 py-2 text-[11px] text-muted">
                         No scheduled classes
                       </div>
                     )}
 
-                    {visibleEntries.map((entry) => {
+                    {day.visibleEntries.map((entry) => {
                       if (entry.kind === "session") {
                         return (
                           <button
@@ -255,7 +278,7 @@ export function MonthScheduleView({
                               onEntryClick?.(entry);
                             }}
                             className={`flex items-start gap-2 rounded-[8px] border px-2 py-1.5 text-left hover:bg-[#1B2129] ${
-                              conflictingSessionIds.has(entry.session.id)
+                              day.conflictingSessionIds.has(entry.session.id)
                                 ? "border-danger/30 bg-danger/5 hover:border-danger/50"
                                 : "border-border bg-surface-raised hover:border-accent/50"
                             }`}
@@ -267,7 +290,7 @@ export function MonthScheduleView({
                               <p className="truncate text-[11px] font-medium text-text-primary">{entry.session.name}</p>
                               <div className="mt-1 flex items-center gap-2 text-[10px] text-text-secondary">
                                 <span className="capitalize">{getSessionMeta(entry.session)}</span>
-                                {conflictingSessionIds.has(entry.session.id) && (
+                                {day.conflictingSessionIds.has(entry.session.id) && (
                                   <span className="text-danger">Overlaps</span>
                                 )}
                                 {entry.session.capacity && (
@@ -303,21 +326,21 @@ export function MonthScheduleView({
                       );
                     })}
 
-                    {hiddenEntries.length > 0 && (
+                    {day.hiddenEntries.length > 0 && (
                       <button
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
                           if (onMoreClick) {
-                            onMoreClick(date, hiddenEntries);
+                            onMoreClick(day.date, day.hiddenEntries);
                             return;
                           }
 
-                          onDayClick?.(date);
+                          onDayClick?.(day.date);
                         }}
                         className="mt-auto rounded-[8px] border border-border px-2 py-1.5 text-left text-[11px] font-medium text-accent hover:bg-accent/10"
                       >
-                        +{hiddenEntries.length} more
+                        +{day.hiddenEntries.length} more
                       </button>
                     )}
                   </div>

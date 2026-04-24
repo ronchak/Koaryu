@@ -337,7 +337,9 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
               <>
                 <div className="p-3 bg-surface-raised rounded-[6px] border border-border mb-4">
                   <p className="text-xs text-text-secondary">
-                    Add a parent or guardian if this student is a minor. You can add more after saving.
+                    {isEdit
+                      ? "Guardian details are shown for reference during this edit. Student profile fields save from here."
+                      : "Add a parent or guardian if this student is a minor. You can add more after saving."}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -346,12 +348,14 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
                     value={guardianFirst}
                     onChange={(e) => setGuardianFirst(e.target.value)}
                     placeholder="Kenji"
+                    disabled={isEdit}
                   />
                   <Input
                     label="Guardian last name"
                     value={guardianLast}
                     onChange={(e) => setGuardianLast(e.target.value)}
                     placeholder="Tanaka"
+                    disabled={isEdit}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -361,6 +365,7 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
                     value={guardianEmail}
                     onChange={(e) => setGuardianEmail(e.target.value)}
                     placeholder="guardian@email.com"
+                    disabled={isEdit}
                   />
                   <Input
                     label="Phone"
@@ -368,6 +373,7 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
                     value={guardianPhone}
                     onChange={(e) => setGuardianPhone(e.target.value)}
                     placeholder="(555) 000-0000"
+                    disabled={isEdit}
                   />
                 </div>
                 <Input
@@ -375,6 +381,7 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
                   value={guardianRelation}
                   onChange={(e) => setGuardianRelation(e.target.value)}
                   placeholder="Mother, Father, Grandparent..."
+                  disabled={isEdit}
                 />
               </>
             )}

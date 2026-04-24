@@ -6,7 +6,7 @@ import { Header } from "@/components/header";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
 import { Button } from "@/components/ui/button";
-import { useConfigStore, useStudentStore } from "@/lib/store";
+import { useBeltStore, useConfigStore, useStudentStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import type { BeltLadder, BeltRank, Promotion, Student, StudentCreate } from "@/types";
 import { AlertTriangle, ArrowLeft, Award, Mail, Phone, User, Pencil, Trash2 } from "lucide-react";
@@ -105,42 +105,65 @@ export default function StudentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { isPreviewMode, token } = useConfigStore();
-  const { students, updateStudent, deleteStudents } = useStudentStore();
+  const { students, studentsLoaded, updateStudent, deleteStudents } = useStudentStore();
+  const {
+    beltLadders: storeBeltLadders,
+    promotionHistoryByStudent,
+    loadPromotionHistory: loadPromotionHistoryForStudent,
+  } = useBeltStore();
   const id = params.id as string;
   const [showEdit, setShowEdit] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hydratedStudent, setHydratedStudent] = useState<Student | null>(null);
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [beltLadders, setBeltLadders] = useState<BeltLadder[]>([]);
-  const [promotionHistory, setPromotionHistory] = useState<Promotion[]>([]);
-  const [isLoadingBeltData, setIsLoadingBeltData] = useState(false);
+  const [fallbackBeltLadders, setFallbackBeltLadders] = useState<BeltLadder[]>([]);
+  const [promotionHistoryState, setPromotionHistoryState] = useState<{
+    studentId: string;
+    items: Promotion[];
+  } | null>(null);
+  const [isLoadingFallbackBeltLadders, setIsLoadingFallbackBeltLadders] = useState(false);
+  const [isLoadingPromotionHistory, setIsLoadingPromotionHistory] = useState(false);
   const [beltLoadError, setBeltLoadError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const listStudent = useMemo(
     () => students.find((s) => s.id === id),
     [students, id]
   );
+  const cachedPromotionHistory = promotionHistoryByStudent[id];
 
   useEffect(() => {
     let mounted = true;
+    const controller = new AbortController();
 
     async function loadStudent() {
       if (isPreviewMode || !token) {
         if (mounted) {
           setHydratedStudent(null);
           setLoadError(null);
+          setIsLoadingStudent(false);
         }
         return;
       }
 
-      if (listStudent && listStudent.guardians.length > 0) {
+      if (listStudent) {
         if (mounted) {
           setHydratedStudent(null);
           setLoadError(null);
+          setIsLoadingStudent(false);
+        }
+        return;
+      }
+
+      if (!studentsLoaded) {
+        if (mounted) {
+          setHydratedStudent(null);
+          setLoadError(null);
+          setIsLoadingStudent(false);
         }
         return;
       }
@@ -149,11 +172,16 @@ export default function StudentDetailPage() {
       setLoadError(null);
 
       try {
-        const result = await api.get<Student>(`/students/${id}`, token);
+        const result = await api.get<Student>(`/students/${id}`, token, {
+          signal: controller.signal,
+        });
         if (mounted) {
           setHydratedStudent(result);
         }
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
         if (mounted) {
           setLoadError(error instanceof Error ? error.message : "Failed to load student");
         }
@@ -168,36 +196,79 @@ export default function StudentDetailPage() {
 
     return () => {
       mounted = false;
+      controller.abort();
     };
-  }, [id, isPreviewMode, listStudent, token]);
+  }, [id, isPreviewMode, listStudent, studentsLoaded, token]);
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadBeltData() {
-      if (isPreviewMode || !token) {
+    async function loadFallbackBeltLadders() {
+      if (isPreviewMode || !token || storeBeltLadders.length > 0) {
         if (mounted) {
-          setBeltLadders([]);
-          setPromotionHistory([]);
-          setBeltLoadError(null);
+          setIsLoadingFallbackBeltLadders(false);
         }
         return;
       }
 
-      setIsLoadingBeltData(true);
+      setIsLoadingFallbackBeltLadders(true);
       setBeltLoadError(null);
 
       try {
-        const [laddersResult, promotionsResult] = await Promise.all([
-          api.get<BeltLadder[]>("/belts/ladders", token),
-          api.get<Promotion[]>(`/belts/promotions?student_id=${encodeURIComponent(id)}`, token),
-        ]);
-
+        const laddersResult = await api.get<BeltLadder[]>("/belts/ladders", token);
         if (!mounted) return;
-
-        setBeltLadders(laddersResult);
-        setPromotionHistory(promotionsResult);
+        setFallbackBeltLadders(laddersResult);
       } catch (error) {
+        if (mounted) {
+          setBeltLoadError(
+            error instanceof Error ? error.message : "Failed to load belt ladder"
+          );
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingFallbackBeltLadders(false);
+        }
+      }
+    }
+
+    void loadFallbackBeltLadders();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isPreviewMode, storeBeltLadders.length, token]);
+
+  useEffect(() => {
+    let mounted = true;
+    const controller = new AbortController();
+
+    async function loadStudentPromotionHistory() {
+      const cachedHistory = cachedPromotionHistory;
+      setPromotionHistoryState({ studentId: id, items: cachedHistory ?? [] });
+
+      if (isPreviewMode || !token) {
+        if (mounted) {
+          setBeltLoadError(null);
+          setIsLoadingPromotionHistory(false);
+        }
+        return;
+      }
+
+      setIsLoadingPromotionHistory(!cachedHistory);
+      setBeltLoadError(null);
+
+      try {
+        const promotionsResult = await loadPromotionHistoryForStudent(id, {
+          signal: controller.signal,
+        });
+
+        if (mounted) {
+          setPromotionHistoryState({ studentId: id, items: promotionsResult });
+        }
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
         if (mounted) {
           setBeltLoadError(
             error instanceof Error ? error.message : "Failed to load belt history"
@@ -205,19 +276,27 @@ export default function StudentDetailPage() {
         }
       } finally {
         if (mounted) {
-          setIsLoadingBeltData(false);
+          setIsLoadingPromotionHistory(false);
         }
       }
     }
 
-    void loadBeltData();
+    void loadStudentPromotionHistory();
 
     return () => {
       mounted = false;
+      controller.abort();
     };
-  }, [id, isPreviewMode, token]);
+  }, [cachedPromotionHistory, id, isPreviewMode, loadPromotionHistoryForStudent, token]);
 
-  const student = hydratedStudent ?? listStudent;
+  const student = hydratedStudent?.id === id ? hydratedStudent : listStudent;
+  const promotionHistory = promotionHistoryState?.studentId === id
+    ? promotionHistoryState.items
+    : [];
+  const beltLadders = storeBeltLadders.length > 0 ? storeBeltLadders : fallbackBeltLadders;
+  const isLoadingBeltData = isLoadingPromotionHistory || (
+    beltLadders.length === 0 && isLoadingFallbackBeltLadders
+  );
   const rankById = useMemo(() => {
     const entries = beltLadders.flatMap((ladder) =>
       ladder.ranks.map((rank) => [
@@ -228,7 +307,7 @@ export default function StudentDetailPage() {
     return new Map<string, RankWithContext>(entries);
   }, [beltLadders]);
 
-  if (!student && isLoadingStudent) {
+  if (!student && (!studentsLoaded || isLoadingStudent)) {
     return (
       <>
         <Header title="Loading student" />
@@ -279,6 +358,7 @@ export default function StudentDetailPage() {
   async function handleEdit(data: StudentCreate) {
     if (!student) return;
     setIsSaving(true);
+    setActionMessage(null);
     try {
       await updateStudent(id, {
         legal_first_name: data.legal_first_name,
@@ -302,12 +382,10 @@ export default function StudentDetailPage() {
         tags: data.tags,
       });
 
-      if (!isPreviewMode && token) {
-        const freshStudent = await api.get<Student>(`/students/${id}`, token);
-        setHydratedStudent(freshStudent);
-      }
+      setHydratedStudent(null);
 
       setShowEdit(false);
+      setActionMessage("Student profile updated.");
     } finally {
       setIsSaving(false);
     }
@@ -342,6 +420,14 @@ export default function StudentDetailPage() {
           Delete
         </Button>
       </Header>
+
+      {actionMessage ? (
+        <div className="px-8 pt-4">
+          <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+            {actionMessage}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex-1 p-8">
         <div className="max-w-3xl grid grid-cols-3 gap-6">

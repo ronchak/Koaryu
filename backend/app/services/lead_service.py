@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 from typing import Optional
 from supabase import Client
@@ -12,6 +13,7 @@ from app.services.studio_scope import ensure_optional_studio_record, ensure_staf
 
 VALID_STAGES = {"inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled", "closed_lost"}
 VALID_SOURCES = {"walk_in", "referral", "social", "search", "website", "other"}
+CONVERSION_NAMESPACE = uuid.UUID("27c8322f-a4e4-46d7-bfae-018f6b638858")
 
 
 class LeadService:
@@ -157,12 +159,12 @@ class LeadService:
             "Program not found",
         )
         if lead.converted_student_id:
-            raise HTTPException(status_code=409, detail="Lead has already been converted to a student")
-        if lead.stage == "enrolled":
-            raise HTTPException(status_code=409, detail="Lead already enrolled")
+            return lead
 
         # Create student from lead data
+        student_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:student"))
         student_data = {
+            "id": student_id,
             "studio_id": studio_id,
             "legal_first_name": lead.first_name,
             "legal_last_name": lead.last_name,
@@ -174,29 +176,57 @@ class LeadService:
             "notes": lead.notes,
             "tags": ["converted-lead"],
         }
-        student_result = self.supabase.table("students").insert(student_data).execute()
-        if not student_result.data:
-            raise HTTPException(status_code=500, detail="Failed to create student from lead")
-
-        student_id = student_result.data[0]["id"]
+        existing_student = (
+            self.supabase.table("students")
+            .select("id")
+            .eq("id", student_id)
+            .eq("studio_id", studio_id)
+            .maybe_single()
+            .execute()
+        )
+        if not existing_student.data:
+            student_result = self.supabase.table("students").insert(student_data).execute()
+            if not student_result.data:
+                raise HTTPException(status_code=500, detail="Failed to create student from lead")
 
         # If minor, create guardian from lead data
         if lead.is_minor and lead.guardian_name:
             parts = lead.guardian_name.split(" ", 1)
             g_first = parts[0]
             g_last = parts[1] if len(parts) > 1 else ""
-            g_result = self.supabase.table("guardians").insert({
-                "studio_id": studio_id,
-                "first_name": g_first,
-                "last_name": g_last,
-                "email": lead.guardian_email,
-                "phone": lead.guardian_phone,
-                "is_primary_contact": True,
-            }).execute()
-            if g_result.data:
+            guardian_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:guardian"))
+            existing_guardian = (
+                self.supabase.table("guardians")
+                .select("id")
+                .eq("id", guardian_id)
+                .eq("studio_id", studio_id)
+                .maybe_single()
+                .execute()
+            )
+            if not existing_guardian.data:
+                self.supabase.table("guardians").insert({
+                    "id": guardian_id,
+                    "studio_id": studio_id,
+                    "first_name": g_first,
+                    "last_name": g_last,
+                    "email": lead.guardian_email,
+                    "phone": lead.guardian_phone,
+                    "is_primary_contact": True,
+                }).execute()
+
+            link_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{student_id}:{guardian_id}:link"))
+            existing_link = (
+                self.supabase.table("student_guardians")
+                .select("id")
+                .eq("id", link_id)
+                .maybe_single()
+                .execute()
+            )
+            if not existing_link.data:
                 self.supabase.table("student_guardians").insert({
+                    "id": link_id,
                     "student_id": student_id,
-                    "guardian_id": g_result.data[0]["id"],
+                    "guardian_id": guardian_id,
                 }).execute()
 
         # Update lead

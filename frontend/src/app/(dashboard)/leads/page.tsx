@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { toLocalDateKey } from "@/lib/date";
 import { useConfigStore, useLeadStore } from "@/lib/store";
 import type { Lead, LeadSource, LeadStage } from "@/types";
 import {
@@ -68,7 +69,7 @@ function timeAgo(value: string) {
 }
 
 function todayDateString() {
-  return new Date().toISOString().split("T")[0];
+  return toLocalDateKey();
 }
 
 function fullName(lead: Pick<Lead, "first_name" | "last_name">) {
@@ -85,6 +86,9 @@ function getNextStage(stage: LeadStage): LeadStage | null {
 }
 
 function getStageLabel(stage: LeadStage) {
+  if (stage === "closed_lost") {
+    return "Closed Lost";
+  }
   return PIPELINE_STAGES.find((candidate) => candidate.id === stage)?.label ?? stage;
 }
 
@@ -125,6 +129,7 @@ export default function LeadsPage() {
   const [addLeadError, setAddLeadError] = useState<string | null>(null);
   const [pendingLeadId, setPendingLeadId] = useState<string | null>(null);
   const [leadActionError, setLeadActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
   const [optimisticLeads, setOptimisticLeads] = useState<Record<string, Lead>>({});
 
@@ -311,11 +316,13 @@ export default function LeadsPage() {
 
   async function handleAddLead(data: Partial<Lead>) {
     setAddLeadError(null);
+    setActionMessage(null);
     setIsAddingLead(true);
 
     try {
       await addLead(data);
       setShowAddLead(false);
+      setActionMessage("Lead added to the pipeline.");
     } catch (error) {
       console.error("Failed to add lead", error);
       setAddLeadError("Could not add this lead. Please try again.");
@@ -330,11 +337,19 @@ export default function LeadsPage() {
     options?: { closeAfterSuccess?: boolean }
   ) {
     setLeadActionError(null);
+    setActionMessage(null);
     setPendingLeadId(lead.id);
     const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, updates);
 
     try {
       await updateLead(lead.id, updates);
+      if (updates.stage) {
+        setActionMessage(`${fullName(lead)} moved to ${getStageLabel(updates.stage)}.`);
+      } else if ("follow_up_date" in updates) {
+        setActionMessage(`Follow-up updated for ${fullName(lead)}.`);
+      } else {
+        setActionMessage(`${fullName(lead)} updated.`);
+      }
       if (options?.closeAfterSuccess) {
         setSelectedLeadId(null);
       }
@@ -414,6 +429,7 @@ export default function LeadsPage() {
 
   async function handleMarkContacted(lead: Lead, advanceStage: boolean) {
     setLeadActionError(null);
+    setActionMessage(null);
     setPendingLeadId(lead.id);
     const nextStage = advanceStage ? getNextStage(lead.stage) : null;
     const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, {
@@ -442,6 +458,11 @@ export default function LeadsPage() {
         stage: nextStage ?? lead.stage,
         follow_up_date: null,
       });
+      setActionMessage(
+        advanceStage && nextStage
+          ? `${fullName(lead)} moved to ${getStageLabel(nextStage)}.`
+          : `${fullName(lead)} marked contacted.`
+      );
 
       if (selectedLeadId === lead.id && !advanceStage) {
         setSelectedLeadId(lead.id);
@@ -492,6 +513,14 @@ export default function LeadsPage() {
         <div className="px-8 pt-4">
           <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
             {leadActionError}
+          </div>
+        </div>
+      )}
+
+      {actionMessage && !selectedLead && (
+        <div className="px-8 pt-4">
+          <div className="rounded-[6px] border border-success/20 bg-success/5 px-3 py-2 text-sm text-success">
+            {actionMessage}
           </div>
         </div>
       )}
@@ -749,7 +778,23 @@ export default function LeadsPage() {
 
                     {stageLeads.length === 0 && (
                       <div className="text-center py-8">
-                        <p className="text-xs text-muted">No leads</p>
+                        <p className="text-xs text-muted">
+                          {stage.id === "inquiry"
+                            ? "New inquiries will start here."
+                            : `No leads are currently in ${stage.label.toLowerCase()}.`}
+                        </p>
+                        {stage.id === "inquiry" ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddLeadError(null);
+                              setShowAddLead(true);
+                            }}
+                            className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
+                          >
+                            Add lead
+                          </button>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -1031,7 +1076,7 @@ export default function LeadsPage() {
               }
             }}
           />
-          <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-md p-6">
+          <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-md max-h-[85vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-base font-semibold text-text-primary">Add new lead</h2>
               <button
@@ -1058,6 +1103,15 @@ export default function LeadsPage() {
                   source: formData.get("source") as LeadSource,
                   program_interest:
                     (formData.get("program_interest") as string) || undefined,
+                  follow_up_date:
+                    (formData.get("follow_up_date") as string) || undefined,
+                  is_minor: formData.get("is_minor") === "on",
+                  guardian_name:
+                    (formData.get("guardian_name") as string) || undefined,
+                  guardian_email:
+                    (formData.get("guardian_email") as string) || undefined,
+                  guardian_phone:
+                    (formData.get("guardian_phone") as string) || undefined,
                   notes: (formData.get("notes") as string) || undefined,
                 });
               }}
@@ -1137,6 +1191,52 @@ export default function LeadsPage() {
                   disabled={isAddingLead}
                   className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm text-text-secondary font-medium">
+                  Follow-up date
+                </label>
+                <input
+                  name="follow_up_date"
+                  type="date"
+                  defaultValue={today}
+                  disabled={isAddingLead}
+                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-text-secondary">
+                <input
+                  name="is_minor"
+                  type="checkbox"
+                  disabled={isAddingLead}
+                  className="accent-[var(--accent)]"
+                />
+                Minor lead
+              </label>
+              <div className="grid grid-cols-1 gap-3 rounded-[6px] border border-border bg-surface/60 p-3">
+                <p className="text-xs font-medium text-text-secondary">Guardian details</p>
+                <input
+                  name="guardian_name"
+                  placeholder="Guardian name"
+                  disabled={isAddingLead}
+                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    name="guardian_email"
+                    type="email"
+                    placeholder="Guardian email"
+                    disabled={isAddingLead}
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                  />
+                  <input
+                    name="guardian_phone"
+                    type="tel"
+                    placeholder="Guardian phone"
+                    disabled={isAddingLead}
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                  />
+                </div>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm text-text-secondary font-medium">Notes</label>

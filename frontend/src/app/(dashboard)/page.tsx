@@ -1,6 +1,7 @@
 "use client";
 
 import { Header } from "@/components/header";
+import { toLocalDateKey } from "@/lib/date";
 import { buildStudentInactivityRows, isStudentOnHoldNow } from "@/lib/student-insights";
 import {
   useBeltStore,
@@ -19,6 +20,14 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
+
+const QUICK_ACTIONS = [
+  { label: "Add Student", href: "/students", icon: Users },
+  { label: "Import CSV", href: "/students/import", icon: Clock },
+  { label: "View Leads", href: "/leads", icon: UserPlus },
+  { label: "Reports", href: "/reports", icon: TrendingUp },
+];
 
 function formatDate(value?: string) {
   if (!value) return "—";
@@ -74,44 +83,113 @@ export default function DashboardPage() {
   const { leads } = useLeadStore();
   const { sessions, attendance } = useScheduleStore();
   const { beltRanks, subRankTerm } = useBeltStore();
-  const today = new Date().toISOString().split("T")[0];
+  const today = toLocalDateKey();
 
-  const totalStudents = students.length;
-  const activeStudents = students.filter(
-    (student) => student.status === "active" || student.status === "trialing"
-  ).length;
-  const trialingStudents = students.filter(
-    (student) => student.status === "trialing"
-  ).length;
+  const studentStats = useMemo(() => {
+    let activeStudents = 0;
+    let trialingStudents = 0;
+    let onHoldStudents = 0;
 
-  const activeLeads = leads.filter(
-    (lead) => lead.stage !== "closed_lost" && lead.stage !== "enrolled"
-  ).length;
-  const enrolledLeads = leads.filter((lead) => lead.stage === "enrolled").length;
-  const dueTodayLeads = leads.filter(
-    (lead) =>
-      lead.stage !== "closed_lost" &&
-      lead.stage !== "enrolled" &&
-      !!lead.follow_up_date &&
-      lead.follow_up_date <= today
-  ).length;
+    for (const student of students) {
+      if (student.status === "active" || student.status === "trialing") {
+        activeStudents += 1;
+      }
 
-  const todaySessions = sessions.filter((session) => session.date === today).length;
-  const beltCount = beltRanks.filter((rank) => !rank.is_tip).length;
+      if (student.status === "trialing") {
+        trialingStudents += 1;
+      }
 
-  const inactivityRows = buildStudentInactivityRows(
-    students,
-    sessions,
-    attendance,
-    today
+      if (isStudentOnHoldNow(student, today)) {
+        onHoldStudents += 1;
+      }
+    }
+
+    return {
+      totalStudents: students.length,
+      activeStudents,
+      trialingStudents,
+      onHoldStudents,
+    };
+  }, [students, today]);
+
+  const leadStats = useMemo(() => {
+    let activeLeads = 0;
+    let enrolledLeads = 0;
+    let dueTodayLeads = 0;
+
+    for (const lead of leads) {
+      if (lead.stage === "enrolled") {
+        enrolledLeads += 1;
+        continue;
+      }
+
+      if (lead.stage === "closed_lost") {
+        continue;
+      }
+
+      activeLeads += 1;
+
+      if (lead.follow_up_date && lead.follow_up_date <= today) {
+        dueTodayLeads += 1;
+      }
+    }
+
+    return { activeLeads, enrolledLeads, dueTodayLeads };
+  }, [leads, today]);
+
+  const todaySessions = useMemo(
+    () => sessions.reduce((count, session) => count + (session.date === today ? 1 : 0), 0),
+    [sessions, today]
   );
-  const onHoldStudents = students.filter((student) => isStudentOnHoldNow(student, today)).length;
-  const watch14 = inactivityRows.filter((row) => row.daysInactive >= 14).length;
-  const watch30 = inactivityRows.filter((row) => row.daysInactive >= 30).length;
-  const watch45 = inactivityRows.filter((row) => row.daysInactive >= 45).length;
-  const highestRiskStudents = inactivityRows
-    .filter((row) => row.daysInactive >= 14)
-    .slice(0, 5);
+
+  const beltStats = useMemo(() => {
+    let beltCount = 0;
+    let tipCount = 0;
+
+    for (const rank of beltRanks) {
+      if (rank.is_tip) {
+        tipCount += 1;
+      } else {
+        beltCount += 1;
+      }
+    }
+
+    return { beltCount, tipCount };
+  }, [beltRanks]);
+
+  const inactivityRows = useMemo(
+    () => buildStudentInactivityRows(students, sessions, attendance, today),
+    [attendance, sessions, students, today]
+  );
+
+  const inactivityStats = useMemo(() => {
+    let watch14 = 0;
+    let watch30 = 0;
+    let watch45 = 0;
+    const highestRiskStudents: typeof inactivityRows = [];
+
+    for (const row of inactivityRows) {
+      if (row.daysInactive >= 14) {
+        watch14 += 1;
+
+        if (highestRiskStudents.length < 5) {
+          highestRiskStudents.push(row);
+        }
+      }
+
+      if (row.daysInactive >= 30) {
+        watch30 += 1;
+      }
+
+      if (row.daysInactive >= 45) {
+        watch45 += 1;
+      }
+    }
+
+    return { watch14, watch30, watch45, highestRiskStudents };
+  }, [inactivityRows]);
+
+  const recentStudents = useMemo(() => students.slice(0, 5), [students]);
 
   return (
     <>
@@ -125,16 +203,16 @@ export default function DashboardPage() {
             <StatCard
               icon={Users}
               label="Total Students"
-              value={totalStudents}
-              sub={`${activeStudents} active · ${trialingStudents} trialing`}
+              value={studentStats.totalStudents}
+              sub={`${studentStats.activeStudents} active · ${studentStats.trialingStudents} trialing`}
               href="/students"
               accent="#3B82F6"
             />
             <StatCard
               icon={UserPlus}
               label="Active Leads"
-              value={activeLeads}
-              sub={`${dueTodayLeads} follow-ups due · ${enrolledLeads} enrolled`}
+              value={leadStats.activeLeads}
+              sub={`${leadStats.dueTodayLeads} follow-ups due · ${leadStats.enrolledLeads} enrolled`}
               href="/leads"
               accent="#8B5CF6"
             />
@@ -153,8 +231,8 @@ export default function DashboardPage() {
             <StatCard
               icon={Award}
               label="Belt Ranks"
-              value={beltCount}
-              sub={`${beltRanks.filter((rank) => rank.is_tip).length} ${subRankTerm.toLowerCase()}s configured`}
+              value={beltStats.beltCount}
+              sub={`${beltStats.tipCount} ${subRankTerm.toLowerCase()}s configured`}
               href="/belt-tracker"
               accent="#22C55E"
             />
@@ -164,7 +242,7 @@ export default function DashboardPage() {
             <StatCard
               icon={Clock}
               label="14+ Days Inactive"
-              value={watch14}
+              value={inactivityStats.watch14}
               sub="Students who may need a quick outreach touch"
               href="/students?inactiveDays=14"
               accent="#F59E0B"
@@ -172,7 +250,7 @@ export default function DashboardPage() {
             <StatCard
               icon={Clock}
               label="30+ Days Inactive"
-              value={watch30}
+              value={inactivityStats.watch30}
               sub="Likely at-risk if they were attending regularly"
               href="/students?inactiveDays=30"
               accent="#EF4444"
@@ -180,7 +258,7 @@ export default function DashboardPage() {
             <StatCard
               icon={Clock}
               label="45+ Days Inactive"
-              value={watch45}
+              value={inactivityStats.watch45}
               sub="Highest urgency follow-up list"
               href="/students?inactiveDays=45"
               accent="#B91C1C"
@@ -188,7 +266,7 @@ export default function DashboardPage() {
             <StatCard
               icon={PauseCircle}
               label="On Hold"
-              value={onHoldStudents}
+              value={studentStats.onHoldStudents}
               sub="Excluded from inactivity cards until their hold ends"
               href="/students"
               accent="#64748B"
@@ -209,13 +287,13 @@ export default function DashboardPage() {
                 </Link>
               </div>
 
-              {highestRiskStudents.length === 0 ? (
+              {inactivityStats.highestRiskStudents.length === 0 ? (
                 <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
                   No active students have crossed the 14-day inactivity threshold right now.
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {highestRiskStudents.map((row) => (
+                  {inactivityStats.highestRiskStudents.map((row) => (
                     <Link
                       key={row.student.id}
                       href={`/students/${row.student.id}`}
@@ -247,12 +325,7 @@ export default function DashboardPage() {
                 Quick Actions
               </h3>
               <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "Add Student", href: "/students", icon: Users },
-                  { label: "Import CSV", href: "/students/import", icon: Clock },
-                  { label: "View Leads", href: "/leads", icon: UserPlus },
-                  { label: "Reports", href: "/reports", icon: TrendingUp },
-                ].map((action) => (
+                {QUICK_ACTIONS.map((action) => (
                   <Link
                     key={action.label}
                     href={action.href}
@@ -275,7 +348,7 @@ export default function DashboardPage() {
                 </Link>
               </div>
               <div className="space-y-2">
-                {students.slice(0, 5).map((student) => (
+                {recentStudents.map((student) => (
                   <Link
                     key={student.id}
                     href={`/students/${student.id}`}

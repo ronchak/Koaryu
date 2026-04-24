@@ -10,6 +10,7 @@ interface ApiOptions {
   method?: string;
   headers?: Record<string, string>;
   omitStudioHeader?: boolean;
+  signal?: AbortSignal;
   timeoutMs?: number | null;
   timeoutMessage?: string;
   networkErrorMessage?: string;
@@ -21,6 +22,7 @@ interface FormApiOptions {
   body: FormData;
   headers?: Record<string, string>;
   omitStudioHeader?: boolean;
+  signal?: AbortSignal;
   timeoutMs?: number | null;
   timeoutMessage?: string;
   networkErrorMessage?: string;
@@ -99,6 +101,12 @@ async function parseSuccessResponse<T>(res: Response): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+function createAbortError(): Error {
+  const error = new Error("Request was canceled.");
+  error.name = "AbortError";
+  return error;
+}
+
 async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const {
     token,
@@ -106,6 +114,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     method = "GET",
     headers: extraHeaders,
     omitStudioHeader = false,
+    signal,
     timeoutMs = API_TIMEOUT_MS,
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
@@ -128,9 +137,23 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   }
 
   const controller = new AbortController();
+  let abortReason: "caller" | "timeout" | null = null;
   const timeout = timeoutMs == null
     ? null
-    : setTimeout(() => controller.abort(), timeoutMs);
+    : setTimeout(() => {
+        abortReason ??= "timeout";
+        controller.abort();
+      }, timeoutMs);
+  const abortFromCaller = () => {
+    abortReason ??= "caller";
+    controller.abort();
+  };
+
+  if (signal?.aborted) {
+    abortFromCaller();
+  } else {
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
 
   let res: Response;
   try {
@@ -142,13 +165,17 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(timeoutMessage);
+      if (abortReason === "timeout") {
+        throw new Error(timeoutMessage);
+      }
+      throw createAbortError();
     }
     throw new Error(networkErrorMessage);
   } finally {
     if (timeout) {
       clearTimeout(timeout);
     }
+    signal?.removeEventListener("abort", abortFromCaller);
   }
 
   if (!res.ok) {
@@ -165,6 +192,7 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
     method = "POST",
     headers: extraHeaders,
     omitStudioHeader = false,
+    signal,
     timeoutMs = API_TIMEOUT_MS,
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
@@ -185,9 +213,23 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
   }
 
   const controller = new AbortController();
+  let abortReason: "caller" | "timeout" | null = null;
   const timeout = timeoutMs == null
     ? null
-    : setTimeout(() => controller.abort(), timeoutMs);
+    : setTimeout(() => {
+        abortReason ??= "timeout";
+        controller.abort();
+      }, timeoutMs);
+  const abortFromCaller = () => {
+    abortReason ??= "caller";
+    controller.abort();
+  };
+
+  if (signal?.aborted) {
+    abortFromCaller();
+  } else {
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
 
   let res: Response;
   try {
@@ -199,13 +241,17 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(timeoutMessage);
+      if (abortReason === "timeout") {
+        throw new Error(timeoutMessage);
+      }
+      throw createAbortError();
     }
     throw new Error(networkErrorMessage);
   } finally {
     if (timeout) {
       clearTimeout(timeout);
     }
+    signal?.removeEventListener("abort", abortFromCaller);
   }
 
   if (!res.ok) {

@@ -24,6 +24,14 @@ const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
   other: "Other",
 };
 
+const LEAD_FUNNEL_STAGES = [
+  "inquiry",
+  "trial_scheduled",
+  "trial_completed",
+  "offer_sent",
+  "enrolled",
+] as const satisfies LeadStage[];
+
 function formatDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
     month: "short",
@@ -81,10 +89,10 @@ export default function ReportsPage() {
   const { leads } = useLeadStore();
   const { attendance, sessions } = useScheduleStore();
   const today = new Date().toISOString().split("T")[0];
-  const lookbackStart = subtractDays(today, 29);
+  const lookbackStart = useMemo(() => subtractDays(today, 29), [today]);
 
-  const leadStageCounts = useMemo(() => {
-    const counts: Record<LeadStage, number> = {
+  const leadMetrics = useMemo(() => {
+    const leadStageCounts: Record<LeadStage, number> = {
       inquiry: 0,
       trial_scheduled: 0,
       trial_completed: 0,
@@ -92,44 +100,62 @@ export default function ReportsPage() {
       enrolled: 0,
       closed_lost: 0,
     };
+    const sourceCounts = (Object.keys(LEAD_SOURCE_LABELS) as LeadSource[]).reduce(
+      (counts, source) => {
+        counts[source] = { total: 0, active: 0, enrolled: 0 };
+        return counts;
+      },
+      {} as Record<LeadSource, { total: number; active: number; enrolled: number }>
+    );
 
     for (const lead of leads) {
-      counts[lead.stage] += 1;
+      leadStageCounts[lead.stage] += 1;
+
+      const sourceCount = sourceCounts[lead.source];
+      sourceCount.total += 1;
+
+      if (lead.stage !== "closed_lost") {
+        sourceCount.active += 1;
+      }
+
+      if (lead.stage === "enrolled") {
+        sourceCount.enrolled += 1;
+      }
     }
 
-    return counts;
-  }, [leads]);
-
-  const totalLeads = leads.length;
-  const enrolledLeads = leadStageCounts.enrolled;
-  const activePipelineLeads = totalLeads - leadStageCounts.closed_lost;
-  const funnelRows = (["inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled"] as LeadStage[])
-    .map((stage) => ({
+    const totalLeads = leads.length;
+    const enrolledLeads = leadStageCounts.enrolled;
+    const activePipelineLeads = totalLeads - leadStageCounts.closed_lost;
+    const funnelRows = LEAD_FUNNEL_STAGES.map((stage) => ({
       stage,
       label: LEAD_STAGE_LABELS[stage],
       count: leadStageCounts[stage],
       share: activePipelineLeads > 0 ? leadStageCounts[stage] / activePipelineLeads : 0,
     }));
+    const sourceRows = (Object.keys(LEAD_SOURCE_LABELS) as LeadSource[])
+      .map((source) => {
+        const counts = sourceCounts[source];
 
-  const sourceRows = useMemo(
-    () =>
-      (Object.keys(LEAD_SOURCE_LABELS) as LeadSource[])
-        .map((source) => {
-          const leadsForSource = leads.filter((lead) => lead.source === source);
-          const enrolled = leadsForSource.filter((lead) => lead.stage === "enrolled").length;
+        return {
+          source,
+          label: LEAD_SOURCE_LABELS[source],
+          total: counts.total,
+          active: counts.active,
+          enrolled: counts.enrolled,
+          conversionRate: counts.total > 0 ? counts.enrolled / counts.total : null,
+        };
+      })
+      .sort((a, b) => b.total - a.total);
 
-          return {
-            source,
-            label: LEAD_SOURCE_LABELS[source],
-            total: leadsForSource.length,
-            active: leadsForSource.filter((lead) => lead.stage !== "closed_lost").length,
-            enrolled,
-            conversionRate: leadsForSource.length > 0 ? enrolled / leadsForSource.length : null,
-          };
-        })
-        .sort((a, b) => b.total - a.total),
-    [leads]
-  );
+    return {
+      leadStageCounts,
+      totalLeads,
+      enrolledLeads,
+      activePipelineLeads,
+      funnelRows,
+      sourceRows,
+    };
+  }, [leads]);
 
   const attendanceBySession = useMemo(() => {
     const counts = new Map<string, number>();
@@ -172,28 +198,54 @@ export default function ReportsPage() {
       });
   }, [attendanceBySession, lookbackStart, sessions, today]);
 
-  const totalAttendance = sessionRows.reduce((sum, session) => sum + session.attendees, 0);
-  const totalCapacity = sessionRows.reduce(
-    (sum, session) => sum + (session.capacity && session.capacity > 0 ? session.capacity : 0),
-    0
-  );
-  const sessionsWithCapacity = sessionRows.filter(
-    (session) => session.capacity && session.capacity > 0
-  ).length;
-  const utilizationRate = totalCapacity > 0 ? totalAttendance / totalCapacity : null;
-  const averageAttendance = sessionRows.length > 0 ? totalAttendance / sessionRows.length : 0;
-  const uniqueAttendees = new Set(
-    attendance
-      .filter((record) => {
-        const session = sessions.find((candidate) => candidate.id === record.session_id);
-        if (!session || record.status === "absent") {
-          return false;
-        }
+  const attendanceMetrics = useMemo(() => {
+    let totalAttendance = 0;
+    let totalCapacity = 0;
+    let sessionsWithCapacity = 0;
 
-        return session.date >= lookbackStart && session.date <= today;
-      })
-      .map((record) => record.student_id)
-  ).size;
+    for (const session of sessionRows) {
+      totalAttendance += session.attendees;
+
+      if (session.capacity && session.capacity > 0) {
+        totalCapacity += session.capacity;
+        sessionsWithCapacity += 1;
+      }
+    }
+
+    return {
+      totalAttendance,
+      totalCapacity,
+      sessionsWithCapacity,
+      utilizationRate: totalCapacity > 0 ? totalAttendance / totalCapacity : null,
+      averageAttendance: sessionRows.length > 0 ? totalAttendance / sessionRows.length : 0,
+    };
+  }, [sessionRows]);
+
+  const sessionIdsInLookback = useMemo(() => {
+    const sessionIds = new Set<string>();
+
+    for (const session of sessions) {
+      if (session.date >= lookbackStart && session.date <= today) {
+        sessionIds.add(session.id);
+      }
+    }
+
+    return sessionIds;
+  }, [lookbackStart, sessions, today]);
+
+  const uniqueAttendees = useMemo(() => {
+    const studentIds = new Set<string>();
+
+    for (const record of attendance) {
+      if (record.status !== "absent" && sessionIdsInLookback.has(record.session_id)) {
+        studentIds.add(record.student_id);
+      }
+    }
+
+    return studentIds.size;
+  }, [attendance, sessionIdsInLookback]);
+
+  const visibleSessionRows = useMemo(() => sessionRows.slice(0, 10), [sessionRows]);
 
   return (
     <>
@@ -208,31 +260,35 @@ export default function ReportsPage() {
             <MetricCard
               icon={BarChart3}
               label="Leads Captured"
-              value={String(totalLeads)}
-              sub={`${activePipelineLeads} still active in the funnel`}
+              value={String(leadMetrics.totalLeads)}
+              sub={`${leadMetrics.activePipelineLeads} still active in the funnel`}
               accent="#8B5CF6"
             />
             <MetricCard
               icon={TrendingUp}
               label="Lead Conversion"
-              value={formatPercent(totalLeads > 0 ? enrolledLeads / totalLeads : null)}
-              sub={`${enrolledLeads} currently marked enrolled`}
+              value={formatPercent(
+                leadMetrics.totalLeads > 0
+                  ? leadMetrics.enrolledLeads / leadMetrics.totalLeads
+                  : null
+              )}
+              sub={`${leadMetrics.enrolledLeads} currently marked enrolled`}
               accent="#22C55E"
             />
             <MetricCard
               icon={Users}
               label="30-Day Attendance"
-              value={String(totalAttendance)}
-              sub={`${Math.round(averageAttendance || 0)} average check-ins per class`}
+              value={String(attendanceMetrics.totalAttendance)}
+              sub={`${Math.round(attendanceMetrics.averageAttendance || 0)} average check-ins per class`}
               accent="#3B82F6"
             />
             <MetricCard
               icon={Calendar}
               label="Utilization"
-              value={formatPercent(utilizationRate)}
+              value={formatPercent(attendanceMetrics.utilizationRate)}
               sub={
-                sessionsWithCapacity > 0
-                  ? `${sessionsWithCapacity} classes with capacity tracking`
+                attendanceMetrics.sessionsWithCapacity > 0
+                  ? `${attendanceMetrics.sessionsWithCapacity} classes with capacity tracking`
                   : "Add class capacities to unlock utilization"
               }
               accent="#F59E0B"
@@ -249,12 +305,12 @@ export default function ReportsPage() {
                   </p>
                 </div>
                 <span className="rounded-[4px] border border-border bg-surface-raised px-2 py-1 text-xs text-text-secondary">
-                  {leadStageCounts.closed_lost} lost
+                  {leadMetrics.leadStageCounts.closed_lost} lost
                 </span>
               </div>
 
               <div className="space-y-3">
-                {funnelRows.map((row) => (
+                {leadMetrics.funnelRows.map((row) => (
                   <div key={row.stage}>
                     <div className="flex items-center justify-between text-sm mb-1.5">
                       <span className="text-text-primary">{row.label}</span>
@@ -280,7 +336,7 @@ export default function ReportsPage() {
               </div>
 
               <div className="space-y-3">
-                {sourceRows.map((row) => (
+                {leadMetrics.sourceRows.map((row) => (
                   <div
                     key={row.source}
                     className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
@@ -323,7 +379,7 @@ export default function ReportsPage() {
                   {uniqueAttendees} unique attendees
                 </span>
                 <span className="rounded-[4px] border border-border bg-surface-raised px-2 py-1 text-text-secondary">
-                  {totalCapacity > 0 ? `${totalCapacity} total seats tracked` : "No seat caps yet"}
+                  {attendanceMetrics.totalCapacity > 0 ? `${attendanceMetrics.totalCapacity} total seats tracked` : "No seat caps yet"}
                 </span>
               </div>
             </div>
@@ -345,7 +401,7 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sessionRows.slice(0, 10).map((session) => (
+                    {visibleSessionRows.map((session) => (
                       <tr key={session.id} className="border-b border-border/60 last:border-0">
                         <td className="py-3 pr-4 text-text-primary">{session.name}</td>
                         <td className="py-3 pr-4 text-text-secondary">

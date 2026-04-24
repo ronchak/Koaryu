@@ -4,6 +4,29 @@
  */
 import type { Student, StudentListResponse } from "@/types";
 
+function dateDaysFromToday(offsetDays: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function todayStr(): string {
+  return dateDaysFromToday(0);
+}
+
+function isoDaysFromToday(offsetDays: number, time = "12:00:00"): string {
+  return `${dateDaysFromToday(offsetDays)}T${time}Z`;
+}
+
+function dayOfWeek(offsetDays = 0): number {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return date.getDay();
+}
+
 export const MOCK_STUDENTS: Student[] = [
   {
     id: "mock-1",
@@ -16,7 +39,8 @@ export const MOCK_STUDENTS: Student[] = [
     email: undefined,
     phone: undefined,
     status: "active",
-    membership_start_date: "2023-09-01",
+    membership_start_date: dateDaysFromToday(-210),
+    current_belt_rank_id: "rank-1",
     tags: ["youth", "competition"],
     guardians: [
       {
@@ -29,8 +53,8 @@ export const MOCK_STUDENTS: Student[] = [
         is_primary_contact: true,
       },
     ],
-    created_at: "2023-09-01T00:00:00Z",
-    updated_at: "2024-11-15T00:00:00Z",
+    created_at: isoDaysFromToday(-210, "09:00:00"),
+    updated_at: isoDaysFromToday(-1, "15:30:00"),
   },
   {
     id: "mock-2",
@@ -43,11 +67,12 @@ export const MOCK_STUDENTS: Student[] = [
     email: "marcus.webb@email.com",
     phone: "(555) 876-5432",
     status: "active",
-    membership_start_date: "2022-01-15",
+    membership_start_date: dateDaysFromToday(-420),
+    current_belt_rank_id: "rank-1d",
     tags: ["adult", "competitor"],
     guardians: [],
-    created_at: "2022-01-15T00:00:00Z",
-    updated_at: "2024-10-20T00:00:00Z",
+    created_at: isoDaysFromToday(-420, "10:00:00"),
+    updated_at: isoDaysFromToday(-2, "18:15:00"),
   },
   {
     id: "mock-3",
@@ -60,7 +85,8 @@ export const MOCK_STUDENTS: Student[] = [
     email: undefined,
     phone: undefined,
     status: "trialing",
-    membership_start_date: "2024-12-01",
+    membership_start_date: dateDaysFromToday(-15),
+    current_belt_rank_id: "rank-1",
     tags: ["youth", "trial"],
     guardians: [
       {
@@ -73,8 +99,8 @@ export const MOCK_STUDENTS: Student[] = [
         is_primary_contact: true,
       },
     ],
-    created_at: "2024-12-01T00:00:00Z",
-    updated_at: "2024-12-01T00:00:00Z",
+    created_at: isoDaysFromToday(-15, "16:00:00"),
+    updated_at: isoDaysFromToday(-1, "16:30:00"),
   },
   {
     id: "mock-4",
@@ -87,11 +113,12 @@ export const MOCK_STUDENTS: Student[] = [
     email: "derek.kim@email.com",
     phone: "(555) 456-7890",
     status: "inactive",
-    membership_start_date: "2021-06-01",
+    membership_start_date: dateDaysFromToday(-600),
+    current_belt_rank_id: "rank-2",
     tags: ["adult"],
     guardians: [],
-    created_at: "2021-06-01T00:00:00Z",
-    updated_at: "2024-08-10T00:00:00Z",
+    created_at: isoDaysFromToday(-600, "11:00:00"),
+    updated_at: isoDaysFromToday(-45, "11:00:00"),
   },
   {
     id: "mock-5",
@@ -104,7 +131,8 @@ export const MOCK_STUDENTS: Student[] = [
     email: undefined,
     phone: undefined,
     status: "active",
-    membership_start_date: "2023-03-10",
+    membership_start_date: dateDaysFromToday(-260),
+    current_belt_rank_id: "rank-1b",
     tags: ["youth"],
     guardians: [
       {
@@ -117,8 +145,55 @@ export const MOCK_STUDENTS: Student[] = [
         is_primary_contact: true,
       },
     ],
-    created_at: "2023-03-10T00:00:00Z",
-    updated_at: "2024-11-01T00:00:00Z",
+    created_at: isoDaysFromToday(-260, "12:00:00"),
+    updated_at: isoDaysFromToday(-1, "17:00:00"),
+  },
+  {
+    id: "mock-7",
+    studio_id: "mock-studio",
+    legal_first_name: "Nora",
+    legal_last_name: "Patel",
+    preferred_name: "Nora",
+    date_of_birth: "1995-05-14",
+    is_minor: false,
+    email: "nora.patel@email.com",
+    phone: "(555) 246-8101",
+    status: "active",
+    membership_start_date: dateDaysFromToday(-120),
+    current_belt_rank_id: "rank-2a",
+    notes: "Usually attends lunch classes. Good candidate for a quick reactivation text.",
+    tags: ["adult", "follow-up"],
+    guardians: [],
+    created_at: isoDaysFromToday(-120, "13:00:00"),
+    updated_at: isoDaysFromToday(-21, "13:00:00"),
+  },
+  {
+    id: "mock-8",
+    studio_id: "mock-studio",
+    legal_first_name: "Leo",
+    legal_last_name: "Nguyen",
+    preferred_name: "Leo",
+    date_of_birth: "2017-08-09",
+    is_minor: true,
+    email: undefined,
+    phone: undefined,
+    status: "trialing",
+    membership_start_date: dateDaysFromToday(-5),
+    current_belt_rank_id: "rank-1",
+    tags: ["youth", "trial"],
+    guardians: [
+      {
+        id: "g-4",
+        first_name: "Mai",
+        last_name: "Nguyen",
+        email: "mai.nguyen@email.com",
+        phone: "(555) 135-7911",
+        relation: "Mother",
+        is_primary_contact: true,
+      },
+    ],
+    created_at: isoDaysFromToday(-5, "14:00:00"),
+    updated_at: isoDaysFromToday(-1, "09:30:00"),
   },
   {
     id: "mock-6",
@@ -131,12 +206,15 @@ export const MOCK_STUDENTS: Student[] = [
     email: "james.obrien@email.com",
     phone: "(555) 678-9012",
     status: "paused",
-    membership_start_date: "2020-08-20",
-    notes: "On medical hold until Feb 2025. Contact before reactivating.",
+    hold_start_date: dateDaysFromToday(-10),
+    hold_end_date: dateDaysFromToday(20),
+    membership_start_date: dateDaysFromToday(-700),
+    current_belt_rank_id: "rank-5",
+    notes: "On medical hold this month. Contact before reactivating.",
     tags: ["adult", "medical-hold"],
     guardians: [],
-    created_at: "2020-08-20T00:00:00Z",
-    updated_at: "2024-12-05T00:00:00Z",
+    created_at: isoDaysFromToday(-700, "10:30:00"),
+    updated_at: isoDaysFromToday(-10, "09:00:00"),
   },
 ];
 
@@ -159,14 +237,6 @@ import type {
   Lead,
 } from "@/types";
 
-function todayStr(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-function dayOfWeek(): number {
-  return new Date().getDay(); // 0=Sunday
-}
-
 export const MOCK_CLASS_TEMPLATES: ClassTemplate[] = [
   {
     id: "tmpl-1",
@@ -178,8 +248,8 @@ export const MOCK_CLASS_TEMPLATES: ClassTemplate[] = [
     end_time: "16:45",
     capacity: 20,
     is_active: true,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
+    created_at: isoDaysFromToday(-90, "09:00:00"),
+    updated_at: isoDaysFromToday(-2, "09:00:00"),
   },
   {
     id: "tmpl-2",
@@ -191,34 +261,34 @@ export const MOCK_CLASS_TEMPLATES: ClassTemplate[] = [
     end_time: "19:30",
     capacity: 30,
     is_active: true,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
+    created_at: isoDaysFromToday(-90, "09:05:00"),
+    updated_at: isoDaysFromToday(-2, "09:05:00"),
   },
   {
     id: "tmpl-3",
     studio_id: "mock-studio",
     name: "Open Mat",
-    day_of_week: (dayOfWeek() + 1) % 7,
+    day_of_week: dayOfWeek(1),
     start_date: todayStr(),
     start_time: "10:00",
     end_time: "12:00",
     capacity: 40,
     is_active: true,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
+    created_at: isoDaysFromToday(-90, "09:10:00"),
+    updated_at: isoDaysFromToday(-2, "09:10:00"),
   },
   {
     id: "tmpl-4",
     studio_id: "mock-studio",
     name: "Competition Prep",
-    day_of_week: (dayOfWeek() + 2) % 7,
+    day_of_week: dayOfWeek(2),
     start_date: todayStr(),
     start_time: "17:00",
     end_time: "18:30",
     capacity: 15,
     is_active: true,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
+    created_at: isoDaysFromToday(-90, "09:15:00"),
+    updated_at: isoDaysFromToday(-2, "09:15:00"),
   },
 ];
 
@@ -258,7 +328,7 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     session_id: "sess-1",
     student_id: "mock-1",
     status: "present",
-    checked_in_at: todayStr() + "T16:00:00Z",
+    checked_in_at: `${todayStr()}T16:00:00Z`,
     student_name: "Aiko Tanaka",
   },
   {
@@ -267,7 +337,7 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     session_id: "sess-1",
     student_id: "mock-5",
     status: "present",
-    checked_in_at: todayStr() + "T16:02:00Z",
+    checked_in_at: `${todayStr()}T16:02:00Z`,
     student_name: "Priya Sharma",
   },
   {
@@ -276,8 +346,35 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     session_id: "sess-1",
     student_id: "mock-3",
     status: "late",
-    checked_in_at: todayStr() + "T16:10:00Z",
+    checked_in_at: `${todayStr()}T16:10:00Z`,
     student_name: "Sofia Reyes",
+  },
+  {
+    id: "att-4",
+    studio_id: "mock-studio",
+    session_id: "sess-2",
+    student_id: "mock-2",
+    status: "present",
+    checked_in_at: `${todayStr()}T18:01:00Z`,
+    student_name: "Marc Webb",
+  },
+  {
+    id: "att-5",
+    studio_id: "mock-studio",
+    session_id: "sess-2",
+    student_id: "mock-4",
+    status: "present",
+    checked_in_at: `${todayStr()}T18:04:00Z`,
+    student_name: "Derek Kim",
+  },
+  {
+    id: "att-6",
+    studio_id: "mock-studio",
+    session_id: "historic-nora",
+    student_id: "mock-7",
+    status: "present",
+    checked_in_at: `${dateDaysFromToday(-21)}T12:05:00Z`,
+    student_name: "Nora Patel",
   },
 ];
 
@@ -482,8 +579,10 @@ export const MOCK_ELIGIBILITY: EligibilityEntry[] = [
   {
     student_id: "mock-1",
     student_name: "Aiko Tanaka",
+    current_rank_id: "rank-1",
     current_rank_name: "White Belt",
     current_rank_color: "#FFFFFF",
+    next_rank_id: "rank-1a",
     next_rank_name: "Red Tip 1",
     next_rank_color: "#FFFFFF",
     classes_since_promo: 6,
@@ -498,8 +597,10 @@ export const MOCK_ELIGIBILITY: EligibilityEntry[] = [
   {
     student_id: "mock-5",
     student_name: "Priya Sharma",
+    current_rank_id: "rank-1b",
     current_rank_name: "Red Tip 2",
     current_rank_color: "#FFFFFF",
+    next_rank_id: "rank-1c",
     next_rank_name: "Red Tip 3",
     next_rank_color: "#FFFFFF",
     classes_since_promo: 9,
@@ -514,8 +615,10 @@ export const MOCK_ELIGIBILITY: EligibilityEntry[] = [
   {
     student_id: "mock-2",
     student_name: "Marc Webb",
+    current_rank_id: "rank-1d",
     current_rank_name: "Black Tip",
     current_rank_color: "#FFFFFF",
+    next_rank_id: "rank-2",
     next_rank_name: "Yellow Belt",
     next_rank_color: "#EAB308",
     classes_since_promo: 12,
@@ -530,8 +633,10 @@ export const MOCK_ELIGIBILITY: EligibilityEntry[] = [
   {
     student_id: "mock-6",
     student_name: "Jimmy O'Brien",
+    current_rank_id: "rank-5",
     current_rank_name: "Blue Belt",
     current_rank_color: "#3B82F6",
+    next_rank_id: "rank-6",
     next_rank_name: "Green Belt",
     next_rank_color: "#22C55E",
     classes_since_promo: 110,
@@ -544,10 +649,30 @@ export const MOCK_ELIGIBILITY: EligibilityEntry[] = [
     is_eligible: false,
   },
   {
+    student_id: "mock-7",
+    student_name: "Nora Patel",
+    current_rank_id: "rank-2a",
+    current_rank_name: "Yellow Tip",
+    current_rank_color: "#EAB308",
+    next_rank_id: "rank-3",
+    next_rank_name: "Orange Belt",
+    next_rank_color: "#F97316",
+    classes_since_promo: 18,
+    classes_required: 30,
+    days_at_rank: 75,
+    days_required: 180,
+    classes_met: false,
+    time_met: false,
+    needs_approval: true,
+    is_eligible: false,
+  },
+  {
     student_id: "mock-4",
     student_name: "Derek Kim",
+    current_rank_id: "rank-2",
     current_rank_name: "Yellow Belt",
     current_rank_color: "#EAB308",
+    next_rank_id: "rank-3",
     next_rank_name: "Orange Belt",
     next_rank_color: "#F97316",
     classes_since_promo: 22,
@@ -576,9 +701,10 @@ export const MOCK_LEADS: Lead[] = [
     stage: "inquiry",
     program_interest: "Adult BJJ",
     is_minor: false,
+    follow_up_date: todayStr(),
     notes: "Interested in evening classes. Has prior wrestling experience.",
-    created_at: "2025-04-15T10:00:00Z",
-    updated_at: "2025-04-15T10:00:00Z",
+    created_at: isoDaysFromToday(-6, "10:00:00"),
+    updated_at: isoDaysFromToday(-1, "10:00:00"),
   },
   {
     id: "lead-2",
@@ -594,10 +720,10 @@ export const MOCK_LEADS: Lead[] = [
     guardian_name: "Elena Gonzalez",
     guardian_email: "elena.g@email.com",
     guardian_phone: "(555) 333-4445",
-    follow_up_date: "2025-04-20",
+    follow_up_date: dateDaysFromToday(1),
     notes: "Referred by Carmen Reyes. Daughter is 8 years old.",
-    created_at: "2025-04-14T14:00:00Z",
-    updated_at: "2025-04-16T09:00:00Z",
+    created_at: isoDaysFromToday(-8, "14:00:00"),
+    updated_at: isoDaysFromToday(-2, "09:00:00"),
   },
   {
     id: "lead-3",
@@ -609,9 +735,10 @@ export const MOCK_LEADS: Lead[] = [
     stage: "trial_completed",
     program_interest: "Adult No-Gi",
     is_minor: false,
+    follow_up_date: todayStr(),
     notes: "Completed trial class on 4/12. Very enthusiastic. Follow up with pricing.",
-    created_at: "2025-04-10T08:00:00Z",
-    updated_at: "2025-04-13T11:00:00Z",
+    created_at: isoDaysFromToday(-12, "08:00:00"),
+    updated_at: isoDaysFromToday(-3, "11:00:00"),
   },
   {
     id: "lead-4",
@@ -624,10 +751,10 @@ export const MOCK_LEADS: Lead[] = [
     stage: "offer_sent",
     program_interest: "Adult BJJ",
     is_minor: false,
-    follow_up_date: "2025-04-18",
+    follow_up_date: dateDaysFromToday(-1),
     notes: "Sent Growth plan pricing. Waiting for decision.",
-    created_at: "2025-04-08T16:00:00Z",
-    updated_at: "2025-04-15T10:00:00Z",
+    created_at: isoDaysFromToday(-14, "16:00:00"),
+    updated_at: isoDaysFromToday(-1, "10:00:00"),
   },
   {
     id: "lead-5",
@@ -642,7 +769,7 @@ export const MOCK_LEADS: Lead[] = [
     is_minor: false,
     lost_reason: "price_objection",
     notes: "Price was the deciding factor. May reconsider if we run a promo.",
-    created_at: "2025-04-01T12:00:00Z",
-    updated_at: "2025-04-10T15:00:00Z",
+    created_at: isoDaysFromToday(-24, "12:00:00"),
+    updated_at: isoDaysFromToday(-15, "15:00:00"),
   },
 ];

@@ -32,6 +32,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "paused", label: "Paused" },
   { value: "canceled", label: "Canceled" },
 ];
+const STUDENTS_BOOTSTRAP_FRESH_MS = 30_000;
 
 function formatDate(d?: string) {
   if (!d) return "—";
@@ -71,6 +72,8 @@ export default function StudentsPage() {
     students,
     studentsLoaded,
     studentsLoadError,
+    studentsLastLoadedAt,
+    studentsMayBePartial,
     addStudent,
     bulkAddTagsToStudents,
     bulkUpdateStudentStatus,
@@ -92,11 +95,36 @@ export default function StudentsPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [bulkActionError, setBulkActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
   const [bulkStatus, setBulkStatus] = useState<StudentStatus>("active");
+  const studentRows = useMemo(
+    () =>
+      students.map((student) => ({
+        student,
+        displayName: displayName(student),
+        searchFields: {
+          legalFirstName: student.legal_first_name.toLowerCase(),
+          legalLastName: student.legal_last_name.toLowerCase(),
+          preferredName: student.preferred_name?.toLowerCase() || "",
+          email: student.email?.toLowerCase() || "",
+        },
+        contact:
+          student.email ||
+          student.phone ||
+          (student.is_minor && student.guardians[0]?.email) ||
+          "—",
+        visibleTags: student.tags.slice(0, 2),
+        hiddenTagCount: Math.max(0, student.tags.length - 2),
+      })),
+    [students]
+  );
   const inactivityRows = useMemo(
-    () => buildStudentInactivityRows(students, sessions, attendance),
-    [attendance, sessions, students]
+    () =>
+      inactivityThreshold
+        ? buildStudentInactivityRows(students, sessions, attendance)
+        : [],
+    [attendance, inactivityThreshold, sessions, students]
   );
   const inactivityByStudentId = useMemo(
     () => new Map(inactivityRows.map((row) => [row.student.id, row.daysInactive])),
@@ -105,53 +133,68 @@ export default function StudentsPage() {
   const hasActiveFilters = Boolean(search || statusFilter || inactivityThreshold);
 
   useEffect(() => {
+    if (!studentsLoaded) {
+      return;
+    }
+
+    if (
+      !studentsLoadError &&
+      !studentsMayBePartial &&
+      studentsLastLoadedAt &&
+      Date.now() - studentsLastLoadedAt < STUDENTS_BOOTSTRAP_FRESH_MS
+    ) {
+      return;
+    }
+
     void refreshStudents().catch((error) => {
       console.error("Failed to refresh students page data", error);
     });
-  }, [refreshStudents]);
+  }, [refreshStudents, studentsLastLoadedAt, studentsLoadError, studentsLoaded, studentsMayBePartial]);
 
   // ---- Filter & Sort ----
   const filtered = useMemo(() => {
-    let list = [...students];
+    let list = [...studentRows];
 
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
-        (s) =>
-          s.legal_first_name.toLowerCase().includes(q) ||
-          s.legal_last_name.toLowerCase().includes(q) ||
-          (s.preferred_name?.toLowerCase() || "").includes(q) ||
-          (s.email?.toLowerCase() || "").includes(q)
+        (row) =>
+          row.searchFields.legalFirstName.includes(q) ||
+          row.searchFields.legalLastName.includes(q) ||
+          row.searchFields.preferredName.includes(q) ||
+          row.searchFields.email.includes(q)
       );
     }
 
     if (statusFilter) {
-      list = list.filter((s) => s.status === statusFilter);
+      list = list.filter((row) => row.student.status === statusFilter);
     }
 
     if (inactivityThreshold) {
-      list = list.filter((student) => (inactivityByStudentId.get(student.id) || 0) >= inactivityThreshold);
+      list = list.filter(
+        (row) => (inactivityByStudentId.get(row.student.id) || 0) >= inactivityThreshold
+      );
     }
 
     list.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "name") {
-        cmp = displayName(a).localeCompare(displayName(b));
+        cmp = a.displayName.localeCompare(b.displayName);
       } else if (sortKey === "status") {
-        cmp = a.status.localeCompare(b.status);
+        cmp = a.student.status.localeCompare(b.student.status);
       } else if (sortKey === "membership_start_date") {
         cmp =
-          (a.membership_start_date || "").localeCompare(
-            b.membership_start_date || ""
+          (a.student.membership_start_date || "").localeCompare(
+            b.student.membership_start_date || ""
           );
       } else if (sortKey === "created_at") {
-        cmp = a.created_at.localeCompare(b.created_at);
+        cmp = a.student.created_at.localeCompare(b.student.created_at);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
 
     return list;
-  }, [students, search, statusFilter, inactivityThreshold, inactivityByStudentId, sortKey, sortDir]);
+  }, [studentRows, search, statusFilter, inactivityThreshold, inactivityByStudentId, sortKey, sortDir]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -165,6 +208,7 @@ export default function StudentsPage() {
   function toggleSelect(id: string) {
     setDeleteError(null);
     setBulkActionError(null);
+    setActionMessage(null);
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -182,17 +226,19 @@ export default function StudentsPage() {
   function toggleSelectAll() {
     setDeleteError(null);
     setBulkActionError(null);
+    setActionMessage(null);
     if (selectedIds.size === filtered.length) {
       setActiveBulkPanel(null);
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filtered.map((s) => s.id)));
+      setSelectedIds(new Set(filtered.map((row) => row.student.id)));
     }
   }
 
   function toggleBulkPanel(panel: "tags" | "status" | "delete") {
     setDeleteError(null);
     setBulkActionError(null);
+    setActionMessage(null);
     setActiveBulkPanel((current) => (current === panel ? null : panel));
   }
 
@@ -203,9 +249,11 @@ export default function StudentsPage() {
     setDeleteError(null);
 
     try {
+      const deleteCount = selectedIds.size;
       await deleteStudents(Array.from(selectedIds));
       setSelectedIds(new Set());
       setActiveBulkPanel(null);
+      setActionMessage(`${deleteCount} ${deleteCount === 1 ? "student was" : "students were"} removed from the active roster.`);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Failed to delete selected students.");
     } finally {
@@ -243,6 +291,7 @@ export default function StudentsPage() {
       }
       setTagInput("");
       setActiveBulkPanel(null);
+      setActionMessage(`Tags added to ${result.updated} ${result.updated === 1 ? "student" : "students"}.`);
     } catch (error) {
       setBulkActionError(error instanceof Error ? error.message : "Failed to add tags.");
     } finally {
@@ -265,6 +314,7 @@ export default function StudentsPage() {
         return;
       }
       setActiveBulkPanel(null);
+      setActionMessage(`Status changed to ${bulkStatus} for ${result.updated} ${result.updated === 1 ? "student" : "students"}.`);
     } catch (error) {
       setBulkActionError(error instanceof Error ? error.message : "Failed to update status.");
     } finally {
@@ -277,6 +327,7 @@ export default function StudentsPage() {
     try {
       await addStudent(data);
       setShowForm(false);
+      setActionMessage("Student added to the roster.");
     } finally {
       setIsAdding(false);
     }
@@ -328,6 +379,14 @@ export default function StudentsPage() {
             </div>
           </div>
         )}
+
+        {actionMessage ? (
+          <div className="px-8 pt-4">
+            <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+              {actionMessage}
+            </div>
+          </div>
+        ) : null}
 
         {/* Toolbar */}
         <div className="flex items-center gap-3 px-8 py-4 border-b border-border">
@@ -597,12 +656,16 @@ export default function StudentsPage() {
                   Clear filters
                 </button>
               ) : (
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="mt-3 text-sm text-accent hover:text-accent-hover cursor-pointer"
-                >
-                  Add student
-                </button>
+                <div className="mt-4 flex items-center gap-3">
+                  <Button variant="primary" size="sm" onClick={() => setShowForm(true)}>
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Add student
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => router.push("/students/import")}>
+                    <Upload className="w-3.5 h-3.5" />
+                    Import CSV
+                  </Button>
+                </div>
               )}
             </div>
           ) : (
@@ -662,13 +725,9 @@ export default function StudentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((student, idx) => {
+                {filtered.map((row, idx) => {
+                  const { student } = row;
                   const isSelected = selectedIds.has(student.id);
-                  const contact =
-                    student.email ||
-                    student.phone ||
-                    (student.is_minor && student.guardians[0]?.email) ||
-                    "—";
                   return (
                     <tr
                       key={student.id}
@@ -719,11 +778,11 @@ export default function StudentsPage() {
                         <StatusBadge status={student.status} />
                       </td>
                       <td className="px-4 py-3 text-text-secondary font-mono text-xs">
-                        {contact}
+                        {row.contact}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
-                          {student.tags.slice(0, 2).map((tag) => (
+                          {row.visibleTags.map((tag) => (
                             <span
                               key={tag}
                               className="px-1.5 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
@@ -731,9 +790,9 @@ export default function StudentsPage() {
                               {tag}
                             </span>
                           ))}
-                          {student.tags.length > 2 && (
+                          {row.hiddenTagCount > 0 && (
                             <span className="text-xs text-muted">
-                              +{student.tags.length - 2}
+                              +{row.hiddenTagCount}
                             </span>
                           )}
                         </div>

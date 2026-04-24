@@ -11,6 +11,8 @@ import { APP_TAGLINE } from "@/lib/constants";
 import { setActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
 import type { Studio } from "@/types";
 
+const PREVIEW_STUDIO_ID = "preview-studio";
+
 const TIMEZONES = [
   "America/New_York",
   "America/Chicago",
@@ -45,6 +47,21 @@ export default function OnboardingPage() {
     setIsLoading(true);
 
     try {
+      if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
+        const previewUserId =
+          typeof window !== "undefined"
+            ? window.localStorage.getItem("koaryu:previewSignupEmail") || "preview-user"
+            : "preview-user";
+        setStudioStateCookie(previewUserId, true);
+        setActiveStudioIdCookie(PREVIEW_STUDIO_ID);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("koaryu:studioName", studioName);
+        }
+        router.push("/");
+        router.refresh();
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         setError("You must be signed in to create a studio.");

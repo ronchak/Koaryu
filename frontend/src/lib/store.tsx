@@ -31,8 +31,16 @@ import {
 } from "@/lib/mock-data";
 import { parseCalendarDate, toCalendarDateKey } from "@/lib/schedule-calendar";
 
+interface AuthUserProfile {
+  id: string;
+  email: string;
+  full_name?: string | null;
+}
+
 interface AuthProfileResponse {
+  user: AuthUserProfile;
   studio_id: string | null;
+  role: string | null;
 }
 
 interface StudentListPageResponse {
@@ -54,6 +62,27 @@ interface BootstrapResponse {
   primary_belt_ladder: BeltLadder | null;
 }
 
+interface DemoResetCounts {
+  students: number;
+  leads: number;
+  belt_ranks: number;
+  class_sessions: number;
+  attendance_records: number;
+}
+
+interface DemoResetResponse {
+  studio_name: string;
+  students: Student[];
+  leads: Lead[];
+  belt_ladders: BeltLadder[];
+  primary_belt_ladder: BeltLadder | null;
+  eligibility: EligibilityEntry[];
+  templates: ClassTemplate[];
+  sessions: ClassSession[];
+  attendance: AttendanceRecord[];
+  counts: DemoResetCounts;
+}
+
 // ── Storage keys ─────────────────────────────────────────────────────────────
 const KEYS = {
   students: "koaryu:students",
@@ -66,6 +95,16 @@ const KEYS = {
   subRankTerm: "koaryu:subRankTerm",
   ladderName: "koaryu:ladderName",
 };
+
+const DEMO_STUDIO_NAME = "River City Martial Arts";
+const DASHBOARD_BOOTSTRAP_STUDENT_LIMIT = 200;
+const PROMOTION_HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
+const SCHEDULE_ATTENDANCE_BULK_THRESHOLD = 3;
+
+interface PromotionHistoryCacheEntry {
+  items: Promotion[];
+  fetchedAt: number;
+}
 
 function load<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -80,6 +119,17 @@ function save<T>(key: string, value: T) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function clearPreviewStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith("koaryu:")) {
+        localStorage.removeItem(key);
+      }
+    });
   } catch {}
 }
 
@@ -223,6 +273,13 @@ function upsertBeltLadder(ladders: BeltLadder[], nextLadder: BeltLadder): BeltLa
   return sortBeltLadders(next);
 }
 
+function normalizeAttendanceRecords(records: AttendanceRecord[]): AttendanceRecord[] {
+  return records.map((record) => ({
+    ...record,
+    student_name: record.student_name || "",
+  }));
+}
+
 function getPreviewTemplateSessionDates(template: ClassTemplate): string[] {
   const start = parseCalendarDate(template.start_date);
   const end = template.end_date ? parseCalendarDate(template.end_date) : parseCalendarDate(template.start_date);
@@ -251,6 +308,8 @@ interface StoreContextValue {
   students: Student[];
   studentsLoaded: boolean;
   studentsLoadError: string | null;
+  studentsLastLoadedAt: number | null;
+  studentsMayBePartial: boolean;
   addStudent: (data: StudentCreate) => Promise<Student>;
   updateStudent: (id: string, data: Partial<Student>) => Promise<void>;
   deleteStudents: (ids: string[]) => Promise<void>;
@@ -290,6 +349,11 @@ interface StoreContextValue {
   subRankTerm: string;
   setSubRankTerm: (term: string) => Promise<void>;
   eligibility: EligibilityEntry[];
+  promotionHistoryByStudent: Record<string, Promotion[]>;
+  loadPromotionHistory: (
+    studentId: string,
+    options?: { force?: boolean; signal?: AbortSignal }
+  ) => Promise<Promotion[]>;
   promoteStudent: (studentId: string, toRankId: string, notes?: string) => Promise<Promotion>;
 
   // Schedule
@@ -305,7 +369,10 @@ interface StoreContextValue {
 
   // Studio
   studioName: string;
+  userEmail: string;
+  userName: string;
   setStudioName: (name: string) => Promise<void>;
+  resetDemoData: () => Promise<DemoResetResponse>;
 }
 
 type ConfigStoreContextValue = Pick<StoreContextValue, "isPreviewMode" | "token">;
@@ -313,6 +380,8 @@ type StudentsStoreContextValue = Pick<
   StoreContextValue,
   | "studentsLoaded"
   | "studentsLoadError"
+  | "studentsLastLoadedAt"
+  | "studentsMayBePartial"
   | "students"
   | "addStudent"
   | "updateStudent"
@@ -343,6 +412,8 @@ type BeltsStoreContextValue = Pick<
   | "subRankTerm"
   | "setSubRankTerm"
   | "eligibility"
+  | "promotionHistoryByStudent"
+  | "loadPromotionHistory"
   | "promoteStudent"
 >;
 type ScheduleStoreContextValue = Pick<
@@ -357,7 +428,10 @@ type ScheduleStoreContextValue = Pick<
   | "attendance"
   | "toggleCheckIn"
 >;
-type StudioStoreContextValue = Pick<StoreContextValue, "studioName" | "setStudioName">;
+type StudioStoreContextValue = Pick<
+  StoreContextValue,
+  "studioName" | "userEmail" | "userName" | "setStudioName" | "resetDemoData"
+>;
 
 const ConfigStoreContext = createContext<ConfigStoreContextValue | null>(null);
 const StudentsStoreContext = createContext<StudentsStoreContextValue | null>(null);
@@ -412,21 +486,25 @@ export function useStore(): StoreContextValue {
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
-  const [hydrated, setHydrated] = useState(isPreviewMode);
+  const [hydrated, setHydrated] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const router = useRouter();
   const [supabase] = useState(() => createClient());
 
   // ── State ──
   const [students, setStudents] = useState<Student[]>(() =>
-    isPreviewMode ? load(KEYS.students, MOCK_STUDENTS) : []
+    isPreviewMode ? MOCK_STUDENTS : []
   );
   const [studentsLoaded, setStudentsLoaded] = useState(isPreviewMode);
   const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
+  const [studentsLastLoadedAt, setStudentsLastLoadedAt] = useState<number | null>(() =>
+    isPreviewMode ? Date.now() : null
+  );
+  const [studentsMayBePartial, setStudentsMayBePartial] = useState(false);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
   const [leads, setLeads] = useState<Lead[]>(() =>
-    isPreviewMode ? load(KEYS.leads, MOCK_LEADS) : []
+    isPreviewMode ? MOCK_LEADS : []
   );
   const leadsRef = useRef<Lead[]>(leads);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
@@ -434,30 +512,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
-    isPreviewMode ? load(KEYS.beltRanks, MOCK_BELT_LADDER.ranks) : []
+    isPreviewMode ? MOCK_BELT_LADDER.ranks : []
   );
   const beltRanksRef = useRef<BeltRank[]>(beltRanks);
   const refreshBeltsRef = useRef<((preferredLadderId?: string | null) => Promise<void>) | null>(null);
   const [sessions, setSessions] = useState<ClassSession[]>(() =>
-    isPreviewMode ? load(KEYS.sessions, MOCK_SESSIONS) : []
+    isPreviewMode ? MOCK_SESSIONS : []
   );
   const sessionsRef = useRef<ClassSession[]>(sessions);
   const [templates, setTemplates] = useState<ClassTemplate[]>(() =>
-    isPreviewMode ? load(KEYS.templates, MOCK_CLASS_TEMPLATES) : []
+    isPreviewMode ? MOCK_CLASS_TEMPLATES : []
   );
   const templatesRef = useRef<ClassTemplate[]>(templates);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() =>
-    isPreviewMode ? load(KEYS.attendance, MOCK_ATTENDANCE) : []
+    isPreviewMode ? MOCK_ATTENDANCE : []
   );
   const attendanceRef = useRef<AttendanceRecord[]>(attendance);
   const [studioName, setStudioNameState] = useState(() =>
-    isPreviewMode ? load(KEYS.studioName, "My Studio") : ""
+    isPreviewMode ? "My Studio" : ""
+  );
+  const [currentUser, setCurrentUser] = useState<AuthUserProfile | null>(() =>
+    isPreviewMode
+      ? { id: "preview-user", email: "demo@koaryu.local", full_name: "Demo User" }
+      : null
   );
   const [subRankTerm, setSubRankTermState] = useState(() =>
-    isPreviewMode ? load(KEYS.subRankTerm, "Stripe") : "Stripe"
+    isPreviewMode ? MOCK_BELT_LADDER.sub_rank_term || "Stripe" : "Stripe"
   );
   const [ladderName, setLadderNameState] = useState(() =>
-    isPreviewMode ? load(KEYS.ladderName, "Brazilian Jiu-Jitsu") : ""
+    isPreviewMode ? MOCK_BELT_LADDER.name : ""
   );
   const [currentLadderId, setCurrentLadderIdState] = useState<string | null>(null);
   const currentLadderIdRef = useRef<string | null>(null);
@@ -465,6 +548,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_ELIGIBILITY : []
   );
   const eligibilityRef = useRef<EligibilityEntry[]>(eligibility);
+  const [promotionHistoryCache, setPromotionHistoryCache] = useState<Record<string, PromotionHistoryCacheEntry>>({});
+  const promotionHistoryCacheRef = useRef<Record<string, PromotionHistoryCacheEntry>>(promotionHistoryCache);
+  const promotionHistoryRequestsRef = useRef<Record<string, Promise<Promotion[]>>>({});
+  const promotionHistoryGenerationRef = useRef(0);
+
+  const clearPromotionHistoryCache = useCallback(() => {
+    promotionHistoryGenerationRef.current += 1;
+    promotionHistoryRequestsRef.current = {};
+    promotionHistoryCacheRef.current = {};
+    setPromotionHistoryCache({});
+  }, []);
+
+  const commitPromotionHistoryCache = useCallback((studentId: string, items: Promotion[]) => {
+    setPromotionHistoryCache((current) => {
+      const next = {
+        ...current,
+        [studentId]: {
+          items,
+          fetchedAt: Date.now(),
+        },
+      };
+      promotionHistoryCacheRef.current = next;
+      return next;
+    });
+  }, []);
 
   const updateCurrentLadderId = useCallback((nextLadderId: string | null) => {
     setCurrentLadderIdState(nextLadderId);
@@ -492,9 +600,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [students]);
 
   const commitStudents = useCallback(
-    (next: Student[] | ((current: Student[]) => Student[])) => {
+    (
+      next: Student[] | ((current: Student[]) => Student[]),
+      options?: { mayBePartial?: boolean }
+    ) => {
       setStudentsLoaded(true);
       setStudentsLoadError(null);
+      setStudentsLastLoadedAt(Date.now());
+      setStudentsMayBePartial(Boolean(options?.mayBePartial));
       setStudents((current) => {
         const resolved = typeof next === "function"
           ? (next as (current: Student[]) => Student[])(current)
@@ -534,8 +647,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     eligibilityRef.current = eligibility;
   }, [eligibility]);
 
+  useEffect(() => {
+    promotionHistoryCacheRef.current = promotionHistoryCache;
+  }, [promotionHistoryCache]);
+
   const resetLiveStudioState = useCallback(() => {
     setStudioNameState("");
+    setCurrentUser(null);
     commitStudents([]);
     setStudentsLoaded(true);
     setStudentsLoadError(null);
@@ -549,7 +667,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTemplates([]);
     setAttendance([]);
     setEligibility([]);
-  }, [commitStudents, updateCurrentLadderId]);
+    clearPromotionHistoryCache();
+  }, [clearPromotionHistoryCache, commitStudents, updateCurrentLadderId]);
+
+  const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
+    setStudioNameState(data.studio_name);
+    commitStudents(data.students);
+    setLeads(data.leads);
+    applyLadderSelection(
+      data.belt_ladders.length > 0
+        ? data.belt_ladders
+        : data.primary_belt_ladder
+          ? [data.primary_belt_ladder]
+          : [],
+      data.primary_belt_ladder?.id ?? null
+    );
+    setEligibility(data.eligibility);
+    setTemplates(data.templates);
+    setSessions(data.sessions.sort(compareSessions));
+    setAttendance(data.attendance);
+    clearPromotionHistoryCache();
+  }, [applyLadderSelection, clearPromotionHistoryCache, commitStudents]);
+
+  useEffect(() => {
+    if (!isPreviewMode) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const storedRanks = load(KEYS.beltRanks, MOCK_BELT_LADDER.ranks);
+      const storedSubRankTerm = load(KEYS.subRankTerm, MOCK_BELT_LADDER.sub_rank_term || "Stripe");
+      const storedLadderName = load(KEYS.ladderName, MOCK_BELT_LADDER.name);
+      const previewLadder: BeltLadder = {
+        ...MOCK_BELT_LADDER,
+        name: storedLadderName,
+        sub_rank_term: storedSubRankTerm,
+        ranks: storedRanks,
+      };
+
+      setStudioNameState(load(KEYS.studioName, "My Studio"));
+      commitStudents(load(KEYS.students, MOCK_STUDENTS));
+      setLeads(load(KEYS.leads, MOCK_LEADS));
+      applyLadderSelection([previewLadder], previewLadder.id);
+      setEligibility(MOCK_ELIGIBILITY);
+      setTemplates(load(KEYS.templates, MOCK_CLASS_TEMPLATES));
+      setSessions(load(KEYS.sessions, MOCK_SESSIONS).sort(compareSessions));
+      setAttendance(load(KEYS.attendance, MOCK_ATTENDANCE));
+      setStudentsLoaded(true);
+      setStudentsLoadError(null);
+      setHydrated(true);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [applyLadderSelection, commitStudents, isPreviewMode]);
 
   const fetchAllStudents = useCallback(async (
     authToken: string,
@@ -598,36 +770,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
 
       setToken(session.access_token);
-      setHydrated(true);
 
       try {
-        const authProfile = await api.get<AuthProfileResponse>(
-          "/auth/me",
-          session.access_token,
-          { omitStudioHeader: true }
-        );
-        if (!mounted) return;
-
-        setStudioStateCookie(session.user.id, Boolean(authProfile.studio_id));
-        if (authProfile.studio_id) {
-          setActiveStudioIdCookie(authProfile.studio_id);
-        } else {
-          clearActiveStudioIdCookie();
-        }
-
-        if (!authProfile.studio_id) {
-          if (mounted) {
-            resetLiveStudioState();
-            router.replace("/onboarding");
-          }
-          return;
-        }
-
         let criticalData: BootstrapResponse;
 
         try {
           criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap", session.access_token);
         } catch (bootstrapError) {
+          const authProfile = await api.get<AuthProfileResponse>(
+            "/auth/me",
+            session.access_token,
+            { omitStudioHeader: true }
+          );
+          if (!mounted) return;
+
+          if (!authProfile.studio_id) {
+            clearActiveStudioIdCookie();
+            setStudioStateCookie(session.user.id, false);
+            resetLiveStudioState();
+            setCurrentUser(authProfile.user);
+            setHydrated(true);
+            router.replace("/onboarding");
+            return;
+          }
+
           const [
             studioRes,
             studentsRes,
@@ -655,9 +821,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
 
         if (mounted) {
+          const authProfile = criticalData.auth;
+          const userProfile = authProfile.user ?? {
+            id: session.user.id,
+            email: session.user.email || "",
+            full_name: session.user.user_metadata?.full_name || null,
+          };
+
+          setCurrentUser(userProfile);
+          setStudioStateCookie(session.user.id, Boolean(authProfile.studio_id));
+          if (authProfile.studio_id) {
+            setActiveStudioIdCookie(authProfile.studio_id);
+          } else {
+            clearActiveStudioIdCookie();
+          }
+
+          if (!authProfile.studio_id) {
+            resetLiveStudioState();
+            setCurrentUser(userProfile);
+            setHydrated(true);
+            router.replace("/onboarding");
+            return;
+          }
+
+          clearPromotionHistoryCache();
           setStudioNameState(criticalData.studio_name || criticalData.studio?.name || "");
           if (studentsRevisionRef.current === studentsRevisionAtStart) {
-            commitStudents(criticalData.students);
+            commitStudents(criticalData.students, {
+              mayBePartial: criticalData.students.length >= DASHBOARD_BOOTSTRAP_STUDENT_LIMIT,
+            });
           }
           setLeads(criticalData.leads);
           applyLadderSelection(
@@ -668,15 +860,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 : [],
             criticalData.primary_belt_ladder?.id ?? null
           );
+          setHydrated(true);
         }
 
         void (async () => {
-          const [templatesRes, beltLaddersRes] = await Promise.all([
-            api.get<ClassTemplate[]>("/schedule/templates", session.access_token).catch(() => []),
-            api.get<BeltLadder[]>("/belts/ladders", session.access_token).catch(() => []),
-          ]);
+          const templatesRes = await api
+            .get<ClassTemplate[]>("/schedule/templates", session.access_token)
+            .catch(() => []);
           const selectedLadder = selectBeltLadder(
-            beltLaddersRes,
+            beltLaddersRef.current,
             currentLadderIdRef.current
           );
           const eligibilityRes = selectedLadder
@@ -698,35 +890,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             session.access_token
           ).catch(() => []);
 
-          const attendanceGroups = await Promise.all(
-            sessionsRes.map((sessionItem) =>
-              api
-                .get<AttendanceRecord[]>(
-                  `/schedule/sessions/${sessionItem.id}/attendance`,
-                  session.access_token
-                )
-                .catch(() => [])
+          const attendanceRes = await api
+            .get<AttendanceRecord[]>(
+              `/schedule/attendance?start_date=${start.toISOString().split("T")[0]}&end_date=${end.toISOString().split("T")[0]}`,
+              session.access_token
             )
-          );
+            .catch(() => []);
 
           if (!mounted) {
             return;
           }
 
           setTemplates(templatesRes);
-          applyLadderSelection(
-            beltLaddersRes,
-            selectedLadder?.id ?? currentLadderIdRef.current
-          );
           setEligibility(eligibilityRes);
           setSessions(sessionsRes);
-          setAttendance(attendanceGroups.flat());
+          setAttendance(normalizeAttendanceRecords(attendanceRes));
         })().catch((error) => {
           console.error("Failed to load deferred dashboard data", error);
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (mounted && /Complete onboarding first|No studio found/i.test(message)) {
+          resetLiveStudioState();
+          setHydrated(true);
           router.replace("/onboarding");
           return;
         }
@@ -734,6 +920,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStudentsLoadError(
             error instanceof Error ? error.message : "Failed to load the student roster."
           );
+          setHydrated(true);
         }
         console.error("Failed to load initial data", error);
       }
@@ -750,6 +937,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setToken(session.access_token);
       } else {
         setToken(null);
+        setCurrentUser(null);
         clearStudioStateCookie();
         clearActiveStudioIdCookie();
       }
@@ -759,7 +947,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, commitStudents, fetchAllStudents, isPreviewMode, resetLiveStudioState, router, supabase]);
+  }, [applyLadderSelection, clearPromotionHistoryCache, commitStudents, fetchAllStudents, isPreviewMode, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -888,6 +1076,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         const validStatuses: StudentStatus[] = ["active", "trialing", "inactive", "paused", "canceled"];
         const rawStatus = (mapped.status || "").trim().toLowerCase();
+        const statusValue = mapped.status || "";
         const rowIssues: CsvImportResult["rows"][number]["issues"] = [];
         let normalizedStatus = rawStatus;
 
@@ -915,15 +1104,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             code: "normalized_status",
             severity: "warning",
             field: "status",
-            value: row.status,
-            message: `Status "${row.status}" will be imported as "paused".`,
+            value: statusValue,
+            message: `Status "${statusValue}" will be imported as "paused".`,
           });
         } else if (mapped.status && !validStatuses.includes(rawStatus as StudentStatus)) {
           rowIssues.push({
             code: "invalid_status",
             severity: "error",
             field: "status",
-            value: row.status,
+            value: statusValue,
             message: `Invalid status "${mapped.status}". Must be one of: ${validStatuses.join(", ")}`,
           });
         }
@@ -1241,6 +1430,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         guardian_name: data.guardian_name,
         guardian_email: data.guardian_email,
         guardian_phone: data.guardian_phone,
+        follow_up_date: data.follow_up_date,
         notes: data.notes,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1592,6 +1782,57 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await refreshBelts(ladder.id);
   }, [applyLadderSelection, ensureCurrentLadder, isPreviewMode, refreshBelts, token]);
 
+  const loadPromotionHistory = useCallback(async (
+    studentId: string,
+    options?: { force?: boolean; signal?: AbortSignal }
+  ): Promise<Promotion[]> => {
+    const cached = promotionHistoryCacheRef.current[studentId];
+    const cacheIsFresh = cached
+      && Date.now() - cached.fetchedAt < PROMOTION_HISTORY_CACHE_TTL_MS;
+
+    if (cached && !options?.force && cacheIsFresh) {
+      return cached.items;
+    }
+
+    const inFlightRequest = promotionHistoryRequestsRef.current[studentId];
+    if (inFlightRequest && !options?.force) {
+      return inFlightRequest;
+    }
+
+    if (isPreviewMode) {
+      return cached?.items ?? [];
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const generation = promotionHistoryGenerationRef.current;
+    const request = api
+      .get<Promotion[]>(
+        `/belts/promotions?student_id=${encodeURIComponent(studentId)}&include_names=false`,
+        token,
+        {
+          timeoutMs: 6000,
+          timeoutMessage: "Promotion history took too long to load. Please try again.",
+        }
+      )
+      .then((result) => {
+        if (generation === promotionHistoryGenerationRef.current) {
+          commitPromotionHistoryCache(studentId, result);
+        }
+        return result;
+      })
+      .finally(() => {
+        if (promotionHistoryRequestsRef.current[studentId] === request) {
+          delete promotionHistoryRequestsRef.current[studentId];
+        }
+      });
+
+    promotionHistoryRequestsRef.current[studentId] = request;
+    return request;
+  }, [commitPromotionHistoryCache, isPreviewMode, token]);
+
   const promoteStudent = useCallback(async (studentId: string, toRankId: string, notes?: string) => {
     if (isPreviewMode) {
       const student = studentsRef.current.find((item) => item.id === studentId);
@@ -1613,7 +1854,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         )
       );
 
-      return {
+      const promotion = {
         id: localId(),
         studio_id: student.studio_id,
         student_id: studentId,
@@ -1626,6 +1867,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         from_rank_name: beltRanksRef.current.find((rank) => rank.id === student.current_belt_rank_id)?.name,
         to_rank_name: targetRank.name,
       };
+
+      const existing = promotionHistoryCacheRef.current[studentId]?.items ?? [];
+      commitPromotionHistoryCache(
+        studentId,
+        [promotion, ...existing.filter((item) => item.id !== promotion.id)]
+      );
+
+      return promotion;
     }
 
     if (!token) {
@@ -1642,9 +1891,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       token
     );
 
+    const existing = promotionHistoryCacheRef.current[studentId]?.items ?? [];
+    commitPromotionHistoryCache(
+      studentId,
+      [result, ...existing.filter((item) => item.id !== result.id)]
+    );
+
     await Promise.all([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
     return result;
-  }, [beltRanksRef, isPreviewMode, persistStudents, refreshBelts, refreshStudents, studentsRef, token]);
+  }, [beltRanksRef, commitPromotionHistoryCache, isPreviewMode, persistStudents, refreshBelts, refreshStudents, studentsRef, token]);
 
   // ── Schedule ──
   const refreshScheduleRange = useCallback(async (startDate: string, endDate: string): Promise<ClassSession[]> => {
@@ -1660,35 +1915,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       `/schedule/sessions?start_date=${startDate}&end_date=${endDate}`,
       token
     );
-    let replacedSessionIds = Array.from(
-      new Set(rangeSessions.map((session) => session.id))
+    const replacedSessionIds = Array.from(
+      new Set([
+        ...sessionsRef.current
+          .filter((session) => session.date >= startDate && session.date <= endDate)
+          .map((session) => session.id),
+        ...rangeSessions.map((session) => session.id),
+      ])
     );
 
-    setSessions((current) => {
-      replacedSessionIds = Array.from(
-        new Set([
-          ...current
-            .filter((session) => session.date >= startDate && session.date <= endDate)
-            .map((session) => session.id),
-          ...rangeSessions.map((session) => session.id),
-        ])
-      );
-      return mergeSessionsForRange(current, rangeSessions, startDate, endDate);
-    });
-    void Promise.all(
-      rangeSessions.map((sessionItem) =>
-        api
-          .get<AttendanceRecord[]>(
-            `/schedule/sessions/${sessionItem.id}/attendance`,
-            token
-          )
-          .catch(() => [])
-      )
-    ).then((groups) => {
+    setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
+    const attendanceQuery = rangeSessions.length >= SCHEDULE_ATTENDANCE_BULK_THRESHOLD
+      ? `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`
+      : `/schedule/attendance?${rangeSessions
+          .map((sessionItem) => `session_ids=${encodeURIComponent(sessionItem.id)}`)
+          .join("&")}`;
+
+    if (rangeSessions.length > 0) {
+      void api
+        .get<AttendanceRecord[]>(attendanceQuery, token)
+        .then((records) => {
+          setAttendance((current) =>
+            mergeAttendanceForSessions(
+              current,
+              normalizeAttendanceRecords(records),
+              replacedSessionIds
+            )
+          );
+        })
+        .catch((error) => {
+          console.error("Failed to refresh schedule attendance", error);
+        });
+    } else {
       setAttendance((current) =>
-        mergeAttendanceForSessions(current, groups.flat(), replacedSessionIds)
+        mergeAttendanceForSessions(current, [], replacedSessionIds)
       );
-    });
+    }
     return rangeSessions;
   }, [isPreviewMode, token]);
 
@@ -1702,11 +1964,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     const records = await api.get<AttendanceRecord[]>(
-      `/schedule/sessions/${sessionId}/attendance`,
+      `/schedule/attendance?session_ids=${encodeURIComponent(sessionId)}`,
       token
     );
-    setAttendance((current) => mergeAttendanceForSessions(current, records, [sessionId]));
-    return records;
+    const normalizedRecords = normalizeAttendanceRecords(records);
+    setAttendance((current) => mergeAttendanceForSessions(current, normalizedRecords, [sessionId]));
+    return normalizedRecords;
   }, [isPreviewMode, token]);
 
   const addTemplate = useCallback(async (data: ClassTemplateCreate): Promise<ClassTemplate> => {
@@ -1934,24 +2197,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
       const previousStatus = existing?.status ?? null;
       const currentIndex = existing ? cycle.indexOf(existing.status) : -1;
-      const nextStatus = cycle[(currentIndex + 1 + cycle.length) % cycle.length];
-      const optimisticRecord: AttendanceRecord = existing
-        ? { ...existing, status: nextStatus }
-        : {
-            id: `optimistic-${sessionId}-${studentId}`,
-            studio_id: "",
-            session_id: sessionId,
-            student_id: studentId,
-            status: nextStatus,
-            checked_in_at: new Date().toISOString(),
-            student_name: name,
-          };
+      const nextStatus: AttendanceStatus | null =
+        existing && currentIndex === cycle.length - 1
+          ? null
+          : cycle[(currentIndex + 1 + cycle.length) % cycle.length];
 
       setAttendance((current) => {
         const next = current.filter(
           (record) => !(record.session_id === sessionId && record.student_id === studentId)
         );
-        next.push(optimisticRecord);
+        if (nextStatus) {
+          next.push(
+            existing
+              ? { ...existing, status: nextStatus }
+              : {
+                  id: `optimistic-${sessionId}-${studentId}`,
+                  studio_id: "",
+                  session_id: sessionId,
+                  student_id: studentId,
+                  status: nextStatus,
+                  checked_in_at: new Date().toISOString(),
+                  student_name: name,
+                }
+          );
+        }
         return next;
       });
       setSessions((current) =>
@@ -1963,6 +2232,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
 
       try {
+        if (!nextStatus) {
+          await api.delete(
+            `/schedule/attendance?session_id=${encodeURIComponent(sessionId)}&student_id=${encodeURIComponent(studentId)}`,
+            token
+          );
+          return;
+        }
+
         const res = await api.post<AttendanceRecord>(
           "/schedule/attendance",
           {
@@ -2017,6 +2294,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [isPreviewMode, token]);
 
+  const resetDemoData = useCallback(async (): Promise<DemoResetResponse> => {
+    if (isPreviewMode) {
+      clearPreviewStorage();
+      const previewResponse: DemoResetResponse = {
+        studio_name: DEMO_STUDIO_NAME,
+        students: MOCK_STUDENTS,
+        leads: MOCK_LEADS,
+        belt_ladders: [MOCK_BELT_LADDER],
+        primary_belt_ladder: MOCK_BELT_LADDER,
+        eligibility: MOCK_ELIGIBILITY,
+        templates: MOCK_CLASS_TEMPLATES,
+        sessions: [...MOCK_SESSIONS].sort(compareSessions),
+        attendance: MOCK_ATTENDANCE,
+        counts: {
+          students: MOCK_STUDENTS.length,
+          leads: MOCK_LEADS.length,
+          belt_ranks: MOCK_BELT_LADDER.ranks.length,
+          class_sessions: MOCK_SESSIONS.length,
+          attendance_records: MOCK_ATTENDANCE.length,
+        },
+      };
+
+      save(KEYS.studioName, previewResponse.studio_name);
+      save(KEYS.students, previewResponse.students);
+      save(KEYS.leads, previewResponse.leads);
+      save(KEYS.beltRanks, MOCK_BELT_LADDER.ranks);
+      save(KEYS.sessions, previewResponse.sessions);
+      save(KEYS.templates, previewResponse.templates);
+      save(KEYS.attendance, previewResponse.attendance);
+      save(KEYS.subRankTerm, MOCK_BELT_LADDER.sub_rank_term || "Stripe");
+      save(KEYS.ladderName, MOCK_BELT_LADDER.name);
+
+      applyDemoResetResponse(previewResponse);
+      return previewResponse;
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const response = await api.post<DemoResetResponse>(
+      "/demo/reset",
+      {},
+      token,
+      {
+        timeoutMs: 60000,
+        timeoutMessage: "Demo reset is taking longer than expected. Please try again in a moment.",
+      }
+    );
+    applyDemoResetResponse(response);
+    return response;
+  }, [applyDemoResetResponse, isPreviewMode, token]);
+
   // ── Context values ──
   const configValue = useMemo<ConfigStoreContextValue>(() => ({
     isPreviewMode,
@@ -2026,6 +2356,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const studentsValue = useMemo<StudentsStoreContextValue>(() => ({
     studentsLoaded,
     studentsLoadError,
+    studentsLastLoadedAt,
+    studentsMayBePartial,
     students,
     addStudent,
     updateStudent,
@@ -2037,6 +2369,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }), [
     studentsLoaded,
     studentsLoadError,
+    studentsLastLoadedAt,
+    studentsMayBePartial,
     addStudent,
     bulkAddTagsToStudents,
     bulkUpdateStudentStatus,
@@ -2063,6 +2397,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateLead,
   ]);
 
+  const promotionHistoryByStudent = useMemo<Record<string, Promotion[]>>(
+    () => Object.fromEntries(
+      Object.entries(promotionHistoryCache).map(([studentId, entry]) => [studentId, entry.items])
+    ),
+    [promotionHistoryCache]
+  );
+
   const beltsValue = useMemo<BeltsStoreContextValue>(() => ({
     beltLadders,
     beltRanks,
@@ -2074,6 +2415,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     subRankTerm,
     setSubRankTerm,
     eligibility,
+    promotionHistoryByStudent,
+    loadPromotionHistory,
     promoteStudent,
   }), [
     beltLadders,
@@ -2081,6 +2424,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     currentLadderId,
     eligibility,
     ladderName,
+    loadPromotionHistory,
+    promotionHistoryByStudent,
     setCurrentLadder,
     promoteStudent,
     setBeltRanks,
@@ -2113,8 +2458,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const studioValue = useMemo<StudioStoreContextValue>(() => ({
     studioName,
+    userEmail: currentUser?.email || "",
+    userName: currentUser?.full_name || "",
+    resetDemoData,
     setStudioName,
-  }), [setStudioName, studioName]);
+  }), [currentUser, resetDemoData, setStudioName, studioName]);
 
   if (!hydrated) {
     return (

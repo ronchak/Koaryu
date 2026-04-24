@@ -10,8 +10,8 @@ from app.schemas.dashboard_bootstrap import (
     DashboardBootstrapStudioSummary,
 )
 from app.schemas.lead import LeadResponse
-from app.schemas.student import StudentResponse
 from app.services.auth_service import AuthService
+from app.services.student_service import StudentService
 
 
 class DashboardBootstrapService:
@@ -101,16 +101,8 @@ class DashboardBootstrapService:
                 detail="Studio not found",
             )
 
-        students = [
-            StudentResponse(
-                **{
-                    **{key: value for key, value in row.items() if key not in ("deleted_at",)},
-                    "tags": row.get("tags") or [],
-                },
-                guardians=[],
-            )
-            for row in (students_result.data or [])
-        ]
+        student_service = StudentService(self.supabase)
+        students = student_service._rows_to_responses(students_result.data or [])
 
         leads = [LeadResponse(**row) for row in (leads_result.data or [])]
 

@@ -110,5 +110,12 @@ input::placeholder, textarea::placeholder {
 
 /* ---- Transitions ---- */
 a, button {
-  transition: all 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    text-decoration-color 0.15s ease,
+    fill 0.15s ease,
+    stroke 0.15s ease,
+    opacity 0.15s ease;
 }

@@ -13,6 +13,7 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
@@ -20,9 +21,14 @@ export default function SignupPage() {
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setNotice("");
     setIsLoading(true);
 
     if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("koaryu:previewSignupEmail", email);
+        window.localStorage.setItem("koaryu:previewSignupName", fullName);
+      }
       setTimeout(() => {
         router.push("/onboarding");
         router.refresh();
@@ -46,10 +52,14 @@ export default function SignupPage() {
       return;
     }
 
-    if (data.session) {
-      setStudioStateCookie(data.session.user.id, false);
-      clearActiveStudioIdCookie();
+    if (!data.session) {
+      setNotice("Check your email to confirm your account, then sign in to finish setting up your studio.");
+      setIsLoading(false);
+      return;
     }
+
+    setStudioStateCookie(data.session.user.id, false);
+    clearActiveStudioIdCookie();
 
     // After signup, redirect to onboarding to create their studio
     router.push("/onboarding");
@@ -97,6 +107,9 @@ export default function SignupPage() {
 
         {error && (
           <p className="text-xs text-danger">{error}</p>
+        )}
+        {notice && (
+          <p className="text-xs text-success">{notice}</p>
         )}
 
         <Button

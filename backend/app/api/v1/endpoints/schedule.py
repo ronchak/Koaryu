@@ -107,6 +107,22 @@ async def get_attendance(
     return await ScheduleService(supabase).get_session_attendance(session_id, studio_id)
 
 
+@router.get("/attendance", response_model=list[AttendanceResponse])
+async def list_attendance(
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    session_ids: Optional[list[str]] = Query(default=None),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await ScheduleService(supabase).list_attendance(
+        studio_id,
+        start_date=start_date,
+        end_date=end_date,
+        session_ids=session_ids,
+    )
+
+
 @router.post("/attendance", response_model=AttendanceResponse, status_code=201)
 async def check_in(
     data: AttendanceCheckIn,
@@ -115,6 +131,16 @@ async def check_in(
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).check_in(data, studio_id, user_id)
+
+
+@router.delete("/attendance", status_code=204)
+async def clear_attendance(
+    session_id: str = Query(...),
+    student_id: str = Query(...),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    await ScheduleService(supabase).clear_attendance(session_id, student_id, studio_id)
 
 
 @router.post("/attendance/bulk", response_model=list[AttendanceResponse])

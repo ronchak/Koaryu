@@ -102,20 +102,69 @@ export function ScheduleSessionDetailModal({
     return () => window.removeEventListener("keydown", handleEscape);
   }, [deleteInFlight, onClose, open]);
 
-  const attendanceByStudentId = useMemo(
-    () => new Map(attendance.map((record) => [record.student_id, record])),
-    [attendance]
+  const attendanceSummary = useMemo(() => {
+    if (!open) {
+      return { checkedInCount: 0, absentCount: 0 };
+    }
+
+    let checkedInCount = 0;
+    let absentCount = 0;
+
+    for (const record of attendance) {
+      if (record.status === "absent") {
+        absentCount += 1;
+      } else {
+        checkedInCount += 1;
+      }
+    }
+
+    return { checkedInCount, absentCount };
+  }, [attendance, open]);
+
+  const attendanceByStudentId = useMemo(() => {
+    if (!open) {
+      return new Map<string, AttendanceRecord>();
+    }
+
+    return new Map(attendance.map((record) => [record.student_id, record]));
+  }, [attendance, open]);
+
+  const studentAttendanceRows = useMemo(
+    () => {
+      if (!open) {
+        return [];
+      }
+
+      return students.map((student) => ({
+        student,
+        attendanceRecord: attendanceByStudentId.get(student.id),
+        studentName: getStudentName(student),
+        initials: `${student.legal_first_name[0] ?? ""}${student.legal_last_name[0] ?? ""}`,
+      }));
+    },
+    [attendanceByStudentId, open, students]
   );
 
-  if (!open || !session) {
+  const sessionLabels = useMemo(() => {
+    if (!open || !session) {
+      return null;
+    }
+
+    return {
+      date: formatDate(session.date),
+      startTime: formatTime(session.start_time),
+      endTime: formatTime(session.end_time),
+    };
+  }, [open, session]);
+
+  if (!open || !session || !sessionLabels) {
     return null;
   }
 
   const activeSession = session;
 
   const showDeleteConfirm = deleteConfirmSessionId === activeSession.id;
-  const checkedInCount = attendance.filter((record) => record.status !== "absent").length;
-  const absentCount = attendance.filter((record) => record.status === "absent").length;
+  const { checkedInCount, absentCount } = attendanceSummary;
   const isRecurring = Boolean(activeSession.template_id);
   const canDeleteSeries = Boolean(isRecurring && onDeleteSeries);
   const isDeleting = deleteInFlight !== null;
@@ -161,7 +210,7 @@ export function ScheduleSessionDetailModal({
               </span>
             </div>
             <p className="mt-1 text-xs text-muted">
-              {formatDate(activeSession.date)} · {formatTime(activeSession.start_time)} - {formatTime(activeSession.end_time)}
+              {sessionLabels.date} · {sessionLabels.startTime} - {sessionLabels.endTime}
             </p>
           </div>
 
@@ -187,7 +236,7 @@ export function ScheduleSessionDetailModal({
                 <Calendar className="h-3.5 w-3.5" />
                 Date
               </div>
-              <p className="mt-2 text-sm text-text-primary">{formatDate(activeSession.date)}</p>
+              <p className="mt-2 text-sm text-text-primary">{sessionLabels.date}</p>
             </div>
 
             <div className="rounded-[6px] border border-border bg-surface px-3 py-3">
@@ -196,7 +245,7 @@ export function ScheduleSessionDetailModal({
                 Time
               </div>
               <p className="mt-2 text-sm text-text-primary">
-                {formatTime(activeSession.start_time)} - {formatTime(activeSession.end_time)}
+                {sessionLabels.startTime} - {sessionLabels.endTime}
               </p>
             </div>
 
@@ -266,16 +315,13 @@ export function ScheduleSessionDetailModal({
               </div>
             ) : (
               <div className="space-y-1">
-                {students.map((student) => {
-                  const attendanceRecord = attendanceByStudentId.get(student.id);
-                  const studentName = getStudentName(student);
-
+                {studentAttendanceRows.map(({ student, attendanceRecord, studentName, initials }) => {
                   return (
                     <button
                       key={student.id}
                       disabled={pendingAttendanceStudentId === student.id}
                       onClick={async () => {
-                        await onToggleAttendance(session.id, student.id, studentName);
+                        await onToggleAttendance(activeSession.id, student.id, studentName);
                       }}
                       className={`w-full cursor-pointer rounded-[6px] px-3 py-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                         attendanceRecord
@@ -293,8 +339,7 @@ export function ScheduleSessionDetailModal({
                         <div className="flex min-w-0 items-center gap-2.5">
                           <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-border bg-surface-raised">
                             <span className="text-[10px] font-medium text-text-secondary">
-                              {student.legal_first_name[0]}
-                              {student.legal_last_name[0]}
+                              {initials}
                             </span>
                           </div>
                           <div className="min-w-0">

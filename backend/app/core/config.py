@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
     FRONTEND_URL: str = "http://localhost:4000"
     ENVIRONMENT: str = "development"
+    DEMO_RESET_ENABLED: bool = False
 
     # API
     API_V1_PREFIX: str = "/api/v1"
