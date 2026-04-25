@@ -9,13 +9,17 @@ from datetime import date, datetime, timezone
 from typing import Any, Optional
 from supabase import Client
 from fastapi import HTTPException, status
+from postgrest.exceptions import APIError as PostgrestAPIError
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     GuardianCreate, GuardianResponse, CsvImportActionOptions, CsvImportIssue,
     CsvImportOptions, CsvImportResult, CsvImportRow, CsvImportSetupIssue,
     CsvImportWarning,
     BulkTagUpdate, BulkStatusUpdate,
+    StudentProgramMembershipCreate, StudentProgramMembershipResponse,
+    StudentProgramMembershipUpdate,
 )
+from app.services.program_service import ProgramService
 from app.services.studio_scope import ensure_optional_studio_record
 
 VALID_STATUSES = {"active", "trialing", "inactive", "paused", "canceled"}
@@ -413,6 +417,66 @@ class StudentService:
     def _fetch_guardians_for_student(self, student_id: str) -> list[GuardianResponse]:
         return self._fetch_guardians_for_students([student_id]).get(student_id, [])
 
+    def _membership_row_to_response(self, row: dict) -> StudentProgramMembershipResponse:
+        program = row.get("programs") or {}
+        rank = row.get("belt_ranks") or {}
+        if isinstance(program, list):
+            program = program[0] if program else {}
+        if isinstance(rank, list):
+            rank = rank[0] if rank else {}
+        return StudentProgramMembershipResponse(
+            id=row["id"],
+            studio_id=row["studio_id"],
+            student_id=row["student_id"],
+            program_id=row["program_id"],
+            program_name=program.get("name"),
+            program_color_hex=program.get("color_hex"),
+            status=row.get("status") or "active",
+            started_at=row.get("started_at"),
+            ended_at=row.get("ended_at"),
+            current_belt_rank_id=row.get("current_belt_rank_id"),
+            current_belt_rank_name=rank.get("name"),
+            current_belt_rank_color=rank.get("color_hex"),
+            created_at=row["created_at"],
+            updated_at=row.get("updated_at") or row["created_at"],
+        )
+
+    def _fetch_memberships_for_students(
+        self,
+        student_ids: list[str],
+    ) -> dict[str, list[StudentProgramMembershipResponse]]:
+        ordered_student_ids = list(dict.fromkeys(student_ids))
+        memberships_by_student_id: dict[str, list[StudentProgramMembershipResponse]] = {
+            student_id: []
+            for student_id in ordered_student_ids
+        }
+        if not ordered_student_ids:
+            return memberships_by_student_id
+
+        try:
+            result = (
+                self.supabase.table("student_program_memberships")
+                .select("*, programs(name, color_hex), belt_ranks(name, color_hex)")
+                .in_("student_id", ordered_student_ids)
+                .order("created_at")
+                .execute()
+            )
+        except PostgrestAPIError as exc:
+            if not self._is_optional_membership_schema_error(exc):
+                raise
+            return memberships_by_student_id
+
+        for row in result.data or []:
+            student_id = row.get("student_id")
+            if student_id not in memberships_by_student_id:
+                continue
+            memberships_by_student_id[student_id].append(self._membership_row_to_response(row))
+
+        return memberships_by_student_id
+
+    def _fetch_memberships_for_student(self, student_id: str) -> list[StudentProgramMembershipResponse]:
+        return self._fetch_memberships_for_students([student_id]).get(student_id, [])
+
     def _embedded_guardians_from_row(self, row: dict) -> Optional[list[GuardianResponse]]:
         if "student_guardians" not in row:
             return None
@@ -429,15 +493,20 @@ class StudentService:
         return guardians
 
     def _rows_to_responses(self, rows: list[dict]) -> list[StudentResponse]:
-        guardians_by_student_id = self._fetch_guardians_for_students([
+        student_ids = [
             row["id"]
             for row in rows
             if row.get("id")
+        ]
+        guardians_by_student_id = self._fetch_guardians_for_students([
+            *student_ids
         ])
+        memberships_by_student_id = self._fetch_memberships_for_students(student_ids)
         return [
             self._row_to_response(
                 row,
                 guardians=guardians_by_student_id.get(row.get("id"), []),
+                memberships=memberships_by_student_id.get(row.get("id"), []),
             )
             for row in rows
         ]
@@ -446,11 +515,14 @@ class StudentService:
         self,
         row: dict,
         guardians: Optional[list[GuardianResponse]] = None,
+        memberships: Optional[list[StudentProgramMembershipResponse]] = None,
     ) -> StudentResponse:
         if guardians is None:
             guardians = self._embedded_guardians_from_row(row)
         if guardians is None:
             guardians = self._fetch_guardians_for_student(row["id"])
+        if memberships is None:
+            memberships = self._fetch_memberships_for_student(row["id"])
 
         normalized_row = {
             **{
@@ -463,7 +535,171 @@ class StudentService:
         return StudentResponse(
             **normalized_row,
             guardians=guardians,
+            program_memberships=memberships,
         )
+
+    def _rank_program_id(self, rank_id: Optional[str], studio_id: str) -> Optional[str]:
+        if not rank_id:
+            return None
+        result = (
+            self.supabase.table("belt_ranks")
+            .select("id, belt_ladders!inner(program_id, studio_id)")
+            .eq("id", rank_id)
+            .eq("studio_id", studio_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Current belt rank not found")
+        ladder = result.data.get("belt_ladders") or {}
+        if isinstance(ladder, list):
+            ladder = ladder[0] if ladder else {}
+        return ladder.get("program_id")
+
+    def _normalize_program_ids_for_write(
+        self,
+        studio_id: str,
+        program_id: Optional[str],
+        program_ids: Optional[list[str]],
+    ) -> list[str]:
+        values: list[str] = []
+        if program_ids is not None:
+            values.extend(program_ids)
+        elif program_id:
+            values.append(program_id)
+
+        normalized = []
+        seen: set[str] = set()
+        for value in values:
+            if value and value not in seen:
+                ProgramService(self.supabase).ensure_program_active(studio_id, value)
+                normalized.append(value)
+                seen.add(value)
+
+        if not normalized:
+            normalized.append(ProgramService(self.supabase).get_unassigned_program_id(studio_id))
+
+        return normalized
+
+    def _membership_write_payload(self, payload: dict) -> dict:
+        next_payload = dict(payload)
+        for key in ("started_at", "ended_at"):
+            if next_payload.get(key):
+                next_payload[key] = str(next_payload[key])
+        return next_payload
+
+    def _is_optional_membership_schema_error(self, exc: PostgrestAPIError) -> bool:
+        return exc.code in {"42P01", "42703", "PGRST204", "PGRST205"}
+
+    def _ensure_student_exists(self, student_id: str, studio_id: str) -> None:
+        result = (
+            self.supabase.table("students")
+            .select("id")
+            .eq("id", student_id)
+            .eq("studio_id", studio_id)
+            .is_("deleted_at", "null")
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+    def _sync_legacy_program_fields(
+        self,
+        student_id: str,
+        studio_id: str,
+        program_ids: list[str],
+        current_belt_rank_id: Optional[str] = None,
+    ) -> None:
+        update_payload = {"program_id": program_ids[0] if program_ids else None}
+        if current_belt_rank_id is not None:
+            update_payload["current_belt_rank_id"] = current_belt_rank_id
+        (
+            self.supabase.table("students")
+            .update(update_payload)
+            .eq("id", student_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+
+    def _replace_active_program_memberships(
+        self,
+        student_id: str,
+        studio_id: str,
+        program_ids: list[str],
+        *,
+        current_belt_rank_id: Optional[str] = None,
+        started_at: Optional[str] = None,
+    ) -> None:
+        try:
+            existing = (
+                self.supabase.table("student_program_memberships")
+                .select("id, program_id, status, ended_at")
+                .eq("student_id", student_id)
+                .eq("studio_id", studio_id)
+                .is_("ended_at", "null")
+                .execute()
+            )
+            existing_by_program = {
+                row["program_id"]: row
+                for row in existing.data or []
+                if row.get("program_id")
+            }
+            desired = set(program_ids)
+            now = datetime.now(timezone.utc).date().isoformat()
+
+            for program_id, row in existing_by_program.items():
+                if program_id not in desired:
+                    (
+                        self.supabase.table("student_program_memberships")
+                        .update({"status": "ended", "ended_at": now, "current_belt_rank_id": None})
+                        .eq("id", row["id"])
+                        .eq("studio_id", studio_id)
+                        .execute()
+                    )
+
+            rank_program_id = self._rank_program_id(current_belt_rank_id, studio_id) if current_belt_rank_id else None
+            membership_rows = []
+            for program_id in program_ids:
+                rank_for_membership = (
+                    current_belt_rank_id
+                    if current_belt_rank_id and (rank_program_id in {None, program_id})
+                    else None
+                )
+                row = existing_by_program.get(program_id)
+                if row:
+                    update_payload = {
+                        "status": "active",
+                        "ended_at": None,
+                        "current_belt_rank_id": rank_for_membership,
+                    }
+                    if started_at:
+                        update_payload["started_at"] = started_at
+                    (
+                        self.supabase.table("student_program_memberships")
+                        .update(update_payload)
+                        .eq("id", row["id"])
+                        .eq("studio_id", studio_id)
+                        .execute()
+                    )
+                    continue
+
+                membership_rows.append({
+                    "studio_id": studio_id,
+                    "student_id": student_id,
+                    "program_id": program_id,
+                    "status": "active",
+                    "started_at": started_at,
+                    "current_belt_rank_id": rank_for_membership,
+                })
+
+            if membership_rows:
+                self.supabase.table("student_program_memberships").insert(membership_rows).execute()
+        except PostgrestAPIError as exc:
+            if not self._is_optional_membership_schema_error(exc):
+                raise
+
+        self._sync_legacy_program_fields(student_id, studio_id, program_ids, current_belt_rank_id)
 
     def _parse_import_date(
         self,
@@ -1558,6 +1794,7 @@ class StudentService:
             return []
 
         program_lookup = self._build_named_record_lookup("programs", studio_id)
+        program_service = ProgramService(self.supabase)
         created_programs: list[str] = []
         for normalized_name, raw_name in requested_names.items():
             existing_id = program_lookup[1].get(normalized_name)
@@ -1566,19 +1803,43 @@ class StudentService:
 
             program_id = self._deterministic_import_uuid(import_run_id, "program", normalized_name)
             result = None
+            sort_order = (len(program_lookup[0]) + len(created_programs)) * 10
+            full_program_row = {
+                "id": program_id,
+                "studio_id": studio_id,
+                "name": raw_name,
+                "description": "Program created from student import.",
+                "color_hex": "#64748B",
+                "sort_order": sort_order,
+                "is_system": False,
+                "archived_at": None,
+            }
             try:
                 result = (
                     self.supabase.table("programs")
                     .upsert(
-                        {
-                            "id": program_id,
-                            "studio_id": studio_id,
-                            "name": raw_name,
-                        },
+                        full_program_row,
                         on_conflict="id",
                     )
                     .execute()
                 )
+            except PostgrestAPIError as exc:
+                if exc.code not in {"42703", "PGRST204", "PGRST205"}:
+                    result = None
+                else:
+                    result = (
+                        self.supabase.table("programs")
+                        .upsert(
+                            {
+                                "id": program_id,
+                                "studio_id": studio_id,
+                                "name": raw_name,
+                                "description": "Program created from student import.",
+                            },
+                            on_conflict="id",
+                        )
+                        .execute()
+                    )
             except Exception:
                 result = None
             if not result or not result.data:
@@ -1589,8 +1850,10 @@ class StudentService:
                 raise HTTPException(status_code=500, detail=f"Failed to create program '{raw_name}'")
 
             created_programs.append(raw_name)
+            program_lookup = self._build_named_record_lookup("programs", studio_id)
 
         if created_programs:
+            program_service.ensure_program_ladders(studio_id)
             try:
                 self.supabase.table("audit_logs").insert({
                     "studio_id": studio_id,
@@ -1958,7 +2221,19 @@ class StudentService:
         if status_filter:
             query = query.eq("status", status_filter)
         if program_id:
-            query = query.eq("program_id", program_id)
+            memberships = (
+                self.supabase.table("student_program_memberships")
+                .select("student_id")
+                .eq("studio_id", studio_id)
+                .eq("program_id", program_id)
+                .in_("status", ["active", "paused"])
+                .is_("ended_at", "null")
+                .execute()
+            )
+            student_ids = [row["student_id"] for row in (memberships.data or []) if row.get("student_id")]
+            if not student_ids:
+                return StudentListResponse(items=[], total=0, page=page, page_size=page_size)
+            query = query.in_("id", student_ids)
 
         offset = (page - 1) * page_size
         query = query.range(offset, offset + page_size - 1)
@@ -1989,14 +2264,21 @@ class StudentService:
         self, data: StudentCreate, studio_id: str, actor_id: str
     ) -> StudentResponse:
         guardians_data = data.guardians
-        student_dict = data.model_dump(exclude={"guardians"})
+        raw_data = data.model_dump(exclude={"guardians"})
+        program_ids = self._normalize_program_ids_for_write(
+            studio_id,
+            raw_data.get("program_id"),
+            raw_data.pop("program_ids", None),
+        )
+        student_dict = raw_data
         ensure_optional_studio_record(
             self.supabase,
             "programs",
-            student_dict.get("program_id"),
+            program_ids[0] if program_ids else None,
             studio_id,
             "Program not found",
         )
+        student_dict["program_id"] = program_ids[0]
         student_dict["studio_id"] = studio_id
         student_dict = self._prepare_student_write(student_dict, set_default_is_minor=True)
 
@@ -2005,6 +2287,13 @@ class StudentService:
             raise HTTPException(status_code=500, detail="Failed to create student")
 
         student = result.data[0]
+        self._replace_active_program_memberships(
+            student["id"],
+            studio_id,
+            program_ids,
+            current_belt_rank_id=student.get("current_belt_rank_id"),
+            started_at=student.get("membership_start_date"),
+        )
 
         # Attach guardians
         guardian_responses = []
@@ -2029,10 +2318,7 @@ class StudentService:
             "metadata": {"name": f"{data.legal_first_name} {data.legal_last_name}"},
         }).execute()
 
-        return StudentResponse(
-            **{k: v for k, v in student.items() if k != "deleted_at"},
-            guardians=guardian_responses,
-        )
+        return self._row_to_response(student, guardians=guardian_responses)
 
     async def get_student(self, student_id: str, studio_id: str) -> StudentResponse:
         result = (
@@ -2054,6 +2340,15 @@ class StudentService:
         update_dict = data.model_dump(exclude_unset=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
+        program_ids_were_set = "program_ids" in update_dict or "program_id" in update_dict
+        program_ids = None
+        if program_ids_were_set:
+            program_ids = self._normalize_program_ids_for_write(
+                studio_id,
+                update_dict.get("program_id"),
+                update_dict.pop("program_ids", None),
+            )
+            update_dict["program_id"] = program_ids[0]
         ensure_optional_studio_record(
             self.supabase,
             "programs",
@@ -2073,6 +2368,29 @@ class StudentService:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Student not found")
+        if program_ids is not None:
+            self._replace_active_program_memberships(
+                student_id,
+                studio_id,
+                program_ids,
+                current_belt_rank_id=update_dict.get("current_belt_rank_id") or result.data[0].get("current_belt_rank_id"),
+                started_at=result.data[0].get("membership_start_date"),
+            )
+        elif "current_belt_rank_id" in update_dict:
+            memberships = self._fetch_memberships_for_student(student_id)
+            active_program_ids = [
+                membership.program_id
+                for membership in memberships
+                if membership.status in {"active", "paused"} and not membership.ended_at
+            ]
+            if active_program_ids:
+                self._replace_active_program_memberships(
+                    student_id,
+                    studio_id,
+                    active_program_ids,
+                    current_belt_rank_id=result.data[0].get("current_belt_rank_id"),
+                    started_at=result.data[0].get("membership_start_date"),
+                )
 
         self.supabase.table("audit_logs").insert({
             "studio_id": studio_id,
@@ -2106,6 +2424,130 @@ class StudentService:
             "entity_id": student_id,
             "metadata": {},
         }).execute()
+
+    async def list_program_memberships(
+        self,
+        student_id: str,
+        studio_id: str,
+    ) -> list[StudentProgramMembershipResponse]:
+        self._ensure_student_exists(student_id, studio_id)
+        return self._fetch_memberships_for_student(student_id)
+
+    async def add_program_membership(
+        self,
+        student_id: str,
+        data: StudentProgramMembershipCreate,
+        studio_id: str,
+        actor_id: str,
+    ) -> StudentProgramMembershipResponse:
+        self._ensure_student_exists(student_id, studio_id)
+        ProgramService(self.supabase).ensure_program_active(studio_id, data.program_id)
+        row = self._membership_write_payload(data.model_dump())
+        row["student_id"] = student_id
+        row["studio_id"] = studio_id
+        result = self.supabase.table("student_program_memberships").insert(row).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to add student program membership")
+        self.supabase.table("audit_logs").insert({
+            "studio_id": studio_id,
+            "actor_id": actor_id,
+            "action": "student.program_added",
+            "entity_type": "student",
+            "entity_id": student_id,
+            "metadata": {"program_id": data.program_id},
+        }).execute()
+        memberships = self._fetch_memberships_for_student(student_id)
+        active_program_ids = [
+            membership.program_id
+            for membership in memberships
+            if membership.status in {"active", "paused"} and not membership.ended_at
+        ]
+        if active_program_ids:
+            self._sync_legacy_program_fields(student_id, studio_id, active_program_ids)
+        return self._membership_row_to_response(result.data[0])
+
+    async def update_program_membership(
+        self,
+        student_id: str,
+        membership_id: str,
+        data: StudentProgramMembershipUpdate,
+        studio_id: str,
+        actor_id: str,
+    ) -> StudentProgramMembershipResponse:
+        self._ensure_student_exists(student_id, studio_id)
+        update_dict = self._membership_write_payload(data.model_dump(exclude_unset=True))
+        if not update_dict:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        if update_dict.get("status") == "ended" and not update_dict.get("ended_at"):
+            update_dict["ended_at"] = datetime.now(timezone.utc).date().isoformat()
+        if update_dict.get("status") in {"active", "paused"}:
+            update_dict["ended_at"] = None
+        result = (
+            self.supabase.table("student_program_memberships")
+            .update(update_dict)
+            .eq("id", membership_id)
+            .eq("student_id", student_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Student program membership not found")
+        self.supabase.table("audit_logs").insert({
+            "studio_id": studio_id,
+            "actor_id": actor_id,
+            "action": "student.program_updated",
+            "entity_type": "student_program_membership",
+            "entity_id": membership_id,
+            "metadata": update_dict,
+        }).execute()
+        memberships = self._fetch_memberships_for_student(student_id)
+        active_program_ids = [
+            membership.program_id
+            for membership in memberships
+            if membership.status in {"active", "paused"} and not membership.ended_at
+        ]
+        if active_program_ids:
+            self._sync_legacy_program_fields(student_id, studio_id, active_program_ids)
+        return self._membership_row_to_response(result.data[0])
+
+    async def remove_program_membership(
+        self,
+        student_id: str,
+        membership_id: str,
+        studio_id: str,
+        actor_id: str,
+    ) -> None:
+        self._ensure_student_exists(student_id, studio_id)
+        now = datetime.now(timezone.utc).date().isoformat()
+        result = (
+            self.supabase.table("student_program_memberships")
+            .update({"status": "ended", "ended_at": now, "current_belt_rank_id": None})
+            .eq("id", membership_id)
+            .eq("student_id", student_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Student program membership not found")
+        self.supabase.table("audit_logs").insert({
+            "studio_id": studio_id,
+            "actor_id": actor_id,
+            "action": "student.program_removed",
+            "entity_type": "student_program_membership",
+            "entity_id": membership_id,
+            "metadata": {"student_id": student_id},
+        }).execute()
+        memberships = self._fetch_memberships_for_student(student_id)
+        active_program_ids = [
+            membership.program_id
+            for membership in memberships
+            if membership.status in {"active", "paused"} and not membership.ended_at
+        ]
+        if not active_program_ids:
+            active_program_ids = [ProgramService(self.supabase).get_unassigned_program_id(studio_id)]
+            self._replace_active_program_memberships(student_id, studio_id, active_program_ids)
+        else:
+            self._sync_legacy_program_fields(student_id, studio_id, active_program_ids)
 
     # ---- Bulk Actions ----
 
@@ -2296,6 +2738,7 @@ class StudentService:
                 if effective_options.create_missing_programs
                 else []
             )
+            ProgramService(self.supabase).ensure_program_ladders(studio_id)
             belt_rank_lookup = self._build_belt_rank_lookup(studio_id)
             created_ladders, created_belts = (
                 self._create_missing_belts(
@@ -2323,9 +2766,12 @@ class StudentService:
                 guardian_email = mapped.pop("guardian_email", None)
                 guardian_phone = mapped.pop("guardian_phone", None)
                 guardian_relation = mapped.pop("guardian_relation", None)
-                mapped["program_id"] = row.get("resolved_program_id")
-                if not mapped.get("program_id"):
-                    mapped.pop("program_id", None)
+                program_ids = self._normalize_program_ids_for_write(
+                    studio_id,
+                    row.get("resolved_program_id"),
+                    None,
+                )
+                mapped["program_id"] = program_ids[0]
 
                 unresolved_belt_value = row.get("unresolved_belt_value")
                 resolved_belt_rank_id = row.get("resolved_belt_rank_id")
@@ -2356,6 +2802,13 @@ class StudentService:
                     )
                     if not s_result.data:
                         raise RuntimeError("Failed to create student")
+                    self._replace_active_program_memberships(
+                        mapped["id"],
+                        studio_id,
+                        program_ids,
+                        current_belt_rank_id=mapped.get("current_belt_rank_id"),
+                        started_at=mapped.get("membership_start_date"),
+                    )
                 except Exception as exc:
                     row["issues"].append(_make_import_issue(
                         "execute_failed",

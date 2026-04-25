@@ -12,6 +12,7 @@ class LeadCreate(BaseModel):
     source: str = "walk_in"
     stage: str = "inquiry"
     program_interest: Optional[str] = None
+    program_id: Optional[str] = None
     is_minor: bool = False
     guardian_name: Optional[str] = None
     guardian_email: Optional[str] = None
@@ -29,6 +30,7 @@ class LeadUpdate(BaseModel):
     source: Optional[str] = None
     stage: Optional[str] = None
     program_interest: Optional[str] = None
+    program_id: Optional[str] = None
     is_minor: Optional[bool] = None
     guardian_name: Optional[str] = None
     guardian_email: Optional[str] = None
@@ -49,6 +51,7 @@ class LeadResponse(BaseModel):
     source: str
     stage: str
     program_interest: Optional[str] = None
+    program_id: Optional[str] = None
     is_minor: bool
     guardian_name: Optional[str] = None
     guardian_email: Optional[str] = None

@@ -99,3 +99,35 @@ def resolve_staff_role_for_user(
     # which matches the latest studio a user just onboarded into more often
     # than the oldest historical membership.
     return roles[0]
+
+
+def resolve_admin_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+) -> dict:
+    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+
+    if membership.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only studio admins can manage staff roles.",
+        )
+
+    return membership
+
+
+def resolve_program_manager_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+) -> dict:
+    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+
+    if membership.get("role") not in {"admin", "front_desk"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only studio admins and front desk staff can manage programs.",
+        )
+
+    return membership

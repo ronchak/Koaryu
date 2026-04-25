@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -10,6 +11,7 @@ from app.schemas.dashboard_bootstrap import (
     DashboardBootstrapStudioSummary,
 )
 from app.schemas.lead import LeadResponse
+from app.services.program_service import ProgramService
 from app.services.auth_service import AuthService
 from app.services.student_service import StudentService
 
@@ -67,11 +69,28 @@ class DashboardBootstrapService:
             .execute()
         )
 
+    def _fetch_programs(self, studio_id: str):
+        return ProgramService(self.supabase).list_programs(studio_id, include_archived=True)
+
     def _fetch_belt_ladders(self, studio_id: str):
+        visible_programs = (
+            self.supabase.table("programs")
+            .select("id, is_system, archived_at")
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+        visible_program_ids = [
+            row["id"]
+            for row in (visible_programs.data or [])
+            if row.get("id") and not row.get("is_system") and not row.get("archived_at")
+        ]
+        if not visible_program_ids:
+            return SimpleNamespace(data=[])
         return (
             self.supabase.table("belt_ladders")
             .select("*, belt_ranks(*)")
             .eq("studio_id", studio_id)
+            .in_("program_id", visible_program_ids)
             .order("created_at")
             .execute()
         )
@@ -87,12 +106,14 @@ class DashboardBootstrapService:
             return DashboardBootstrapResponse(auth=auth)
 
         studio_id = auth.studio_id
+        ProgramService(self.supabase).ensure_program_ladders(studio_id)
 
-        studio_result, students_result, leads_result, ladders_result = await asyncio.gather(
+        studio_result, students_result, leads_result, ladders_result, programs = await asyncio.gather(
             asyncio.to_thread(self._fetch_studio_summary, studio_id),
             asyncio.to_thread(self._fetch_students, studio_id),
             asyncio.to_thread(self._fetch_leads, studio_id),
             asyncio.to_thread(self._fetch_belt_ladders, studio_id),
+            self._fetch_programs(studio_id),
         )
 
         if not studio_result.data:
@@ -119,6 +140,7 @@ class DashboardBootstrapService:
             studio=studio,
             studio_name=studio.name,
             students=students,
+            programs=programs,
             leads=leads,
             belt_ladders=belt_ladders,
             primary_belt_ladder=primary_belt_ladder,

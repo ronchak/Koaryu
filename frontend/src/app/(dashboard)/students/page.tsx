@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
 import { buildStudentInactivityRows } from "@/lib/student-insights";
-import { useScheduleStore, useStudentStore } from "@/lib/store";
+import { useProgramStore, useScheduleStore, useStudentStore } from "@/lib/store";
+import { ProgramBadge } from "@/components/programs/program-picker";
 import type { Student, StudentCreate, StudentStatus } from "@/types";
 import {
   UserPlus,
@@ -81,9 +82,11 @@ export default function StudentsPage() {
     refreshStudents,
   } = useStudentStore();
   const { sessions, attendance } = useScheduleStore();
+  const { programs } = useProgramStore();
   const inactivityThreshold = Number(searchParams.get("inactiveDays") || "") || null;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [programFilter, setProgramFilter] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -103,11 +106,19 @@ export default function StudentsPage() {
       students.map((student) => ({
         student,
         displayName: displayName(student),
+        programs: (student.program_memberships || [])
+          .filter((membership) => membership.status !== "ended" && !membership.ended_at)
+          .map((membership) => programs.find((program) => program.id === membership.program_id))
+          .filter(Boolean),
         searchFields: {
           legalFirstName: student.legal_first_name.toLowerCase(),
           legalLastName: student.legal_last_name.toLowerCase(),
           preferredName: student.preferred_name?.toLowerCase() || "",
           email: student.email?.toLowerCase() || "",
+          programs: (student.program_memberships || [])
+            .map((membership) => membership.program_name || "")
+            .join(" ")
+            .toLowerCase(),
         },
         contact:
           student.email ||
@@ -117,7 +128,7 @@ export default function StudentsPage() {
         visibleTags: student.tags.slice(0, 2),
         hiddenTagCount: Math.max(0, student.tags.length - 2),
       })),
-    [students]
+    [programs, students]
   );
   const inactivityRows = useMemo(
     () =>
@@ -130,7 +141,7 @@ export default function StudentsPage() {
     () => new Map(inactivityRows.map((row) => [row.student.id, row.daysInactive])),
     [inactivityRows]
   );
-  const hasActiveFilters = Boolean(search || statusFilter || inactivityThreshold);
+  const hasActiveFilters = Boolean(search || statusFilter || programFilter || inactivityThreshold);
 
   useEffect(() => {
     if (!studentsLoaded) {
@@ -161,14 +172,24 @@ export default function StudentsPage() {
         (row) =>
           row.searchFields.legalFirstName.includes(q) ||
           row.searchFields.legalLastName.includes(q) ||
-          row.searchFields.preferredName.includes(q) ||
-          row.searchFields.email.includes(q)
-      );
-    }
+	          row.searchFields.preferredName.includes(q) ||
+	          row.searchFields.email.includes(q) ||
+	          row.searchFields.programs.includes(q)
+	      );
+	    }
 
-    if (statusFilter) {
-      list = list.filter((row) => row.student.status === statusFilter);
-    }
+	    if (statusFilter) {
+	      list = list.filter((row) => row.student.status === statusFilter);
+	    }
+	    if (programFilter) {
+	      list = list.filter((row) =>
+	        (row.student.program_memberships || []).some((membership) =>
+	          membership.program_id === programFilter &&
+	          membership.status !== "ended" &&
+	          !membership.ended_at
+	        ) || row.student.program_id === programFilter
+	      );
+	    }
 
     if (inactivityThreshold) {
       list = list.filter(
@@ -194,7 +215,7 @@ export default function StudentsPage() {
     });
 
     return list;
-  }, [studentRows, search, statusFilter, inactivityThreshold, inactivityByStudentId, sortKey, sortDir]);
+  }, [studentRows, search, statusFilter, programFilter, inactivityThreshold, inactivityByStudentId, sortKey, sortDir]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -411,6 +432,19 @@ export default function StudentsPage() {
             {STATUS_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={programFilter}
+            onChange={(e) => setProgramFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+          >
+            <option value="">All programs</option>
+            {programs.filter((program) => !program.archived_at).map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.name}
               </option>
             ))}
           </select>
@@ -647,9 +681,10 @@ export default function StudentsPage() {
               {hasActiveFilters ? (
                 <button
                   onClick={() => {
-                    setSearch("");
-                    setStatusFilter("");
-                    router.replace("/students");
+	                    setSearch("");
+	                    setStatusFilter("");
+	                    setProgramFilter("");
+	                    router.replace("/students");
                   }}
                   className="mt-3 text-sm text-accent hover:text-accent-hover cursor-pointer"
                 >
@@ -689,17 +724,20 @@ export default function StudentsPage() {
                       <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
                     </span>
                   </th>
-                  <th
-                    className="px-4 py-3 text-left text-xs font-medium text-text-secondary cursor-pointer select-none"
-                    onClick={() => handleSort("status")}
-                  >
+	                  <th
+	                    className="px-4 py-3 text-left text-xs font-medium text-text-secondary cursor-pointer select-none"
+	                    onClick={() => handleSort("status")}
+	                  >
                     <span className="flex items-center gap-1">
                       Status
                       <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
-                    </span>
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-                    Contact
+	                    </span>
+	                  </th>
+	                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+	                    Programs
+	                  </th>
+	                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+	                    Contact
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
                     Tags
@@ -774,10 +812,21 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={student.status} />
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary font-mono text-xs">
+	                      <td className="px-4 py-3">
+	                        <StatusBadge status={student.status} />
+	                      </td>
+	                      <td className="px-4 py-3">
+	                        <div className="flex flex-wrap gap-1">
+	                          {row.programs.length > 0 ? (
+	                            row.programs.map((program) => (
+	                              <ProgramBadge key={program!.id} program={program} />
+	                            ))
+	                          ) : (
+	                            <ProgramBadge program={programs.find((program) => program.id === student.program_id)} />
+	                          )}
+	                        </div>
+	                      </td>
+	                      <td className="px-4 py-3 text-text-secondary font-mono text-xs">
                         {row.contact}
                       </td>
                       <td className="px-4 py-3">

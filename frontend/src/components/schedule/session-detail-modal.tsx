@@ -13,8 +13,9 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
-import type { AttendanceRecord, AttendanceStatus, ClassSession, Student } from "@/types";
+import type { AttendanceRecord, AttendanceStatus, ClassSession, Program, Student } from "@/types";
 
 export type ScheduleSessionDeleteScope = "session" | "series";
 
@@ -22,6 +23,7 @@ export interface ScheduleSessionDetailModalProps {
   open: boolean;
   session: ClassSession | null;
   students: Student[];
+  programs?: Program[];
   attendance: AttendanceRecord[];
   attendanceError?: string | null;
   pendingAttendanceStudentId?: string | null;
@@ -72,10 +74,23 @@ function getStudentName(student: Student) {
   return `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
 }
 
+function getActiveStudentProgramIds(student: Student) {
+  const membershipProgramIds = (student.program_memberships || [])
+    .filter((membership) => membership.status !== "ended" && !membership.ended_at)
+    .map((membership) => membership.program_id);
+
+  return Array.from(new Set([...membershipProgramIds, student.program_id].filter(Boolean) as string[]));
+}
+
+function studentBelongsToProgram(student: Student, programId: string) {
+  return getActiveStudentProgramIds(student).includes(programId);
+}
+
 export function ScheduleSessionDetailModal({
   open,
   session,
   students,
+  programs = [],
   attendance,
   attendanceError = null,
   pendingAttendanceStudentId = null,
@@ -129,20 +144,37 @@ export function ScheduleSessionDetailModal({
     return new Map(attendance.map((record) => [record.student_id, record]));
   }, [attendance, open]);
 
-  const studentAttendanceRows = useMemo(
+  const rosterSections = useMemo(
     () => {
-      if (!open) {
-        return [];
+      if (!open || !session) {
+        return { classProgramRows: [], otherProgramRows: [] };
       }
 
-      return students.map((student) => ({
-        student,
-        attendanceRecord: attendanceByStudentId.get(student.id),
-        studentName: getStudentName(student),
-        initials: `${student.legal_first_name[0] ?? ""}${student.legal_last_name[0] ?? ""}`,
-      }));
+      const rows = students
+        .map((student) => {
+          const studentProgramIds = getActiveStudentProgramIds(student);
+          return {
+            student,
+            attendanceRecord: attendanceByStudentId.get(student.id),
+            studentName: getStudentName(student),
+            initials: `${student.legal_first_name[0] ?? ""}${student.legal_last_name[0] ?? ""}`,
+            programs: studentProgramIds
+              .map((programId) => programs.find((program) => program.id === programId))
+              .filter(Boolean) as Program[],
+          };
+        })
+        .sort((left, right) => left.studentName.localeCompare(right.studentName));
+
+      if (!session.program_id) {
+        return { classProgramRows: rows, otherProgramRows: [] };
+      }
+
+      return {
+        classProgramRows: rows.filter(({ student }) => studentBelongsToProgram(student, session.program_id!)),
+        otherProgramRows: rows.filter(({ student }) => !studentBelongsToProgram(student, session.program_id!)),
+      };
     },
-    [attendanceByStudentId, open, students]
+    [attendanceByStudentId, open, programs, session, students]
   );
 
   const sessionLabels = useMemo(() => {
@@ -168,6 +200,91 @@ export function ScheduleSessionDetailModal({
   const isRecurring = Boolean(activeSession.template_id);
   const canDeleteSeries = Boolean(isRecurring && onDeleteSeries);
   const isDeleting = deleteInFlight !== null;
+  const hasClassProgram = Boolean(activeSession.program_id);
+  const activeProgram = activeSession.program_id
+    ? programs.find((program) => program.id === activeSession.program_id)
+    : null;
+
+  function renderRosterRows(
+    rows: typeof rosterSections.classProgramRows,
+    options?: { markDropIns?: boolean }
+  ) {
+    return rows.map(({ student, attendanceRecord, studentName, initials, programs: studentPrograms }) => (
+      <button
+        key={student.id}
+        disabled={pendingAttendanceStudentId === student.id}
+        onClick={async () => {
+          await onToggleAttendance(activeSession.id, student.id, studentName);
+        }}
+        className={`w-full cursor-pointer rounded-[6px] px-3 py-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          attendanceRecord
+            ? attendanceRecord.status === "present"
+              ? "border border-success/20 bg-success/10"
+              : attendanceRecord.status === "late"
+                ? "border border-warning/20 bg-warning/10"
+                : attendanceRecord.status === "absent"
+                  ? "border border-danger/20 bg-danger/10"
+                  : "border border-border bg-surface-raised"
+            : "border border-border bg-surface hover:bg-surface-raised"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-border bg-surface-raised">
+              <span className="text-[10px] font-medium text-text-secondary">
+                {initials}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <p className="truncate text-left text-sm text-text-primary">{studentName}</p>
+                {options?.markDropIns || attendanceRecord?.is_cross_program ? (
+                  <span className="rounded-[4px] border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">
+                    Drop-in
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                {student.is_minor ? (
+                  <span className="text-left text-[10px] text-muted">Minor</span>
+                ) : null}
+                {studentPrograms.length > 0 ? (
+                  studentPrograms.slice(0, 2).map((program) => (
+                    <ProgramBadge key={program.id} program={program} />
+                  ))
+                ) : hasClassProgram ? (
+                  <ProgramBadge program={null} fallback="No matching program" />
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {attendanceRecord ? (
+              <>
+                {STATUS_ICON[attendanceRecord.status]}
+                <span
+                  className={`text-xs capitalize ${
+                    attendanceRecord.status === "present"
+                      ? "text-success"
+                      : attendanceRecord.status === "late"
+                        ? "text-warning"
+                        : attendanceRecord.status === "absent"
+                          ? "text-danger"
+                          : "text-muted"
+                  }`}
+                >
+                  {attendanceRecord.status}
+                </span>
+              </>
+            ) : (
+              <span className="text-xs text-muted">Tap to check in</span>
+            )}
+          </div>
+        </div>
+      </button>
+    ));
+  }
 
   async function handleDelete(scope: ScheduleSessionDeleteScope) {
     if (scope === "series" && onDeleteSeries) {
@@ -205,6 +322,7 @@ export function ScheduleSessionDetailModal({
               >
                 {activeSession.name}
               </h2>
+              {hasClassProgram ? <ProgramBadge program={activeProgram} fallback="Program" /> : null}
               <span className="rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-text-secondary">
                 {SESSION_STATUS_LABELS[session.status]}
               </span>
@@ -314,68 +432,38 @@ export function ScheduleSessionDetailModal({
                 </p>
               </div>
             ) : (
-              <div className="space-y-1">
-                {studentAttendanceRows.map(({ student, attendanceRecord, studentName, initials }) => {
-                  return (
-                    <button
-                      key={student.id}
-                      disabled={pendingAttendanceStudentId === student.id}
-                      onClick={async () => {
-                        await onToggleAttendance(activeSession.id, student.id, studentName);
-                      }}
-                      className={`w-full cursor-pointer rounded-[6px] px-3 py-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                        attendanceRecord
-                          ? attendanceRecord.status === "present"
-                            ? "border border-success/20 bg-success/10"
-                            : attendanceRecord.status === "late"
-                              ? "border border-warning/20 bg-warning/10"
-                              : attendanceRecord.status === "absent"
-                                ? "border border-danger/20 bg-danger/10"
-                                : "border border-border bg-surface-raised"
-                          : "border border-border bg-surface hover:bg-surface-raised"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-border bg-surface-raised">
-                            <span className="text-[10px] font-medium text-text-secondary">
-                              {initials}
-                            </span>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate text-left text-sm text-text-primary">{studentName}</p>
-                            {student.is_minor ? (
-                              <p className="mt-0.5 text-left text-[10px] text-muted">Minor</p>
-                            ) : null}
-                          </div>
-                        </div>
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  {hasClassProgram ? (
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <p className="text-xs font-medium text-text-secondary">Class program students</p>
+                      <ProgramBadge program={activeProgram} fallback="Program" />
+                    </div>
+                  ) : null}
+                  {rosterSections.classProgramRows.length > 0 ? (
+                    renderRosterRows(rosterSections.classProgramRows)
+                  ) : (
+                    <div className="rounded-[6px] border border-border bg-surface px-3 py-3 text-xs text-muted">
+                      No active students are assigned to this class program yet.
+                    </div>
+                  )}
+                </div>
 
-                        <div className="flex items-center gap-1.5">
-                          {attendanceRecord ? (
-                            <>
-                              {STATUS_ICON[attendanceRecord.status]}
-                              <span
-                                className={`text-xs capitalize ${
-                                  attendanceRecord.status === "present"
-                                    ? "text-success"
-                                    : attendanceRecord.status === "late"
-                                      ? "text-warning"
-                                      : attendanceRecord.status === "absent"
-                                        ? "text-danger"
-                                        : "text-muted"
-                                }`}
-                              >
-                                {attendanceRecord.status}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-xs text-muted">Tap to check in</span>
-                          )}
-                        </div>
+                {hasClassProgram ? (
+                  <div className="space-y-1 border-t border-border pt-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <p className="text-xs font-medium text-text-secondary">Other program drop-ins</p>
+                      <span className="text-xs text-muted">{rosterSections.otherProgramRows.length}</span>
+                    </div>
+                    {rosterSections.otherProgramRows.length > 0 ? (
+                      renderRosterRows(rosterSections.otherProgramRows, { markDropIns: true })
+                    ) : (
+                      <div className="rounded-[6px] border border-border bg-surface px-3 py-3 text-xs text-muted">
+                        No other active students available for drop-in attendance.
                       </div>
-                    </button>
-                  );
-                })}
+                    )}
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

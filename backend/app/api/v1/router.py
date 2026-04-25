@@ -6,7 +6,9 @@ from app.api.v1.endpoints import (
     demo,
     health,
     leads,
+    programs,
     schedule,
+    staff,
     students,
     studios,
 )
@@ -19,6 +21,8 @@ router.include_router(dashboard.router)
 router.include_router(demo.router)
 router.include_router(studios.router)
 router.include_router(students.router)
+router.include_router(programs.router)
 router.include_router(schedule.router)
 router.include_router(belts.router)
 router.include_router(leads.router)
+router.include_router(staff.router)

@@ -1,11 +1,13 @@
 "use client";
 
 import { Header } from "@/components/header";
+import { ProgramBadge } from "@/components/programs/program-picker";
 import { toLocalDateKey } from "@/lib/date";
 import { buildStudentInactivityRows, isStudentOnHoldNow } from "@/lib/student-insights";
 import {
   useBeltStore,
   useLeadStore,
+  useProgramStore,
   useScheduleStore,
   useStudentStore,
   useStudioStore,
@@ -81,9 +83,14 @@ export default function DashboardPage() {
   const { studioName } = useStudioStore();
   const { students } = useStudentStore();
   const { leads } = useLeadStore();
+  const { programs } = useProgramStore();
   const { sessions, attendance } = useScheduleStore();
   const { beltRanks, subRankTerm } = useBeltStore();
   const today = toLocalDateKey();
+  const programById = useMemo(
+    () => new Map(programs.map((program) => [program.id, program])),
+    [programs]
+  );
 
   const studentStats = useMemo(() => {
     let activeStudents = 0;
@@ -190,6 +197,88 @@ export default function DashboardPage() {
   }, [inactivityRows]);
 
   const recentStudents = useMemo(() => students.slice(0, 5), [students]);
+
+  const programBuckets = useMemo(() => {
+    const rows = new Map<string, {
+      programId: string | null;
+      label: string;
+      activeStudents: number;
+      trialingStudents: number;
+      activeLeads: number;
+      todaySessions: number;
+    }>();
+
+    for (const program of programs.filter((item) => !item.archived_at)) {
+      rows.set(program.id, {
+        programId: program.id,
+        label: program.name,
+        activeStudents: 0,
+        trialingStudents: 0,
+        activeLeads: 0,
+        todaySessions: 0,
+      });
+    }
+
+    const ensureRow = (programId: string | null, fallback: string) => {
+      const key = programId || "unassigned";
+      const existing = rows.get(key);
+      if (existing) {
+        return existing;
+      }
+
+      const program = programId ? programById.get(programId) : null;
+      const row = {
+        programId,
+        label: program?.name || fallback,
+        activeStudents: 0,
+        trialingStudents: 0,
+        activeLeads: 0,
+        todaySessions: 0,
+      };
+      rows.set(key, row);
+      return row;
+    };
+
+    for (const student of students) {
+      const memberships = student.program_memberships?.filter((membership) => membership.status === "active") ?? [];
+      const programIds = memberships.length > 0
+        ? memberships.map((membership) => membership.program_id)
+        : [student.program_id || null];
+
+      for (const programId of programIds) {
+        const row = ensureRow(programId, "No program");
+        if (student.status === "active") {
+          row.activeStudents += 1;
+        } else if (student.status === "trialing") {
+          row.trialingStudents += 1;
+        }
+      }
+    }
+
+    for (const lead of leads) {
+      if (lead.stage === "closed_lost" || lead.stage === "enrolled") {
+        continue;
+      }
+
+      ensureRow(lead.program_id || null, lead.program_interest || "No program").activeLeads += 1;
+    }
+
+    for (const session of sessions) {
+      if (session.date !== today || session.status === "canceled") {
+        continue;
+      }
+
+      ensureRow(session.program_id || null, "No program").todaySessions += 1;
+    }
+
+    return Array.from(rows.values())
+      .filter((row) => row.activeStudents > 0 || row.trialingStudents > 0 || row.activeLeads > 0 || row.todaySessions > 0)
+      .sort((a, b) =>
+        b.activeStudents + b.trialingStudents + b.activeLeads + b.todaySessions -
+        (a.activeStudents + a.trialingStudents + a.activeLeads + a.todaySessions)
+      )
+      .slice(0, 5);
+  }, [leads, programById, programs, sessions, students, today]);
 
   return (
     <>
@@ -337,6 +426,56 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="bg-surface border border-border rounded-[6px] p-5 mt-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-medium text-text-primary">Program Buckets</h3>
+                <p className="text-xs text-text-secondary mt-1">
+                  Active students, open leads, and today&apos;s classes grouped by program.
+                </p>
+              </div>
+              <Link href="/reports" className="text-xs text-accent hover:text-accent-hover">
+                View reports →
+              </Link>
+            </div>
+
+            {programBuckets.length === 0 ? (
+              <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
+                Program activity will appear here once students, leads, or classes are assigned.
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {programBuckets.map((row) => (
+                  <div
+                    key={row.programId || row.label}
+                    className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
+                  >
+                    <ProgramBadge
+                      program={row.programId ? programById.get(row.programId) : null}
+                      fallback={row.label}
+                    />
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="font-mono text-text-primary">
+                          {row.activeStudents + row.trialingStudents}
+                        </p>
+                        <p className="text-muted">students</p>
+                      </div>
+                      <div>
+                        <p className="font-mono text-text-primary">{row.activeLeads}</p>
+                        <p className="text-muted">leads</p>
+                      </div>
+                      <div>
+                        <p className="font-mono text-text-primary">{row.todaySessions}</p>
+                        <p className="text-muted">today</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {students.length > 0 && (

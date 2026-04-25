@@ -13,6 +13,7 @@ from app.services.studio_scope import (
     ensure_staff_user_in_studio,
     ensure_studio_record,
 )
+from app.services.program_service import ProgramService
 
 
 class ScheduleService:
@@ -162,13 +163,7 @@ class ScheduleService:
                 studio_id,
                 "Instructor not found in this studio",
             )
-            ensure_optional_studio_record(
-                self.supabase,
-                "programs",
-                row.get("program_id"),
-                studio_id,
-                "Program not found",
-            )
+            ProgramService(self.supabase).ensure_program_active(studio_id, row.get("program_id"))
             row["studio_id"] = studio_id
             result = self.supabase.table("class_templates").insert(row).execute()
             if not result.data:
@@ -209,13 +204,7 @@ class ScheduleService:
             studio_id,
             "Instructor not found in this studio",
         )
-        ensure_optional_studio_record(
-            self.supabase,
-            "programs",
-            update_dict.get("program_id"),
-            studio_id,
-            "Program not found",
-        )
+        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
         result = (
             self.supabase.table("class_templates")
             .update(update_dict)
@@ -321,13 +310,7 @@ class ScheduleService:
             studio_id,
             "Instructor not found in this studio",
         )
-        ensure_optional_studio_record(
-            self.supabase,
-            "programs",
-            row.get("program_id"),
-            studio_id,
-            "Program not found",
-        )
+        ProgramService(self.supabase).ensure_program_active(studio_id, row.get("program_id"))
         row["studio_id"] = studio_id
         result = self.supabase.table("class_sessions").insert(row).execute()
         if not result.data:
@@ -559,13 +542,16 @@ class ScheduleService:
     async def check_in(
         self, data: AttendanceCheckIn, studio_id: str, actor_id: str
     ) -> AttendanceResponse:
-        ensure_studio_record(
-            self.supabase,
-            "class_sessions",
-            data.session_id,
-            studio_id,
-            "Class session not found",
+        session_result = (
+            self.supabase.table("class_sessions")
+            .select("id, program_id")
+            .eq("id", data.session_id)
+            .eq("studio_id", studio_id)
+            .maybe_single()
+            .execute()
         )
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Class session not found")
         ensure_studio_record(
             self.supabase,
             "students",
@@ -577,6 +563,28 @@ class ScheduleService:
         row = data.model_dump()
         row["studio_id"] = studio_id
         row["checked_in_by"] = actor_id
+
+        session_program_id = session_result.data.get("program_id")
+        if session_program_id:
+            membership_result = (
+                self.supabase.table("student_program_memberships")
+                .select("id")
+                .eq("studio_id", studio_id)
+                .eq("student_id", data.student_id)
+                .eq("program_id", session_program_id)
+                .in_("status", ["active", "paused"])
+                .is_("ended_at", "null")
+                .limit(1)
+                .execute()
+            )
+            is_cross_program = not bool(membership_result.data)
+            row["is_cross_program"] = is_cross_program
+            if is_cross_program and data.counts_toward_eligibility is None:
+                row["counts_toward_eligibility"] = False
+            elif data.counts_toward_eligibility is None:
+                row["counts_toward_eligibility"] = True
+        elif data.counts_toward_eligibility is None:
+            row["counts_toward_eligibility"] = True
 
         # Upsert — if already checked in, update status
         result = (
@@ -609,6 +617,8 @@ class ScheduleService:
                 session_id=data.session_id,
                 student_id=ci.student_id,
                 status=ci.status,
+                counts_toward_eligibility=ci.counts_toward_eligibility,
+                override_reason=ci.override_reason,
             )
             r = await self.check_in(ci_data, studio_id, actor_id)
             results.append(r)

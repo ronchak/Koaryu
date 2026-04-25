@@ -2,18 +2,21 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
+from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
 from app.schemas.demo import DemoResetCounts, DemoResetResponse
 from app.schemas.schedule import AttendanceResponse
 from app.services.belt_service import BeltService
 from app.services.lead_service import LeadService
+from app.services.program_service import ProgramService
 from app.services.schedule_service import ScheduleService
 from app.services.student_service import StudentService
 
 
 DEMO_STUDIO_NAME = "River City Martial Arts"
 DEMO_NAMESPACE = uuid.UUID("7d8a064e-135e-47b6-8c6b-c1c4d65b7f82")
+OPTIONAL_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
 
 
 class DemoService:
@@ -44,6 +47,13 @@ class DemoService:
     def _delete_by_studio(self, table: str, studio_id: str) -> None:
         self.supabase.table(table).delete().eq("studio_id", studio_id).execute()
 
+    def _delete_optional_by_studio(self, table: str, studio_id: str) -> None:
+        try:
+            self._delete_by_studio(table, studio_id)
+        except PostgrestAPIError as exc:
+            if exc.code not in OPTIONAL_SCHEMA_ERROR_CODES:
+                raise
+
     def _fetch_ids(self, table: str, studio_id: str) -> list[str]:
         result = self.supabase.table(table).select("id").eq("studio_id", studio_id).execute()
         return [row["id"] for row in (result.data or []) if row.get("id")]
@@ -52,12 +62,22 @@ class DemoService:
         if rows:
             self.supabase.table(table).insert(rows).execute()
 
+    def _insert_optional(self, table: str, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        try:
+            self._insert(table, rows)
+        except PostgrestAPIError as exc:
+            if exc.code not in OPTIONAL_SCHEMA_ERROR_CODES:
+                raise
+
     def _clear_demo_surface(self, studio_id: str) -> None:
         student_ids = self._fetch_ids("students", studio_id)
         guardian_ids = self._fetch_ids("guardians", studio_id)
 
         self._delete_by_studio("attendance", studio_id)
         self._delete_by_studio("promotions", studio_id)
+        self._delete_optional_by_studio("student_program_memberships", studio_id)
         self._delete_by_studio("lead_activities", studio_id)
         self._delete_by_studio("student_import_runs", studio_id)
         self._delete_by_studio("leads", studio_id)
@@ -78,34 +98,28 @@ class DemoService:
     def _seed_programs(self, studio_id: str) -> dict[str, str]:
         now = self._timestamp()
         programs = {
-            "kids_bjj": {
-                "id": self._id(studio_id, "program:kids-bjj"),
+            "bjj_core": {
+                "id": self._id(studio_id, "program:bjj-core"),
                 "studio_id": studio_id,
-                "name": "Kids Brazilian Jiu-Jitsu",
-                "description": "Ages 7-12 fundamentals, confidence, and safe movement.",
+                "name": "Brazilian Jiu-Jitsu Core",
+                "description": "Shared belt progression for kids, adults, fundamentals, and no-gi.",
                 "created_at": now,
             },
-            "adult_bjj": {
-                "id": self._id(studio_id, "program:adult-bjj"),
+            "tae_kwon_do": {
+                "id": self._id(studio_id, "program:tae-kwon-do"),
                 "studio_id": studio_id,
-                "name": "Adult Brazilian Jiu-Jitsu",
-                "description": "Fundamentals, no-gi, and competition development.",
-                "created_at": now,
-            },
-            "muay_thai": {
-                "id": self._id(studio_id, "program:muay-thai"),
-                "studio_id": studio_id,
-                "name": "Muay Thai Fundamentals",
-                "description": "Beginner striking, footwork, and conditioning.",
+                "name": "Tae Kwon Do Fundamentals",
+                "description": "Foundational forms, footwork, sparring, and confidence.",
                 "created_at": now,
             },
         }
         self._insert("programs", list(programs.values()))
         return {key: row["id"] for key, row in programs.items()}
 
-    def _seed_belts(self, studio_id: str) -> dict[str, str]:
+    def _seed_belts(self, studio_id: str, program_ids: dict[str, str]) -> dict[str, str]:
         now = self._timestamp()
         ladder_id = self._id(studio_id, "ladder:bjj-core")
+        tkd_ladder_id = self._id(studio_id, "ladder:tae-kwon-do")
         self._insert(
             "belt_ladders",
             [
@@ -113,7 +127,16 @@ class DemoService:
                     "id": ladder_id,
                     "studio_id": studio_id,
                     "name": "Brazilian Jiu-Jitsu Core",
-                    "program_id": None,
+                    "program_id": program_ids["bjj_core"],
+                    "sub_rank_term": "Stripe",
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                {
+                    "id": tkd_ladder_id,
+                    "studio_id": studio_id,
+                    "name": "Tae Kwon Do Fundamentals",
+                    "program_id": program_ids["tae_kwon_do"],
                     "sub_rank_term": "Stripe",
                     "created_at": now,
                     "updated_at": now,
@@ -151,8 +174,37 @@ class DemoService:
                     "created_at": now,
                 }
             )
+        tkd_rank_specs = [
+            ("tkd-white", "White Belt", "#FFFFFF", 0, 0, 0, False, False, None),
+            ("tkd-yellow-stripe", "Yellow Stripe", "#FFFFFF", 1, 5, 1, False, True, "#EAB308"),
+            ("tkd-yellow", "Yellow Belt", "#EAB308", 2, 10, 2, True, False, None),
+            ("tkd-green-stripe", "Green Stripe", "#FFFFFF", 3, 14, 3, False, True, "#22C55E"),
+            ("tkd-green", "Green Belt", "#22C55E", 4, 18, 4, True, False, None),
+            ("tkd-blue-stripe", "Blue Stripe", "#FFFFFF", 5, 22, 5, False, True, "#3B82F6"),
+            ("tkd-blue", "Blue Belt", "#3B82F6", 6, 28, 6, True, False, None),
+        ]
+        for key, name, color, order, classes, months, approval, is_tip, tip_color in tkd_rank_specs:
+            rank_id = self._id(studio_id, f"rank:{key}")
+            rank_ids[key] = rank_id
+            rank_rows.append(
+                {
+                    "id": rank_id,
+                    "ladder_id": tkd_ladder_id,
+                    "studio_id": studio_id,
+                    "name": name,
+                    "color_hex": color,
+                    "display_order": order,
+                    "min_classes": classes,
+                    "min_months": months,
+                    "requires_approval": approval,
+                    "is_tip": is_tip,
+                    "tip_color_hex": tip_color,
+                    "created_at": now,
+                }
+            )
         self._insert("belt_ranks", rank_rows)
         rank_ids["ladder"] = ladder_id
+        rank_ids["tkd_ladder"] = tkd_ladder_id
         return rank_ids
 
     def _seed_students(
@@ -173,7 +225,7 @@ class DemoService:
                 "phone": None,
                 "status": "active",
                 "membership": self._date(-610),
-                "program": program_ids["kids_bjj"],
+                "program": program_ids["bjj_core"],
                 "rank": rank_ids["white-stripe-2"],
                 "tags": ["youth", "competition", "demo-ready"],
                 "notes": "Quietly technical; ready to show promotion eligibility.",
@@ -189,7 +241,7 @@ class DemoService:
                 "phone": None,
                 "status": "active",
                 "membership": self._date(-420),
-                "program": program_ids["kids_bjj"],
+                "program": program_ids["bjj_core"],
                 "rank": rank_ids["white-stripe-3"],
                 "tags": ["youth", "leadership"],
                 "notes": "Consistent attendance; next promotion requires instructor approval.",
@@ -205,7 +257,7 @@ class DemoService:
                 "phone": None,
                 "status": "active",
                 "membership": self._date(-300),
-                "program": program_ids["kids_bjj"],
+                "program": program_ids["bjj_core"],
                 "rank": rank_ids["white"],
                 "tags": ["youth", "attendance-watch"],
                 "notes": "Classes are on track; needs a little more time at rank.",
@@ -221,7 +273,7 @@ class DemoService:
                 "phone": None,
                 "status": "active",
                 "membership": self._date(-150),
-                "program": program_ids["kids_bjj"],
+                "program": program_ids["bjj_core"],
                 "rank": rank_ids["white-stripe-1"],
                 "tags": ["youth", "new-family"],
                 "notes": "Newer student with a few classes toward the next stripe.",
@@ -237,7 +289,7 @@ class DemoService:
                 "phone": "(555) 876-5432",
                 "status": "active",
                 "membership": self._date(-910),
-                "program": program_ids["adult_bjj"],
+                "program": program_ids["bjj_core"],
                 "rank": rank_ids["yellow"],
                 "tags": ["adult", "competitor"],
                 "notes": "Competition team regular; good profile for attendance history.",
@@ -253,9 +305,9 @@ class DemoService:
                 "phone": None,
                 "status": "trialing",
                 "membership": self._date(-9),
-                "program": program_ids["muay_thai"],
-                "rank": None,
-                "tags": ["trial", "muay-thai"],
+                "program": program_ids["tae_kwon_do"],
+                "rank": rank_ids["tkd-white"],
+                "tags": ["trial", "tae-kwon-do"],
                 "notes": "Trial family from the spring open house.",
                 "guardian": ("Carmen", "Reyes", "carmen.reyes@example.test", "(555) 345-6789", "Mother"),
             },
@@ -269,7 +321,7 @@ class DemoService:
                 "phone": "(555) 456-7890",
                 "status": "inactive",
                 "membership": self._date(-1200),
-                "program": program_ids["adult_bjj"],
+                "program": program_ids["bjj_core"],
                 "rank": rank_ids["orange"],
                 "tags": ["adult", "alumni"],
                 "notes": "Moved out of town. Keep for inactive roster visibility.",
@@ -285,7 +337,7 @@ class DemoService:
                 "phone": "(555) 678-9012",
                 "status": "paused",
                 "membership": self._date(-980),
-                "program": program_ids["adult_bjj"],
+                "program": program_ids["bjj_core"],
                 "rank": rank_ids["yellow"],
                 "tags": ["adult", "medical-hold"],
                 "notes": "On medical hold; excluded from inactivity alerts while hold is active.",
@@ -294,8 +346,339 @@ class DemoService:
                 "hold_end": self._date(30),
             },
         ]
+        student_specs.extend([
+            {
+                "key": "hana",
+                "first": "Hana",
+                "last": "Mori",
+                "preferred": "Hana",
+                "dob": "2016-02-08",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-260),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white-stripe-1"],
+                "tags": ["youth", "beginner"],
+                "notes": "Steady beginner who pairs well with newer students.",
+                "guardian": ("Yumi", "Mori", "yumi.mori@example.test", "(555) 241-0101", "Mother"),
+            },
+            {
+                "key": "liam",
+                "first": "Liam",
+                "last": "Johnson",
+                "preferred": "Liam",
+                "dob": "2014-05-19",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-95),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white"],
+                "tags": ["youth", "new-family"],
+                "notes": "Newer student building class consistency.",
+                "guardian": ("Megan", "Johnson", "megan.johnson@example.test", "(555) 241-0102", "Mother"),
+            },
+            {
+                "key": "ava",
+                "first": "Ava",
+                "last": "Martinez",
+                "preferred": "Ava",
+                "dob": "2013-10-02",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-390),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white-stripe-2"],
+                "tags": ["youth", "attendance-strong"],
+                "notes": "Consistent classes and strong retention drills.",
+                "guardian": ("Rosa", "Martinez", "rosa.martinez@example.test", "(555) 241-0103", "Mother"),
+            },
+            {
+                "key": "noah_b",
+                "first": "Noah",
+                "last": "Bennett",
+                "preferred": "Noah",
+                "dob": "2012-12-11",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-510),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white-stripe-3"],
+                "tags": ["youth", "promotion-watch"],
+                "notes": "Close to yellow belt once approval is complete.",
+                "guardian": ("Claire", "Bennett", "claire.bennett@example.test", "(555) 241-0104", "Mother"),
+            },
+            {
+                "key": "zara",
+                "first": "Zara",
+                "last": "Ali",
+                "preferred": "Zara",
+                "dob": "2015-07-30",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-185),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white"],
+                "tags": ["youth", "confidence"],
+                "notes": "Developing confidence in live drills.",
+                "guardian": ("Samira", "Ali", "samira.ali@example.test", "(555) 241-0105", "Mother"),
+            },
+            {
+                "key": "ethan",
+                "first": "Ethan",
+                "last": "Wong",
+                "preferred": "Ethan",
+                "dob": "2011-04-17",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-720),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["yellow"],
+                "tags": ["youth", "assistant-helper"],
+                "notes": "Helps newer kids with warmups.",
+                "guardian": ("Michelle", "Wong", "michelle.wong@example.test", "(555) 241-0106", "Mother"),
+            },
+            {
+                "key": "lucas",
+                "first": "Lucas",
+                "last": "Grant",
+                "preferred": "Lucas",
+                "dob": "1990-08-03",
+                "email": "lucas.grant@example.test",
+                "phone": "(555) 241-0107",
+                "status": "active",
+                "membership": self._date(-140),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white-stripe-1"],
+                "tags": ["adult", "evening"],
+                "notes": "Usually attends the evening no-gi block.",
+                "guardian": None,
+            },
+            {
+                "key": "maya",
+                "first": "Maya",
+                "last": "Chen",
+                "preferred": "Maya",
+                "dob": "1986-09-27",
+                "email": "maya.chen@example.test",
+                "phone": "(555) 241-0108",
+                "status": "active",
+                "membership": self._date(-1100),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["orange"],
+                "tags": ["adult", "mentor"],
+                "notes": "Reliable mentor for fundamentals students.",
+                "guardian": None,
+            },
+            {
+                "key": "oliver",
+                "first": "Oliver",
+                "last": "Stone",
+                "preferred": "Ollie",
+                "dob": "1998-01-06",
+                "email": "oliver.stone@example.test",
+                "phone": "(555) 241-0109",
+                "status": "active",
+                "membership": self._date(-60),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white"],
+                "tags": ["adult", "trial-converted"],
+                "notes": "Recently converted from a trial.",
+                "guardian": None,
+            },
+            {
+                "key": "amara",
+                "first": "Amara",
+                "last": "Okafor",
+                "preferred": "Amara",
+                "dob": "1993-03-25",
+                "email": "amara.okafor@example.test",
+                "phone": "(555) 241-0110",
+                "status": "active",
+                "membership": self._date(-1380),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["green"],
+                "tags": ["adult", "cross-training"],
+                "notes": "Advanced BJJ student also cross-training in Tae Kwon Do.",
+                "guardian": None,
+                "extra_programs": [
+                    {"program": program_ids["tae_kwon_do"], "rank": rank_ids["tkd-white"], "status": "active", "started_at": self._date(-45)}
+                ],
+            },
+            {
+                "key": "ben",
+                "first": "Ben",
+                "last": "Carter",
+                "preferred": "Ben",
+                "dob": "1984-11-09",
+                "email": "ben.carter@example.test",
+                "phone": "(555) 241-0111",
+                "status": "active",
+                "membership": self._date(-310),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white-stripe-2"],
+                "tags": ["adult", "morning"],
+                "notes": "Morning class regular.",
+                "guardian": None,
+            },
+            {
+                "key": "isabella",
+                "first": "Isabella",
+                "last": "Rossi",
+                "preferred": "Bella",
+                "dob": "2014-03-14",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-235),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white-stripe-1"],
+                "tags": ["youth", "after-school"],
+                "notes": "After-school student with strong attendance.",
+                "guardian": ("Gianna", "Rossi", "gianna.rossi@example.test", "(555) 241-0112", "Mother"),
+            },
+            {
+                "key": "kai",
+                "first": "Kai",
+                "last": "Thompson",
+                "preferred": "Kai",
+                "dob": "2010-06-23",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-980),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["orange"],
+                "tags": ["youth", "competition"],
+                "notes": "Competition-focused youth student.",
+                "guardian": ("Andre", "Thompson", "andre.thompson@example.test", "(555) 241-0113", "Father"),
+            },
+            {
+                "key": "mia_j",
+                "first": "Mia",
+                "last": "Johnson",
+                "preferred": "Mia",
+                "dob": "2016-09-01",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-120),
+                "program": program_ids["bjj_core"],
+                "rank": rank_ids["white"],
+                "tags": ["youth", "new-family"],
+                "notes": "Good fit for beginner fundamentals.",
+                "guardian": ("Dana", "Johnson", "dana.johnson@example.test", "(555) 241-0114", "Mother"),
+            },
+            {
+                "key": "isabel",
+                "first": "Isabel",
+                "last": "Torres",
+                "preferred": "Izzy",
+                "dob": "2012-02-28",
+                "email": None,
+                "phone": None,
+                "status": "trialing",
+                "membership": self._date(-6),
+                "program": program_ids["tae_kwon_do"],
+                "rank": rank_ids["tkd-white"],
+                "tags": ["youth", "tae-kwon-do", "trial"],
+                "notes": "Trying the youth Tae Kwon Do track.",
+                "guardian": ("Marisol", "Torres", "marisol.torres@example.test", "(555) 241-0115", "Mother"),
+            },
+            {
+                "key": "omar",
+                "first": "Omar",
+                "last": "Haddad",
+                "preferred": "Omar",
+                "dob": "1991-05-05",
+                "email": "omar.haddad@example.test",
+                "phone": "(555) 241-0116",
+                "status": "active",
+                "membership": self._date(-80),
+                "program": program_ids["tae_kwon_do"],
+                "rank": rank_ids["tkd-yellow"],
+                "tags": ["adult", "tae-kwon-do", "cross-training"],
+                "notes": "Primary Tae Kwon Do student also taking BJJ basics.",
+                "guardian": None,
+                "extra_programs": [
+                    {"program": program_ids["bjj_core"], "rank": rank_ids["white"], "status": "active", "started_at": self._date(-25)}
+                ],
+            },
+            {
+                "key": "chloe",
+                "first": "Chloe",
+                "last": "Park",
+                "preferred": "Chloe",
+                "dob": "2013-08-20",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-130),
+                "program": program_ids["tae_kwon_do"],
+                "rank": rank_ids["tkd-yellow-stripe"],
+                "tags": ["youth", "tae-kwon-do"],
+                "notes": "Building confidence through forms and footwork drills.",
+                "guardian": ("Jin", "Park", "jin.park@example.test", "(555) 241-0117", "Father"),
+            },
+            {
+                "key": "diego",
+                "first": "Diego",
+                "last": "Flores",
+                "preferred": "Diego",
+                "dob": "1989-12-12",
+                "email": "diego.flores@example.test",
+                "phone": "(555) 241-0118",
+                "status": "active",
+                "membership": self._date(-210),
+                "program": program_ids["tae_kwon_do"],
+                "rank": rank_ids["tkd-yellow"],
+                "tags": ["adult", "tae-kwon-do"],
+                "notes": "Regular Tae Kwon Do student.",
+                "guardian": None,
+            },
+            {
+                "key": "ellie",
+                "first": "Ellie",
+                "last": "Smith",
+                "preferred": "Ellie",
+                "dob": "2015-01-16",
+                "email": None,
+                "phone": None,
+                "status": "active",
+                "membership": self._date(-70),
+                "program": program_ids["tae_kwon_do"],
+                "rank": rank_ids["tkd-white"],
+                "tags": ["youth", "tae-kwon-do", "beginner"],
+                "notes": "New beginner in the Tae Kwon Do program.",
+                "guardian": ("Paula", "Smith", "paula.smith@example.test", "(555) 241-0119", "Mother"),
+            },
+            {
+                "key": "sam",
+                "first": "Sam",
+                "last": "Wilson",
+                "preferred": "Sam",
+                "dob": "1982-07-07",
+                "email": "sam.wilson@example.test",
+                "phone": "(555) 241-0120",
+                "status": "paused",
+                "membership": self._date(-410),
+                "program": program_ids["tae_kwon_do"],
+                "rank": rank_ids["tkd-green-stripe"],
+                "tags": ["adult", "tae-kwon-do", "travel-hold"],
+                "notes": "Paused while traveling for work.",
+                "guardian": None,
+                "hold_start": self._date(-7),
+                "hold_end": self._date(21),
+            },
+        ])
 
         student_rows = []
+        membership_rows = []
         guardian_rows = []
         join_rows = []
         student_ids: dict[str, str] = {}
@@ -303,6 +686,11 @@ class DemoService:
         for spec in student_specs:
             student_id = self._id(studio_id, f"student:{spec['key']}")
             student_ids[spec["key"]] = student_id
+            membership_status = "paused" if spec["status"] == "paused" else "active"
+            membership_ended_at = None
+            if spec["status"] in {"inactive", "canceled"}:
+                membership_status = "ended"
+                membership_ended_at = self._date(-1)
             student_rows.append(
                 {
                     "id": student_id,
@@ -325,6 +713,36 @@ class DemoService:
                     "updated_at": now,
                 }
             )
+            membership_rows.append(
+                {
+                    "id": self._id(studio_id, f"student-program:{spec['key']}"),
+                    "studio_id": studio_id,
+                    "student_id": student_id,
+                    "program_id": spec["program"],
+                    "status": membership_status,
+                    "started_at": spec["membership"],
+                    "ended_at": membership_ended_at,
+                    "current_belt_rank_id": spec["rank"],
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+            for index, extra_program in enumerate(spec.get("extra_programs", []), start=1):
+                extra_status = extra_program.get("status", "active")
+                membership_rows.append(
+                    {
+                        "id": self._id(studio_id, f"student-program:{spec['key']}:extra:{index}"),
+                        "studio_id": studio_id,
+                        "student_id": student_id,
+                        "program_id": extra_program["program"],
+                        "status": extra_status,
+                        "started_at": extra_program.get("started_at", spec["membership"]),
+                        "ended_at": self._date(-1) if extra_status == "ended" else None,
+                        "current_belt_rank_id": extra_program.get("rank"),
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
             if spec["guardian"]:
                 first, last, email, phone, relation = spec["guardian"]
                 guardian_id = self._id(studio_id, f"guardian:{spec['key']}")
@@ -350,6 +768,7 @@ class DemoService:
                 )
 
         self._insert("students", student_rows)
+        self._insert_optional("student_program_memberships", membership_rows)
         self._insert("guardians", guardian_rows)
         self._insert("student_guardians", join_rows)
         return student_ids
@@ -358,6 +777,7 @@ class DemoService:
         self,
         studio_id: str,
         actor_id: str,
+        program_ids: dict[str, str],
         student_ids: dict[str, str],
         rank_ids: dict[str, str],
     ) -> None:
@@ -369,6 +789,13 @@ class DemoService:
             ("marcus", None, "yellow", -100, "Promoted after winter grading."),
             ("derek", None, "orange", -220, "Historical promotion retained for profile context."),
             ("james", None, "yellow", -180, "Promotion before medical hold."),
+            ("hana", None, "white-stripe-1", -32, "First stripe after strong beginner attendance."),
+            ("ava", None, "white-stripe-2", -54, "Second stripe earned during youth fundamentals."),
+            ("noah_b", None, "white-stripe-3", -66, "Third stripe; yellow belt review is next."),
+            ("ethan", None, "yellow", -140, "Youth leadership promotion."),
+            ("maya", None, "orange", -260, "Adult fundamentals promotion history."),
+            ("amara", None, "green", -300, "Advanced rank retained for demo progression."),
+            ("kai", None, "orange", -210, "Competition-track youth promotion."),
         ]
         rows = []
         for student_key, from_key, to_key, offset, notes in promotion_specs:
@@ -377,6 +804,8 @@ class DemoService:
                     "id": self._id(studio_id, f"promotion:{student_key}:{to_key}"),
                     "studio_id": studio_id,
                     "student_id": student_ids[student_key],
+                    "student_program_membership_id": self._id(studio_id, f"student-program:{student_key}"),
+                    "program_id": program_ids["bjj_core"],
                     "from_rank_id": rank_ids[from_key] if from_key else None,
                     "to_rank_id": rank_ids[to_key],
                     "promoted_by": actor_id,
@@ -394,10 +823,10 @@ class DemoService:
     ) -> None:
         now = self._timestamp()
         template_specs = [
-            ("kids-bjj-today", "Kids BJJ Fundamentals", 0, "16:00", "16:45", program_ids["kids_bjj"], 20),
-            ("adult-nogi-today", "Adult No-Gi", 0, "18:00", "19:30", program_ids["adult_bjj"], 28),
-            ("muay-thai-tomorrow", "Muay Thai Fundamentals", 1, "17:30", "18:30", program_ids["muay_thai"], 24),
-            ("competition-prep", "Competition Prep", 2, "17:00", "18:30", program_ids["adult_bjj"], 16),
+            ("kids-bjj-today", "Kids BJJ Fundamentals", 0, "16:00", "16:45", program_ids["bjj_core"], 20),
+            ("adult-nogi-today", "Adult No-Gi", 0, "18:00", "19:30", program_ids["bjj_core"], 28),
+            ("tae-kwon-do-tomorrow", "Tae Kwon Do Fundamentals", 1, "17:30", "18:30", program_ids["tae_kwon_do"], 24),
+            ("competition-prep", "Competition Prep", 2, "17:00", "18:30", program_ids["bjj_core"], 16),
         ]
         template_rows = []
         for key, name, day_offset, start, end, program_id, capacity in template_specs:
@@ -433,7 +862,7 @@ class DemoService:
                     "date": self._date(offset),
                     "start_time": "18:00",
                     "end_time": "19:15",
-                    "program_id": program_ids["adult_bjj"] if index % 3 == 0 else program_ids["kids_bjj"],
+                    "program_id": program_ids["bjj_core"],
                     "capacity": 24,
                     "status": "completed",
                     "created_at": self._timestamp(offset, 8),
@@ -441,9 +870,9 @@ class DemoService:
             )
 
         today_sessions = [
-            ("today-kids", "Kids BJJ Fundamentals", "16:00", "16:45", program_ids["kids_bjj"], 20, "kids-bjj-today"),
-            ("today-adult", "Adult No-Gi", "18:00", "19:30", program_ids["adult_bjj"], 28, "adult-nogi-today"),
-            ("today-muay", "Muay Thai Fundamentals", "19:45", "20:30", program_ids["muay_thai"], 24, None),
+            ("today-kids", "Kids BJJ Fundamentals", "16:00", "16:45", program_ids["bjj_core"], 20, "kids-bjj-today"),
+            ("today-adult", "Adult No-Gi", "18:00", "19:30", program_ids["bjj_core"], 28, "adult-nogi-today"),
+            ("today-tae-kwon-do", "Tae Kwon Do Fundamentals", "19:45", "20:30", program_ids["tae_kwon_do"], 24, None),
         ]
         for key, name, start, end, program_id, capacity, template_key in today_sessions:
             sessions.append(
@@ -474,7 +903,21 @@ class DemoService:
             "priya": 7,
             "nina": 4,
             "marcus": 16,
-            "sofia": 1,
+            "hana": 6,
+            "liam": 3,
+            "ava": 11,
+            "noah_b": 13,
+            "zara": 5,
+            "ethan": 18,
+            "lucas": 8,
+            "maya": 15,
+            "oliver": 4,
+            "amara": 18,
+            "ben": 9,
+            "isabella": 7,
+            "kai": 17,
+            "mia_j": 3,
+            "omar": 2,
         }
         student_names = {
             "aiko": "Aiko Tanaka",
@@ -482,7 +925,21 @@ class DemoService:
             "priya": "Priya Sharma",
             "nina": "Nina Patel",
             "marcus": "Marcus Webb",
-            "sofia": "Sofia Reyes",
+            "hana": "Hana Mori",
+            "liam": "Liam Johnson",
+            "ava": "Ava Martinez",
+            "noah_b": "Noah Bennett",
+            "zara": "Zara Ali",
+            "ethan": "Ethan Wong",
+            "lucas": "Lucas Grant",
+            "maya": "Maya Chen",
+            "oliver": "Oliver Stone",
+            "amara": "Amara Okafor",
+            "ben": "Ben Carter",
+            "isabella": "Isabella Rossi",
+            "kai": "Kai Thompson",
+            "mia_j": "Mia Johnson",
+            "omar": "Omar Haddad",
         }
         attendance_rows = []
         for student_key, count in attendance_counts.items():
@@ -504,8 +961,26 @@ class DemoService:
             ("today-kids", "mateo", "present"),
             ("today-kids", "priya", "late"),
             ("today-kids", "nina", "present"),
+            ("today-kids", "hana", "present"),
+            ("today-kids", "liam", "present"),
+            ("today-kids", "ava", "present"),
+            ("today-kids", "noah_b", "present"),
+            ("today-kids", "isabella", "present"),
+            ("today-kids", "kai", "present"),
+            ("today-kids", "mia_j", "present"),
             ("today-adult", "marcus", "present"),
-            ("today-muay", "sofia", "present"),
+            ("today-adult", "lucas", "present"),
+            ("today-adult", "maya", "present"),
+            ("today-adult", "oliver", "late"),
+            ("today-adult", "amara", "present"),
+            ("today-adult", "ben", "present"),
+            ("today-adult", "omar", "present"),
+            ("today-tae-kwon-do", "sofia", "present"),
+            ("today-tae-kwon-do", "isabel", "present"),
+            ("today-tae-kwon-do", "omar", "present"),
+            ("today-tae-kwon-do", "chloe", "present"),
+            ("today-tae-kwon-do", "diego", "present"),
+            ("today-tae-kwon-do", "ellie", "late"),
         ]
         for session_key, student_key, status_value in today_attendance:
             attendance_rows.append(
@@ -515,7 +990,11 @@ class DemoService:
                     "session_id": self._id(studio_id, f"session:{session_key}"),
                     "student_id": student_ids[student_key],
                     "status": status_value,
-                    "checked_in_at": self._timestamp(0, 16 if session_key == "today-kids" else 18, 10),
+                    "checked_in_at": self._timestamp(
+                        0,
+                        16 if session_key == "today-kids" else 19 if session_key == "today-tae-kwon-do" else 18,
+                        10,
+                    ),
                     "checked_in_by": None,
                 }
             )
@@ -532,7 +1011,7 @@ class DemoService:
                 "(555) 221-0144",
                 "walk_in",
                 "inquiry",
-                "Kids Brazilian Jiu-Jitsu",
+                "Brazilian Jiu-Jitsu Core",
                 True,
                 "Lauren Brooks",
                 "lauren.brooks@example.test",
@@ -550,7 +1029,7 @@ class DemoService:
                 "(555) 330-0188",
                 "website",
                 "trial_scheduled",
-                "Adult Brazilian Jiu-Jitsu",
+                "Brazilian Jiu-Jitsu Core",
                 False,
                 None,
                 None,
@@ -568,14 +1047,14 @@ class DemoService:
                 "(555) 501-7712",
                 "referral",
                 "trial_completed",
-                "Muay Thai Fundamentals",
+                "Tae Kwon Do Fundamentals",
                 False,
                 None,
                 None,
                 None,
                 self._date(0),
                 None,
-                "Loved the pad work; price sheet sent.",
+                "Loved the forms class; price sheet sent.",
                 -7,
             ),
             (
@@ -586,7 +1065,7 @@ class DemoService:
                 "(555) 620-4410",
                 "social",
                 "offer_sent",
-                "Kids Brazilian Jiu-Jitsu",
+                "Brazilian Jiu-Jitsu Core",
                 True,
                 "Dana Grant",
                 "dana.grant@example.test",
@@ -604,7 +1083,7 @@ class DemoService:
                 "(555) 780-3301",
                 "search",
                 "closed_lost",
-                "Adult Brazilian Jiu-Jitsu",
+                "Brazilian Jiu-Jitsu Core",
                 False,
                 None,
                 None,
@@ -700,9 +1179,9 @@ class DemoService:
         ).eq("id", studio_id).execute()
 
         program_ids = self._seed_programs(studio_id)
-        rank_ids = self._seed_belts(studio_id)
+        rank_ids = self._seed_belts(studio_id, program_ids)
         student_ids = self._seed_students(studio_id, program_ids, rank_ids)
-        self._seed_promotions(studio_id, actor_id, student_ids, rank_ids)
+        self._seed_promotions(studio_id, actor_id, program_ids, student_ids, rank_ids)
         self._seed_schedule(studio_id, program_ids, student_ids)
         self._seed_leads(studio_id, actor_id)
         self._write_audit_log(studio_id, actor_id)
@@ -715,6 +1194,7 @@ class DemoService:
             page=1,
             page_size=200,
         )
+        programs = await ProgramService(self.supabase).list_programs(studio_id, include_archived=True)
         leads = await LeadService(self.supabase).list_leads(studio_id)
         belt_ladders = await BeltService(self.supabase).list_ladders(studio_id)
         primary_belt_ladder = belt_ladders[0] if belt_ladders else None
@@ -741,6 +1221,7 @@ class DemoService:
 
         return DemoResetResponse(
             studio_name=DEMO_STUDIO_NAME,
+            programs=programs,
             students=students_page.items,
             leads=leads,
             lead_activities=[],

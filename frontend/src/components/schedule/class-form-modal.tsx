@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { ProgramPicker } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { Program } from "@/types";
 import { Calendar, Clock, Repeat, Users, X } from "lucide-react";
 
 const FULL_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -11,6 +13,7 @@ export type ClassFormMode = "single" | "weekly";
 
 export type ClassFormField =
   | "name"
+  | "programId"
   | "date"
   | "startTime"
   | "endTime"
@@ -25,6 +28,7 @@ export interface SingleSessionFormSubmitPayload {
   sessionDate: string;
   startTime: string;
   endTime: string;
+  program_id?: string;
   capacity?: number;
 }
 
@@ -33,6 +37,7 @@ export interface WeeklyClassTemplateSubmitPayload {
   name: string;
   startTime: string;
   endTime: string;
+  program_id?: string;
   capacity?: number;
   recurrence: {
     frequency: "weekly";
@@ -52,6 +57,8 @@ export interface ClassFormInitialValues {
   date?: string;
   startTime?: string;
   endTime?: string;
+  programId?: string | null;
+  program_id?: string | null;
   capacity?: number;
   dayOfWeek?: number;
   startDate?: string;
@@ -70,6 +77,7 @@ interface SharedClassFormModalProps {
   title?: string;
   defaultMode?: ClassFormMode;
   submitLabel?: string;
+  programs?: Program[];
 }
 
 interface UnifiedSubmitProps {
@@ -92,6 +100,7 @@ interface FormState {
   date: string;
   startTime: string;
   endTime: string;
+  programId: string;
   capacity: string;
   dayOfWeek: number;
   startDate: string;
@@ -155,6 +164,7 @@ function buildInitialState(initialValues?: ClassFormInitialValues, defaultMode: 
     date,
     startTime: initialValues?.startTime || "18:00",
     endTime: initialValues?.endTime || "19:30",
+    programId: initialValues?.programId || initialValues?.program_id || "",
     capacity: initialValues?.capacity ? String(initialValues.capacity) : "",
     dayOfWeek: initialValues?.dayOfWeek ?? getDayOfWeekFromDate(date),
     startDate: initialValues?.startDate || date,
@@ -218,6 +228,7 @@ export function ClassFormModal(props: ClassFormModalProps) {
     initialValues?.date || "",
     initialValues?.startTime || "",
     initialValues?.endTime || "",
+    initialValues?.programId || initialValues?.program_id || "",
     initialValues?.capacity ?? "",
     initialValues?.dayOfWeek ?? "",
     initialValues?.startDate || "",
@@ -237,6 +248,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     initialValues,
     defaultMode,
     submitLabel,
+    programs = [],
   } = props;
 
   const [form, setForm] = useState<FormState>(() => buildInitialState(initialValues, defaultMode));
@@ -342,6 +354,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     if (Object.keys(nextErrors).length > 0) return;
 
     const capacity = capacityValue ? Number.parseInt(capacityValue, 10) : undefined;
+    const programId = form.programId || undefined;
     const payload: ClassFormSubmitPayload =
       form.mode === "single"
         ? {
@@ -350,6 +363,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
             sessionDate: form.date,
             startTime: form.startTime,
             endTime: form.endTime,
+            program_id: programId,
             capacity,
           }
         : {
@@ -357,6 +371,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
             name: trimmedName,
             startTime: form.startTime,
             endTime: form.endTime,
+            program_id: programId,
             capacity,
             recurrence: {
               frequency: "weekly",
@@ -475,6 +490,15 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
               onChange={(event) => patchForm({ name: event.target.value }, ["name"])}
               placeholder="Adult Gi Fundamentals"
               error={getFieldError("name")}
+            />
+
+            <ProgramPicker
+              programs={programs}
+              value={form.programId}
+              onChange={(programId) => patchForm({ programId: programId || "" }, ["programId"])}
+              label="Program"
+              allowEmpty
+              disabled={isLoading}
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

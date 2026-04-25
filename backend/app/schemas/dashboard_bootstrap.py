@@ -4,6 +4,7 @@ from typing import Optional
 from app.schemas.auth import AuthResponse
 from app.schemas.belt import BeltLadderResponse
 from app.schemas.lead import LeadResponse
+from app.schemas.program import ProgramResponse
 from app.schemas.student import StudentResponse
 
 
@@ -20,6 +21,7 @@ class DashboardBootstrapResponse(BaseModel):
     studio: Optional[DashboardBootstrapStudioSummary] = None
     studio_name: Optional[str] = None
     students: list[StudentResponse] = Field(default_factory=list)
+    programs: list[ProgramResponse] = Field(default_factory=list)
     leads: list[LeadResponse] = Field(default_factory=list)
     belt_ladders: list[BeltLadderResponse] = Field(default_factory=list)
     primary_belt_ladder: Optional[BeltLadderResponse] = None

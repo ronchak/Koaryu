@@ -19,6 +19,8 @@ import type {
   ClassSession, ClassSessionCreate, ClassSessionDeleteScope,
   ClassTemplate, ClassTemplateCreate, AttendanceRecord, AttendanceStatus,
   CsvImportOptions, CsvImportRequest, CsvImportResult, EligibilityEntry, Promotion,
+  Program, ProgramCreate, ProgramUpdate,
+  StaffInviteCreate, StaffMember, StaffRoleName,
 } from "@/types";
 import {
   MOCK_STUDENTS,
@@ -40,7 +42,7 @@ interface AuthUserProfile {
 interface AuthProfileResponse {
   user: AuthUserProfile;
   studio_id: string | null;
-  role: string | null;
+  role: StaffRoleName | null;
 }
 
 interface StudentListPageResponse {
@@ -56,6 +58,7 @@ interface BootstrapResponse {
   studio: {
     name: string;
   } | null;
+  programs?: Program[];
   students: Student[];
   leads: Lead[];
   belt_ladders: BeltLadder[];
@@ -72,6 +75,7 @@ interface DemoResetCounts {
 
 interface DemoResetResponse {
   studio_name: string;
+  programs?: Program[];
   students: Student[];
   leads: Lead[];
   belt_ladders: BeltLadder[];
@@ -83,6 +87,10 @@ interface DemoResetResponse {
   counts: DemoResetCounts;
 }
 
+type StudentUpdatePayload = Partial<Student> & {
+  program_ids?: string[];
+};
+
 // ── Storage keys ─────────────────────────────────────────────────────────────
 const KEYS = {
   students: "koaryu:students",
@@ -91,6 +99,8 @@ const KEYS = {
   sessions: "koaryu:sessions",
   templates: "koaryu:templates",
   attendance: "koaryu:attendance",
+  programs: "koaryu:programs",
+  beltLadders: "koaryu:beltLadders",
   studioName: "koaryu:studioName",
   subRankTerm: "koaryu:subRankTerm",
   ladderName: "koaryu:ladderName",
@@ -100,6 +110,212 @@ const DEMO_STUDIO_NAME = "River City Martial Arts";
 const DASHBOARD_BOOTSTRAP_STUDENT_LIMIT = 200;
 const PROMOTION_HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
 const SCHEDULE_ATTENDANCE_BULK_THRESHOLD = 3;
+const MOCK_PROGRAMS: Program[] = [
+  {
+    id: "program-bjj-core",
+    studio_id: "mock-studio",
+    name: "Brazilian Jiu-Jitsu Core",
+    description: "Shared rank plan for kids, adults, fundamentals, and no-gi.",
+    color_hex: "#38BDF8",
+    sort_order: 10,
+    is_system: false,
+    archived_at: null,
+    created_at: "2026-04-21T09:00:00Z",
+    updated_at: "2026-04-21T09:00:00Z",
+    usage: { student_count: 18, active_student_count: 17, class_count: 4, active_class_count: 4, lead_count: 5, belt_ladder_count: 1 },
+  },
+  {
+    id: "program-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "Tae Kwon Do Fundamentals",
+    description: "Foundational forms, footwork, sparring, and confidence.",
+    color_hex: "#F59E0B",
+    sort_order: 20,
+    is_system: false,
+    archived_at: null,
+    created_at: "2026-04-21T09:00:00Z",
+    updated_at: "2026-04-21T09:00:00Z",
+    usage: { student_count: 4, active_student_count: 4, class_count: 1, active_class_count: 1, lead_count: 1, belt_ladder_count: 1 },
+  },
+  {
+    id: "program-unassigned",
+    studio_id: "mock-studio",
+    name: "Unassigned",
+    description: "Students awaiting program assignment.",
+    color_hex: "#94A3B8",
+    sort_order: 9999,
+    is_system: true,
+    archived_at: null,
+    created_at: "2026-04-21T09:00:00Z",
+    updated_at: "2026-04-21T09:00:00Z",
+    usage: { student_count: 0, active_student_count: 0, class_count: 0, active_class_count: 0, lead_count: 0, belt_ladder_count: 0 },
+  },
+];
+const MOCK_TAE_KWON_DO_RANKS: BeltRank[] = [
+  {
+    id: "tkd-rank-1",
+    ladder_id: "ladder-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "White Belt",
+    color_hex: "#FFFFFF",
+    display_order: 0,
+    min_classes: 0,
+    min_months: 0,
+    requires_approval: false,
+    is_tip: false,
+    created_at: "2026-04-21T09:00:00Z",
+  },
+  {
+    id: "tkd-rank-1a",
+    ladder_id: "ladder-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "Yellow Stripe",
+    color_hex: "#FFFFFF",
+    tip_color_hex: "#EAB308",
+    display_order: 1,
+    min_classes: 5,
+    min_months: 1,
+    requires_approval: false,
+    is_tip: true,
+    created_at: "2026-04-21T09:00:00Z",
+  },
+  {
+    id: "tkd-rank-2",
+    ladder_id: "ladder-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "Yellow Belt",
+    color_hex: "#EAB308",
+    display_order: 2,
+    min_classes: 10,
+    min_months: 2,
+    requires_approval: true,
+    is_tip: false,
+    created_at: "2026-04-21T09:00:00Z",
+  },
+  {
+    id: "tkd-rank-2a",
+    ladder_id: "ladder-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "Green Stripe",
+    color_hex: "#FFFFFF",
+    tip_color_hex: "#22C55E",
+    display_order: 3,
+    min_classes: 14,
+    min_months: 3,
+    requires_approval: false,
+    is_tip: true,
+    created_at: "2026-04-21T09:00:00Z",
+  },
+  {
+    id: "tkd-rank-3",
+    ladder_id: "ladder-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "Green Belt",
+    color_hex: "#22C55E",
+    display_order: 4,
+    min_classes: 18,
+    min_months: 4,
+    requires_approval: true,
+    is_tip: false,
+    created_at: "2026-04-21T09:00:00Z",
+  },
+  {
+    id: "tkd-rank-3a",
+    ladder_id: "ladder-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "Blue Stripe",
+    color_hex: "#FFFFFF",
+    tip_color_hex: "#3B82F6",
+    display_order: 5,
+    min_classes: 22,
+    min_months: 5,
+    requires_approval: false,
+    is_tip: true,
+    created_at: "2026-04-21T09:00:00Z",
+  },
+  {
+    id: "tkd-rank-4",
+    ladder_id: "ladder-tae-kwon-do",
+    studio_id: "mock-studio",
+    name: "Blue Belt",
+    color_hex: "#3B82F6",
+    display_order: 6,
+    min_classes: 28,
+    min_months: 6,
+    requires_approval: true,
+    is_tip: false,
+    created_at: "2026-04-21T09:00:00Z",
+  },
+];
+const MOCK_TAE_KWON_DO_LADDER: BeltLadder = {
+  id: "ladder-tae-kwon-do",
+  studio_id: "mock-studio",
+  name: "Tae Kwon Do Fundamentals",
+  program_id: "program-tae-kwon-do",
+  sub_rank_term: "Stripe",
+  created_at: "2026-04-21T09:00:00Z",
+  updated_at: "2026-04-21T09:00:00Z",
+  ranks: MOCK_TAE_KWON_DO_RANKS,
+};
+const MOCK_BELT_LADDERS: BeltLadder[] = [MOCK_BELT_LADDER, MOCK_TAE_KWON_DO_LADDER];
+const MOCK_STAFF_MEMBERS: StaffMember[] = [
+  {
+    id: "preview-staff-admin",
+    studio_id: "mock-studio",
+    user_id: "preview-user",
+    email: "demo@koaryu.local",
+    full_name: "Demo User",
+    role: "admin",
+    status: "active",
+    invited_by: null,
+    created_at: "2026-04-21T09:00:00Z",
+    updated_at: "2026-04-21T09:00:00Z",
+    last_sign_in_at: "2026-04-24T21:00:00Z",
+  },
+  {
+    id: "preview-staff-instructor",
+    studio_id: "mock-studio",
+    user_id: "preview-instructor",
+    email: "sensei@rivercity.example",
+    full_name: "Maya Chen",
+    role: "instructor",
+    status: "active",
+    invited_by: "preview-user",
+    created_at: "2026-04-22T15:30:00Z",
+    updated_at: "2026-04-22T15:30:00Z",
+    last_sign_in_at: "2026-04-24T18:15:00Z",
+  },
+  {
+    id: "preview-staff-front-desk",
+    studio_id: "mock-studio",
+    user_id: "preview-front-desk",
+    email: "frontdesk@rivercity.example",
+    full_name: "Jordan Lee",
+    role: "front_desk",
+    status: "pending",
+    invited_by: "preview-user",
+    created_at: "2026-04-23T11:45:00Z",
+    updated_at: "2026-04-23T11:45:00Z",
+    last_sign_in_at: null,
+  },
+];
+
+const STAFF_ROLE_ORDER: Record<StaffRoleName, number> = {
+  admin: 0,
+  instructor: 1,
+  front_desk: 2,
+};
+
+function sortStaffMembers(items: StaffMember[], currentUserId?: string | null): StaffMember[] {
+  return [...items].sort((a, b) => {
+    if (currentUserId && a.user_id === currentUserId && b.user_id !== currentUserId) return -1;
+    if (currentUserId && b.user_id === currentUserId && a.user_id !== currentUserId) return 1;
+    const roleDelta = STAFF_ROLE_ORDER[a.role] - STAFF_ROLE_ORDER[b.role];
+    if (roleDelta !== 0) return roleDelta;
+    if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+    return a.created_at.localeCompare(b.created_at);
+  });
+}
 
 interface PromotionHistoryCacheEntry {
   items: Promotion[];
@@ -311,7 +527,7 @@ interface StoreContextValue {
   studentsLastLoadedAt: number | null;
   studentsMayBePartial: boolean;
   addStudent: (data: StudentCreate) => Promise<Student>;
-  updateStudent: (id: string, data: Partial<Student>) => Promise<void>;
+  updateStudent: (id: string, data: StudentUpdatePayload) => Promise<void>;
   deleteStudents: (ids: string[]) => Promise<void>;
   bulkAddTagsToStudents: (
     studentIds: string[],
@@ -329,6 +545,16 @@ interface StoreContextValue {
     request?: { importKey?: string }
   ) => Promise<CsvImportResult>;
   refreshStudents: () => Promise<Student[]>;
+
+  // Programs
+  programs: Program[];
+  programsLoaded: boolean;
+  programsLoadError: string | null;
+  refreshPrograms: (options?: { includeArchived?: boolean }) => Promise<Program[]>;
+  createProgram: (data: ProgramCreate) => Promise<Program>;
+  updateProgram: (id: string, data: ProgramUpdate) => Promise<Program>;
+  archiveProgram: (id: string) => Promise<Program>;
+  restoreProgram: (id: string) => Promise<Program>;
 
   // Leads
   leads: Lead[];
@@ -349,6 +575,9 @@ interface StoreContextValue {
   subRankTerm: string;
   setSubRankTerm: (term: string) => Promise<void>;
   eligibility: EligibilityEntry[];
+  eligibilityLadderId: string | null;
+  eligibilityPendingLadderId: string | null;
+  eligibilityLoadError: string | null;
   promotionHistoryByStudent: Record<string, Promotion[]>;
   loadPromotionHistory: (
     studentId: string,
@@ -369,9 +598,18 @@ interface StoreContextValue {
 
   // Studio
   studioName: string;
+  currentUserId: string;
+  currentRole: StaffRoleName | null;
   userEmail: string;
   userName: string;
+  staffMembers: StaffMember[];
+  staffLoaded: boolean;
+  staffLoadError: string | null;
   setStudioName: (name: string) => Promise<void>;
+  refreshStaff: () => Promise<StaffMember[]>;
+  inviteStaff: (data: StaffInviteCreate) => Promise<StaffMember>;
+  updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
+  removeStaff: (id: string) => Promise<void>;
   resetDemoData: () => Promise<DemoResetResponse>;
 }
 
@@ -389,7 +627,18 @@ type StudentsStoreContextValue = Pick<
   | "bulkAddTagsToStudents"
   | "bulkUpdateStudentStatus"
   | "importStudents"
-  | "refreshStudents"
+	| "refreshStudents"
+>;
+type ProgramsStoreContextValue = Pick<
+  StoreContextValue,
+  | "programs"
+  | "programsLoaded"
+  | "programsLoadError"
+  | "refreshPrograms"
+  | "createProgram"
+  | "updateProgram"
+  | "archiveProgram"
+  | "restoreProgram"
 >;
 type LeadsStoreContextValue = Pick<
   StoreContextValue,
@@ -412,6 +661,9 @@ type BeltsStoreContextValue = Pick<
   | "subRankTerm"
   | "setSubRankTerm"
   | "eligibility"
+  | "eligibilityLadderId"
+  | "eligibilityPendingLadderId"
+  | "eligibilityLoadError"
   | "promotionHistoryByStudent"
   | "loadPromotionHistory"
   | "promoteStudent"
@@ -430,11 +682,25 @@ type ScheduleStoreContextValue = Pick<
 >;
 type StudioStoreContextValue = Pick<
   StoreContextValue,
-  "studioName" | "userEmail" | "userName" | "setStudioName" | "resetDemoData"
+  | "studioName"
+  | "currentUserId"
+  | "currentRole"
+  | "userEmail"
+  | "userName"
+  | "staffMembers"
+  | "staffLoaded"
+  | "staffLoadError"
+  | "setStudioName"
+  | "refreshStaff"
+  | "inviteStaff"
+  | "updateStaffRole"
+  | "removeStaff"
+  | "resetDemoData"
 >;
 
 const ConfigStoreContext = createContext<ConfigStoreContextValue | null>(null);
 const StudentsStoreContext = createContext<StudentsStoreContextValue | null>(null);
+const ProgramsStoreContext = createContext<ProgramsStoreContextValue | null>(null);
 const LeadsStoreContext = createContext<LeadsStoreContextValue | null>(null);
 const BeltsStoreContext = createContext<BeltsStoreContextValue | null>(null);
 const ScheduleStoreContext = createContext<ScheduleStoreContextValue | null>(null);
@@ -454,6 +720,10 @@ export function useConfigStore(): ConfigStoreContextValue {
 
 export function useStudentStore(): StudentsStoreContextValue {
   return useRequiredContext(StudentsStoreContext, "useStudentStore");
+}
+
+export function useProgramStore(): ProgramsStoreContextValue {
+  return useRequiredContext(ProgramsStoreContext, "useProgramStore");
 }
 
 export function useLeadStore(): LeadsStoreContextValue {
@@ -476,6 +746,7 @@ export function useStore(): StoreContextValue {
   return {
     ...useConfigStore(),
     ...useStudentStore(),
+    ...useProgramStore(),
     ...useLeadStore(),
     ...useBeltStore(),
     ...useScheduleStore(),
@@ -488,6 +759,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
   const [hydrated, setHydrated] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
   const router = useRouter();
   const [supabase] = useState(() => createClient());
 
@@ -503,12 +775,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [studentsMayBePartial, setStudentsMayBePartial] = useState(false);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
+  const [programs, setPrograms] = useState<Program[]>(() =>
+    isPreviewMode ? MOCK_PROGRAMS : []
+  );
+  const [programsLoaded, setProgramsLoaded] = useState(isPreviewMode);
+  const [programsLoadError, setProgramsLoadError] = useState<string | null>(null);
+  const programsRef = useRef<Program[]>(programs);
   const [leads, setLeads] = useState<Lead[]>(() =>
     isPreviewMode ? MOCK_LEADS : []
   );
   const leadsRef = useRef<Lead[]>(leads);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
-    isPreviewMode ? [MOCK_BELT_LADDER] : []
+    isPreviewMode ? MOCK_BELT_LADDERS : []
   );
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
@@ -536,6 +814,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ? { id: "preview-user", email: "demo@koaryu.local", full_name: "Demo User" }
       : null
   );
+  const activeUserId = currentUser?.id || null;
+  const [currentRole, setCurrentRole] = useState<StaffRoleName | null>(() =>
+    isPreviewMode ? "admin" : null
+  );
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() =>
+    isPreviewMode ? MOCK_STAFF_MEMBERS : []
+  );
+  const [staffLoaded, setStaffLoaded] = useState(isPreviewMode);
+  const [staffLoadError, setStaffLoadError] = useState<string | null>(null);
   const [subRankTerm, setSubRankTermState] = useState(() =>
     isPreviewMode ? MOCK_BELT_LADDER.sub_rank_term || "Stripe" : "Stripe"
   );
@@ -548,6 +835,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_ELIGIBILITY : []
   );
   const eligibilityRef = useRef<EligibilityEntry[]>(eligibility);
+  const [eligibilityLadderId, setEligibilityLadderId] = useState<string | null>(() =>
+    isPreviewMode ? MOCK_BELT_LADDER.id : null
+  );
+  const [eligibilityPendingLadderId, setEligibilityPendingLadderId] = useState<string | null>(null);
+  const [eligibilityLoadError, setEligibilityLoadError] = useState<string | null>(null);
+  const eligibilityCacheRef = useRef<Record<string, EligibilityEntry[]>>(
+    isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
+  );
+  const eligibilityRequestSeqRef = useRef(0);
   const [promotionHistoryCache, setPromotionHistoryCache] = useState<Record<string, PromotionHistoryCacheEntry>>({});
   const promotionHistoryCacheRef = useRef<Record<string, PromotionHistoryCacheEntry>>(promotionHistoryCache);
   const promotionHistoryRequestsRef = useRef<Record<string, Promise<Promotion[]>>>({});
@@ -591,9 +887,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLadderNameState(selectedLadder?.name || "");
     setSubRankTermState(selectedLadder?.sub_rank_term || "Stripe");
     setBeltRanksState(selectedLadder?.ranks || []);
+    if (isPreviewMode) save(KEYS.beltLadders, orderedLadders);
 
     return selectedLadder;
-  }, [updateCurrentLadderId]);
+  }, [isPreviewMode, updateCurrentLadderId]);
 
   useEffect(() => {
     studentsRef.current = students;
@@ -624,6 +921,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [leads]);
 
   useEffect(() => {
+    programsRef.current = programs;
+  }, [programs]);
+
+  useEffect(() => {
     beltLaddersRef.current = beltLadders;
   }, [beltLadders]);
 
@@ -651,9 +952,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promotionHistoryCacheRef.current = promotionHistoryCache;
   }, [promotionHistoryCache]);
 
+  const commitEligibilityRows = useCallback((ladderId: string | null, rows: EligibilityEntry[]) => {
+    setEligibility(rows);
+    eligibilityRef.current = rows;
+    setEligibilityLadderId(ladderId);
+    if (ladderId) {
+      eligibilityCacheRef.current[ladderId] = rows;
+    }
+  }, []);
+
+  const clearEligibilityState = useCallback(() => {
+    eligibilityRequestSeqRef.current += 1;
+    eligibilityCacheRef.current = {};
+    commitEligibilityRows(null, []);
+    setEligibilityPendingLadderId(null);
+    setEligibilityLoadError(null);
+  }, [commitEligibilityRows]);
+
   const resetLiveStudioState = useCallback(() => {
     setStudioNameState("");
     setCurrentUser(null);
+    setCurrentRole(null);
+    setStaffMembers([]);
+    setStaffLoaded(false);
+    setStaffLoadError(null);
+    setPrograms([]);
+    setProgramsLoaded(false);
+    setProgramsLoadError(null);
     commitStudents([]);
     setStudentsLoaded(true);
     setStudentsLoadError(null);
@@ -666,15 +991,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions([]);
     setTemplates([]);
     setAttendance([]);
-    setEligibility([]);
+    clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [clearPromotionHistoryCache, commitStudents, updateCurrentLadderId]);
+  }, [clearEligibilityState, clearPromotionHistoryCache, commitStudents, updateCurrentLadderId]);
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
     setStudioNameState(data.studio_name);
     commitStudents(data.students);
+    setPrograms(data.programs || programsRef.current);
+    setProgramsLoaded(true);
+    setProgramsLoadError(null);
     setLeads(data.leads);
-    applyLadderSelection(
+    const selectedLadder = applyLadderSelection(
       data.belt_ladders.length > 0
         ? data.belt_ladders
         : data.primary_belt_ladder
@@ -682,12 +1010,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : [],
       data.primary_belt_ladder?.id ?? null
     );
-    setEligibility(data.eligibility);
+    commitEligibilityRows(selectedLadder?.id ?? null, data.eligibility);
+    setEligibilityPendingLadderId(null);
+    setEligibilityLoadError(null);
     setTemplates(data.templates);
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [applyLadderSelection, clearPromotionHistoryCache, commitStudents]);
+  }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents]);
 
   useEffect(() => {
     if (!isPreviewMode) {
@@ -695,21 +1025,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     const timer = window.setTimeout(() => {
-      const storedRanks = load(KEYS.beltRanks, MOCK_BELT_LADDER.ranks);
-      const storedSubRankTerm = load(KEYS.subRankTerm, MOCK_BELT_LADDER.sub_rank_term || "Stripe");
-      const storedLadderName = load(KEYS.ladderName, MOCK_BELT_LADDER.name);
-      const previewLadder: BeltLadder = {
-        ...MOCK_BELT_LADDER,
-        name: storedLadderName,
-        sub_rank_term: storedSubRankTerm,
-        ranks: storedRanks,
-      };
+      const storedLadders = load(KEYS.beltLadders, MOCK_BELT_LADDERS);
+      const previewLadders = storedLadders.length ? storedLadders : MOCK_BELT_LADDERS;
+      const selectedPreviewLadder = selectBeltLadder(previewLadders, currentLadderIdRef.current) || previewLadders[0];
+      const storedRanks = load(KEYS.beltRanks, selectedPreviewLadder?.ranks || MOCK_BELT_LADDER.ranks);
+      const storedSubRankTerm = load(KEYS.subRankTerm, selectedPreviewLadder?.sub_rank_term || "Stripe");
+      const storedLadderName = load(KEYS.ladderName, selectedPreviewLadder?.name || MOCK_BELT_LADDER.name);
+      const hydratedLadders = previewLadders.map((ladder) =>
+        ladder.id === selectedPreviewLadder?.id
+          ? { ...ladder, name: storedLadderName, sub_rank_term: storedSubRankTerm, ranks: storedRanks }
+          : ladder
+      );
 
       setStudioNameState(load(KEYS.studioName, "My Studio"));
       commitStudents(load(KEYS.students, MOCK_STUDENTS));
+      setPrograms(load(KEYS.programs, MOCK_PROGRAMS));
+      setProgramsLoaded(true);
+      setProgramsLoadError(null);
       setLeads(load(KEYS.leads, MOCK_LEADS));
-      applyLadderSelection([previewLadder], previewLadder.id);
-      setEligibility(MOCK_ELIGIBILITY);
+      applyLadderSelection(hydratedLadders, selectedPreviewLadder?.id ?? null);
+      commitEligibilityRows(
+        selectedPreviewLadder?.id ?? null,
+        selectedPreviewLadder?.id === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : []
+      );
+      setEligibilityPendingLadderId(null);
+      setEligibilityLoadError(null);
       setTemplates(load(KEYS.templates, MOCK_CLASS_TEMPLATES));
       setSessions(load(KEYS.sessions, MOCK_SESSIONS).sort(compareSessions));
       setAttendance(load(KEYS.attendance, MOCK_ATTENDANCE));
@@ -721,7 +1061,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [applyLadderSelection, commitStudents, isPreviewMode]);
+  }, [applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode]);
 
   const fetchAllStudents = useCallback(async (
     authToken: string,
@@ -752,6 +1092,91 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return collected;
   }, []);
 
+  const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
+    return ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [];
+  }, []);
+
+  const fetchEligibilityForLadder = useCallback(async (
+    ladderId?: string | null,
+    options?: { signal?: AbortSignal }
+  ): Promise<EligibilityEntry[]> => {
+    if (isPreviewMode) {
+      return previewEligibilityForLadder(ladderId);
+    }
+
+    const authToken = tokenRef.current;
+    if (!authToken) {
+      throw new Error("Not authenticated");
+    }
+
+    if (!ladderId) {
+      return [];
+    }
+
+    return api.get<EligibilityEntry[]>(
+      `/belts/eligibility?ladder_id=${encodeURIComponent(ladderId)}`,
+      authToken,
+      options
+    );
+  }, [isPreviewMode, previewEligibilityForLadder]);
+
+  const loadEligibilityForLadder = useCallback(async (
+    ladderId?: string | null,
+    options?: { force?: boolean }
+  ): Promise<EligibilityEntry[]> => {
+    const requestSeq = ++eligibilityRequestSeqRef.current;
+    setEligibilityLoadError(null);
+
+    if (!ladderId) {
+      commitEligibilityRows(null, []);
+      setEligibilityPendingLadderId(null);
+      return [];
+    }
+
+    const cachedRows = eligibilityCacheRef.current[ladderId];
+    if (!options?.force && cachedRows) {
+      commitEligibilityRows(ladderId, cachedRows);
+      setEligibilityPendingLadderId(null);
+
+      void fetchEligibilityForLadder(ladderId)
+        .then((rows) => {
+          if (requestSeq !== eligibilityRequestSeqRef.current || currentLadderIdRef.current !== ladderId) {
+            return;
+          }
+          commitEligibilityRows(ladderId, rows);
+          setEligibilityLoadError(null);
+        })
+        .catch((error) => {
+          if (requestSeq !== eligibilityRequestSeqRef.current || currentLadderIdRef.current !== ladderId) {
+            return;
+          }
+          console.warn("Failed to refresh cached eligibility", error);
+        });
+
+      return cachedRows;
+    }
+
+    commitEligibilityRows(null, []);
+    setEligibilityPendingLadderId(ladderId);
+
+    try {
+      const rows = await fetchEligibilityForLadder(ladderId);
+      if (requestSeq === eligibilityRequestSeqRef.current && currentLadderIdRef.current === ladderId) {
+        commitEligibilityRows(ladderId, rows);
+        setEligibilityLoadError(null);
+        setEligibilityPendingLadderId(null);
+      }
+      return rows;
+    } catch (error) {
+      if (requestSeq === eligibilityRequestSeqRef.current && currentLadderIdRef.current === ladderId) {
+        commitEligibilityRows(null, []);
+        setEligibilityPendingLadderId(null);
+        setEligibilityLoadError(error instanceof Error ? error.message : "Eligibility could not be loaded.");
+      }
+      throw error;
+    }
+  }, [commitEligibilityRows, fetchEligibilityForLadder]);
+
   // Authentication and Data Fetching
   useEffect(() => {
     let mounted = true;
@@ -769,6 +1194,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      tokenRef.current = session.access_token;
       setToken(session.access_token);
 
       try {
@@ -789,6 +1215,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             setStudioStateCookie(session.user.id, false);
             resetLiveStudioState();
             setCurrentUser(authProfile.user);
+            setCurrentRole(authProfile.role);
             setHydrated(true);
             router.replace("/onboarding");
             return;
@@ -797,11 +1224,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const [
             studioRes,
             studentsRes,
+            programsRes,
             leadsRes,
             beltLaddersRes,
           ] = await Promise.all([
             api.get<{ name: string }>("/studios/current", session.access_token),
             fetchAllStudents(session.access_token, { timeoutMs: 30000 }),
+            api.get<Program[]>("/programs?include_archived=true", session.access_token).catch(() => []),
             api.get<Lead[]>("/leads", session.access_token),
             api.get<BeltLadder[]>("/belts/ladders", session.access_token),
           ]);
@@ -810,6 +1239,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             auth: authProfile,
             studio: studioRes,
             students: studentsRes,
+            programs: programsRes,
             leads: leadsRes,
             belt_ladders: beltLaddersRes,
             primary_belt_ladder: beltLaddersRes[0] ?? null,
@@ -829,6 +1259,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           };
 
           setCurrentUser(userProfile);
+          setCurrentRole(authProfile.role);
           setStudioStateCookie(session.user.id, Boolean(authProfile.studio_id));
           if (authProfile.studio_id) {
             setActiveStudioIdCookie(authProfile.studio_id);
@@ -839,6 +1270,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!authProfile.studio_id) {
             resetLiveStudioState();
             setCurrentUser(userProfile);
+            setCurrentRole(authProfile.role);
             setHydrated(true);
             router.replace("/onboarding");
             return;
@@ -846,13 +1278,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
           clearPromotionHistoryCache();
           setStudioNameState(criticalData.studio_name || criticalData.studio?.name || "");
+          setPrograms(criticalData.programs || []);
+          setProgramsLoaded(true);
+          setProgramsLoadError(null);
           if (studentsRevisionRef.current === studentsRevisionAtStart) {
             commitStudents(criticalData.students, {
               mayBePartial: criticalData.students.length >= DASHBOARD_BOOTSTRAP_STUDENT_LIMIT,
             });
           }
           setLeads(criticalData.leads);
-          applyLadderSelection(
+          const selectedInitialLadder = applyLadderSelection(
             criticalData.belt_ladders.length > 0
               ? criticalData.belt_ladders
               : criticalData.primary_belt_ladder
@@ -860,6 +1295,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 : [],
             criticalData.primary_belt_ladder?.id ?? null
           );
+          if (selectedInitialLadder) {
+            void loadEligibilityForLadder(selectedInitialLadder.id, { force: true }).catch(() => undefined);
+          } else {
+            commitEligibilityRows(null, []);
+          }
           setHydrated(true);
         }
 
@@ -867,19 +1307,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const templatesRes = await api
             .get<ClassTemplate[]>("/schedule/templates", session.access_token)
             .catch(() => []);
-          const selectedLadder = selectBeltLadder(
-            beltLaddersRef.current,
-            currentLadderIdRef.current
-          );
-          const eligibilityRes = selectedLadder
-            ? await api
-                .get<EligibilityEntry[]>(
-                  `/belts/eligibility?ladder_id=${encodeURIComponent(selectedLadder.id)}`,
-                  session.access_token
-                )
-                .catch(() => [])
-            : [];
-
           const start = new Date();
           start.setDate(start.getDate() - 30);
           const end = new Date();
@@ -902,7 +1329,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
 
           setTemplates(templatesRes);
-          setEligibility(eligibilityRes);
           setSessions(sessionsRes);
           setAttendance(normalizeAttendanceRecords(attendanceRes));
         })().catch((error) => {
@@ -934,10 +1360,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
+        tokenRef.current = session.access_token;
         setToken(session.access_token);
       } else {
+        tokenRef.current = null;
         setToken(null);
         setCurrentUser(null);
+        setCurrentRole(null);
+        setStaffMembers([]);
+        setStaffLoaded(false);
+        setStaffLoadError(null);
+        setPrograms([]);
+        setProgramsLoaded(false);
+        setProgramsLoadError(null);
         clearStudioStateCookie();
         clearActiveStudioIdCookie();
       }
@@ -947,7 +1382,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, clearPromotionHistoryCache, commitStudents, fetchAllStudents, isPreviewMode, resetLiveStudioState, router, supabase]);
+  }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, fetchAllStudents, isPreviewMode, loadEligibilityForLadder, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -955,10 +1390,127 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isPreviewMode) save(KEYS.students, next);
   }, [commitStudents, isPreviewMode]);
 
+  const persistPrograms = useCallback((next: Program[]) => {
+    const sorted = [...next].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    setPrograms(sorted);
+    setProgramsLoaded(true);
+    setProgramsLoadError(null);
+    if (isPreviewMode) save(KEYS.programs, sorted);
+  }, [isPreviewMode]);
+
   const persistLeads = useCallback((next: Lead[]) => {
     setLeads(next);
     if (isPreviewMode) save(KEYS.leads, next);
   }, [isPreviewMode]);
+
+  const refreshPrograms = useCallback(async (options?: { includeArchived?: boolean }): Promise<Program[]> => {
+    if (isPreviewMode) {
+      const stored = load(KEYS.programs, MOCK_PROGRAMS);
+      persistPrograms(stored);
+      return stored;
+    }
+    if (!token) throw new Error("Not authenticated");
+    setProgramsLoadError(null);
+    try {
+      const result = await api.get<Program[]>(
+        `/programs?include_archived=${options?.includeArchived ? "true" : "false"}`,
+        token
+      );
+      persistPrograms(result);
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load programs.";
+      setProgramsLoadError(message);
+      throw error;
+    }
+  }, [isPreviewMode, persistPrograms, token]);
+
+  const createProgram = useCallback(async (data: ProgramCreate): Promise<Program> => {
+    if (isPreviewMode) {
+      const now = new Date().toISOString();
+      const programId = localId();
+      const created: Program = {
+        id: programId,
+        studio_id: "mock-studio",
+        name: data.name,
+        description: data.description,
+        color_hex: data.color_hex || "#64748B",
+        sort_order: data.sort_order ?? programsRef.current.length * 10,
+        is_system: false,
+        archived_at: null,
+        created_at: now,
+        updated_at: now,
+        usage: { student_count: 0, active_student_count: 0, class_count: 0, active_class_count: 0, lead_count: 0, belt_ladder_count: 1 },
+      };
+      const ladder: BeltLadder = {
+        id: localId(),
+        studio_id: "mock-studio",
+        name: created.name,
+        program_id: programId,
+        sub_rank_term: "Stripe",
+        created_at: now,
+        updated_at: now,
+        ranks: [],
+      };
+      persistPrograms([...programsRef.current, created]);
+      applyLadderSelection([...beltLaddersRef.current, ladder], currentLadderIdRef.current || ladder.id);
+      return created;
+    }
+    if (!token) throw new Error("Not authenticated");
+    const created = await api.post<Program>("/programs", data, token);
+    persistPrograms([...programsRef.current.filter((program) => program.id !== created.id), created]);
+    await (refreshBeltsRef.current?.(currentLadderIdRef.current).catch(() => undefined) ?? Promise.resolve());
+    return created;
+  }, [applyLadderSelection, isPreviewMode, persistPrograms, token]);
+
+  const updateProgram = useCallback(async (id: string, data: ProgramUpdate): Promise<Program> => {
+    if (isPreviewMode) {
+      const updated = programsRef.current.map((program) =>
+        program.id === id ? { ...program, ...data, updated_at: new Date().toISOString() } : program
+      );
+      persistPrograms(updated);
+      if (data.name) {
+        const nextLadders = beltLaddersRef.current.map((ladder) =>
+          ladder.program_id === id ? { ...ladder, name: data.name || ladder.name, updated_at: new Date().toISOString() } : ladder
+        );
+        applyLadderSelection(nextLadders, currentLadderIdRef.current);
+      }
+      return updated.find((program) => program.id === id)!;
+    }
+    if (!token) throw new Error("Not authenticated");
+    const updated = await api.patch<Program>(`/programs/${id}`, data, token);
+    persistPrograms(programsRef.current.map((program) => program.id === id ? updated : program));
+    await (refreshBeltsRef.current?.(currentLadderIdRef.current).catch(() => undefined) ?? Promise.resolve());
+    return updated;
+  }, [applyLadderSelection, isPreviewMode, persistPrograms, token]);
+
+  const archiveProgram = useCallback(async (id: string): Promise<Program> => {
+    if (isPreviewMode) {
+      const updated = programsRef.current.map((program) =>
+        program.id === id ? { ...program, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() } : program
+      );
+      persistPrograms(updated);
+      return updated.find((program) => program.id === id)!;
+    }
+    if (!token) throw new Error("Not authenticated");
+    const archived = await api.post<Program>(`/programs/${id}/archive`, {}, token);
+    persistPrograms(programsRef.current.map((program) => program.id === id ? archived : program));
+    return archived;
+  }, [isPreviewMode, persistPrograms, token]);
+
+  const restoreProgram = useCallback(async (id: string): Promise<Program> => {
+    if (isPreviewMode) {
+      const updated = programsRef.current.map((program) =>
+        program.id === id ? { ...program, archived_at: null, updated_at: new Date().toISOString() } : program
+      );
+      persistPrograms(updated);
+      return updated.find((program) => program.id === id)!;
+    }
+    if (!token) throw new Error("Not authenticated");
+    const restored = await api.post<Program>(`/programs/${id}/restore`, {}, token);
+    persistPrograms(programsRef.current.map((program) => program.id === id ? restored : program));
+    return restored;
+  }, [isPreviewMode, persistPrograms, token]);
 
   const persistBeltRanks = useCallback((next: BeltRank[]) => {
     setBeltRanksState(next);
@@ -981,11 +1533,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [isPreviewMode]);
 
   // ── Students ──
-  const addStudent = useCallback(async (data: StudentCreate): Promise<Student> => {
-    if (isPreviewMode) {
-      const newStudent: Student = {
-        id: localId(),
-        studio_id: "mock-studio",
+	  const addStudent = useCallback(async (data: StudentCreate): Promise<Student> => {
+	    if (isPreviewMode) {
+	      const selectedProgramIds = data.program_ids?.length
+	        ? data.program_ids
+	        : data.program_id
+	          ? [data.program_id]
+	          : ["program-unassigned"];
+	      const now = new Date().toISOString();
+	      const membershipStart = data.membership_start_date || now.split("T")[0];
+	      const newStudent: Student = {
+	        id: localId(),
+	        studio_id: "mock-studio",
         legal_first_name: data.legal_first_name,
         legal_last_name: data.legal_last_name,
         preferred_name: data.preferred_name,
@@ -1001,11 +1560,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         address_zip: data.address_zip,
         emergency_contact_name: data.emergency_contact_name,
         emergency_contact_phone: data.emergency_contact_phone,
-        emergency_contact_relation: data.emergency_contact_relation,
-        status: (data.status as StudentStatus) || "active",
-        membership_start_date: data.membership_start_date || new Date().toISOString().split("T")[0],
-        notes: data.notes,
-        tags: data.tags || [],
+	        emergency_contact_relation: data.emergency_contact_relation,
+	        status: (data.status as StudentStatus) || "active",
+	        membership_start_date: membershipStart,
+	        program_id: selectedProgramIds[0],
+	        current_belt_rank_id: data.current_belt_rank_id,
+	        notes: data.notes,
+	        tags: data.tags || [],
         guardians: (data.guardians || []).map((g, i) => ({
           id: localId(),
           first_name: g.first_name,
@@ -1013,13 +1574,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           email: g.email,
           phone: g.phone,
           relation: g.relation,
-          is_primary_contact: g.is_primary_contact ?? i === 0,
-        })),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      persistStudents([newStudent, ...studentsRef.current]);
-      return newStudent;
+	          is_primary_contact: g.is_primary_contact ?? i === 0,
+	        })),
+	        program_memberships: selectedProgramIds.map((programId) => {
+	          const program = programsRef.current.find((item) => item.id === programId);
+	          return {
+	            id: localId(),
+	            studio_id: "mock-studio",
+	            student_id: "preview-pending",
+	            program_id: programId,
+	            program_name: program?.name,
+	            program_color_hex: program?.color_hex,
+	            status: "active" as const,
+	            started_at: membershipStart,
+	            ended_at: null,
+	            current_belt_rank_id: programId === selectedProgramIds[0] ? data.current_belt_rank_id : undefined,
+	            created_at: now,
+	            updated_at: now,
+	          };
+	        }),
+	        created_at: now,
+	        updated_at: now,
+	      };
+      newStudent.program_memberships = (newStudent.program_memberships ?? []).map((membership) => ({
+	        ...membership,
+	        student_id: newStudent.id,
+	      }));
+	      persistStudents([newStudent, ...studentsRef.current]);
+	      return newStudent;
     } else {
       if (!token) throw new Error("Not authenticated");
       const res = await api.post<Student>("/students", data, token);
@@ -1028,7 +1610,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [commitStudents, isPreviewMode, persistStudents, studentsRef, token]);
 
-  const updateStudent = useCallback(async (id: string, data: Partial<Student>) => {
+  const updateStudent = useCallback(async (id: string, data: StudentUpdatePayload) => {
     if (isPreviewMode) {
       const next = studentsRef.current.map(s => s.id === id ? { ...s, ...data, updated_at: new Date().toISOString() } : s);
       persistStudents(next);
@@ -1248,6 +1830,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         const refreshOperations: Promise<unknown>[] = [];
 
+        refreshOperations.push(refreshPrograms({ includeArchived: true }));
+
         if (shouldRefreshStudents) {
           refreshOperations.push(
             fetchAllStudents(token, { timeoutMs: 30000 }).then((refreshedStudents) => {
@@ -1271,7 +1855,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       return result;
     }
-  }, [commitStudents, fetchAllStudents, isPreviewMode, persistStudents, studentsRef, token]);
+  }, [commitStudents, fetchAllStudents, isPreviewMode, persistStudents, refreshPrograms, studentsRef, token]);
 
   const refreshStudents = useCallback(async (): Promise<Student[]> => {
     if (isPreviewMode) {
@@ -1426,6 +2010,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         source: (data.source as LeadSource) || "walk_in",
         stage: "inquiry",
         program_interest: data.program_interest,
+        program_id: data.program_id,
         is_minor: data.is_minor || false,
         guardian_name: data.guardian_name,
         guardian_email: data.guardian_email,
@@ -1478,25 +2063,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return result;
   }, [isPreviewMode, token]);
 
-  const fetchEligibilityForLadder = useCallback(async (ladderId?: string | null): Promise<EligibilityEntry[]> => {
-    if (isPreviewMode) {
-      return MOCK_ELIGIBILITY;
-    }
-
-    if (!token) {
-      throw new Error("Not authenticated");
-    }
-
-    if (!ladderId) {
-      return [];
-    }
-
-    return api.get<EligibilityEntry[]>(
-      `/belts/eligibility?ladder_id=${encodeURIComponent(ladderId)}`,
-      token
-    );
-  }, [isPreviewMode, token]);
-
   const refreshBelts = useCallback(async (preferredLadderId?: string | null) => {
     if (isPreviewMode) {
       return;
@@ -1511,11 +2077,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       beltLaddersRes,
       preferredLadderId ?? currentLadderIdRef.current
     );
-    const eligibilityRes = selectedLadder
-      ? await fetchEligibilityForLadder(selectedLadder.id).catch(() => [])
-      : [];
-    setEligibility(eligibilityRes);
-  }, [applyLadderSelection, fetchEligibilityForLadder, isPreviewMode, token]);
+    await loadEligibilityForLadder(selectedLadder?.id ?? null, { force: true }).catch(() => undefined);
+  }, [applyLadderSelection, isPreviewMode, loadEligibilityForLadder, token]);
   useEffect(() => {
     refreshBeltsRef.current = refreshBelts;
   }, [refreshBelts]);
@@ -1523,9 +2086,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setCurrentLadder = useCallback(async (ladderId: string) => {
     if (isPreviewMode) {
       const selectedLadder = applyLadderSelection(beltLaddersRef.current, ladderId);
-      if (selectedLadder) {
-        setEligibility(MOCK_ELIGIBILITY);
-      }
+      commitEligibilityRows(
+        selectedLadder?.id ?? null,
+        previewEligibilityForLadder(selectedLadder?.id)
+      );
+      setEligibilityPendingLadderId(null);
+      setEligibilityLoadError(null);
       return;
     }
 
@@ -1535,14 +2101,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const refreshedEligibility = await fetchEligibilityForLadder(selectedLadder.id).catch(
-      (error) => {
-        setEligibility([]);
-        throw error;
-      }
-    );
-    setEligibility(refreshedEligibility);
-  }, [applyLadderSelection, fetchEligibilityForLadder, isPreviewMode]);
+    await loadEligibilityForLadder(selectedLadder.id);
+  }, [applyLadderSelection, commitEligibilityRows, isPreviewMode, loadEligibilityForLadder, previewEligibilityForLadder]);
 
   const ensureCurrentLadder = useCallback(async (termOverride?: string) => {
     if (isPreviewMode) {
@@ -1577,21 +2137,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const created = await api.post<BeltLadder>(
-      "/belts/ladders",
-      {
-        name: ladderName || "Default Belt Ladder",
-        sub_rank_term: termOverride || subRankTerm,
-      },
-      token
-    );
-
-    applyLadderSelection([created], created.id);
-    return {
-      id: created.id,
-      sub_rank_term: created.sub_rank_term || termOverride || "Stripe",
-    };
-  }, [applyLadderSelection, isPreviewMode, ladderName, subRankTerm, token]);
+    throw new Error("Create a program in Settings before configuring ranks.");
+  }, [applyLadderSelection, isPreviewMode, subRankTerm, token]);
 
   const convertLeadToStudent = useCallback(async (leadId: string) => {
     const lead = leadsRef.current.find((item) => item.id === leadId);
@@ -1607,6 +2154,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const studentId = localId();
       const now = new Date().toISOString();
       const membershipStartDate = new Date().toISOString().split("T")[0];
+      const selectedProgramId = lead.program_id || "program-unassigned";
+      const selectedProgram = programsRef.current.find((program) => program.id === selectedProgramId);
 
       const newStudent: Student = {
         id: studentId,
@@ -1629,8 +2178,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         emergency_contact_relation: undefined,
         status: "active",
         membership_start_date: membershipStartDate,
-        program_id: undefined,
+        program_id: selectedProgramId,
         current_belt_rank_id: undefined,
+        program_memberships: [
+          {
+            id: localId(),
+            studio_id: "mock-studio",
+            student_id: studentId,
+            program_id: selectedProgramId,
+            program_name: selectedProgram?.name,
+            program_color_hex: selectedProgram?.color_hex,
+            status: "active",
+            started_at: membershipStartDate,
+            ended_at: null,
+            current_belt_rank_id: null,
+            current_belt_rank_name: null,
+            current_belt_rank_color: null,
+            created_at: now,
+            updated_at: now,
+          },
+        ],
         stripe_customer_id: undefined,
         notes: lead.notes,
         tags: ["converted-lead"],
@@ -1677,6 +2244,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       {
         status: "active",
         membership_start_date: membershipStartDate,
+        program_id: lead.program_id || undefined,
       },
       token
     );
@@ -1710,7 +2278,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         sub_rank_term: nextSubRankTerm,
         ranks,
       };
-      applyLadderSelection([nextPreviewLadder], nextPreviewLadder.id);
+      applyLadderSelection(upsertBeltLadder(beltLaddersRef.current, nextPreviewLadder), nextPreviewLadder.id);
     } else {
       const desiredSubRankTerm = options?.subRankTerm?.trim() || undefined;
       const ladder = await ensureCurrentLadder(desiredSubRankTerm);
@@ -1738,11 +2306,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const nextLadders = upsertBeltLadder(beltLaddersRef.current, syncedLadder);
       applyLadderSelection(nextLadders, syncedLadder.id);
 
-      const refreshedEligibility = await fetchEligibilityForLadder(syncedLadder.id)
-        .catch(() => eligibilityRef.current);
-      setEligibility(refreshedEligibility);
+      await loadEligibilityForLadder(syncedLadder.id, { force: true }).catch(() => undefined);
     }
-  }, [applyLadderSelection, ensureCurrentLadder, fetchEligibilityForLadder, isPreviewMode, ladderName, persistBeltRanks, subRankTerm, token]);
+  }, [applyLadderSelection, ensureCurrentLadder, isPreviewMode, ladderName, loadEligibilityForLadder, persistBeltRanks, subRankTerm, token]);
 
   const setLadderName = useCallback((name: string) => {
     setLadderNameState(name);
@@ -2294,14 +2860,122 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [isPreviewMode, token]);
 
+  const refreshStaff = useCallback(async (): Promise<StaffMember[]> => {
+    if (isPreviewMode) {
+      const sorted = sortStaffMembers(staffMembers, activeUserId);
+      setStaffMembers(sorted);
+      setStaffLoaded(true);
+      setStaffLoadError(null);
+      return sorted;
+    }
+
+    if (!token) throw new Error("Not authenticated");
+
+    try {
+      const result = await api.get<StaffMember[]>("/staff", token);
+      const sorted = sortStaffMembers(result, activeUserId);
+      setStaffMembers(sorted);
+      setStaffLoaded(true);
+      setStaffLoadError(null);
+      return sorted;
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : "";
+      const message =
+        rawMessage && rawMessage !== "Internal Server Error"
+          ? rawMessage
+          : "Staff could not be loaded. Please try again.";
+      setStaffLoaded(true);
+      setStaffLoadError(message);
+      throw error;
+    }
+  }, [activeUserId, isPreviewMode, staffMembers, token]);
+
+  const inviteStaff = useCallback(async (data: StaffInviteCreate): Promise<StaffMember> => {
+    if (isPreviewMode) {
+      const now = new Date().toISOString();
+      const normalizedEmail = data.email.trim().toLowerCase();
+      const previewMember: StaffMember = {
+        id: `preview-staff-${Date.now()}`,
+        studio_id: "mock-studio",
+        user_id: `preview-staff-user-${Date.now()}`,
+        email: normalizedEmail,
+        full_name: null,
+        role: data.role,
+        status: "pending",
+        invited_by: activeUserId || "preview-user",
+        created_at: now,
+        updated_at: now,
+        last_sign_in_at: null,
+      };
+      setStaffMembers((current) =>
+        sortStaffMembers([...current, previewMember], activeUserId)
+      );
+      setStaffLoaded(true);
+      setStaffLoadError(null);
+      return previewMember;
+    }
+
+    if (!token) throw new Error("Not authenticated");
+
+    const result = await api.post<StaffMember>("/staff/invitations", data, token);
+    setStaffMembers((current) =>
+      sortStaffMembers([...current.filter((member) => member.id !== result.id), result], activeUserId)
+    );
+    setStaffLoaded(true);
+    setStaffLoadError(null);
+    return result;
+  }, [activeUserId, isPreviewMode, token]);
+
+  const updateStaffRole = useCallback(async (
+    id: string,
+    role: StaffRoleName
+  ): Promise<StaffMember> => {
+    if (isPreviewMode) {
+      let updated: StaffMember | null = null;
+      setStaffMembers((current) =>
+        sortStaffMembers(
+          current.map((member) => {
+            if (member.id !== id) return member;
+            updated = { ...member, role, updated_at: new Date().toISOString() };
+            return updated;
+          }),
+          activeUserId
+        )
+      );
+      if (!updated) throw new Error("Staff member not found.");
+      return updated;
+    }
+
+    if (!token) throw new Error("Not authenticated");
+
+    const result = await api.patch<StaffMember>(`/staff/${id}`, { role }, token);
+    setStaffMembers((current) =>
+      sortStaffMembers(current.map((member) => (member.id === id ? result : member)), activeUserId)
+    );
+    return result;
+  }, [activeUserId, isPreviewMode, token]);
+
+  const removeStaff = useCallback(async (id: string): Promise<void> => {
+    if (isPreviewMode) {
+      setStaffMembers((current) => current.filter((member) => member.id !== id));
+      return;
+    }
+
+    if (!token) throw new Error("Not authenticated");
+
+    await api.delete(`/staff/${id}`, token);
+    setStaffMembers((current) => current.filter((member) => member.id !== id));
+  }, [isPreviewMode, token]);
+
   const resetDemoData = useCallback(async (): Promise<DemoResetResponse> => {
     if (isPreviewMode) {
       clearPreviewStorage();
       const previewResponse: DemoResetResponse = {
         studio_name: DEMO_STUDIO_NAME,
+        programs: MOCK_PROGRAMS,
         students: MOCK_STUDENTS,
         leads: MOCK_LEADS,
-        belt_ladders: [MOCK_BELT_LADDER],
+        belt_ladders: MOCK_BELT_LADDERS,
         primary_belt_ladder: MOCK_BELT_LADDER,
         eligibility: MOCK_ELIGIBILITY,
         templates: MOCK_CLASS_TEMPLATES,
@@ -2318,6 +2992,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       save(KEYS.studioName, previewResponse.studio_name);
       save(KEYS.students, previewResponse.students);
+      save(KEYS.programs, MOCK_PROGRAMS);
+      save(KEYS.beltLadders, MOCK_BELT_LADDERS);
       save(KEYS.leads, previewResponse.leads);
       save(KEYS.beltRanks, MOCK_BELT_LADDER.ranks);
       save(KEYS.sessions, previewResponse.sessions);
@@ -2325,6 +3001,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       save(KEYS.attendance, previewResponse.attendance);
       save(KEYS.subRankTerm, MOCK_BELT_LADDER.sub_rank_term || "Stripe");
       save(KEYS.ladderName, MOCK_BELT_LADDER.name);
+      setStaffMembers(MOCK_STAFF_MEMBERS);
+      setStaffLoaded(true);
+      setStaffLoadError(null);
+      persistPrograms(MOCK_PROGRAMS);
 
       applyDemoResetResponse(previewResponse);
       return previewResponse;
@@ -2345,7 +3025,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     applyDemoResetResponse(response);
     return response;
-  }, [applyDemoResetResponse, isPreviewMode, token]);
+  }, [applyDemoResetResponse, isPreviewMode, persistPrograms, token]);
 
   // ── Context values ──
   const configValue = useMemo<ConfigStoreContextValue>(() => ({
@@ -2397,6 +3077,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateLead,
   ]);
 
+  const programsValue = useMemo<ProgramsStoreContextValue>(() => ({
+    programs,
+    programsLoaded,
+    programsLoadError,
+    refreshPrograms,
+    createProgram,
+    updateProgram,
+    archiveProgram,
+    restoreProgram,
+  }), [
+    archiveProgram,
+    createProgram,
+    programs,
+    programsLoaded,
+    programsLoadError,
+    refreshPrograms,
+    restoreProgram,
+    updateProgram,
+  ]);
+
   const promotionHistoryByStudent = useMemo<Record<string, Promotion[]>>(
     () => Object.fromEntries(
       Object.entries(promotionHistoryCache).map(([studentId, entry]) => [studentId, entry.items])
@@ -2415,6 +3115,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     subRankTerm,
     setSubRankTerm,
     eligibility,
+    eligibilityLadderId,
+    eligibilityPendingLadderId,
+    eligibilityLoadError,
     promotionHistoryByStudent,
     loadPromotionHistory,
     promoteStudent,
@@ -2423,6 +3126,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beltRanks,
     currentLadderId,
     eligibility,
+    eligibilityLadderId,
+    eligibilityLoadError,
+    eligibilityPendingLadderId,
     ladderName,
     loadPromotionHistory,
     promotionHistoryByStudent,
@@ -2458,11 +3164,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const studioValue = useMemo<StudioStoreContextValue>(() => ({
     studioName,
+    currentUserId: activeUserId || "",
+    currentRole,
     userEmail: currentUser?.email || "",
     userName: currentUser?.full_name || "",
+    staffMembers,
+    staffLoaded,
+    staffLoadError,
+    refreshStaff,
+    inviteStaff,
+    updateStaffRole,
+    removeStaff,
     resetDemoData,
     setStudioName,
-  }), [currentUser, resetDemoData, setStudioName, studioName]);
+  }), [
+    activeUserId,
+    currentRole,
+    currentUser,
+    inviteStaff,
+    refreshStaff,
+    removeStaff,
+    resetDemoData,
+    setStudioName,
+    staffLoadError,
+    staffLoaded,
+    staffMembers,
+    studioName,
+    updateStaffRole,
+  ]);
 
   if (!hydrated) {
     return (
@@ -2475,15 +3204,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <ConfigStoreContext.Provider value={configValue}>
       <StudentsStoreContext.Provider value={studentsValue}>
-        <LeadsStoreContext.Provider value={leadsValue}>
-          <BeltsStoreContext.Provider value={beltsValue}>
-            <ScheduleStoreContext.Provider value={scheduleValue}>
-              <StudioStoreContext.Provider value={studioValue}>
-                {children}
-              </StudioStoreContext.Provider>
-            </ScheduleStoreContext.Provider>
-          </BeltsStoreContext.Provider>
-        </LeadsStoreContext.Provider>
+        <ProgramsStoreContext.Provider value={programsValue}>
+          <LeadsStoreContext.Provider value={leadsValue}>
+            <BeltsStoreContext.Provider value={beltsValue}>
+              <ScheduleStoreContext.Provider value={scheduleValue}>
+                <StudioStoreContext.Provider value={studioValue}>
+                  {children}
+                </StudioStoreContext.Provider>
+              </ScheduleStoreContext.Provider>
+            </BeltsStoreContext.Provider>
+          </LeadsStoreContext.Provider>
+        </ProgramsStoreContext.Provider>
       </StudentsStoreContext.Provider>
     </ConfigStoreContext.Provider>
   );

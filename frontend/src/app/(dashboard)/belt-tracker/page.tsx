@@ -1,10 +1,13 @@
 "use client";
 
-import { Fragment, useState, useRef, useCallback, useMemo } from "react";
+import { Fragment, useState, useRef, useCallback, useMemo, useEffect } from "react";
+import Link from "next/link";
 import { Header } from "@/components/header";
+import { ProgramPicker } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
-import { useBeltStore } from "@/lib/store";
-import type { BeltRank, EligibilityEntry } from "@/types";
+import { api } from "@/lib/api";
+import { useBeltStore, useConfigStore, useProgramStore, useStudentStore } from "@/lib/store";
+import type { BeltRank, EligibilityEntry, Promotion } from "@/types";
 import {
   Award,
   Check,
@@ -361,11 +364,18 @@ function DeleteConfirm({ name, onConfirm, onCancel }: {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function BeltTrackerPage() {
   const store = useBeltStore();
+  const { isPreviewMode, token } = useConfigStore();
+  const { refreshStudents } = useStudentStore();
+  const { programs, programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
   const [tab, setTab] = useState<Tab>("eligibility");
   const beltLadders = store.beltLadders;
   const currentLadderId = store.currentLadderId;
   const eligibility = store.eligibility;
+  const eligibilityLadderId = store.eligibilityLadderId;
+  const eligibilityPendingLadderId = store.eligibilityPendingLadderId;
+  const eligibilityLoadError = store.eligibilityLoadError;
   const ladderName = store.ladderName;
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
 
   // Draft state is only used once the user starts editing.
   const [draftRanks, setDraftRanks] = useState<BeltRank[]>([]);
@@ -410,17 +420,98 @@ export default function BeltTrackerPage() {
   const [isPromoting, setIsPromoting] = useState(false);
 
   // ── Derived state ──────────────────────────────────────────────────────────
-  const ladderRanks = dirty ? draftRanks : store.beltRanks;
-  const eligibilityRanks = store.beltRanks;
-  const subRankTerm = dirty ? draftSubRankTerm : store.subRankTerm;
+  useEffect(() => {
+    if (!programsLoaded && !programsLoadError) {
+      void refreshPrograms().catch(() => undefined);
+    }
+  }, [programsLoaded, programsLoadError, refreshPrograms]);
+
+  const beltPrograms = useMemo(
+    () => programs.filter((program) => !program.archived_at && !program.is_system),
+    [programs]
+  );
+  const ladderByProgramId = useMemo(() => {
+    const map = new Map<string, (typeof beltLadders)[number]>();
+    for (const ladder of beltLadders) {
+      if (ladder.program_id && !map.has(ladder.program_id)) {
+        map.set(ladder.program_id, ladder);
+      }
+    }
+    return map;
+  }, [beltLadders]);
+  const currentStoreLadder = useMemo(
+    () => beltLadders.find((ladder) => ladder.id === currentLadderId) ?? null,
+    [beltLadders, currentLadderId]
+  );
+  const selectedProgram = useMemo(() => {
+    const selected = selectedProgramId
+      ? beltPrograms.find((program) => program.id === selectedProgramId)
+      : null;
+    if (selected) return selected;
+
+    const currentProgram = currentStoreLadder?.program_id
+      ? beltPrograms.find((program) => program.id === currentStoreLadder.program_id)
+      : null;
+    if (currentProgram) return currentProgram;
+
+    return beltPrograms.find((program) => ladderByProgramId.has(program.id)) ?? beltPrograms[0] ?? null;
+  }, [beltPrograms, currentStoreLadder, ladderByProgramId, selectedProgramId]);
+  const currentLadder = selectedProgram ? ladderByProgramId.get(selectedProgram.id) ?? null : null;
+  const currentProgramReady = Boolean(currentLadder && currentLadder.id === currentLadderId);
+  const activeLadderRanks = currentLadder
+    ? currentLadder.id === currentLadderId
+      ? store.beltRanks
+      : currentLadder.ranks
+    : [];
+  const ladderRanks = dirty ? draftRanks : activeLadderRanks;
+  const eligibilityRanks = activeLadderRanks;
+  const subRankTerm = dirty ? draftSubRankTerm : currentLadder?.sub_rank_term || store.subRankTerm;
   const groups = groupRanks(ladderRanks);
-  const currentLadder = beltLadders.find((ladder) => ladder.id === currentLadderId) ?? null;
   const editRank = editRankId ? ladderRanks.find(r => r.id === editRankId) : null;
   const deleteRank = deleteRankId ? ladderRanks.find(r => r.id === deleteRankId) : null;
   const rankById = useMemo(
     () => new Map(eligibilityRanks.map((rank) => [rank.id, rank])),
     [eligibilityRanks]
   );
+  const eligibilityMatchesLadder = Boolean(currentLadder?.id && eligibilityLadderId === currentLadder.id);
+  const visibleEligibility = useMemo(
+    () => eligibilityMatchesLadder ? eligibility : [],
+    [eligibility, eligibilityMatchesLadder]
+  );
+  const isEligibilityLoading = Boolean(
+    currentLadder
+      && (
+        isSwitchingLadder
+        || eligibilityPendingLadderId === currentLadder.id
+        || (!eligibilityMatchesLadder && !eligibilityLoadError)
+      )
+  );
+
+  const handleSelectLadder = useCallback(async (nextLadderId: string) => {
+    if (!nextLadderId || nextLadderId === currentLadderId) {
+      return;
+    }
+
+    setIsSwitchingLadder(true);
+    setLadderError(null);
+    try {
+      await store.setCurrentLadder(nextLadderId);
+      setCollapsedEligibilityGroups(new Set());
+    } catch (error) {
+      console.error("Failed to switch belt ladder", error);
+      setLadderError("Could not switch ladders right now. Please try again.");
+    } finally {
+      setIsSwitchingLadder(false);
+    }
+  }, [currentLadderId, store]);
+
+  const handleSelectProgram = useCallback((nextProgramId: string | null) => {
+    setSelectedProgramId(nextProgramId);
+    const nextLadder = nextProgramId ? ladderByProgramId.get(nextProgramId) : null;
+    if (nextLadder && !dirty) {
+      void handleSelectLadder(nextLadder.id);
+    }
+  }, [dirty, handleSelectLadder, ladderByProgramId]);
 
   const eligibilityGroups = useMemo(() => {
     const rankOrder = new Map(eligibilityRanks.map((rank, index) => [rank.id, index]));
@@ -451,7 +542,7 @@ export default function BeltTrackerPage() {
       return left.student_name.localeCompare(right.student_name);
     };
 
-    for (const entry of eligibility) {
+    for (const entry of visibleEligibility) {
       const key = entry.current_rank_id ?? "unranked";
       if (!groupsByKey.has(key)) {
         const rank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
@@ -479,7 +570,7 @@ export default function BeltTrackerPage() {
         }
         return left.label.localeCompare(right.label);
       });
-  }, [eligibility, eligibilityRanks, rankById]);
+  }, [eligibilityRanks, rankById, visibleEligibility]);
 
   const updateRanks = useCallback((updater: (current: BeltRank[]) => BeltRank[]) => {
     setSaveError(null);
@@ -568,8 +659,9 @@ export default function BeltTrackerPage() {
 
   // ── CRUD ────────────────────────────────────────────────────────────────────
   function handleAddBelt(data: RankFormData) {
+    if (!currentLadder || !currentProgramReady) return;
     const newRank: BeltRank = {
-      id: localId(), ladder_id: currentLadderId || "ladder-1", studio_id: "studio-1",
+      id: localId(), ladder_id: currentLadder.id, studio_id: "studio-1",
       name: data.name, color_hex: data.color_hex, is_tip: false,
       tip_color_hex: undefined, min_classes: data.min_classes,
       min_months: data.min_months, requires_approval: data.requires_approval,
@@ -580,10 +672,11 @@ export default function BeltTrackerPage() {
   }
 
   function handleAddTip(gIdx: number, data: RankFormData) {
+    if (!currentLadder || !currentProgramReady) return;
     // Insert the new tip after the last tip in this group
     const newGroups = groups.map(g => ({ ...g, tips: [...g.tips] }));
     const newTip: BeltRank = {
-      id: localId(), ladder_id: currentLadderId || "ladder-1", studio_id: "studio-1",
+      id: localId(), ladder_id: currentLadder.id, studio_id: "studio-1",
       name: data.name, color_hex: newGroups[gIdx].belt.color_hex,
       is_tip: true, tip_color_hex: data.tip_color_hex,
       min_classes: data.min_classes, min_months: data.min_months,
@@ -643,11 +736,15 @@ export default function BeltTrackerPage() {
 
   async function handleSaveRanks() {
     setSaveError(null);
+    if (!currentLadder || !currentProgramReady) {
+      setSaveError("Program ranks are still loading. Please try again in a moment.");
+      return;
+    }
     setIsSaving(true);
     try {
       await store.setBeltRanks(ladderRanks, { subRankTerm });
       setDirty(false);
-      setActionMessage("Belt ladder saved.");
+      setActionMessage("Program ranks saved.");
     } catch (error) {
       console.error("Failed to save belt ranks", error);
       setSaveError("Could not save ladder changes. Please try again.");
@@ -664,24 +761,6 @@ export default function BeltTrackerPage() {
     setSaveError(null);
     setLadderError(null);
     setActionMessage(null);
-  }
-
-  async function handleSelectLadder(nextLadderId: string) {
-    if (!nextLadderId || nextLadderId === currentLadderId) {
-      return;
-    }
-
-    setIsSwitchingLadder(true);
-    setLadderError(null);
-    try {
-      await store.setCurrentLadder(nextLadderId);
-      setCollapsedEligibilityGroups(new Set());
-    } catch (error) {
-      console.error("Failed to switch belt ladder", error);
-      setLadderError("Could not switch ladders right now. Please try again.");
-    } finally {
-      setIsSwitchingLadder(false);
-    }
   }
 
   function toggleEligibilityGroup(groupKey: string) {
@@ -704,15 +783,44 @@ export default function BeltTrackerPage() {
       setPromotionError("Could not determine the next rank for this promotion.");
       return;
     }
+    if (!currentLadder?.ranks.some((rank) => rank.id === targetRankId)) {
+      setPromotionError("This promotion target is not part of the current belt ladder.");
+      return;
+    }
+    if (selectedProgram?.id && promoteEntry.program_id && promoteEntry.program_id !== selectedProgram.id) {
+      setPromotionError("This student is queued in a different program. Switch programs before promoting.");
+      return;
+    }
 
     setIsPromoting(true);
     setPromotionError(null);
     try {
-      await store.promoteStudent(
-        promoteEntry.student_id,
-        targetRankId,
-        promotionNotes.trim() || undefined
-      );
+      if (isPreviewMode) {
+        await store.promoteStudent(
+          promoteEntry.student_id,
+          targetRankId,
+          promotionNotes.trim() || undefined
+        );
+      } else {
+        if (!token) {
+          throw new Error("Not authenticated");
+        }
+        await api.post<Promotion>(
+          "/belts/promote",
+          {
+            student_id: promoteEntry.student_id,
+            to_rank_id: targetRankId,
+            student_program_membership_id: promoteEntry.student_program_membership_id,
+            program_id: promoteEntry.program_id,
+            notes: promotionNotes.trim() || undefined,
+          },
+          token
+        );
+        await Promise.all([
+          refreshStudents().catch(() => []),
+          currentLadderId ? store.setCurrentLadder(currentLadderId) : Promise.resolve(),
+        ]);
+      }
       setActionMessage(`${promoteEntry.student_name} promoted to ${promoteEntry.next_rank_name}.`);
       setPromoteEntry(null);
       setPromotionNotes("");
@@ -734,7 +842,7 @@ export default function BeltTrackerPage() {
         {tab === "eligibility" ? (
           <Button variant="secondary" size="sm" onClick={() => setTab("ladder")}>
             <Settings className="w-3.5 h-3.5" />
-            Configure ladder
+            Configure ranks
           </Button>
         ) : (
           <Button variant="secondary" size="sm" onClick={() => setTab("eligibility")}>
@@ -749,7 +857,7 @@ export default function BeltTrackerPage() {
         <div className="flex items-center gap-4 px-8 py-3 border-b border-border">
           {([
             { id: "eligibility" as Tab, label: "Eligibility" },
-            { id: "ladder" as Tab, label: "Ladder Config" },
+            { id: "ladder" as Tab, label: "Rank Plan" },
           ]).map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`text-sm pb-2 border-b-2 cursor-pointer transition-colors ${
@@ -762,27 +870,22 @@ export default function BeltTrackerPage() {
             </button>
           ))}
           <div className="ml-auto flex items-center gap-3">
-            {beltLadders.length > 1 ? (
-              <div className="flex flex-col items-end gap-1">
-                <label className="text-[11px] uppercase tracking-[0.12em] text-muted">Ladder</label>
-                <select
-                  value={currentLadderId ?? ""}
-                  onChange={(event) => void handleSelectLadder(event.target.value)}
+            {beltPrograms.length > 0 ? (
+              <div className="w-64">
+                <ProgramPicker
+                  programs={beltPrograms}
+                  value={selectedProgram?.id ?? ""}
+                  onChange={handleSelectProgram}
                   disabled={dirty || isSwitchingLadder}
-                  className="min-w-44 rounded-[6px] border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {beltLadders.map((ladder) => (
-                    <option key={ladder.id} value={ladder.id}>
-                      {ladder.name}
-                    </option>
-                  ))}
-                </select>
+                />
                 {dirty && (
-                  <p className="text-[11px] text-warning">Save or discard changes before switching ladders.</p>
+                  <p className="mt-1 text-[11px] text-warning">Save or discard changes before switching programs.</p>
                 )}
               </div>
             ) : (
-              <span className="text-xs text-muted">{ladderName}</span>
+              <span className="text-xs text-muted">
+                {programsLoaded ? "No programs yet" : "Loading programs..."}
+              </span>
             )}
           </div>
         </div>
@@ -803,19 +906,36 @@ export default function BeltTrackerPage() {
                 {ladderError}
               </div>
             )}
+            {programsLoadError && (
+              <div className="mx-8 mt-6 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {programsLoadError}
+              </div>
+            )}
+            {eligibilityLoadError && !isEligibilityLoading && (
+              <div className="mx-8 mt-6 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {eligibilityLoadError}
+              </div>
+            )}
 
-            {eligibilityGroups.length === 0 ? (
+            {isEligibilityLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Clock className="w-8 h-8 text-muted mb-3 animate-pulse" />
+                <p className="text-sm text-text-secondary">
+                  Loading eligibility for {selectedProgram?.name || "this program"}...
+                </p>
+              </div>
+            ) : eligibilityGroups.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <Award className="w-8 h-8 text-muted mb-3" />
                 <p className="text-sm text-text-secondary">
-                  {currentLadder
-                    ? `No active students matched the ${currentLadder.name} ladder yet.`
+                  {selectedProgram
+                    ? `No active students are ready in ${selectedProgram.name} yet.`
                     : "No active students to evaluate."}
                 </p>
                 <div className="mt-4 flex items-center gap-3">
                   <Button variant="secondary" size="sm" onClick={() => setTab("ladder")}>
                     <Settings className="w-3.5 h-3.5" />
-                    Configure ladder
+                    Configure ranks
                   </Button>
                   <Button variant="primary" size="sm" onClick={() => window.location.assign("/students")}>
                     <Users className="w-3.5 h-3.5" />
@@ -893,9 +1013,14 @@ export default function BeltTrackerPage() {
                           const currentRank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
                           const nextRank = entry.next_rank_id ? rankById.get(entry.next_rank_id) : undefined;
                           return (
-                            <tr key={entry.student_id} className="border-b border-border hover:bg-surface-raised/50 transition-colors">
+                            <tr key={`${entry.student_program_membership_id ?? entry.program_id ?? "legacy"}-${entry.student_id}`} className="border-b border-border hover:bg-surface-raised/50 transition-colors">
                               <td className="px-6 py-3">
-                                <p className="font-medium text-text-primary">{entry.student_name}</p>
+                                <Link
+                                  href={`/students/${entry.student_id}`}
+                                  className="inline-flex rounded-[4px] font-medium text-text-primary transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                                >
+                                  {entry.student_name}
+                                </Link>
                               </td>
                               <td className="px-4 py-3">
                                 {entry.current_rank_name && entry.current_rank_color
@@ -939,7 +1064,11 @@ export default function BeltTrackerPage() {
                                   <Button
                                     variant="primary"
                                     size="sm"
+                                    disabled={!entry.next_rank_id}
                                     onClick={() => {
+                                      if (!entry.next_rank_id) {
+                                        return;
+                                      }
                                       setPromotionError(null);
                                       setPromotionNotes("");
                                       setPromoteEntry(entry);
@@ -965,11 +1094,10 @@ export default function BeltTrackerPage() {
         {tab === "ladder" && (
           <div className="flex-1 p-8 overflow-y-auto">
             <div className="max-w-xl">
-
               {/* Config header */}
               <div className="flex items-start justify-between mb-5">
                 <div>
-                  <h2 className="text-sm font-semibold text-text-primary">{currentLadder?.name || ladderName}</h2>
+                  <h2 className="text-sm font-semibold text-text-primary">{selectedProgram?.name || currentLadder?.name || ladderName || "Program ranks"}</h2>
                   <p className="text-xs text-muted mt-0.5">
                     {groups.length} belts · {ladderRanks.filter(r => r.is_tip).length} {subRankTerm.toLowerCase()}s total
                   </p>
@@ -1025,13 +1153,13 @@ export default function BeltTrackerPage() {
                     <Button
                       variant="primary"
                       size="sm"
-                      disabled={isSaving}
+                      disabled={isSaving || !currentProgramReady}
                       onClick={handleSaveRanks}
                     >
-                      <Save className="w-3.5 h-3.5" />{isSaving ? "Saving..." : "Save order"}
+                      <Save className="w-3.5 h-3.5" />{isSaving ? "Saving..." : "Save ranks"}
                     </Button>
                   )}
-                  <Button variant="secondary" size="sm" onClick={() => setAddBeltModal(true)}>
+                  <Button variant="secondary" size="sm" disabled={!currentProgramReady} onClick={() => setAddBeltModal(true)}>
                     <Plus className="w-3.5 h-3.5" />Add belt
                   </Button>
                 </div>
@@ -1040,6 +1168,11 @@ export default function BeltTrackerPage() {
               {ladderError && (
                 <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
                   {ladderError}
+                </div>
+              )}
+              {programsLoadError && (
+                <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                  {programsLoadError}
                 </div>
               )}
 
@@ -1199,8 +1332,20 @@ export default function BeltTrackerPage() {
                 {groups.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-10 text-center text-muted border border-dashed border-border rounded-[6px]">
                     <Tag className="w-6 h-6 mb-2" />
-                    <p className="text-sm">No belts yet. Add your first belt to get started.</p>
-                    <Button variant="secondary" size="sm" className="mt-4" onClick={() => setAddBeltModal(true)}>
+                    <p className="text-sm">
+                      {currentLadder
+                        ? "No belts yet. Add your first belt to get started."
+                        : selectedProgram
+                          ? "This program is still preparing its rank plan. Refresh programs and try again."
+                          : "Create a program in Settings before tracking belts."}
+                    </p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="mt-4"
+                      disabled={!currentProgramReady}
+                      onClick={() => setAddBeltModal(true)}
+                    >
                       <Plus className="w-3.5 h-3.5" />
                       Add belt
                     </Button>

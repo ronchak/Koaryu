@@ -24,6 +24,38 @@ class GuardianResponse(BaseModel):
     is_primary_contact: bool
 
 
+class StudentProgramMembershipResponse(BaseModel):
+    id: str
+    studio_id: str
+    student_id: str
+    program_id: str
+    program_name: Optional[str] = None
+    program_color_hex: Optional[str] = None
+    status: str
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+    current_belt_rank_id: Optional[str] = None
+    current_belt_rank_name: Optional[str] = None
+    current_belt_rank_color: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class StudentProgramMembershipCreate(BaseModel):
+    program_id: str
+    status: Literal["active", "paused", "ended"] = "active"
+    started_at: Optional[date] = None
+    ended_at: Optional[date] = None
+    current_belt_rank_id: Optional[str] = None
+
+
+class StudentProgramMembershipUpdate(BaseModel):
+    status: Optional[Literal["active", "paused", "ended"]] = None
+    started_at: Optional[date] = None
+    ended_at: Optional[date] = None
+    current_belt_rank_id: Optional[str] = None
+
+
 # ---- Student ----
 
 class StudentCreate(BaseModel):
@@ -45,6 +77,8 @@ class StudentCreate(BaseModel):
     status: str = "active"
     membership_start_date: Optional[date] = None
     program_id: Optional[str] = None
+    program_ids: list[str] = Field(default_factory=list)
+    current_belt_rank_id: Optional[str] = None
     notes: Optional[str] = None
     tags: list[str] = []
     # Guardians supplied at creation time (for minors)
@@ -70,6 +104,8 @@ class StudentUpdate(BaseModel):
     status: Optional[str] = None
     membership_start_date: Optional[date] = None
     program_id: Optional[str] = None
+    program_ids: Optional[list[str]] = None
+    current_belt_rank_id: Optional[str] = None
     notes: Optional[str] = None
     tags: Optional[list[str]] = None
 
@@ -101,6 +137,7 @@ class StudentResponse(BaseModel):
     notes: Optional[str] = None
     tags: list[str] = []
     guardians: list[GuardianResponse] = []
+    program_memberships: list[StudentProgramMembershipResponse] = []
     created_at: str
     updated_at: str
 

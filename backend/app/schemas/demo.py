@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.belt import BeltLadderResponse, EligibilityEntry
 from app.schemas.lead import LeadActivityResponse, LeadResponse
+from app.schemas.program import ProgramResponse
 from app.schemas.schedule import (
     AttendanceResponse,
     ClassSessionResponse,
@@ -22,6 +23,7 @@ class DemoResetCounts(BaseModel):
 
 class DemoResetResponse(BaseModel):
     studio_name: str
+    programs: list[ProgramResponse] = Field(default_factory=list)
     students: list[StudentResponse] = Field(default_factory=list)
     leads: list[LeadResponse] = Field(default_factory=list)
     lead_activities: list[LeadActivityResponse] = Field(default_factory=list)

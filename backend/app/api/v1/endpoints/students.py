@@ -5,6 +5,8 @@ from app.core.deps import get_current_user_id, get_current_studio_id, get_supaba
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     CsvImportRequest, CsvImportResult, BulkTagUpdate, BulkStatusUpdate,
+    StudentProgramMembershipCreate, StudentProgramMembershipResponse,
+    StudentProgramMembershipUpdate,
 )
 from app.services.student_service import StudentService
 import json
@@ -88,6 +90,53 @@ async def delete_student(
 ):
     service = StudentService(supabase)
     await service.soft_delete_student(student_id, studio_id, user_id)
+
+
+@router.get("/{student_id}/programs", response_model=list[StudentProgramMembershipResponse])
+async def list_student_programs(
+    student_id: str,
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    service = StudentService(supabase)
+    return await service.list_program_memberships(student_id, studio_id)
+
+
+@router.post("/{student_id}/programs", response_model=StudentProgramMembershipResponse, status_code=201)
+async def add_student_program(
+    student_id: str,
+    data: StudentProgramMembershipCreate,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    service = StudentService(supabase)
+    return await service.add_program_membership(student_id, data, studio_id, user_id)
+
+
+@router.patch("/{student_id}/programs/{membership_id}", response_model=StudentProgramMembershipResponse)
+async def update_student_program(
+    student_id: str,
+    membership_id: str,
+    data: StudentProgramMembershipUpdate,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    service = StudentService(supabase)
+    return await service.update_program_membership(student_id, membership_id, data, studio_id, user_id)
+
+
+@router.delete("/{student_id}/programs/{membership_id}", status_code=204)
+async def remove_student_program(
+    student_id: str,
+    membership_id: str,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    service = StudentService(supabase)
+    await service.remove_program_membership(student_id, membership_id, studio_id, user_id)
 
 
 @router.post("/bulk/tags", status_code=200)

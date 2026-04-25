@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import { Header } from "@/components/header";
-import { useLeadStore, useScheduleStore } from "@/lib/store";
+import { ProgramBadge } from "@/components/programs/program-picker";
+import { useLeadStore, useProgramStore, useScheduleStore } from "@/lib/store";
 import type { LeadSource, LeadStage } from "@/types";
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
 
@@ -87,9 +88,14 @@ function MetricCard({
 
 export default function ReportsPage() {
   const { leads } = useLeadStore();
+  const { programs } = useProgramStore();
   const { attendance, sessions } = useScheduleStore();
   const today = new Date().toISOString().split("T")[0];
   const lookbackStart = useMemo(() => subtractDays(today, 29), [today]);
+  const programById = useMemo(
+    () => new Map(programs.map((program) => [program.id, program])),
+    [programs]
+  );
 
   const leadMetrics = useMemo(() => {
     const leadStageCounts: Record<LeadStage, number> = {
@@ -247,6 +253,84 @@ export default function ReportsPage() {
 
   const visibleSessionRows = useMemo(() => sessionRows.slice(0, 10), [sessionRows]);
 
+  const programLeadRows = useMemo(() => {
+    const rows = new Map<string, {
+      programId: string | null;
+      label: string;
+      total: number;
+      active: number;
+      enrolled: number;
+    }>();
+
+    for (const program of programs.filter((item) => !item.archived_at)) {
+      rows.set(program.id, {
+        programId: program.id,
+        label: program.name,
+        total: 0,
+        active: 0,
+        enrolled: 0,
+      });
+    }
+
+    for (const lead of leads) {
+      const programId = lead.program_id || null;
+      const key = programId || "unassigned";
+      const row = rows.get(key) ?? {
+        programId,
+        label: lead.program_interest || "No program",
+        total: 0,
+        active: 0,
+        enrolled: 0,
+      };
+
+      row.total += 1;
+      if (lead.stage !== "closed_lost") {
+        row.active += 1;
+      }
+      if (lead.stage === "enrolled") {
+        row.enrolled += 1;
+      }
+      rows.set(key, row);
+    }
+
+    return Array.from(rows.values())
+      .filter((row) => row.total > 0)
+      .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label))
+      .slice(0, 6);
+  }, [leads, programs]);
+
+  const programAttendanceRows = useMemo(() => {
+    const rows = new Map<string, {
+      programId: string | null;
+      label: string;
+      sessions: number;
+      attendance: number;
+      capacity: number;
+    }>();
+
+    for (const session of sessionRows) {
+      const programId = session.program_id || null;
+      const program = programId ? programById.get(programId) : null;
+      const key = programId || "unassigned";
+      const row = rows.get(key) ?? {
+        programId,
+        label: program?.name || "No program",
+        sessions: 0,
+        attendance: 0,
+        capacity: 0,
+      };
+
+      row.sessions += 1;
+      row.attendance += session.attendees;
+      row.capacity += session.capacity ?? 0;
+      rows.set(key, row);
+    }
+
+    return Array.from(rows.values())
+      .sort((a, b) => b.attendance - a.attendance || b.sessions - a.sessions)
+      .slice(0, 6);
+  }, [programById, sessionRows]);
+
   return (
     <>
       <Header
@@ -358,6 +442,82 @@ export default function ReportsPage() {
                   </div>
                 ))}
               </div>
+            </section>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+            <section className="rounded-[6px] border border-border bg-surface p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-text-primary">Lead Programs</h2>
+                <p className="text-xs text-text-secondary mt-1">
+                  Pipeline demand grouped by selected program.
+                </p>
+              </div>
+
+              {programLeadRows.length === 0 ? (
+                <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
+                  Program selection will appear here as leads are captured.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {programLeadRows.map((row) => (
+                    <div
+                      key={row.programId || row.label}
+                      className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <ProgramBadge
+                            program={row.programId ? programById.get(row.programId) : null}
+                            fallback={row.label}
+                          />
+                          <p className="text-xs text-text-secondary mt-2">
+                            {row.active} active · {row.enrolled} enrolled
+                          </p>
+                        </div>
+                        <p className="text-sm font-mono text-text-primary">{row.total}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[6px] border border-border bg-surface p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-text-primary">Program Attendance</h2>
+                <p className="text-xs text-text-secondary mt-1">
+                  Last 30 days of class volume and check-ins by program.
+                </p>
+              </div>
+
+              {programAttendanceRows.length === 0 ? (
+                <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
+                  Program attendance will appear after classes are scheduled.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {programAttendanceRows.map((row) => (
+                    <div
+                      key={row.programId || row.label}
+                      className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <ProgramBadge
+                            program={row.programId ? programById.get(row.programId) : null}
+                            fallback={row.label}
+                          />
+                          <p className="text-xs text-text-secondary mt-2">
+                            {row.sessions} sessions · {row.capacity > 0 ? `${formatPercent(row.attendance / row.capacity)} utilization` : "No capacity tracked"}
+                          </p>
+                        </div>
+                        <p className="text-sm font-mono text-text-primary">{row.attendance}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           </div>
 

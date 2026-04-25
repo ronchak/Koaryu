@@ -1,5 +1,5 @@
 First Name,Last Name,Preferred Name,Date of Birth,Email,Phone,Status,Membership Start Date,Program,Current Belt,Guardian Name,Guardian Email,Guardian Phone,Guardian Relation,Tags,Notes
 Kai,Morgan,Kai,2014-02-14,,(555) 239-8810,Active,2026-03-01,Kids Brazilian Jiu-Jitsu,White Belt,Jamie Morgan,jamie.morgan@example.test,(555) 239-8811,Parent,"youth,open-house","Demo CSV row: new youth student from spring open house."
-Leah,Stone,Leah,1995-08-09,leah.stone@example.test,(555) 904-7712,Trialing,2026-04-18,Muay Thai Fundamentals,,,"",,,"trial,muay-thai","Trial student with no current belt yet."
+Leah,Stone,Leah,1995-08-09,leah.stone@example.test,(555) 904-7712,Trialing,2026-04-18,Tae Kwon Do Fundamentals,White Belt,,"",,,"trial,tae-kwon-do","Trial student in the Tae Kwon Do fundamentals track."
 Owen,Rivera,Owen,2012-05-20,,(555) 443-1888,Overdue,2025-11-05,Kids Brazilian Jiu-Jitsu,White Stripe 1,Marisol Rivera,marisol.rivera@example.test,(555) 443-1889,Mother,"youth,needs-follow-up","Status alias demonstrates normalization from overdue to paused."
 Grace,Lee,Grace,1989-10-03,grace.lee@example.test,(555) 612-9980,Active,2025-06-12,Adult Brazilian Jiu-Jitsu,Yellow Belt,,,,,"adult,competitor","Adult student with an existing belt assignment."

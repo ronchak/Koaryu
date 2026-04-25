@@ -1,6 +1,7 @@
 import uuid
 from datetime import date
 from typing import Optional
+from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 from fastapi import HTTPException
 from app.schemas.lead import (
@@ -9,11 +10,13 @@ from app.schemas.lead import (
     LeadConvert,
 )
 from app.services.studio_scope import ensure_optional_studio_record, ensure_staff_user_in_studio
+from app.services.program_service import ProgramService
 
 
 VALID_STAGES = {"inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled", "closed_lost"}
 VALID_SOURCES = {"walk_in", "referral", "social", "search", "website", "other"}
 CONVERSION_NAMESPACE = uuid.UUID("27c8322f-a4e4-46d7-bfae-018f6b638858")
+OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
 
 
 class LeadService:
@@ -46,8 +49,15 @@ class LeadService:
             studio_id,
             "Assigned staff member not found in this studio",
         )
+        ProgramService(self.supabase).ensure_program_active(studio_id, row.get("program_id"))
         row["studio_id"] = studio_id
-        result = self.supabase.table("leads").insert(row).execute()
+        try:
+            result = self.supabase.table("leads").insert(row).execute()
+        except PostgrestAPIError as exc:
+            if exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES or "program_id" not in row:
+                raise
+            row.pop("program_id", None)
+            result = self.supabase.table("leads").insert(row).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create lead")
 
@@ -96,6 +106,7 @@ class LeadService:
             studio_id,
             "Assigned staff member not found in this studio",
         )
+        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
 
         # Log stage change
         if "stage" in update_dict:
@@ -109,13 +120,27 @@ class LeadService:
                     "created_by": actor_id,
                 }).execute()
 
-        result = (
-            self.supabase.table("leads")
-            .update(update_dict)
-            .eq("id", lead_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
+        try:
+            result = (
+                self.supabase.table("leads")
+                .update(update_dict)
+                .eq("id", lead_id)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
+        except PostgrestAPIError as exc:
+            if exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES or "program_id" not in update_dict:
+                raise
+            update_dict.pop("program_id", None)
+            if not update_dict:
+                return await self.get_lead(lead_id, studio_id)
+            result = (
+                self.supabase.table("leads")
+                .update(update_dict)
+                .eq("id", lead_id)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
         if not result.data:
             raise HTTPException(status_code=404, detail="Lead not found")
         return LeadResponse(**result.data[0])
@@ -151,13 +176,9 @@ class LeadService:
     ) -> LeadResponse:
         """Convert a lead into a student record."""
         lead = await self.get_lead(lead_id, studio_id)
-        ensure_optional_studio_record(
-            self.supabase,
-            "programs",
-            data.program_id,
-            studio_id,
-            "Program not found",
-        )
+        program_service = ProgramService(self.supabase)
+        program_id = data.program_id or lead.program_id or program_service.get_unassigned_program_id(studio_id)
+        program_service.ensure_program_active(studio_id, program_id)
         if lead.converted_student_id:
             return lead
 
@@ -172,7 +193,7 @@ class LeadService:
             "phone": lead.phone,
             "status": data.status,
             "membership_start_date": data.membership_start_date or str(date.today()),
-            "program_id": data.program_id,
+            "program_id": program_id,
             "notes": lead.notes,
             "tags": ["converted-lead"],
         }
@@ -188,6 +209,18 @@ class LeadService:
             student_result = self.supabase.table("students").insert(student_data).execute()
             if not student_result.data:
                 raise HTTPException(status_code=500, detail="Failed to create student from lead")
+            if program_id:
+                try:
+                    self.supabase.table("student_program_memberships").insert({
+                        "studio_id": studio_id,
+                        "student_id": student_id,
+                        "program_id": program_id,
+                        "status": "active",
+                        "started_at": student_data["membership_start_date"],
+                    }).execute()
+                except PostgrestAPIError as exc:
+                    if exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES:
+                        raise
 
         # If minor, create guardian from lead data
         if lead.is_minor and lead.guardian_name:

@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
+import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
-import { useBeltStore, useConfigStore, useStudentStore } from "@/lib/store";
+import { useBeltStore, useConfigStore, useProgramStore, useStudentStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import type { BeltLadder, BeltRank, Promotion, Student, StudentCreate } from "@/types";
 import { AlertTriangle, ArrowLeft, Award, Mail, Phone, User, Pencil, Trash2 } from "lucide-react";
@@ -106,6 +107,7 @@ export default function StudentDetailPage() {
   const router = useRouter();
   const { isPreviewMode, token } = useConfigStore();
   const { students, studentsLoaded, updateStudent, deleteStudents } = useStudentStore();
+  const { programs } = useProgramStore();
   const {
     beltLadders: storeBeltLadders,
     promotionHistoryByStudent,
@@ -346,6 +348,14 @@ export default function StudentDetailPage() {
     ? beltLadders.find((ladder) => ladder.id === currentRank.ladder_id)
     : beltLadders.find((ladder) => ladder.program_id && ladder.program_id === student.program_id);
   const currentLadderRanks = currentLadder?.ranks || [];
+  const activeMemberships = (student.program_memberships || []).filter(
+    (membership) => membership.status !== "ended" && !membership.ended_at
+  );
+  const activeProgramIds = activeMemberships.length > 0
+    ? activeMemberships.map((membership) => membership.program_id)
+    : student.program_id
+      ? [student.program_id]
+      : [];
   const currentRankIndex = currentRank
     ? currentLadderRanks.findIndex((rank) => rank.id === currentRank.id)
     : -1;
@@ -380,6 +390,9 @@ export default function StudentDetailPage() {
         membership_start_date: data.membership_start_date,
         notes: data.notes,
         tags: data.tags,
+        program_id: data.program_id,
+        program_ids: data.program_ids,
+        current_belt_rank_id: data.current_belt_rank_id,
       });
 
       setHydratedStudent(null);
@@ -494,6 +507,16 @@ export default function StudentDetailPage() {
               )}
               {student.is_minor && (
                 <p className="text-xs text-warning mt-2">Minor</p>
+              )}
+              {activeProgramIds.length > 0 && (
+                <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                  {activeProgramIds.map((programId) => {
+                    const program = programs.find((item) => item.id === programId);
+                    return program ? (
+                      <ProgramBadge key={programId} program={program} />
+                    ) : null;
+                  })}
+                </div>
               )}
             </div>
 
@@ -758,6 +781,9 @@ export default function StudentDetailPage() {
             hold_end_date: student.hold_end_date,
             notes: student.notes,
             tags: student.tags,
+            program_id: student.program_id,
+            program_ids: activeProgramIds,
+            current_belt_rank_id: student.current_belt_rank_id,
             guardians: student.guardians.map((guardian) => ({
               first_name: guardian.first_name,
               last_name: guardian.last_name,

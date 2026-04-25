@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { toLocalDateKey } from "@/lib/date";
-import { useScheduleStore, useStudentStore } from "@/lib/store";
+import { useProgramStore, useScheduleStore, useStudentStore } from "@/lib/store";
 import type { ClassSession, ClassTemplate } from "@/types";
 import { ClassFormModal, type ClassFormSubmitPayload } from "@/components/schedule/class-form-modal";
 import { MonthScheduleView } from "@/components/schedule/month-schedule-view";
+import { ProgramBadge } from "@/components/programs/program-picker";
 import {
   ScheduleSessionDetailModal,
   type ScheduleSessionDeleteScope,
@@ -67,6 +68,7 @@ type View = "month" | "week" | "day";
 
 export default function SchedulePage() {
   const { students } = useStudentStore();
+  const { programs } = useProgramStore();
   const {
     attendance,
     sessions,
@@ -81,6 +83,7 @@ export default function SchedulePage() {
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>("week");
+  const [programFilter, setProgramFilter] = useState("");
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
@@ -144,28 +147,50 @@ export default function SchedulePage() {
 
   const today = dateStr(new Date());
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
+  const activePrograms = useMemo(
+    () => programs.filter((program) => !program.archived_at),
+    [programs]
+  );
+  const programById = useMemo(
+    () => new Map(programs.map((program) => [program.id, program])),
+    [programs]
+  );
+  const filteredSessions = useMemo(
+    () =>
+      programFilter
+        ? sessions.filter((session) => session.program_id === programFilter)
+        : sessions,
+    [programFilter, sessions]
+  );
+  const filteredTemplates = useMemo(
+    () =>
+      programFilter
+        ? templates.filter((template) => template.program_id === programFilter)
+        : templates,
+    [programFilter, templates]
+  );
 
   const sessionsByDate = useMemo(() => {
     const grouped: Record<string, ClassSession[]> = {};
-    sessions.forEach((session) => {
+    filteredSessions.forEach((session) => {
       if (!grouped[session.date]) {
         grouped[session.date] = [];
       }
       grouped[session.date].push(session);
     });
     return grouped;
-  }, [sessions]);
+  }, [filteredSessions]);
 
   const templatesByDay = useMemo(() => {
     const grouped: Record<number, ClassTemplate[]> = {};
-    templates.forEach((template) => {
+    filteredTemplates.forEach((template) => {
       if (!grouped[template.day_of_week]) {
         grouped[template.day_of_week] = [];
       }
       grouped[template.day_of_week].push(template);
     });
     return grouped;
-  }, [templates]);
+  }, [filteredTemplates]);
 
   const activeStudents = useMemo(
     () => students.filter((student) => student.status === "active" || student.status === "trialing"),
@@ -230,6 +255,7 @@ export default function SchedulePage() {
           date: payload.sessionDate,
           start_time: payload.startTime,
           end_time: payload.endTime,
+          program_id: payload.program_id,
           capacity: payload.capacity,
         });
       } else {
@@ -240,6 +266,7 @@ export default function SchedulePage() {
           end_time: payload.endTime,
           start_date: payload.recurrence.startDate,
           end_date: payload.recurrence.endDate,
+          program_id: payload.program_id,
           capacity: payload.capacity,
         });
 
@@ -366,6 +393,26 @@ export default function SchedulePage() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-8 py-3">
+          <select
+            value={programFilter}
+            onChange={(event) => setProgramFilter(event.target.value)}
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+          >
+            <option value="">All programs</option>
+            {activePrograms.map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.name}
+              </option>
+            ))}
+          </select>
+          {programFilter ? (
+            <ProgramBadge program={programById.get(programFilter)} />
+          ) : (
+            <span className="text-xs text-muted">Showing classes from every program</span>
+          )}
+        </div>
+
         {scheduleLoadError ? (
           <div className="px-8 pt-4">
             <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
@@ -386,8 +433,8 @@ export default function SchedulePage() {
           <div className="flex-1 p-6">
             <MonthScheduleView
               month={currentDate}
-              sessions={sessions}
-              templates={templates}
+              sessions={filteredSessions}
+              templates={filteredTemplates}
               selectedDate={currentDate}
               today={new Date()}
               maxVisibleEntries={3}
@@ -458,6 +505,9 @@ export default function SchedulePage() {
                         <p className="text-xs font-medium text-text-primary truncate">{session.name}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-[10px] text-muted font-mono">{formatTime(session.start_time)}</span>
+                          {session.program_id ? (
+                            <ProgramBadge program={programById.get(session.program_id)} />
+                          ) : null}
                           <span className="text-[10px] text-text-secondary flex items-center gap-0.5">
                             <Users className="w-2.5 h-2.5" />
                             {session.attendance_count}
@@ -474,7 +524,12 @@ export default function SchedulePage() {
                           className="w-full mb-1.5 p-2 border border-dashed border-border rounded-[6px] opacity-50"
                         >
                           <p className="text-xs text-muted truncate">{template.name}</p>
-                          <span className="text-[10px] text-muted font-mono">{formatTime(template.start_time)}</span>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] text-muted font-mono">{formatTime(template.start_time)}</span>
+                            {template.program_id ? (
+                              <ProgramBadge program={programById.get(template.program_id)} />
+                            ) : null}
+                          </div>
                         </div>
                       ))
                     )}
@@ -527,7 +582,12 @@ export default function SchedulePage() {
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium text-text-primary">{session.name}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-text-primary">{session.name}</p>
+                          {session.program_id ? (
+                            <ProgramBadge program={programById.get(session.program_id)} />
+                          ) : null}
+                        </div>
                         <p className="text-xs text-muted font-mono mt-1">
                           {formatTime(session.start_time)} – {formatTime(session.end_time)}
                         </p>
@@ -552,6 +612,7 @@ export default function SchedulePage() {
         open={Boolean(selectedSession)}
         session={selectedSession}
         students={activeStudents}
+        programs={programs}
         attendance={selectedSession ? getSessionAttendance(selectedSession.id) : []}
         attendanceError={attendanceError}
         pendingAttendanceStudentId={pendingAttendanceId}
@@ -586,6 +647,7 @@ export default function SchedulePage() {
         error={createClassError}
         title="Add class"
         defaultMode="weekly"
+        programs={programs}
         onSubmit={handleCreateClass}
       />
     </>

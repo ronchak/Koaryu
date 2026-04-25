@@ -109,6 +109,8 @@ class AttendanceCheckIn(BaseModel):
     session_id: str
     student_id: str
     status: str = "present"  # present, late, excused, absent
+    counts_toward_eligibility: Optional[bool] = None
+    override_reason: Optional[str] = None
 
 
 class AttendanceResponse(BaseModel):
@@ -119,6 +121,9 @@ class AttendanceResponse(BaseModel):
     status: str
     checked_in_at: str
     checked_in_by: Optional[str] = None
+    is_cross_program: bool = False
+    counts_toward_eligibility: bool = True
+    override_reason: Optional[str] = None
     # Joined student info for display
     student_name: Optional[str] = None
 

@@ -3,11 +3,12 @@
 import { useMemo, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
+import { ProgramBadge, ProgramPicker } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { toLocalDateKey } from "@/lib/date";
-import { useConfigStore, useLeadStore } from "@/lib/store";
-import type { Lead, LeadSource, LeadStage } from "@/types";
+import { useConfigStore, useLeadStore, useProgramStore } from "@/lib/store";
+import type { Lead, LeadSource, LeadStage, Program } from "@/types";
 import {
   Calendar,
   ExternalLink,
@@ -109,9 +110,14 @@ function getFollowUpStatusLabel(date: string, today: string) {
   return `Due ${formatDate(date)}`;
 }
 
+function getProgramLabel(lead: Lead, program?: Program | null) {
+  return program?.name || lead.program_interest || "No program";
+}
+
 export default function LeadsPage() {
   const router = useRouter();
   const { isPreviewMode, token } = useConfigStore();
+  const { programs } = useProgramStore();
   const {
     leads: baseLeads,
     addLead,
@@ -132,6 +138,16 @@ export default function LeadsPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
   const [optimisticLeads, setOptimisticLeads] = useState<Record<string, Lead>>({});
+  const [addLeadProgramId, setAddLeadProgramId] = useState<string | null>(null);
+
+  const activePrograms = useMemo(
+    () => programs.filter((program) => !program.archived_at),
+    [programs]
+  );
+  const programById = useMemo(
+    () => new Map(programs.map((program) => [program.id, program])),
+    [programs]
+  );
 
   const leads = useMemo(() => {
     const merged = new Map<string, Lead>();
@@ -322,6 +338,7 @@ export default function LeadsPage() {
     try {
       await addLead(data);
       setShowAddLead(false);
+      setAddLeadProgramId(null);
       setActionMessage("Lead added to the pipeline.");
     } catch (error) {
       console.error("Failed to add lead", error);
@@ -501,6 +518,7 @@ export default function LeadsPage() {
           size="sm"
           onClick={() => {
             setAddLeadError(null);
+            setAddLeadProgramId(null);
             setShowAddLead(true);
           }}
         >
@@ -575,9 +593,12 @@ export default function LeadsPage() {
                             <p className="text-sm font-medium text-text-primary">
                               {fullName(lead)}
                             </p>
-                            {lead.program_interest && (
-                              <p className="text-xs text-muted mt-1">{lead.program_interest}</p>
-                            )}
+                            <div className="mt-1">
+                              <ProgramBadge
+                                program={lead.program_id ? programById.get(lead.program_id) : null}
+                                fallback={getProgramLabel(lead, null)}
+                              />
+                            </div>
                           </button>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
                             <span className="rounded-[4px] border border-border bg-surface px-2 py-0.5">
@@ -734,11 +755,12 @@ export default function LeadsPage() {
                             <p className="text-sm font-medium text-text-primary">
                               {fullName(lead)}
                             </p>
-                            {lead.program_interest && (
-                              <p className="text-xs text-muted mt-0.5">
-                                {lead.program_interest}
-                              </p>
-                            )}
+                            <div className="mt-1">
+                              <ProgramBadge
+                                program={lead.program_id ? programById.get(lead.program_id) : null}
+                                fallback={getProgramLabel(lead, null)}
+                              />
+                            </div>
                           </div>
                           <GripVertical className="w-3.5 h-3.5 text-border flex-shrink-0 cursor-grab" />
                         </div>
@@ -788,6 +810,7 @@ export default function LeadsPage() {
                             type="button"
                             onClick={() => {
                               setAddLeadError(null);
+                              setAddLeadProgramId(null);
                               setShowAddLead(true);
                             }}
                             className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
@@ -911,14 +934,13 @@ export default function LeadsPage() {
                     {SOURCE_LABELS[selectedLead.source]}
                   </span>
                 </div>
-                {selectedLead.program_interest && (
-                  <div>
-                    <p className="text-xs text-muted mb-1">Program interest</p>
-                    <p className="text-sm text-text-primary">
-                      {selectedLead.program_interest}
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-xs text-muted mb-1">Program</p>
+                  <ProgramBadge
+                    program={selectedLead.program_id ? programById.get(selectedLead.program_id) : null}
+                    fallback={getProgramLabel(selectedLead, null)}
+                  />
+                </div>
               </div>
 
               {selectedLead.is_minor && selectedLead.guardian_name && (
@@ -1073,6 +1095,7 @@ export default function LeadsPage() {
             onClick={() => {
               if (!isAddingLead) {
                 setShowAddLead(false);
+                setAddLeadProgramId(null);
               }
             }}
           />
@@ -1083,6 +1106,7 @@ export default function LeadsPage() {
                 onClick={() => {
                   if (!isAddingLead) {
                     setShowAddLead(false);
+                    setAddLeadProgramId(null);
                   }
                 }}
                 disabled={isAddingLead}
@@ -1101,8 +1125,10 @@ export default function LeadsPage() {
                   email: (formData.get("email") as string) || undefined,
                   phone: (formData.get("phone") as string) || undefined,
                   source: formData.get("source") as LeadSource,
-                  program_interest:
-                    (formData.get("program_interest") as string) || undefined,
+                  program_id: addLeadProgramId,
+                  program_interest: addLeadProgramId
+                    ? programById.get(addLeadProgramId)?.name
+                    : undefined,
                   follow_up_date:
                     (formData.get("follow_up_date") as string) || undefined,
                   is_minor: formData.get("is_minor") === "on",
@@ -1182,14 +1208,13 @@ export default function LeadsPage() {
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm text-text-secondary font-medium">
-                  Program interest
-                </label>
-                <input
-                  name="program_interest"
-                  placeholder="e.g. Adult BJJ, Kids Martial Arts"
+                <ProgramPicker
+                  programs={activePrograms}
+                  value={addLeadProgramId}
+                  onChange={setAddLeadProgramId}
+                  label="Program"
+                  allowEmpty
                   disabled={isAddingLead}
-                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -1253,7 +1278,10 @@ export default function LeadsPage() {
                   size="sm"
                   type="button"
                   disabled={isAddingLead}
-                  onClick={() => setShowAddLead(false)}
+                  onClick={() => {
+                    setShowAddLead(false);
+                    setAddLeadProgramId(null);
+                  }}
                 >
                   Cancel
                 </Button>

@@ -15,12 +15,80 @@ export interface UserProfile {
   full_name: string;
 }
 
+export type StaffRoleName = "admin" | "instructor" | "front_desk";
+export type StaffStatus = "pending" | "active";
+
 export interface StaffRole {
   id: string;
   studio_id: string;
   user_id: string;
-  role: "admin" | "instructor" | "front_desk";
+  role: StaffRoleName;
   created_at: string;
+  updated_at?: string;
+  invited_by?: string | null;
+  invited_email?: string | null;
+}
+
+export interface StaffMember {
+  id: string;
+  studio_id: string;
+  user_id: string;
+  email: string;
+  full_name?: string | null;
+  role: StaffRoleName;
+  status: StaffStatus;
+  invited_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  last_sign_in_at?: string | null;
+}
+
+export interface StaffInviteCreate {
+  email: string;
+  role: StaffRoleName;
+}
+
+export interface StaffRoleUpdate {
+  role: StaffRoleName;
+}
+
+// ---- Programs ----
+
+export interface ProgramUsage {
+  student_count: number;
+  active_student_count: number;
+  class_count: number;
+  active_class_count: number;
+  lead_count: number;
+  belt_ladder_count: number;
+}
+
+export interface Program {
+  id: string;
+  studio_id: string;
+  name: string;
+  description?: string | null;
+  color_hex: string;
+  sort_order: number;
+  is_system: boolean;
+  archived_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  usage: ProgramUsage;
+}
+
+export interface ProgramCreate {
+  name: string;
+  description?: string;
+  color_hex?: string;
+  sort_order?: number;
+}
+
+export interface ProgramUpdate {
+  name?: string;
+  description?: string | null;
+  color_hex?: string;
+  sort_order?: number;
 }
 
 export interface StudioCreate {
@@ -48,6 +116,23 @@ export interface Guardian {
   is_primary_contact: boolean;
 }
 
+export interface StudentProgramMembership {
+  id: string;
+  studio_id: string;
+  student_id: string;
+  program_id: string;
+  program_name?: string | null;
+  program_color_hex?: string | null;
+  status: "active" | "paused" | "ended";
+  started_at?: string | null;
+  ended_at?: string | null;
+  current_belt_rank_id?: string | null;
+  current_belt_rank_name?: string | null;
+  current_belt_rank_color?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Student {
   id: string;
   studio_id: string;
@@ -71,6 +156,7 @@ export interface Student {
   membership_start_date?: string;
   program_id?: string;
   current_belt_rank_id?: string;
+  program_memberships?: StudentProgramMembership[];
   stripe_customer_id?: string;
   notes?: string;
   tags: string[];
@@ -105,6 +191,8 @@ export interface StudentCreate {
   status?: StudentStatus;
   membership_start_date?: string;
   program_id?: string;
+  program_ids?: string[];
+  current_belt_rank_id?: string;
   notes?: string;
   tags?: string[];
   guardians?: {
@@ -302,6 +390,9 @@ export interface AttendanceRecord {
   status: AttendanceStatus;
   checked_in_at: string;
   checked_in_by?: string;
+  is_cross_program?: boolean;
+  counts_toward_eligibility?: boolean;
+  override_reason?: string | null;
   student_name?: string;
 }
 
@@ -337,6 +428,8 @@ export interface BeltRank {
 
 export interface EligibilityEntry {
   student_id: string;
+  student_program_membership_id?: string;
+  program_id?: string;
   student_name: string;
   current_rank_id?: string;
   current_rank_name?: string;
@@ -358,6 +451,8 @@ export interface Promotion {
   id: string;
   studio_id: string;
   student_id: string;
+  student_program_membership_id?: string | null;
+  program_id?: string | null;
   from_rank_id?: string;
   to_rank_id: string;
   promoted_by: string;
@@ -384,6 +479,7 @@ export interface Lead {
   source: LeadSource;
   stage: LeadStage;
   program_interest?: string;
+  program_id?: string | null;
   is_minor: boolean;
   guardian_name?: string;
   guardian_email?: string;

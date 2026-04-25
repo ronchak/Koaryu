@@ -2,7 +2,7 @@
  * Mock data for frontend development without a live Supabase connection.
  * Remove or replace with real API calls once credentials are in place.
  */
-import type { Student, StudentListResponse } from "@/types";
+import type { Student, StudentListResponse, StudentProgramMembership } from "@/types";
 
 function dateDaysFromToday(offsetDays: number): string {
   const date = new Date();
@@ -27,7 +27,7 @@ function dayOfWeek(offsetDays = 0): number {
   return date.getDay();
 }
 
-export const MOCK_STUDENTS: Student[] = [
+const MOCK_BASE_STUDENTS: Student[] = [
   {
     id: "mock-1",
     studio_id: "mock-studio",
@@ -218,6 +218,126 @@ export const MOCK_STUDENTS: Student[] = [
   },
 ];
 
+const MOCK_ADDITIONAL_STUDENTS: Student[] = [
+  ["mock-9", "Hana", "Mori", "Hana", "2016-02-08", true, "active", -260, "rank-1a", ["youth", "beginner"]],
+  ["mock-10", "Liam", "Johnson", "Liam", "2014-05-19", true, "active", -95, "rank-1", ["youth", "new-family"]],
+  ["mock-11", "Ava", "Martinez", "Ava", "2013-10-02", true, "active", -390, "rank-1b", ["youth", "attendance-strong"]],
+  ["mock-12", "Noah", "Bennett", "Noah", "2012-12-11", true, "active", -510, "rank-1d", ["youth", "promotion-watch"]],
+  ["mock-13", "Zara", "Ali", "Zara", "2015-07-30", true, "active", -185, "rank-1", ["youth", "confidence"]],
+  ["mock-14", "Ethan", "Wong", "Ethan", "2011-04-17", true, "active", -720, "rank-2", ["youth", "assistant-helper"]],
+  ["mock-15", "Lucas", "Grant", "Lucas", "1990-08-03", false, "active", -140, "rank-1a", ["adult", "evening"]],
+  ["mock-16", "Maya", "Chen", "Maya", "1986-09-27", false, "active", -1100, "rank-4", ["adult", "mentor"]],
+  ["mock-17", "Amara", "Okafor", "Amara", "1993-03-25", false, "active", -1380, "rank-6", ["adult", "cross-training"]],
+  ["mock-18", "Kai", "Thompson", "Kai", "2010-06-23", true, "active", -980, "rank-4", ["youth", "competition"]],
+  ["mock-19", "Omar", "Haddad", "Omar", "1991-05-05", false, "active", -80, "tkd-rank-2", ["adult", "tae-kwon-do", "cross-training"]],
+  ["mock-20", "Chloe", "Park", "Chloe", "2013-08-20", true, "active", -130, "tkd-rank-1a", ["youth", "tae-kwon-do"]],
+].map(([id, first, last, preferred, dob, isMinor, status, membershipOffset, rankId, tags]) => {
+  const isTaeKwonDoPrimary = (tags as string[]).includes("tae-kwon-do");
+  const primaryProgramId = isTaeKwonDoPrimary ? "program-tae-kwon-do" : "program-bjj-core";
+  const primaryProgramName = isTaeKwonDoPrimary ? "Tae Kwon Do Fundamentals" : "Brazilian Jiu-Jitsu Core";
+  const primaryProgramColor = isTaeKwonDoPrimary ? "#F59E0B" : "#38BDF8";
+  const startedAt = dateDaysFromToday(membershipOffset as number);
+  const studentId = id as string;
+  const memberships: StudentProgramMembership[] = [
+    {
+      id: `${studentId}-program-primary`,
+      studio_id: "mock-studio",
+      student_id: studentId,
+      program_id: primaryProgramId,
+      program_name: primaryProgramName,
+      program_color_hex: primaryProgramColor,
+      status: "active" as const,
+      started_at: startedAt,
+      ended_at: null,
+      current_belt_rank_id: (rankId as string | undefined) ?? null,
+      current_belt_rank_name: isTaeKwonDoPrimary
+        ? rankId === "tkd-rank-2"
+          ? "Yellow Belt"
+          : "Yellow Stripe"
+        : null,
+      current_belt_rank_color: isTaeKwonDoPrimary
+        ? rankId === "tkd-rank-2"
+          ? "#EAB308"
+          : "#FFFFFF"
+        : null,
+      created_at: isoDaysFromToday(membershipOffset as number, "09:00:00"),
+      updated_at: isoDaysFromToday(-1, "09:00:00"),
+    },
+  ];
+  if (studentId === "mock-17") {
+    memberships.push({
+      id: `${studentId}-program-tae-kwon-do`,
+      studio_id: "mock-studio",
+      student_id: studentId,
+      program_id: "program-tae-kwon-do",
+      program_name: "Tae Kwon Do Fundamentals",
+      program_color_hex: "#F59E0B",
+      status: "active",
+      started_at: dateDaysFromToday(-45),
+      ended_at: null,
+      current_belt_rank_id: "tkd-rank-1",
+      current_belt_rank_name: "White Belt",
+      current_belt_rank_color: "#FFFFFF",
+      created_at: isoDaysFromToday(-45, "09:00:00"),
+      updated_at: isoDaysFromToday(-1, "09:00:00"),
+    });
+  }
+  if (studentId === "mock-19") {
+    memberships.push({
+      id: `${studentId}-program-bjj`,
+      studio_id: "mock-studio",
+      student_id: studentId,
+      program_id: "program-bjj-core",
+      program_name: "Brazilian Jiu-Jitsu Core",
+      program_color_hex: "#38BDF8",
+      status: "active",
+      started_at: dateDaysFromToday(-25),
+      ended_at: null,
+      current_belt_rank_id: "rank-1",
+      current_belt_rank_name: "White Belt",
+      current_belt_rank_color: "#FFFFFF",
+      created_at: isoDaysFromToday(-25, "09:00:00"),
+      updated_at: isoDaysFromToday(-1, "09:00:00"),
+    });
+  }
+
+  return {
+    id: studentId,
+    studio_id: "mock-studio",
+    legal_first_name: first as string,
+    legal_last_name: last as string,
+    preferred_name: preferred as string,
+    date_of_birth: dob as string,
+    is_minor: isMinor as boolean,
+    email: isMinor ? undefined : `${String(first).toLowerCase()}.${String(last).toLowerCase()}@email.com`,
+    phone: isMinor ? undefined : "(555) 246-8000",
+    status: status as Student["status"],
+    membership_start_date: startedAt,
+    program_id: primaryProgramId,
+    current_belt_rank_id: rankId as string | undefined,
+    program_memberships: memberships,
+    notes: isTaeKwonDoPrimary ? "Part of the Tae Kwon Do program roster." : "Demo student for program filtering and rank readiness.",
+    tags: tags as string[],
+    guardians: isMinor
+      ? [
+          {
+            id: `${studentId}-guardian`,
+            first_name: "Demo",
+            last_name: last as string,
+            email: `guardian.${String(last).toLowerCase()}@email.com`,
+            phone: "(555) 246-8001",
+            relation: "Guardian",
+            is_primary_contact: true,
+          },
+        ]
+      : [],
+    created_at: isoDaysFromToday(membershipOffset as number, "09:00:00"),
+    updated_at: isoDaysFromToday(-1, "09:00:00"),
+  };
+});
+
+export const MOCK_STUDENTS: Student[] = [...MOCK_BASE_STUDENTS, ...MOCK_ADDITIONAL_STUDENTS];
+
 export const MOCK_STUDENT_LIST: StudentListResponse = {
   items: MOCK_STUDENTS,
   total: MOCK_STUDENTS.length,
@@ -246,6 +366,7 @@ export const MOCK_CLASS_TEMPLATES: ClassTemplate[] = [
     start_date: todayStr(),
     start_time: "16:00",
     end_time: "16:45",
+    program_id: "program-bjj-core",
     capacity: 20,
     is_active: true,
     created_at: isoDaysFromToday(-90, "09:00:00"),
@@ -259,6 +380,7 @@ export const MOCK_CLASS_TEMPLATES: ClassTemplate[] = [
     start_date: todayStr(),
     start_time: "18:00",
     end_time: "19:30",
+    program_id: "program-bjj-core",
     capacity: 30,
     is_active: true,
     created_at: isoDaysFromToday(-90, "09:05:00"),
@@ -272,6 +394,7 @@ export const MOCK_CLASS_TEMPLATES: ClassTemplate[] = [
     start_date: todayStr(),
     start_time: "10:00",
     end_time: "12:00",
+    program_id: "program-bjj-core",
     capacity: 40,
     is_active: true,
     created_at: isoDaysFromToday(-90, "09:10:00"),
@@ -285,10 +408,25 @@ export const MOCK_CLASS_TEMPLATES: ClassTemplate[] = [
     start_date: todayStr(),
     start_time: "17:00",
     end_time: "18:30",
+    program_id: "program-bjj-core",
     capacity: 15,
     is_active: true,
     created_at: isoDaysFromToday(-90, "09:15:00"),
     updated_at: isoDaysFromToday(-2, "09:15:00"),
+  },
+  {
+    id: "tmpl-5",
+    studio_id: "mock-studio",
+    name: "Tae Kwon Do Fundamentals",
+    day_of_week: dayOfWeek(1),
+    start_date: todayStr(),
+    start_time: "17:30",
+    end_time: "18:30",
+    program_id: "program-tae-kwon-do",
+    capacity: 24,
+    is_active: true,
+    created_at: isoDaysFromToday(-90, "09:20:00"),
+    updated_at: isoDaysFromToday(-2, "09:20:00"),
   },
 ];
 
@@ -301,6 +439,7 @@ export const MOCK_SESSIONS: ClassSession[] = [
     date: todayStr(),
     start_time: "16:00",
     end_time: "16:45",
+    program_id: "program-bjj-core",
     capacity: 20,
     status: "scheduled",
     created_at: todayStr() + "T00:00:00Z",
@@ -314,7 +453,22 @@ export const MOCK_SESSIONS: ClassSession[] = [
     date: todayStr(),
     start_time: "18:00",
     end_time: "19:30",
+    program_id: "program-bjj-core",
     capacity: 30,
+    status: "scheduled",
+    created_at: todayStr() + "T00:00:00Z",
+    attendance_count: 2,
+  },
+  {
+    id: "sess-3",
+    studio_id: "mock-studio",
+    template_id: "tmpl-5",
+    name: "Tae Kwon Do Fundamentals",
+    date: todayStr(),
+    start_time: "17:30",
+    end_time: "18:30",
+    program_id: "program-tae-kwon-do",
+    capacity: 24,
     status: "scheduled",
     created_at: todayStr() + "T00:00:00Z",
     attendance_count: 2,
@@ -375,6 +529,24 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     status: "present",
     checked_in_at: `${dateDaysFromToday(-21)}T12:05:00Z`,
     student_name: "Nora Patel",
+  },
+  {
+    id: "att-7",
+    studio_id: "mock-studio",
+    session_id: "sess-3",
+    student_id: "mock-19",
+    status: "present",
+    checked_in_at: `${todayStr()}T17:35:00Z`,
+    student_name: "Omar Haddad",
+  },
+  {
+    id: "att-8",
+    studio_id: "mock-studio",
+    session_id: "sess-3",
+    student_id: "mock-20",
+    status: "present",
+    checked_in_at: `${todayStr()}T17:36:00Z`,
+    student_name: "Chloe Park",
   },
 ];
 
@@ -568,7 +740,8 @@ export const MOCK_BELT_RANKS: BeltRank[] = [
 export const MOCK_BELT_LADDER: BeltLadder = {
   id: "ladder-1",
   studio_id: "mock-studio",
-  name: "Kids Martial Arts",
+  name: "Brazilian Jiu-Jitsu Core",
+  program_id: "program-bjj-core",
   sub_rank_term: "Stripe",
   created_at: "2024-01-01T00:00:00Z",
   updated_at: "2024-01-01T00:00:00Z",
@@ -699,7 +872,8 @@ export const MOCK_LEADS: Lead[] = [
     phone: "(555) 111-2222",
     source: "website",
     stage: "inquiry",
-    program_interest: "Adult BJJ",
+    program_interest: "Brazilian Jiu-Jitsu Core",
+    program_id: "program-bjj-core",
     is_minor: false,
     follow_up_date: todayStr(),
     notes: "Interested in evening classes. Has prior wrestling experience.",
@@ -715,7 +889,8 @@ export const MOCK_LEADS: Lead[] = [
     phone: "(555) 333-4444",
     source: "referral",
     stage: "trial_scheduled",
-    program_interest: "Kids Martial Arts",
+    program_interest: "Brazilian Jiu-Jitsu Core",
+    program_id: "program-bjj-core",
     is_minor: true,
     guardian_name: "Elena Gonzalez",
     guardian_email: "elena.g@email.com",
@@ -733,7 +908,8 @@ export const MOCK_LEADS: Lead[] = [
     email: "tyler.b@email.com",
     source: "social",
     stage: "trial_completed",
-    program_interest: "Adult No-Gi",
+    program_interest: "Brazilian Jiu-Jitsu Core",
+    program_id: "program-bjj-core",
     is_minor: false,
     follow_up_date: todayStr(),
     notes: "Completed trial class on 4/12. Very enthusiastic. Follow up with pricing.",
@@ -749,7 +925,8 @@ export const MOCK_LEADS: Lead[] = [
     phone: "(555) 555-6666",
     source: "walk_in",
     stage: "offer_sent",
-    program_interest: "Adult BJJ",
+    program_interest: "Brazilian Jiu-Jitsu Core",
+    program_id: "program-bjj-core",
     is_minor: false,
     follow_up_date: dateDaysFromToday(-1),
     notes: "Sent Growth plan pricing. Waiting for decision.",
@@ -765,7 +942,8 @@ export const MOCK_LEADS: Lead[] = [
     phone: "(555) 777-8888",
     source: "search",
     stage: "closed_lost",
-    program_interest: "Competition",
+    program_interest: "Tae Kwon Do Fundamentals",
+    program_id: "program-tae-kwon-do",
     is_minor: false,
     lost_reason: "price_objection",
     notes: "Price was the deciding factor. May reconsider if we run a promo.",

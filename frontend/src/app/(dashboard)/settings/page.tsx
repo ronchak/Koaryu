@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { ProgramsSection } from "@/components/settings/programs-section";
+import { StaffRolesSection } from "@/components/settings/staff-roles-section";
 import { useConfigStore, useStudioStore } from "@/lib/store";
 import { Save, Check, RotateCcw } from "lucide-react";
 
@@ -86,7 +88,7 @@ export default function SettingsPage() {
     <>
       <Header title="Settings" description="Studio configuration and preferences." />
       <div className="flex-1 p-8">
-        <div className="max-w-xl space-y-6">
+        <div className="max-w-3xl space-y-6">
           {/* Studio info */}
           <section className="bg-surface border border-border rounded-[6px] p-5">
             <h3 className="text-sm font-medium text-text-primary mb-4">Studio Information</h3>
@@ -115,13 +117,9 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* Staff section */}
-          <section className="bg-surface border border-border rounded-[6px] p-5">
-            <h3 className="text-sm font-medium text-text-primary mb-1">Staff & Roles</h3>
-            <p className="text-xs text-muted">
-              Invite instructors and front-desk staff with role-based permissions. Available after connecting Supabase.
-            </p>
-          </section>
+          <ProgramsSection />
+
+          <StaffRolesSection />
 
           {/* Data section */}
           <section className="bg-surface border border-border rounded-[6px] p-5">

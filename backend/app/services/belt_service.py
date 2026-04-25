@@ -1,8 +1,10 @@
 import json
+import re
 from typing import Any, Callable, Optional
 from datetime import datetime, timezone
 from supabase import Client
 from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
 from app.schemas.belt import (
     BeltLadderCreate, BeltLadderUpdate, BeltLadderSyncRequest, BeltLadderResponse,
     BeltRankCreate, BeltRankUpdate, BeltRankResponse,
@@ -10,6 +12,7 @@ from app.schemas.belt import (
     EligibilityEntry,
 )
 from app.services.studio_scope import ensure_optional_studio_record, ensure_studio_record
+from app.services.program_service import ProgramService
 
 
 class BeltService:
@@ -80,6 +83,19 @@ class BeltService:
             raise HTTPException(status_code=404, detail="Belt ladder not found")
         return self._build_ladder_response(result.data)
 
+    def _get_ladder_row(self, ladder_id: str, studio_id: str) -> dict[str, Any]:
+        result = (
+            self.supabase.table("belt_ladders")
+            .select("*")
+            .eq("id", ladder_id)
+            .eq("studio_id", studio_id)
+            .single()
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Belt ladder not found")
+        return result.data
+
     # ---- Ladders ----
 
     async def list_ranks(
@@ -99,10 +115,26 @@ class BeltService:
         return [BeltRankResponse(**rank) for rank in (result.data or [])]
 
     async def list_ladders(self, studio_id: str) -> list[BeltLadderResponse]:
+        ProgramService(self.supabase).ensure_program_ladders(studio_id)
+        active_program_rows = (
+            self.supabase.table("programs")
+            .select("id, is_system, archived_at")
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+        visible_program_ids = {
+            row["id"]
+            for row in (active_program_rows.data or [])
+            if row.get("id") and not row.get("is_system") and not row.get("archived_at")
+        }
+        if not visible_program_ids:
+            return []
+
         result = (
             self.supabase.table("belt_ladders")
             .select("*, belt_ranks(*)")
             .eq("studio_id", studio_id)
+            .in_("program_id", list(visible_program_ids))
             .order("created_at")
             .execute()
         )
@@ -191,28 +223,27 @@ class BeltService:
         self, data: BeltLadderCreate, studio_id: str, actor_id: str
     ) -> BeltLadderResponse:
         row = data.model_dump()
-        ensure_optional_studio_record(
-            self.supabase,
-            "programs",
-            row.get("program_id"),
-            studio_id,
-            "Program not found",
-        )
-        if row.get("program_id"):
-            existing = (
-                self.supabase.table("belt_ladders")
-                .select("*, belt_ranks(*)")
-                .eq("studio_id", studio_id)
-                .eq("program_id", row["program_id"])
-                .order("created_at")
-                .execute()
+        program_id = row.get("program_id")
+        if not program_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Create a program first. Each program owns exactly one belt configuration.",
             )
-            existing_rows = existing.data or []
-            if existing_rows:
-                raise HTTPException(
-                    status_code=409,
-                    detail="This program already has a belt ladder. Edit the existing ladder instead of creating another one.",
-                )
+        ProgramService(self.supabase).ensure_program_active(studio_id, program_id)
+        existing = (
+            self.supabase.table("belt_ladders")
+            .select("*, belt_ranks(*)")
+            .eq("studio_id", studio_id)
+            .eq("program_id", program_id)
+            .order("created_at")
+            .execute()
+        )
+        existing_rows = existing.data or []
+        if existing_rows:
+            raise HTTPException(
+                status_code=409,
+                detail="This program already has a belt configuration. Edit the existing program ranks instead of creating another one.",
+            )
         row["studio_id"] = studio_id
         result = self.supabase.table("belt_ladders").insert(row).execute()
         if not result.data:
@@ -247,13 +278,13 @@ class BeltService:
             studio_id,
             "Belt ladder not found",
         )
-        ensure_optional_studio_record(
-            self.supabase,
-            "programs",
-            update_dict.get("program_id"),
-            studio_id,
-            "Program not found",
-        )
+        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
+        current_ladder = self._get_ladder_row(ladder_id, studio_id)
+        if "program_id" in update_dict and update_dict.get("program_id") != current_ladder.get("program_id"):
+            raise HTTPException(
+                status_code=409,
+                detail="A belt configuration cannot be moved to another program.",
+            )
         if update_dict.get("program_id"):
             existing = (
                 self.supabase.table("belt_ladders")
@@ -279,6 +310,19 @@ class BeltService:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Belt ladder not found")
+
+        updated_ladder = result.data[0]
+        if update_dict.get("name") and updated_ladder.get("program_id"):
+            try:
+                (
+                    self.supabase.table("programs")
+                    .update({"name": update_dict["name"]})
+                    .eq("id", updated_ladder["program_id"])
+                    .eq("studio_id", studio_id)
+                    .execute()
+                )
+            except PostgrestAPIError:
+                pass
 
         self.supabase.table("audit_logs").insert({
             "studio_id": studio_id,
@@ -402,7 +446,25 @@ class BeltService:
         if isinstance(value, datetime):
             parsed = value
         else:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            normalized = str(value).strip().replace("Z", "+00:00")
+            try:
+                parsed = datetime.fromisoformat(normalized)
+            except ValueError:
+                # Supabase/PostgREST can return timestamptz values with fewer than
+                # six fractional-second digits. Python 3.9's fromisoformat is picky
+                # about that shape, so normalize the fraction before parsing.
+                match = re.match(
+                    r"^(?P<head>.*T\d{2}:\d{2}:\d{2})\.(?P<fraction>\d+)(?P<tz>[+-]\d{2}:?\d{2})?$",
+                    normalized,
+                )
+                if not match:
+                    raise
+
+                fraction = (match.group("fraction") + "000000")[:6]
+                timezone_suffix = match.group("tz") or ""
+                if timezone_suffix and ":" not in timezone_suffix:
+                    timezone_suffix = f"{timezone_suffix[:3]}:{timezone_suffix[3:]}"
+                parsed = datetime.fromisoformat(f"{match.group('head')}.{fraction}{timezone_suffix}")
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
@@ -423,29 +485,48 @@ class BeltService:
             offset += page_size
         return rows
 
-    def _fetch_latest_promotions_by_student(
+    def _fetch_latest_promotions_by_context(
         self,
         studio_id: str,
-        student_ids: list[str],
+        eligibility_contexts: list[dict[str, Any]],
     ) -> dict[str, Optional[str]]:
         latest_promotions: dict[str, Optional[str]] = {}
-        unique_student_ids = sorted(set(student_ids))
+        unique_student_ids = sorted({
+            context["student"]["id"]
+            for context in eligibility_contexts
+            if context.get("student", {}).get("id")
+        })
 
         for student_id_chunk in self._chunked(unique_student_ids):
             promotion_rows = self._fetch_paged(
                 lambda student_id_chunk=student_id_chunk: (
                     self.supabase.table("promotions")
-                    .select("student_id, promoted_at")
+                    .select("student_id, student_program_membership_id, program_id, promoted_at")
                     .eq("studio_id", studio_id)
                     .in_("student_id", student_id_chunk)
                     .order("promoted_at", desc=True)
                 )
             )
-            for row in promotion_rows:
-                student_id = row.get("student_id")
-                promoted_at = row.get("promoted_at")
-                if student_id and student_id not in latest_promotions:
-                    latest_promotions[student_id] = promoted_at
+
+            for context in eligibility_contexts:
+                context_key = context["context_key"]
+                student_id = context["student"]["id"]
+                if student_id not in student_id_chunk or context_key in latest_promotions:
+                    continue
+                membership_id = context.get("membership_id")
+                program_id = context.get("program_id")
+                for row in promotion_rows:
+                    if row.get("student_id") != student_id:
+                        continue
+                    if membership_id and row.get("student_program_membership_id") == membership_id:
+                        latest_promotions[context_key] = row.get("promoted_at")
+                        break
+                    if program_id and row.get("program_id") == program_id:
+                        latest_promotions[context_key] = row.get("promoted_at")
+                        break
+                    if not membership_id and not row.get("program_id"):
+                        latest_promotions[context_key] = row.get("promoted_at")
+                        break
 
         return latest_promotions
 
@@ -453,35 +534,37 @@ class BeltService:
         self,
         studio_id: str,
         eligibility_contexts: list[dict[str, Any]],
-        latest_promotions_by_student: dict[str, Optional[str]],
+        latest_promotions_by_context: dict[str, Optional[str]],
         ladder_meta: dict[str, dict[str, Any]],
     ) -> dict[str, int]:
-        contexts_by_student = {
-            context["student"]["id"]: context
-            for context in eligibility_contexts
-            if context.get("student", {}).get("id")
-        }
+        contexts_by_student: dict[str, list[dict[str, Any]]] = {}
+        for context in eligibility_contexts:
+            student_id = context.get("student", {}).get("id")
+            if student_id:
+                contexts_by_student.setdefault(student_id, []).append(context)
         student_ids = sorted(contexts_by_student)
-        attendance_counts = {student_id: 0 for student_id in student_ids}
+        attendance_counts = {context["context_key"]: 0 for context in eligibility_contexts}
         if not student_ids:
             return attendance_counts
 
         parsed_promotion_dates = {
-            student_id: self._parse_datetime(promoted_at)
-            for student_id, promoted_at in latest_promotions_by_student.items()
-            if student_id in contexts_by_student and promoted_at
+            context_key: self._parse_datetime(promoted_at)
+            for context_key, promoted_at in latest_promotions_by_context.items()
+            if promoted_at
         }
         student_ids_with_promotions = [
-            student_id for student_id in student_ids if student_id in parsed_promotion_dates
+            student_id for student_id in student_ids
+            if any(context["context_key"] in parsed_promotion_dates for context in contexts_by_student[student_id])
         ]
+        student_ids_with_promotion_set = set(student_ids_with_promotions)
         student_ids_without_promotions = [
-            student_id for student_id in student_ids if student_id not in parsed_promotion_dates
+            student_id for student_id in student_ids if student_id not in student_ids_with_promotion_set
         ]
 
         def build_attendance_query(student_id_chunk: list[str], lower_bound: Optional[str] = None) -> Any:
             query = (
                 self.supabase.table("attendance")
-                .select("student_id, checked_in_at, class_sessions!inner(program_id)")
+                    .select("student_id, checked_in_at, counts_toward_eligibility, class_sessions!inner(program_id)")
                 .eq("studio_id", studio_id)
                 .in_("student_id", student_id_chunk)
                 .neq("status", "absent")
@@ -493,26 +576,30 @@ class BeltService:
         def process_attendance_rows(attendance_rows: list[dict[str, Any]]) -> None:
             for row in attendance_rows:
                 student_id = row.get("student_id")
-                context = contexts_by_student.get(student_id)
-                if not student_id or not context:
+                contexts = contexts_by_student.get(student_id, [])
+                if not student_id or not contexts:
                     continue
 
-                promotion_date = parsed_promotion_dates.get(student_id)
-                if promotion_date:
-                    checked_in_at = row.get("checked_in_at")
-                    if not checked_in_at or self._parse_datetime(checked_in_at) < promotion_date:
-                        continue
-
-                ladder_program_id = (
-                    ladder_meta.get(context["target_ladder_id"]) or {}
-                ).get("program_id")
                 class_session = row.get("class_sessions") or {}
                 if isinstance(class_session, list):
                     class_session = class_session[0] if class_session else {}
-                if ladder_program_id and class_session.get("program_id") != ladder_program_id:
+                if row.get("counts_toward_eligibility") is False:
                     continue
 
-                attendance_counts[student_id] += 1
+                for context in contexts:
+                    promotion_date = parsed_promotion_dates.get(context["context_key"])
+                    if promotion_date:
+                        checked_in_at = row.get("checked_in_at")
+                        if not checked_in_at or self._parse_datetime(checked_in_at) < promotion_date:
+                            continue
+
+                    ladder_program_id = (
+                        ladder_meta.get(context["target_ladder_id"]) or {}
+                    ).get("program_id")
+                    if ladder_program_id and class_session.get("program_id") != ladder_program_id:
+                        continue
+
+                    attendance_counts[context["context_key"]] += 1
 
         for student_id_chunk in self._chunked(student_ids_without_promotions):
             process_attendance_rows(
@@ -523,8 +610,7 @@ class BeltService:
 
         if student_ids_with_promotions:
             lower_bound = min(
-                parsed_promotion_dates[student_id]
-                for student_id in student_ids_with_promotions
+                parsed_promotion_dates.values()
             ).isoformat()
             for student_id_chunk in self._chunked(student_ids_with_promotions):
                 process_attendance_rows(
@@ -609,37 +695,58 @@ class BeltService:
             .is_("deleted_at", "null")
             .execute()
         )
+        student_ids = [row["id"] for row in (students_result.data or []) if row.get("id")]
+        memberships_by_student: dict[str, list[dict[str, Any]]] = {}
+        if student_ids:
+            memberships_result = (
+                self.supabase.table("student_program_memberships")
+                .select("id, student_id, program_id, status, ended_at, started_at, current_belt_rank_id")
+                .eq("studio_id", studio_id)
+                .in_("student_id", student_ids)
+                .in_("status", ["active", "paused"])
+                .is_("ended_at", "null")
+                .execute()
+            )
+            for membership in memberships_result.data or []:
+                memberships_by_student.setdefault(membership["student_id"], []).append(membership)
 
         eligibility_contexts: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc)
         selected_ladder = ladder_meta.get(ladder_id) if ladder_id else None
         studio_has_single_ladder = len(ladder_meta) == 1
 
-        for s in students_result.data or []:
-            current_rank_id = s.get("current_belt_rank_id")
+        def add_context_for_program_state(
+            s: dict[str, Any],
+            *,
+            membership_id: Optional[str],
+            program_id_value: Optional[str],
+            current_rank_id_value: Optional[str],
+            started_at: Optional[str],
+        ) -> None:
+            current_rank_id = current_rank_id_value
             current_rank = rank_map.get(current_rank_id) if current_rank_id else None
             current_ladder_id = current_rank.get("ladder_id") if current_rank else None
-            student_program_id = s.get("program_id")
+            student_program_id = program_id_value
 
             target_ladder_id: Optional[str] = None
 
             if ladder_id:
                 if current_ladder_id:
                     if current_ladder_id != ladder_id:
-                        continue
+                        return
                     target_ladder_id = ladder_id
                 elif selected_ladder and selected_ladder.get("program_id"):
                     if student_program_id != selected_ladder.get("program_id"):
-                        continue
+                        return
                     target_ladder_id = ladder_id
                 elif studio_has_single_ladder:
                     target_ladder_id = ladder_id
                 elif student_program_id:
-                    continue
+                    return
                 elif len(unscoped_ladder_ids) == 1 and unscoped_ladder_ids[0] == ladder_id:
                     target_ladder_id = ladder_id
                 else:
-                    continue
+                    return
             else:
                 if current_ladder_id:
                     target_ladder_id = current_ladder_id
@@ -648,66 +755,85 @@ class BeltService:
                     if len(program_ladders) == 1:
                         target_ladder_id = program_ladders[0]
                     else:
-                        continue
+                        return
                 elif studio_has_single_ladder:
                     target_ladder_id = next(iter(ladder_meta))
                 elif len(unscoped_ladder_ids) == 1:
                     target_ladder_id = unscoped_ladder_ids[0]
                 else:
-                    continue
+                    return
 
             if not target_ladder_id:
-                continue
+                return
 
             ladder_ranks = ranks_by_ladder.get(target_ladder_id, [])
             if not ladder_ranks:
-                continue
+                return
 
             if current_rank and current_rank.get("ladder_id") != target_ladder_id:
                 current_rank = None
+
+            context_base = {
+                "student": s,
+                "membership_id": membership_id,
+                "program_id": student_program_id,
+                "target_ladder_id": target_ladder_id,
+                "started_at": started_at,
+                "context_key": membership_id or f"{s['id']}:{student_program_id or 'legacy'}:{target_ladder_id}",
+            }
 
             # If no rank, the next rank is the first one
             if not current_rank:
                 next_rank = ladder_ranks[0]
                 if not next_rank:
-                    continue
+                    return
                 eligibility_contexts.append({
-                    "student": s,
-                    "target_ladder_id": target_ladder_id,
+                    **context_base,
                     "current_rank_id": None,
                     "current_rank": None,
                     "next_rank": next_rank,
                 })
-                continue
+                return
 
             next_rank = next_rank_map_by_ladder.get(target_ladder_id, {}).get(current_rank_id)
             if not next_rank:
-                continue  # Already at highest rank
+                return  # Already at highest rank
 
             eligibility_contexts.append({
-                "student": s,
-                "target_ladder_id": target_ladder_id,
+                **context_base,
                 "current_rank_id": current_rank_id,
                 "current_rank": current_rank,
                 "next_rank": next_rank,
             })
 
-        ranked_contexts = [
-            context for context in eligibility_contexts if context.get("current_rank")
-        ]
-        ranked_student_ids = [
-            context["student"]["id"]
-            for context in ranked_contexts
-            if context.get("student", {}).get("id")
-        ]
-        latest_promotions_by_student = self._fetch_latest_promotions_by_student(
+        for s in students_result.data or []:
+            memberships = memberships_by_student.get(s["id"]) or []
+            if memberships:
+                for membership in memberships:
+                    add_context_for_program_state(
+                        s,
+                        membership_id=membership.get("id"),
+                        program_id_value=membership.get("program_id"),
+                        current_rank_id_value=membership.get("current_belt_rank_id"),
+                        started_at=membership.get("started_at"),
+                    )
+            else:
+                add_context_for_program_state(
+                    s,
+                    membership_id=None,
+                    program_id_value=s.get("program_id"),
+                    current_rank_id_value=s.get("current_belt_rank_id"),
+                    started_at=s.get("membership_start_date"),
+                )
+
+        latest_promotions_by_context = self._fetch_latest_promotions_by_context(
             studio_id,
-            ranked_student_ids,
+            eligibility_contexts,
         )
         attendance_counts_by_student = self._fetch_attendance_counts_by_student(
             studio_id,
-            ranked_contexts,
-            latest_promotions_by_student,
+            eligibility_contexts,
+            latest_promotions_by_context,
             ladder_meta,
         )
 
@@ -717,10 +843,19 @@ class BeltService:
             current_rank = context["current_rank"]
             next_rank = context["next_rank"]
             current_rank_id = context["current_rank_id"]
+            context_key = context["context_key"]
+            latest_promo_date = latest_promotions_by_context.get(context_key)
+            classes_since = attendance_counts_by_student.get(context_key, 0)
 
             if not current_rank:
+                anchor_date = latest_promo_date or context.get("started_at") or s.get("membership_start_date")
+                days_at = max(0, (now - self._parse_datetime(anchor_date)).days) if anchor_date else 0
+                classes_met = classes_since >= next_rank["min_classes"]
+                time_met = days_at >= next_rank["min_months"] * 30
                 entries.append(EligibilityEntry(
                     student_id=s["id"],
+                    student_program_membership_id=context.get("membership_id"),
+                    program_id=context.get("program_id"),
                     student_name=f"{s.get('preferred_name') or s['legal_first_name']} {s['legal_last_name']}",
                     current_rank_id=None,
                     current_rank_name=None,
@@ -728,22 +863,19 @@ class BeltService:
                     next_rank_id=next_rank["id"],
                     next_rank_name=next_rank["name"],
                     next_rank_color=next_rank["color_hex"],
-                    classes_since_promo=0,
+                    classes_since_promo=classes_since,
                     classes_required=next_rank["min_classes"],
-                    days_at_rank=0,
+                    days_at_rank=days_at,
                     days_required=next_rank["min_months"] * 30,
-                    classes_met=next_rank["min_classes"] == 0,
-                    time_met=next_rank["min_months"] == 0,
+                    classes_met=classes_met,
+                    time_met=time_met,
                     needs_approval=next_rank["requires_approval"],
-                    is_eligible=next_rank["min_classes"] == 0 and next_rank["min_months"] == 0,
+                    is_eligible=classes_met and time_met and not next_rank["requires_approval"],
                 ))
                 continue
 
-            last_promo_date = latest_promotions_by_student.get(s["id"])
-            classes_since = attendance_counts_by_student.get(s["id"], 0)
-
             # Days at current rank
-            anchor_date = last_promo_date or s.get("membership_start_date")
+            anchor_date = latest_promo_date or context.get("started_at") or s.get("membership_start_date")
             if anchor_date:
                 anchor_dt = self._parse_datetime(anchor_date)
                 days_at = max(0, (now - anchor_dt).days)
@@ -758,6 +890,8 @@ class BeltService:
 
             entries.append(EligibilityEntry(
                 student_id=s["id"],
+                student_program_membership_id=context.get("membership_id"),
+                program_id=context.get("program_id"),
                 student_name=f"{s.get('preferred_name') or s['legal_first_name']} {s['legal_last_name']}",
                 current_rank_id=current_rank_id,
                 current_rank_name=current_rank["name"],
@@ -818,7 +952,48 @@ class BeltService:
             raise HTTPException(status_code=404, detail="Student not found")
 
         student_program_id = student_result.data.get("program_id")
-        from_rank_id = student_result.data.get("current_belt_rank_id")
+        membership = None
+        target_program_id = data.program_id or target_ladder.get("program_id") or student_program_id
+        if data.student_program_membership_id:
+            membership_result = (
+                self.supabase.table("student_program_memberships")
+                .select("id, program_id, current_belt_rank_id, status, ended_at")
+                .eq("id", data.student_program_membership_id)
+                .eq("student_id", data.student_id)
+                .eq("studio_id", studio_id)
+                .maybe_single()
+                .execute()
+            )
+            membership = membership_result.data
+        elif target_program_id:
+            membership_result = (
+                self.supabase.table("student_program_memberships")
+                .select("id, program_id, current_belt_rank_id, status, ended_at")
+                .eq("student_id", data.student_id)
+                .eq("studio_id", studio_id)
+                .eq("program_id", target_program_id)
+                .in_("status", ["active", "paused"])
+                .is_("ended_at", "null")
+                .maybe_single()
+                .execute()
+            )
+            membership = membership_result.data
+
+        if target_ladder.get("program_id"):
+            if not membership or membership.get("program_id") != target_ladder.get("program_id"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="This student does not belong to the selected program ladder.",
+                )
+
+        if membership and membership.get("ended_at"):
+            raise HTTPException(status_code=400, detail="Cannot promote an ended program membership.")
+
+        from_rank_id = (
+            membership.get("current_belt_rank_id")
+            if membership
+            else student_result.data.get("current_belt_rank_id")
+        )
         current_rank = None
         if from_rank_id:
             current_rank_result = (
@@ -837,11 +1012,6 @@ class BeltService:
                     status_code=400,
                     detail="Promotions must stay within the student's current belt ladder.",
                 )
-        elif target_ladder.get("program_id") and student_program_id and target_ladder["program_id"] != student_program_id:
-            raise HTTPException(
-                status_code=400,
-                detail="This student does not belong to the selected program ladder.",
-            )
 
         ladder_ranks_result = (
             self.supabase.table("belt_ranks")
@@ -876,6 +1046,8 @@ class BeltService:
         promo = {
             "studio_id": studio_id,
             "student_id": data.student_id,
+            "student_program_membership_id": membership.get("id") if membership else None,
+            "program_id": membership.get("program_id") if membership else target_ladder.get("program_id"),
             "from_rank_id": from_rank_id,
             "to_rank_id": data.to_rank_id,
             "promoted_by": actor_id,
@@ -885,10 +1057,20 @@ class BeltService:
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to record promotion")
 
-        # Update student's current rank
-        self.supabase.table("students").update(
-            {"current_belt_rank_id": data.to_rank_id}
-        ).eq("id", data.student_id).execute()
+        if membership:
+            (
+                self.supabase.table("student_program_memberships")
+                .update({"current_belt_rank_id": data.to_rank_id})
+                .eq("id", membership["id"])
+                .eq("studio_id", studio_id)
+                .execute()
+            )
+
+        # Compatibility fields for older UI paths during migration.
+        self.supabase.table("students").update({
+            "current_belt_rank_id": data.to_rank_id,
+            "program_id": (membership.get("program_id") if membership else student_program_id),
+        }).eq("id", data.student_id).eq("studio_id", studio_id).execute()
 
         # Audit log
         self.supabase.table("audit_logs").insert({
@@ -899,6 +1081,8 @@ class BeltService:
             "entity_id": result.data[0]["id"],
             "metadata": {
                 "student_id": data.student_id,
+                "student_program_membership_id": membership.get("id") if membership else None,
+                "program_id": membership.get("program_id") if membership else target_ladder.get("program_id"),
                 "from_rank_id": from_rank_id,
                 "to_rank_id": data.to_rank_id,
             },

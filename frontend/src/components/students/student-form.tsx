@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { StudentCreate } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ProgramPicker } from "@/components/programs/program-picker";
+import { useProgramStore } from "@/lib/store";
 import { X } from "lucide-react";
 
 interface StudentFormProps {
@@ -16,6 +18,7 @@ interface StudentFormProps {
 type FormTab = "info" | "contact" | "guardian";
 
 export function StudentForm({ onSubmit, onClose, isLoading, initialData }: StudentFormProps) {
+  const { programs } = useProgramStore();
   const isEdit = !!initialData;
   const [tab, setTab] = useState<FormTab>("info");
   const [error, setError] = useState("");
@@ -29,6 +32,13 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
   const [holdEnd, setHoldEnd] = useState(initialData?.hold_end_date || "");
   const [status, setStatus] = useState<string>(initialData?.status || "active");
   const [membershipStart, setMembershipStart] = useState(initialData?.membership_start_date || "");
+  const [programIds, setProgramIds] = useState<string[]>(
+    initialData?.program_ids?.length
+      ? initialData.program_ids
+      : initialData?.program_id
+        ? [initialData.program_id]
+        : []
+  );
   const [notes, setNotes] = useState(initialData?.notes || "");
   const [tags, setTags] = useState(initialData?.tags?.join(", ") || "");
 
@@ -80,8 +90,11 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
       date_of_birth: dob || undefined,
       hold_start_date: holdStart || undefined,
       hold_end_date: holdEnd || undefined,
-      status: status as StudentCreate["status"],
+	      status: status as StudentCreate["status"],
       membership_start_date: membershipStart || undefined,
+      program_id: programIds[0],
+      program_ids: programIds,
+      current_belt_rank_id: initialData?.current_belt_rank_id,
       notes: notes.trim() || undefined,
       tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
       email: email.trim() || undefined,
@@ -222,8 +235,8 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
                     Students on an active hold are excluded from inactivity alerts until the hold ends.
                   </p>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm text-text-secondary font-medium">Status</label>
+	                <div className="flex flex-col gap-1.5">
+	                  <label className="text-sm text-text-secondary font-medium">Status</label>
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
@@ -234,9 +247,17 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
                     <option value="inactive">Inactive</option>
                     <option value="paused">Paused</option>
                     <option value="canceled">Canceled</option>
-                  </select>
-                </div>
-                <Input
+	                  </select>
+	                </div>
+	                <ProgramPicker
+	                  programs={programs}
+	                  label="Programs"
+	                  multiple
+	                  values={programIds}
+	                  onChange={() => undefined}
+	                  onChangeMany={setProgramIds}
+	                />
+	                <Input
                   label="Tags"
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}

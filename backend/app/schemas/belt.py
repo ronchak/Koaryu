@@ -80,6 +80,8 @@ class BeltLadderSyncRequest(BaseModel):
 class PromoteStudent(BaseModel):
     student_id: str
     to_rank_id: str
+    student_program_membership_id: Optional[str] = None
+    program_id: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -87,6 +89,8 @@ class PromotionResponse(BaseModel):
     id: str
     studio_id: str
     student_id: str
+    student_program_membership_id: Optional[str] = None
+    program_id: Optional[str] = None
     from_rank_id: Optional[str] = None
     to_rank_id: str
     promoted_by: str
@@ -102,6 +106,8 @@ class PromotionResponse(BaseModel):
 
 class EligibilityEntry(BaseModel):
     student_id: str
+    student_program_membership_id: Optional[str] = None
+    program_id: Optional[str] = None
     student_name: str
     current_rank_id: Optional[str] = None
     current_rank_name: Optional[str] = None
