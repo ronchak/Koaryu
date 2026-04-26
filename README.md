@@ -27,6 +27,7 @@ Frontend environment variables:
 - `NEXT_PUBLIC_SUPABASE_URL`: your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: the public anon key used by the browser and SSR middleware
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://localhost:8001/api/v1`
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key used by frontend billing flows
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): when `true`, bypasses live auth/data bootstrapping and serves preview/demo data only
 
 Backend environment variables:
@@ -70,7 +71,8 @@ If you prefer to run each service manually, use the commands below.
 ```bash
 cd frontend
 cp .env.example .env.local
-# Fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_API_URL
+# Fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+# NEXT_PUBLIC_API_URL, and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 npm install
 npm run dev
 ```
@@ -110,6 +112,19 @@ Studio membership is the tenant boundary. Backend services and RLS policies are 
 
 ## Deployment And Demo Notes
 
+- The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for Production. Add them in Vercel Project Settings or with:
+
+```bash
+cd frontend
+vercel link --yes --project koaryu
+vercel env add NEXT_PUBLIC_SUPABASE_URL production
+vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
+vercel env add NEXT_PUBLIC_API_URL production
+vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
+```
+
+- Missing Supabase public variables will fail `next build` while prerendering auth pages such as `/login`, because `@supabase/ssr` requires the project URL and anon key when the client is created.
+- For preview deployments, add the same variables to the Preview environment. With recent Vercel CLI versions, branch-scoped preview variables may require an explicit branch argument.
 - Backend deployments must include `SUPABASE_SERVICE_ROLE_KEY`; the frontend must not receive that key.
 - Keep `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` aligned with the deployed origins so auth redirects, CORS, and middleware checks hit the correct backend.
 - Preview mode is for demos only. Live mode now starts empty for new studios and should be used for deployment verification.
