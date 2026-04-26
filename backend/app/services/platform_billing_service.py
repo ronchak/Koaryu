@@ -52,23 +52,28 @@ class PlatformBillingService:
         stripe_service = StripeService()
 
         if not customer_id:
-            customer = stripe_service.create_customer(
-                name=studio.get("name") or "Koaryu studio",
-                metadata={"studio_id": studio_id, "product": "koaryu_core"},
-            )
-            customer_id = customer["id"] if isinstance(customer, dict) else customer.id
-            row = self._update_subscription_row(
-                studio_id,
-                {"stripe_customer_id": customer_id, "comped": False, "status": "trialing"},
-            )
+            customer_id = self._create_platform_customer(stripe_service, studio_id, studio)
 
         frontend_url = self.settings.FRONTEND_URL.rstrip("/")
-        session = stripe_service.create_core_checkout_session(
-            customer_id=customer_id,
-            studio_id=studio_id,
-            success_url=success_url or f"{frontend_url}/billing?koaryu_checkout=success",
-            cancel_url=cancel_url or f"{frontend_url}/billing?koaryu_checkout=cancelled",
-        )
+        checkout_urls = {
+            "success_url": success_url or f"{frontend_url}/billing?koaryu_checkout=success",
+            "cancel_url": cancel_url or f"{frontend_url}/billing?koaryu_checkout=cancelled",
+        }
+        try:
+            session = stripe_service.create_core_checkout_session(
+                customer_id=customer_id,
+                studio_id=studio_id,
+                **checkout_urls,
+            )
+        except Exception as exc:
+            if not self._is_missing_stripe_customer_error(exc):
+                raise
+            customer_id = self._create_platform_customer(stripe_service, studio_id, studio)
+            session = stripe_service.create_core_checkout_session(
+                customer_id=customer_id,
+                studio_id=studio_id,
+                **checkout_urls,
+            )
         self._audit(studio_id, actor_id, "platform_billing.checkout_created", studio_id, {"customer_id": customer_id})
         return BillingLinkResponse(url=session["url"] if isinstance(session, dict) else session.url)
 
@@ -159,6 +164,25 @@ class PlatformBillingService:
         if not insert_result.data:
             raise HTTPException(status_code=500, detail="Failed to initialize Koaryu Core billing.")
         return insert_result.data[0]
+
+    def _create_platform_customer(self, stripe_service: StripeService, studio_id: str, studio: dict[str, Any]) -> str:
+        customer = stripe_service.create_customer(
+            name=studio.get("name") or "Koaryu studio",
+            metadata={"studio_id": studio_id, "product": "koaryu_core"},
+        )
+        customer_id = customer["id"] if isinstance(customer, dict) else customer.id
+        self._update_subscription_row(
+            studio_id,
+            {"stripe_customer_id": customer_id, "comped": False, "status": "trialing"},
+        )
+        return customer_id
+
+    @staticmethod
+    def _is_missing_stripe_customer_error(exc: Exception) -> bool:
+        if not exc.__class__.__module__.startswith("stripe"):
+            return False
+        message = str(exc).lower()
+        return "no such customer" in message
 
     def _update_subscription_row(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
         result = (
