@@ -112,6 +112,7 @@ Studio membership is the tenant boundary. Backend services and RLS policies are 
 
 ## Deployment And Demo Notes
 
+- Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
 - The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for Production. Add them in Vercel Project Settings or with:
 
 ```bash
