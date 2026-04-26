@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:4000"
     ENVIRONMENT: str = "development"
     DEMO_RESET_ENABLED: bool = False
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_RESTRICTED_KEY: str = ""
+    STRIPE_PLATFORM_WEBHOOK_SECRET: str = ""
+    STRIPE_CONNECT_WEBHOOK_SECRET: str = ""
+    STRIPE_KOARYU_CORE_PRICE_ID: str = ""
+    STRIPE_CONNECT_CLIENT_ID: str = ""
+    BILLING_PLATFORM_FEE_BPS: int = 50
 
     # API
     API_V1_PREFIX: str = "/api/v1"

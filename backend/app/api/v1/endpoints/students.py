@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header
 from typing import Optional
 from supabase import Client
-from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
+from app.core.deps import get_current_user_id, get_current_studio_id, get_requested_studio_id, get_supabase
+from app.schemas.billing import StudentBillingEnrollmentCreate, StudentBillingEnrollmentResponse
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     CsvImportRequest, CsvImportResult, BulkTagUpdate, BulkStatusUpdate,
     StudentProgramMembershipCreate, StudentProgramMembershipResponse,
     StudentProgramMembershipUpdate,
 )
+from app.services.billing_service import BillingService
+from app.services.studio_scope import resolve_billing_manager_staff_role_for_user
 from app.services.student_service import StudentService
 import json
 
@@ -137,6 +140,30 @@ async def remove_student_program(
 ):
     service = StudentService(supabase)
     await service.remove_program_membership(student_id, membership_id, studio_id, user_id)
+
+
+@router.get("/{student_id}/billing", response_model=list[StudentBillingEnrollmentResponse])
+async def list_student_billing(
+    student_id: str,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = resolve_billing_manager_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+    return await BillingService(supabase).list_student_billing(student_id, studio_id)
+
+
+@router.post("/{student_id}/billing/enrollments", response_model=StudentBillingEnrollmentResponse, status_code=201)
+async def add_student_billing_enrollment(
+    student_id: str,
+    data: StudentBillingEnrollmentCreate,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = resolve_billing_manager_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+    payload = data.model_copy(update={"student_id": student_id})
+    return await BillingService(supabase).add_student_billing_enrollment(payload, studio_id, user_id)
 
 
 @router.post("/bulk/tags", status_code=200)

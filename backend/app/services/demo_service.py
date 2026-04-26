@@ -75,6 +75,23 @@ class DemoService:
         student_ids = self._fetch_ids("students", studio_id)
         guardian_ids = self._fetch_ids("guardians", studio_id)
 
+        for table in [
+            "billing_disputes",
+            "billing_refunds",
+            "billing_payments",
+            "billing_invoice_items",
+            "billing_invoices",
+            "student_billing_enrollments",
+            "billing_plan_programs",
+            "billing_plans",
+            "billing_payers",
+            "email_usage_events",
+            "export_jobs",
+            "studio_payment_accounts",
+            "studio_subscriptions",
+        ]:
+            self._delete_optional_by_studio(table, studio_id)
+
         self._delete_by_studio("attendance", studio_id)
         self._delete_by_studio("promotions", studio_id)
         self._delete_optional_by_studio("student_program_memberships", studio_id)
@@ -1152,6 +1169,270 @@ class DemoService:
         self._insert("leads", lead_rows)
         self._insert("lead_activities", activity_rows)
 
+    def _seed_billing(
+        self,
+        studio_id: str,
+        program_ids: dict[str, str],
+        student_ids: dict[str, str],
+    ) -> None:
+        now = self._timestamp()
+        period_start = self._today().replace(day=1).isoformat()
+        if self._today().month == 12:
+            period_end = date(self._today().year + 1, 1, 1).isoformat()
+        else:
+            period_end = date(self._today().year, self._today().month + 1, 1).isoformat()
+
+        self._insert_optional(
+            "studio_subscriptions",
+            [
+                {
+                    "studio_id": studio_id,
+                    "stripe_customer_id": "cus_demo_river_city",
+                    "stripe_subscription_id": "sub_demo_koaryu_core",
+                    "status": "active",
+                    "plan_name": "Koaryu Core",
+                    "monthly_price_cents": 2700,
+                    "currency": "usd",
+                    "current_period_start": period_start,
+                    "current_period_end": period_end,
+                    "cancel_at_period_end": False,
+                    "last_payment_status": "paid",
+                    "comped": False,
+                    "metadata": {"demo": True},
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+        )
+        self._insert_optional(
+            "studio_payment_accounts",
+            [
+                {
+                    "studio_id": studio_id,
+                    "stripe_connected_account_id": "acct_demo_river_city",
+                    "status": "charges_enabled",
+                    "charges_enabled": True,
+                    "payouts_enabled": True,
+                    "details_submitted": True,
+                    "requirements_due": [],
+                    "platform_fee_bps": 50,
+                    "metadata": {"demo": True},
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ],
+        )
+        self._insert_optional(
+            "email_usage_events",
+            [
+                {
+                    "id": self._id(studio_id, f"email-usage:{category}"),
+                    "studio_id": studio_id,
+                    "category": category,
+                    "quantity": quantity,
+                    "sent_at": self._timestamp(offset, 10),
+                    "metadata": {"demo": True},
+                }
+                for category, quantity, offset in [
+                    ("trial_reminders", 88, -18),
+                    ("attendance_followups", 104, -12),
+                    ("promotion_notices", 42, -7),
+                    ("billing_receipts", 96, -3),
+                    ("staff_invites", 18, -1),
+                ]
+            ],
+        )
+
+        plan_specs = [
+            ("kids-unlimited", "Kids Unlimited", "Unlimited youth classes with belt testing billed separately.", 12900, "monthly", [program_ids["bjj_core"]]),
+            ("tkd-fundamentals", "Tae Kwon Do Fundamentals", "Monthly Tae Kwon Do tuition for youth and adult fundamentals.", 11900, "monthly", [program_ids["tae_kwon_do"]]),
+            ("family-unlimited", "Family Unlimited", "Family tuition for multiple students across programs.", 17900, "monthly", [program_ids["bjj_core"], program_ids["tae_kwon_do"]]),
+            ("belt-test", "Belt Testing Fee", "One-time exam charge collected when a promotion is approved.", 3500, "paid_in_full", [program_ids["bjj_core"], program_ids["tae_kwon_do"]]),
+        ]
+        plan_rows = []
+        plan_program_rows = []
+        plan_ids: dict[str, str] = {}
+        for index, (key, name, description, amount, interval, attached_programs) in enumerate(plan_specs):
+            plan_id = self._id(studio_id, f"billing-plan:{key}")
+            plan_ids[key] = plan_id
+            plan_rows.append(
+                {
+                    "id": plan_id,
+                    "studio_id": studio_id,
+                    "name": name,
+                    "description": description,
+                    "amount_cents": amount,
+                    "currency": "usd",
+                    "billing_interval": interval,
+                    "status": "active",
+                    "signup_fee_cents": 4900 if key == "kids-unlimited" else 0,
+                    "trial_days": 14 if key == "kids-unlimited" else 0,
+                    "proration_behavior": "next_cycle",
+                    "stripe_product_id": f"prod_demo_{key}",
+                    "stripe_price_id": f"price_demo_{key}",
+                    "metadata": {"demo": True},
+                    "created_at": self._timestamp(-36 + index, 9),
+                    "updated_at": now,
+                }
+            )
+            for program_id in attached_programs:
+                plan_program_rows.append(
+                    {
+                        "id": self._id(studio_id, f"billing-plan-program:{key}:{program_id}"),
+                        "studio_id": studio_id,
+                        "billing_plan_id": plan_id,
+                        "program_id": program_id,
+                        "created_at": now,
+                    }
+                )
+        self._insert_optional("billing_plans", plan_rows)
+        self._insert_optional("billing_plan_programs", plan_program_rows)
+
+        payer_specs = [
+            ("tanaka", "Kenji Tanaka", "kenji.tanaka@example.test", "(555) 234-5678", "guardian:aiko", "current", "enabled", 0),
+            ("park", "Jin Park", "jin.park@example.test", "(555) 241-0117", "guardian:chloe", "past_due", "enabled", 11900),
+            ("haddad", "Omar Haddad", "omar.haddad@example.test", "(555) 241-0116", None, "externally_paid", "not_configured", 0),
+            ("webb", "Marcus Webb", "marcus.webb@example.test", "(555) 876-5432", None, "current", "enabled", 0),
+            ("thompson", "Andre Thompson", "andre.thompson@example.test", "(555) 241-0113", "guardian:kai", "failed", "enabled", 12900),
+        ]
+        payer_ids: dict[str, str] = {}
+        payer_rows = []
+        for key, name, email, phone, guardian_key, billing_status, autopay_status, balance in payer_specs:
+            payer_id = self._id(studio_id, f"billing-payer:{key}")
+            payer_ids[key] = payer_id
+            payer_rows.append(
+                {
+                    "id": payer_id,
+                    "studio_id": studio_id,
+                    "guardian_id": self._id(studio_id, guardian_key) if guardian_key else None,
+                    "display_name": name,
+                    "email": email,
+                    "phone": phone,
+                    "stripe_customer_id": None if billing_status == "externally_paid" else f"cus_demo_{key}",
+                    "autopay_status": autopay_status,
+                    "billing_status": billing_status,
+                    "balance_cents": balance,
+                    "metadata": {"demo": True},
+                    "created_at": self._timestamp(-32, 9),
+                    "updated_at": now,
+                }
+            )
+        self._insert_optional("billing_payers", payer_rows)
+
+        enrollment_specs = [
+            ("aiko", "tanaka", "kids-unlimited", "current", self._date(7)),
+            ("chloe", "park", "tkd-fundamentals", "past_due", self._date(-3)),
+            ("omar", "haddad", "tkd-fundamentals", "externally_paid", self._date(5)),
+            ("marcus", "webb", "family-unlimited", "current", self._date(10)),
+            ("kai", "thompson", "kids-unlimited", "failed", self._date(-1)),
+        ]
+        enrollment_ids: dict[str, str] = {}
+        enrollment_rows = []
+        for student_key, payer_key, plan_key, billing_status, next_bill_on in enrollment_specs:
+            enrollment_id = self._id(studio_id, f"billing-enrollment:{student_key}:{plan_key}")
+            enrollment_ids[student_key] = enrollment_id
+            enrollment_rows.append(
+                {
+                    "id": enrollment_id,
+                    "studio_id": studio_id,
+                    "student_id": student_ids[student_key],
+                    "payer_id": payer_ids[payer_key],
+                    "billing_plan_id": plan_ids[plan_key],
+                    "status": "active",
+                    "billing_status": billing_status,
+                    "start_date": self._date(-90),
+                    "next_bill_on": next_bill_on,
+                    "stripe_subscription_id": None if billing_status == "externally_paid" else f"sub_demo_{student_key}",
+                    "metadata": {"demo": True},
+                    "created_at": self._timestamp(-30, 9),
+                    "updated_at": now,
+                }
+            )
+        self._insert_optional("student_billing_enrollments", enrollment_rows)
+
+        invoice_specs = [
+            ("paid-aiko", "tanaka", "aiko", "tuition", "paid", 12900, 12900, self._date(-24), False, "in_demo_aiko"),
+            ("open-chloe", "park", "chloe", "tuition", "open", 11900, 0, self._date(-3), False, "in_demo_chloe"),
+            ("external-omar", "haddad", "omar", "tuition", "paid", 11900, 11900, self._date(-2), True, None),
+            ("paid-marcus", "webb", "marcus", "tuition", "paid", 17900, 17900, self._date(-12), False, "in_demo_marcus"),
+            ("failed-kai", "thompson", "kai", "tuition", "open", 12900, 0, self._date(-1), False, "in_demo_kai"),
+        ]
+        invoice_ids: dict[str, str] = {}
+        invoice_rows = []
+        invoice_item_rows = []
+        for key, payer_key, student_key, invoice_type, invoice_status, due, paid, due_date, external, stripe_invoice in invoice_specs:
+            invoice_id = self._id(studio_id, f"billing-invoice:{key}")
+            invoice_ids[key] = invoice_id
+            invoice_rows.append(
+                {
+                    "id": invoice_id,
+                    "studio_id": studio_id,
+                    "payer_id": payer_ids[payer_key],
+                    "student_id": student_ids[student_key],
+                    "enrollment_id": enrollment_ids[student_key],
+                    "stripe_invoice_id": stripe_invoice,
+                    "stripe_account_id": None if external else "acct_demo_river_city",
+                    "invoice_type": invoice_type,
+                    "status": invoice_status,
+                    "amount_due_cents": due,
+                    "amount_paid_cents": paid,
+                    "currency": "usd",
+                    "hosted_invoice_url": f"https://dashboard.stripe.com/test/invoices/{stripe_invoice}" if stripe_invoice else None,
+                    "due_date": due_date,
+                    "paid_at": self._timestamp(-1, 14) if invoice_status == "paid" else None,
+                    "external": external,
+                    "metadata": {"demo": True},
+                    "created_at": self._timestamp(-25, 8),
+                    "updated_at": now,
+                }
+            )
+            invoice_item_rows.append(
+                {
+                    "id": self._id(studio_id, f"billing-invoice-item:{key}"),
+                    "studio_id": studio_id,
+                    "invoice_id": invoice_id,
+                    "student_id": student_ids[student_key],
+                    "description": "Monthly tuition",
+                    "quantity": 1,
+                    "unit_amount_cents": due,
+                    "amount_cents": due,
+                    "metadata": {"demo": True},
+                    "created_at": self._timestamp(-25, 8),
+                }
+            )
+        self._insert_optional("billing_invoices", invoice_rows)
+        self._insert_optional("billing_invoice_items", invoice_item_rows)
+
+        payment_specs = [
+            ("card-aiko", "tanaka", "paid-aiko", "succeeded", 12900, "card", None, None, -24),
+            ("external-omar", "haddad", "external-omar", "externally_recorded", 11900, "external", "Zelle", "Recorded by front desk.", -2),
+            ("card-marcus", "webb", "paid-marcus", "succeeded", 17900, "card", None, None, -12),
+        ]
+        payment_rows = []
+        for key, payer_key, invoice_key, payment_status, amount, method, external_method, note, offset in payment_specs:
+            payment_rows.append(
+                {
+                    "id": self._id(studio_id, f"billing-payment:{key}"),
+                    "studio_id": studio_id,
+                    "payer_id": payer_ids[payer_key],
+                    "invoice_id": invoice_ids[invoice_key],
+                    "stripe_payment_intent_id": None if external_method else f"pi_demo_{key}",
+                    "stripe_charge_id": None if external_method else f"ch_demo_{key}",
+                    "stripe_account_id": None if external_method else "acct_demo_river_city",
+                    "status": payment_status,
+                    "amount_cents": amount,
+                    "currency": "usd",
+                    "payment_method_type": method,
+                    "external_method": external_method,
+                    "note": note,
+                    "processed_at": self._timestamp(offset, 14),
+                    "metadata": {"demo": True},
+                    "created_at": self._timestamp(offset, 14),
+                    "updated_at": now,
+                }
+            )
+        self._insert_optional("billing_payments", payment_rows)
+
     def _write_audit_log(self, studio_id: str, actor_id: str) -> None:
         self._insert(
             "audit_logs",
@@ -1184,6 +1465,7 @@ class DemoService:
         self._seed_promotions(studio_id, actor_id, program_ids, student_ids, rank_ids)
         self._seed_schedule(studio_id, program_ids, student_ids)
         self._seed_leads(studio_id, actor_id)
+        self._seed_billing(studio_id, program_ids, student_ids)
         self._write_audit_log(studio_id, actor_id)
 
         students_page = await StudentService(self.supabase).list_students(

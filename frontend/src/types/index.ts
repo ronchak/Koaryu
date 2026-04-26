@@ -52,6 +52,222 @@ export interface StaffRoleUpdate {
   role: StaffRoleName;
 }
 
+// ---- Billing ----
+
+export type SubscriptionStatus =
+  | "comped"
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "unpaid"
+  | "canceled"
+  | "incomplete"
+  | "incomplete_expired"
+  | "paused";
+
+export type PaymentAccountStatus =
+  | "not_connected"
+  | "onboarding_incomplete"
+  | "charges_enabled"
+  | "action_required"
+  | "deauthorized";
+
+export type BillingPlanStatus = "pending" | "active" | "archived";
+export type BillingInterval =
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "annual"
+  | "paid_in_full"
+  | "fixed_term"
+  | "trial";
+
+export type PayerBillingStatus =
+  | "current"
+  | "upcoming"
+  | "past_due"
+  | "failed"
+  | "unpaid"
+  | "externally_paid"
+  | "no_payment_method"
+  | "no_billing_plan";
+
+export type AutopayStatus = "not_configured" | "pending" | "enabled" | "disabled";
+export type InvoiceStatus = "draft" | "open" | "paid" | "void" | "uncollectible" | "refunded" | "partially_refunded";
+export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "refunded" | "disputed" | "externally_recorded";
+
+export interface BillingLinkResponse {
+  url: string;
+}
+
+export interface BillingActionRequest {
+  success_url?: string;
+  cancel_url?: string;
+  return_url?: string;
+  refresh_url?: string;
+}
+
+export interface EmailUsage {
+  included: number;
+  sent: number;
+  overage_count: number;
+  overage_rate_cents: number;
+  estimated_overage_cents: number;
+  period_start: string;
+  period_end: string;
+}
+
+export interface PlatformBillingStatus {
+  studio_id: string;
+  plan_name: string;
+  monthly_price_cents: number;
+  currency: string;
+  status: SubscriptionStatus;
+  comped: boolean;
+  trial_start?: string | null;
+  trial_end?: string | null;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  cancel_at_period_end: boolean;
+  last_payment_status?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+  email_usage: EmailUsage;
+}
+
+export interface StudioPaymentAccount {
+  studio_id: string;
+  stripe_connected_account_id?: string | null;
+  status: PaymentAccountStatus;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  requirements_due: string[];
+  platform_fee_bps: number;
+  liability_note: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface BillingPlanProgram {
+  program_id: string;
+  program_name?: string | null;
+  program_color_hex?: string | null;
+}
+
+export interface BillingPlan {
+  id: string;
+  studio_id: string;
+  name: string;
+  description?: string | null;
+  amount_cents: number;
+  currency: string;
+  billing_interval: BillingInterval;
+  status: BillingPlanStatus;
+  signup_fee_cents: number;
+  trial_days: number;
+  proration_behavior: string;
+  freeze_behavior?: string | null;
+  cancellation_policy?: string | null;
+  tax_behavior?: string | null;
+  stripe_product_id?: string | null;
+  stripe_price_id?: string | null;
+  programs: BillingPlanProgram[];
+  can_accept_payments: boolean;
+  pending_reason?: string | null;
+  archived_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingPlanCreate {
+  name: string;
+  description?: string;
+  amount_cents: number;
+  currency?: string;
+  billing_interval: BillingInterval;
+  program_ids?: string[];
+  signup_fee_cents?: number;
+  trial_days?: number;
+  proration_behavior?: string;
+}
+
+export interface BillingPayer {
+  id: string;
+  studio_id: string;
+  guardian_id?: string | null;
+  display_name: string;
+  email?: string | null;
+  phone?: string | null;
+  address_line1?: string | null;
+  address_city?: string | null;
+  address_state?: string | null;
+  address_zip?: string | null;
+  stripe_customer_id?: string | null;
+  autopay_status: AutopayStatus;
+  billing_status: PayerBillingStatus;
+  balance_cents: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingPayerCreate {
+  display_name: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface BillingInvoice {
+  id: string;
+  studio_id: string;
+  payer_id?: string | null;
+  student_id?: string | null;
+  enrollment_id?: string | null;
+  stripe_invoice_id?: string | null;
+  stripe_account_id?: string | null;
+  invoice_type: string;
+  status: InvoiceStatus;
+  amount_due_cents: number;
+  amount_paid_cents: number;
+  currency: string;
+  hosted_invoice_url?: string | null;
+  due_date?: string | null;
+  paid_at?: string | null;
+  external: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingPayment {
+  id: string;
+  studio_id: string;
+  payer_id?: string | null;
+  invoice_id?: string | null;
+  status: PaymentStatus;
+  amount_cents: number;
+  currency: string;
+  payment_method_type?: string | null;
+  external_method?: string | null;
+  note?: string | null;
+  processed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExportJob {
+  id: string;
+  studio_id: string;
+  export_type: string;
+  status: string;
+  requested_by?: string | null;
+  download_url?: string | null;
+  error?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+}
+
 // ---- Programs ----
 
 export interface ProgramUsage {
