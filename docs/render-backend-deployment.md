@@ -8,7 +8,7 @@ Use the root `render.yaml` Blueprint when creating the service.
 
 Expected service settings:
 
-- Service name: `koaryu-api`
+- Service name: `koaryu`
 - Type: Web Service
 - Runtime: Python
 - Region: Ohio
@@ -52,9 +52,9 @@ STRIPE_CONNECT_CLIENT_ID=
 After the first deploy finishes:
 
 ```bash
-curl https://koaryu-api.onrender.com/health
-curl https://koaryu-api.onrender.com/api/v1/health
-curl https://koaryu-api.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
+curl https://koaryu.onrender.com/health
+curl https://koaryu.onrender.com/api/v1/health
+curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
@@ -64,7 +64,7 @@ If the build succeeds but the live backend still looks old or unreachable, inspe
 After Render is live, update the Vercel frontend production env var:
 
 ```env
-NEXT_PUBLIC_API_URL=https://koaryu-api.onrender.com/api/v1
+NEXT_PUBLIC_API_URL=https://koaryu.onrender.com/api/v1
 ```
 
 Then redeploy the Vercel frontend so Next.js bakes the new URL into the production build.
@@ -74,8 +74,8 @@ Then redeploy the Vercel frontend so Next.js bakes the new URL into the producti
 After Render is live, configure Stripe webhook endpoints:
 
 ```txt
-https://koaryu-api.onrender.com/api/v1/webhooks/stripe/platform
-https://koaryu-api.onrender.com/api/v1/webhooks/stripe/connect
+https://koaryu.onrender.com/api/v1/webhooks/stripe/platform
+https://koaryu.onrender.com/api/v1/webhooks/stripe/connect
 ```
 
 Copy the resulting `whsec_...` values back into Render:

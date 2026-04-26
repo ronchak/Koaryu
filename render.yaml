@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: koaryu-api
+    name: koaryu
     runtime: python
     plan: free
     region: ohio

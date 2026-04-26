@@ -15,6 +15,7 @@ Required variables:
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anon key for browser and SSR auth
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://127.0.0.1:8001/api/v1`
+- `NEXT_PUBLIC_SITE_URL`: frontend origin used for auth callback links, typically `http://localhost:4000` locally and `https://koaryu.app` in production
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key for frontend billing flows
 
 These variables are read during `next build`, so they must also be configured on Vercel before production deploys.
@@ -44,6 +45,7 @@ The frontend Vercel project should use this `frontend/` directory as the app roo
 vercel env add NEXT_PUBLIC_SUPABASE_URL production
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 vercel env add NEXT_PUBLIC_API_URL production
+vercel env add NEXT_PUBLIC_SITE_URL production
 vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 ```
 
