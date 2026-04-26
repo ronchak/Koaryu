@@ -78,6 +78,25 @@ https://koaryu.onrender.com/api/v1/webhooks/stripe/platform
 https://koaryu.onrender.com/api/v1/webhooks/stripe/connect
 ```
 
+Platform endpoint events:
+
+```txt
+checkout.session.completed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
+invoice.paid
+invoice.payment_failed
+```
+
+Connect endpoint events:
+
+```txt
+account.updated
+```
+
+The live Connect endpoint currently listens only to connected account `account.updated` events.
+
 Copy the resulting `whsec_...` values back into Render:
 
 ```env

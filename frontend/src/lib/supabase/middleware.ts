@@ -8,6 +8,8 @@ import {
   STUDIO_STATE_COOKIE_MAX_AGE_SECONDS,
 } from "@/lib/studio-state-cookie";
 
+const PUBLIC_STATUS_ROUTES = new Set(["/404", "/500", "/502", "/503", "/504"]);
+
 function setStudioStateCookie(
   response: NextResponse,
   request: NextRequest,
@@ -63,7 +65,7 @@ function copyResponseCookies(source: NextResponse, target: NextResponse) {
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  if (pathname.startsWith("/api/")) {
+  if (pathname.startsWith("/api/") || PUBLIC_STATUS_ROUTES.has(pathname)) {
     return NextResponse.next();
   }
 
