@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useConfigStore, useProgramStore, useStudentStore, useStudioStore } from "@/lib/store";
@@ -736,8 +737,24 @@ export default function BillingPage() {
                 ))}
               </div>
 
-              {message ? <p className="rounded-[6px] border border-success/20 bg-success/10 px-3 py-2 text-xs text-success">{message}</p> : null}
-              {error ? <p className="rounded-[6px] border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</p> : null}
+              {message ? (
+                <DismissibleNotice
+                  tone="success"
+                  onDismiss={() => setMessage("")}
+                  className="text-xs"
+                >
+                  {message}
+                </DismissibleNotice>
+              ) : null}
+              {error ? (
+                <DismissibleNotice
+                  tone="danger"
+                  onDismiss={() => setError("")}
+                  className="text-xs"
+                >
+                  {error}
+                </DismissibleNotice>
+              ) : null}
 
               {!liveDataReady && !isPreviewMode ? (
                 <div className="flex items-center gap-2 text-sm text-muted">

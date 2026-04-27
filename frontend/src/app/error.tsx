@@ -28,7 +28,7 @@ export default function Error({
           <StatusAction onClick={reset} icon={RefreshCcw}>
             Try again
           </StatusAction>
-          <StatusAction href="/" icon={Home} variant="secondary">
+          <StatusAction href="/dashboard" icon={Home} variant="secondary">
             Dashboard
           </StatusAction>
         </>

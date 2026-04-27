@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Header } from "@/components/header";
 import { ProgramPicker } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { api } from "@/lib/api";
 import { useBeltStore, useConfigStore, useProgramStore, useStudentStore } from "@/lib/store";
 import type { BeltRank, EligibilityEntry, Promotion } from "@/types";
@@ -404,6 +405,7 @@ export default function BeltTrackerPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [ladderError, setLadderError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [dismissedLoadNotices, setDismissedLoadNotices] = useState<Set<string>>(new Set());
   const [isSwitchingLadder, setIsSwitchingLadder] = useState(false);
   const [collapsedEligibilityGroups, setCollapsedEligibilityGroups] = useState<Set<string>>(new Set());
 
@@ -418,6 +420,13 @@ export default function BeltTrackerPage() {
   const [promotionNotes, setPromotionNotes] = useState("");
   const [promotionError, setPromotionError] = useState<string | null>(null);
   const [isPromoting, setIsPromoting] = useState(false);
+
+  const isLoadNoticeDismissed = (key: string, message: string | null) =>
+    Boolean(message && dismissedLoadNotices.has(`${key}:${message}`));
+  const dismissLoadNotice = (key: string, message: string | null) => {
+    if (!message) return;
+    setDismissedLoadNotices((current) => new Set(current).add(`${key}:${message}`));
+  };
 
   // ── Derived state ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -892,9 +901,9 @@ export default function BeltTrackerPage() {
 
         {actionMessage ? (
           <div className="px-8 pt-4">
-            <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+            <DismissibleNotice tone="success" onDismiss={() => setActionMessage(null)}>
               {actionMessage}
-            </div>
+            </DismissibleNotice>
           </div>
         ) : null}
 
@@ -902,18 +911,30 @@ export default function BeltTrackerPage() {
         {tab === "eligibility" && (
           <div className="flex-1 overflow-x-auto">
             {ladderError && (
-              <div className="mx-8 mt-6 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+              <div className="mx-8 mt-6">
+                <DismissibleNotice tone="danger" onDismiss={() => setLadderError(null)}>
                 {ladderError}
+                </DismissibleNotice>
               </div>
             )}
-            {programsLoadError && (
-              <div className="mx-8 mt-6 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+            {programsLoadError && !isLoadNoticeDismissed("programs", programsLoadError) && (
+              <div className="mx-8 mt-6">
+                <DismissibleNotice
+                  tone="danger"
+                  onDismiss={() => dismissLoadNotice("programs", programsLoadError)}
+                >
                 {programsLoadError}
+                </DismissibleNotice>
               </div>
             )}
-            {eligibilityLoadError && !isEligibilityLoading && (
-              <div className="mx-8 mt-6 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+            {eligibilityLoadError && !isEligibilityLoading && !isLoadNoticeDismissed("eligibility", eligibilityLoadError) && (
+              <div className="mx-8 mt-6">
+                <DismissibleNotice
+                  tone="danger"
+                  onDismiss={() => dismissLoadNotice("eligibility", eligibilityLoadError)}
+                >
                 {eligibilityLoadError}
+                </DismissibleNotice>
               </div>
             )}
 
@@ -1166,20 +1187,32 @@ export default function BeltTrackerPage() {
               </div>
 
               {ladderError && (
-                <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                <DismissibleNotice
+                  tone="danger"
+                  onDismiss={() => setLadderError(null)}
+                  className="mb-4"
+                >
                   {ladderError}
-                </div>
+                </DismissibleNotice>
               )}
-              {programsLoadError && (
-                <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+              {programsLoadError && !isLoadNoticeDismissed("programs", programsLoadError) && (
+                <DismissibleNotice
+                  tone="danger"
+                  onDismiss={() => dismissLoadNotice("programs", programsLoadError)}
+                  className="mb-4"
+                >
                   {programsLoadError}
-                </div>
+                </DismissibleNotice>
               )}
 
               {saveError && (
-                <div className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                <DismissibleNotice
+                  tone="danger"
+                  onDismiss={() => setSaveError(null)}
+                  className="mb-4"
+                >
                   {saveError}
-                </div>
+                </DismissibleNotice>
               )}
 
               <p className="text-xs text-muted mb-4 flex items-center gap-1.5">
@@ -1435,9 +1468,13 @@ export default function BeltTrackerPage() {
                 className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none" />
             </div>
             {promotionError && (
-              <p className="mb-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+              <DismissibleNotice
+                tone="danger"
+                onDismiss={() => setPromotionError(null)}
+                className="mb-4"
+              >
                 {promotionError}
-              </p>
+              </DismissibleNotice>
             )}
             <div className="flex justify-end gap-2">
               <Button

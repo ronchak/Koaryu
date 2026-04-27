@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import type { AttendanceRecord, AttendanceStatus, ClassSession, Program, Student } from "@/types";
 
 export type ScheduleSessionDeleteScope = "session" | "series";
@@ -26,6 +27,7 @@ export interface ScheduleSessionDetailModalProps {
   programs?: Program[];
   attendance: AttendanceRecord[];
   attendanceError?: string | null;
+  onDismissAttendanceError?: () => void;
   pendingAttendanceStudentId?: string | null;
   deleteError?: string | null;
   deleteInFlight?: ScheduleSessionDeleteScope | null;
@@ -93,6 +95,7 @@ export function ScheduleSessionDetailModal({
   programs = [],
   attendance,
   attendanceError = null,
+  onDismissAttendanceError,
   pendingAttendanceStudentId = null,
   deleteError = null,
   deleteInFlight = null,
@@ -405,9 +408,13 @@ export function ScheduleSessionDetailModal({
           ) : null}
 
           {attendanceError ? (
-            <div className="mt-4 rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+            <DismissibleNotice
+              tone="danger"
+              onDismiss={() => onDismissAttendanceError?.()}
+              className="mt-4"
+            >
               {attendanceError}
-            </div>
+            </DismissibleNotice>
           ) : null}
 
           <div className="mt-5">

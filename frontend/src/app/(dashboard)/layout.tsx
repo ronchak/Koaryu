@@ -21,13 +21,13 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="min-h-screen">
       <Sidebar
         userEmail={userEmail}
         userName={userName || studioName || "Koaryu"}
         onSignOut={handleSignOut}
       />
-      <main className="flex-1 ml-[240px] flex flex-col min-h-screen">
+      <main className="flex min-h-screen flex-col lg:ml-[240px]">
         {children}
       </main>
     </div>

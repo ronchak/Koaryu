@@ -33,6 +33,8 @@ const LEAD_FUNNEL_STAGES = [
   "enrolled",
 ] as const satisfies LeadStage[];
 
+/* ─── Helpers ─────────────────────────────────── */
+
 function formatDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
     month: "short",
@@ -54,6 +56,8 @@ function subtractDays(dateString: string, days: number) {
   return date.toISOString().split("T")[0];
 }
 
+/* ─── Reusable Panel Components ───────────────── */
+
 function MetricCard({
   icon: Icon,
   label,
@@ -68,23 +72,79 @@ function MetricCard({
   accent: string;
 }) {
   return (
-    <div className="rounded-[6px] border border-border bg-surface p-5">
+    <div className="bg-surface border border-border p-5">
       <div className="flex items-center gap-3 mb-3">
         <div
-          className="w-9 h-9 rounded-[8px] flex items-center justify-center"
-          style={{ backgroundColor: `${accent}15` }}
+          className="w-8 h-8 flex items-center justify-center"
+          style={{ backgroundColor: `${accent}12` }}
         >
           <Icon className="w-4 h-4" style={{ color: accent }} />
         </div>
-        <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+        <span className="text-[11px] font-medium uppercase tracking-widest text-text-secondary">
           {label}
         </span>
       </div>
-      <p className="text-2xl font-bold text-text-primary font-mono">{value}</p>
-      <p className="text-xs text-muted mt-1">{sub}</p>
+      <p className="text-3xl font-bold text-text-primary font-mono leading-none">{value}</p>
+      <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>
     </div>
   );
 }
+
+function Panel({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`bg-surface border border-border p-5 ${className}`}>
+      {children}
+    </section>
+  );
+}
+
+function PanelHeader({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 mb-5">
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
+        {subtitle && (
+          <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="border border-border bg-surface-raised/40 px-4 py-5 text-sm text-text-secondary">
+      {message}
+    </div>
+  );
+}
+
+function StatBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="border border-border bg-surface-raised px-2 py-1 text-xs text-text-secondary">
+      {children}
+    </span>
+  );
+}
+
+/* ─── Page ────────────────────────────────────── */
 
 export default function ReportsPage() {
   const { leads } = useLeadStore();
@@ -338,9 +398,11 @@ export default function ReportsPage() {
         description="Live lead funnel, source, and attendance trends for the current studio."
       />
 
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-6 sm:p-8">
         <div className="max-w-6xl space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+
+          {/* ── Metric Cards ── */}
+          <div className="grid gap-px bg-border md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               icon={BarChart3}
               label="Leads Captured"
@@ -379,201 +441,181 @@ export default function ReportsPage() {
             />
           </div>
 
+          {/* ── Lead Funnel + Lead Sources ── */}
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-            <section className="rounded-[6px] border border-border bg-surface p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-sm font-medium text-text-primary">Lead Funnel</h2>
-                  <p className="text-xs text-text-secondary mt-1">
-                    Current leads grouped by pipeline stage.
-                  </p>
-                </div>
-                <span className="rounded-[4px] border border-border bg-surface-raised px-2 py-1 text-xs text-text-secondary">
-                  {leadMetrics.leadStageCounts.closed_lost} lost
-                </span>
-              </div>
+            <Panel>
+              <PanelHeader
+                title="Lead Funnel"
+                subtitle="Current leads grouped by pipeline stage."
+              >
+                <StatBadge>{leadMetrics.leadStageCounts.closed_lost} lost</StatBadge>
+              </PanelHeader>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {leadMetrics.funnelRows.map((row) => (
                   <div key={row.stage}>
-                    <div className="flex items-center justify-between text-sm mb-1.5">
-                      <span className="text-text-primary">{row.label}</span>
+                    <div className="flex items-center justify-between text-sm mb-2">
+                      <span className="text-text-primary font-medium">{row.label}</span>
                       <span className="font-mono text-text-secondary">{row.count}</span>
                     </div>
-                    <div className="h-2 rounded-full bg-surface-raised overflow-hidden">
+                    <div className="h-1.5 bg-surface-raised overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-accent"
+                        className="h-full bg-accent transition-[width] duration-150"
                         style={{ width: `${Math.max(row.share * 100, row.count > 0 ? 10 : 0)}%` }}
                       />
                     </div>
                   </div>
                 ))}
               </div>
-            </section>
+            </Panel>
 
-            <section className="rounded-[6px] border border-border bg-surface p-5">
-              <div className="mb-4">
-                <h2 className="text-sm font-medium text-text-primary">Lead Sources</h2>
-                <p className="text-xs text-text-secondary mt-1">
-                  Compare volume and enrolled outcomes by acquisition source.
-                </p>
-              </div>
+            <Panel>
+              <PanelHeader
+                title="Lead Sources"
+                subtitle="Compare volume and enrolled outcomes by acquisition source."
+              />
 
-              <div className="space-y-3">
+              <div className="divide-y divide-border border-t border-border">
                 {leadMetrics.sourceRows.map((row) => (
                   <div
                     key={row.source}
-                    className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
+                    className="flex items-start justify-between gap-4 py-4"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">{row.label}</p>
-                        <p className="text-xs text-text-secondary mt-1">
-                          {row.active} active · {row.enrolled} enrolled
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-mono text-text-primary">{row.total}</p>
-                        <p className="text-xs text-muted">
-                          {formatPercent(row.conversionRate)} enrolled
-                        </p>
-                      </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text-primary">{row.label}</p>
+                      <p className="text-xs text-text-secondary mt-1">
+                        {row.active} active · {row.enrolled} enrolled
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-base font-mono font-semibold text-text-primary">{row.total}</p>
+                      <p className="text-[11px] text-muted mt-0.5">
+                        {formatPercent(row.conversionRate)} conv.
+                      </p>
                     </div>
                   </div>
                 ))}
               </div>
-            </section>
+            </Panel>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <section className="rounded-[6px] border border-border bg-surface p-5">
-              <div className="mb-4">
-                <h2 className="text-sm font-medium text-text-primary">Lead Programs</h2>
-                <p className="text-xs text-text-secondary mt-1">
-                  Pipeline demand grouped by selected program.
-                </p>
-              </div>
+          {/* ── Lead Programs + Program Attendance ── */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Panel>
+              <PanelHeader
+                title="Lead Programs"
+                subtitle="Pipeline demand grouped by selected program."
+              />
 
               {programLeadRows.length === 0 ? (
-                <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
-                  Program selection will appear here as leads are captured.
-                </div>
+                <EmptyState message="Program selection will appear here as leads are captured." />
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-border border-t border-border">
                   {programLeadRows.map((row) => (
                     <div
                       key={row.programId || row.label}
-                      className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
+                      className="flex items-start justify-between gap-4 py-4"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <ProgramBadge
-                            program={row.programId ? programById.get(row.programId) : null}
-                            fallback={row.label}
-                          />
-                          <p className="text-xs text-text-secondary mt-2">
-                            {row.active} active · {row.enrolled} enrolled
-                          </p>
-                        </div>
-                        <p className="text-sm font-mono text-text-primary">{row.total}</p>
+                      <div className="min-w-0">
+                        <ProgramBadge
+                          program={row.programId ? programById.get(row.programId) : null}
+                          fallback={row.label}
+                        />
+                        <p className="text-xs text-text-secondary mt-2">
+                          {row.active} active · {row.enrolled} enrolled
+                        </p>
                       </div>
+                      <p className="text-base font-mono font-semibold text-text-primary shrink-0">
+                        {row.total}
+                      </p>
                     </div>
                   ))}
                 </div>
               )}
-            </section>
+            </Panel>
 
-            <section className="rounded-[6px] border border-border bg-surface p-5">
-              <div className="mb-4">
-                <h2 className="text-sm font-medium text-text-primary">Program Attendance</h2>
-                <p className="text-xs text-text-secondary mt-1">
-                  Last 30 days of class volume and check-ins by program.
-                </p>
-              </div>
+            <Panel>
+              <PanelHeader
+                title="Program Attendance"
+                subtitle="Last 30 days of class volume and check-ins by program."
+              />
 
               {programAttendanceRows.length === 0 ? (
-                <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
-                  Program attendance will appear after classes are scheduled.
-                </div>
+                <EmptyState message="Program attendance will appear after classes are scheduled." />
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-border border-t border-border">
                   {programAttendanceRows.map((row) => (
                     <div
                       key={row.programId || row.label}
-                      className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
+                      className="flex items-start justify-between gap-4 py-4"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <ProgramBadge
-                            program={row.programId ? programById.get(row.programId) : null}
-                            fallback={row.label}
-                          />
-                          <p className="text-xs text-text-secondary mt-2">
-                            {row.sessions} sessions · {row.capacity > 0 ? `${formatPercent(row.attendance / row.capacity)} utilization` : "No capacity tracked"}
-                          </p>
-                        </div>
-                        <p className="text-sm font-mono text-text-primary">{row.attendance}</p>
+                      <div className="min-w-0">
+                        <ProgramBadge
+                          program={row.programId ? programById.get(row.programId) : null}
+                          fallback={row.label}
+                        />
+                        <p className="text-xs text-text-secondary mt-2">
+                          {row.sessions} sessions · {row.capacity > 0 ? `${formatPercent(row.attendance / row.capacity)} utilization` : "No capacity tracked"}
+                        </p>
                       </div>
+                      <p className="text-base font-mono font-semibold text-text-primary shrink-0">
+                        {row.attendance}
+                      </p>
                     </div>
                   ))}
                 </div>
               )}
-            </section>
+            </Panel>
           </div>
 
-          <section className="rounded-[6px] border border-border bg-surface p-5">
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between mb-4">
-              <div>
-                <h2 className="text-sm font-medium text-text-primary">
-                  Attendance & Utilization
-                </h2>
-                <p className="text-xs text-text-secondary mt-1">
-                  Last 30 days of completed or elapsed classes.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <span className="rounded-[4px] border border-border bg-surface-raised px-2 py-1 text-text-secondary">
-                  {sessionRows.length} sessions
-                </span>
-                <span className="rounded-[4px] border border-border bg-surface-raised px-2 py-1 text-text-secondary">
-                  {uniqueAttendees} unique attendees
-                </span>
-                <span className="rounded-[4px] border border-border bg-surface-raised px-2 py-1 text-text-secondary">
+          {/* ── Attendance & Utilization Table ── */}
+          <Panel>
+            <PanelHeader
+              title="Attendance & Utilization"
+              subtitle="Last 30 days of completed or elapsed classes."
+            >
+              <div className="flex flex-wrap gap-2">
+                <StatBadge>{sessionRows.length} sessions</StatBadge>
+                <StatBadge>{uniqueAttendees} unique attendees</StatBadge>
+                <StatBadge>
                   {attendanceMetrics.totalCapacity > 0 ? `${attendanceMetrics.totalCapacity} total seats tracked` : "No seat caps yet"}
-                </span>
+                </StatBadge>
               </div>
-            </div>
+            </PanelHeader>
 
             {sessionRows.length === 0 ? (
-              <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
-                No classes have been scheduled in the last 30 days yet, so attendance and utilization metrics are still warming up.
-              </div>
+              <EmptyState message="No classes have been scheduled in the last 30 days yet, so attendance and utilization metrics are still warming up." />
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto -mx-5">
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-secondary">
-                      <th className="py-2 pr-4 font-medium">Class</th>
-                      <th className="py-2 pr-4 font-medium">Date</th>
-                      <th className="py-2 pr-4 font-medium">Attendance</th>
-                      <th className="py-2 pr-4 font-medium">Capacity</th>
-                      <th className="py-2 font-medium">Utilization</th>
+                    <tr className="border-y border-border text-left text-[11px] uppercase tracking-widest text-muted">
+                      <th className="py-3 pl-5 pr-4 font-medium">Class</th>
+                      <th className="py-3 pr-4 font-medium">Date</th>
+                      <th className="py-3 pr-4 font-medium">Attendance</th>
+                      <th className="py-3 pr-4 font-medium">Capacity</th>
+                      <th className="py-3 pr-5 font-medium">Utilization</th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleSessionRows.map((session) => (
-                      <tr key={session.id} className="border-b border-border/60 last:border-0">
-                        <td className="py-3 pr-4 text-text-primary">{session.name}</td>
-                        <td className="py-3 pr-4 text-text-secondary">
+                      <tr
+                        key={session.id}
+                        className="border-b border-border/50 last:border-0 hover:bg-surface-raised/30 transition-colors"
+                      >
+                        <td className="py-3.5 pl-5 pr-4 text-text-primary font-medium">
+                          {session.name}
+                        </td>
+                        <td className="py-3.5 pr-4 text-text-secondary">
                           {formatDate(session.date)}
                         </td>
-                        <td className="py-3 pr-4 font-mono text-text-primary">
+                        <td className="py-3.5 pr-4 font-mono text-text-primary">
                           {session.attendees}
                         </td>
-                        <td className="py-3 pr-4 font-mono text-text-secondary">
+                        <td className="py-3.5 pr-4 font-mono text-text-secondary">
                           {session.capacity ?? "—"}
                         </td>
-                        <td className="py-3 font-mono text-text-secondary">
+                        <td className="py-3.5 pr-5 font-mono text-text-secondary">
                           {formatPercent(session.utilization)}
                         </td>
                       </tr>
@@ -582,7 +624,7 @@ export default function ReportsPage() {
                 </table>
               </div>
             )}
-          </section>
+          </Panel>
         </div>
       </div>
     </>

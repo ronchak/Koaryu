@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ProgramPicker } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import type { Program } from "@/types";
 import { Calendar, Clock, Repeat, Users, X } from "lucide-react";
@@ -72,6 +73,7 @@ interface SharedClassFormModalProps {
   onClose: () => void;
   isLoading?: boolean;
   error?: string | null;
+  onDismissError?: () => void;
   fieldErrors?: ClassFormFieldErrors;
   initialValues?: ClassFormInitialValues;
   title?: string;
@@ -243,6 +245,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     onClose,
     isLoading = false,
     error,
+    onDismissError,
     fieldErrors,
     title = "Create class",
     initialValues,
@@ -434,9 +437,15 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
         <form onSubmit={handleSubmit}>
           <div className="px-6 py-5 space-y-5 max-h-[80vh] overflow-y-auto">
             {(error || submitError) && (
-              <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+              <DismissibleNotice
+                tone="danger"
+                onDismiss={() => {
+                  setSubmitError(null);
+                  onDismissError?.();
+                }}
+              >
                 {error || submitError}
-              </div>
+              </DismissibleNotice>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

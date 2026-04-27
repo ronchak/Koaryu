@@ -108,6 +108,7 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
   const isOnboardingRoute = pathname.startsWith("/onboarding");
+  const isLandingRoute = pathname === "/";
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
 
   function redirectTo(path: string, options?: { clearStudioState?: boolean }) {
@@ -125,7 +126,7 @@ export async function updateSession(request: NextRequest) {
   if (!user) {
     clearStudioStateCookie(supabaseResponse, request);
     clearActiveStudioCookie(supabaseResponse, request);
-    if (isAuthRoute) {
+    if (isLandingRoute || isAuthRoute) {
       return supabaseResponse;
     }
     return redirectTo("/login", { clearStudioState: true });
@@ -187,8 +188,12 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
+  if (isLandingRoute) {
+    return redirectTo(hasStudio ? "/dashboard" : "/onboarding");
+  }
+
   if (isOnboardingRoute && hasStudio) {
-    return redirectTo("/");
+    return redirectTo("/dashboard");
   }
 
   if (!isOnboardingRoute && !hasStudio) {

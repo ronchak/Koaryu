@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { ProgramBadge, ProgramPicker } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { api } from "@/lib/api";
 import { toLocalDateKey } from "@/lib/date";
 import { useConfigStore, useLeadStore, useProgramStore } from "@/lib/store";
@@ -528,26 +529,26 @@ export default function LeadsPage() {
       </Header>
 
       {leadActionError && !selectedLead && (
-        <div className="px-8 pt-4">
-          <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+        <div className="px-4 pt-4 sm:px-6 lg:px-8">
+          <DismissibleNotice tone="danger" onDismiss={() => setLeadActionError(null)}>
             {leadActionError}
-          </div>
+          </DismissibleNotice>
         </div>
       )}
 
       {actionMessage && !selectedLead && (
-        <div className="px-8 pt-4">
-          <div className="rounded-[6px] border border-success/20 bg-success/5 px-3 py-2 text-sm text-success">
+        <div className="px-4 pt-4 sm:px-6 lg:px-8">
+          <DismissibleNotice tone="success" onDismiss={() => setActionMessage(null)}>
             {actionMessage}
-          </div>
+          </DismissibleNotice>
         </div>
       )}
 
-      <div className="flex-1 flex flex-col">
-        <div className="px-8 pt-6">
+      <div className="flex-1 flex flex-col overflow-x-hidden">
+        <div className="px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
           <div className="rounded-[6px] border border-border bg-surface p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-sm font-medium text-text-primary">Follow-Up Today</h3>
                 <p className="text-sm text-text-secondary mt-1">
                   Keep due leads moving with one-click contact, reschedule, and stage actions.
@@ -622,8 +623,8 @@ export default function LeadsPage() {
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-end gap-2">
-                          <div>
+                        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(150px,auto)_repeat(3,minmax(0,auto))] sm:items-end">
+                          <div className="min-w-0">
                             <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-text-secondary">
                               Next follow-up
                             </label>
@@ -634,7 +635,7 @@ export default function LeadsPage() {
                               onChange={(event) =>
                                 setFollowUpInputValue(lead.id, event.target.value)
                               }
-                              className="rounded-[6px] border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                              className="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                             />
                           </div>
                           <Button
@@ -681,8 +682,8 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-x-auto p-6">
-          <div className="flex gap-4 min-w-max h-full">
+        <div className="flex-1 p-4 sm:p-6">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-5">
             {PIPELINE_STAGES.map((stage) => {
               const stageLeads = leadsByStage[stage.id] || [];
               const canDropIntoStage = draggedLeadRecord?.stage !== undefined
@@ -692,7 +693,7 @@ export default function LeadsPage() {
               return (
                 <div
                   key={stage.id}
-                  className={`w-80 flex flex-col rounded-[8px] border p-2 transition-colors ${
+                  className={`min-w-0 flex flex-col rounded-[8px] border p-2 transition-colors ${
                     isDropActive
                       ? "border-accent/50 bg-accent/5"
                       : "border-transparent"
@@ -717,7 +718,7 @@ export default function LeadsPage() {
                   <div
                     className={`flex-1 space-y-2 rounded-[6px] border-t-2 p-3 transition-colors ${stage.color} ${
                       isDropActive ? "bg-accent/10" : "bg-surface/50"
-                    } min-h-[280px]`}
+                    } min-h-[240px]`}
                     onDragOver={(event) => handleStageDragOver(event, stage.id)}
                     onDragLeave={(event) => handleStageDragLeave(event, stage.id)}
                     onDrop={(event) => {
@@ -746,13 +747,13 @@ export default function LeadsPage() {
                           setLeadActionError(null);
                           setSelectedLeadId(lead.id);
                         }}
-                        className={`bg-surface border border-border rounded-[6px] p-3 cursor-pointer hover:border-accent/30 transition-colors ${
+                        className={`min-w-0 bg-surface border border-border rounded-[6px] p-3 cursor-pointer hover:border-accent/30 transition-colors ${
                           draggedLead === lead.id || pendingLeadId === lead.id ? "opacity-50" : ""
                         }`}
                       >
                         <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <p className="text-sm font-medium text-text-primary">
+                          <div className="min-w-0">
+                            <p className="break-words text-sm font-medium text-text-primary">
                               {fullName(lead)}
                             </p>
                             <div className="mt-1">
@@ -765,10 +766,10 @@ export default function LeadsPage() {
                           <GripVertical className="w-3.5 h-3.5 text-border flex-shrink-0 cursor-grab" />
                         </div>
 
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-surface-raised border border-border rounded-[4px] text-text-secondary">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex min-w-0 items-center gap-1 rounded-[4px] border border-border bg-surface-raised px-1.5 py-0.5 text-[10px] text-text-secondary">
                             {SOURCE_ICONS[lead.source]}
-                            {SOURCE_LABELS[lead.source]}
+                            <span className="truncate">{SOURCE_LABELS[lead.source]}</span>
                           </span>
                           {lead.is_minor && (
                             <span className="text-[10px] text-warning">Minor</span>
@@ -786,7 +787,7 @@ export default function LeadsPage() {
                           )}
                         </div>
 
-                        <div className="flex items-center gap-3 text-[10px] text-muted">
+                        <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted">
                           {lead.follow_up_date && (
                             <span className="flex items-center gap-0.5">
                               <Calendar className="w-2.5 h-2.5" />
@@ -828,7 +829,7 @@ export default function LeadsPage() {
         </div>
 
         {showLost && lostLeads.length > 0 && (
-          <div className="border-t border-border px-8 py-4">
+          <div className="border-t border-border px-4 py-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-medium text-text-secondary uppercase tracking-wide">
                 Closed Lost
@@ -840,7 +841,7 @@ export default function LeadsPage() {
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {lostLeads.map((lead) => (
                 <div
                   key={lead.id}
@@ -848,9 +849,9 @@ export default function LeadsPage() {
                     setLeadActionError(null);
                     setSelectedLeadId(lead.id);
                   }}
-                  className="flex-shrink-0 w-56 bg-surface border border-border rounded-[6px] p-3 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
+                  className="min-w-0 rounded-[6px] border border-border bg-surface p-3 opacity-60 transition-opacity cursor-pointer hover:opacity-100"
                 >
-                  <p className="text-sm text-text-primary font-medium">{fullName(lead)}</p>
+                  <p className="break-words text-sm font-medium text-text-primary">{fullName(lead)}</p>
                   <p className="text-xs text-danger mt-1 capitalize">
                     {lead.lost_reason?.replace(/_/g, " ") || "Unknown"}
                   </p>
@@ -862,12 +863,12 @@ export default function LeadsPage() {
       </div>
 
       {selectedLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/60"
             onClick={clearSelectedLead}
           />
-          <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-md max-h-[80vh] overflow-y-auto">
+          <div className="relative max-h-[80vh] w-full max-w-md overflow-y-auto rounded-[6px] border border-border bg-bg">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h2 className="text-base font-semibold text-text-primary">
                 {fullName(selectedLead)}
@@ -882,9 +883,9 @@ export default function LeadsPage() {
             </div>
             <div className="p-5 space-y-4">
               {leadActionError && (
-                <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                <DismissibleNotice tone="danger" onDismiss={() => setLeadActionError(null)}>
                   {leadActionError}
-                </div>
+                </DismissibleNotice>
               )}
 
               <div>
@@ -926,7 +927,7 @@ export default function LeadsPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted mb-1">Source</p>
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary">
@@ -983,7 +984,7 @@ export default function LeadsPage() {
                   )}
                 </div>
 
-                <div className="flex gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <input
                     type="date"
                     value={getFollowUpInputValue(selectedLead)}
@@ -991,7 +992,7 @@ export default function LeadsPage() {
                     onChange={(event) =>
                       setFollowUpInputValue(selectedLead.id, event.target.value)
                     }
-                    className="flex-1 rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   <Button
                     variant="secondary"
@@ -1053,7 +1054,7 @@ export default function LeadsPage() {
                 </div>
               )}
 
-              <div className="flex gap-2 pt-2 border-t border-border">
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
                 {selectedLead.stage !== "enrolled" && selectedLead.stage !== "closed_lost" && (
                   <Button
                     variant="primary"
@@ -1089,7 +1090,7 @@ export default function LeadsPage() {
       )}
 
       {showAddLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/60"
             onClick={() => {
@@ -1099,7 +1100,7 @@ export default function LeadsPage() {
               }
             }}
           />
-          <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-md max-h-[85vh] overflow-y-auto p-6">
+          <div className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[6px] border border-border bg-bg p-5 sm:p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-base font-semibold text-text-primary">Add new lead</h2>
               <button
@@ -1144,11 +1145,11 @@ export default function LeadsPage() {
               className="space-y-4"
             >
               {addLeadError && (
-                <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                <DismissibleNotice tone="danger" onDismiss={() => setAddLeadError(null)}>
                   {addLeadError}
-                </div>
+                </DismissibleNotice>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm text-text-secondary font-medium">
                     First name *
@@ -1181,7 +1182,7 @@ export default function LeadsPage() {
                   className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-sm text-text-secondary font-medium">Phone</label>
                   <input
@@ -1246,7 +1247,7 @@ export default function LeadsPage() {
                   disabled={isAddingLead}
                   className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                 />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <input
                     name="guardian_email"
                     type="email"
@@ -1272,7 +1273,7 @@ export default function LeadsPage() {
                   className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap justify-end gap-2 pt-2">
                 <Button
                   variant="ghost"
                   size="sm"

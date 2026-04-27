@@ -13,6 +13,7 @@ import {
   useStudioStore,
 } from "@/lib/store";
 import {
+  ArrowRight,
   Award,
   Calendar,
   Clock,
@@ -24,12 +25,16 @@ import {
 import Link from "next/link";
 import { useMemo } from "react";
 
+/* ─── Quick actions config ────────────────────── */
+
 const QUICK_ACTIONS = [
   { label: "Add Student", href: "/students", icon: Users },
   { label: "Import CSV", href: "/students/import", icon: Clock },
   { label: "View Leads", href: "/leads", icon: UserPlus },
   { label: "Reports", href: "/reports", icon: TrendingUp },
 ];
+
+/* ─── Helpers ─────────────────────────────────── */
 
 function formatDate(value?: string) {
   if (!value) return "—";
@@ -39,6 +44,8 @@ function formatDate(value?: string) {
     day: "numeric",
   });
 }
+
+/* ─── Stat Card ───────────────────────────────── */
 
 function StatCard({
   icon: Icon,
@@ -57,27 +64,141 @@ function StatCard({
 }) {
   const content = (
     <div
-      className={`bg-surface border border-border rounded-[6px] p-5 transition-colors ${
-        href ? "hover:border-accent/40 cursor-pointer" : ""
-      }`}
+      className={`
+        group relative bg-surface border border-border p-5
+        transition-colors duration-150
+        ${href ? "hover:border-[color:var(--accent)]/30 cursor-pointer" : ""}
+      `}
     >
+      {/* Accent top edge — 2px line, visible on hover */}
+      {href && (
+        <span
+          className="absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+          style={{ backgroundColor: accent || "var(--accent)" }}
+        />
+      )}
+
       <div className="flex items-center gap-3 mb-3">
         <div
-          className="w-8 h-8 rounded-[6px] flex items-center justify-center"
-          style={{ backgroundColor: accent ? `${accent}15` : "var(--surface-raised)" }}
+          className="w-8 h-8 flex items-center justify-center"
+          style={{ backgroundColor: accent ? `${accent}12` : "var(--surface-raised)" }}
         >
           <Icon className="w-4 h-4" style={{ color: accent || "var(--text-secondary)" }} />
         </div>
-        <span className="text-xs text-muted font-medium uppercase tracking-wide">{label}</span>
+        <span className="text-[11px] text-muted font-medium uppercase tracking-widest">
+          {label}
+        </span>
       </div>
-      <p className="text-2xl font-bold text-text-primary font-mono">{value}</p>
-      {sub && <p className="text-xs text-muted mt-1">{sub}</p>}
+      <p className="text-3xl font-bold text-text-primary font-mono leading-none">{value}</p>
+      {sub && <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>}
     </div>
   );
 
   if (href) return <Link href={href}>{content}</Link>;
   return content;
 }
+
+/* ─── Inactivity Compact Bar ──────────────────── */
+
+function InactivityBar({
+  watch14,
+  watch30,
+  watch45,
+  onHold,
+}: {
+  watch14: number;
+  watch30: number;
+  watch45: number;
+  onHold: number;
+}) {
+  const segments = [
+    { label: "14+ days", value: watch14, color: "#F59E0B", href: "/students?inactiveDays=14" },
+    { label: "30+ days", value: watch30, color: "#EF4444", href: "/students?inactiveDays=30" },
+    { label: "45+ days", value: watch45, color: "#B91C1C", href: "/students?inactiveDays=45" },
+    { label: "On hold",  value: onHold,  color: "#64748B", href: "/students" },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 border border-border bg-surface divide-x divide-border">
+      {segments.map((seg) => (
+        <Link
+          key={seg.label}
+          href={seg.href}
+          className="group relative flex items-center gap-3 px-4 py-3.5 hover:bg-surface-raised/50 transition-colors"
+        >
+          <span
+            className="absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+            style={{ backgroundColor: seg.color }}
+          />
+          <span
+            className="w-2 h-2 shrink-0"
+            style={{ backgroundColor: seg.color }}
+          />
+          <div className="min-w-0">
+            <p className="text-lg font-mono font-bold text-text-primary leading-none">
+              {seg.value}
+            </p>
+            <p className="text-[11px] text-muted mt-1 uppercase tracking-wide">
+              {seg.label}
+            </p>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Panel wrapper ───────────────────────────── */
+
+function Panel({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`bg-surface border border-border p-5 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function PanelHeader({
+  title,
+  subtitle,
+  href,
+  linkLabel = "View all",
+}: {
+  title: string;
+  subtitle?: string;
+  href?: string;
+  linkLabel?: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 mb-5">
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+        {subtitle && (
+          <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {href && (
+        <Link
+          href={href}
+          className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover shrink-0 transition-colors"
+        >
+          {linkLabel}
+          <ArrowRight className="w-3 h-3" />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/* ─── Page ────────────────────────────────────── */
 
 export default function DashboardPage() {
   const { studioName } = useStudioStore();
@@ -286,9 +407,11 @@ export default function DashboardPage() {
         title="Dashboard"
         description={studioName || "Your studio at a glance."}
       />
-      <div className="flex-1 p-8">
-        <div className="max-w-5xl">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="flex-1 p-6 sm:p-8">
+        <div className="max-w-6xl">
+
+          {/* ── Primary Stats ── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-border mb-6">
             <StatCard
               icon={Users}
               label="Total Students"
@@ -327,66 +450,37 @@ export default function DashboardPage() {
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-4 mb-4">
-            <StatCard
-              icon={Clock}
-              label="14+ Days Inactive"
-              value={inactivityStats.watch14}
-              sub="Students who may need a quick outreach touch"
-              href="/students?inactiveDays=14"
-              accent="#F59E0B"
-            />
-            <StatCard
-              icon={Clock}
-              label="30+ Days Inactive"
-              value={inactivityStats.watch30}
-              sub="Likely at-risk if they were attending regularly"
-              href="/students?inactiveDays=30"
-              accent="#EF4444"
-            />
-            <StatCard
-              icon={Clock}
-              label="45+ Days Inactive"
-              value={inactivityStats.watch45}
-              sub="Highest urgency follow-up list"
-              href="/students?inactiveDays=45"
-              accent="#B91C1C"
-            />
-            <StatCard
-              icon={PauseCircle}
-              label="On Hold"
-              value={studentStats.onHoldStudents}
-              sub="Excluded from inactivity cards until their hold ends"
-              href="/students"
-              accent="#64748B"
+          {/* ── Inactivity & On Hold — compact bar ── */}
+          <div className="mb-6">
+            <InactivityBar
+              watch14={inactivityStats.watch14}
+              watch30={inactivityStats.watch30}
+              watch45={inactivityStats.watch45}
+              onHold={studentStats.onHoldStudents}
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="bg-surface border border-border rounded-[6px] p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-sm font-medium text-text-primary">Inactivity Watch</h3>
-                  <p className="text-xs text-text-secondary mt-1">
-                    Active and trialing students only. Current holds are excluded automatically.
-                  </p>
-                </div>
-                <Link href="/reports" className="text-xs text-accent hover:text-accent-hover">
-                  Open reports →
-                </Link>
-              </div>
+          {/* ── Inactivity Watch + Quick Actions ── */}
+          <div className="grid gap-px bg-border lg:grid-cols-[1.2fr_0.8fr] mb-6">
+            <Panel>
+              <PanelHeader
+                title="Inactivity Watch"
+                subtitle="Active and trialing students only. Current holds are excluded automatically."
+                href="/reports"
+                linkLabel="Open reports"
+              />
 
               {inactivityStats.highestRiskStudents.length === 0 ? (
-                <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
+                <div className="border border-border bg-surface-raised/40 px-4 py-5 text-sm text-text-secondary">
                   No active students have crossed the 14-day inactivity threshold right now.
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {inactivityStats.highestRiskStudents.map((row) => (
                     <Link
                       key={row.student.id}
                       href={`/students/${row.student.id}`}
-                      className="flex items-center justify-between gap-4 rounded-[6px] border border-border/70 bg-surface-raised/60 px-4 py-3 hover:border-accent/40 transition-colors"
+                      className="group relative flex items-center justify-between gap-4 border border-border bg-surface-raised/40 px-4 py-3 hover:border-[color:var(--accent)]/30 transition-colors"
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-text-primary">
@@ -398,59 +492,52 @@ export default function DashboardPage() {
                             : `No attendance yet · member since ${formatDate(row.referenceDate)}`}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-lg font-mono text-text-primary">{row.daysInactive}</p>
-                        <p className="text-[11px] text-muted uppercase tracking-wide">days inactive</p>
+                      <div className="text-right shrink-0">
+                        <p className="text-lg font-mono font-semibold text-text-primary">{row.daysInactive}</p>
+                        <p className="text-[10px] text-muted uppercase tracking-widest">days</p>
                       </div>
                     </Link>
                   ))}
                 </div>
               )}
-            </div>
+            </Panel>
 
-            <div className="bg-surface border border-border rounded-[6px] p-5">
-              <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
-                <TrendingUp className="w-3.5 h-3.5 text-muted" />
-                Quick Actions
-              </h3>
-              <div className="grid grid-cols-2 gap-3">
+            <Panel>
+              <PanelHeader title="Quick Actions" />
+              <div className="grid grid-cols-2 gap-2">
                 {QUICK_ACTIONS.map((action) => (
                   <Link
                     key={action.label}
                     href={action.href}
-                    className="flex items-center gap-2.5 px-4 py-3 bg-surface-raised border border-border rounded-[6px] hover:border-accent/40 transition-colors text-sm text-text-secondary hover:text-text-primary"
+                    className="group relative flex items-center gap-2.5 px-4 py-3 bg-surface-raised/60 border border-border hover:border-[color:var(--accent)]/30 transition-colors text-sm text-text-secondary hover:text-text-primary"
                   >
-                    <action.icon className="w-3.5 h-3.5 text-muted" />
+                    <action.icon className="w-3.5 h-3.5 text-muted group-hover:text-accent transition-colors" />
                     {action.label}
                   </Link>
                 ))}
               </div>
-            </div>
+            </Panel>
           </div>
 
-          <div className="bg-surface border border-border rounded-[6px] p-5 mt-4">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-medium text-text-primary">Program Buckets</h3>
-                <p className="text-xs text-text-secondary mt-1">
-                  Active students, open leads, and today&apos;s classes grouped by program.
-                </p>
-              </div>
-              <Link href="/reports" className="text-xs text-accent hover:text-accent-hover">
-                View reports →
-              </Link>
-            </div>
+          {/* ── Program Buckets ── */}
+          <Panel className="mb-6">
+            <PanelHeader
+              title="Program Buckets"
+              subtitle="Active students, open leads, and today's classes grouped by program."
+              href="/reports"
+              linkLabel="View reports"
+            />
 
             {programBuckets.length === 0 ? (
-              <div className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
+              <div className="border border-border bg-surface-raised/40 px-4 py-5 text-sm text-text-secondary">
                 Program activity will appear here once students, leads, or classes are assigned.
               </div>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-px bg-border md:grid-cols-2 xl:grid-cols-3">
                 {programBuckets.map((row) => (
                   <div
                     key={row.programId || row.label}
-                    className="rounded-[6px] border border-border bg-surface-raised/60 px-4 py-3"
+                    className="bg-surface px-4 py-4"
                   >
                     <ProgramBadge
                       program={row.programId ? programById.get(row.programId) : null}
@@ -458,54 +545,53 @@ export default function DashboardPage() {
                     />
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                       <div>
-                        <p className="font-mono text-text-primary">
+                        <p className="font-mono text-base font-semibold text-text-primary">
                           {row.activeStudents + row.trialingStudents}
                         </p>
-                        <p className="text-muted">students</p>
+                        <p className="text-muted mt-0.5">students</p>
                       </div>
                       <div>
-                        <p className="font-mono text-text-primary">{row.activeLeads}</p>
-                        <p className="text-muted">leads</p>
+                        <p className="font-mono text-base font-semibold text-text-primary">{row.activeLeads}</p>
+                        <p className="text-muted mt-0.5">leads</p>
                       </div>
                       <div>
-                        <p className="font-mono text-text-primary">{row.todaySessions}</p>
-                        <p className="text-muted">today</p>
+                        <p className="font-mono text-base font-semibold text-text-primary">{row.todaySessions}</p>
+                        <p className="text-muted mt-0.5">today</p>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </Panel>
 
+          {/* ── Recent Students ── */}
           {students.length > 0 && (
-            <div className="bg-surface border border-border rounded-[6px] p-5 mt-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-text-primary">Recent Students</h3>
-                <Link href="/students" className="text-xs text-accent hover:text-accent-hover">
-                  View all →
-                </Link>
-              </div>
-              <div className="space-y-2">
+            <Panel>
+              <PanelHeader
+                title="Recent Students"
+                href="/students"
+              />
+              <div className="divide-y divide-border border-t border-border">
                 {recentStudents.map((student) => (
                   <Link
                     key={student.id}
                     href={`/students/${student.id}`}
-                    className="flex items-center justify-between px-3 py-2 rounded-[6px] hover:bg-surface-raised transition-colors"
+                    className="flex items-center justify-between py-3 hover:bg-surface-raised/40 transition-colors -mx-5 px-5"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-6 h-6 rounded-full bg-surface-raised border border-border flex items-center justify-center flex-shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-7 h-7 bg-surface-raised border border-border flex items-center justify-center flex-shrink-0">
                         <span className="text-[10px] font-medium text-text-secondary">
                           {student.legal_first_name[0]}
                           {student.legal_last_name[0]}
                         </span>
                       </div>
-                      <span className="text-sm text-text-primary">
+                      <span className="text-sm text-text-primary truncate">
                         {student.preferred_name || student.legal_first_name} {student.legal_last_name}
                       </span>
                     </div>
                     <span
-                      className={`text-xs px-1.5 py-0.5 rounded-[4px] capitalize ${
+                      className={`text-[11px] px-2 py-0.5 font-medium uppercase tracking-wide ${
                         student.status === "active"
                           ? "text-success bg-success/10"
                           : student.status === "trialing"
@@ -520,7 +606,7 @@ export default function DashboardPage() {
                   </Link>
                 ))}
               </div>
-            </div>
+            </Panel>
           )}
         </div>
       </div>

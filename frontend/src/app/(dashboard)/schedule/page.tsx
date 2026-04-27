@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { toLocalDateKey } from "@/lib/date";
 import { useProgramStore, useScheduleStore, useStudentStore } from "@/lib/store";
 import type { ClassSession, ClassTemplate } from "@/types";
@@ -415,17 +416,17 @@ export default function SchedulePage() {
 
         {scheduleLoadError ? (
           <div className="px-8 pt-4">
-            <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
+            <DismissibleNotice tone="danger" onDismiss={() => setScheduleLoadError(null)}>
               {scheduleLoadError}
-            </div>
+            </DismissibleNotice>
           </div>
         ) : null}
 
         {actionMessage ? (
           <div className="px-8 pt-4">
-            <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+            <DismissibleNotice tone="success" onDismiss={() => setActionMessage(null)}>
               {actionMessage}
-            </div>
+            </DismissibleNotice>
           </div>
         ) : null}
 
@@ -615,6 +616,7 @@ export default function SchedulePage() {
         programs={programs}
         attendance={selectedSession ? getSessionAttendance(selectedSession.id) : []}
         attendanceError={attendanceError}
+        onDismissAttendanceError={() => setAttendanceError(null)}
         pendingAttendanceStudentId={pendingAttendanceId}
         deleteError={deleteError}
         deleteInFlight={deleteInFlight}
@@ -645,6 +647,7 @@ export default function SchedulePage() {
         }}
         isLoading={isCreatingClass}
         error={createClassError}
+        onDismissError={() => setCreateClassError(null)}
         title="Add class"
         defaultMode="weekly"
         programs={programs}

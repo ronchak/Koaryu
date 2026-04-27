@@ -57,7 +57,7 @@ export default function OnboardingPage() {
         if (typeof window !== "undefined") {
           window.localStorage.setItem("koaryu:studioName", studioName);
         }
-        router.push("/");
+        router.push("/dashboard");
         router.refresh();
         return;
       }
@@ -77,7 +77,7 @@ export default function OnboardingPage() {
       setStudioStateCookie(session.user.id, true);
       setActiveStudioIdCookie(studio.id);
 
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to create studio";

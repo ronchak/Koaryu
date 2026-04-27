@@ -50,7 +50,7 @@ export default function AuthLayout({
         } else {
           clearActiveStudioIdCookie();
         }
-        router.replace(hasStudio ? "/" : "/onboarding");
+        router.replace(hasStudio ? "/dashboard" : "/onboarding");
         router.refresh();
       } catch {
         // Keep the auth page mounted if studio lookup fails.

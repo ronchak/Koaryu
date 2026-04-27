@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
@@ -382,8 +383,8 @@ export default function StudentsPage() {
       <div className="flex-1 flex flex-col">
         {inactivityThreshold && (
           <div className="px-8 pt-4">
-            <div className="flex items-center justify-between rounded-[6px] border border-warning/20 bg-warning/5 px-4 py-3">
-              <div>
+            <DismissibleNotice tone="warning" onDismiss={() => router.push("/students")}>
+              <div className="text-text-primary">
                 <p className="text-sm font-medium text-text-primary">
                   Showing students inactive for {inactivityThreshold}+ days
                 </p>
@@ -391,21 +392,15 @@ export default function StudentsPage() {
                   Current holds are excluded automatically from this list.
                 </p>
               </div>
-              <button
-                onClick={() => router.push("/students")}
-                className="text-xs text-accent hover:text-accent-hover"
-              >
-                Clear filter
-              </button>
-            </div>
+            </DismissibleNotice>
           </div>
         )}
 
         {actionMessage ? (
           <div className="px-8 pt-4">
-            <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+            <DismissibleNotice tone="success" onDismiss={() => setActionMessage(null)}>
               {actionMessage}
-            </div>
+            </DismissibleNotice>
           </div>
         ) : null}
 

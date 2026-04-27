@@ -18,7 +18,7 @@ export default function Custom502Page() {
       ]}
       actions={
         <>
-          <StatusAction href="/" icon={Home}>
+          <StatusAction href="/dashboard" icon={Home}>
             Dashboard
           </StatusAction>
           <StatusAction href="/504" icon={ServerCrash} variant="secondary">

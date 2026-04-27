@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/students/status-badge";
 import { StudentForm } from "@/components/students/student-form";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useBeltStore, useConfigStore, useProgramStore, useStudentStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import type { BeltLadder, BeltRank, Promotion, Student, StudentCreate } from "@/types";
@@ -436,9 +437,9 @@ export default function StudentDetailPage() {
 
       {actionMessage ? (
         <div className="px-8 pt-4">
-          <div className="rounded-[6px] border border-success/20 bg-success/5 px-4 py-3 text-sm text-success">
+          <DismissibleNotice tone="success" onDismiss={() => setActionMessage(null)}>
             {actionMessage}
-          </div>
+          </DismissibleNotice>
         </div>
       ) : null}
 

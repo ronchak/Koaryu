@@ -27,7 +27,7 @@ export default function LoginPage() {
 
     if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
       setTimeout(() => {
-        router.push("/");
+        router.push("/dashboard");
         router.refresh();
       }, 500);
       return;
@@ -64,7 +64,7 @@ export default function LoginPage() {
       } else {
         clearActiveStudioIdCookie();
       }
-      router.push(hasStudio ? "/" : "/onboarding");
+      router.push(hasStudio ? "/dashboard" : "/onboarding");
       router.refresh();
     } catch (postLoginError) {
       const message =

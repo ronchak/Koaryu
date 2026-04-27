@@ -6,15 +6,15 @@ interface HeaderProps {
 
 export function Header({ title, description, children }: HeaderProps) {
   return (
-    <header className="flex items-center justify-between px-8 py-5 border-b border-border">
-      <div>
+    <header className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-5">
+      <div className="min-w-0">
         <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
         {description && (
           <p className="text-sm text-text-secondary mt-0.5">{description}</p>
         )}
       </div>
       {children && (
-        <div className="flex items-center gap-2">{children}</div>
+        <div className="flex flex-wrap items-center gap-2">{children}</div>
       )}
     </header>
   );

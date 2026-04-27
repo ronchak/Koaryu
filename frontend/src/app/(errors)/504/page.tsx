@@ -19,7 +19,7 @@ export default function Custom504Page() {
       ]}
       actions={
         <>
-          <StatusAction href="/" icon={Home}>
+          <StatusAction href="/dashboard" icon={Home}>
             Dashboard
           </StatusAction>
           <StatusReloadAction />

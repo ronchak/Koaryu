@@ -119,3 +119,489 @@ a, button {
     stroke 0.15s ease,
     opacity 0.15s ease;
 }
+
+/* =========================================
+   Scroll-Reveal Animations
+   ========================================= */
+
+.animate-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: opacity, transform;
+}
+
+.animate-reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Scale-in variant for pricing */
+.animate-scale-in {
+  opacity: 0;
+  transform: scale(0.92);
+  transition:
+    opacity 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    transform 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: opacity, transform;
+}
+
+.animate-scale-in.in-view {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ---- Dot-grid hero texture ---- */
+.dot-grid {
+  background-image: radial-gradient(
+    circle,
+    var(--border) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+  opacity: 0.35;
+}
+
+/* ---- Hero product preview ---- */
+.hero-preview {
+  position: relative;
+  width: min(100%, 520px);
+  margin-left: auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-raised) 92%, black),
+      color-mix(in srgb, var(--surface) 88%, black)
+    );
+  box-shadow:
+    0 24px 80px color-mix(in srgb, black 42%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+  padding: 16px;
+}
+
+.hero-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent),
+    transparent
+  );
+  opacity: 0.75;
+}
+
+.hero-preview__shine {
+  pointer-events: none;
+  position: absolute;
+  inset: -1px;
+  background:
+    radial-gradient(
+      circle at 20% 0%,
+      color-mix(in srgb, var(--accent) 16%, transparent),
+      transparent 36%
+    ),
+    radial-gradient(
+      circle at 92% 18%,
+      color-mix(in srgb, #3b82f6 10%, transparent),
+      transparent 28%
+    );
+  opacity: 0.82;
+}
+
+.hero-preview__topbar,
+.hero-preview__metrics,
+.hero-preview__split,
+.hero-preview__panel {
+  position: relative;
+}
+
+.hero-preview__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.hero-preview__status {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 8px;
+  white-space: nowrap;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.hero-preview__status:hover {
+  border-color: color-mix(in srgb, var(--accent-hover) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent-hover) 13%, transparent);
+  color: var(--accent-hover);
+}
+
+.hero-preview__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.hero-preview__metric {
+  --preview-accent: var(--accent);
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-raised) 82%, black);
+  padding: 11px;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.hero-preview__metric::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--preview-accent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.hero-preview__metric:hover {
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--surface-raised) 94%, var(--preview-accent) 6%);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--preview-accent) 12%, transparent);
+}
+
+.hero-preview__metric:hover::before {
+  opacity: 1;
+}
+
+.hero-preview__metric-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-preview__icon {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--preview-accent) 14%, transparent);
+  color: var(--preview-accent);
+}
+
+.preview-blue {
+  --preview-accent: #3b82f6;
+}
+
+.preview-purple {
+  --preview-accent: #8b5cf6;
+}
+
+.preview-gold {
+  --preview-accent: #f59e0b;
+}
+
+.preview-green {
+  --preview-accent: #22c55e;
+}
+
+.hero-preview__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.hero-preview__panel {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-raised) 72%, black);
+  padding: 12px;
+}
+
+.hero-preview__notice {
+  margin-top: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--text-secondary));
+  background: color-mix(in srgb, var(--surface) 84%, black);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 10px;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.hero-preview__panel:hover .hero-preview__notice {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--text-primary);
+}
+
+.hero-preview__action,
+.hero-preview__program-panel,
+.hero-preview__program-row {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 76%, black);
+  color: var(--text-secondary);
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.hero-preview__action {
+  appearance: none;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+}
+
+.hero-preview__action:hover,
+.hero-preview__program-row:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 86%, var(--accent) 5%);
+  color: var(--text-primary);
+}
+
+.hero-preview__pseudo-link {
+  appearance: none;
+  display: inline-flex;
+  margin-left: auto;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0;
+  text-align: right;
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition:
+    color 0.18s ease,
+    text-decoration-color 0.18s ease;
+}
+
+.hero-preview__pseudo-link:hover {
+  color: var(--accent-hover);
+  text-decoration-color: currentColor;
+}
+
+.hero-preview__program-panel {
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.hero-preview__program-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hero-preview__program-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(42px, 0.48fr));
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.hero-preview__program-name {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-preview__program-row strong {
+  display: block;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* ---- Accent glow on headings ---- */
+.accent-glow {
+  text-shadow: 0 0 40px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* ---- Gold accent stripe (page top bar) ---- */
+.accent-stripe {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 20%,
+    var(--accent) 80%,
+    transparent 100%
+  );
+}
+
+/* ---- Hero underline draw-in ---- */
+.draw-line {
+  width: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s;
+}
+
+.in-view .draw-line,
+.draw-line.in-view {
+  width: 64px;
+}
+
+/* ---- FAQ smooth expand ---- */
+.faq-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    grid-template-rows 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    opacity 0.22s ease,
+    transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.faq-item[data-state="open"] .faq-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.faq-body > div {
+  overflow: hidden;
+}
+
+/* FAQ toggle icon rotation */
+.faq-icon {
+  transition: transform 0.3s ease;
+}
+
+.faq-item[data-state="open"] .faq-icon {
+  transform: rotate(45deg);
+}
+
+/* ---- Workflow timeline connector ---- */
+.timeline-step {
+  position: relative;
+}
+
+.timeline-step::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: 40px;
+  bottom: -20px;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    var(--border) 100%
+  );
+}
+
+.timeline-step:last-child::before {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .timeline-step::before {
+    left: 31px;
+    top: 40px;
+  }
+}
+
+/* ---- Feature hover accent ---- */
+.feature-item {
+  border-left: 2px solid transparent;
+  padding-left: 16px;
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.feature-item:hover {
+  border-left-color: var(--accent);
+  background-color: color-mix(in srgb, var(--surface) 50%, transparent);
+}
+
+/* ---- Stat ticker fade-in ---- */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stat-item {
+  opacity: 0;
+  animation: fadeInUp 0.5s ease forwards;
+}
+
+.stat-item:nth-child(1) { animation-delay: 0.5s; }
+.stat-item:nth-child(2) { animation-delay: 0.7s; }
+.stat-item:nth-child(3) { animation-delay: 0.9s; }
+
+/* ---- Button hover lift ---- */
+.btn-lift {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.15s ease;
+}
+
+.btn-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 15%, transparent);
+}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import { useProgramStore, useStudioStore } from "@/lib/store";
 import type { Program } from "@/types";
@@ -38,6 +39,7 @@ export function ProgramsSection() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [dismissedProgramsLoadError, setDismissedProgramsLoadError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -173,8 +175,33 @@ export function ProgramsSection() {
         </p>
       )}
 
-      {message ? <p className="mb-3 text-xs text-success">{message}</p> : null}
-      {error || programsLoadError ? <p className="mb-3 text-xs text-danger">{error || programsLoadError}</p> : null}
+      {message ? (
+        <DismissibleNotice
+          tone="success"
+          onDismiss={() => setMessage("")}
+          className="mb-3 text-xs"
+        >
+          {message}
+        </DismissibleNotice>
+      ) : null}
+      {error ? (
+        <DismissibleNotice
+          tone="danger"
+          onDismiss={() => setError("")}
+          className="mb-3 text-xs"
+        >
+          {error}
+        </DismissibleNotice>
+      ) : null}
+      {programsLoadError && dismissedProgramsLoadError !== programsLoadError ? (
+        <DismissibleNotice
+          tone="danger"
+          onDismiss={() => setDismissedProgramsLoadError(programsLoadError)}
+          className="mb-3 text-xs"
+        >
+          {programsLoadError}
+        </DismissibleNotice>
+      ) : null}
 
       <div className="divide-y divide-border rounded-[6px] border border-border">
         {!programsLoaded ? (

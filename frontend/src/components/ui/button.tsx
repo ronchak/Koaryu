@@ -1,9 +1,16 @@
-import { ButtonHTMLAttributes, forwardRef } from "react";
+import {
+  cloneElement,
+  forwardRef,
+  isValidElement,
+  type ButtonHTMLAttributes,
+  type ReactElement,
+} from "react";
 
-type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
+type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "outline";
 type ButtonSize = "sm" | "md" | "lg";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  asChild?: boolean;
   variant?: ButtonVariant;
   size?: ButtonSize;
   isLoading?: boolean;
@@ -18,6 +25,8 @@ const variantStyles: Record<ButtonVariant, string> = {
     "bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20",
   ghost:
     "bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface-raised",
+  outline:
+    "bg-transparent text-text-primary border border-border hover:bg-surface-raised",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -26,9 +35,20 @@ const sizeStyles: Record<ButtonSize, string> = {
   lg: "px-5 py-2.5 text-sm",
 };
 
+const baseStyles = `
+  inline-flex items-center justify-center gap-2
+  rounded-[6px] font-medium
+  transition-colors duration-150
+  disabled:opacity-50 disabled:cursor-not-allowed
+  cursor-pointer
+`;
+
+type ChildElement = ReactElement<{ className?: string }>;
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
+      asChild = false,
       variant = "primary",
       size = "md",
       isLoading = false,
@@ -39,20 +59,26 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
+    const composedClassName = `
+      ${baseStyles}
+      ${variantStyles[variant]}
+      ${sizeStyles[size]}
+      ${className}
+    `;
+
+    if (asChild && isValidElement(children)) {
+      const child = children as ChildElement;
+
+      return cloneElement(child, {
+        className: `${composedClassName} ${child.props.className ?? ""}`,
+      });
+    }
+
     return (
       <button
         ref={ref}
         disabled={disabled || isLoading}
-        className={`
-          inline-flex items-center justify-center gap-2
-          rounded-[6px] font-medium
-          transition-colors duration-150
-          disabled:opacity-50 disabled:cursor-not-allowed
-          cursor-pointer
-          ${variantStyles[variant]}
-          ${sizeStyles[size]}
-          ${className}
-        `}
+        className={composedClassName}
         {...props}
       >
         {isLoading && (

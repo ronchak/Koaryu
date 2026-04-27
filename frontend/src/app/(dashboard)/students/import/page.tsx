@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { api } from "@/lib/api";
 import { useConfigStore, useStudentStore } from "@/lib/store";
 import type { CsvImportOptions, CsvImportResult, CsvParseResponse } from "@/types";
@@ -937,9 +938,13 @@ export default function ImportPage() {
           </div>
 
           {errorMessage ? (
-            <div className="mb-6 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3">
-              <p className="text-sm text-danger">{errorMessage}</p>
-            </div>
+            <DismissibleNotice
+              tone="danger"
+              onDismiss={() => setErrorMessage(null)}
+              className="mb-6"
+            >
+              {errorMessage}
+            </DismissibleNotice>
           ) : null}
 
           {stage === "upload" ? (

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import { useConfigStore, useStudioStore } from "@/lib/store";
 import type { StaffMember, StaffRoleName } from "@/types";
@@ -174,6 +175,7 @@ export function StaffRolesSection() {
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [dismissedStaffLoadError, setDismissedStaffLoadError] = useState("");
 
   const canManageStaff = currentRole === "admin";
   const adminCount = useMemo(
@@ -338,11 +340,34 @@ export function StaffRolesSection() {
         </Button>
       </form>
 
-      {(message || actionError || staffLoadError) && (
-        <div className="mb-4">
-          {message && <p className="text-xs text-success">{message}</p>}
-          {(actionError || staffLoadError) && (
-            <p className="text-xs text-danger">{actionError || staffLoadError}</p>
+      {(message || actionError || (staffLoadError && dismissedStaffLoadError !== staffLoadError)) && (
+        <div className="mb-4 space-y-2">
+          {message && (
+            <DismissibleNotice
+              tone="success"
+              onDismiss={() => setMessage("")}
+              className="text-xs"
+            >
+              {message}
+            </DismissibleNotice>
+          )}
+          {actionError && (
+            <DismissibleNotice
+              tone="danger"
+              onDismiss={() => setActionError("")}
+              className="text-xs"
+            >
+              {actionError}
+            </DismissibleNotice>
+          )}
+          {staffLoadError && dismissedStaffLoadError !== staffLoadError && (
+            <DismissibleNotice
+              tone="danger"
+              onDismiss={() => setDismissedStaffLoadError(staffLoadError)}
+              className="text-xs"
+            >
+              {staffLoadError}
+            </DismissibleNotice>
           )}
         </div>
       )}
