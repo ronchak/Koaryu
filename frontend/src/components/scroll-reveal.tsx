@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ElementType, type ReactNode } from "react";
 
 interface ScrollRevealProps {
   children: ReactNode;
   className?: string;
   stagger?: number;
-  as?: keyof JSX.IntrinsicElements;
+  as?: ElementType;
 }
 
 export function ScrollReveal({
@@ -36,7 +36,6 @@ export function ScrollReveal({
   }, []);
 
   return (
-    // @ts-expect-error – dynamic tag typing
     <Tag
       ref={ref}
       className={`animate-reveal ${className}`}
