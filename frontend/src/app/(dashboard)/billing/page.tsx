@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import { useConfigStore, useProgramStore, useStudentStore, useStudioStore } from "@/lib/store";
 import type {
   BillingInvoice,
@@ -440,6 +441,7 @@ export default function BillingPage() {
   const billingPayers = isPreviewMode ? PREVIEW_PAYERS : payers;
   const billingInvoices = isPreviewMode ? PREVIEW_INVOICES : invoices;
   const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;
+  const billingPeriod = subscriptionPeriodCopy(billingPlatform);
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at && !program.is_system),
     [programs]
@@ -787,9 +789,9 @@ export default function BillingPage() {
                       </div>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         <div>
-                          <p className="text-xs text-muted">Current period</p>
+                          <p className="text-xs text-muted">{billingPeriod.label}</p>
                           <p className="mt-1 text-sm text-text-primary">
-                            {billingPlatform ? `${formatDate(billingPlatform.current_period_start)} to ${formatDate(billingPlatform.current_period_end)}` : "Admins manage subscription"}
+                            {billingPeriod.value}
                           </p>
                         </div>
                         <div>

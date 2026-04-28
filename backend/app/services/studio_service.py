@@ -1,5 +1,6 @@
 import re
 import uuid
+from datetime import datetime, timezone
 from supabase import Client
 from app.schemas.studio import StudioCreate, StudioUpdate, StudioResponse
 from fastapi import HTTPException, status
@@ -81,6 +82,16 @@ class StudioService:
                 "entity_type": "studio",
                 "entity_id": studio["id"],
                 "metadata": {"name": data.name},
+            }
+        ).execute()
+
+        now = datetime.now(timezone.utc).isoformat()
+        self.supabase.table("studio_subscriptions").insert(
+            {
+                "studio_id": studio["id"],
+                "status": "incomplete",
+                "comped": False,
+                "current_period_start": now,
             }
         ).execute()
 

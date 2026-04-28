@@ -15,6 +15,8 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,18 +36,34 @@ interface SidebarProps {
   userEmail?: string;
   userName?: string;
   onSignOut?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
-export function Sidebar({ userEmail, userName, onSignOut }: SidebarProps) {
+export function Sidebar({
+  userEmail,
+  userName,
+  onSignOut,
+  isCollapsed = false,
+  onToggleCollapsed,
+}: SidebarProps) {
   const pathname = usePathname();
   const displayName = userName || "User";
   const avatarLetter = (userName || userEmail || "U")[0].toUpperCase();
+  const ToggleIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose;
+  const toggleLabel = isCollapsed ? "Expand sidebar" : "Collapse sidebar";
 
   return (
     <>
       <div className="sticky top-0 z-30 border-b border-border bg-surface lg:hidden">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <Logo size="sm" />
+          <Link
+            href="/"
+            aria-label="Go to Koaryu homepage"
+            className="inline-flex rounded-[6px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            <Logo size="sm" />
+          </Link>
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
               {avatarLetter}
@@ -96,15 +114,79 @@ export function Sidebar({ userEmail, userName, onSignOut }: SidebarProps) {
         </nav>
       </div>
 
-      <aside className="fixed left-0 top-0 bottom-0 z-30 hidden w-[240px] flex-col border-r border-border bg-surface lg:flex">
+      <aside
+        className={`
+          fixed left-0 top-0 bottom-0 z-30 hidden flex-col overflow-hidden border-r border-border bg-surface
+          transition-[width] duration-200 ease-out motion-reduce:transition-none lg:flex
+          ${isCollapsed ? "w-[88px]" : "w-[240px]"}
+        `}
+      >
         {/* Logo */}
-        <div className="px-5 py-5 border-b border-border">
-          <Logo size="md" />
+        <div
+          className={`
+            flex items-center border-b border-border
+            transition-[height,padding] duration-200 ease-out motion-reduce:transition-none
+            ${
+              isCollapsed
+                ? "h-[76px] justify-center px-4"
+                : "h-[73px] justify-between px-5"
+            }
+          `}
+        >
+          <Link
+            href="/"
+            aria-label="Go to Koaryu homepage"
+            className="inline-flex min-w-0 rounded-[6px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          >
+            <Logo size="md" showText={!isCollapsed} />
+          </Link>
+          {onToggleCollapsed && !isCollapsed && (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label={toggleLabel}
+              aria-expanded={!isCollapsed}
+              title={toggleLabel}
+              className={`
+                inline-flex flex-shrink-0 cursor-pointer items-center justify-center text-muted
+                transition-all duration-150 ease-out hover:bg-surface-raised hover:text-text-primary
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2
+                focus-visible:ring-offset-surface
+                ml-3 h-7 w-7 rounded-[6px]
+              `}
+            >
+              <ToggleIcon className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-3 px-3 overflow-y-auto">
-          <ul className="space-y-0.5">
+        <nav
+          className={`
+            flex-1 transition-[padding] duration-200 ease-out motion-reduce:transition-none
+            ${isCollapsed ? "overflow-hidden px-6 py-4" : "overflow-y-auto px-3 py-3"}
+          `}
+        >
+          <ul className={isCollapsed ? "space-y-2" : "space-y-0.5"}>
+            {onToggleCollapsed && isCollapsed && (
+              <li>
+                <button
+                  type="button"
+                  onClick={onToggleCollapsed}
+                  aria-label={toggleLabel}
+                  aria-expanded={!isCollapsed}
+                  title={toggleLabel}
+                  className="
+                    group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-[10px] px-0 text-muted
+                    transition-all duration-150 ease-out hover:bg-surface-raised hover:text-text-primary
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2
+                    focus-visible:ring-offset-surface
+                  "
+                >
+                  <ToggleIcon className="h-[18px] w-[18px]" />
+                </button>
+              </li>
+            )}
             {NAV_ITEMS.map((item) => {
               const Icon = iconMap[item.icon];
               const isActive = pathname.startsWith(item.href);
@@ -113,9 +195,16 @@ export function Sidebar({ userEmail, userName, onSignOut }: SidebarProps) {
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    aria-label={item.label}
+                    title={isCollapsed ? item.label : undefined}
                     className={`
-                      flex items-center gap-3 px-3 py-2 rounded-[6px] text-sm
-                      transition-all duration-150 group relative
+                      group relative flex items-center text-sm
+                      transition-all duration-150 ease-out
+                      ${
+                        isCollapsed
+                          ? "h-10 w-10 justify-center rounded-[10px] px-0"
+                          : "h-10 gap-3 rounded-[6px] px-3"
+                      }
                       ${
                         isActive
                           ? "bg-surface-raised text-text-primary"
@@ -125,16 +214,33 @@ export function Sidebar({ userEmail, userName, onSignOut }: SidebarProps) {
                   >
                     {/* Active indicator bar */}
                     {isActive && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-accent" />
+                      <span
+                        className={`
+                          absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-accent
+                          ${isCollapsed ? "h-5" : "h-4"}
+                        `}
+                      />
                     )}
                     {Icon && (
                       <Icon
-                        className={`w-4 h-4 flex-shrink-0 ${
+                        className={`${isCollapsed ? "h-[18px] w-[18px]" : "h-4 w-4"} flex-shrink-0 ${
                           isActive ? "text-accent" : "text-muted group-hover:text-text-secondary"
                         }`}
                       />
                     )}
-                    <span>{item.label}</span>
+                    <span
+                      className={`
+                        overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform]
+                        duration-150 ease-out motion-reduce:transition-none
+                        ${
+                          isCollapsed
+                            ? "max-w-0 -translate-x-1 opacity-0"
+                            : "max-w-36 translate-x-0 opacity-100"
+                        }
+                      `}
+                    >
+                      {item.label}
+                    </span>
                   </Link>
                 </li>
               );
@@ -143,15 +249,41 @@ export function Sidebar({ userEmail, userName, onSignOut }: SidebarProps) {
         </nav>
 
         {/* User section */}
-        <div className="border-t border-border px-3 py-3">
-          <div className="flex items-center gap-3 px-3 py-2">
+        <div
+          className={`
+            border-t border-border transition-[padding] duration-200 ease-out motion-reduce:transition-none
+            ${isCollapsed ? "px-0 py-4" : "px-3 py-3"}
+          `}
+        >
+          <div
+            className={`
+              flex items-center rounded-[6px] transition-all duration-150 ease-out
+              ${isCollapsed ? "h-9 justify-center px-0" : "h-11 gap-3 px-3"}
+            `}
+            title={isCollapsed ? displayName : undefined}
+          >
             {/* Avatar */}
-            <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+            <div
+              className={`
+                rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0
+                ${isCollapsed ? "h-8 w-8" : "h-7 w-7"}
+              `}
+            >
               <span className="text-xs font-medium text-accent">
                 {avatarLetter}
               </span>
             </div>
-            <div className="flex-1 min-w-0">
+            <div
+              className={`
+                min-w-0 flex-1 overflow-hidden transition-[max-width,opacity,transform]
+                duration-150 ease-out motion-reduce:transition-none
+                ${
+                  isCollapsed
+                    ? "max-w-0 -translate-x-1 opacity-0"
+                    : "max-w-36 translate-x-0 opacity-100"
+                }
+              `}
+            >
               <p className="text-sm text-text-primary truncate">
                 {displayName}
               </p>
@@ -159,8 +291,14 @@ export function Sidebar({ userEmail, userName, onSignOut }: SidebarProps) {
             </div>
             <button
               onClick={onSignOut}
-              className="text-muted hover:text-text-secondary transition-colors p-1 cursor-pointer"
+              tabIndex={isCollapsed ? -1 : 0}
+              className={`
+                cursor-pointer p-1 text-muted transition-[max-width,opacity,color] duration-150 ease-out
+                hover:text-text-secondary motion-reduce:transition-none
+                ${isCollapsed ? "max-w-0 overflow-hidden opacity-0" : "max-w-7 opacity-100"}
+              `}
               title="Sign out"
+              aria-hidden={isCollapsed}
             >
               <LogOut className="w-4 h-4" />
             </button>

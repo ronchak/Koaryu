@@ -134,6 +134,9 @@ class StudentResponse(BaseModel):
     program_id: Optional[str] = None
     current_belt_rank_id: Optional[str] = None
     stripe_customer_id: Optional[str] = None
+    photo_path: Optional[str] = None
+    photo_url: Optional[str] = None
+    photo_updated_at: Optional[str] = None
     notes: Optional[str] = None
     tags: list[str] = []
     guardians: list[GuardianResponse] = []

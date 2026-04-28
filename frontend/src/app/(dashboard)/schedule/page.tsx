@@ -352,37 +352,38 @@ export default function SchedulePage() {
       </Header>
 
       <div className="flex-1 flex flex-col">
-        <div className="flex items-center justify-between px-8 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
+        {/* ── Toolbar ── */}
+        <div className="flex items-center justify-between px-6 sm:px-8 py-4 border-b border-border">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => navigate(-1)}
-              className="p-1.5 rounded-[6px] hover:bg-surface-raised text-text-secondary cursor-pointer"
+              className="p-1.5 hover:bg-surface-raised text-text-secondary transition-colors cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={jumpToToday}
-              className="px-3 py-1 text-xs font-medium text-accent hover:bg-accent/10 rounded-[6px] cursor-pointer"
+              className="px-3 py-1 text-xs font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
             >
               Today
             </button>
             <button
               onClick={() => navigate(1)}
-              className="p-1.5 rounded-[6px] hover:bg-surface-raised text-text-secondary cursor-pointer"
+              className="p-1.5 hover:bg-surface-raised text-text-secondary transition-colors cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
-            <span className="text-sm text-text-primary ml-2 font-medium">
+            <span className="text-sm text-text-primary ml-3 font-semibold tracking-tight">
               {getToolbarLabel()}
             </span>
           </div>
 
-          <div className="flex items-center bg-surface-raised rounded-[6px] border border-border p-0.5">
+          <div className="flex items-center bg-surface border border-border p-0.5">
             {(["month", "week", "day"] as View[]).map((nextView) => (
               <button
                 key={nextView}
                 onClick={() => setView(nextView)}
-                className={`px-3 py-1 text-xs rounded-[4px] capitalize cursor-pointer transition-colors ${
+                className={`px-3 py-1 text-xs capitalize cursor-pointer transition-colors ${
                   view === nextView
                     ? "bg-accent text-[#0B0D10] font-medium"
                     : "text-text-secondary hover:text-text-primary"
@@ -394,11 +395,12 @@ export default function SchedulePage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 border-b border-border px-8 py-3">
+        {/* ── Program filter ── */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 sm:px-8 py-3">
           <select
             value={programFilter}
             onChange={(event) => setProgramFilter(event.target.value)}
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-border text-text-primary focus:border-accent focus:outline-none"
           >
             <option value="">All programs</option>
             {activePrograms.map((program) => (
@@ -414,8 +416,9 @@ export default function SchedulePage() {
           )}
         </div>
 
+        {/* ── Notices ── */}
         {scheduleLoadError ? (
-          <div className="px-8 pt-4">
+          <div className="px-6 sm:px-8 pt-4">
             <DismissibleNotice tone="danger" onDismiss={() => setScheduleLoadError(null)}>
               {scheduleLoadError}
             </DismissibleNotice>
@@ -423,13 +426,14 @@ export default function SchedulePage() {
         ) : null}
 
         {actionMessage ? (
-          <div className="px-8 pt-4">
+          <div className="px-6 sm:px-8 pt-4">
             <DismissibleNotice tone="success" onDismiss={() => setActionMessage(null)}>
               {actionMessage}
             </DismissibleNotice>
           </div>
         ) : null}
 
+        {/* ── Month View ── */}
         {view === "month" && (
           <div className="flex-1 p-6">
             <MonthScheduleView
@@ -457,27 +461,34 @@ export default function SchedulePage() {
           </div>
         )}
 
+        {/* ── Week View ── */}
         {view === "week" && (
           <div className="flex-1 overflow-x-auto">
             <div className="grid grid-cols-7 min-w-[980px]">
+              {/* Day headers */}
               {weekDates.map((date) => {
                 const key = dateStr(date);
                 const isToday = key === today;
                 return (
                   <div
                     key={`header-${key}`}
-                    className={`px-3 py-3 text-center border-b border-r border-border ${
-                      isToday ? "bg-accent/5" : ""
+                    className={`relative px-3 py-3 text-center border-b border-r border-border last:border-r-0 ${
+                      isToday ? "bg-accent/[0.04]" : ""
                     }`}
                   >
-                    <p className="text-xs text-muted">{DAY_NAMES[date.getDay()]}</p>
-                    <p className={`text-lg font-mono ${isToday ? "text-accent font-bold" : "text-text-primary"}`}>
+                    {/* Today accent line */}
+                    {isToday && (
+                      <span className="absolute top-0 left-0 right-0 h-[2px] bg-accent" />
+                    )}
+                    <p className="text-[11px] text-muted uppercase tracking-widest">{DAY_NAMES[date.getDay()]}</p>
+                    <p className={`text-lg font-mono mt-0.5 ${isToday ? "text-accent font-bold" : "text-text-primary"}`}>
                       {date.getDate()}
                     </p>
                   </div>
                 );
               })}
 
+              {/* Day cells */}
               {weekDates.map((date) => {
                 const key = dateStr(date);
                 const isToday = key === today;
@@ -485,54 +496,96 @@ export default function SchedulePage() {
                 const dayTemplates = (templatesByDay[date.getDay()] || []).filter((template) =>
                   templateAppliesToDate(template, date)
                 );
+                const isEmpty = daySessions.length === 0 && dayTemplates.length === 0;
 
                 return (
                   <div
                     key={`cell-${key}`}
-                    className={`min-h-[180px] border-r border-b border-border p-2 ${
+                    className={`min-h-[180px] border-r border-b border-border p-2 last:border-r-0 ${
                       isToday ? "bg-accent/[0.02]" : ""
                     }`}
                   >
-                    {daySessions.map((session) => (
-                      <button
-                        key={session.id}
-                        onClick={() => {
-                          setAttendanceError(null);
-                          setDeleteError(null);
-                          setSelectedSession(session);
-                        }}
-                        className="w-full text-left mb-1.5 p-2 bg-surface-raised border border-border rounded-[6px] hover:border-accent/50 transition-colors cursor-pointer"
-                      >
-                        <p className="text-xs font-medium text-text-primary truncate">{session.name}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] text-muted font-mono">{formatTime(session.start_time)}</span>
-                          {session.program_id ? (
-                            <ProgramBadge program={programById.get(session.program_id)} />
-                          ) : null}
-                          <span className="text-[10px] text-text-secondary flex items-center gap-0.5">
-                            <Users className="w-2.5 h-2.5" />
-                            {session.attendance_count}
-                            {session.capacity ? `/${session.capacity}` : ""}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                    {daySessions.map((session) => {
+                      const program = session.program_id ? programById.get(session.program_id) : null;
+                      const accentColor = program?.color_hex || "var(--border)";
+
+                      return (
+                        <button
+                          key={session.id}
+                          onClick={() => {
+                            setAttendanceError(null);
+                            setDeleteError(null);
+                            setSelectedSession(session);
+                          }}
+                          className="group relative w-full text-left mb-2 bg-surface-raised border border-border hover:border-[color:var(--accent)]/40 transition-colors cursor-pointer overflow-hidden"
+                        >
+                          {/* Program color accent bar */}
+                          <span
+                            className="absolute left-0 top-0 bottom-0 w-[3px]"
+                            style={{ backgroundColor: accentColor }}
+                          />
+
+                          <div className="pl-3 pr-2.5 py-2.5">
+                            <p className="text-xs font-semibold text-text-primary truncate leading-tight">
+                              {session.name}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <span className="text-[10px] text-muted font-mono leading-none">
+                                {formatTime(session.start_time)}
+                              </span>
+                              {program && (
+                                <span className="text-[10px] text-text-secondary truncate leading-none">
+                                  {program.name}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-border/50">
+                              {session.capacity ? (
+                                <span className="text-[10px] text-muted">
+                                  Cap {session.capacity}
+                                </span>
+                              ) : (
+                                <span />
+                              )}
+                              <span className="text-[10px] text-text-secondary font-mono flex items-center gap-1">
+                                <Users className="w-2.5 h-2.5 text-muted" />
+                                {session.attendance_count}
+                                {session.capacity ? `/${session.capacity}` : ""}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
 
                     {daySessions.length === 0 && dayTemplates.length > 0 && (
-                      dayTemplates.map((template) => (
-                        <div
-                          key={template.id}
-                          className="w-full mb-1.5 p-2 border border-dashed border-border rounded-[6px] opacity-50"
-                        >
-                          <p className="text-xs text-muted truncate">{template.name}</p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <span className="text-[10px] text-muted font-mono">{formatTime(template.start_time)}</span>
-                            {template.program_id ? (
-                              <ProgramBadge program={programById.get(template.program_id)} />
-                            ) : null}
+                      dayTemplates.map((template) => {
+                        const program = template.program_id ? programById.get(template.program_id) : null;
+
+                        return (
+                          <div
+                            key={template.id}
+                            className="relative w-full mb-2 border border-dashed border-border/60 opacity-60 overflow-hidden"
+                          >
+                            <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-border/40" />
+                            <div className="pl-3 pr-2.5 py-2">
+                              <p className="text-xs text-muted truncate">{template.name}</p>
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted font-mono">{formatTime(template.start_time)}</span>
+                                {program && (
+                                  <span className="text-[10px] text-muted truncate">{program.name}</span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
+                    )}
+
+                    {isEmpty && (
+                      <div className="flex items-center justify-center h-full min-h-[60px]">
+                        <span className="text-[10px] text-muted/40 uppercase tracking-widest">—</span>
+                      </div>
                     )}
                   </div>
                 );
@@ -541,9 +594,10 @@ export default function SchedulePage() {
           </div>
         )}
 
+        {/* ── Day View ── */}
         {view === "day" && (
-          <div className="flex-1 p-8">
-            <h2 className="text-sm font-medium text-text-primary mb-4">
+          <div className="flex-1 p-6 sm:p-8">
+            <h2 className="text-sm font-semibold text-text-primary mb-5">
               {currentDate.toLocaleDateString("en-US", {
                 weekday: "long",
                 month: "long",
@@ -553,13 +607,13 @@ export default function SchedulePage() {
             </h2>
 
             {daySessionList.length === 0 ? (
-              <div className="text-center py-12">
-                <Calendar className="w-6 h-6 text-muted mx-auto mb-2" />
+              <div className="text-center py-16 border border-border bg-surface">
+                <Calendar className="w-5 h-5 text-muted mx-auto mb-3" />
                 <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="mt-4"
+                  className="mt-5"
                   onClick={() => {
                     setCreateClassError(null);
                     setShowAddClass(true);
@@ -570,7 +624,7 @@ export default function SchedulePage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {daySessionList.map((session) => (
                   <button
                     key={session.id}
@@ -579,21 +633,24 @@ export default function SchedulePage() {
                       setDeleteError(null);
                       setSelectedSession(session);
                     }}
-                    className="w-full text-left p-4 bg-surface border border-border rounded-[6px] hover:border-accent/50 transition-colors cursor-pointer"
+                    className="group relative w-full text-left p-5 bg-surface border border-border hover:border-[color:var(--accent)]/30 transition-colors cursor-pointer"
                   >
+                    {/* Accent top edge on hover */}
+                    <span className="absolute top-0 left-0 right-0 h-[2px] bg-accent opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+
                     <div className="flex items-center justify-between">
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium text-text-primary">{session.name}</p>
+                          <p className="font-semibold text-text-primary">{session.name}</p>
                           {session.program_id ? (
                             <ProgramBadge program={programById.get(session.program_id)} />
                           ) : null}
                         </div>
-                        <p className="text-xs text-muted font-mono mt-1">
+                        <p className="text-xs text-muted font-mono mt-1.5">
                           {formatTime(session.start_time)} – {formatTime(session.end_time)}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 text-text-secondary">
+                      <div className="flex items-center gap-2 text-text-secondary shrink-0">
                         <Users className="w-3.5 h-3.5" />
                         <span className="text-sm font-mono">
                           {session.attendance_count}

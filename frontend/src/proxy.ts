@@ -7,14 +7,19 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico (favicon file)
-     * - manifest.webmanifest (site manifest)
-     * - public files (images, etc.)
-     */
-    "/((?!_next/static|_next/image|favicon.ico|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/",
+    "/login",
+    "/signup",
+    "/onboarding/:path*",
+    "/subscription-required/:path*",
+    "/dashboard/:path*",
+    "/students/:path*",
+    "/leads/:path*",
+    "/schedule/:path*",
+    "/belt-tracker/:path*",
+    "/reports/:path*",
+    "/settings/:path*",
+    "/billing/:path*",
+    "/automations/:path*",
   ],
 };

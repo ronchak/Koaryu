@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import Depends, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.security import get_user_id_from_token
-from app.db.supabase import get_supabase_client
+from app.db.supabase import create_supabase_client
 from app.services.studio_scope import resolve_staff_role_for_user
 from supabase import Client
 
@@ -22,8 +22,8 @@ async def get_current_user_id(
 
 
 async def get_supabase() -> Client:
-    """FastAPI dependency that provides the Supabase admin client."""
-    return get_supabase_client()
+    """FastAPI dependency that provides an isolated Supabase admin client."""
+    return create_supabase_client()
 
 
 async def get_requested_studio_id(
@@ -46,5 +46,10 @@ async def get_current_studio_id(
     user belongs to it. Falls back to a deterministic membership when the
     request does not yet carry active studio state.
     """
-    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return membership["studio_id"]

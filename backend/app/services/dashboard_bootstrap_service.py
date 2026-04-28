@@ -14,6 +14,7 @@ from app.schemas.lead import LeadResponse
 from app.services.program_service import ProgramService
 from app.services.auth_service import AuthService
 from app.services.student_service import StudentService
+from app.services.studio_scope import ensure_platform_subscription_access
 
 
 class DashboardBootstrapService:
@@ -106,15 +107,20 @@ class DashboardBootstrapService:
             return DashboardBootstrapResponse(auth=auth)
 
         studio_id = auth.studio_id
-        ProgramService(self.supabase).ensure_program_ladders(studio_id)
-
-        studio_result, students_result, leads_result, ladders_result, programs = await asyncio.gather(
-            asyncio.to_thread(self._fetch_studio_summary, studio_id),
-            asyncio.to_thread(self._fetch_students, studio_id),
-            asyncio.to_thread(self._fetch_leads, studio_id),
-            asyncio.to_thread(self._fetch_belt_ladders, studio_id),
-            self._fetch_programs(studio_id),
+        ensure_platform_subscription_access(self.supabase, studio_id)
+        await asyncio.to_thread(
+            ProgramService(self.supabase).ensure_program_ladders,
+            studio_id,
         )
+
+        # supabase-py's sync client is not safe to share across parallel thread
+        # calls; concurrent reads can surface as httpx/httpcore ReadError and
+        # leave the frontend with no bootstrap data.
+        studio_result = await asyncio.to_thread(self._fetch_studio_summary, studio_id)
+        students_result = await asyncio.to_thread(self._fetch_students, studio_id)
+        leads_result = await asyncio.to_thread(self._fetch_leads, studio_id)
+        ladders_result = await asyncio.to_thread(self._fetch_belt_ladders, studio_id)
+        programs = await self._fetch_programs(studio_id)
 
         if not studio_result.data:
             raise HTTPException(

@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     leads,
     platform_billing,
     programs,
+    reports,
     schedule,
     staff,
     students,
@@ -28,6 +29,7 @@ router.include_router(webhooks.router)
 router.include_router(studios.router)
 router.include_router(students.router)
 router.include_router(programs.router)
+router.include_router(reports.router)
 router.include_router(schedule.router)
 router.include_router(belts.router)
 router.include_router(leads.router)

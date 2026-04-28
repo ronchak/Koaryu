@@ -84,6 +84,29 @@ async def update_student(
     return await service.update_student(student_id, data, studio_id, user_id)
 
 
+@router.post("/{student_id}/photo", response_model=StudentResponse)
+async def upload_student_photo(
+    student_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    service = StudentService(supabase)
+    return await service.upload_student_photo(student_id, studio_id, user_id, file)
+
+
+@router.delete("/{student_id}/photo", response_model=StudentResponse)
+async def delete_student_photo(
+    student_id: str,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    service = StudentService(supabase)
+    return await service.delete_student_photo(student_id, studio_id, user_id)
+
+
 @router.delete("/{student_id}", status_code=204)
 async def delete_student(
     student_id: str,
@@ -149,7 +172,12 @@ async def list_student_billing(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = resolve_billing_manager_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+    studio_id = resolve_billing_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )["studio_id"]
     return await BillingService(supabase).list_student_billing(student_id, studio_id)
 
 
@@ -161,7 +189,12 @@ async def add_student_billing_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = resolve_billing_manager_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+    studio_id = resolve_billing_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )["studio_id"]
     payload = data.model_copy(update={"student_id": student_id})
     return await BillingService(supabase).add_student_billing_enrollment(payload, studio_id, user_id)
 

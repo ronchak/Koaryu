@@ -25,12 +25,12 @@ import {
   X,
 } from "lucide-react";
 
-const PIPELINE_STAGES: { id: LeadStage; label: string; color: string }[] = [
-  { id: "inquiry", label: "Inquiry", color: "border-t-accent" },
-  { id: "trial_scheduled", label: "Trial Scheduled", color: "border-t-warning" },
-  { id: "trial_completed", label: "Trial Completed", color: "border-t-[#1E90FF]" },
-  { id: "offer_sent", label: "Offer Sent", color: "border-t-[#8B5CF6]" },
-  { id: "enrolled", label: "Enrolled", color: "border-t-success" },
+const PIPELINE_STAGES: { id: LeadStage; label: string; hex: string }[] = [
+  { id: "inquiry", label: "Inquiry", hex: "var(--accent)" },
+  { id: "trial_scheduled", label: "Trial Scheduled", hex: "var(--warning)" },
+  { id: "trial_completed", label: "Trial Completed", hex: "#1E90FF" },
+  { id: "offer_sent", label: "Offer Sent", hex: "#8B5CF6" },
+  { id: "enrolled", label: "Enrolled", hex: "var(--success)" },
 ];
 
 const SOURCE_ICONS: Record<LeadSource, React.ReactNode> = {
@@ -546,7 +546,7 @@ export default function LeadsPage() {
 
       <div className="flex-1 flex flex-col overflow-x-hidden">
         <div className="px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
-          <div className="rounded-[6px] border border-border bg-surface p-5">
+          <div className="border border-border bg-surface p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
                 <h3 className="text-sm font-medium text-text-primary">Follow-Up Today</h3>
@@ -555,20 +555,20 @@ export default function LeadsPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
-                <span className="rounded-[4px] border border-warning/20 bg-warning/10 px-2 py-1 text-warning">
+                <span className="border border-warning/20 bg-warning/10 px-2 py-1 text-warning">
                   {dueTodayCount} due today
                 </span>
-                <span className="rounded-[4px] border border-danger/20 bg-danger/10 px-2 py-1 text-danger">
+                <span className="border border-danger/20 bg-danger/10 px-2 py-1 text-danger">
                   {overdueCount} overdue
                 </span>
-                <span className="rounded-[4px] border border-border bg-surface-raised px-2 py-1 text-text-secondary">
+                <span className="border border-border bg-surface-raised px-2 py-1 text-text-secondary">
                   {upcomingFollowUps} upcoming
                 </span>
               </div>
             </div>
 
             {followUpQueue.length === 0 ? (
-              <div className="mt-4 rounded-[6px] border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
+              <div className="mt-4 border border-border bg-surface-raised/60 px-4 py-5 text-sm text-text-secondary">
                 No leads are due for follow-up today. Upcoming follow-ups will continue to show on each lead card.
               </div>
             ) : (
@@ -580,7 +580,7 @@ export default function LeadsPage() {
                   return (
                     <div
                       key={lead.id}
-                      className="rounded-[6px] border border-border bg-surface-raised/60 p-4"
+                      className="border border-border bg-surface-raised/60 p-4"
                     >
                       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                         <div className="min-w-0">
@@ -602,16 +602,16 @@ export default function LeadsPage() {
                             </div>
                           </button>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
-                            <span className="rounded-[4px] border border-border bg-surface px-2 py-0.5">
+                            <span className="border border-border bg-surface px-2 py-0.5">
                               {getStageLabel(lead.stage)}
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-[4px] border border-border bg-surface px-2 py-0.5">
+                            <span className="inline-flex items-center gap-1 border border-border bg-surface px-2 py-0.5">
                               {SOURCE_ICONS[lead.source]}
                               {SOURCE_LABELS[lead.source]}
                             </span>
                             {lead.follow_up_date && (
                               <span
-                                className={`rounded-[4px] px-2 py-0.5 ${
+                                className={`px-2 py-0.5 ${
                                   lead.follow_up_date < today
                                     ? "bg-danger/10 text-danger"
                                     : "bg-warning/10 text-warning"
@@ -635,7 +635,7 @@ export default function LeadsPage() {
                               onChange={(event) =>
                                 setFollowUpInputValue(lead.id, event.target.value)
                               }
-                              className="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                              className="w-full border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                             />
                           </div>
                           <Button
@@ -693,10 +693,10 @@ export default function LeadsPage() {
               return (
                 <div
                   key={stage.id}
-                  className={`min-w-0 flex flex-col rounded-[8px] border p-2 transition-colors ${
+                  className={`min-w-0 flex flex-col transition-colors ${
                     isDropActive
-                      ? "border-accent/50 bg-accent/5"
-                      : "border-transparent"
+                      ? "ring-1 ring-accent/50"
+                      : ""
                   }`}
                   onDragOver={(event) => handleStageDragOver(event, stage.id)}
                   onDragLeave={(event) => handleStageDragLeave(event, stage.id)}
@@ -704,20 +704,24 @@ export default function LeadsPage() {
                     void handleDrop(event, stage.id);
                   }}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-xs font-medium text-text-secondary uppercase tracking-wide">
-                        {stage.label}
-                      </h3>
-                      <span className="text-xs text-muted font-mono bg-surface-raised px-1.5 py-0.5 rounded-[4px]">
-                        {stageLeads.length}
-                      </span>
-                    </div>
+                  {/* Stage accent bar */}
+                  <span
+                    className="block h-[3px] w-full shrink-0"
+                    style={{ backgroundColor: stage.hex }}
+                  />
+
+                  <div className="flex items-center justify-between px-3 py-2.5 bg-surface border-x border-border">
+                    <h3 className="text-[11px] font-medium text-text-secondary uppercase tracking-widest">
+                      {stage.label}
+                    </h3>
+                    <span className="text-[11px] text-muted font-mono">
+                      {stageLeads.length}
+                    </span>
                   </div>
 
                   <div
-                    className={`flex-1 space-y-2 rounded-[6px] border-t-2 p-3 transition-colors ${stage.color} ${
-                      isDropActive ? "bg-accent/10" : "bg-surface/50"
+                    className={`flex-1 border border-border border-t-0 p-2 transition-colors ${
+                      isDropActive ? "bg-accent/[0.04]" : "bg-surface/30"
                     } min-h-[240px]`}
                     onDragOver={(event) => handleStageDragOver(event, stage.id)}
                     onDragLeave={(event) => handleStageDragLeave(event, stage.id)}
@@ -727,84 +731,90 @@ export default function LeadsPage() {
                   >
                     {canDropIntoStage && (
                       <div
-                        className={`rounded-[6px] border border-dashed px-3 py-2 text-xs transition-colors ${
+                        className={`border border-dashed px-3 py-2 text-xs mb-2 transition-colors ${
                           isDropActive
                             ? "border-accent/60 bg-accent/10 text-accent"
                             : "border-border bg-surface-raised/40 text-muted"
                         }`}
                       >
-                        Drop here to move this lead to {stage.label.toLowerCase()}.
+                        Drop to move to {stage.label.toLowerCase()}
                       </div>
                     )}
 
-                    {stageLeads.map((lead) => (
-                      <div
-                        key={lead.id}
-                        draggable
-                        onDragStart={(event) => handleCardDragStart(event, lead.id)}
-                        onDragEnd={clearDragState}
-                        onClick={() => {
-                          setLeadActionError(null);
-                          setSelectedLeadId(lead.id);
-                        }}
-                        className={`min-w-0 bg-surface border border-border rounded-[6px] p-3 cursor-pointer hover:border-accent/30 transition-colors ${
-                          draggedLead === lead.id || pendingLeadId === lead.id ? "opacity-50" : ""
-                        }`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="min-w-0">
-                            <p className="break-words text-sm font-medium text-text-primary">
-                              {fullName(lead)}
+                    {stageLeads.map((lead) => {
+                      const program = lead.program_id ? programById.get(lead.program_id) : null;
+                      const cardAccent = program?.color_hex || "var(--border)";
+
+                      return (
+                        <div
+                          key={lead.id}
+                          draggable
+                          onDragStart={(event) => handleCardDragStart(event, lead.id)}
+                          onDragEnd={clearDragState}
+                          onClick={() => {
+                            setLeadActionError(null);
+                            setSelectedLeadId(lead.id);
+                          }}
+                          className={`group relative min-w-0 bg-surface border border-border mb-2 cursor-pointer hover:border-[color:var(--accent)]/30 transition-colors overflow-hidden ${
+                            draggedLead === lead.id || pendingLeadId === lead.id ? "opacity-50" : ""
+                          }`}
+                        >
+                          <span
+                            className="absolute left-0 top-0 bottom-0 w-[3px]"
+                            style={{ backgroundColor: cardAccent }}
+                          />
+                          <div className="pl-3.5 pr-3 py-2.5">
+                            <div className="flex items-start justify-between gap-1">
+                              <p className="break-words text-sm font-semibold text-text-primary leading-tight">
+                                {fullName(lead)}
+                              </p>
+                              <GripVertical className="w-3 h-3 text-border flex-shrink-0 cursor-grab mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                            <p className="text-[10px] text-text-secondary mt-1 truncate">
+                              {program?.name || lead.program_interest || "No program"}
                             </p>
-                            <div className="mt-1">
-                              <ProgramBadge
-                                program={lead.program_id ? programById.get(lead.program_id) : null}
-                                fallback={getProgramLabel(lead, null)}
-                              />
+
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 border border-border bg-surface-raised px-1.5 py-0.5 text-[10px] text-text-secondary">
+                                {SOURCE_ICONS[lead.source]}
+                                <span className="truncate">{SOURCE_LABELS[lead.source]}</span>
+                              </span>
+                              {lead.is_minor && (
+                                <span className="text-[10px] text-warning">Minor</span>
+                              )}
+                              {lead.follow_up_date && lead.follow_up_date <= today && (
+                                <span
+                                  className={`text-[10px] px-1.5 py-0.5 ${
+                                    lead.follow_up_date < today
+                                      ? "bg-danger/10 text-danger"
+                                      : "bg-warning/10 text-warning"
+                                  }`}
+                                >
+                                  {getFollowUpStatusLabel(lead.follow_up_date, today)}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-2 pt-1.5 border-t border-border/40 text-[10px] text-muted">
+                              {lead.follow_up_date && (
+                                <span className="flex items-center gap-0.5">
+                                  <Calendar className="w-2.5 h-2.5" />
+                                  {formatDate(lead.follow_up_date)}
+                                </span>
+                              )}
+                              <span>{timeAgo(lead.created_at)}</span>
                             </div>
                           </div>
-                          <GripVertical className="w-3.5 h-3.5 text-border flex-shrink-0 cursor-grab" />
                         </div>
-
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex min-w-0 items-center gap-1 rounded-[4px] border border-border bg-surface-raised px-1.5 py-0.5 text-[10px] text-text-secondary">
-                            {SOURCE_ICONS[lead.source]}
-                            <span className="truncate">{SOURCE_LABELS[lead.source]}</span>
-                          </span>
-                          {lead.is_minor && (
-                            <span className="text-[10px] text-warning">Minor</span>
-                          )}
-                          {lead.follow_up_date && lead.follow_up_date <= today && (
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded-[4px] ${
-                                lead.follow_up_date < today
-                                  ? "bg-danger/10 text-danger"
-                                  : "bg-warning/10 text-warning"
-                              }`}
-                            >
-                              {getFollowUpStatusLabel(lead.follow_up_date, today)}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted">
-                          {lead.follow_up_date && (
-                            <span className="flex items-center gap-0.5">
-                              <Calendar className="w-2.5 h-2.5" />
-                              {formatDate(lead.follow_up_date)}
-                            </span>
-                          )}
-                          <span>{timeAgo(lead.created_at)}</span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {stageLeads.length === 0 && (
                       <div className="text-center py-8">
                         <p className="text-xs text-muted">
                           {stage.id === "inquiry"
                             ? "New inquiries will start here."
-                            : `No leads are currently in ${stage.label.toLowerCase()}.`}
+                            : `No leads in ${stage.label.toLowerCase()}.`}
                         </p>
                         {stage.id === "inquiry" ? (
                           <button
@@ -814,7 +824,7 @@ export default function LeadsPage() {
                               setAddLeadProgramId(null);
                               setShowAddLead(true);
                             }}
-                            className="mt-3 text-xs font-medium text-accent hover:text-accent-hover"
+                            className="mt-3 text-xs font-medium text-accent hover:text-accent-hover cursor-pointer"
                           >
                             Add lead
                           </button>

@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/students/status-badge";
+import { StudentAvatar } from "@/components/students/student-avatar";
 import { StudentForm } from "@/components/students/student-form";
+import { toLocalDateKey } from "@/lib/date";
 import { buildStudentInactivityRows } from "@/lib/student-insights";
 import { useProgramStore, useScheduleStore, useStudentStore } from "@/lib/store";
 import { ProgramBadge } from "@/components/programs/program-picker";
@@ -49,6 +51,20 @@ function displayName(s: Student) {
   return `${s.legal_last_name}, ${s.preferred_name || s.legal_first_name}`;
 }
 
+function subtractDays(dateString: string, days: number) {
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setDate(date.getDate() - days);
+  return toLocalDateKey(date);
+}
+
+function studentStartDate(student: Student) {
+  return student.membership_start_date || student.created_at.slice(0, 10);
+}
+
+function isCurrentStudent(student: Student) {
+  return student.status === "active" || student.status === "trialing" || student.status === "paused";
+}
+
 function SortIcon({
   col,
   sortKey,
@@ -85,6 +101,22 @@ export default function StudentsPage() {
   const { sessions, attendance } = useScheduleStore();
   const { programs } = useProgramStore();
   const inactivityThreshold = Number(searchParams.get("inactiveDays") || "") || null;
+  const newStudentFilter = searchParams.get("newStudents");
+  const newStudentDays = Number(newStudentFilter || "") || null;
+  const isNewStudentYtd = newStudentFilter === "ytd";
+  const hasNewStudentFilter = Boolean(newStudentDays || isNewStudentYtd);
+  const today = toLocalDateKey();
+  const newStudentStartDate = useMemo(() => {
+    if (isNewStudentYtd) {
+      return `${today.slice(0, 4)}-01-01`;
+    }
+
+    if (newStudentDays) {
+      return subtractDays(today, newStudentDays);
+    }
+
+    return null;
+  }, [isNewStudentYtd, newStudentDays, today]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [programFilter, setProgramFilter] = useState<string>("");
@@ -142,7 +174,7 @@ export default function StudentsPage() {
     () => new Map(inactivityRows.map((row) => [row.student.id, row.daysInactive])),
     [inactivityRows]
   );
-  const hasActiveFilters = Boolean(search || statusFilter || programFilter || inactivityThreshold);
+  const hasActiveFilters = Boolean(search || statusFilter || programFilter || inactivityThreshold || hasNewStudentFilter);
 
   useEffect(() => {
     if (!studentsLoaded) {
@@ -198,6 +230,17 @@ export default function StudentsPage() {
       );
     }
 
+    if (newStudentStartDate) {
+      list = list.filter((row) => {
+        if (!isCurrentStudent(row.student)) {
+          return false;
+        }
+
+        const startDate = studentStartDate(row.student);
+        return startDate >= newStudentStartDate && startDate <= today;
+      });
+    }
+
     list.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "name") {
@@ -216,7 +259,18 @@ export default function StudentsPage() {
     });
 
     return list;
-  }, [studentRows, search, statusFilter, programFilter, inactivityThreshold, inactivityByStudentId, sortKey, sortDir]);
+  }, [
+    studentRows,
+    search,
+    statusFilter,
+    programFilter,
+    inactivityThreshold,
+    inactivityByStudentId,
+    newStudentStartDate,
+    today,
+    sortKey,
+    sortDir,
+  ]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -395,6 +449,23 @@ export default function StudentsPage() {
             </DismissibleNotice>
           </div>
         )}
+
+        {hasNewStudentFilter && newStudentStartDate ? (
+          <div className="px-8 pt-4">
+            <DismissibleNotice tone="success" onDismiss={() => router.push("/students")}>
+              <div className="text-text-primary">
+                <p className="text-sm font-medium text-text-primary">
+                  {isNewStudentYtd
+                    ? "Showing new students year to date"
+                    : `Showing new students from the last ${newStudentDays} days`}
+                </p>
+                <p className="text-xs text-muted mt-0.5">
+                  Current active, trialing, or paused students are filtered by membership start date.
+                </p>
+              </div>
+            </DismissibleNotice>
+          </div>
+        ) : null}
 
         {actionMessage ? (
           <div className="px-8 pt-4">
@@ -790,12 +861,7 @@ export default function StudentsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-surface-raised border border-border flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-medium text-text-secondary">
-                              {student.legal_first_name[0]}
-                              {student.legal_last_name[0]}
-                            </span>
-                          </div>
+                          <StudentAvatar student={student} />
                           <div>
                             <p className="font-medium text-text-primary text-sm">
                               {student.preferred_name || student.legal_first_name}{" "}

@@ -8,8 +8,9 @@ from collections import defaultdict
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 from supabase import Client
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from postgrest.exceptions import APIError as PostgrestAPIError
+from storage3.utils import StorageException
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     GuardianCreate, GuardianResponse, CsvImportActionOptions, CsvImportIssue,
@@ -64,6 +65,21 @@ COMMON_IMPORT_DATE_FORMATS = (
 )
 IMPORT_RUN_OPERATION = "students_csv_execute"
 IMPORT_RUN_STALE_AFTER_SECONDS = 45
+STUDENT_PHOTO_BUCKET = "student-photos"
+STUDENT_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+STUDENT_PHOTO_SIGNED_URL_SECONDS = 15 * 60
+STUDENT_PHOTO_ALLOWED_CONTENT_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+STUDENT_PHOTO_CONTENT_TYPE_ALIASES = {
+    "image/jpg": "image/jpeg",
+    "image/jpeg": "image/jpeg",
+    "image/png": "image/png",
+    "image/webp": "image/webp",
+}
+_PHOTO_URL_UNSET = object()
 
 def _normalize_header(h: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", h.strip().lower()).strip()
@@ -367,6 +383,199 @@ class StudentService:
 
         return payload
 
+    def _student_photo_columns_available(self) -> bool:
+        if hasattr(self, "_photo_columns_available"):
+            return bool(self._photo_columns_available)
+        try:
+            (
+                self.supabase.table("students")
+                .select("id, photo_path, photo_updated_at")
+                .limit(1)
+                .execute()
+            )
+            self._photo_columns_available = True
+        except PostgrestAPIError as exc:
+            if "photo_path" not in (getattr(exc, "message", "") or str(exc)):
+                raise
+            self._photo_columns_available = False
+        return bool(self._photo_columns_available)
+
+    def _photo_bucket(self):
+        return self.supabase.storage.from_(STUDENT_PHOTO_BUCKET)
+
+    def _storage_error_status(self, exc: StorageException) -> Optional[int]:
+        if not exc.args:
+            return None
+        payload = exc.args[0]
+        if not isinstance(payload, dict):
+            return None
+        status_code = payload.get("statusCode") or payload.get("status_code")
+        try:
+            return int(status_code)
+        except (TypeError, ValueError):
+            return None
+
+    def _is_storage_conflict(self, exc: StorageException) -> bool:
+        status_code = self._storage_error_status(exc)
+        if status_code == 409:
+            return True
+        payload = exc.args[0] if exc.args else {}
+        if not isinstance(payload, dict):
+            return False
+        message = str(payload.get("message") or payload.get("error") or "").lower()
+        return "already exists" in message or "duplicate" in message
+
+    def _extract_signed_photo_url(self, payload: dict) -> Optional[str]:
+        return (
+            payload.get("signedURL")
+            or payload.get("signedUrl")
+            or payload.get("signed_url")
+            or payload.get("url")
+        )
+
+    def _create_signed_photo_url(self, photo_path: Optional[str]) -> Optional[str]:
+        if not photo_path:
+            return None
+        try:
+            payload = self._photo_bucket().create_signed_url(
+                photo_path,
+                STUDENT_PHOTO_SIGNED_URL_SECONDS,
+            )
+        except StorageException:
+            return None
+        return self._extract_signed_photo_url(payload)
+
+    def _create_signed_photo_urls(self, photo_paths: list[str]) -> dict[str, Optional[str]]:
+        ordered_paths = [
+            path
+            for path in dict.fromkeys(photo_paths)
+            if path
+        ]
+        if not ordered_paths:
+            return {}
+
+        try:
+            signed_payloads = self._photo_bucket().create_signed_urls(
+                ordered_paths,
+                STUDENT_PHOTO_SIGNED_URL_SECONDS,
+            )
+        except StorageException:
+            return {path: None for path in ordered_paths}
+
+        urls_by_path: dict[str, Optional[str]] = {}
+        for index, payload in enumerate(signed_payloads or []):
+            path = payload.get("path") or payload.get("name")
+            if not path and index < len(ordered_paths):
+                path = ordered_paths[index]
+            if path:
+                urls_by_path[path] = self._extract_signed_photo_url(payload)
+
+        for path in ordered_paths:
+            urls_by_path.setdefault(path, None)
+        return urls_by_path
+
+    def _normalize_photo_content_type(self, content_type: Optional[str]) -> Optional[str]:
+        if not content_type:
+            return None
+        return STUDENT_PHOTO_CONTENT_TYPE_ALIASES.get(
+            content_type.split(";")[0].strip().lower()
+        )
+
+    def _detect_photo_content_type(self, content: bytes) -> Optional[str]:
+        if content.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if (
+            len(content) >= 12
+            and content[:4] == b"RIFF"
+            and content[8:12] == b"WEBP"
+        ):
+            return "image/webp"
+        return None
+
+    async def _read_validated_photo_file(self, file: UploadFile) -> tuple[bytes, str, str]:
+        declared_content_type = self._normalize_photo_content_type(file.content_type)
+        if declared_content_type not in STUDENT_PHOTO_ALLOWED_CONTENT_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail="Student photo must be a JPEG, PNG, or WebP image.",
+            )
+
+        content = await file.read(STUDENT_PHOTO_MAX_BYTES + 1)
+        if not content:
+            raise HTTPException(status_code=400, detail="Student photo file is empty.")
+        if len(content) > STUDENT_PHOTO_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Student photo must be 5 MB or smaller.",
+            )
+
+        detected_content_type = self._detect_photo_content_type(content)
+        if detected_content_type != declared_content_type:
+            raise HTTPException(
+                status_code=400,
+                detail="Student photo content does not match its declared image type.",
+            )
+
+        extension = STUDENT_PHOTO_ALLOWED_CONTENT_TYPES[detected_content_type]
+        return content, detected_content_type, extension
+
+    def _student_photo_path(self, student: dict, extension: str) -> str:
+        return f"{student['studio_id']}/students/{student['id']}/profile"
+
+    def _find_stored_student_photo_path(self, student: dict) -> Optional[str]:
+        photo_path = self._student_photo_path(student, "webp")
+        try:
+            objects = self._photo_bucket().list(f"{student['studio_id']}/students/{student['id']}")
+        except StorageException:
+            return None
+        if any((item.get("name") if isinstance(item, dict) else None) == "profile" for item in objects or []):
+            return photo_path
+        return None
+
+    def _upload_photo_object(self, photo_path: str, content: bytes, content_type: str) -> None:
+        file_options = {
+            "content-type": content_type,
+            "cache-control": "3600",
+            "upsert": "true",
+        }
+        bucket = self._photo_bucket()
+        try:
+            bucket.upload(photo_path, content, file_options=file_options)
+        except StorageException as exc:
+            if not self._is_storage_conflict(exc):
+                raise HTTPException(
+                    status_code=502,
+                    detail="Failed to store student photo.",
+                ) from exc
+            try:
+                bucket.update(photo_path, content, file_options=file_options)
+            except StorageException as update_exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Failed to replace student photo.",
+                ) from update_exc
+
+    def _remove_photo_objects(self, photo_paths: list[str], *, raise_on_failure: bool = True) -> None:
+        paths = [
+            path
+            for path in dict.fromkeys(photo_paths)
+            if path
+        ]
+        if not paths:
+            return
+        try:
+            self._photo_bucket().remove(paths)
+        except StorageException as exc:
+            if self._storage_error_status(exc) == 404:
+                return
+            if raise_on_failure:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Failed to remove student photo.",
+                ) from exc
+
     def _guardian_row_to_response(self, guardian_row: dict) -> GuardianResponse:
         return GuardianResponse(**{
             "id": guardian_row["id"],
@@ -502,11 +711,17 @@ class StudentService:
             *student_ids
         ])
         memberships_by_student_id = self._fetch_memberships_for_students(student_ids)
+        photo_urls_by_path = self._create_signed_photo_urls([
+            row["photo_path"]
+            for row in rows
+            if row.get("photo_path")
+        ])
         return [
             self._row_to_response(
                 row,
                 guardians=guardians_by_student_id.get(row.get("id"), []),
                 memberships=memberships_by_student_id.get(row.get("id"), []),
+                photo_url=photo_urls_by_path.get(row.get("photo_path")),
             )
             for row in rows
         ]
@@ -516,6 +731,7 @@ class StudentService:
         row: dict,
         guardians: Optional[list[GuardianResponse]] = None,
         memberships: Optional[list[StudentProgramMembershipResponse]] = None,
+        photo_url: Any = _PHOTO_URL_UNSET,
     ) -> StudentResponse:
         if guardians is None:
             guardians = self._embedded_guardians_from_row(row)
@@ -523,6 +739,13 @@ class StudentService:
             guardians = self._fetch_guardians_for_student(row["id"])
         if memberships is None:
             memberships = self._fetch_memberships_for_student(row["id"])
+        if photo_url is _PHOTO_URL_UNSET:
+            photo_path = row.get("photo_path")
+            if not photo_path and not self._student_photo_columns_available():
+                photo_path = self._find_stored_student_photo_path(row)
+                if photo_path:
+                    row = {**row, "photo_path": photo_path}
+            photo_url = self._create_signed_photo_url(photo_path)
 
         normalized_row = {
             **{
@@ -531,6 +754,7 @@ class StudentService:
                 if k not in ("deleted_at", "student_guardians")
             },
             "tags": row.get("tags") or [],
+            "photo_url": photo_url,
         }
         return StudentResponse(
             **normalized_row,
@@ -603,6 +827,20 @@ class StudentService:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Student not found")
+
+    def _fetch_student_row_for_studio(self, student_id: str, studio_id: str) -> dict:
+        result = (
+            self.supabase.table("students")
+            .select("*")
+            .eq("id", student_id)
+            .eq("studio_id", studio_id)
+            .is_("deleted_at", "null")
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            raise HTTPException(status_code=404, detail="Student not found")
+        return result.data
 
     def _sync_legacy_program_fields(
         self,
@@ -2402,6 +2640,137 @@ class StudentService:
         }).execute()
 
         return self._row_to_response(result.data[0])
+
+    async def upload_student_photo(
+        self,
+        student_id: str,
+        studio_id: str,
+        actor_id: str,
+        file: UploadFile,
+    ) -> StudentResponse:
+        student = self._fetch_student_row_for_studio(student_id, studio_id)
+        content, content_type, extension = await self._read_validated_photo_file(file)
+        photo_path = self._student_photo_path(student, extension)
+        previous_photo_path = student.get("photo_path")
+
+        self._upload_photo_object(photo_path, content, content_type)
+
+        update_payload = {
+            "photo_path": photo_path,
+            "photo_updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if not self._student_photo_columns_available():
+            row = {
+                **student,
+                **update_payload,
+            }
+            self.supabase.table("audit_logs").insert({
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "student.photo_uploaded",
+                "entity_type": "student",
+                "entity_id": student_id,
+                "metadata": {
+                    "photo_path": photo_path,
+                    "content_type": content_type,
+                    "size_bytes": len(content),
+                    "metadata_persisted": False,
+                },
+            }).execute()
+            return self._row_to_response(
+                row,
+                photo_url=self._create_signed_photo_url(photo_path),
+            )
+
+        result = (
+            self.supabase.table("students")
+            .update(update_payload)
+            .eq("id", student_id)
+            .eq("studio_id", studio_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        if not result.data:
+            if photo_path != previous_photo_path:
+                self._remove_photo_objects([photo_path], raise_on_failure=False)
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        if previous_photo_path and previous_photo_path != photo_path:
+            self._remove_photo_objects([previous_photo_path], raise_on_failure=False)
+
+        self.supabase.table("audit_logs").insert({
+            "studio_id": studio_id,
+            "actor_id": actor_id,
+            "action": "student.photo_uploaded",
+            "entity_type": "student",
+            "entity_id": student_id,
+            "metadata": {
+                "photo_path": photo_path,
+                "content_type": content_type,
+                "size_bytes": len(content),
+            },
+        }).execute()
+
+        return self._row_to_response(result.data[0])
+
+    async def delete_student_photo(
+        self,
+        student_id: str,
+        studio_id: str,
+        actor_id: str,
+    ) -> StudentResponse:
+        student = self._fetch_student_row_for_studio(student_id, studio_id)
+        previous_photo_path = student.get("photo_path")
+        if not previous_photo_path and not self._student_photo_columns_available():
+            previous_photo_path = self._student_photo_path(student, "webp")
+        if previous_photo_path:
+            self._remove_photo_objects([previous_photo_path])
+
+        if not self._student_photo_columns_available():
+            self.supabase.table("audit_logs").insert({
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "student.photo_deleted",
+                "entity_type": "student",
+                "entity_id": student_id,
+                "metadata": {
+                    "photo_path": previous_photo_path,
+                    "metadata_persisted": False,
+                },
+            }).execute()
+            return self._row_to_response(
+                {
+                    **student,
+                    "photo_path": None,
+                    "photo_updated_at": None,
+                },
+                photo_url=None,
+            )
+
+        result = (
+            self.supabase.table("students")
+            .update({
+                "photo_path": None,
+                "photo_updated_at": None,
+            })
+            .eq("id", student_id)
+            .eq("studio_id", studio_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        self.supabase.table("audit_logs").insert({
+            "studio_id": studio_id,
+            "actor_id": actor_id,
+            "action": "student.photo_deleted",
+            "entity_type": "student",
+            "entity_id": student_id,
+            "metadata": {"photo_path": previous_photo_path},
+        }).execute()
+
+        return self._row_to_response(result.data[0], photo_url=None)
 
     async def soft_delete_student(
         self, student_id: str, studio_id: str, actor_id: str

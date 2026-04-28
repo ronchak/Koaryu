@@ -36,7 +36,12 @@ async def create_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_program_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await ProgramService(supabase).create_program(data, membership["studio_id"], user_id)
 
 
@@ -57,7 +62,12 @@ async def update_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_program_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await ProgramService(supabase).update_program(program_id, data, membership["studio_id"], user_id)
 
 
@@ -68,7 +78,12 @@ async def archive_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_program_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await ProgramService(supabase).archive_program(program_id, membership["studio_id"], user_id)
 
 
@@ -79,7 +94,12 @@ async def restore_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_program_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await ProgramService(supabase).restore_program(program_id, membership["studio_id"], user_id)
 
 

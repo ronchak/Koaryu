@@ -29,12 +29,34 @@ from app.services.studio_scope import (
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
-def _admin_studio_id(supabase: Client, user_id: str, requested_studio_id: Optional[str]) -> str:
-    return resolve_billing_admin_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+def _admin_studio_id(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str],
+    *,
+    require_platform_subscription: bool = False,
+) -> str:
+    return resolve_billing_admin_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+    )["studio_id"]
 
 
-def _manager_studio_id(supabase: Client, user_id: str, requested_studio_id: Optional[str]) -> str:
-    return resolve_billing_manager_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+def _manager_studio_id(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str],
+    *,
+    require_platform_subscription: bool = False,
+) -> str:
+    return resolve_billing_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+    )["studio_id"]
 
 
 @router.get("/connect/status", response_model=StudioPaymentAccountResponse)
@@ -79,7 +101,12 @@ async def list_plans(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).list_plans(studio_id)
 
 
@@ -90,7 +117,12 @@ async def create_plan(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).create_plan(data, studio_id, user_id)
 
 
@@ -102,7 +134,12 @@ async def update_plan(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).update_plan(plan_id, data, studio_id, user_id)
 
 
@@ -113,7 +150,12 @@ async def archive_plan(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).archive_plan(plan_id, studio_id, user_id)
 
 
@@ -123,7 +165,12 @@ async def list_payers(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).list_payers(studio_id)
 
 
@@ -134,7 +181,12 @@ async def create_payer(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).create_payer(data, studio_id, user_id)
 
 
@@ -145,7 +197,12 @@ async def get_payer(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).get_payer(payer_id, studio_id)
 
 
@@ -157,7 +214,12 @@ async def update_payer(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).update_payer(payer_id, data, studio_id, user_id)
 
 
@@ -167,7 +229,12 @@ async def list_invoices(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).list_invoices(studio_id)
 
 
@@ -177,7 +244,12 @@ async def list_payments(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).list_payments(studio_id)
 
 
@@ -188,7 +260,12 @@ async def record_external_payment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).record_external_payment(data, studio_id, user_id)
 
 
@@ -199,7 +276,12 @@ async def create_export_job(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).create_export_job(data, studio_id, user_id)
 
 
@@ -210,5 +292,10 @@ async def get_export_job(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).get_export_job(export_id, studio_id)

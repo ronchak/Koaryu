@@ -2,8 +2,9 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { LoadingScreen } from "@/components/loading-screen";
 import { createClient } from "@/lib/supabase/client";
-import { api } from "@/lib/api";
+import { api, isSubscriptionRequiredError } from "@/lib/api";
 import {
   clearActiveStudioIdCookie,
   clearStudioStateCookie,
@@ -529,6 +530,8 @@ interface StoreContextValue {
   addStudent: (data: StudentCreate) => Promise<Student>;
   updateStudent: (id: string, data: StudentUpdatePayload) => Promise<void>;
   deleteStudents: (ids: string[]) => Promise<void>;
+  uploadStudentPhoto: (studentId: string, file: File) => Promise<Student>;
+  deleteStudentPhoto: (studentId: string) => Promise<Student>;
   bulkAddTagsToStudents: (
     studentIds: string[],
     tags: string[]
@@ -624,6 +627,8 @@ type StudentsStoreContextValue = Pick<
   | "addStudent"
   | "updateStudent"
   | "deleteStudents"
+  | "uploadStudentPhoto"
+  | "deleteStudentPhoto"
   | "bulkAddTagsToStudents"
   | "bulkUpdateStudentStatus"
   | "importStudents"
@@ -775,6 +780,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [studentsMayBePartial, setStudentsMayBePartial] = useState(false);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
+  const previewStudentPhotoUrlsRef = useRef<Record<string, string>>({});
   const [programs, setPrograms] = useState<Program[]>(() =>
     isPreviewMode ? MOCK_PROGRAMS : []
   );
@@ -895,6 +901,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
+
+  useEffect(() => {
+    const previewUrls = previewStudentPhotoUrlsRef.current;
+    return () => {
+      Object.values(previewUrls).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   const commitStudents = useCallback(
     (
@@ -1203,6 +1216,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           criticalData = await api.get<BootstrapResponse>("/dashboard/bootstrap", session.access_token);
         } catch (bootstrapError) {
+          if (isSubscriptionRequiredError(bootstrapError)) {
+            const authProfile = await api.get<AuthProfileResponse>(
+              "/auth/me",
+              session.access_token
+            );
+            if (!mounted) return;
+
+            const userProfile = authProfile.user ?? {
+              id: session.user.id,
+              email: session.user.email || "",
+              full_name: session.user.user_metadata?.full_name || null,
+            };
+            setCurrentUser(userProfile);
+            setCurrentRole(authProfile.role);
+            setStudioStateCookie(session.user.id, Boolean(authProfile.studio_id));
+            if (authProfile.studio_id) {
+              setActiveStudioIdCookie(authProfile.studio_id);
+            } else {
+              clearActiveStudioIdCookie();
+            }
+            setHydrated(true);
+            router.replace(authProfile.studio_id ? "/subscription-required" : "/onboarding");
+            return;
+          }
+
           const authProfile = await api.get<AuthProfileResponse>(
             "/auth/me",
             session.access_token,
@@ -1245,9 +1283,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             primary_belt_ladder: beltLaddersRes[0] ?? null,
           };
 
-          if (bootstrapError instanceof Error && !/404|API error: 404/.test(bootstrapError.message)) {
-            console.warn("Falling back to legacy dashboard bootstrap", bootstrapError);
-          }
+          console.warn("Falling back to legacy dashboard bootstrap", bootstrapError);
         }
 
         if (mounted) {
@@ -1336,6 +1372,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
+        if (mounted && isSubscriptionRequiredError(error)) {
+          setHydrated(true);
+          router.replace("/subscription-required");
+          return;
+        }
         if (mounted && /Complete onboarding first|No studio found/i.test(message)) {
           resetLiveStudioState();
           setHydrated(true);
@@ -1624,6 +1665,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const deleteStudents = useCallback(async (ids: string[]) => {
     if (isPreviewMode) {
       const idSet = new Set(ids);
+      ids.forEach((studentId) => {
+        const photoUrl = previewStudentPhotoUrlsRef.current[studentId];
+        if (photoUrl) {
+          URL.revokeObjectURL(photoUrl);
+          delete previewStudentPhotoUrlsRef.current[studentId];
+        }
+      });
       const next = studentsRef.current.filter(s => !idSet.has(s.id));
       persistStudents(next);
     } else {
@@ -1635,6 +1683,90 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       commitStudents((current) => current.filter((student) => !idSet.has(student.id)));
     }
   }, [commitStudents, isPreviewMode, persistStudents, studentsRef, token]);
+
+  const uploadStudentPhoto = useCallback(async (studentId: string, file: File): Promise<Student> => {
+    if (isPreviewMode) {
+      const student = studentsRef.current.find((item) => item.id === studentId);
+      if (!student) {
+        throw new Error("Student not found");
+      }
+
+      const existingUrl = previewStudentPhotoUrlsRef.current[studentId];
+      if (existingUrl) {
+        URL.revokeObjectURL(existingUrl);
+      }
+
+      const now = new Date().toISOString();
+      const photoUrl = URL.createObjectURL(file);
+      previewStudentPhotoUrlsRef.current[studentId] = photoUrl;
+      const updated: Student = {
+        ...student,
+        photo_path: `preview/students/${studentId}/${file.name}`,
+        photo_url: photoUrl,
+        photo_updated_at: now,
+        updated_at: now,
+      };
+
+      commitStudents((current) =>
+        current.map((item) => item.id === studentId ? updated : item)
+      );
+      return updated;
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const body = new FormData();
+    body.append("file", file);
+    const updated = await api.postForm<Student>(`/students/${studentId}/photo`, body, token);
+    commitStudents((current) =>
+      current.some((item) => item.id === studentId)
+        ? current.map((item) => item.id === studentId ? updated : item)
+        : [updated, ...current]
+    );
+    return updated;
+  }, [commitStudents, isPreviewMode, studentsRef, token]);
+
+  const deleteStudentPhoto = useCallback(async (studentId: string): Promise<Student> => {
+    if (isPreviewMode) {
+      const student = studentsRef.current.find((item) => item.id === studentId);
+      if (!student) {
+        throw new Error("Student not found");
+      }
+
+      const existingUrl = previewStudentPhotoUrlsRef.current[studentId];
+      if (existingUrl) {
+        URL.revokeObjectURL(existingUrl);
+        delete previewStudentPhotoUrlsRef.current[studentId];
+      }
+
+      const updated: Student = {
+        ...student,
+        photo_path: null,
+        photo_url: null,
+        photo_updated_at: null,
+        updated_at: new Date().toISOString(),
+      };
+
+      commitStudents((current) =>
+        current.map((item) => item.id === studentId ? updated : item)
+      );
+      return updated;
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const updated = await api.delete<Student>(`/students/${studentId}/photo`, token);
+    commitStudents((current) =>
+      current.some((item) => item.id === studentId)
+        ? current.map((item) => item.id === studentId ? updated : item)
+        : [updated, ...current]
+    );
+    return updated;
+  }, [commitStudents, isPreviewMode, studentsRef, token]);
 
   const importStudents = useCallback(async (
     file: File,
@@ -3042,6 +3174,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addStudent,
     updateStudent,
     deleteStudents,
+    uploadStudentPhoto,
+    deleteStudentPhoto,
     bulkAddTagsToStudents,
     bulkUpdateStudentStatus,
     importStudents,
@@ -3054,11 +3188,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addStudent,
     bulkAddTagsToStudents,
     bulkUpdateStudentStatus,
+    deleteStudentPhoto,
     deleteStudents,
     importStudents,
     refreshStudents,
     students,
     updateStudent,
+    uploadStudentPhoto,
   ]);
 
   const leadsValue = useMemo<LeadsStoreContextValue>(() => ({
@@ -3194,11 +3330,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   ]);
 
   if (!hydrated) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   return (

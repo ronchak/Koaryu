@@ -31,7 +31,12 @@ async def reset_demo_studio(
             detail="Choose an active studio before resetting demo data.",
         )
 
-    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     if membership.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -67,6 +67,11 @@ class StripeService:
         stripe = self._stripe()
         return stripe.billing_portal.Session.create(customer=customer_id, return_url=return_url)
 
+    def retrieve_subscription(self, subscription_id: str, *, expand: Optional[list[str]] = None):
+        stripe = self._stripe()
+        params = {"expand": expand or ["items.data"]}
+        return stripe.Subscription.retrieve(subscription_id, **params)
+
     def create_connect_account(self, *, studio_id: str, business_name: str):
         stripe = self._stripe()
         try:

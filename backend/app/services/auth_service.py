@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -11,6 +12,17 @@ class AuthService:
         self.supabase = supabase
 
     async def get_user_profile(
+        self,
+        user_id: str,
+        requested_studio_id: Optional[str] = None,
+    ) -> AuthResponse:
+        return await asyncio.to_thread(
+            self._get_user_profile_sync,
+            user_id,
+            requested_studio_id,
+        )
+
+    def _get_user_profile_sync(
         self,
         user_id: str,
         requested_studio_id: Optional[str] = None,

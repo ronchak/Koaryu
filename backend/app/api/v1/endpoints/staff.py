@@ -16,7 +16,12 @@ def _resolve_admin_studio_id(
     user_id: str,
     requested_studio_id: Optional[str],
 ) -> str:
-    membership = resolve_admin_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_admin_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return membership["studio_id"]
 
 

@@ -728,9 +728,9 @@ function HeroProductPreview() {
               Open Reports
             </button>
           </div>
-          <div className="hero-preview__notice">
+          <button type="button" className="hero-preview__notice">
             6 students crossed the 14-day threshold.
-          </div>
+          </button>
         </section>
 
         <section className="hero-preview__panel">

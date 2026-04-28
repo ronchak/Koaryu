@@ -132,10 +132,6 @@ export async function updateSession(request: NextRequest) {
     return redirectTo("/login", { clearStudioState: true });
   }
 
-  if (isAuthRoute) {
-    return supabaseResponse;
-  }
-
   const studioStateCookie = parseStudioStateCookie(
     request.cookies.get(STUDIO_STATE_COOKIE)?.value
   );
@@ -189,6 +185,10 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (isLandingRoute) {
+    return supabaseResponse;
+  }
+
+  if (isAuthRoute) {
     return redirectTo(hasStudio ? "/dashboard" : "/onboarding");
   }
 

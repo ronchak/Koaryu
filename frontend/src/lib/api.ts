@@ -1,8 +1,24 @@
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 
 const SERVER_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
-const API_BASE = typeof window === "undefined" ? SERVER_API_BASE : "/api/proxy";
+const BROWSER_API_BASE =
+  process.env.NEXT_PUBLIC_USE_API_PROXY === "true" ? "/api/proxy" : SERVER_API_BASE;
+const API_BASE = typeof window === "undefined" ? SERVER_API_BASE : BROWSER_API_BASE;
 const API_TIMEOUT_MS = 12000;
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function isSubscriptionRequiredError(error: unknown) {
+  return error instanceof ApiError && error.status === 402;
+}
 
 interface ApiOptions {
   token?: string;
@@ -179,7 +195,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
+    throw new ApiError(await parseErrorResponse(res), res.status);
   }
 
   return parseSuccessResponse<T>(res);
@@ -255,10 +271,89 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
   }
 
   if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
+    throw new ApiError(await parseErrorResponse(res), res.status);
   }
 
   return parseSuccessResponse<T>(res);
+}
+
+async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ blob: Blob; filename: string | null }> {
+  const {
+    token,
+    headers: extraHeaders,
+    omitStudioHeader = false,
+    signal,
+    timeoutMs = API_TIMEOUT_MS,
+    timeoutMessage = "Download timed out. Please try again.",
+    networkErrorMessage = "Failed to reach the backend. Please try again.",
+  } = options;
+  const headers: Record<string, string> = {
+    Accept: "text/csv",
+    ...extraHeaders,
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  if (typeof window !== "undefined" && !omitStudioHeader) {
+    const activeStudioId = getActiveStudioIdCookie();
+    if (activeStudioId && !headers["X-Studio-Id"]) {
+      headers["X-Studio-Id"] = activeStudioId;
+    }
+  }
+
+  const controller = new AbortController();
+  let abortReason: "caller" | "timeout" | null = null;
+  const timeout = timeoutMs == null
+    ? null
+    : setTimeout(() => {
+        abortReason ??= "timeout";
+        controller.abort();
+      }, timeoutMs);
+  const abortFromCaller = () => {
+    abortReason ??= "caller";
+    controller.abort();
+  };
+
+  if (signal?.aborted) {
+    abortFromCaller();
+  } else {
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: "GET",
+      headers,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      if (abortReason === "timeout") {
+        throw new Error(timeoutMessage);
+      }
+      throw createAbortError();
+    }
+    throw new Error(networkErrorMessage);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
+
+  if (!res.ok) {
+    throw new ApiError(await parseErrorResponse(res), res.status);
+  }
+
+  const contentDisposition = res.headers.get("content-disposition") || "";
+  const filenameMatch = /filename="?([^"]+)"?/i.exec(contentDisposition);
+  return {
+    blob: await res.blob(),
+    filename: filenameMatch?.[1] ?? null,
+  };
 }
 
 export const api = {
@@ -281,4 +376,7 @@ export const api = {
     options?: Omit<FormApiOptions, "token" | "method" | "body">
   ) =>
     apiFormFetch<T>(path, { ...options, method: "POST", body, token }),
+
+  download: (path: string, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
+    apiDownload(path, { ...options, token }),
 };

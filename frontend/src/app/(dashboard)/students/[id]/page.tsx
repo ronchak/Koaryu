@@ -1,9 +1,10 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Header } from "@/components/header";
 import { StatusBadge } from "@/components/students/status-badge";
+import { StudentAvatar } from "@/components/students/student-avatar";
 import { StudentForm } from "@/components/students/student-form";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,10 @@ import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useBeltStore, useConfigStore, useProgramStore, useStudentStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import type { BeltLadder, BeltRank, Promotion, Student, StudentCreate } from "@/types";
-import { AlertTriangle, ArrowLeft, Award, Mail, Phone, User, Pencil, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Award, Camera, Mail, Phone, User, Pencil, Trash2, X } from "lucide-react";
+
+const STUDENT_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+const STUDENT_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function formatDate(d?: string) {
   if (!d) return "—";
@@ -35,6 +39,18 @@ function calculateAge(dob?: string): string {
   if (!dob) return "—";
   const diff = Date.now() - new Date(dob).getTime();
   return `${Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25))} yrs`;
+}
+
+function validateStudentPhotoFile(file: File): string | null {
+  if (!STUDENT_PHOTO_TYPES.has(file.type)) {
+    return "Choose a JPG, PNG, or WebP image.";
+  }
+
+  if (file.size > STUDENT_PHOTO_MAX_BYTES) {
+    return "Choose an image under 5 MB.";
+  }
+
+  return null;
 }
 
 function InfoRow({ label, value }: { label: string; value?: string }) {
@@ -107,7 +123,14 @@ export default function StudentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { isPreviewMode, token } = useConfigStore();
-  const { students, studentsLoaded, updateStudent, deleteStudents } = useStudentStore();
+  const {
+    students,
+    studentsLoaded,
+    updateStudent,
+    deleteStudents,
+    uploadStudentPhoto,
+    deleteStudentPhoto,
+  } = useStudentStore();
   const { programs } = useProgramStore();
   const {
     beltLadders: storeBeltLadders,
@@ -132,12 +155,24 @@ export default function StudentDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [isPhotoSaving, setIsPhotoSaving] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const listStudent = useMemo(
     () => students.find((s) => s.id === id),
     [students, id]
   );
   const cachedPromotionHistory = promotionHistoryByStudent[id];
+
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) {
+        URL.revokeObjectURL(photoPreviewUrl);
+      }
+    };
+  }, [photoPreviewUrl]);
 
   useEffect(() => {
     let mounted = true;
@@ -418,6 +453,60 @@ export default function StudentDetailPage() {
     }
   }
 
+  async function handlePhotoSelected(file: File) {
+    const validationError = validateStudentPhotoFile(file);
+    if (validationError) {
+      setPhotoError(validationError);
+      return;
+    }
+
+    const nextPreviewUrl = URL.createObjectURL(file);
+    setPhotoPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return nextPreviewUrl;
+    });
+    setPhotoError(null);
+    setActionMessage(null);
+    setIsPhotoSaving(true);
+
+    try {
+      const updated = await uploadStudentPhoto(id, file);
+      setHydratedStudent(updated);
+      setActionMessage("Student photo updated.");
+      setPhotoPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "Failed to update student photo.");
+    } finally {
+      setIsPhotoSaving(false);
+      if (photoInputRef.current) {
+        photoInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function handleDeletePhoto() {
+    setPhotoError(null);
+    setActionMessage(null);
+    setIsPhotoSaving(true);
+
+    try {
+      const updated = await deleteStudentPhoto(id);
+      setHydratedStudent(updated);
+      setActionMessage("Student photo removed.");
+      setPhotoPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "Failed to remove student photo.");
+    } finally {
+      setIsPhotoSaving(false);
+    }
+  }
+
   return (
     <>
       <Header title={fullName} description="Student profile">
@@ -489,11 +578,12 @@ export default function StudentDetailPage() {
           {/* Left col — summary card */}
           <div className="col-span-1 space-y-4">
             <div className="bg-surface border border-border rounded-[6px] p-5 text-center">
-              <div className="w-16 h-16 rounded-full bg-surface-raised border border-border flex items-center justify-center mx-auto mb-3">
-                <span className="text-2xl font-semibold text-text-secondary">
-                  {student.legal_first_name[0]}{student.legal_last_name[0]}
-                </span>
-              </div>
+              <StudentAvatar
+                student={student}
+                size="lg"
+                src={photoPreviewUrl}
+                className="mx-auto mb-3"
+              />
               <p className="font-semibold text-text-primary text-base">{fullName}</p>
               {student.legal_first_name !== student.preferred_name && student.preferred_name && (
                 <p className="text-xs text-muted mt-0.5">
@@ -503,6 +593,43 @@ export default function StudentDetailPage() {
               <div className="mt-3">
                 <StatusBadge status={student.status} />
               </div>
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(event) => {
+                    const selectedFile = event.target.files?.[0];
+                    if (selectedFile) void handlePhotoSelected(selectedFile);
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  isLoading={isPhotoSaving}
+                  onClick={() => photoInputRef.current?.click()}
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  {student.photo_url ? "Replace" : "Upload"}
+                </Button>
+                {student.photo_path || student.photo_url || photoPreviewUrl ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isPhotoSaving}
+                    onClick={handleDeletePhoto}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+              {photoError ? (
+                <p className="text-xs text-danger mt-2">{photoError}</p>
+              ) : isPhotoSaving ? (
+                <p className="text-xs text-muted mt-2">Updating photo...</p>
+              ) : null}
               {isCurrentHold(student) && (
                 <p className="text-xs text-warning mt-2">Currently on hold</p>
               )}

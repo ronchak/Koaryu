@@ -368,6 +368,9 @@ export interface Student {
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
   emergency_contact_relation?: string;
+  photo_path?: string | null;
+  photo_url?: string | null;
+  photo_updated_at?: string | null;
   status: StudentStatus;
   membership_start_date?: string;
   program_id?: string;

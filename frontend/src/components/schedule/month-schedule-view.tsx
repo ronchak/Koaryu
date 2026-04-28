@@ -164,22 +164,22 @@ export function MonthScheduleView({
   }, [calendarDays, showTemplatePlaceholders]);
 
   return (
-    <div className={`rounded-[10px] border border-border bg-surface ${className}`}>
+    <div className={`border border-border bg-surface ${className}`}>
       {showHeader && (
         <div className="flex flex-col gap-3 border-b border-border px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted">Month View</p>
+            <p className="text-[11px] font-medium uppercase tracking-widest text-muted">Month View</p>
             <h2 className="mt-1 text-lg font-semibold text-text-primary">{formatMonthLabel(month)}</h2>
             <p className="mt-1 text-xs text-text-secondary">{formatMonthRange(month)}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1">
+            <span className="inline-flex items-center gap-1.5 border border-border bg-surface-raised px-2.5 py-1">
               <CalendarClock className="h-3.5 w-3.5" />
               {monthlySessionCount} scheduled
             </span>
             {showTemplatePlaceholders && monthlyTemplateGapCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1">
+              <span className="inline-flex items-center gap-1.5 border border-border bg-surface-raised px-2.5 py-1">
                 <Layers3 className="h-3.5 w-3.5" />
                 {monthlyTemplateGapCount} uncovered templates
               </span>
@@ -190,14 +190,16 @@ export function MonthScheduleView({
 
       <div className="overflow-x-auto">
         <div className="min-w-[980px]">
+          {/* Day name headers */}
           <div className="grid grid-cols-7 border-b border-border bg-surface-raised/60">
             {MONTH_DAY_NAMES.map((dayName) => (
               <div key={dayName} className="border-r border-border px-3 py-2 last:border-r-0">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted">{dayName}</p>
+                <p className="text-[11px] font-medium uppercase tracking-widest text-muted">{dayName}</p>
               </div>
             ))}
           </div>
 
+          {/* Calendar grid */}
           <div className="grid grid-cols-7">
             {calendarDays.map((day) => {
               const isToday = day.dateKey === todayKey;
@@ -208,20 +210,21 @@ export function MonthScheduleView({
                   className={`group relative flex min-h-[156px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors last:border-r-0 hover:bg-surface-raised/50 ${
                     day.inCurrentMonth ? "bg-surface" : "bg-[#0F1318] text-text-secondary"
                   } ${isSelected ? "ring-1 ring-inset ring-accent" : ""} ${
-                    isToday ? "bg-accent/[0.06]" : ""
+                    isToday ? "bg-accent/[0.04]" : ""
                   }`}
                 >
                   <button
                     type="button"
                     onClick={() => onDayClick?.(day.date)}
                     aria-label={day.ariaLabel}
-                    className="absolute inset-0 rounded-[inherit]"
+                    className="absolute inset-0"
                   />
 
+                  {/* Day number and metadata */}
                   <div className="relative z-10 mb-2 flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${
+                        className={`inline-flex h-7 min-w-7 items-center justify-center px-2 text-sm font-semibold ${
                           isToday
                             ? "bg-accent text-[#0B0D10]"
                             : day.inCurrentMonth
@@ -232,7 +235,7 @@ export function MonthScheduleView({
                         {day.date.getDate()}
                       </span>
                       <div className="flex flex-col">
-                        <span className={`text-[10px] uppercase tracking-[0.18em] ${day.inCurrentMonth ? "text-muted" : "text-[#4E5764]"}`}>
+                        <span className={`text-[10px] uppercase tracking-widest ${day.inCurrentMonth ? "text-muted" : "text-[#4E5764]"}`}>
                           {day.monthLabel}
                         </span>
                         {isToday && <span className="text-[10px] font-medium text-accent">Today</span>}
@@ -242,17 +245,17 @@ export function MonthScheduleView({
                     {(day.sessionCount > 0 || day.templateCount > 0) && (
                       <div className="flex flex-col items-end gap-1">
                         {day.sessionCount > 0 && (
-                          <span className="rounded-full bg-surface-raised px-2 py-0.5 text-[10px] font-medium text-text-primary">
+                          <span className="bg-surface-raised px-2 py-0.5 text-[10px] font-medium text-text-primary">
                             {day.sessionCount} {day.sessionCount === 1 ? "class" : "classes"}
                           </span>
                         )}
                         {day.conflictCount > 0 && (
-                          <span className="rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">
+                          <span className="border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-medium text-danger">
                             {day.conflictCount} conflict{day.conflictCount === 1 ? "" : "s"}
                           </span>
                         )}
                         {day.templateCount > 0 && (
-                          <span className="rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted">
+                          <span className="border border-dashed border-border px-2 py-0.5 text-[10px] text-muted">
                             {day.templateCount} pending
                           </span>
                         )}
@@ -260,9 +263,10 @@ export function MonthScheduleView({
                     )}
                   </div>
 
+                  {/* Entries */}
                   <div className="relative z-10 flex flex-1 flex-col gap-1.5">
                     {day.visibleEntries.length === 0 && (
-                      <div className="mt-2 rounded-[8px] border border-dashed border-border/80 px-2 py-2 text-[11px] text-muted">
+                      <div className="mt-2 border border-dashed border-border/80 px-2 py-2 text-[11px] text-muted">
                         No scheduled classes
                       </div>
                     )}
@@ -277,10 +281,10 @@ export function MonthScheduleView({
                               event.stopPropagation();
                               onEntryClick?.(entry);
                             }}
-                            className={`flex items-start gap-2 rounded-[8px] border px-2 py-1.5 text-left hover:bg-[#1B2129] ${
+                            className={`flex items-start gap-2 border px-2 py-1.5 text-left hover:bg-[#1B2129] transition-colors ${
                               day.conflictingSessionIds.has(entry.session.id)
                                 ? "border-danger/30 bg-danger/5 hover:border-danger/50"
-                                : "border-border bg-surface-raised hover:border-accent/50"
+                                : "border-border bg-surface-raised hover:border-[color:var(--accent)]/40"
                             }`}
                           >
                             <div className="min-w-[50px] text-[10px] font-medium text-muted">
@@ -313,14 +317,14 @@ export function MonthScheduleView({
                             event.stopPropagation();
                             onEntryClick?.(entry);
                           }}
-                          className="flex items-start gap-2 rounded-[8px] border border-dashed border-border bg-transparent px-2 py-1.5 text-left opacity-80 hover:border-accent/40 hover:bg-surface-raised/40"
+                          className="flex items-start gap-2 border border-dashed border-border bg-transparent px-2 py-1.5 text-left opacity-80 hover:border-[color:var(--accent)]/40 hover:bg-surface-raised/40 transition-colors"
                         >
                           <div className="min-w-[50px] text-[10px] font-medium text-muted">
                             {formatScheduleTime(entry.template.start_time)}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[11px] text-text-secondary">{entry.template.name}</p>
-                            <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-muted">Template slot</p>
+                            <p className="mt-1 text-[10px] uppercase tracking-widest text-muted">Template slot</p>
                           </div>
                         </button>
                       );
@@ -338,7 +342,7 @@ export function MonthScheduleView({
 
                           onDayClick?.(day.date);
                         }}
-                        className="mt-auto rounded-[8px] border border-border px-2 py-1.5 text-left text-[11px] font-medium text-accent hover:bg-accent/10"
+                        className="mt-auto border border-border px-2 py-1.5 text-left text-[11px] font-medium text-accent hover:bg-accent/10 transition-colors"
                       >
                         +{day.hiddenEntries.length} more
                       </button>

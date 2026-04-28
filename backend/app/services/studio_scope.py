@@ -1,7 +1,14 @@
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
 from supabase import Client
+
+ACTIVE_PLATFORM_SUBSCRIPTION_STATUSES = {"active", "trialing", "comped"}
+SUBSCRIPTION_REQUIRED_DETAIL = {
+    "code": "SUBSCRIPTION_REQUIRED",
+    "message": "Koaryu Core subscription required.",
+}
 
 
 def ensure_studio_record(
@@ -71,10 +78,60 @@ def list_staff_roles_for_user(
     return result.data or []
 
 
+def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
+    result = (
+        supabase.table("studio_subscriptions")
+        .select("status, comped, trial_end")
+        .eq("studio_id", studio_id)
+        .maybe_single()
+        .execute()
+    )
+    row = result.data or {}
+    status_value = row.get("status") or "incomplete"
+    comped = bool(row.get("comped", False))
+    subscription_required = not (comped or status_value in ACTIVE_PLATFORM_SUBSCRIPTION_STATUSES)
+
+    trial_end = row.get("trial_end")
+    if status_value == "trialing" and trial_end:
+        trial_end_text = str(trial_end).replace("Z", "+00:00")
+        try:
+            trial_ends_at = datetime.fromisoformat(trial_end_text)
+            if trial_ends_at.tzinfo is None:
+                trial_ends_at = trial_ends_at.replace(tzinfo=timezone.utc)
+            if trial_ends_at <= datetime.now(timezone.utc):
+                subscription_required = True
+        except ValueError:
+            subscription_required = True
+
+    return {
+        "status": status_value,
+        "comped": comped,
+        "subscription_required": subscription_required,
+    }
+
+
+def ensure_platform_subscription_access(supabase: Client, studio_id: str) -> None:
+    access = get_platform_subscription_access(supabase, studio_id)
+    if not access["subscription_required"]:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail={
+            **SUBSCRIPTION_REQUIRED_DETAIL,
+            "status": access["status"],
+            "comped": access["comped"],
+            "subscription_required": True,
+        },
+    )
+
+
 def resolve_staff_role_for_user(
     supabase: Client,
     user_id: str,
     requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
 ) -> dict:
     roles = list_staff_roles_for_user(supabase, user_id)
 
@@ -87,6 +144,8 @@ def resolve_staff_role_for_user(
     if requested_studio_id:
         for role in roles:
             if role["studio_id"] == requested_studio_id:
+                if require_platform_subscription:
+                    ensure_platform_subscription_access(supabase, role["studio_id"])
                 return role
 
         raise HTTPException(
@@ -98,15 +157,27 @@ def resolve_staff_role_for_user(
     # explicit studio selection. Prefer the most recently created membership,
     # which matches the latest studio a user just onboarded into more often
     # than the oldest historical membership.
-    return roles[0]
+    membership = roles[0]
+
+    if require_platform_subscription:
+        ensure_platform_subscription_access(supabase, membership["studio_id"])
+
+    return membership
 
 
 def resolve_admin_staff_role_for_user(
     supabase: Client,
     user_id: str,
     requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
 ) -> dict:
-    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+    )
 
     if membership.get("role") != "admin":
         raise HTTPException(
@@ -121,8 +192,15 @@ def resolve_program_manager_staff_role_for_user(
     supabase: Client,
     user_id: str,
     requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
 ) -> dict:
-    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+    )
 
     if membership.get("role") not in {"admin", "front_desk"}:
         raise HTTPException(
@@ -137,8 +215,15 @@ def resolve_billing_admin_staff_role_for_user(
     supabase: Client,
     user_id: str,
     requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
 ) -> dict:
-    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+    )
 
     if membership.get("role") != "admin":
         raise HTTPException(
@@ -153,8 +238,15 @@ def resolve_billing_manager_staff_role_for_user(
     supabase: Client,
     user_id: str,
     requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
 ) -> dict:
-    membership = resolve_staff_role_for_user(supabase, user_id, requested_studio_id)
+    membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+    )
 
     if membership.get("role") not in {"admin", "front_desk"}:
         raise HTTPException(

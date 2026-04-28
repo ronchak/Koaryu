@@ -77,7 +77,7 @@ export default function OnboardingPage() {
       setStudioStateCookie(session.user.id, true);
       setActiveStudioIdCookie(studio.id);
 
-      router.push("/dashboard");
+      router.push("/subscription-required");
       router.refresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to create studio";

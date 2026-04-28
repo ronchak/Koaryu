@@ -17,6 +17,8 @@ from app.services.stripe_service import StripeService
 
 EMAIL_INCLUDED_PER_MONTH = 500
 EMAIL_OVERAGE_RATE_CENTS = 0.2
+LIVE_STRIPE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid", "paused"}
+MISSING = object()
 
 
 def _to_text(value: Any) -> Optional[str]:
@@ -34,6 +36,7 @@ class PlatformBillingService:
 
     async def get_status(self, studio_id: str) -> PlatformBillingStatusResponse:
         row = self._ensure_subscription_row(studio_id)
+        row = self._repair_subscription_periods(row)
         return self._status_response(row, self._email_usage(studio_id))
 
     async def get_email_usage(self, studio_id: str) -> EmailUsageResponse:
@@ -107,14 +110,21 @@ class PlatformBillingService:
             studio_id = metadata.get("studio_id")
             if not studio_id:
                 return
+            subscription_id = self._stripe_id(data_object.get("subscription"))
             update = {
-                "stripe_customer_id": data_object.get("customer"),
-                "stripe_subscription_id": data_object.get("subscription"),
+                "stripe_customer_id": self._stripe_id(data_object.get("customer")),
+                "stripe_subscription_id": subscription_id,
                 "status": "trialing",
                 "comped": False,
                 "last_payment_status": data_object.get("payment_status"),
             }
             self._update_subscription_row(studio_id, {k: v for k, v in update.items() if v is not None})
+            if subscription_id:
+                try:
+                    subscription = StripeService().retrieve_subscription(subscription_id)
+                    self._update_subscription_row(studio_id, self._project_subscription(subscription))
+                except Exception:
+                    pass
             return
 
         if event_type.startswith("customer.subscription."):
@@ -125,18 +135,7 @@ class PlatformBillingService:
                 studio_id = row.get("studio_id") if row else None
             if not studio_id:
                 return
-            update = {
-                "stripe_customer_id": data_object.get("customer"),
-                "stripe_subscription_id": data_object.get("id"),
-                "status": data_object.get("status") or "incomplete",
-                "trial_start": self._timestamp(data_object.get("trial_start")),
-                "trial_end": self._timestamp(data_object.get("trial_end")),
-                "current_period_start": self._timestamp(data_object.get("current_period_start")),
-                "current_period_end": self._timestamp(data_object.get("current_period_end")),
-                "cancel_at_period_end": bool(data_object.get("cancel_at_period_end")),
-                "comped": False,
-            }
-            self._update_subscription_row(studio_id, {k: v for k, v in update.items() if v is not None})
+            self._update_subscription_row(studio_id, self._project_subscription(data_object))
             return
 
         if event_type in {"invoice.paid", "invoice.payment_failed"}:
@@ -158,7 +157,7 @@ class PlatformBillingService:
             return result.data
         insert_result = (
             self.supabase.table("studio_subscriptions")
-            .insert({"studio_id": studio_id, "status": "comped", "comped": True})
+            .insert({"studio_id": studio_id, "status": "incomplete", "comped": False})
             .execute()
         )
         if not insert_result.data:
@@ -173,7 +172,7 @@ class PlatformBillingService:
         customer_id = customer["id"] if isinstance(customer, dict) else customer.id
         self._update_subscription_row(
             studio_id,
-            {"stripe_customer_id": customer_id, "comped": False, "status": "trialing"},
+            {"stripe_customer_id": customer_id, "comped": False, "status": "incomplete"},
         )
         return customer_id
 
@@ -206,6 +205,77 @@ class PlatformBillingService:
             if result.data:
                 return result.data[0]
         return None
+
+    def _repair_subscription_periods(self, row: dict[str, Any]) -> dict[str, Any]:
+        if not self._should_repair_subscription_periods(row):
+            return row
+        subscription_id = row.get("stripe_subscription_id")
+        try:
+            subscription = StripeService().retrieve_subscription(subscription_id)
+            return self._update_subscription_row(row["studio_id"], self._project_subscription(subscription))
+        except Exception:
+            return row
+
+    def _should_repair_subscription_periods(self, row: dict[str, Any]) -> bool:
+        if not row.get("stripe_subscription_id"):
+            return False
+        if (row.get("status") or "") not in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
+            return False
+        if (row.get("status") or "") == "trialing" and not row.get("trial_end"):
+            return True
+        current_period_start = row.get("current_period_start")
+        current_period_end = row.get("current_period_end")
+        if not current_period_start or not current_period_end:
+            return True
+        start_epoch = self._timestamp_epoch(current_period_start)
+        end_epoch = self._timestamp_epoch(current_period_end)
+        return start_epoch is not None and end_epoch is not None and start_epoch > end_epoch
+
+    def _project_subscription(self, subscription: Any) -> dict[str, Any]:
+        update: dict[str, Any] = {"comped": False}
+
+        if self._object_has(subscription, "customer"):
+            update["stripe_customer_id"] = self._stripe_id(self._object_get(subscription, "customer"))
+        if self._object_has(subscription, "id"):
+            update["stripe_subscription_id"] = self._stripe_id(self._object_get(subscription, "id"))
+        if self._object_has(subscription, "status"):
+            update["status"] = self._object_get(subscription, "status") or "incomplete"
+        if self._object_has(subscription, "trial_start"):
+            update["trial_start"] = self._timestamp(self._object_get(subscription, "trial_start"))
+        if self._object_has(subscription, "trial_end"):
+            update["trial_end"] = self._timestamp(self._object_get(subscription, "trial_end"))
+        if self._object_has(subscription, "cancel_at_period_end"):
+            update["cancel_at_period_end"] = bool(self._object_get(subscription, "cancel_at_period_end"))
+
+        current_period_start = self._subscription_period(subscription, "current_period_start", min)
+        if current_period_start is not MISSING:
+            update["current_period_start"] = current_period_start
+
+        current_period_end = self._subscription_period(subscription, "current_period_end", max)
+        if current_period_end is not MISSING:
+            update["current_period_end"] = current_period_end
+
+        return update
+
+    def _subscription_period(self, subscription: Any, key: str, pick: Any) -> Any:
+        if self._object_has(subscription, key):
+            return self._timestamp(self._object_get(subscription, key))
+
+        item_values = [
+            value
+            for item in self._subscription_items(subscription)
+            if (value := self._object_get(item, key)) is not None
+        ]
+        if not item_values:
+            return MISSING
+        return self._timestamp(pick(item_values, key=self._timestamp_sort_key))
+
+    def _subscription_items(self, subscription: Any) -> list[Any]:
+        items = self._object_get(subscription, "items") or {}
+        if isinstance(items, list):
+            return items
+        data = self._object_get(items, "data") or []
+        return data if isinstance(data, list) else []
 
     def _get_studio(self, studio_id: str) -> dict[str, Any]:
         result = self.supabase.table("studios").select("id, name").eq("id", studio_id).single().execute()
@@ -265,6 +335,57 @@ class PlatformBillingService:
         if isinstance(value, (int, float)):
             return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
         return str(value)
+
+    @staticmethod
+    def _timestamp_epoch(value: Any) -> Optional[float]:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            timestamp = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return timestamp.timestamp()
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                return timestamp.timestamp()
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _timestamp_sort_key(cls, value: Any) -> tuple:
+        epoch = cls._timestamp_epoch(value)
+        if epoch is not None:
+            return (0, epoch)
+        return (1, str(value))
+
+    @classmethod
+    def _stripe_id(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        stripe_id = cls._object_get(value, "id")
+        return str(stripe_id) if stripe_id else None
+
+    @staticmethod
+    def _object_get(value: Any, key: str, default: Any = None) -> Any:
+        if value is None:
+            return default
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+
+    @staticmethod
+    def _object_has(value: Any, key: str) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, dict):
+            return key in value
+        return hasattr(value, key)
 
     def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
         self.supabase.table("audit_logs").insert({

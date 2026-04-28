@@ -10,6 +10,7 @@ import { useState } from "react";
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const { studioName, userEmail, userName } = useStudioStore();
 
   async function handleSignOut() {
@@ -26,8 +27,15 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         userEmail={userEmail}
         userName={userName || studioName || "Koaryu"}
         onSignOut={handleSignOut}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
       />
-      <main className="flex min-h-screen flex-col lg:ml-[240px]">
+      <main
+        className={`
+          flex min-h-screen flex-col transition-[margin-left] duration-200 ease-out motion-reduce:transition-none
+          ${isSidebarCollapsed ? "lg:ml-[88px]" : "lg:ml-[240px]"}
+        `}
+      >
         {children}
       </main>
     </div>

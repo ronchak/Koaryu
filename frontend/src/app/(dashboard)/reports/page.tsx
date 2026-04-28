@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { Header } from "@/components/header";
 import { ProgramBadge } from "@/components/programs/program-picker";
-import { useLeadStore, useProgramStore, useScheduleStore } from "@/lib/store";
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import { useConfigStore, useLeadStore, useProgramStore, useScheduleStore, useStudioStore } from "@/lib/store";
 import type { LeadSource, LeadStage } from "@/types";
-import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
+import { BarChart3, Calendar, Download, FileText, Plus, TrendingUp, Users } from "lucide-react";
 
 const LEAD_STAGE_LABELS: Record<LeadStage, string> = {
   inquiry: "Inquiry",
@@ -33,6 +35,96 @@ const LEAD_FUNNEL_STAGES = [
   "enrolled",
 ] as const satisfies LeadStage[];
 
+type ExportReport = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+type ExportGroup = {
+  title: string;
+  emphasis?: boolean;
+  reports: ExportReport[];
+};
+
+const EXPORT_GROUPS: ExportGroup[] = [
+  {
+    title: "Owner Intelligence",
+    emphasis: true,
+    reports: [
+      { id: "owner_kpi_summary", title: "Owner KPI Summary", description: "Active students, new joins, attendance, utilization, conversion, MRR, open invoice exposure, and failed-payment pressure." },
+      { id: "quiet_churn_watchlist", title: "Quiet Churn Watchlist", description: "Active students whose attendance, billing, or progress signals suggest they may be drifting before they cancel." },
+      { id: "first_90_days_onboarding", title: "First 90 Days Onboarding", description: "New students by habit formation: first visit, first week, first month, first five classes, and recommended follow-up." },
+      { id: "lead_quality_after_enrollment", title: "Lead Quality After Enrollment", description: "Lead sources ranked by conversion, active converted students, first-month attendance, and collected payment value." },
+      { id: "belt_momentum_testing_pipeline", title: "Belt Momentum and Testing Pipeline", description: "Students by current rank, next rank, classes and days at rank, eligibility requirements, and testing-readiness status." },
+      { id: "revenue_leakage", title: "Revenue Leakage", description: "Active students, enrollments, invoices, and failed payments that may be causing missed or delayed revenue." },
+      { id: "schedule_utilization_demand", title: "Schedule Utilization and Demand", description: "Class demand by program, class name, and start time using attendance, capacity, cancellation, and trend signals." },
+      { id: "family_account_health", title: "Family Account Health", description: "Household-level risk using payer balance, contact completeness, active students, recent visits, and at-risk students." },
+      { id: "lifecycle_segmentation", title: "Lifecycle Segmentation", description: "Students grouped into first-90-days, core engaged, active light, quiet, at-risk, paused, or inactive/canceled segments." },
+      { id: "instructor_staff_impact", title: "Instructor and Staff Impact", description: "Instructor class attendance and utilization alongside assigned lead conversion where staff IDs are present." },
+      { id: "data_hygiene_readiness", title: "Data Hygiene and Studio Readiness", description: "Missing guardians, emergency contacts, program/rank assignments, billing enrollments, payer contact details, and lead follow-ups." },
+    ],
+  },
+  {
+    title: "Student Records",
+    reports: [
+      { id: "students", title: "Students", description: "Roster, contact details, holds, tags, notes, photos, and soft-delete state." },
+      { id: "guardian_contacts", title: "Guardians and Contacts", description: "Guardian records linked back to each student relationship." },
+      { id: "student_program_memberships", title: "Program Enrollments", description: "Per-student program memberships and current rank assignments." },
+    ],
+  },
+  {
+    title: "Growth",
+    reports: [
+      { id: "leads", title: "Leads", description: "Pipeline stage, source, program interest, follow-up, guardian, and conversion fields." },
+      { id: "lead_activities", title: "Lead Activities", description: "Notes, calls, meetings, emails, follow-ups, and stage-change history." },
+    ],
+  },
+  {
+    title: "Programs and Ranks",
+    reports: [
+      { id: "programs", title: "Programs", description: "Program setup, colors, ordering, archived state, and system flags." },
+      { id: "belt_ladders", title: "Belt Ladders", description: "Rank ladder definitions and per-ladder sub-rank terminology." },
+      { id: "belt_ranks", title: "Belt Ranks", description: "Belt and stripe/tip requirements, ordering, colors, and approval rules." },
+      { id: "promotions", title: "Promotion History", description: "Immutable promotion records, rank changes, notes, and approving staff IDs." },
+    ],
+  },
+  {
+    title: "Schedule",
+    reports: [
+      { id: "class_templates", title: "Recurring Class Templates", description: "Weekly schedule definitions, dates, capacity, program, and instructor IDs." },
+      { id: "class_sessions", title: "Class Sessions", description: "Individual class occurrences, status, notes, capacity, and soft-delete state." },
+      { id: "attendance", title: "Attendance Records", description: "Check-ins, absences, cross-program credit, eligibility overrides, and staff IDs." },
+    ],
+  },
+  {
+    title: "Billing",
+    reports: [
+      { id: "billing_payers", title: "Payers", description: "Family payer contact details, balances, autopay state, and billing status." },
+      { id: "billing_plans", title: "Billing Plans", description: "Plan pricing, interval, signup fees, Stripe references, policies, and archive state." },
+      { id: "billing_plan_programs", title: "Plan Programs", description: "Which programs each billing plan applies to." },
+      { id: "student_billing_enrollments", title: "Student Billing Enrollments", description: "Student, payer, plan, billing status, subscription, and next-bill dates." },
+      { id: "billing_invoices", title: "Invoices", description: "Invoice status, due dates, paid amounts, hosted URLs, and Stripe IDs." },
+      { id: "billing_invoice_items", title: "Invoice Items", description: "Line-item descriptions, quantities, unit amounts, and totals." },
+      { id: "billing_payments", title: "Payments", description: "Stripe and external payment records, methods, notes, and processing timestamps." },
+      { id: "billing_refunds", title: "Refunds", description: "Refund amounts, reasons, Stripe IDs, and status." },
+      { id: "billing_disputes", title: "Disputes", description: "Chargeback/dispute amount, reason, liability owner, and status." },
+      { id: "billing_adjustments", title: "Adjustments", description: "Manual payer or student balance adjustments with reasons and notes." },
+    ],
+  },
+  {
+    title: "Administration",
+    reports: [
+      { id: "studio_overview", title: "Studio Overview", description: "Studio profile, Koaryu subscription state, and payment-account readiness." },
+      { id: "staff_roles", title: "Staff Roles", description: "Staff membership, role, invitation, profile, and last sign-in details." },
+      { id: "audit_logs", title: "Audit Logs", description: "Sensitive action history with actor IDs, entity IDs, and metadata." },
+      { id: "email_usage_events", title: "Email Usage", description: "Email usage events, recipients, provider IDs, quantities, and metadata." },
+      { id: "student_import_runs", title: "Student Import Runs", description: "CSV import idempotency keys, request hashes, results, and errors." },
+      { id: "export_jobs", title: "Export Jobs", description: "Queued async export requests and their status history." },
+    ],
+  },
+];
+
 /* ─── Helpers ─────────────────────────────────── */
 
 function formatDate(value: string) {
@@ -54,6 +146,22 @@ function subtractDays(dateString: string, days: number) {
   const date = new Date(`${dateString}T00:00:00`);
   date.setDate(date.getDate() - days);
   return date.toISOString().split("T")[0];
+}
+
+function fallbackCsvFilename(reportId: string) {
+  const date = new Date().toISOString().slice(0, 10);
+  return `koaryu-${reportId.replace(/_/g, "-")}-${date}.csv`;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 /* ─── Reusable Panel Components ───────────────── */
@@ -144,18 +252,140 @@ function StatBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ExportGroupDisclosure({
+  group,
+  exportingReportId,
+  isPreviewMode,
+  canExportStudioData,
+  onDownload,
+}: {
+  group: ExportGroup;
+  exportingReportId: string | null;
+  isPreviewMode: boolean;
+  canExportStudioData: boolean;
+  onDownload: (report: ExportReport) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const panelId = useId();
+  const headerClassName = group.emphasis
+    ? "relative flex w-full cursor-pointer items-start justify-between gap-4 py-4 pl-4 pr-1 text-left before:absolute before:left-0 before:top-4 before:bottom-4 before:w-[2px] before:rounded-full before:bg-accent"
+    : "flex w-full cursor-pointer items-start justify-between gap-4 py-4 text-left";
+
+  return (
+    <section className="faq-item" data-state={isOpen ? "open" : "closed"}>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        className={headerClassName}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className="flex min-w-0 items-start gap-3">
+          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-text-primary">
+              {group.title}
+            </span>
+            <span className="mt-1 block text-xs text-text-secondary">
+              {group.reports.length} CSV export{group.reports.length === 1 ? "" : "s"}
+            </span>
+          </span>
+        </span>
+        <Plus className="faq-icon mt-0.5 h-4 w-4 shrink-0 text-accent" />
+      </button>
+
+      <div id={panelId} className="faq-body" aria-hidden={!isOpen}>
+        <div>
+          <div className="divide-y divide-border border-t border-border pb-2">
+            {group.reports.map((report) => {
+              const isExporting = exportingReportId === report.id;
+              const isDisabled = Boolean(exportingReportId) || isPreviewMode || !canExportStudioData;
+
+              return (
+                <div
+                  key={report.id}
+                  className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-text-primary">{report.title}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                      {report.description}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="w-full shrink-0 sm:w-[118px]"
+                    isLoading={isExporting}
+                    disabled={isDisabled}
+                    onClick={() => onDownload(report)}
+                  >
+                    {!isExporting ? <Download className="h-3.5 w-3.5" /> : null}
+                    CSV
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─── Page ────────────────────────────────────── */
 
 export default function ReportsPage() {
+  const { isPreviewMode, token } = useConfigStore();
   const { leads } = useLeadStore();
   const { programs } = useProgramStore();
   const { attendance, sessions } = useScheduleStore();
+  const { currentRole } = useStudioStore();
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState("");
+  const [exportError, setExportError] = useState("");
   const today = new Date().toISOString().split("T")[0];
   const lookbackStart = useMemo(() => subtractDays(today, 29), [today]);
+  const canExportStudioData = currentRole === "admin" || currentRole === "front_desk";
   const programById = useMemo(
     () => new Map(programs.map((program) => [program.id, program])),
     [programs]
   );
+
+  async function handleDownloadReport(report: ExportReport) {
+    setExportError("");
+    setExportMessage("");
+
+    if (isPreviewMode) {
+      setExportError("Live CSV exports are available when Koaryu is connected to a studio database.");
+      return;
+    }
+
+    if (!canExportStudioData) {
+      setExportError("Only admins and front desk staff can export studio data.");
+      return;
+    }
+
+    if (!token) {
+      setExportError("Sign in again before exporting CSVs.");
+      return;
+    }
+
+    setExportingReportId(report.id);
+    try {
+      const { blob, filename } = await api.download(`/reports/exports/${report.id}`, token, {
+        timeoutMs: 60000,
+        timeoutMessage: "CSV export is taking longer than expected. Please try again.",
+      });
+      downloadBlob(blob, filename || fallbackCsvFilename(report.id));
+      setExportMessage(`${report.title} CSV downloaded.`);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "CSV export failed.");
+    } finally {
+      setExportingReportId(null);
+    }
+  }
 
   const leadMetrics = useMemo(() => {
     const leadStageCounts: Record<LeadStage, number> = {
@@ -624,6 +854,42 @@ export default function ReportsPage() {
                 </table>
               </div>
             )}
+          </Panel>
+
+          <Panel>
+            <PanelHeader
+              title="Data Exports"
+              subtitle="Separate CSV downloads for the core records owned by this studio."
+            >
+              <StatBadge>
+                {EXPORT_GROUPS.reduce((count, group) => count + group.reports.length, 0)} CSV reports
+              </StatBadge>
+            </PanelHeader>
+
+            {exportMessage ? (
+              <div className="mb-4 border border-success/20 bg-success/10 px-4 py-3 text-sm text-success">
+                {exportMessage}
+              </div>
+            ) : null}
+
+            {exportError ? (
+              <div className="mb-4 border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+                {exportError}
+              </div>
+            ) : null}
+
+            <div className="divide-y divide-border border-y border-border">
+              {EXPORT_GROUPS.map((group) => (
+                <ExportGroupDisclosure
+                  key={group.title}
+                  group={group}
+                  exportingReportId={exportingReportId}
+                  isPreviewMode={isPreviewMode}
+                  canExportStudioData={canExportStudioData}
+                  onDownload={(report) => void handleDownloadReport(report)}
+                />
+              ))}
+            </div>
           </Panel>
         </div>
       </div>

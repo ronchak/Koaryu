@@ -120,6 +120,206 @@ a, button {
     opacity 0.15s ease;
 }
 
+/* ---- Minimal app loading screen ---- */
+.koaryu-loading-screen {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  color: var(--text-secondary);
+}
+
+.koaryu-panda-stage {
+  display: grid;
+  width: 88px;
+  height: 88px;
+  place-items: center;
+}
+
+.koaryu-panda {
+  display: block;
+  width: 76px;
+  height: 76px;
+  overflow: visible;
+}
+
+.koaryu-panda__dance {
+  animation: koaryu-panda-dance 1.05s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.koaryu-panda__shadow {
+  fill: color-mix(in srgb, var(--border) 72%, transparent);
+  animation: koaryu-panda-shadow 1.05s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.koaryu-panda__fur {
+  fill: #f6f7f8;
+  stroke: #2b333d;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.koaryu-panda__dark {
+  fill: #59616b;
+  stroke: #2b333d;
+  stroke-width: 1.6;
+}
+
+.koaryu-panda__accent {
+  fill: #f2a9b6;
+  stroke: #2b333d;
+  stroke-linejoin: round;
+  stroke-width: 1.2;
+}
+
+.koaryu-panda__patch,
+.koaryu-panda__arm,
+.koaryu-panda__leg {
+  fill: #59616b;
+  stroke: #2b333d;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.koaryu-panda__eye,
+.koaryu-panda__nose {
+  fill: #12161b;
+}
+
+.koaryu-panda__eye-shine {
+  fill: #f6f7f8;
+}
+
+.koaryu-panda__mouth,
+.koaryu-panda__soft-line {
+  fill: none;
+  stroke: #2b333d;
+  stroke-linecap: round;
+}
+
+.koaryu-panda__mouth {
+  stroke-width: 1.8;
+}
+
+.koaryu-panda__soft-line {
+  opacity: 0.18;
+  stroke-width: 1.6;
+}
+
+.koaryu-panda__arm,
+.koaryu-panda__leg {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.koaryu-panda__arm--left {
+  animation: koaryu-panda-left-arm 1.05s ease-in-out infinite;
+}
+
+.koaryu-panda__arm--right {
+  animation: koaryu-panda-right-arm 1.05s ease-in-out infinite;
+}
+
+.koaryu-panda__leg--left {
+  animation: koaryu-panda-left-foot 1.05s ease-in-out infinite;
+}
+
+.koaryu-panda__leg--right {
+  animation: koaryu-panda-right-foot 1.05s ease-in-out infinite;
+}
+
+.koaryu-loading-screen__text {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+@keyframes koaryu-panda-dance {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-2deg);
+  }
+  25% {
+    transform: translate3d(2px, -4px, 0) rotate(4deg);
+  }
+  50% {
+    transform: translate3d(0, 0, 0) rotate(1deg);
+  }
+  75% {
+    transform: translate3d(-2px, -4px, 0) rotate(-5deg);
+  }
+}
+
+@keyframes koaryu-panda-shadow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scaleX(1);
+  }
+  25%,
+  75% {
+    opacity: 0.32;
+    transform: scaleX(0.74);
+  }
+}
+
+@keyframes koaryu-panda-left-arm {
+  0%,
+  100% {
+    transform: rotate(10deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-18deg) translateY(-2px);
+  }
+}
+
+@keyframes koaryu-panda-right-arm {
+  0%,
+  100% {
+    transform: rotate(-10deg) translateY(-2px);
+  }
+  50% {
+    transform: rotate(18deg) translateY(0);
+  }
+}
+
+@keyframes koaryu-panda-left-foot {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+@keyframes koaryu-panda-right-foot {
+  0%,
+  100% {
+    transform: translateY(2px);
+  }
+  50% {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .koaryu-panda__dance,
+  .koaryu-panda__shadow,
+  .koaryu-panda__arm,
+  .koaryu-panda__leg {
+    animation: none;
+  }
+}
+
 /* =========================================
    Scroll-Reveal Animations
    ========================================= */
@@ -353,23 +553,19 @@ a, button {
 }
 
 .hero-preview__notice {
+  appearance: none;
+  display: block;
+  width: 100%;
   margin-top: 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--text-secondary));
-  background: color-mix(in srgb, var(--surface) 84%, black);
-  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
   font-size: 12px;
   line-height: 1.5;
   padding: 10px;
-  transition:
-    border-color 0.2s ease,
-    color 0.2s ease;
+  text-align: left;
 }
 
-.hero-preview__panel:hover .hero-preview__notice {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-  color: var(--text-primary);
-}
-
+.hero-preview__notice,
 .hero-preview__action,
 .hero-preview__program-panel,
 .hero-preview__program-row {
@@ -396,6 +592,7 @@ a, button {
   text-align: left;
 }
 
+.hero-preview__notice:hover,
 .hero-preview__action:hover,
 .hero-preview__program-row:hover {
   transform: translateY(-1px);
