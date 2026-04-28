@@ -93,9 +93,9 @@ export function ProgramBadge({
   fallback?: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-border bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">
+    <span className="inline-flex items-center gap-1.5 border border-border bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">
       <span
-        className="h-2 w-2 rounded-full"
+        className="h-2 w-2"
         style={{ backgroundColor: program?.color_hex || "#94A3B8" }}
       />
       {program?.name || fallback}

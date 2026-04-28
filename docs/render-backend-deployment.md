@@ -71,7 +71,7 @@ Then redeploy the Vercel frontend so Next.js bakes the new URL into the producti
 
 ## Stripe Webhooks
 
-After Render is live, configure Stripe webhook endpoints:
+After Render is live, configure Stripe webhook endpoints. Use Stripe test mode first, then repeat in live mode after the same verification checklist passes.
 
 ```txt
 https://koaryu.onrender.com/api/v1/webhooks/stripe/platform
@@ -93,9 +93,27 @@ Connect endpoint events:
 
 ```txt
 account.updated
+account.application.deauthorized
+checkout.session.completed
+invoice.created
+invoice.finalized
+invoice.paid
+invoice.payment_failed
+invoice.voided
+invoice.marked_uncollectible
+payment_intent.processing
+payment_intent.succeeded
+payment_intent.payment_failed
+charge.refunded
+charge.dispute.created
+charge.dispute.updated
+charge.dispute.closed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
 ```
 
-The live Connect endpoint currently listens only to connected account `account.updated` events.
+The Connect endpoint is the source-of-truth ingestion path for Koaryu Payments. It projects Connect onboarding status, hosted setup completion, invoices, payment intents, refunds, disputes, and payer-level tuition subscriptions back into the local billing tables.
 
 Copy the resulting `whsec_...` values back into Render:
 
@@ -103,3 +121,52 @@ Copy the resulting `whsec_...` values back into Render:
 STRIPE_PLATFORM_WEBHOOK_SECRET=
 STRIPE_CONNECT_WEBHOOK_SECRET=
 ```
+
+Then redeploy the backend so FastAPI verifies signatures with the new secrets.
+
+### Local Connect Webhook Smoke Test
+
+With the backend running on `127.0.0.1:8001`, run:
+
+```bash
+npm run dev:stripe-connect-smoke
+```
+
+The smoke test signs a synthetic Connect `account.updated` event with `STRIPE_CONNECT_WEBHOOK_SECRET`, posts it to `/api/v1/webhooks/stripe/connect`, and posts the same event again. A passing result returns `processed` first and `already_processed` second, proving the local route, signature validation, projector entrypoint, and `stripe_events` dedupe table.
+
+For true Stripe delivery in local development, use the Stripe CLI or a trusted HTTPS tunnel:
+
+```bash
+stripe listen --forward-connect-to http://127.0.0.1:8001/api/v1/webhooks/stripe/connect
+```
+
+Copy the CLI-provided `whsec_...` into `backend/.env` as `STRIPE_CONNECT_WEBHOOK_SECRET`, restart the backend, then replay a recent test event:
+
+```bash
+stripe events resend evt_... --webhook-endpoint we_...
+```
+
+### Koaryu Payments Rollout Checks
+
+Before enabling live Koaryu Payments for a studio:
+
+- Confirm `/health` and `/api/v1/health` are green on Render.
+- Confirm the Stripe Dashboard shows successful deliveries to both platform and Connect endpoints.
+- Create or sync a billing plan and verify the connected-account Product and immutable Price.
+- Create or sync a payer and verify the connected-account Customer.
+- Complete hosted autopay setup and verify `checkout.session.completed` enables payer autopay locally.
+- Enroll two students for one payer and verify one Stripe Subscription with the expected subscription item quantity.
+- Finalize and pay a hosted invoice; verify `invoice.paid` creates the local payment and reports Koaryu fee basis.
+- Trigger a failed invoice payment and verify `invoice.payment_failed` plus `payment_intent.payment_failed` populate the failed-payment queue.
+- Record an external payment and confirm it has no application fee amount.
+- Refund a test payment and verify `charge.refunded` projects into `billing_refunds`.
+- Use Stripe's `pm_card_createDispute` test PaymentMethod and confirm `charge.dispute.created` projects into `billing_disputes`.
+- Run a reconciliation pass for any object whose webhook delivery was missed or delayed.
+
+### Rollout Risks
+
+- Do not enable new Stripe billing actions for a studio whose Connect account is `deauthorized` or lacks `charges_enabled`.
+- Keep `BILLING_PLATFORM_FEE_BPS=50` unless the fee promise changes. External payments must keep `application_fee_amount_cents=0`.
+- Stripe and Supabase writes are not atomic. Local intent rows, deterministic Stripe idempotency keys, webhook projection, and reconciliation are all required to repair partial success.
+- Treat plan pricing as immutable. Create a new connected-account Price for amount or interval changes; migrate active subscriptions deliberately.
+- Preserve test data until the verification pass is reviewed. Delete or archive Stripe/Supabase test artifacts only after an explicit cleanup approval.

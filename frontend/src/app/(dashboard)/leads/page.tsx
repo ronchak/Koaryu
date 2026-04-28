@@ -859,7 +859,7 @@ export default function LeadsPage() {
                     setLeadActionError(null);
                     setSelectedLeadId(lead.id);
                   }}
-                  className="min-w-0 rounded-[6px] border border-border bg-surface p-3 opacity-60 transition-opacity cursor-pointer hover:opacity-100"
+                  className="min-w-0 border border-border bg-surface p-3 opacity-60 transition-opacity cursor-pointer hover:opacity-100"
                 >
                   <p className="break-words text-sm font-medium text-text-primary">{fullName(lead)}</p>
                   <p className="text-xs text-danger mt-1 capitalize">
@@ -878,7 +878,7 @@ export default function LeadsPage() {
             className="absolute inset-0 bg-black/60"
             onClick={clearSelectedLead}
           />
-          <div className="relative max-h-[80vh] w-full max-w-md overflow-y-auto rounded-[6px] border border-border bg-bg">
+          <div className="relative max-h-[80vh] w-full max-w-md overflow-y-auto border border-border bg-bg">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h2 className="text-base font-semibold text-text-primary">
                 {fullName(selectedLead)}
@@ -909,7 +909,7 @@ export default function LeadsPage() {
                       event.target.value as LeadStage
                     );
                   }}
-                  className="w-full px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+                  className="w-full px-3 py-1.5 text-sm bg-surface-raised border border-border text-text-primary focus:border-accent focus:outline-none"
                 >
                   {[...PIPELINE_STAGES, { id: "closed_lost" as LeadStage, label: "Closed Lost" }].map(
                     (stage) => (
@@ -940,7 +940,7 @@ export default function LeadsPage() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted mb-1">Source</p>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-surface-raised border border-border text-text-secondary">
                     {SOURCE_ICONS[selectedLead.source]}
                     {SOURCE_LABELS[selectedLead.source]}
                   </span>
@@ -955,7 +955,7 @@ export default function LeadsPage() {
               </div>
 
               {selectedLead.is_minor && selectedLead.guardian_name && (
-                <div className="bg-surface border border-border rounded-[6px] p-3">
+                <div className="bg-surface border border-border p-3">
                   <p className="text-xs text-muted mb-2">Guardian</p>
                   <p className="text-sm text-text-primary">{selectedLead.guardian_name}</p>
                   {selectedLead.guardian_email && (
@@ -971,7 +971,7 @@ export default function LeadsPage() {
                 </div>
               )}
 
-              <div className="bg-surface border border-border rounded-[6px] p-3 space-y-3">
+              <div className="bg-surface border border-border p-3 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs text-muted">Follow-up date</p>
@@ -983,7 +983,7 @@ export default function LeadsPage() {
                   </div>
                   {selectedLead.follow_up_date && selectedLead.follow_up_date <= today && (
                     <span
-                      className={`rounded-[4px] px-2 py-1 text-xs ${
+                      className={`px-2 py-1 text-xs ${
                         selectedLead.follow_up_date < today
                           ? "bg-danger/10 text-danger"
                           : "bg-warning/10 text-warning"
@@ -1002,7 +1002,7 @@ export default function LeadsPage() {
                     onChange={(event) =>
                       setFollowUpInputValue(selectedLead.id, event.target.value)
                     }
-                    className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   <Button
                     variant="secondary"
@@ -1056,7 +1056,7 @@ export default function LeadsPage() {
               )}
 
               {selectedLead.stage === "closed_lost" && selectedLead.lost_reason && (
-                <div className="bg-danger/5 border border-danger/20 rounded-[6px] p-3">
+                <div className="bg-danger/5 border border-danger/20 p-3">
                   <p className="text-xs text-danger mb-1">Lost reason</p>
                   <p className="text-sm text-text-primary capitalize">
                     {selectedLead.lost_reason.replace(/_/g, " ")}
@@ -1110,7 +1110,7 @@ export default function LeadsPage() {
               }
             }}
           />
-          <div className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[6px] border border-border bg-bg p-5 sm:p-6">
+          <div className="relative max-h-[85vh] w-full max-w-md overflow-y-auto border border-border bg-bg p-5 sm:p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-base font-semibold text-text-primary">Add new lead</h2>
               <button
@@ -1168,7 +1168,7 @@ export default function LeadsPage() {
                     name="first_name"
                     required
                     disabled={isAddingLead}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -1179,7 +1179,7 @@ export default function LeadsPage() {
                     name="last_name"
                     required
                     disabled={isAddingLead}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
@@ -1199,7 +1199,7 @@ export default function LeadsPage() {
                     name="phone"
                     type="tel"
                     disabled={isAddingLead}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -1208,7 +1208,7 @@ export default function LeadsPage() {
                     name="source"
                     defaultValue="walk_in"
                     disabled={isAddingLead}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border text-text-primary focus:border-accent focus:outline-none"
                   >
                     {Object.entries(SOURCE_LABELS).map(([key, label]) => (
                       <option key={key} value={key}>
@@ -1249,7 +1249,7 @@ export default function LeadsPage() {
                 />
                 Minor lead
               </label>
-              <div className="grid grid-cols-1 gap-3 rounded-[6px] border border-border bg-surface/60 p-3">
+              <div className="grid grid-cols-1 gap-3 border border-border bg-surface/60 p-3">
                 <p className="text-xs font-medium text-text-secondary">Guardian details</p>
                 <input
                   name="guardian_name"
@@ -1263,14 +1263,14 @@ export default function LeadsPage() {
                     type="email"
                     placeholder="Guardian email"
                     disabled={isAddingLead}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   />
                   <input
                     name="guardian_phone"
                     type="tel"
                     placeholder="Guardian phone"
                     disabled={isAddingLead}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
@@ -1280,7 +1280,7 @@ export default function LeadsPage() {
                   name="notes"
                   rows={2}
                   disabled={isAddingLead}
-                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
+                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
                 />
               </div>
               <div className="flex flex-wrap justify-end gap-2 pt-2">

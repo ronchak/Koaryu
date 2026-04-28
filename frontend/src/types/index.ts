@@ -93,6 +93,8 @@ export type PayerBillingStatus =
   | "no_billing_plan";
 
 export type AutopayStatus = "not_configured" | "pending" | "enabled" | "disabled";
+export type BillingCollectionMode = "autopay" | "invoice_link" | "external";
+export type BillingEnrollmentStatus = "active" | "trialing" | "paused" | "canceled" | "ended" | "pending";
 export type InvoiceStatus = "draft" | "open" | "paid" | "void" | "uncollectible" | "refunded" | "partially_refunded";
 export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "refunded" | "disputed" | "externally_recorded";
 
@@ -172,6 +174,9 @@ export interface BillingPlan {
   tax_behavior?: string | null;
   stripe_product_id?: string | null;
   stripe_price_id?: string | null;
+  stripe_sync_status?: "synced" | "pending" | "missing" | "error" | null;
+  stripe_sync_error?: string | null;
+  last_synced_at?: string | null;
   programs: BillingPlanProgram[];
   can_accept_payments: boolean;
   pending_reason?: string | null;
@@ -204,6 +209,13 @@ export interface BillingPayer {
   address_state?: string | null;
   address_zip?: string | null;
   stripe_customer_id?: string | null;
+  stripe_payment_method_id?: string | null;
+  stripe_payment_method_type?: string | null;
+  stripe_payment_method_last4?: string | null;
+  stripe_payment_method_brand?: string | null;
+  stripe_sync_status?: "synced" | "pending" | "missing" | "error" | null;
+  stripe_sync_error?: string | null;
+  last_synced_at?: string | null;
   autopay_status: AutopayStatus;
   billing_status: PayerBillingStatus;
   balance_cents: number;
@@ -217,6 +229,68 @@ export interface BillingPayerCreate {
   phone?: string;
 }
 
+export interface BillingSubscription {
+  id: string;
+  studio_id: string;
+  payer_id?: string | null;
+  enrollment_id?: string | null;
+  plan_id?: string | null;
+  student_id?: string | null;
+  stripe_subscription_id?: string | null;
+  stripe_subscription_item_id?: string | null;
+  status: SubscriptionStatus;
+  collection_mode: BillingCollectionMode;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  next_bill_date?: string | null;
+  cancel_at_period_end?: boolean;
+  canceled_at?: string | null;
+  trial_start?: string | null;
+  trial_end?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentBillingEnrollment {
+  id: string;
+  studio_id: string;
+  student_id: string;
+  payer_id: string;
+  plan_id: string;
+  subscription_id?: string | null;
+  stripe_subscription_id?: string | null;
+  stripe_subscription_item_id?: string | null;
+  collection_mode: BillingCollectionMode;
+  status: BillingEnrollmentStatus;
+  start_date: string;
+  end_date?: string | null;
+  next_bill_date?: string | null;
+  paused_at?: string | null;
+  canceled_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentBillingEnrollmentCreate {
+  student_id: string;
+  payer_id: string;
+  plan_id: string;
+  collection_mode: BillingCollectionMode;
+  start_date: string;
+  end_date?: string | null;
+  next_bill_date?: string | null;
+}
+
+export interface StudentBillingEnrollmentUpdate {
+  payer_id?: string;
+  plan_id?: string;
+  collection_mode?: BillingCollectionMode;
+  status?: BillingEnrollmentStatus;
+  start_date?: string;
+  end_date?: string | null;
+  next_bill_date?: string | null;
+}
+
 export interface BillingInvoice {
   id: string;
   studio_id: string;
@@ -225,17 +299,39 @@ export interface BillingInvoice {
   enrollment_id?: string | null;
   stripe_invoice_id?: string | null;
   stripe_account_id?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+  stripe_payment_intent_id?: string | null;
   invoice_type: string;
   status: InvoiceStatus;
   amount_due_cents: number;
   amount_paid_cents: number;
+  application_fee_amount_cents?: number | null;
+  stripe_fee_amount_cents?: number | null;
   currency: string;
   hosted_invoice_url?: string | null;
+  invoice_pdf?: string | null;
+  number?: string | null;
   due_date?: string | null;
   paid_at?: string | null;
+  finalized_at?: string | null;
+  voided_at?: string | null;
+  reconciled_at?: string | null;
   external: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface BillingInvoiceCreate {
+  payer_id: string;
+  enrollment_id?: string;
+  student_id?: string;
+  amount_cents: number;
+  currency?: string;
+  invoice_type?: string;
+  due_date?: string;
+  description?: string;
+  send_hosted_invoice?: boolean;
 }
 
 export interface BillingPayment {
@@ -243,8 +339,15 @@ export interface BillingPayment {
   studio_id: string;
   payer_id?: string | null;
   invoice_id?: string | null;
+  enrollment_id?: string | null;
+  stripe_payment_intent_id?: string | null;
+  stripe_charge_id?: string | null;
+  stripe_balance_transaction_id?: string | null;
   status: PaymentStatus;
   amount_cents: number;
+  application_fee_amount_cents?: number | null;
+  stripe_fee_amount_cents?: number | null;
+  net_amount_cents?: number | null;
   currency: string;
   payment_method_type?: string | null;
   external_method?: string | null;

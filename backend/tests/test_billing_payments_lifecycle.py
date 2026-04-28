@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+import unittest
+
+from app.schemas.billing import (
+    BillingInvoiceResponse,
+    StudentBillingEnrollmentCreate,
+    StudentBillingEnrollmentResponse,
+)
+from app.services.billing_service import BillingService
+
+
+class _FakeResponse:
+    def __init__(self, data):
+        self.data = data
+
+
+class _FakeQuery:
+    def __init__(self, rows):
+        self.rows = rows
+        self.filters = []
+        self.update_values = None
+
+    def select(self, *_args):
+        return self
+
+    def update(self, values):
+        self.update_values = values
+        return self
+
+    def eq(self, key, value):
+        self.filters.append(lambda row, key=key, value=value: row.get(key) == value)
+        return self
+
+    def is_(self, key, value):
+        if value == "null":
+            self.filters.append(lambda row, key=key: row.get(key) is None)
+        return self
+
+    def in_(self, key, values):
+        values = set(values)
+        self.filters.append(lambda row, key=key, values=values: row.get(key) in values)
+        return self
+
+    def execute(self):
+        matched = [row for row in self.rows if all(match(row) for match in self.filters)]
+        if self.update_values is not None:
+            for row in matched:
+                row.update(self.update_values)
+        return _FakeResponse(matched)
+
+
+class _FakeSupabase:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def table(self, name):
+        return _FakeQuery(self.tables[name])
+
+
+class BillingPaymentsLifecycleTest(unittest.TestCase):
+    def service(self) -> BillingService:
+        service = object.__new__(BillingService)
+        service.settings = type("Settings", (), {"BILLING_PLATFORM_FEE_BPS": 50})()
+        return service
+
+    def test_interval_mapping_for_stripe_prices(self):
+        service = self.service()
+
+        self.assertEqual(service._stripe_recurring_for_interval("monthly"), ({"interval": "month", "interval_count": 1}, 1))
+        self.assertEqual(service._stripe_recurring_for_interval("biweekly"), ({"interval": "week", "interval_count": 2}, 2))
+        self.assertEqual(service._stripe_recurring_for_interval("annual"), ({"interval": "year", "interval_count": 1}, 1))
+        self.assertEqual(service._stripe_recurring_for_interval("paid_in_full"), (None, 1))
+
+    def test_application_fee_percent_and_amount_use_platform_bps(self):
+        service = self.service()
+        account = {"platform_fee_bps": 50}
+
+        self.assertEqual(service._application_fee_percent(account), 0.5)
+        self.assertEqual(service._application_fee_amount(12900, account), 64)
+
+    def test_out_of_band_paid_invoice_projects_external_totals_without_fee(self):
+        service = self.service()
+
+        projection = service._invoice_projection({
+            "id": "in_123",
+            "status": "paid",
+            "paid_out_of_band": True,
+            "amount_due": 234,
+            "amount_paid": 0,
+            "amount_remaining": 234,
+            "currency": "usd",
+            "application_fee_amount": 1,
+        }, "acct_123")
+
+        self.assertEqual(projection["status"], "paid")
+        self.assertEqual(projection["amount_paid_cents"], 234)
+        self.assertEqual(projection["amount_remaining_cents"], 0)
+        self.assertEqual(projection["application_fee_amount_cents"], 0)
+
+    def test_non_card_payment_method_summary_uses_method_type(self):
+        service = self.service()
+
+        fields = service._payment_method_fields_from_payment_method({
+            "id": "pm_link",
+            "type": "link",
+        })
+
+        self.assertEqual(fields["default_payment_method_id"], "pm_link")
+        self.assertEqual(fields["default_payment_method_brand"], "link")
+        self.assertIsNone(fields["default_payment_method_last4"])
+
+    def test_frontend_enrollment_payload_aliases_are_accepted(self):
+        payload = StudentBillingEnrollmentCreate.model_validate({
+            "student_id": "student_1",
+            "payer_id": "payer_1",
+            "plan_id": "plan_1",
+            "collection_mode": "invoice_link",
+            "start_date": "2026-04-28",
+            "next_bill_date": "2026-05-01",
+        })
+
+        self.assertEqual(payload.billing_plan_id, "plan_1")
+        self.assertEqual(payload.next_bill_on, "2026-05-01")
+
+    def test_enrollment_response_exposes_frontend_aliases(self):
+        response = StudentBillingEnrollmentResponse.model_validate({
+            "id": "enrollment_1",
+            "studio_id": "studio_1",
+            "student_id": "student_1",
+            "payer_id": "payer_1",
+            "billing_plan_id": "plan_1",
+            "billing_subscription_id": "billing_sub_1",
+            "collection_mode": "autopay",
+            "status": "active",
+            "billing_status": "current",
+            "start_date": "2026-04-28",
+            "next_bill_on": "2026-05-01",
+            "created_at": "2026-04-28T00:00:00Z",
+            "updated_at": "2026-04-28T00:00:00Z",
+        })
+
+        self.assertEqual(response.plan_id, "plan_1")
+        self.assertEqual(response.subscription_id, "billing_sub_1")
+        self.assertEqual(response.next_bill_date, "2026-05-01")
+
+    def test_invoice_response_exposes_stripe_number_alias(self):
+        response = BillingInvoiceResponse.model_validate({
+            "id": "invoice_1",
+            "studio_id": "studio_1",
+            "invoice_number": "INV-001",
+            "invoice_type": "tuition",
+            "status": "open",
+            "amount_due_cents": 12900,
+            "amount_paid_cents": 0,
+            "currency": "usd",
+            "external": False,
+            "created_at": "2026-04-28T00:00:00Z",
+            "updated_at": "2026-04-28T00:00:00Z",
+        })
+
+        self.assertEqual(response.number, "INV-001")
+
+    def test_late_payment_intent_links_existing_dispute_and_marks_payment_disputed(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_disputes": [{
+                "id": "dispute_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_charge_id": "ch_1",
+                "payment_id": None,
+                "stripe_payment_intent_id": None,
+                "status": "needs_response",
+            }],
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_charge_id": "ch_1",
+                "stripe_payment_intent_id": "pi_1",
+                "status": "succeeded",
+            }],
+        })
+
+        payment = service._link_disputes_to_payment({
+            "id": "payment_1",
+            "studio_id": "studio_1",
+            "stripe_account_id": "acct_1",
+            "stripe_charge_id": "ch_1",
+            "stripe_payment_intent_id": "pi_1",
+            "status": "succeeded",
+        }, "acct_1")
+
+        dispute = service.supabase.tables["billing_disputes"][0]
+        stored_payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["status"], "disputed")
+        self.assertEqual(stored_payment["status"], "disputed")
+        self.assertEqual(dispute["payment_id"], "payment_1")
+        self.assertEqual(dispute["stripe_payment_intent_id"], "pi_1")
+
+
+if __name__ == "__main__":
+    unittest.main()
