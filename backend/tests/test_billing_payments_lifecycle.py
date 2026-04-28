@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from fastapi import HTTPException
+
 from app.schemas.billing import (
     BillingInvoiceResponse,
     StudentBillingEnrollmentCreate,
@@ -80,6 +82,23 @@ class _FakeStripeAccount:
 
 class _FakeStripe:
     Account = _FakeStripeAccount()
+
+
+class _FakeStripeConnectMismatchError(Exception):
+    __module__ = "stripe.error"
+
+
+class _FakeStripeMismatchedAccount:
+    def retrieve(self, account_id=None):
+        if account_id:
+            raise _FakeStripeConnectMismatchError(
+                "Only Stripe Connect platforms can work with other accounts."
+            )
+        return {"id": "acct_platform"}
+
+
+class _FakeStripeWithMismatchedAccount:
+    Account = _FakeStripeMismatchedAccount()
 
 
 class BillingPaymentsLifecycleTest(unittest.TestCase):
@@ -235,6 +254,44 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
             "https://dashboard.stripe.com/acct_platform/test/connect/accounts/acct_connected/activity",
         )
         self.assertNotIn(("create_login_link", "acct_connected"), _FakeStripe.Account.calls)
+
+    def test_connect_account_creation_uses_accounts_v2_full_dashboard(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        calls = []
+
+        def fake_v2_post(path, payload, *, idempotency_key=None):
+            calls.append((path, payload, idempotency_key))
+            return {"id": "acct_v2", "object": "v2.core.account"}
+
+        service._stripe_v2_post = fake_v2_post
+
+        account = service.create_connect_account(
+            studio_id="studio_1",
+            business_name="River City Martial Arts",
+            contact_email="owner@example.com",
+        )
+
+        self.assertEqual(account["id"], "acct_v2")
+        path, payload, idempotency_key = calls[0]
+        self.assertEqual(path, "/v2/core/accounts")
+        self.assertEqual(idempotency_key, "koaryu-connect-account-studio_1")
+        self.assertEqual(payload["dashboard"], "full")
+        self.assertEqual(payload["contact_email"], "owner@example.com")
+        self.assertEqual(payload["configuration"]["merchant"]["capabilities"]["card_payments"]["requested"], True)
+        self.assertEqual(payload["defaults"]["responsibilities"]["fees_collector"], "stripe")
+        self.assertEqual(payload["defaults"]["responsibilities"]["losses_collector"], "stripe")
+
+    def test_stale_connected_account_returns_actionable_conflict(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        service._stripe = lambda: _FakeStripeWithMismatchedAccount
+
+        with self.assertRaises(HTTPException) as context:
+            service.create_connect_dashboard_url(account_id="acct_from_other_platform")
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("Reconnect Stripe Payments in live mode", context.exception.detail)
 
 
 if __name__ == "__main__":

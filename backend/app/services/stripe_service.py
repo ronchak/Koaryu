@@ -4,9 +4,20 @@ import importlib
 from urllib.parse import quote
 from typing import Any, Optional
 
+import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
+
+
+STRIPE_ACCOUNTS_V2_VERSION = "2026-03-25.dahlia"
+
+
+class _StripeV2RequestError(Exception):
+    def __init__(self, *, code: Optional[str], message: str, request_id: Optional[str] = None):
+        super().__init__(message)
+        self.code = code
+        self.request_id = request_id
 
 
 class StripeService:
@@ -440,7 +451,62 @@ class StripeService:
         params = {"expand": expand or ["items.data"]}
         return stripe.Subscription.retrieve(subscription_id, **params)
 
-    def create_connect_account(self, *, studio_id: str, business_name: str):
+    def create_connect_account(self, *, studio_id: str, business_name: str, contact_email: Optional[str] = None):
+        try:
+            return self._create_connect_account_v2(
+                studio_id=studio_id,
+                business_name=business_name,
+                contact_email=contact_email,
+            )
+        except _StripeV2RequestError as exc:
+            if exc.code != "accounts_v2_access_blocked":
+                self._raise_connect_account_error(exc, "create a connected account")
+
+        return self._create_connect_account_v1(studio_id=studio_id, business_name=business_name)
+
+    def _create_connect_account_v2(self, *, studio_id: str, business_name: str, contact_email: Optional[str] = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "display_name": business_name,
+            "dashboard": "full",
+            "identity": {
+                "country": "us",
+                "entity_type": "company",
+                "business_details": {"registered_name": business_name},
+            },
+            "configuration": {
+                "merchant": {
+                    "capabilities": {
+                        "card_payments": {"requested": True},
+                    },
+                },
+            },
+            "defaults": {
+                "currency": "usd",
+                "responsibilities": {
+                    "fees_collector": "stripe",
+                    "losses_collector": "stripe",
+                },
+                "profile": {
+                    "doing_business_as": business_name,
+                    "product_description": "Martial arts tuition and membership payments",
+                },
+                "locales": ["en-US"],
+            },
+            "metadata": {
+                "studio_id": studio_id,
+                "product": "koaryu_payments",
+            },
+            "include": ["configuration.merchant", "identity", "defaults", "requirements"],
+        }
+        if contact_email:
+            payload["contact_email"] = contact_email
+        return self._stripe_v2_post(
+            "/v2/core/accounts",
+            payload,
+            idempotency_key=f"koaryu-connect-account-{studio_id}",
+        )
+
+    def _create_connect_account_v1(self, *, studio_id: str, business_name: str):
         stripe = self._stripe()
         try:
             return stripe.Account.create(
@@ -453,15 +519,53 @@ class StripeService:
                 },
             )
         except Exception as exc:
-            if exc.__class__.__module__.startswith("stripe"):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "Stripe Connect is not ready for this Stripe account. "
-                        "Enable Connect in the Stripe Dashboard before starting studio payment onboarding."
-                    ),
-                ) from exc
+            if self._is_stripe_exception(exc):
+                self._raise_connect_account_error(exc, "create a connected account")
             raise
+
+    def _stripe_v2_post(self, path: str, payload: dict[str, Any], *, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        if not self.settings.STRIPE_SECRET_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stripe is not configured for this environment.",
+            )
+        headers = {
+            "Authorization": f"Bearer {self.settings.STRIPE_SECRET_KEY}",
+            "Stripe-Version": STRIPE_ACCOUNTS_V2_VERSION,
+            "Content-Type": "application/json",
+        }
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+
+        try:
+            response = httpx.post(
+                f"https://api.stripe.com{path}",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+        except httpx.HTTPError as exc:
+            raise _StripeV2RequestError(code=None, message="Stripe Accounts v2 request failed.") from exc
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise _StripeV2RequestError(
+                code=None,
+                message="Stripe Accounts v2 returned an invalid response.",
+                request_id=response.headers.get("Request-Id"),
+            ) from exc
+
+        if response.status_code >= 400:
+            error = data.get("error") if isinstance(data, dict) else None
+            code = error.get("code") if isinstance(error, dict) else None
+            message = error.get("message") if isinstance(error, dict) else "Stripe Accounts v2 request failed."
+            raise _StripeV2RequestError(
+                code=code,
+                message=message,
+                request_id=response.headers.get("Request-Id"),
+            )
+        return data
 
     def create_connect_onboarding_link(
         self,
@@ -471,44 +575,64 @@ class StripeService:
         return_url: str,
     ):
         stripe = self._stripe()
-        return stripe.AccountLink.create(
-            account=account_id,
-            refresh_url=refresh_url,
-            return_url=return_url,
-            type="account_onboarding",
-        )
+        try:
+            return stripe.AccountLink.create(
+                account=account_id,
+                refresh_url=refresh_url,
+                return_url=return_url,
+                type="account_onboarding",
+            )
+        except Exception as exc:
+            if self._is_stripe_exception(exc):
+                self._raise_connect_account_error(exc, "create an onboarding link")
+            raise
 
     def create_connect_dashboard_link(self, *, account_id: str):
         stripe = self._stripe()
-        return stripe.Account.create_login_link(account_id)
+        try:
+            return stripe.Account.create_login_link(account_id)
+        except Exception as exc:
+            if self._is_stripe_exception(exc):
+                self._raise_connect_account_error(exc, "create a dashboard login link")
+            raise
 
     def retrieve_account(self, *, account_id: Optional[str] = None):
         stripe = self._stripe()
-        if account_id:
-            return stripe.Account.retrieve(account_id)
-        return stripe.Account.retrieve()
+        try:
+            if account_id:
+                return stripe.Account.retrieve(account_id)
+            return stripe.Account.retrieve()
+        except Exception as exc:
+            if self._is_stripe_exception(exc):
+                self._raise_connect_account_error(exc, "retrieve a connected account")
+            raise
 
     def create_connect_dashboard_url(self, *, account_id: str) -> str:
         stripe = self._stripe()
-        connected_account = stripe.Account.retrieve(account_id)
-        controller = self._object_get(connected_account, "controller") or {}
-        dashboard = self._object_get(controller, "stripe_dashboard") or {}
-        dashboard_type = self._object_get(dashboard, "type")
-        account_type = self._object_get(connected_account, "type")
+        try:
+            connected_account = stripe.Account.retrieve(account_id)
+            controller = self._object_get(connected_account, "controller") or {}
+            dashboard = self._object_get(controller, "stripe_dashboard") or {}
+            dashboard_type = self._object_get(dashboard, "type")
+            account_type = self._object_get(connected_account, "type")
 
-        if dashboard_type == "full" or account_type == "standard":
-            platform_account = stripe.Account.retrieve()
-            platform_account_id = self._object_get(platform_account, "id")
-            mode_segment = "/test" if self.settings.STRIPE_SECRET_KEY.startswith("sk_test_") else ""
-            if platform_account_id:
-                return (
-                    f"https://dashboard.stripe.com/{quote(platform_account_id)}"
-                    f"{mode_segment}/connect/accounts/{quote(account_id)}/activity"
-                )
-            return f"https://dashboard.stripe.com{mode_segment}/connect/accounts/{quote(account_id)}/activity"
+            if dashboard_type == "full" or account_type == "standard":
+                platform_account = stripe.Account.retrieve()
+                platform_account_id = self._object_get(platform_account, "id")
+                mode_segment = "/test" if self.settings.STRIPE_SECRET_KEY.startswith("sk_test_") else ""
+                if platform_account_id:
+                    return (
+                        f"https://dashboard.stripe.com/{quote(platform_account_id)}"
+                        f"{mode_segment}/connect/accounts/{quote(account_id)}/activity"
+                    )
+                return f"https://dashboard.stripe.com{mode_segment}/connect/accounts/{quote(account_id)}/activity"
 
-        link = stripe.Account.create_login_link(account_id)
-        return link["url"] if isinstance(link, dict) else link.url
+            link = stripe.Account.create_login_link(account_id)
+            return link["url"] if isinstance(link, dict) else link.url
+        except Exception as exc:
+            if self._is_stripe_exception(exc):
+                self._raise_connect_account_error(exc, "open the connected account dashboard")
+            raise
 
     def construct_webhook_event(self, *, payload: bytes, signature: Optional[str], secret: str):
         if not secret:
@@ -529,3 +653,37 @@ class StripeService:
         if isinstance(obj, dict):
             return obj.get(key)
         return getattr(obj, key, None)
+
+    @staticmethod
+    def _is_stripe_exception(exc: Exception) -> bool:
+        return exc.__class__.__module__.startswith("stripe")
+
+    def _raise_connect_account_error(self, exc: Exception, action: str) -> None:
+        message = str(exc)
+        if "Only Stripe Connect platforms can work with other accounts" in message:
+            detail = (
+                "This Stripe account cannot access the stored connected account. "
+                "Reconnect Stripe Payments in live mode so Koaryu can create a connected account "
+                "under the active Stripe platform."
+            )
+        elif "No such account" in message or "No such connected account" in message:
+            detail = (
+                "The stored Stripe connected account is no longer accessible. "
+                "Reconnect Stripe Payments before opening Stripe-hosted billing tools."
+            )
+        elif "signed up for Connect" in message or "account_create_activation_required" in message:
+            detail = (
+                "Stripe Connect is not activated for this live Stripe platform yet. "
+                "Finish Stripe Connect setup in the Stripe Dashboard before starting studio payment onboarding."
+            )
+        elif "account_creation_liability_unacknowledged" in message or "unacknowledged" in message:
+            detail = (
+                "Stripe needs the Connect responsibility acknowledgements completed before Koaryu can create "
+                "live connected accounts."
+            )
+        else:
+            detail = (
+                f"Stripe Connect could not {action}. "
+                "Check the connected account status in Stripe, then retry."
+            )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc

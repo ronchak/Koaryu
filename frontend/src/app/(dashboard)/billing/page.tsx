@@ -593,6 +593,21 @@ export default function BillingPage() {
   const billingInvoices = isPreviewMode ? PREVIEW_INVOICES : invoices;
   const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;
   const billingPeriod = subscriptionPeriodCopy(billingPlatform);
+  const canOpenCustomerPortal = canManageKoaryuSubscription && Boolean(billingPlatform?.stripe_customer_id);
+  const hasStripeConnectedAccount = Boolean(billingConnect?.stripe_connected_account_id);
+  const canOpenStripeDashboard = Boolean(hasStripeConnectedAccount && billingConnect?.status !== "deauthorized");
+  const needsConnectOnboarding = Boolean(
+    hasStripeConnectedAccount
+      && (
+        !billingConnect?.charges_enabled
+        || !billingConnect.details_submitted
+        || billingConnect.status !== "charges_enabled"
+        || Boolean(billingConnect.requirements_due?.length)
+      )
+  );
+  const connectActionLabel = needsConnectOnboarding
+    ? "Continue onboarding"
+    : "Connect Stripe";
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at && !program.is_system),
     [programs]
@@ -706,26 +721,33 @@ export default function BillingPage() {
         paymentsResult,
       ] = results;
 
-      let partialError = "";
-      const applyResult = <T,>(result: PromiseSettledResult<T>, apply: (value: T) => void) => {
+      const failures: string[] = [];
+      const applyResult = <T,>(
+        label: string,
+        result: PromiseSettledResult<T>,
+        apply: (value: T) => void,
+        clear: () => void
+      ) => {
         if (result.status === "fulfilled") {
           apply(result.value);
           return;
         }
-        partialError = result.reason instanceof Error ? result.reason.message : "Some billing data could not be loaded.";
+        clear();
+        const message = result.reason instanceof Error ? result.reason.message : "could not be loaded";
+        failures.push(`${label}: ${message}`);
       };
 
-      applyResult(platformResult, setPlatformBilling);
-      applyResult(connectResult, setPaymentAccount);
-      applyResult(plansResult, setPlans);
-      applyResult(payersResult, setPayers);
-      applyResult(subscriptionsResult, setSubscriptions);
-      applyResult(enrollmentsResult, setEnrollments);
-      applyResult(invoicesResult, setInvoices);
-      applyResult(paymentsResult, setPayments);
+      applyResult("Koaryu Core", platformResult, setPlatformBilling, () => setPlatformBilling(null));
+      applyResult("Stripe Connect", connectResult, setPaymentAccount, () => setPaymentAccount(null));
+      applyResult("Plans", plansResult, setPlans, () => setPlans([]));
+      applyResult("Families", payersResult, setPayers, () => setPayers([]));
+      applyResult("Subscriptions", subscriptionsResult, setSubscriptions, () => setSubscriptions([]));
+      applyResult("Enrollments", enrollmentsResult, setEnrollments, () => setEnrollments([]));
+      applyResult("Invoices", invoicesResult, setInvoices, () => setInvoices([]));
+      applyResult("Payments", paymentsResult, setPayments, () => setPayments([]));
 
-      if (partialError) {
-        setError(partialError);
+      if (failures.length > 0) {
+        setError(`Some billing data is unavailable. ${failures.join(" ")}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Billing could not be loaded.");
@@ -1223,7 +1245,8 @@ export default function BillingPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          disabled={!canManageKoaryuSubscription || isActionLoading}
+                          disabled={!canOpenCustomerPortal || isActionLoading}
+                          title={canOpenCustomerPortal ? undefined : "Available after Koaryu Core checkout creates a Stripe customer."}
                           onClick={() => void openBillingLink("/platform-billing/portal", {
                             return_url: window.location.href,
                           })}
@@ -1280,12 +1303,13 @@ export default function BillingPage() {
                           })}
                         >
                           <Link2 className="h-3.5 w-3.5" />
-                          Connect Stripe
+                          {connectActionLabel}
                         </Button>
                         <Button
                           variant="secondary"
                           size="sm"
-                          disabled={!billingConnect?.stripe_connected_account_id || !canManageKoaryuSubscription || isActionLoading}
+                          disabled={!canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+                          title={canOpenStripeDashboard ? "Open Stripe to review account status, requirements, payments, and payouts." : "Available after Stripe Connect creates an account."}
                           onClick={() => void openBillingLink("/billing/connect/dashboard-link", {
                             return_url: window.location.href,
                           })}
@@ -1737,7 +1761,7 @@ export default function BillingPage() {
                         <div>
                           <p className="font-medium text-text-primary">{invoice.invoice_type.replace(/_/g, " ")}</p>
                           <p className="text-xs text-muted">{invoice.external ? "External payment record" : invoice.number || invoice.stripe_invoice_id || "Draft invoice"}</p>
-                          {invoice.hosted_invoice_url ? (
+                          {invoice.hosted_invoice_url && !isPreviewMode ? (
                             <a className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline" href={invoice.hosted_invoice_url} target="_blank" rel="noreferrer">
                               Hosted invoice <ArrowUpRight className="h-3 w-3" />
                             </a>
@@ -1750,7 +1774,7 @@ export default function BillingPage() {
                           <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status !== "draft"} onClick={() => void handleInvoiceAction(invoice.id, "finalize")}>
                             Finalize
                           </Button>
-                          {invoice.hosted_invoice_url ? (
+                          {invoice.hosted_invoice_url && !isPreviewMode ? (
                             <Button asChild variant="secondary" size="sm">
                               <a href={invoice.hosted_invoice_url} target="_blank" rel="noreferrer">
                                 <ArrowUpRight className="h-3.5 w-3.5" />

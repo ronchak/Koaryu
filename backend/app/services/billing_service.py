@@ -86,6 +86,7 @@ class BillingService:
             stripe_account = stripe_service.create_connect_account(
                 studio_id=studio_id,
                 business_name=studio.get("name") or "Koaryu studio",
+                contact_email=self._get_user_email(actor_id) or self._get_user_email(studio.get("owner_id")),
             )
             stripe_account_id = stripe_account["id"] if isinstance(stripe_account, dict) else stripe_account.id
             account = self._update_payment_account(studio_id, {
@@ -125,6 +126,8 @@ class BillingService:
     async def create_plan(self, data: BillingPlanCreate, studio_id: str, actor_id: str) -> BillingPlanResponse:
         self._ensure_programs_in_studio(studio_id, data.program_ids)
         account = self._ensure_payment_account_row(studio_id)
+        if account.get("charges_enabled"):
+            self._validate_connect_account_access(account)
         plan_row = data.model_dump(exclude={"program_ids"})
         plan_row["studio_id"] = studio_id
         plan_row["name"] = " ".join(data.name.strip().split())
@@ -154,6 +157,12 @@ class BillingService:
         if "currency" in update and update["currency"]:
             update["currency"] = update["currency"].lower()
         account = self._ensure_payment_account_row(studio_id)
+        should_sync_after_update = account.get("charges_enabled") and (
+            not current.get("stripe_price_id")
+            or any(key in update for key in ("amount_cents", "currency", "billing_interval", "name", "description"))
+        )
+        if should_sync_after_update:
+            self._validate_connect_account_access(account)
         if current.get("status") == "pending" and account.get("charges_enabled") and current.get("stripe_price_id"):
             update.setdefault("status", "active")
         if update:
@@ -175,10 +184,7 @@ class BillingService:
         if data.program_ids is not None:
             self._ensure_programs_in_studio(studio_id, data.program_ids)
             self._replace_plan_programs(studio_id, plan_id, data.program_ids)
-        if account.get("charges_enabled") and (
-            not current.get("stripe_price_id")
-            or any(key in update for key in ("amount_cents", "currency", "billing_interval", "name", "description"))
-        ):
+        if should_sync_after_update:
             current = self._sync_plan_price(current, account)
         self._audit(studio_id, actor_id, "billing.plan_updated", plan_id, {"changes": update, "program_ids": data.program_ids})
         return self._plan_response(current, account)
@@ -222,11 +228,13 @@ class BillingService:
         row["studio_id"] = studio_id
         if row.get("guardian_id"):
             self._ensure_record_in_studio("guardians", row["guardian_id"], studio_id, "Guardian not found.")
+        account = self._ensure_payment_account_row(studio_id)
+        if account.get("charges_enabled"):
+            self._validate_connect_account_access(account)
         result = self.supabase.table("billing_payers").insert(row).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create payer.")
         payer = result.data[0]
-        account = self._ensure_payment_account_row(studio_id)
         if account.get("charges_enabled"):
             payer = self._sync_payer_customer(payer, account)
         self._audit(studio_id, actor_id, "billing.payer_created", payer["id"], {"display_name": data.display_name})
@@ -242,11 +250,13 @@ class BillingService:
             self._ensure_record_in_studio("guardians", update["guardian_id"], studio_id, "Guardian not found.")
         if not update:
             return await self.get_payer(payer_id, studio_id)
+        account = self._ensure_payment_account_row(studio_id)
+        if account.get("charges_enabled"):
+            self._validate_connect_account_access(account)
         result = self.supabase.table("billing_payers").update(update).eq("id", payer_id).eq("studio_id", studio_id).execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Payer not found.")
         payer = result.data[0]
-        account = self._ensure_payment_account_row(studio_id)
         if account.get("charges_enabled"):
             payer = self._sync_payer_customer(payer, account)
         self._audit(studio_id, actor_id, "billing.payer_updated", payer_id, {"changes": update})
@@ -808,7 +818,13 @@ class BillingService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before using hosted payments.")
         if not account.get("charges_enabled"):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Stripe Connect charges are not enabled yet.")
+        self._validate_connect_account_access(account)
         return account
+
+    def _validate_connect_account_access(self, account: dict[str, Any]) -> None:
+        account_id = account.get("stripe_connected_account_id")
+        if account_id:
+            StripeService().retrieve_account(account_id=account_id)
 
     def _sync_plan_price(self, plan: dict[str, Any], account: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
         account_id = account.get("stripe_connected_account_id")
@@ -1973,10 +1989,20 @@ class BillingService:
         return result.data
 
     def _get_studio(self, studio_id: str) -> dict[str, Any]:
-        result = self.supabase.table("studios").select("id, name").eq("id", studio_id).single().execute()
+        result = self.supabase.table("studios").select("id, name, owner_id").eq("id", studio_id).single().execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Studio not found.")
         return result.data
+
+    def _get_user_email(self, user_id: Optional[str]) -> Optional[str]:
+        if not user_id:
+            return None
+        try:
+            result = self.supabase.auth.admin.get_user_by_id(user_id)
+        except Exception:
+            return None
+        user = getattr(result, "user", None)
+        return getattr(user, "email", None)
 
     def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
         self.supabase.table("audit_logs").insert({
