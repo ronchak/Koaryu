@@ -8,6 +8,7 @@ from app.schemas.billing import (
     StudentBillingEnrollmentResponse,
 )
 from app.services.billing_service import BillingService
+from app.services.stripe_service import StripeService
 
 
 class _FakeResponse:
@@ -56,6 +57,29 @@ class _FakeSupabase:
 
     def table(self, name):
         return _FakeQuery(self.tables[name])
+
+
+class _FakeStripeAccount:
+    def __init__(self):
+        self.calls = []
+
+    def retrieve(self, account_id=None):
+        self.calls.append(("retrieve", account_id))
+        if account_id:
+            return {
+                "id": account_id,
+                "type": "standard",
+                "controller": {"stripe_dashboard": {"type": "full"}},
+            }
+        return {"id": "acct_platform"}
+
+    def create_login_link(self, account_id):
+        self.calls.append(("create_login_link", account_id))
+        return {"url": f"https://connect.stripe.com/express/{account_id}"}
+
+
+class _FakeStripe:
+    Account = _FakeStripeAccount()
 
 
 class BillingPaymentsLifecycleTest(unittest.TestCase):
@@ -198,6 +222,19 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(stored_payment["status"], "disputed")
         self.assertEqual(dispute["payment_id"], "payment_1")
         self.assertEqual(dispute["stripe_payment_intent_id"], "pi_1")
+
+    def test_standard_connect_account_uses_platform_dashboard_url(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
+        service._stripe = lambda: _FakeStripe
+
+        url = service.create_connect_dashboard_url(account_id="acct_connected")
+
+        self.assertEqual(
+            url,
+            "https://dashboard.stripe.com/acct_platform/test/connect/accounts/acct_connected/activity",
+        )
+        self.assertNotIn(("create_login_link", "acct_connected"), _FakeStripe.Account.calls)
 
 
 if __name__ == "__main__":

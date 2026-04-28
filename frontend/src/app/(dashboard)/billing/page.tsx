@@ -682,16 +682,7 @@ export default function BillingPage() {
     setIsLoading(true);
     setError("");
     try {
-      const [
-        platformResult,
-        connectResult,
-        plansResult,
-        payersResult,
-        subscriptionsResult,
-        enrollmentsResult,
-        invoicesResult,
-        paymentsResult,
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         canManageKoaryuSubscription
           ? api.get<PlatformBillingStatus>("/platform-billing/status", token)
           : Promise.resolve(null),
@@ -702,15 +693,40 @@ export default function BillingPage() {
         api.get<StudentBillingEnrollment[]>("/billing/enrollments", token),
         api.get<BillingInvoice[]>("/billing/invoices", token),
         api.get<BillingPayment[]>("/billing/payments", token),
-      ]);
-      setPlatformBilling(platformResult);
-      setPaymentAccount(connectResult);
-      setPlans(plansResult);
-      setPayers(payersResult);
-      setSubscriptions(subscriptionsResult);
-      setEnrollments(enrollmentsResult);
-      setInvoices(invoicesResult);
-      setPayments(paymentsResult);
+      ] as const);
+
+      const [
+        platformResult,
+        connectResult,
+        plansResult,
+        payersResult,
+        subscriptionsResult,
+        enrollmentsResult,
+        invoicesResult,
+        paymentsResult,
+      ] = results;
+
+      let partialError = "";
+      const applyResult = <T,>(result: PromiseSettledResult<T>, apply: (value: T) => void) => {
+        if (result.status === "fulfilled") {
+          apply(result.value);
+          return;
+        }
+        partialError = result.reason instanceof Error ? result.reason.message : "Some billing data could not be loaded.";
+      };
+
+      applyResult(platformResult, setPlatformBilling);
+      applyResult(connectResult, setPaymentAccount);
+      applyResult(plansResult, setPlans);
+      applyResult(payersResult, setPayers);
+      applyResult(subscriptionsResult, setSubscriptions);
+      applyResult(enrollmentsResult, setEnrollments);
+      applyResult(invoicesResult, setInvoices);
+      applyResult(paymentsResult, setPayments);
+
+      if (partialError) {
+        setError(partialError);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Billing could not be loaded.");
     } finally {
@@ -749,7 +765,7 @@ export default function BillingPage() {
     setError("");
     setMessage("");
     try {
-      const link = await api.post<BillingLinkResponse>(path, body, token);
+      const link = await api.post<BillingLinkResponse>(path, body, token, { timeoutMs: 30000 });
       window.location.assign(link.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Stripe link could not be created.");

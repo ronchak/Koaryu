@@ -107,9 +107,9 @@ class BillingService:
         stripe_account_id = account.get("stripe_connected_account_id")
         if not stripe_account_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before opening the Stripe dashboard.")
-        link = StripeService().create_connect_dashboard_link(account_id=stripe_account_id)
+        url = StripeService().create_connect_dashboard_url(account_id=stripe_account_id)
         self._audit(studio_id, actor_id, "billing.connect_dashboard_opened", studio_id, {"stripe_account_id": stripe_account_id})
-        return BillingLinkResponse(url=link["url"] if isinstance(link, dict) else link.url)
+        return BillingLinkResponse(url=url)
 
     async def list_plans(self, studio_id: str) -> list[BillingPlanResponse]:
         account = self._ensure_payment_account_row(studio_id)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from urllib.parse import quote
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -481,6 +482,34 @@ class StripeService:
         stripe = self._stripe()
         return stripe.Account.create_login_link(account_id)
 
+    def retrieve_account(self, *, account_id: Optional[str] = None):
+        stripe = self._stripe()
+        if account_id:
+            return stripe.Account.retrieve(account_id)
+        return stripe.Account.retrieve()
+
+    def create_connect_dashboard_url(self, *, account_id: str) -> str:
+        stripe = self._stripe()
+        connected_account = stripe.Account.retrieve(account_id)
+        controller = self._object_get(connected_account, "controller") or {}
+        dashboard = self._object_get(controller, "stripe_dashboard") or {}
+        dashboard_type = self._object_get(dashboard, "type")
+        account_type = self._object_get(connected_account, "type")
+
+        if dashboard_type == "full" or account_type == "standard":
+            platform_account = stripe.Account.retrieve()
+            platform_account_id = self._object_get(platform_account, "id")
+            mode_segment = "/test" if self.settings.STRIPE_SECRET_KEY.startswith("sk_test_") else ""
+            if platform_account_id:
+                return (
+                    f"https://dashboard.stripe.com/{quote(platform_account_id)}"
+                    f"{mode_segment}/connect/accounts/{quote(account_id)}/activity"
+                )
+            return f"https://dashboard.stripe.com{mode_segment}/connect/accounts/{quote(account_id)}/activity"
+
+        link = stripe.Account.create_login_link(account_id)
+        return link["url"] if isinstance(link, dict) else link.url
+
     def construct_webhook_event(self, *, payload: bytes, signature: Optional[str], secret: str):
         if not secret:
             raise HTTPException(
@@ -494,3 +523,9 @@ class StripeService:
             return stripe.Webhook.construct_event(payload, signature, secret)
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook signature.") from exc
+
+    @staticmethod
+    def _object_get(obj: Any, key: str) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
