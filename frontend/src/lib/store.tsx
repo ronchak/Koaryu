@@ -108,7 +108,6 @@ const KEYS = {
 };
 
 const DEMO_STUDIO_NAME = "River City Martial Arts";
-const DASHBOARD_BOOTSTRAP_STUDENT_LIMIT = 200;
 const PROMOTION_HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
 const SCHEDULE_ATTENDANCE_BULK_THRESHOLD = 3;
 const MOCK_PROGRAMS: Program[] = [
@@ -1209,6 +1208,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       tokenRef.current = session.access_token;
       setToken(session.access_token);
+      setHydrated(true);
 
       try {
         let criticalData: BootstrapResponse;
@@ -1319,7 +1319,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setProgramsLoadError(null);
           if (studentsRevisionRef.current === studentsRevisionAtStart) {
             commitStudents(criticalData.students, {
-              mayBePartial: criticalData.students.length >= DASHBOARD_BOOTSTRAP_STUDENT_LIMIT,
+              mayBePartial: true,
             });
           }
           setLeads(criticalData.leads);
@@ -1336,29 +1336,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           } else {
             commitEligibilityRows(null, []);
           }
-          setHydrated(true);
+
+          void api
+            .get<Program[]>("/programs?include_archived=true", session.access_token)
+            .then((programsRes) => {
+              if (!mounted) {
+                return;
+              }
+              setPrograms(programsRes);
+              setProgramsLoaded(true);
+              setProgramsLoadError(null);
+            })
+            .catch((error) => {
+              console.warn("Failed to refresh program usage after bootstrap", error);
+            });
         }
 
         void (async () => {
-          const templatesRes = await api
-            .get<ClassTemplate[]>("/schedule/templates", session.access_token)
-            .catch(() => []);
           const start = new Date();
           start.setDate(start.getDate() - 30);
           const end = new Date();
           end.setDate(end.getDate() + 60);
+          const startDate = start.toISOString().split("T")[0];
+          const endDate = end.toISOString().split("T")[0];
 
-          const sessionsRes = await api.get<ClassSession[]>(
-            `/schedule/sessions?start_date=${start.toISOString().split("T")[0]}&end_date=${end.toISOString().split("T")[0]}`,
-            session.access_token
-          ).catch(() => []);
-
-          const attendanceRes = await api
-            .get<AttendanceRecord[]>(
-              `/schedule/attendance?start_date=${start.toISOString().split("T")[0]}&end_date=${end.toISOString().split("T")[0]}`,
-              session.access_token
-            )
-            .catch(() => []);
+          const [templatesRes, sessionsRes, attendanceRes] = await Promise.all([
+            api
+              .get<ClassTemplate[]>("/schedule/templates", session.access_token)
+              .catch(() => []),
+            api
+              .get<ClassSession[]>(
+                `/schedule/sessions?start_date=${startDate}&end_date=${endDate}`,
+                session.access_token
+              )
+              .catch(() => []),
+            api
+              .get<AttendanceRecord[]>(
+                `/schedule/attendance?start_date=${startDate}&end_date=${endDate}`,
+                session.access_token
+              )
+              .catch(() => []),
+          ]);
 
           if (!mounted) {
             return;

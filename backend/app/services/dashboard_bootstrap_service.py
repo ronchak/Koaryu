@@ -5,6 +5,7 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from supabase import Client
 
+from app.db.supabase import create_supabase_client
 from app.schemas.belt import BeltLadderResponse, BeltRankResponse
 from app.schemas.dashboard_bootstrap import (
     DashboardBootstrapResponse,
@@ -71,7 +72,15 @@ class DashboardBootstrapService:
         )
 
     def _fetch_programs(self, studio_id: str):
-        return ProgramService(self.supabase).list_programs(studio_id, include_archived=True)
+        return ProgramService(self.supabase).list_programs_metadata_sync(
+            studio_id,
+            include_archived=True,
+        )
+
+    @staticmethod
+    def _fetch_with_isolated_client(method_name: str, studio_id: str):
+        service = DashboardBootstrapService(create_supabase_client())
+        return getattr(service, method_name)(studio_id)
 
     def _fetch_belt_ladders(self, studio_id: str):
         visible_programs = (
@@ -108,19 +117,16 @@ class DashboardBootstrapService:
 
         studio_id = auth.studio_id
         ensure_platform_subscription_access(self.supabase, studio_id)
-        await asyncio.to_thread(
-            ProgramService(self.supabase).ensure_program_ladders,
-            studio_id,
-        )
 
         # supabase-py's sync client is not safe to share across parallel thread
-        # calls; concurrent reads can surface as httpx/httpcore ReadError and
-        # leave the frontend with no bootstrap data.
-        studio_result = await asyncio.to_thread(self._fetch_studio_summary, studio_id)
-        students_result = await asyncio.to_thread(self._fetch_students, studio_id)
-        leads_result = await asyncio.to_thread(self._fetch_leads, studio_id)
-        ladders_result = await asyncio.to_thread(self._fetch_belt_ladders, studio_id)
-        programs = await self._fetch_programs(studio_id)
+        # calls, so each bootstrap read gets its own short-lived client.
+        studio_result, students_result, leads_result, ladders_result, programs = await asyncio.gather(
+            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_studio_summary", studio_id),
+            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_students", studio_id),
+            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_leads", studio_id),
+            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_belt_ladders", studio_id),
+            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_programs", studio_id),
+        )
 
         if not studio_result.data:
             raise HTTPException(
@@ -129,7 +135,11 @@ class DashboardBootstrapService:
             )
 
         student_service = StudentService(self.supabase)
-        students = student_service._rows_to_responses(students_result.data or [])
+        students = student_service._rows_to_responses(
+            students_result.data or [],
+            include_guardians=False,
+            include_photo_urls=False,
+        )
 
         leads = [LeadResponse(**row) for row in (leads_result.data or [])]
 

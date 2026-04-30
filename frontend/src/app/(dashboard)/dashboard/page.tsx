@@ -988,12 +988,13 @@ function KpiInsightModal({
 
 export default function DashboardPage() {
   const { studioName } = useStudioStore();
-  const { students } = useStudentStore();
+  const { students, studentsLoaded } = useStudentStore();
   const { leads } = useLeadStore();
   const { programs } = useProgramStore();
   const { sessions, attendance } = useScheduleStore();
   const { beltLadders, beltRanks, eligibility, subRankTerm } = useBeltStore();
   const [activeKpiInsight, setActiveKpiInsight] = useState<KpiInsight | null>(null);
+  const isInitialDashboardLoading = !studentsLoaded;
   const today = toLocalDateKey();
   const lookback14 = useMemo(() => subtractDays(today, 14), [today]);
   const lookback30 = useMemo(() => subtractDays(today, 30), [today]);
@@ -1548,10 +1549,28 @@ export default function DashboardPage() {
     <>
       <Header
         title="Dashboard"
-        description={studioName || "Your studio at a glance."}
+        description={studioName || (isInitialDashboardLoading ? "Loading studio..." : "Your studio at a glance.")}
       />
       <div className="flex-1 p-6 sm:p-8">
         <div className="max-w-6xl">
+          {isInitialDashboardLoading ? (
+            <Panel>
+              <PanelHeader
+                title="Loading Dashboard"
+                subtitle="Preparing the first roster, lead, program, and belt snapshot."
+              />
+              <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
+                {["Students", "Leads", "Classes", "Belts"].map((label) => (
+                  <div key={label} className="bg-surface px-4 py-4">
+                    <div className="h-3 w-20 bg-surface-raised" />
+                    <div className="mt-4 h-8 w-14 bg-surface-raised" />
+                    <div className="mt-3 h-3 w-28 bg-surface-raised" />
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          ) : (
+            <>
 
           {/* ── Primary Stats ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-border mb-6">
@@ -1773,6 +1792,8 @@ export default function DashboardPage() {
                 ))}
               </div>
             </Panel>
+          )}
+            </>
           )}
         </div>
       </div>

@@ -114,6 +114,36 @@ class ProgramService:
             for row in (result.data or [])
         ]
 
+    def list_programs_metadata_sync(
+        self,
+        studio_id: str,
+        include_archived: bool = False,
+    ) -> list[ProgramResponse]:
+        query = (
+            self.supabase.table("programs")
+            .select(PROGRAM_SELECT)
+            .eq("studio_id", studio_id)
+            .order("sort_order")
+            .order("name")
+        )
+        if not include_archived:
+            query = query.is_("archived_at", "null")
+
+        try:
+            result = query.execute()
+        except PostgrestAPIError as exc:
+            if not _is_optional_program_schema_error(exc):
+                raise
+            result = (
+                self.supabase.table("programs")
+                .select(PROGRAM_BASE_SELECT)
+                .eq("studio_id", studio_id)
+                .order("name")
+                .execute()
+            )
+
+        return [self._row_to_response(row) for row in (result.data or [])]
+
     async def get_program(
         self,
         program_id: str,

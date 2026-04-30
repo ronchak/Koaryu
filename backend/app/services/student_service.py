@@ -701,27 +701,39 @@ class StudentService:
                 guardians.append(guardian)
         return guardians
 
-    def _rows_to_responses(self, rows: list[dict]) -> list[StudentResponse]:
+    def _rows_to_responses(
+        self,
+        rows: list[dict],
+        *,
+        include_guardians: bool = True,
+        include_photo_urls: bool = True,
+    ) -> list[StudentResponse]:
         student_ids = [
             row["id"]
             for row in rows
             if row.get("id")
         ]
-        guardians_by_student_id = self._fetch_guardians_for_students([
-            *student_ids
-        ])
+        guardians_by_student_id = (
+            self._fetch_guardians_for_students([*student_ids])
+            if include_guardians
+            else {student_id: [] for student_id in student_ids}
+        )
         memberships_by_student_id = self._fetch_memberships_for_students(student_ids)
-        photo_urls_by_path = self._create_signed_photo_urls([
-            row["photo_path"]
-            for row in rows
-            if row.get("photo_path")
-        ])
+        photo_urls_by_path = (
+            self._create_signed_photo_urls([
+                row["photo_path"]
+                for row in rows
+                if row.get("photo_path")
+            ])
+            if include_photo_urls
+            else {}
+        )
         return [
             self._row_to_response(
                 row,
                 guardians=guardians_by_student_id.get(row.get("id"), []),
                 memberships=memberships_by_student_id.get(row.get("id"), []),
-                photo_url=photo_urls_by_path.get(row.get("photo_path")),
+                photo_url=photo_urls_by_path.get(row.get("photo_path")) if include_photo_urls else None,
             )
             for row in rows
         ]
