@@ -135,15 +135,15 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="koaryu-modal-root p-4">
       {/* Overlay */}
       <div
-        className="absolute inset-0 bg-black/60"
+        className="koaryu-modal-backdrop"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-[560px] bg-surface border border-border rounded-[6px] shadow-2xl">
+      <div className="koaryu-modal-panel w-full max-w-[560px] bg-surface border border-border rounded-[6px] shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="text-base font-semibold text-text-primary">{isEdit ? "Edit student" : "Add student"}</h2>
@@ -161,7 +161,7 @@ export function StudentForm({ onSubmit, onClose, isLoading, initialData }: Stude
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-5 py-2.5 text-sm cursor-pointer transition-all duration-150 border-b-2 -mb-px ${
+              className={`px-5 py-2.5 text-sm cursor-pointer transition-[border-color,color,background-color] duration-150 border-b-2 -mb-px ${
                 tab === t.id
                   ? "text-text-primary border-accent"
                   : "text-muted border-transparent hover:text-text-secondary"

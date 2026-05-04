@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added demo-readiness tooling and data, including a one-click demo reset path, polished demo CSV, and clearer demo seed coverage for students, leads, belts, schedules, and promotion history.
 - Added bulk schedule attendance reads and supporting database indexes so schedule range loads no longer fan out into one attendance request per session.
 - Added promotion-history and eligibility indexes for faster student profile and belt tracker reads.
+- Added a client-side theme system with persisted dark/light/system preference, first-paint theme hydration, and a sidebar theme toggle.
+- Added shared route and modal transition primitives for the dashboard shell, KPI insights, lead details, student forms, schedule modals, and belt tracker dialogs.
+- Added a non-blocking landing-page backend warmup that calls `/api/proxy/health` after the informational page paints.
 
 ### Changed
 - Re-architected belt progression mock data to a "Kids Martial Arts" curriculum with white/yellow/orange/purple/blue/green/brown/black belts and tips.
@@ -33,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optimized student profiles by caching and de-duplicating promotion-history requests, avoiding unnecessary detail refetches for students without guardians, and using the store's belt ladder data when available.
 - Reduced render-time work across dashboard, students, reports, and schedule views by memoizing derived rows/counts and narrowing broad UI transitions.
 - Improved student list refresh behavior so freshly bootstrapped rosters are not immediately refetched unless the bootstrap payload may be partial.
+- Switched the Render and Procfile backend startup command from four Gunicorn workers to a single Uvicorn process for better cold-start headroom on small Render instances.
+- Removed the unused Gunicorn backend dependency after moving production startup to Uvicorn.
+- Kept the informational landing page out of Supabase auth middleware so it does not block on session resolution or backend `/auth/me`; login, onboarding, subscription, and dashboard routes still use the normal auth gate.
+- Updated light-theme-safe color tokens for accent contrast, raised surfaces, hover states, calendar cells, buttons, inputs, and status actions.
+- Replaced broad `transition-all` usage across key dashboard controls with narrower transition properties and reduced-motion support.
 
 ### Verified
 - Confirmed health endpoints, fresh-account onboarding, redirect behavior, and multi-studio isolation in the local Supabase-backed development environment.
@@ -40,3 +48,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Verified authenticated repeated sync calls preserve existing rank IDs, add new ranks safely, and roll back cleanly when invalid payloads are submitted.
 - Verified the performance pass with frontend lint, TypeScript, production build, backend compile/import smoke tests, diff whitespace checks, and local dev health checks.
 - Confirmed runtime request shape now uses one promotion-history request per student profile load and one bulk attendance request per schedule range.
+- Verified the new Uvicorn production command boots locally and returns an OK `/health` response.
+- Verified the landing-page middleware/warmup changes with targeted frontend lint.

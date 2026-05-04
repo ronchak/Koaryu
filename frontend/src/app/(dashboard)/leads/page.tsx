@@ -873,12 +873,12 @@ export default function LeadsPage() {
       </div>
 
       {selectedLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="koaryu-modal-root p-4">
           <div
-            className="absolute inset-0 bg-black/60"
+            className="koaryu-modal-backdrop"
             onClick={clearSelectedLead}
           />
-          <div className="relative max-h-[80vh] w-full max-w-md overflow-y-auto border border-border bg-bg">
+          <div className="koaryu-modal-panel max-h-[80vh] w-full max-w-md overflow-y-auto border border-border bg-bg">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h2 className="text-base font-semibold text-text-primary">
                 {fullName(selectedLead)}
@@ -1100,9 +1100,9 @@ export default function LeadsPage() {
       )}
 
       {showAddLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="koaryu-modal-root p-4">
           <div
-            className="absolute inset-0 bg-black/60"
+            className="koaryu-modal-backdrop"
             onClick={() => {
               if (!isAddingLead) {
                 setShowAddLead(false);
@@ -1110,7 +1110,7 @@ export default function LeadsPage() {
               }
             }}
           />
-          <div className="relative max-h-[85vh] w-full max-w-md overflow-y-auto border border-border bg-bg p-5 sm:p-6">
+          <div className="koaryu-modal-panel max-h-[85vh] w-full max-w-md overflow-y-auto border border-border bg-bg p-5 sm:p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-base font-semibold text-text-primary">Add new lead</h2>
               <button

@@ -760,16 +760,16 @@ function KpiInsightModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div className="koaryu-modal-root p-4 sm:p-6">
       <div
-        className="absolute inset-0 bg-black/60"
+        className="koaryu-modal-backdrop"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="kpi-insight-title"
-        className="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-[6px] border border-border bg-bg shadow-2xl"
+        className="koaryu-modal-panel flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-[6px] border border-border bg-bg shadow-2xl"
       >
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div className="min-w-0">

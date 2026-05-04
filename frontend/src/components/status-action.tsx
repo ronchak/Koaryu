@@ -13,9 +13,9 @@ interface StatusActionProps {
 }
 
 const actionStyles: Record<ActionVariant, string> = {
-  primary: "bg-accent text-[#0B0D10] hover:bg-accent-hover",
+  primary: "bg-accent text-accent-contrast hover:bg-accent-hover",
   secondary:
-    "border border-border bg-surface-raised text-text-primary hover:bg-[#1E2329]",
+    "border border-border bg-surface-raised text-text-primary hover:bg-surface-hover",
   ghost: "text-text-secondary hover:bg-surface-raised hover:text-text-primary",
 };
 
@@ -29,6 +29,7 @@ export function StatusAction({
   const className = `
     inline-flex min-h-10 items-center justify-center gap-2 rounded-[6px]
     px-3.5 py-2 text-sm font-medium
+    transition-[background-color,border-color,color] duration-150 ease-out motion-reduce:transition-none
     ${actionStyles[variant]}
   `;
   const content = (

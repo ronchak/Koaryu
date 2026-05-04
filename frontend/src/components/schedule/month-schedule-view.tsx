@@ -208,7 +208,7 @@ export function MonthScheduleView({
                 <div
                   key={day.dateKey}
                   className={`group relative flex min-h-[156px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors last:border-r-0 hover:bg-surface-raised/50 ${
-                    day.inCurrentMonth ? "bg-surface" : "bg-[#0F1318] text-text-secondary"
+                    day.inCurrentMonth ? "bg-surface" : "bg-bg text-text-secondary"
                   } ${isSelected ? "ring-1 ring-inset ring-accent" : ""} ${
                     isToday ? "bg-accent/[0.04]" : ""
                   }`}
@@ -226,7 +226,7 @@ export function MonthScheduleView({
                       <span
                         className={`inline-flex h-7 min-w-7 items-center justify-center px-2 text-sm font-semibold ${
                           isToday
-                            ? "bg-accent text-[#0B0D10]"
+                            ? "bg-accent text-accent-contrast"
                             : day.inCurrentMonth
                             ? "bg-surface-raised text-text-primary"
                             : "bg-transparent text-muted"
@@ -235,7 +235,7 @@ export function MonthScheduleView({
                         {day.date.getDate()}
                       </span>
                       <div className="flex flex-col">
-                        <span className={`text-[10px] uppercase tracking-widest ${day.inCurrentMonth ? "text-muted" : "text-[#4E5764]"}`}>
+                        <span className={`text-[10px] uppercase tracking-widest ${day.inCurrentMonth ? "text-muted" : "text-muted"}`}>
                           {day.monthLabel}
                         </span>
                         {isToday && <span className="text-[10px] font-medium text-accent">Today</span>}
@@ -281,7 +281,7 @@ export function MonthScheduleView({
                               event.stopPropagation();
                               onEntryClick?.(entry);
                             }}
-                            className={`flex items-start gap-2 border px-2 py-1.5 text-left hover:bg-[#1B2129] transition-colors ${
+                            className={`flex items-start gap-2 border px-2 py-1.5 text-left hover:bg-surface-hover transition-colors ${
                               day.conflictingSessionIds.has(entry.session.id)
                                 ? "border-danger/30 bg-danger/5 hover:border-danger/50"
                                 : "border-border bg-surface-raised hover:border-[color:var(--accent)]/40"

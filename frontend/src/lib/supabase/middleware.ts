@@ -65,6 +65,12 @@ function copyResponseCookies(source: NextResponse, target: NextResponse) {
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  // Keep the informational landing page independent of Supabase and backend
+  // cold starts. Login and dashboard routes still run the normal auth gate.
+  if (pathname === "/") {
+    return NextResponse.next();
+  }
+
   if (pathname.startsWith("/api/") || PUBLIC_STATUS_ROUTES.has(pathname)) {
     return NextResponse.next();
   }
@@ -108,7 +114,6 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
   const isOnboardingRoute = pathname.startsWith("/onboarding");
-  const isLandingRoute = pathname === "/";
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
 
   function redirectTo(path: string, options?: { clearStudioState?: boolean }) {
@@ -126,7 +131,7 @@ export async function updateSession(request: NextRequest) {
   if (!user) {
     clearStudioStateCookie(supabaseResponse, request);
     clearActiveStudioCookie(supabaseResponse, request);
-    if (isLandingRoute || isAuthRoute) {
+    if (isAuthRoute) {
       return supabaseResponse;
     }
     return redirectTo("/login", { clearStudioState: true });
@@ -181,10 +186,6 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (hasStudio === null) {
-    return supabaseResponse;
-  }
-
-  if (isLandingRoute) {
     return supabaseResponse;
   }
 

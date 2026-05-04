@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { ThemeProvider } from "@/components/theme-provider";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 import "./globals.css";
 
@@ -46,9 +47,29 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  colorScheme: "dark",
-  themeColor: "#0B0D10",
+  colorScheme: "dark light",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0B0D10" },
+    { media: "(prefers-color-scheme: light)", color: "#F7F8FA" },
+  ],
 };
+
+const themeScript = `
+(() => {
+  try {
+    const stored = window.localStorage.getItem("koaryu-theme");
+    const preference = stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+    const resolved = preference === "system"
+      ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+      : preference;
+    document.documentElement.dataset.theme = resolved;
+    document.documentElement.style.colorScheme = resolved;
+  } catch {
+    document.documentElement.dataset.theme = "dark";
+    document.documentElement.style.colorScheme = "dark";
+  }
+})();
+`;
 
 export default function RootLayout({
   children,
@@ -58,10 +79,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-theme="dark"
+      suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="min-h-full flex flex-col font-sans antialiased">
-        {children}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

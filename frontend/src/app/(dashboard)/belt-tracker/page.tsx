@@ -90,7 +90,7 @@ function ProgressBar({ current, required, met }: { current: number; required: nu
     <div className="flex items-center gap-2 w-full">
       <div className="flex-1 h-1.5 bg-surface-raised rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${met ? "bg-success" : "bg-accent"}`}
+          className={`h-full rounded-full transition-[background-color,width] ${met ? "bg-success" : "bg-accent"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -221,9 +221,9 @@ function RankFormModal({ initial, onSave, onClose, title, subRankTerm, forceTip,
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-sm p-6 overflow-y-auto max-h-[90vh]">
+    <div className="koaryu-modal-root p-4">
+      <div className="koaryu-modal-backdrop" onClick={onClose} />
+      <div className="koaryu-modal-panel bg-bg border border-border rounded-[6px] w-full max-w-sm p-6 overflow-y-auto max-h-[90vh]">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-text-primary">{title}</h2>
           <button onClick={onClose} className="text-muted hover:text-text-secondary cursor-pointer">
@@ -340,9 +340,9 @@ function DeleteConfirm({ name, onConfirm, onCancel }: {
   name: string; onConfirm: () => void; onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
-      <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-xs p-6">
+    <div className="koaryu-modal-root p-4">
+      <div className="koaryu-modal-backdrop" onClick={onCancel} />
+      <div className="koaryu-modal-panel bg-bg border border-border rounded-[6px] w-full max-w-xs p-6">
         <h2 className="text-base font-semibold text-text-primary mb-2">Delete rank?</h2>
         <p className="text-sm text-text-secondary mb-4">
           <strong className="text-text-primary">{name}</strong> will be permanently removed.
@@ -1230,7 +1230,7 @@ export default function BeltTrackerPage() {
                   return (
                     <div
                       key={group.belt.id}
-                      className={`rounded-[6px] border transition-all ${
+                      className={`rounded-[6px] border transition-[background-color,border-color,opacity] ${
                         isDropTarget
                           ? "border-accent bg-accent/5"
                           : "border-border bg-surface"
@@ -1318,7 +1318,7 @@ export default function BeltTrackerPage() {
                                 onDragOver={(e) => onTipDragOver(gIdx, tIdx, e)}
                                 onDrop={() => onTipDrop(gIdx, tIdx)}
                                 onDragEnd={onTipDragEnd}
-                                className={`flex items-center gap-2.5 py-2 px-2 rounded-[4px] mb-0.5 transition-all select-none ${
+                                className={`flex items-center gap-2.5 py-2 px-2 rounded-[4px] mb-0.5 transition-[background-color,color,opacity] select-none ${
                                   isTipDragging ? "opacity-30" : "opacity-100"
                                 } ${isTipOver ? "bg-accent/10" : "hover:bg-surface-raised/60"}`}
                               >
@@ -1440,9 +1440,9 @@ export default function BeltTrackerPage() {
 
       {/* ── Promote modal ──────────────────────────────────────── */}
       {promoteEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setPromoteEntry(null)} />
-          <div className="relative bg-bg border border-border rounded-[6px] w-full max-w-sm p-6">
+        <div className="koaryu-modal-root p-4">
+          <div className="koaryu-modal-backdrop" onClick={() => setPromoteEntry(null)} />
+          <div className="koaryu-modal-panel bg-bg border border-border rounded-[6px] w-full max-w-sm p-6">
             <h2 className="text-base font-semibold text-text-primary mb-4">Confirm Promotion</h2>
             <div className="bg-surface border border-border rounded-[6px] p-4 mb-4">
               <p className="text-sm text-text-primary font-medium">{promoteEntry.student_name}</p>

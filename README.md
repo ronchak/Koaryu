@@ -115,6 +115,7 @@ Studio membership is the tenant boundary. Backend services and RLS policies are 
 ## Deployment And Demo Notes
 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
+- Render starts the FastAPI backend with a single Uvicorn process in production. Keep the root `render.yaml`, `backend/Procfile`, and `docs/render-backend-deployment.md` start commands aligned.
 - The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for Production. Add them in Vercel Project Settings or with:
 
 ```bash
@@ -131,6 +132,8 @@ vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 - For preview deployments, add the same variables to the Preview environment. With recent Vercel CLI versions, branch-scoped preview variables may require an explicit branch argument.
 - Backend deployments must include `SUPABASE_SERVICE_ROLE_KEY`; the frontend must not receive that key.
 - Keep `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` aligned with the deployed origins so auth redirects, CORS, and middleware checks hit the correct backend.
+- The informational landing page is intentionally not part of the Supabase auth middleware gate. It paints as static marketing UI, then warms the backend in the background through `/api/proxy/health` so a follow-up visit to login or dashboard has a better chance of finding Render awake.
+- Login, signup, onboarding, subscription-required, and dashboard routes still block on the normal auth/session behavior. Do not add `/` back to the frontend proxy matcher unless the landing page should become auth-aware again.
 - Preview mode is for demos only. Live mode now starts empty for new studios and should be used for deployment verification.
 - The repo does not currently ship seeded example CSV imports or a packaged demo tenant. For demos, prepare a small example CSV and/or a dedicated demo studio ahead of time.
 - Repeated public signups against a shared dev Supabase project can hit Supabase email rate limits. For heavy QA loops, use a dedicated project, stagger signups, or create test users through an admin flow instead of repeated public signup attempts.
@@ -145,17 +148,22 @@ Recent deployment-readiness work in this repo tightened live-mode persistence an
 - lead conversion into students
 - reports and student hold data paths
 - belt ladder and related live persistence
+- Render cold-start behavior by replacing the four-worker Gunicorn command with a single Uvicorn process
+- landing-page first paint by removing auth middleware from `/` while keeping a non-blocking backend warmup
+- frontend polish for dark/light theme support, dashboard route transitions, shared modal transitions, and reduced-motion-friendly UI transitions
 
 ## Verification Snapshot
 
 The current dev verification pass included:
 
 - health checks against `/health` and `/api/v1/health`
+- local Uvicorn production-command startup against the backend `/health` endpoint
 - fresh-account auth and onboarding flow verification
 - redirect verification for unauthenticated users, new signed-in users, and fully onboarded users
 - multi-user tenant isolation checks across separate studios
 - fresh studio behavior checks to confirm empty live state instead of mock/demo fallback
 - lint and Python compile checks after the auth/onboarding hardening work
+- targeted frontend lint for landing-page warmup, auth middleware, and proxy changes
 
 The local Supabase-backed verification also surfaced a real `staff_roles` RLS recursion issue, which is now covered by the migration set and avoided in the live frontend gating path.
 

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { clearActiveStudioIdCookie, clearStudioStateCookie } from "@/lib/studio-state-cookie";
+import { DashboardRouteTransition } from "@/components/dashboard-route-transition";
 import { Sidebar } from "@/components/sidebar";
 import { StoreProvider, useStudioStore } from "@/lib/store";
 import { useState } from "react";
@@ -36,7 +37,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           ${isSidebarCollapsed ? "lg:ml-[88px]" : "lg:ml-[240px]"}
         `}
       >
-        {children}
+        <DashboardRouteTransition>{children}</DashboardRouteTransition>
       </main>
     </div>
   );

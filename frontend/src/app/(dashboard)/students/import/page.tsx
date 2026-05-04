@@ -950,7 +950,7 @@ export default function ImportPage() {
           {stage === "upload" ? (
             <div>
               <div
-                className={`border-2 border-dashed rounded-[6px] p-12 text-center cursor-pointer transition-all duration-150 ${
+                className={`border-2 border-dashed rounded-[6px] p-12 text-center cursor-pointer transition-[background-color,border-color,color] duration-150 ${
                   dragOver ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
                 }`}
                 onDrop={(event) => {

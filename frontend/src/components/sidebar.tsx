@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "./logo";
+import { ThemeToggle } from "./theme-toggle";
 import { NAV_ITEMS } from "@/lib/constants";
 import {
   LayoutDashboard,
@@ -71,6 +72,7 @@ export function Sidebar({
             <span className="max-w-32 truncate text-sm text-text-primary">
               {displayName}
             </span>
+            <ThemeToggle compact />
             <button
               onClick={onSignOut}
               className="p-1 text-muted transition-colors cursor-pointer hover:text-text-secondary"
@@ -92,7 +94,7 @@ export function Sidebar({
                 href={item.href}
                 className={`
                   flex min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-2 py-2 text-xs
-                  transition-all duration-150
+                  transition-[background-color,color,border-color] duration-150
                   ${
                     isActive
                       ? "bg-surface-raised text-text-primary"
@@ -149,7 +151,7 @@ export function Sidebar({
               title={toggleLabel}
               className={`
                 inline-flex flex-shrink-0 cursor-pointer items-center justify-center text-muted
-                transition-all duration-150 ease-out hover:bg-surface-raised hover:text-text-primary
+                transition-[background-color,color,border-color] duration-150 ease-out hover:bg-surface-raised hover:text-text-primary
                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2
                 focus-visible:ring-offset-surface
                 ml-3 h-7 w-7 rounded-[6px]
@@ -178,7 +180,7 @@ export function Sidebar({
                   title={toggleLabel}
                   className="
                     group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-[10px] px-0 text-muted
-                    transition-all duration-150 ease-out hover:bg-surface-raised hover:text-text-primary
+                    transition-[background-color,color,border-color] duration-150 ease-out hover:bg-surface-raised hover:text-text-primary
                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2
                     focus-visible:ring-offset-surface
                   "
@@ -199,7 +201,7 @@ export function Sidebar({
                     title={isCollapsed ? item.label : undefined}
                     className={`
                       group relative flex items-center text-sm
-                      transition-all duration-150 ease-out
+                      transition-[background-color,color,border-color] duration-150 ease-out
                       ${
                         isCollapsed
                           ? "h-10 w-10 justify-center rounded-[10px] px-0"
@@ -257,7 +259,7 @@ export function Sidebar({
         >
           <div
             className={`
-              flex items-center rounded-[6px] transition-all duration-150 ease-out
+              flex items-center rounded-[6px] transition-[background-color,color,border-color] duration-150 ease-out
               ${isCollapsed ? "h-9 justify-center px-0" : "h-11 gap-3 px-3"}
             `}
             title={isCollapsed ? displayName : undefined}
@@ -302,7 +304,13 @@ export function Sidebar({
             >
               <LogOut className="w-4 h-4" />
             </button>
+            {!isCollapsed && <ThemeToggle compact />}
           </div>
+          {isCollapsed && (
+            <div className="mt-2 flex justify-center">
+              <ThemeToggle compact />
+            </div>
+          )}
         </div>
       </aside>
     </>

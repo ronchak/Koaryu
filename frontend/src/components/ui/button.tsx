@@ -18,9 +18,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    "bg-accent text-[#0B0D10] hover:bg-accent-hover font-medium",
+    "bg-accent text-accent-contrast hover:bg-accent-hover font-medium",
   secondary:
-    "bg-surface-raised text-text-primary border border-border hover:bg-[#1E2329]",
+    "bg-surface-raised text-text-primary border border-border hover:bg-surface-hover",
   danger:
     "bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20",
   ghost:
@@ -38,7 +38,8 @@ const sizeStyles: Record<ButtonSize, string> = {
 const baseStyles = `
   inline-flex items-center justify-center gap-2
   rounded-[6px] font-medium
-  transition-colors duration-150
+  transition-[background-color,border-color,color,opacity,box-shadow,transform] duration-150 ease-out
+  motion-reduce:transition-none
   disabled:opacity-50 disabled:cursor-not-allowed
   cursor-pointer
 `;

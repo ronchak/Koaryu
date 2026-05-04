@@ -385,7 +385,7 @@ export default function SchedulePage() {
                 onClick={() => setView(nextView)}
                 className={`px-3 py-1 text-xs capitalize cursor-pointer transition-colors ${
                   view === nextView
-                    ? "bg-accent text-[#0B0D10] font-medium"
+                    ? "bg-accent text-accent-contrast font-medium"
                     : "text-text-secondary hover:text-text-primary"
                 }`}
               >

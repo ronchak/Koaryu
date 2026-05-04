@@ -5,32 +5,62 @@
    Dark-mode-first. Linear/Vercel aesthetic.
    ========================================= */
 
-:root {
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0B0D10;
   --surface: #12161B;
   --surface-raised: #171C22;
+  --surface-hover: #1E2329;
   --border: #232A33;
   --text-primary: #F3F5F7;
   --text-secondary: #98A2B3;
   --muted: #667085;
   --accent: #D6B25E;
   --accent-hover: #C4A24E;
+  --accent-contrast: #0B0D10;
   --success: #4CAF7D;
   --warning: #E8A23A;
   --danger: #E05A5A;
   --radius: 6px;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-fast: 140ms;
+  --motion-medium: 200ms;
+  --motion-slow: 280ms;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F7F8FA;
+  --surface: #FFFFFF;
+  --surface-raised: #EEF1F5;
+  --surface-hover: #E5E9F0;
+  --border: #D9DEE7;
+  --text-primary: #111827;
+  --text-secondary: #4B5565;
+  --muted: #7A8494;
+  --accent: #B88922;
+  --accent-hover: #9B711A;
+  --accent-contrast: #111827;
+  --success: #27805A;
+  --warning: #B87618;
+  --danger: #C44545;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
   --color-border: var(--border);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
@@ -96,7 +126,10 @@ input, textarea, select {
   border-radius: var(--radius);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  transition: border-color 0.15s ease;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 input:focus, textarea:focus, select:focus {
@@ -111,13 +144,86 @@ input::placeholder, textarea::placeholder {
 /* ---- Transitions ---- */
 a, button {
   transition:
-    color 0.15s ease,
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    text-decoration-color 0.15s ease,
-    fill 0.15s ease,
-    stroke 0.15s ease,
-    opacity 0.15s ease;
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    text-decoration-color var(--motion-fast) var(--ease-standard),
+    fill var(--motion-fast) var(--ease-standard),
+    stroke var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .theme-transition,
+  .theme-transition * {
+    transition-duration: var(--motion-slow) !important;
+    transition-property: background-color, border-color, color, fill, stroke, opacity !important;
+    transition-timing-function: var(--ease-standard) !important;
+  }
+}
+
+.koaryu-surface-transition {
+  transition:
+    background-color var(--motion-medium) var(--ease-standard),
+    border-color var(--motion-medium) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.koaryu-route-enter {
+  min-width: 0;
+  animation: koaryu-route-enter var(--motion-medium) var(--ease-emphasized) both;
+}
+
+.koaryu-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.koaryu-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, black 62%, transparent);
+  animation: koaryu-fade-in var(--motion-medium) var(--ease-standard) both;
+}
+
+.koaryu-modal-panel {
+  position: relative;
+  animation: koaryu-modal-enter var(--motion-slow) var(--ease-emphasized) both;
+}
+
+@keyframes koaryu-route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes koaryu-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes koaryu-modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* ---- Minimal app loading screen ---- */
@@ -312,6 +418,16 @@ a, button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+
   .koaryu-panda__dance,
   .koaryu-panda__shadow,
   .koaryu-panda__arm,

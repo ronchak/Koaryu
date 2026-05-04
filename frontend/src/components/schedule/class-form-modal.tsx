@@ -403,9 +403,9 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     submitLabel || (form.mode === "weekly" ? "Create weekly template" : "Create one-off session");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="koaryu-modal-root p-4">
       <div
-        className="absolute inset-0 bg-black/60"
+        className="koaryu-modal-backdrop"
         onClick={() => {
           if (!isLoading) onClose();
         }}
@@ -415,7 +415,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative w-full max-w-[560px] bg-surface border border-border rounded-[8px] shadow-2xl"
+        className="koaryu-modal-panel w-full max-w-[560px] bg-surface border border-border rounded-[8px] shadow-2xl"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>

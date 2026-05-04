@@ -85,7 +85,7 @@ export function MobileNav() {
           <Link
             href="/login"
             onClick={() => setOpen(false)}
-            className="flex items-center justify-center w-full py-2.5 text-sm font-medium bg-accent text-[#0B0D10] hover:bg-accent-hover transition-colors"
+            className="flex items-center justify-center w-full py-2.5 text-sm font-medium bg-accent text-accent-contrast hover:bg-accent-hover transition-colors"
             style={{ borderRadius: "6px" }}
           >
             Sign In

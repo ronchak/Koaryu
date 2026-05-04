@@ -28,7 +28,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             bg-surface-raised border border-border rounded-[6px]
             text-text-primary placeholder:text-muted
             focus:border-accent focus:outline-none
-            transition-colors duration-150
+            transition-[background-color,border-color,color] duration-150 ease-out
+            motion-reduce:transition-none
             disabled:opacity-50 disabled:cursor-not-allowed
             ${error ? "border-danger" : ""}
             ${className}

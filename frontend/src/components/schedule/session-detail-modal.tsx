@@ -7,13 +7,11 @@ import {
   Calendar,
   Check,
   Clock,
-  Info,
   Repeat2,
   Trash2,
   Users,
   X,
 } from "lucide-react";
-import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import type { AttendanceRecord, AttendanceStatus, ClassSession, Program, Student } from "@/types";
@@ -326,9 +324,9 @@ export function ScheduleSessionDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="koaryu-modal-root p-4">
       <div
-        className="absolute inset-0 bg-black/60"
+        className="koaryu-modal-backdrop"
         onClick={() => {
           if (!isDeleting) {
             setDeleteConfirmSessionId(null);
@@ -341,7 +339,7 @@ export function ScheduleSessionDetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="schedule-session-detail-title"
-        className="relative flex w-full max-w-xl max-h-[85vh] flex-col overflow-hidden border border-border bg-bg"
+        className="koaryu-modal-panel flex w-full max-w-xl max-h-[85vh] flex-col overflow-hidden border border-border bg-bg"
       >
         {/* ── Program color top accent ── */}
         <span

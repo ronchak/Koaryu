@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatedFaqItem } from "@/components/animated-faq-item";
+import { BackendWarmup } from "@/components/backend-warmup";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { ScrollReveal } from "@/components/scroll-reveal";
@@ -789,6 +790,8 @@ function HeroProductPreview() {
 export default function LandingPage() {
   return (
     <main className="flex min-h-screen flex-col bg-bg text-text-primary">
+      <BackendWarmup />
+
       {/* Accent stripe — thin gold bar at the very top */}
       <div className="accent-stripe w-full" />
 

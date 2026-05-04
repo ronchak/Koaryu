@@ -14,10 +14,12 @@ Expected service settings:
 - Region: Ohio
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
-- Start command: `gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT`
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Health check path: `/health`
 
 Render should use Python `3.11`. The backend includes both `backend/runtime.txt` (`python-3.11.9`) and `backend/.python-version` (`3.11`) so Render does not default to a newer Python release that lacks compatible wheels for pinned dependencies.
+
+The free Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
 ## Config Vars
 
@@ -68,6 +70,34 @@ NEXT_PUBLIC_API_URL=https://koaryu.onrender.com/api/v1
 ```
 
 Then redeploy the Vercel frontend so Next.js bakes the new URL into the production build.
+
+The public landing page warms the backend by calling `/api/proxy/health` after the page hydrates. That proxy route forwards to `NEXT_PUBLIC_API_URL`, so verify the Vercel production value includes the `/api/v1` suffix and reaches the same Render service used by authenticated app routes.
+
+Do not route `/` through frontend auth middleware just to warm Render. The landing page should paint immediately; login, onboarding, subscription-required, and dashboard routes remain responsible for blocking on Supabase and backend auth checks.
+
+## Release Verification
+
+Before tagging or announcing a release:
+
+```bash
+cd backend
+ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
+  venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+In another shell:
+
+```bash
+curl -fsS http://127.0.0.1:8001/health
+curl -fsS http://127.0.0.1:8001/api/v1/health
+```
+
+For frontend changes, run at least the targeted lint pass for the release surface:
+
+```bash
+cd frontend
+npm run lint -- src/app/page.tsx src/components/backend-warmup.tsx src/lib/supabase/middleware.ts src/proxy.ts
+```
 
 ## Stripe Webhooks
 
