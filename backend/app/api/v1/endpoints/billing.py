@@ -90,7 +90,18 @@ async def create_connect_onboarding_link(
         user_id,
         data.refresh_url,
         data.return_url,
+        data.business_entity_type,
     )
+
+
+@router.post("/connect/sync", response_model=StudioPaymentAccountResponse)
+async def sync_connect_status(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    return await BillingService(supabase).sync_connect_account(studio_id)
 
 
 @router.post("/connect/dashboard-link", response_model=BillingLinkResponse)

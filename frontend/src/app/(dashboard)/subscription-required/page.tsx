@@ -7,6 +7,7 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
+import { useConfigStore } from "@/lib/store";
 import type { BillingLinkResponse, PlatformBillingStatus, StaffRoleName } from "@/types";
 
 interface AuthProfileResponse {
@@ -39,6 +40,7 @@ function hasAccess(status?: PlatformBillingStatus | null) {
 
 export default function SubscriptionRequiredPage() {
   const router = useRouter();
+  const { clearSubscriptionRequired } = useConfigStore();
   const [token, setToken] = useState<string | null>(null);
   const [authProfile, setAuthProfile] = useState<AuthProfileResponse | null>(null);
   const [billingStatus, setBillingStatus] = useState<PlatformBillingStatus | null>(null);
@@ -92,6 +94,7 @@ export default function SubscriptionRequiredPage() {
         if (!mounted) return;
         setBillingStatus(status);
         if (hasAccess(status)) {
+          clearSubscriptionRequired();
           router.replace("/dashboard");
         }
       } catch (loadError) {
@@ -108,7 +111,7 @@ export default function SubscriptionRequiredPage() {
     return () => {
       mounted = false;
     };
-  }, [router]);
+  }, [clearSubscriptionRequired, router]);
 
   async function openBillingLink(path: "/platform-billing/checkout" | "/platform-billing/portal") {
     if (!token) return;

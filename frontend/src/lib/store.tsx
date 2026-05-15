@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/loading-screen";
 import { createClient } from "@/lib/supabase/client";
 import { api, isSubscriptionRequiredError } from "@/lib/api";
@@ -519,6 +519,9 @@ interface StoreContextValue {
   // Config
   isPreviewMode: boolean;
   token: string | null;
+  subscriptionRequired: boolean;
+  markSubscriptionRequired: () => void;
+  clearSubscriptionRequired: () => void;
 
   // Students
   students: Student[];
@@ -615,7 +618,10 @@ interface StoreContextValue {
   resetDemoData: () => Promise<DemoResetResponse>;
 }
 
-type ConfigStoreContextValue = Pick<StoreContextValue, "isPreviewMode" | "token">;
+type ConfigStoreContextValue = Pick<
+  StoreContextValue,
+  "isPreviewMode" | "token" | "subscriptionRequired" | "markSubscriptionRequired" | "clearSubscriptionRequired"
+>;
 type StudentsStoreContextValue = Pick<
   StoreContextValue,
   | "studentsLoaded"
@@ -762,9 +768,11 @@ export function useStore(): StoreContextValue {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
   const [hydrated, setHydrated] = useState(false);
+  const [subscriptionRequired, setSubscriptionRequired] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const tokenRef = useRef<string | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
   const [supabase] = useState(() => createClient());
 
   // ── State ──
@@ -982,6 +990,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitEligibilityRows]);
 
   const resetLiveStudioState = useCallback(() => {
+    setSubscriptionRequired(false);
     setStudioNameState("");
     setCurrentUser(null);
     setCurrentRole(null);
@@ -1006,6 +1015,93 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearEligibilityState();
     clearPromotionHistoryCache();
   }, [clearEligibilityState, clearPromotionHistoryCache, commitStudents, updateCurrentLadderId]);
+
+  const applySubscriptionRequiredState = useCallback((
+    authProfile: AuthProfileResponse,
+    sessionUser: { id: string; email?: string | null; user_metadata?: { full_name?: string | null } }
+  ) => {
+    const userProfile = authProfile.user ?? {
+      id: sessionUser.id,
+      email: sessionUser.email || "",
+      full_name: sessionUser.user_metadata?.full_name || null,
+    };
+
+    setSubscriptionRequired(true);
+    setCurrentUser(userProfile);
+    setCurrentRole(authProfile.role);
+    setStudioStateCookie(sessionUser.id, Boolean(authProfile.studio_id));
+    if (authProfile.studio_id) {
+      setActiveStudioIdCookie(authProfile.studio_id);
+    } else {
+      clearActiveStudioIdCookie();
+    }
+
+    setStudioNameState("");
+    setStaffMembers([]);
+    setStaffLoaded(true);
+    setStaffLoadError("Koaryu Core subscription required.");
+    setPrograms([]);
+    setProgramsLoaded(true);
+    setProgramsLoadError("Koaryu Core subscription required.");
+    setStudents([]);
+    studentsRevisionRef.current += 1;
+    setStudentsLoaded(true);
+    setStudentsLastLoadedAt(Date.now());
+    setStudentsMayBePartial(false);
+    setStudentsLoadError("Koaryu Core subscription required.");
+    setLeads([]);
+    setBeltLaddersState([]);
+    updateCurrentLadderId(null);
+    setLadderNameState("");
+    setSubRankTermState("Stripe");
+    setBeltRanksState([]);
+    setSessions([]);
+    setTemplates([]);
+    setAttendance([]);
+    clearEligibilityState();
+    clearPromotionHistoryCache();
+  }, [clearEligibilityState, clearPromotionHistoryCache, updateCurrentLadderId]);
+
+  const markSubscriptionRequired = useCallback(() => {
+    setSubscriptionRequired(true);
+    setStaffLoaded(true);
+    setStaffLoadError("Koaryu Core subscription required.");
+    setPrograms([]);
+    setProgramsLoaded(true);
+    setProgramsLoadError("Koaryu Core subscription required.");
+    setStudents([]);
+    studentsRevisionRef.current += 1;
+    setStudentsLoaded(true);
+    setStudentsLastLoadedAt(Date.now());
+    setStudentsMayBePartial(false);
+    setStudentsLoadError("Koaryu Core subscription required.");
+    setLeads([]);
+    setBeltLaddersState([]);
+    updateCurrentLadderId(null);
+    setLadderNameState("");
+    setSubRankTermState("Stripe");
+    setBeltRanksState([]);
+    setSessions([]);
+    setTemplates([]);
+    setAttendance([]);
+    clearEligibilityState();
+    clearPromotionHistoryCache();
+  }, [clearEligibilityState, clearPromotionHistoryCache, updateCurrentLadderId]);
+
+  const clearSubscriptionRequired = useCallback(() => {
+    setSubscriptionRequired(false);
+    setStudentsLoadError(null);
+    setProgramsLoadError(null);
+    setStaffLoadError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || !subscriptionRequired || pathname === "/subscription-required") {
+      return;
+    }
+
+    router.replace("/subscription-required");
+  }, [hydrated, pathname, router, subscriptionRequired]);
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
     setStudioNameState(data.studio_name);
@@ -1223,21 +1319,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             );
             if (!mounted) return;
 
-            const userProfile = authProfile.user ?? {
-              id: session.user.id,
-              email: session.user.email || "",
-              full_name: session.user.user_metadata?.full_name || null,
-            };
-            setCurrentUser(userProfile);
-            setCurrentRole(authProfile.role);
-            setStudioStateCookie(session.user.id, Boolean(authProfile.studio_id));
-            if (authProfile.studio_id) {
-              setActiveStudioIdCookie(authProfile.studio_id);
-            } else {
-              clearActiveStudioIdCookie();
-            }
+            applySubscriptionRequiredState(authProfile, session.user);
             setHydrated(true);
-            router.replace(authProfile.studio_id ? "/subscription-required" : "/onboarding");
+            if (!authProfile.studio_id) {
+              router.replace("/onboarding");
+            }
             return;
           }
 
@@ -1294,6 +1380,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             full_name: session.user.user_metadata?.full_name || null,
           };
 
+          setSubscriptionRequired(false);
           setCurrentUser(userProfile);
           setCurrentRole(authProfile.role);
           setStudioStateCookie(session.user.id, Boolean(authProfile.studio_id));
@@ -1391,8 +1478,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (mounted && isSubscriptionRequiredError(error)) {
+          const authProfile = await api.get<AuthProfileResponse>(
+            "/auth/me",
+            session.access_token
+          ).catch(() => null);
+          if (!mounted) return;
+          if (authProfile) {
+            applySubscriptionRequiredState(authProfile, session.user);
+          } else {
+            setSubscriptionRequired(true);
+            setStudentsLoaded(true);
+            setStudentsLoadError("Koaryu Core subscription required.");
+            setProgramsLoaded(true);
+            setProgramsLoadError("Koaryu Core subscription required.");
+          }
           setHydrated(true);
-          router.replace("/subscription-required");
           return;
         }
         if (mounted && /Complete onboarding first|No studio found/i.test(message)) {
@@ -1424,6 +1524,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } else {
         tokenRef.current = null;
         setToken(null);
+        setSubscriptionRequired(false);
         setCurrentUser(null);
         setCurrentRole(null);
         setStaffMembers([]);
@@ -1441,7 +1542,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, fetchAllStudents, isPreviewMode, loadEligibilityForLadder, resetLiveStudioState, router, supabase]);
+  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, fetchAllStudents, isPreviewMode, loadEligibilityForLadder, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -3181,7 +3282,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const configValue = useMemo<ConfigStoreContextValue>(() => ({
     isPreviewMode,
     token,
-  }), [isPreviewMode, token]);
+    subscriptionRequired,
+    markSubscriptionRequired,
+    clearSubscriptionRequired,
+  }), [clearSubscriptionRequired, isPreviewMode, markSubscriptionRequired, subscriptionRequired, token]);
 
   const studentsValue = useMemo<StudentsStoreContextValue>(() => ({
     studentsLoaded,

@@ -6,6 +6,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 BillingRole = Literal["admin", "front_desk"]
 SubscriptionStatus = Literal["comped", "trialing", "active", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "paused"]
 PaymentAccountStatus = Literal["not_connected", "onboarding_incomplete", "charges_enabled", "action_required", "deauthorized"]
+ConnectBusinessEntityType = Literal["company", "individual"]
 BillingPlanStatus = Literal["pending", "active", "archived"]
 BillingInterval = Literal["weekly", "biweekly", "monthly", "annual", "paid_in_full", "fixed_term", "trial"]
 BillingCollectionMode = Literal["autopay", "invoice_link", "external"]
@@ -24,6 +25,7 @@ class BillingActionRequest(BaseModel):
     cancel_url: Optional[str] = None
     return_url: Optional[str] = None
     refresh_url: Optional[str] = None
+    business_entity_type: Optional[ConnectBusinessEntityType] = None
 
 
 class EmailUsageResponse(BaseModel):

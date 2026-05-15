@@ -71,6 +71,7 @@ export type PaymentAccountStatus =
   | "charges_enabled"
   | "action_required"
   | "deauthorized";
+export type ConnectBusinessEntityType = "company" | "individual";
 
 export type BillingPlanStatus = "pending" | "active" | "archived";
 export type BillingInterval =
@@ -107,6 +108,7 @@ export interface BillingActionRequest {
   cancel_url?: string;
   return_url?: string;
   refresh_url?: string;
+  business_entity_type?: ConnectBusinessEntityType;
 }
 
 export interface EmailUsage {

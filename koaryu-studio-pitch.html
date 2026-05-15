@@ -1,0 +1,2244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Koaryu for Martial Arts Studios</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d10;
+      --bg-soft: #101419;
+      --surface: #12161b;
+      --surface-raised: #171c22;
+      --surface-hover: #1e2329;
+      --border: #232a33;
+      --border-strong: #323a45;
+      --text: #f3f5f7;
+      --text-soft: #aab3c0;
+      --muted: #667085;
+      --accent: #d6b25e;
+      --accent-soft: rgba(214, 178, 94, 0.13);
+      --green: #4caf7d;
+      --blue: #5b8fdc;
+      --red: #e05a5a;
+      --purple: #9b7bd8;
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-snap-type: y mandatory;
+      background: var(--bg);
+    }
+
+    html.is-programmatic {
+      scroll-behavior: auto;
+      scroll-snap-type: none;
+    }
+
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      overscroll-behavior-y: contain;
+      background:
+        radial-gradient(ellipse at 12% 20%, rgba(214, 178, 94, 0.15), transparent 34%),
+        radial-gradient(ellipse at 86% 16%, rgba(91, 143, 220, 0.10), transparent 30%),
+        radial-gradient(ellipse at 68% 82%, rgba(76, 175, 125, 0.08), transparent 30%),
+        linear-gradient(135deg, #0b0d10 0%, #12110d 42%, #0b0d10 100%),
+        var(--bg);
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .deck-nav {
+      position: fixed;
+      top: 18px;
+      right: 22px;
+      z-index: 10;
+      display: flex;
+      gap: 4px;
+      padding: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: var(--radius);
+      background: rgba(18, 22, 27, 0.82);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.28);
+    }
+
+    .deck-nav a {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 6px;
+      color: var(--text-soft);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 11px;
+    }
+
+    .deck-nav a:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .deck-nav a[aria-current="true"] {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    .slide {
+      position: relative;
+      display: grid;
+      min-height: 100vh;
+      padding: 88px 7vw 58px;
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      --pull: 0;
+      --pull-abs: 0;
+      --entry-y: 28px;
+      --entry-y-soft: 16px;
+      --entry-y-strong: 42px;
+    }
+
+    .slide::before {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      content: "";
+      background:
+        radial-gradient(ellipse at 22% 12%, rgba(214, 178, 94, 0.12), transparent 28%),
+        radial-gradient(ellipse at 90% 18%, rgba(91, 143, 220, 0.08), transparent 26%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 32%);
+      opacity: 0.92;
+    }
+
+    .slide::after {
+      position: absolute;
+      inset: -18% 0;
+      pointer-events: none;
+      content: "";
+      background:
+        linear-gradient(180deg, transparent 12%, rgba(214, 178, 94, 0.12) 46%, transparent 72%);
+      opacity: 0;
+      transform: translateY(var(--entry-y-strong));
+    }
+
+    .slide-inner {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      width: min(1140px, 100%);
+      margin: 0 auto;
+      gap: 48px;
+      align-self: center;
+      transition: transform 520ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    body.snap-ready .slide.is-active .slide-inner {
+      transform: translateY(calc(var(--pull) * -18px));
+    }
+
+    body.snap-ready.is-settling .slide.is-active .slide-inner {
+      transition-duration: 760ms;
+      transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    body.snap-ready .slide .slide-inner > * {
+      opacity: 0;
+      transform: translateY(34px) scale(0.985);
+      transition:
+        opacity 760ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 980ms cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: opacity, transform;
+    }
+
+    body.snap-ready .slide.is-active .slide-inner > * {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    body.snap-ready .slide.is-active .slide-inner > *:nth-child(2) {
+      transition-delay: 120ms;
+    }
+
+    body.snap-ready .slide.is-active .slide-inner > *:nth-child(3) {
+      transition-delay: 210ms;
+    }
+
+    body.snap-ready .slide .slide-inner > .studio-preview {
+      transition:
+        opacity 760ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 920ms cubic-bezier(0.16, 1, 0.3, 1),
+        box-shadow 920ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    body.snap-ready .slide.is-active .slide-inner > .studio-preview {
+      transform: translateY(calc(var(--pull) * -10px)) scale(calc(1 - (var(--pull-abs) * 0.008)));
+    }
+
+    body.snap-ready .slide.is-preparing .slide-inner > * {
+      opacity: 0;
+      transform: translateY(var(--entry-y)) scale(0.992);
+      transition: none;
+    }
+
+    body.snap-ready .slide.is-entering .slide-inner > * {
+      animation: editorial-rise 1850ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      transition: none;
+    }
+
+    body.snap-ready .slide.is-entering .slide-inner > *:nth-child(2) {
+      animation-delay: 180ms;
+    }
+
+    body.snap-ready .slide.is-entering .slide-inner > *:nth-child(3) {
+      animation-delay: 360ms;
+    }
+
+    body.snap-ready .slide.is-entering::after {
+      animation: editorial-wash 2400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    body.snap-ready #one.is-entering .mark {
+      animation: mark-breathe 1700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    body.snap-ready #one.is-entering .studio-preview,
+    body.snap-ready #class-night.is-entering .save-board,
+    body.snap-ready #switch-week.is-entering .migration-panel,
+    body.snap-ready #five.is-entering .price-panel {
+      animation: object-settle 2200ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+    }
+
+    body.snap-ready #two.is-entering .problem-list {
+      animation: editorial-list 2100ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+    }
+
+    body.snap-ready #three.is-entering .feature-grid,
+    body.snap-ready #six.is-entering .trust-grid {
+      animation: editorial-field 2150ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+    }
+
+    body.snap-ready #four.is-entering .workflow {
+      animation: editorial-wipe 2200ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+    }
+
+    body.snap-ready #six.is-entering .cta-row {
+      animation: editorial-rise 1600ms cubic-bezier(0.16, 1, 0.3, 1) 1000ms both;
+    }
+
+    body.snap-ready #two.is-entering .line-item,
+    body.snap-ready #class-night.is-entering .save-card,
+    body.snap-ready #three.is-entering .feature,
+    body.snap-ready #four.is-entering .step,
+    body.snap-ready #switch-week.is-entering .migration-step,
+    body.snap-ready #five.is-entering .included div,
+    body.snap-ready #six.is-entering .trust,
+    body.snap-ready #six.is-entering .button {
+      animation: detail-reveal 1250ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    body.snap-ready #two.is-entering .line-item:nth-child(1),
+    body.snap-ready #class-night.is-entering .save-card:nth-child(1),
+    body.snap-ready #three.is-entering .feature:nth-child(1),
+    body.snap-ready #four.is-entering .step:nth-child(1),
+    body.snap-ready #switch-week.is-entering .migration-step:nth-child(1),
+    body.snap-ready #five.is-entering .included div:nth-child(1),
+    body.snap-ready #six.is-entering .trust:nth-child(1) {
+      animation-delay: 420ms;
+    }
+
+    body.snap-ready #two.is-entering .line-item:nth-child(2),
+    body.snap-ready #class-night.is-entering .save-card:nth-child(2),
+    body.snap-ready #three.is-entering .feature:nth-child(2),
+    body.snap-ready #four.is-entering .step:nth-child(2),
+    body.snap-ready #switch-week.is-entering .migration-step:nth-child(2),
+    body.snap-ready #five.is-entering .included div:nth-child(2),
+    body.snap-ready #six.is-entering .trust:nth-child(2) {
+      animation-delay: 620ms;
+    }
+
+    body.snap-ready #two.is-entering .line-item:nth-child(3),
+    body.snap-ready #class-night.is-entering .save-card:nth-child(3),
+    body.snap-ready #three.is-entering .feature:nth-child(3),
+    body.snap-ready #four.is-entering .step:nth-child(3),
+    body.snap-ready #switch-week.is-entering .migration-step:nth-child(3),
+    body.snap-ready #five.is-entering .included div:nth-child(3),
+    body.snap-ready #six.is-entering .trust:nth-child(3) {
+      animation-delay: 820ms;
+    }
+
+    body.snap-ready #three.is-entering .feature:nth-child(4),
+    body.snap-ready #four.is-entering .step:nth-child(4),
+    body.snap-ready #switch-week.is-entering .migration-step:nth-child(4),
+    body.snap-ready #five.is-entering .included div:nth-child(4),
+    body.snap-ready #six.is-entering .trust:nth-child(4) {
+      animation-delay: 1020ms;
+    }
+
+    body.snap-ready #six.is-entering .button:nth-child(1) {
+      animation-delay: 1360ms;
+    }
+
+    body.snap-ready #six.is-entering .button:nth-child(2) {
+      animation-delay: 1520ms;
+    }
+
+    @keyframes editorial-rise {
+      0% {
+        opacity: 0;
+        transform: translateY(var(--entry-y)) scale(0.992);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes editorial-wash {
+      0% {
+        opacity: 0;
+        transform: translateY(var(--entry-y-strong));
+      }
+
+      38% {
+        opacity: 0.18;
+      }
+
+      100% {
+        opacity: 0;
+        transform: translateY(calc(var(--entry-y-soft) * -0.7));
+      }
+    }
+
+    @keyframes mark-breathe {
+      0% {
+        transform: translateY(var(--entry-y-soft)) scale(0.92);
+        box-shadow: 0 0 0 rgba(214, 178, 94, 0);
+      }
+
+      42% {
+        box-shadow: 0 0 30px rgba(214, 178, 94, 0.22);
+      }
+
+      100% {
+        transform: translateY(0) scale(1);
+        box-shadow: 0 0 0 rgba(214, 178, 94, 0);
+      }
+    }
+
+    @keyframes object-settle {
+      0% {
+        opacity: 0;
+        transform: translateY(var(--entry-y-strong)) scale(0.982);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes editorial-list {
+      0% {
+        opacity: 0;
+        clip-path: inset(0 0 24% 0);
+        transform: translateY(var(--entry-y-soft));
+      }
+
+      100% {
+        opacity: 1;
+        clip-path: inset(0 0 0 0);
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes editorial-field {
+      0% {
+        opacity: 0;
+        transform: translateY(var(--entry-y)) scale(0.992);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes editorial-wipe {
+      0% {
+        opacity: 0;
+        clip-path: inset(0 0 86% 0);
+        transform: translateY(var(--entry-y-soft));
+      }
+
+      100% {
+        opacity: 1;
+        clip-path: inset(0 0 0 0);
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes detail-reveal {
+      0% {
+        opacity: 0;
+        transform: translateY(var(--entry-y-soft)) scale(0.992);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .split {
+      grid-template-columns: minmax(0, 0.92fr) minmax(430px, 0.76fr);
+      align-items: center;
+    }
+
+    .split-wide {
+      grid-template-columns: minmax(0, 0.84fr) minmax(430px, 1fr);
+      align-items: center;
+    }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      color: var(--text);
+      font-family: "Newsreader", ui-serif, Georgia, serif;
+      font-weight: 600;
+      letter-spacing: 0;
+      line-height: 0.98;
+      text-shadow: 0 0 44px rgba(214, 178, 94, 0.12);
+    }
+
+    h1 {
+      max-width: 920px;
+      font-size: 72px;
+    }
+
+    h2 {
+      max-width: 820px;
+      font-size: 56px;
+    }
+
+    h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 18px;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin-top: 24px;
+      color: var(--text-soft);
+      font-size: 22px;
+      line-height: 1.5;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 42px;
+    }
+
+    .mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--bg);
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .wordmark {
+      color: var(--text);
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .wordmark span {
+      color: var(--accent);
+    }
+
+    .terms-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      margin-top: 44px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .term {
+      padding: 15px 18px;
+      border-right: 1px solid var(--border);
+    }
+
+    .term:last-child {
+      border-right: 0;
+    }
+
+    .term small {
+      display: block;
+      color: var(--muted);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .term strong {
+      display: block;
+      margin-top: 6px;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .studio-preview {
+      position: relative;
+      width: min(100%, 540px);
+      margin-left: auto;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(145deg, rgba(23, 28, 34, 0.98), rgba(14, 18, 22, 0.98));
+      box-shadow:
+        0 24px 80px rgba(0, 0, 0, 0.42),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      padding: 16px;
+    }
+
+    .studio-preview::before {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      content: "";
+      opacity: 0.75;
+    }
+
+    .studio-preview::after {
+      position: absolute;
+      inset: -1px;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(214, 178, 94, 0.16), transparent 34%),
+        radial-gradient(circle at 92% 18%, rgba(91, 143, 220, 0.10), transparent 28%);
+      content: "";
+      opacity: 0.82;
+    }
+
+    .preview-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .preview-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .preview-topbar p {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .preview-topbar span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .preview-status {
+      border: 1px solid rgba(214, 178, 94, 0.34);
+      border-radius: 6px;
+      background: rgba(214, 178, 94, 0.09);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 6px 8px;
+      white-space: nowrap;
+    }
+
+    .preview-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      background: var(--border);
+    }
+
+    .preview-metric {
+      --metric-accent: var(--accent);
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      background: rgba(23, 28, 34, 0.86);
+      padding: 12px 11px;
+    }
+
+    .preview-metric::before {
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 2px;
+      background: var(--metric-accent);
+      content: "";
+      opacity: 0.92;
+    }
+
+    .preview-metric:nth-child(1) {
+      --metric-accent: var(--blue);
+    }
+
+    .preview-metric:nth-child(2) {
+      --metric-accent: var(--purple);
+    }
+
+    .preview-metric:nth-child(3) {
+      --metric-accent: var(--accent);
+    }
+
+    .preview-metric:nth-child(4) {
+      --metric-accent: var(--green);
+    }
+
+    .preview-metric small {
+      display: block;
+      min-height: 30px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 800;
+      line-height: 1.35;
+      text-transform: uppercase;
+    }
+
+    .preview-metric strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--text);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .preview-metric span {
+      display: block;
+      margin-top: 5px;
+      color: var(--text-soft);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .preview-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .preview-panel,
+    .program-panel {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(18, 22, 27, 0.76);
+      padding: 12px;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-head h3 {
+      font-size: 13px;
+    }
+
+    .panel-head p {
+      margin-top: 2px;
+      color: var(--text-soft);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .text-action {
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .notice {
+      margin-top: 12px;
+      border: 1px solid rgba(214, 178, 94, 0.22);
+      border-radius: 6px;
+      background: rgba(214, 178, 94, 0.07);
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 10px;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .action {
+      display: flex;
+      min-height: 36px;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(11, 13, 16, 0.42);
+      color: var(--text-soft);
+      font-size: 11px;
+      padding: 9px;
+    }
+
+    .action b {
+      display: grid;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 10px;
+    }
+
+    .program-panel {
+      margin-top: 10px;
+    }
+
+    .program-head,
+    .program-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(44px, 0.48fr));
+      gap: 8px;
+      align-items: center;
+    }
+
+    .program-head {
+      margin-bottom: 9px;
+      color: var(--muted);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .program-row {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(11, 13, 16, 0.42);
+      color: var(--text-soft);
+      font-size: 11px;
+      padding: 9px 10px;
+    }
+
+    .program-row + .program-row {
+      margin-top: 7px;
+    }
+
+    .program-name {
+      overflow: hidden;
+      color: var(--text);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .program-row strong {
+      display: block;
+      color: var(--text);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 13px;
+    }
+
+    .problem-list,
+    .feature-grid,
+    .trust-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .problem-list {
+      margin-top: 6px;
+    }
+
+    .line-item {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding: 22px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .line-item:first-child {
+      border-top: 1px solid var(--border);
+    }
+
+    .number {
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .line-item p,
+    .feature p,
+    .trust p,
+    .step p {
+      margin-top: 8px;
+      font-size: 15px;
+      line-height: 1.58;
+    }
+
+    .feature-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 18px;
+    }
+
+    .feature,
+    .trust,
+    .price-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(18, 22, 27, 0.72);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    }
+
+    .feature {
+      min-height: 290px;
+      padding: 22px;
+    }
+
+    .feature strong {
+      display: block;
+      margin-bottom: 22px;
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .feature h3 {
+      font-family: "Newsreader", ui-serif, Georgia, serif;
+      font-size: 29px;
+      line-height: 1.05;
+    }
+
+    .save-board,
+    .migration-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(145deg, rgba(23, 28, 34, 0.9), rgba(12, 15, 18, 0.92));
+      box-shadow:
+        0 22px 74px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .save-board {
+      display: grid;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .save-head,
+    .migration-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .save-head p,
+    .migration-head p {
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .save-head span,
+    .migration-head span {
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .save-card {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 17px;
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .save-card:last-child {
+      border-bottom: 0;
+    }
+
+    .save-time,
+    .migration-step strong {
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .save-card p,
+    .migration-step p {
+      margin-top: 7px;
+      font-size: 15px;
+      line-height: 1.58;
+    }
+
+    .migration-panel {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .migration-steps {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .migration-step {
+      min-height: 182px;
+      background: rgba(18, 22, 27, 0.78);
+      padding: 22px;
+    }
+
+    .migration-step h3 {
+      margin-top: 18px;
+      font-family: "Newsreader", ui-serif, Georgia, serif;
+      font-size: 27px;
+      line-height: 1.05;
+    }
+
+    .workflow {
+      display: grid;
+      gap: 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 126px 1fr;
+      gap: 28px;
+      padding: 25px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step:last-child {
+      border-bottom: 0;
+    }
+
+    .step-time {
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .price-panel {
+      display: grid;
+      gap: 24px;
+      padding: 34px;
+      background:
+        linear-gradient(145deg, rgba(23, 28, 34, 0.98), rgba(11, 13, 16, 0.98));
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+    }
+
+    .price {
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 76px;
+      font-weight: 800;
+      line-height: 0.9;
+    }
+
+    .price span {
+      color: var(--text-soft);
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .price-panel p {
+      color: var(--text-soft);
+    }
+
+    .included {
+      display: grid;
+      gap: 12px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .included div {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 11px;
+      align-items: start;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .included div::before {
+      width: 9px;
+      height: 9px;
+      margin-top: 7px;
+      background: var(--accent);
+      content: "";
+    }
+
+    .trust-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 36px;
+    }
+
+    .trust {
+      min-height: 238px;
+      padding: 22px;
+      text-align: left;
+    }
+
+    .trust strong {
+      display: block;
+      margin-bottom: 22px;
+      color: var(--accent);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .final {
+      align-items: center;
+      text-align: center;
+    }
+
+    .final .slide-inner {
+      justify-items: center;
+      gap: 0;
+    }
+
+    .final h2 {
+      max-width: 960px;
+    }
+
+    .final .lead {
+      max-width: 820px;
+      margin-right: auto;
+      margin-left: auto;
+    }
+
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 42px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 18px;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--bg);
+      font-weight: 800;
+    }
+
+    .button.secondary {
+      border-color: var(--border-strong);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .page-count {
+      position: absolute;
+      right: 7vw;
+      bottom: 32px;
+      z-index: 1;
+      color: var(--muted);
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .deck-nav {
+        display: none;
+      }
+
+      .slide {
+        min-height: auto;
+        width: 100%;
+        max-width: 100vw;
+        padding: 58px 22px 46px;
+      }
+
+      .slide-inner,
+      .split,
+      .split-wide {
+        grid-template-columns: 1fr;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        gap: 34px;
+      }
+
+      h1 {
+        font-size: 42px;
+        max-width: 340px;
+      }
+
+      h2 {
+        font-size: 36px;
+        max-width: 340px;
+      }
+
+      .lead {
+        font-size: 19px;
+        width: 100%;
+        max-width: 330px;
+      }
+
+      .terms-strip,
+      .feature-grid,
+      .trust-grid,
+      .migration-steps,
+      .preview-metrics,
+      .preview-split {
+        grid-template-columns: 1fr;
+      }
+
+      .term {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .term:last-child {
+        border-bottom: 0;
+      }
+
+      .studio-preview,
+      .price-panel,
+      .save-board,
+      .migration-panel,
+      .feature,
+      .trust {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+      }
+
+      .studio-preview {
+        padding: 14px;
+      }
+
+      .preview-topbar {
+        align-items: flex-start;
+      }
+
+      .preview-topbar > div {
+        min-width: 0;
+      }
+
+      .program-head,
+      .program-row {
+        grid-template-columns: minmax(0, 1fr) repeat(3, minmax(38px, 0.45fr));
+      }
+
+      .step {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .save-head,
+      .migration-head {
+        display: grid;
+      }
+
+      .save-card {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      p,
+      h1,
+      h2,
+      h3,
+      .eyebrow,
+      .lead,
+      .term strong,
+      .preview-topbar span {
+        overflow-wrap: anywhere;
+      }
+
+      .eyebrow {
+        line-height: 1.5;
+        max-width: 315px;
+      }
+
+      .preview-status {
+        justify-self: start;
+        white-space: normal;
+        text-align: left;
+      }
+
+      .preview-topbar {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .page-count {
+        position: static;
+        margin-top: 34px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      body.snap-ready .slide .slide-inner > * {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+
+      body.snap-ready .slide.is-preparing .slide-inner > * {
+        opacity: 1;
+        transform: none;
+      }
+
+      body.snap-ready .slide.is-entering,
+      body.snap-ready .slide.is-entering *,
+      body.snap-ready .slide.is-entering::after {
+        animation: none !important;
+      }
+    }
+
+    @media print {
+      @page {
+        size: landscape;
+        margin: 0;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        background: var(--bg);
+      }
+
+      html {
+        scroll-snap-type: none;
+      }
+
+      body.snap-ready .slide .slide-inner > * {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+
+      body.snap-ready .slide.is-preparing .slide-inner > * {
+        opacity: 1;
+        transform: none;
+      }
+
+      body.snap-ready .slide.is-entering,
+      body.snap-ready .slide.is-entering *,
+      body.snap-ready .slide.is-entering::after {
+        animation: none !important;
+      }
+
+      .deck-nav {
+        display: none;
+      }
+
+      .slide {
+        min-height: 0;
+        height: 100vh;
+        padding: 42px 56px 30px;
+        overflow: hidden;
+        break-inside: avoid;
+        page-break-after: always;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+
+      .slide-inner {
+        width: 100%;
+        max-width: none;
+        gap: 24px;
+      }
+
+      .split {
+        grid-template-columns: minmax(0, 0.9fr) minmax(300px, 0.72fr);
+        gap: 28px;
+      }
+
+      .split-wide {
+        grid-template-columns: minmax(0, 0.82fr) minmax(330px, 1fr);
+        gap: 28px;
+      }
+
+      .brand-row {
+        margin-bottom: 22px;
+      }
+
+      h1 {
+        max-width: 920px;
+        font-size: 50px;
+      }
+
+      h2 {
+        max-width: 820px;
+        font-size: 40px;
+      }
+
+      .eyebrow {
+        max-width: none;
+      }
+
+      .lead {
+        width: auto;
+        max-width: 760px;
+        margin-top: 14px;
+        font-size: 15px;
+        line-height: 1.42;
+      }
+
+      .terms-strip {
+        margin-top: 22px;
+      }
+
+      .term {
+        padding: 11px 13px;
+      }
+
+      .feature-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .feature {
+        min-height: 220px;
+        padding: 14px;
+      }
+
+      .feature h3 {
+        font-size: 23px;
+      }
+
+      .feature strong,
+      .trust strong {
+        margin-bottom: 12px;
+      }
+
+      .line-item {
+        padding: 12px 0;
+      }
+
+      .step {
+        padding: 13px 0;
+      }
+
+      .studio-preview,
+      .save-board,
+      .migration-panel,
+      .price-panel {
+        box-shadow: none;
+      }
+
+      .preview-metrics {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .preview-split {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      }
+
+      .preview-metric {
+        padding: 10px;
+      }
+
+      .window-body {
+        padding: 14px;
+      }
+
+      .price-panel {
+        gap: 18px;
+        padding: 24px;
+      }
+
+      .save-head,
+      .migration-head,
+      .save-card,
+      .migration-step {
+        padding: 14px;
+      }
+
+      .migration-step {
+        min-height: 150px;
+      }
+
+      .migration-step h3 {
+        margin-top: 12px;
+        font-size: 22px;
+      }
+
+      .price {
+        font-size: 58px;
+      }
+
+      .included {
+        gap: 8px;
+        padding-top: 14px;
+      }
+
+      .trust-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .trust {
+        min-height: 210px;
+        padding: 14px;
+      }
+
+      .cta-row {
+        margin-top: 24px;
+      }
+
+      .slide:last-of-type {
+        page-break-after: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="deck-nav" aria-label="Deck navigation">
+    <a href="#one" aria-current="true">1</a>
+    <a href="#two">2</a>
+    <a href="#three">3</a>
+    <a href="#class-night">4</a>
+    <a href="#four">5</a>
+    <a href="#switch-week">6</a>
+    <a href="#five">7</a>
+    <a href="#six">8</a>
+  </nav>
+
+  <main>
+    <section class="slide" id="one">
+      <div class="slide-inner split">
+        <div>
+          <div class="brand-row">
+            <div class="mark">K</div>
+            <div class="wordmark">Koaryu<span>.</span></div>
+          </div>
+          <p class="eyebrow">The daily operating system for martial arts studios</p>
+          <h1>Know who needs attention before class starts.</h1>
+          <p class="lead">Koaryu gives independent schools one focused place to see students, ranks, trials, attendance, tuition status, and the next follow-up that keeps a student on the mat.</p>
+
+          <div class="terms-strip" aria-label="Koaryu studio terms">
+            <div class="term"><small>Platform</small><strong>$27 per studio per month</strong></div>
+            <div class="term"><small>Trial</small><strong>30 days to test it on real classes</strong></div>
+            <div class="term"><small>Growth</small><strong>No per-student software tiers</strong></div>
+            <div class="term"><small>Fit</small><strong>Built first for one-location schools</strong></div>
+          </div>
+        </div>
+
+        <aside class="studio-preview" aria-label="Koaryu dashboard preview">
+          <div class="preview-content">
+            <div class="preview-topbar">
+              <div>
+                <p>Dashboard</p>
+                <span>River City Martial Arts</span>
+              </div>
+              <div class="preview-status">Live studio view</div>
+            </div>
+
+            <div class="preview-metrics">
+              <div class="preview-metric">
+                <small>Total students</small>
+                <strong>132</strong>
+                <span>118 active, 14 trialing</span>
+              </div>
+              <div class="preview-metric">
+                <small>Active leads</small>
+                <strong>27</strong>
+                <span>9 follow-ups due</span>
+              </div>
+              <div class="preview-metric">
+                <small>Today's classes</small>
+                <strong>8</strong>
+                <span>4 programs active</span>
+              </div>
+              <div class="preview-metric">
+                <small>Ready to test</small>
+                <strong>14</strong>
+                <span>3 need approval</span>
+              </div>
+            </div>
+
+            <div class="preview-split">
+              <section class="preview-panel">
+                <div class="panel-head">
+                  <div>
+                    <h3>Inactivity Watch</h3>
+                    <p>Active and trialing students only.</p>
+                  </div>
+                  <span class="text-action">Open reports</span>
+                </div>
+                <div class="notice">6 students crossed the 14-day threshold. Two are trial students who have not booked a second class.</div>
+              </section>
+
+              <section class="preview-panel">
+                <div class="panel-head">
+                  <div>
+                    <h3>Quick Actions</h3>
+                    <p>Built for front-desk speed.</p>
+                  </div>
+                </div>
+                <div class="action-grid">
+                  <div class="action"><b>+</b><span>Add Student</span></div>
+                  <div class="action"><b>C</b><span>Import CSV</span></div>
+                  <div class="action"><b>L</b><span>View Leads</span></div>
+                  <div class="action"><b>R</b><span>Reports</span></div>
+                </div>
+              </section>
+            </div>
+
+            <section class="program-panel">
+              <div class="program-head">
+                <span>Program</span>
+                <span>Students</span>
+                <span>Leads</span>
+                <span>Today</span>
+              </div>
+              <div class="program-row">
+                <span class="program-name">Brazilian Jiu-Jitsu Core</span>
+                <span><strong>64</strong></span>
+                <span><strong>11</strong></span>
+                <span><strong>3</strong></span>
+              </div>
+              <div class="program-row">
+                <span class="program-name">Tae Kwon Do Fundamentals</span>
+                <span><strong>68</strong></span>
+                <span><strong>16</strong></span>
+                <span><strong>5</strong></span>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </div>
+      <div class="page-count">01 / 08</div>
+    </section>
+
+    <section class="slide" id="two">
+      <div class="slide-inner split-wide">
+        <div>
+          <p class="eyebrow">The daily problem</p>
+          <h2>Your school should not run on memory.</h2>
+          <p class="lead">A martial arts studio is full of tiny signals: who missed class, who is almost ready to test, who needs a payment nudge, which trial family needs a call, and which student is quietly slipping away.</p>
+        </div>
+
+        <div class="problem-list">
+          <article class="line-item">
+            <span class="number">01</span>
+            <div>
+              <h3>Spreadsheets hide the next action</h3>
+              <p>A roster tab, an attendance tab, a payment note, and a rank list do not tell an owner what to do before tonight's first class.</p>
+            </div>
+          </article>
+          <article class="line-item">
+            <span class="number">02</span>
+            <div>
+              <h3>Generic gym software misses the teaching model</h3>
+              <p>A custom field for "belt" is not the same as real rank history, program-specific ladders, testing readiness, and instructor approval.</p>
+            </div>
+          </article>
+          <article class="line-item">
+            <span class="number">03</span>
+            <div>
+              <h3>Legacy systems ask small schools to pay big-school prices</h3>
+              <p>Koaryu is built for the owner-operator who needs serious structure without a heavy implementation or a bill that grows with every new student.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="page-count">02 / 08</div>
+    </section>
+
+    <section class="slide" id="three">
+      <div class="slide-inner">
+        <div>
+          <p class="eyebrow">The product promise</p>
+          <h2>Every student gets a path. Every owner gets a clear next move.</h2>
+          <p class="lead">Koaryu is not just a contact database. It connects the school loop from lead to enrollment, attendance to belt progress, and payment status to the follow-up your team should actually make.</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature">
+            <strong>Roster</strong>
+            <h3>Never lose a student in the spreadsheet.</h3>
+            <p>Student profiles hold guardian details, program memberships, notes, attendance, payment context, and promotion history in one place.</p>
+          </article>
+          <article class="feature">
+            <strong>Progress</strong>
+            <h3>Know who is ready to test.</h3>
+            <p>Configurable belt ladders turn classes attended, time at rank, tips, and instructor approval into a real testing list.</p>
+          </article>
+          <article class="feature">
+            <strong>Retention</strong>
+            <h3>Catch quiet drop-off earlier.</h3>
+            <p>Attendance becomes an early warning system for missed classes, stalled trial students, and families who need a timely check-in.</p>
+          </article>
+          <article class="feature">
+            <strong>Revenue</strong>
+            <h3>Stop guessing who needs billing attention.</h3>
+            <p>Stripe-connected billing context keeps payers, plans, invoices, overdue accounts, and family balances visible beside the student record.</p>
+          </article>
+        </div>
+      </div>
+      <div class="page-count">03 / 08</div>
+    </section>
+
+    <section class="slide" id="class-night">
+      <div class="slide-inner split-wide">
+        <div>
+          <p class="eyebrow">The class-night save</p>
+          <h2>Catch the moment before a student drifts away.</h2>
+          <p class="lead">The difference between a retained student and a lost family is often one timely decision: a call after a missed trial, an approval before a belt test, or a nudge before silence becomes normal.</p>
+        </div>
+
+        <div class="save-board" aria-label="Class-night follow-up examples">
+          <div class="save-head">
+            <p>Tonight's attention list</p>
+            <span>3 saves Koaryu surfaces</span>
+          </div>
+          <article class="save-card">
+            <span class="save-time">Trial</span>
+            <div>
+              <h3>Second class missed</h3>
+              <p>A trial student misses the return visit. Koaryu puts the family on today's follow-up list before the lead goes cold.</p>
+            </div>
+          </article>
+          <article class="save-card">
+            <span class="save-time">Rank</span>
+            <div>
+              <h3>Ready, pending approval</h3>
+              <p>A green belt has the classes, the time, and the tips. The instructor sees they only need a final approval.</p>
+            </div>
+          </article>
+          <article class="save-card">
+            <span class="save-time">Risk</span>
+            <div>
+              <h3>Quiet absence spotted early</h3>
+              <p>A normally consistent student crosses the absence threshold. It becomes a check-in now, not a cancellation later.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="page-count">04 / 08</div>
+    </section>
+
+    <section class="slide" id="four">
+      <div class="slide-inner split-wide">
+        <div>
+          <p class="eyebrow">How the week changes</p>
+          <h2>Koaryu turns scattered admin into one studio rhythm.</h2>
+          <p class="lead">The promise is simple: less rebuilding the school from memory, more teaching from a clear picture of who needs what next.</p>
+        </div>
+
+        <div class="workflow">
+          <article class="step">
+            <span class="step-time">Setup</span>
+            <div>
+              <h3>Bring the old system with you</h3>
+              <p>Import rosters and leads from CSV, define programs and rank ladders, then clean up details without delaying daily use.</p>
+            </div>
+          </article>
+          <article class="step">
+            <span class="step-time">Before class</span>
+            <div>
+              <h3>See the roster with context</h3>
+              <p>Know expected students, trial families, staff notes, inactive members, and testing candidates before the room fills.</p>
+            </div>
+          </article>
+          <article class="step">
+            <span class="step-time">After class</span>
+            <div>
+              <h3>Let attendance drive the next decision</h3>
+              <p>Each check-in updates belt progress, class utilization, retention risk, and the long-term student history automatically.</p>
+            </div>
+          </article>
+          <article class="step">
+            <span class="step-time">Belt test</span>
+            <div>
+              <h3>Build the list from evidence</h3>
+              <p>Review classes completed, time at rank, manual approvals, and promotion history instead of rebuilding eligibility by hand.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="page-count">05 / 08</div>
+    </section>
+
+    <section class="slide" id="switch-week">
+      <div class="slide-inner split">
+        <div>
+          <p class="eyebrow">Switch without losing a week</p>
+          <h2>Bring the old system with you, then improve it in place.</h2>
+          <p class="lead">A studio owner should not need a migration project to make better decisions. Koaryu starts with the school you already have: roster, programs, ranks, guardians, and the next class on the schedule.</p>
+        </div>
+
+        <aside class="migration-panel" aria-label="Koaryu migration plan">
+          <div class="migration-head">
+            <p>First week setup</p>
+            <span>No all-or-nothing switch</span>
+          </div>
+          <div class="migration-steps">
+            <article class="migration-step">
+              <strong>01</strong>
+              <h3>Bring the roster</h3>
+              <p>Import a spreadsheet or clean list of students, guardians, leads, and programs.</p>
+            </article>
+            <article class="migration-step">
+              <strong>02</strong>
+              <h3>Map the ranks</h3>
+              <p>Set belt ladders, program rules, testing requirements, and instructor approvals.</p>
+            </article>
+            <article class="migration-step">
+              <strong>03</strong>
+              <h3>Run the next class</h3>
+              <p>Use Koaryu for attendance, trial follow-up, and student lookup before everything is perfect.</p>
+            </article>
+            <article class="migration-step">
+              <strong>04</strong>
+              <h3>Keep control</h3>
+              <p>Clean details over time and keep school history practical to export.</p>
+            </article>
+          </div>
+        </aside>
+      </div>
+      <div class="page-count">06 / 08</div>
+    </section>
+
+    <section class="slide" id="five">
+      <div class="slide-inner split">
+        <div>
+          <p class="eyebrow">Pricing and trust</p>
+          <h2>Serious studio software should not punish growth.</h2>
+          <p class="lead">Koaryu is built around a flat studio subscription because adding more students should feel like progress, not a software penalty.</p>
+        </div>
+
+        <aside class="price-panel" aria-label="Koaryu pricing">
+          <div>
+            <div class="price">$27 <span>/ studio / month</span></div>
+            <p>30-day trial. No per-student software tiers. Month-to-month by design. Stripe processing fees, when used, stay separate from Koaryu's platform subscription.</p>
+          </div>
+          <div class="included">
+            <div>Student CRM, belt tracking, leads, attendance, billing visibility, reports, and automations.</div>
+            <div>CSV migration for schools leaving spreadsheets or older systems.</div>
+            <div>Owner, instructor, and front-desk access boundaries for sensitive records.</div>
+            <div>Exportable school history so the studio keeps control of its own data.</div>
+          </div>
+        </aside>
+      </div>
+      <div class="page-count">07 / 08</div>
+    </section>
+
+    <section class="slide final" id="six">
+      <div class="slide-inner">
+        <p class="eyebrow">Next step</p>
+        <h2>Try Koaryu against the next real week at your school.</h2>
+        <p class="lead">Bring one roster, one belt ladder, one class schedule, and one real operational headache. A useful demo should show whether Koaryu makes the next decision clearer in minutes, not after a month of setup.</p>
+
+        <div class="trust-grid" aria-label="Studio promises">
+          <article class="trust">
+            <strong>01</strong>
+            <h3>Built for the mat</h3>
+            <p>Karate, taekwondo, jiu-jitsu, kickboxing, and family programs with structured ranks and recurring memberships.</p>
+          </article>
+          <article class="trust">
+            <strong>02</strong>
+            <h3>Fast where staff actually work</h3>
+            <p>Designed for laptop, tablet, and phone browsers so check-in and student lookup can happen between classes.</p>
+          </article>
+          <article class="trust">
+            <strong>03</strong>
+            <h3>Clear with sensitive data</h3>
+            <p>Core workflows are records, rules, permissions, and reports that behave predictably around kids, families, and payments.</p>
+          </article>
+          <article class="trust">
+            <strong>04</strong>
+            <h3>Your school history stays yours</h3>
+            <p>Students, guardians, attendance, ranks, leads, and billing records should remain practical to export.</p>
+          </article>
+        </div>
+
+        <div class="cta-row">
+          <a class="button" href="https://koaryu.app">Visit koaryu.app</a>
+          <a class="button secondary" href="mailto:hello@koaryu.app?subject=Koaryu%20studio%20walkthrough">Ask for a walkthrough</a>
+        </div>
+      </div>
+      <div class="page-count">08 / 08</div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const slides = Array.from(document.querySelectorAll(".slide"));
+      const navLinks = Array.from(document.querySelectorAll(".deck-nav a"));
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+      if (!slides.length) return;
+
+      let activeIndex = 0;
+      let locked = false;
+      let wheelWeight = 0;
+      let lastWheelAt = 0;
+      let lastWheelDirection = 0;
+      let pullResetTimer = 0;
+      let arrivalTimer = 0;
+      let preparedIndex = -1;
+      let arrivalReleased = false;
+      let scrollAnimation = 0;
+      let touchStartY = 0;
+      let touchStartX = 0;
+      let touchStartAt = 0;
+      let touchLastPull = 0;
+      const visibility = new Map();
+
+      const clamp = (value) => Math.max(0, Math.min(slides.length - 1, value));
+      const clampUnit = (value) => Math.max(-1, Math.min(1, value));
+      const easeOutQuart = (progress) => 1 - Math.pow(1 - progress, 4);
+
+      const nearestSlideIndex = () => {
+        let bestIndex = 0;
+        let bestDistance = Infinity;
+
+        slides.forEach((slide, index) => {
+          const distance = Math.abs(slide.getBoundingClientRect().top);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+          }
+        });
+
+        return bestIndex;
+      };
+
+      const resetPull = () => {
+        window.clearTimeout(pullResetTimer);
+        slides.forEach((slide) => {
+          slide.style.setProperty("--pull", "0");
+          slide.style.setProperty("--pull-abs", "0");
+        });
+        touchLastPull = 0;
+      };
+
+      const setPull = (value) => {
+        const pull = clampUnit(value);
+        const activeSlide = slides[activeIndex];
+        if (!activeSlide) return;
+
+        activeSlide.style.setProperty("--pull", pull.toFixed(3));
+        activeSlide.style.setProperty("--pull-abs", Math.abs(pull).toFixed(3));
+        touchLastPull = pull;
+      };
+
+      const schedulePullReset = () => {
+        window.clearTimeout(pullResetTimer);
+        pullResetTimer = window.setTimeout(resetPull, 180);
+      };
+
+      const setActive = (index) => {
+        activeIndex = clamp(index);
+        slides.forEach((slide, slideIndex) => {
+          slide.classList.toggle("is-active", slideIndex === activeIndex);
+        });
+        navLinks.forEach((link, linkIndex) => {
+          if (linkIndex === activeIndex) {
+            link.setAttribute("aria-current", "true");
+          } else {
+            link.removeAttribute("aria-current");
+          }
+        });
+      };
+
+      const prepareArrival = (index, direction = 1, energy = 1) => {
+        if (prefersReducedMotion.matches) return;
+
+        const nextIndex = clamp(index);
+        const slide = slides[nextIndex];
+        if (!slide) return;
+
+        const normalizedDirection = direction < 0 ? -1 : 1;
+        const normalizedEnergy = Math.min(1.35, Math.max(0.75, energy));
+        const entryY = Math.round(normalizedDirection * 24 * normalizedEnergy);
+
+        window.clearTimeout(arrivalTimer);
+        slides.forEach((currentSlide) => {
+          currentSlide.classList.remove("is-preparing", "is-entering");
+        });
+
+        slide.style.setProperty("--entry-y", `${entryY}px`);
+        slide.style.setProperty("--entry-y-soft", `${Math.round(entryY * 0.58)}px`);
+        slide.style.setProperty("--entry-y-strong", `${Math.round(entryY * 1.48)}px`);
+        slide.classList.add("is-preparing");
+        preparedIndex = nextIndex;
+        arrivalReleased = false;
+      };
+
+      const releaseArrival = (index = preparedIndex) => {
+        if (prefersReducedMotion.matches) return;
+
+        const nextIndex = clamp(index);
+        const slide = slides[nextIndex];
+        if (!slide || preparedIndex !== nextIndex || arrivalReleased) return;
+
+        arrivalReleased = true;
+        slide.classList.remove("is-preparing", "is-entering");
+        void slide.offsetWidth;
+        slide.classList.add("is-entering");
+        arrivalTimer = window.setTimeout(() => {
+          slide.classList.remove("is-entering");
+          if (preparedIndex === nextIndex) preparedIndex = -1;
+        }, 3300);
+      };
+
+      const animateScrollTo = (targetY, energy = 1, onApproach) => new Promise((resolve) => {
+        window.cancelAnimationFrame(scrollAnimation);
+
+        const startY = window.scrollY;
+        const distance = targetY - startY;
+        let didApproach = false;
+
+        const releaseIfClose = (currentY) => {
+          if (didApproach) return;
+          if (Math.abs(targetY - currentY) <= window.innerHeight * 0.55) {
+            didApproach = true;
+            if (onApproach) onApproach();
+          }
+        };
+
+        if (prefersReducedMotion.matches || Math.abs(distance) < 2) {
+          window.scrollTo(0, targetY);
+          releaseIfClose(targetY);
+          resolve();
+          return;
+        }
+
+        const duration = Math.min(880, Math.max(560, Math.abs(distance) * (0.5 - Math.min(energy, 1.25) * 0.08)));
+        const startedAt = performance.now();
+
+        document.documentElement.classList.add("is-programmatic");
+
+        const tick = (now) => {
+          const progress = Math.min(1, (now - startedAt) / duration);
+          const eased = easeOutQuart(progress);
+          const nextY = startY + distance * eased;
+
+          window.scrollTo(0, nextY);
+          releaseIfClose(nextY);
+
+          if (progress < 1) {
+            scrollAnimation = window.requestAnimationFrame(tick);
+            return;
+          }
+
+          window.scrollTo(0, targetY);
+          releaseIfClose(targetY);
+          document.documentElement.classList.remove("is-programmatic");
+          resolve();
+        };
+
+        scrollAnimation = window.requestAnimationFrame(tick);
+      });
+
+      const goTo = (index, energy = 1) => {
+        const nextIndex = clamp(index);
+        const previousIndex = activeIndex;
+        const direction = Math.sign(nextIndex - previousIndex) || lastWheelDirection || 1;
+
+        if (nextIndex === activeIndex && Math.abs(slides[nextIndex].getBoundingClientRect().top) < 4) {
+          resetPull();
+          return;
+        }
+
+        locked = true;
+        resetPull();
+        prepareArrival(nextIndex, direction, energy);
+        document.body.classList.add("is-settling");
+
+        animateScrollTo(slides[nextIndex].offsetTop, energy, () => {
+          setActive(nextIndex);
+          releaseArrival(nextIndex);
+        }).then(() => {
+          locked = false;
+          wheelWeight = 0;
+          lastWheelDirection = 0;
+          resetPull();
+          document.body.classList.remove("is-settling");
+          if (!arrivalReleased) {
+            setActive(nextIndex);
+            releaseArrival(nextIndex);
+          }
+          setActive(nearestSlideIndex());
+        });
+      };
+
+      const normalizedWheelDelta = (event) => {
+        if (event.deltaMode === 1) return event.deltaY * 18;
+        if (event.deltaMode === 2) return event.deltaY * window.innerHeight;
+        return event.deltaY;
+      };
+
+      const commitWheel = (direction, energy) => {
+        const nextIndex = clamp(activeIndex + direction);
+
+        if (nextIndex === activeIndex) {
+          wheelWeight = 0;
+          schedulePullReset();
+          return;
+        }
+
+        goTo(nextIndex, energy);
+      };
+
+      const handleWheel = (event) => {
+        if (prefersReducedMotion.matches || event.ctrlKey) return;
+
+        event.preventDefault();
+        if (locked) return;
+
+        const delta = normalizedWheelDelta(event);
+        const direction = Math.sign(delta);
+        if (!direction || Math.abs(delta) < 0.8) return;
+
+        const now = Date.now();
+        if (now - lastWheelAt > 340 || direction !== lastWheelDirection) {
+          wheelWeight = 0;
+        }
+
+        wheelWeight = Math.max(-300, Math.min(300, wheelWeight * 0.68 + delta));
+        lastWheelAt = now;
+        lastWheelDirection = direction;
+
+        const instantGesture = Math.abs(delta) > 56;
+        const threshold = instantGesture ? 58 : 128;
+        const pull = wheelWeight / threshold;
+
+        setPull(pull);
+
+        if (Math.abs(wheelWeight) >= threshold) {
+          const energy = Math.min(1.25, Math.max(0.65, Math.abs(wheelWeight) / threshold));
+          commitWheel(Math.sign(wheelWeight), energy);
+          return;
+        }
+
+        schedulePullReset();
+      };
+
+      const handleTouchStart = (event) => {
+        if (!event.touches.length) return;
+        touchStartY = event.touches[0].clientY;
+        touchStartX = event.touches[0].clientX;
+        touchStartAt = Date.now();
+        touchLastPull = 0;
+      };
+
+      const handleTouchMove = (event) => {
+        if (prefersReducedMotion.matches || locked || !event.touches.length) return;
+
+        const touch = event.touches[0];
+        const deltaY = touchStartY - touch.clientY;
+        const deltaX = touchStartX - touch.clientX;
+
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 1.2) {
+          setPull(deltaY / 126);
+        }
+      };
+
+      const handleTouchEnd = (event) => {
+        if (!event.changedTouches.length || locked) return;
+
+        const touch = event.changedTouches[0];
+        const deltaY = touchStartY - touch.clientY;
+        const deltaX = touchStartX - touch.clientX;
+        const elapsed = Math.max(1, Date.now() - touchStartAt);
+        const velocity = Math.abs(deltaY) / elapsed;
+
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 1.22 && (Math.abs(deltaY) > 48 || velocity > 0.3)) {
+          const energy = Math.min(1.25, Math.max(0.7, Math.abs(touchLastPull)));
+          goTo(activeIndex + Math.sign(deltaY), energy);
+          return;
+        }
+
+        resetPull();
+      };
+
+      const handleKeydown = (event) => {
+        const nextKeys = ["ArrowDown", "PageDown", " "];
+        const previousKeys = ["ArrowUp", "PageUp"];
+
+        if (nextKeys.includes(event.key)) {
+          event.preventDefault();
+          goTo(activeIndex + 1);
+        }
+
+        if (previousKeys.includes(event.key)) {
+          event.preventDefault();
+          goTo(activeIndex - 1);
+        }
+
+        if (event.key === "Home") {
+          event.preventDefault();
+          goTo(0);
+        }
+
+        if (event.key === "End") {
+          event.preventDefault();
+          goTo(slides.length - 1);
+        }
+      };
+
+      let scrollTimer = 0;
+      const handleScroll = () => {
+        window.clearTimeout(scrollTimer);
+        scrollTimer = window.setTimeout(() => {
+          if (!locked) setActive(nearestSlideIndex());
+        }, 80);
+      };
+
+      if ("IntersectionObserver" in window) {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => visibility.set(entry.target, entry.intersectionRatio));
+          if (locked) return;
+
+          let bestIndex = activeIndex;
+          let bestRatio = 0;
+
+          slides.forEach((slide, index) => {
+            const ratio = visibility.get(slide) || 0;
+            if (ratio > bestRatio) {
+              bestRatio = ratio;
+              bestIndex = index;
+            }
+          });
+
+          if (bestRatio > 0.48 && bestIndex !== activeIndex) {
+            const direction = Math.sign(bestIndex - activeIndex) || 1;
+            prepareArrival(bestIndex, direction, 0.9);
+            setActive(bestIndex);
+            releaseArrival(bestIndex);
+          }
+        }, {
+          threshold: [0, 0.24, 0.48, 0.72, 0.96]
+        });
+
+        slides.forEach((slide) => observer.observe(slide));
+      }
+
+      navLinks.forEach((link, index) => {
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          goTo(index, 0.9);
+        });
+      });
+
+      document.body.classList.add("snap-ready");
+      setActive(nearestSlideIndex());
+      prepareArrival(activeIndex, 1, 0.9);
+      releaseArrival(activeIndex);
+      window.addEventListener("wheel", handleWheel, { passive: false });
+      window.addEventListener("touchstart", handleTouchStart, { passive: true });
+      window.addEventListener("touchmove", handleTouchMove, { passive: true });
+      window.addEventListener("touchend", handleTouchEnd, { passive: true });
+      window.addEventListener("keydown", handleKeydown);
+      window.addEventListener("scroll", handleScroll, { passive: true });
+      window.addEventListener("resize", () => {
+        if (!locked) setActive(nearestSlideIndex());
+      }, { passive: true });
+    })();
+  </script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -25,6 +27,22 @@ class _FakeQuery:
         self.update_values = None
 
     def select(self, *_args):
+        return self
+
+    def limit(self, *_args):
+        return self
+
+    def single(self):
+        return self
+
+    def maybe_single(self):
+        return self
+
+    def insert(self, values):
+        if isinstance(values, list):
+            self.rows.extend(values)
+        else:
+            self.rows.append(values)
         return self
 
     def update(self, values):
@@ -99,6 +117,28 @@ class _FakeStripeMismatchedAccount:
 
 class _FakeStripeWithMismatchedAccount:
     Account = _FakeStripeMismatchedAccount()
+
+
+class _FakeStripeService:
+    onboarding_calls = []
+    retrieve_account_response = None
+
+    def create_connect_onboarding_link(self, *, account_id: str, refresh_url: str, return_url: str):
+        self.__class__.onboarding_calls.append({
+            "account_id": account_id,
+            "refresh_url": refresh_url,
+            "return_url": return_url,
+        })
+        return {"url": f"https://connect.stripe.test/setup/{account_id}"}
+
+    def retrieve_account(self, *, account_id: str):
+        return self.__class__.retrieve_account_response or {
+            "id": account_id,
+            "charges_enabled": False,
+            "payouts_enabled": False,
+            "details_submitted": False,
+            "requirements": {"currently_due": []},
+        }
 
 
 class BillingPaymentsLifecycleTest(unittest.TestCase):
@@ -278,9 +318,94 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(idempotency_key, "koaryu-connect-account-studio_1")
         self.assertEqual(payload["dashboard"], "full")
         self.assertEqual(payload["contact_email"], "owner@example.com")
+        self.assertEqual(payload["identity"]["entity_type"], "company")
+        self.assertEqual(payload["metadata"]["business_entity_type"], "company")
         self.assertEqual(payload["configuration"]["merchant"]["capabilities"]["card_payments"]["requested"], True)
         self.assertEqual(payload["defaults"]["responsibilities"]["fees_collector"], "stripe")
         self.assertEqual(payload["defaults"]["responsibilities"]["losses_collector"], "stripe")
+
+    def test_connect_account_creation_passes_individual_entity_type(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        calls = []
+
+        def fake_v2_post(path, payload, *, idempotency_key=None):
+            calls.append((path, payload, idempotency_key))
+            return {"id": "acct_v2", "object": "v2.core.account"}
+
+        service._stripe_v2_post = fake_v2_post
+
+        service.create_connect_account(
+            studio_id="studio_1",
+            business_name="River City Martial Arts",
+            contact_email="owner@example.com",
+            business_entity_type="individual",
+        )
+
+        payload = calls[0][1]
+        self.assertEqual(payload["identity"]["entity_type"], "individual")
+        self.assertNotIn("business_details", payload["identity"])
+        self.assertEqual(payload["metadata"]["business_entity_type"], "individual")
+
+    def test_existing_connect_account_uses_default_refresh_and_return_urls_without_studio_lookup(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "onboarding_incomplete",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+        })
+        _FakeStripeService.onboarding_calls = []
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            link = asyncio.run(service.create_connect_onboarding_link("studio_1", "user_1", business_entity_type="individual"))
+
+        self.assertEqual(link.url, "https://connect.stripe.test/setup/acct_existing")
+        self.assertEqual(_FakeStripeService.onboarding_calls[0]["refresh_url"], "https://app.koaryu.test/billing/connect/refresh")
+        self.assertEqual(_FakeStripeService.onboarding_calls[0]["return_url"], "https://app.koaryu.test/billing?connect=return")
+
+    def test_connect_sync_projects_current_stripe_account_requirements(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "onboarding_incomplete",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+        })
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_existing",
+            "charges_enabled": False,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": ["external_account"]},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            response = asyncio.run(service.sync_connect_account("studio_1"))
+
+        self.assertEqual(response.status, "action_required")
+        self.assertFalse(response.charges_enabled)
+        self.assertTrue(response.payouts_enabled)
+        self.assertTrue(response.details_submitted)
+        self.assertEqual(response.requirements_due, ["external_account"])
 
     def test_stale_connected_account_returns_actionable_conflict(self):
         service = StripeService()

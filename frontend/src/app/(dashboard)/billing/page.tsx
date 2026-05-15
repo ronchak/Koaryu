@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -23,7 +24,7 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { api, isSubscriptionRequiredError } from "@/lib/api";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import { useConfigStore, useProgramStore, useStudentStore, useStudioStore } from "@/lib/store";
 import type {
@@ -35,6 +36,7 @@ import type {
   BillingPlanCreate,
   BillingPayer,
   BillingPayerCreate,
+  ConnectBusinessEntityType,
   BillingSubscription,
   ExportJob,
   PlatformBillingStatus,
@@ -53,6 +55,52 @@ const TABS: { id: BillingTab; label: string }[] = [
   { id: "enrollments", label: "Enrollments" },
   { id: "invoices", label: "Invoices" },
   { id: "reports", label: "Reports" },
+];
+
+type RequirementGroup = {
+  id: string;
+  label: string;
+  description: string;
+  matches: string[];
+};
+
+const CONNECT_REQUIREMENT_GROUPS: RequirementGroup[] = [
+  {
+    id: "business-profile",
+    label: "Business profile",
+    description: "Category, website or product details, and support contact information.",
+    matches: ["business_profile."],
+  },
+  {
+    id: "business-details",
+    label: "Business or legal details",
+    description: "Studio legal address, phone, tax ID, and ownership confirmation.",
+    matches: ["company.", "individual.address.", "individual.phone", "individual.id_number"],
+  },
+  {
+    id: "identity",
+    label: "Owner or representative identity",
+    description: "Name, birthday, email, title, phone, and SSN last 4 where required.",
+    matches: ["owners.", "representative.", "individual.first_name", "individual.last_name", "individual.email", "individual.dob.", "individual.ssn_last_4"],
+  },
+  {
+    id: "payouts",
+    label: "Payout bank account",
+    description: "Bank account or debit card where Stripe can send payouts.",
+    matches: ["external_account"],
+  },
+  {
+    id: "statement",
+    label: "Statement descriptor",
+    description: "The payment label families see on bank or card statements.",
+    matches: ["settings.payments.statement_descriptor"],
+  },
+  {
+    id: "terms",
+    label: "Stripe terms acceptance",
+    description: "Stripe services agreement acceptance by the account holder.",
+    matches: ["tos_acceptance."],
+  },
 ];
 
 const PREVIEW_PLATFORM: PlatformBillingStatus = {
@@ -478,6 +526,27 @@ function intervalLabel(interval: BillingPlan["billing_interval"]) {
   return labels[interval];
 }
 
+function requirementGroupItems(requirementsDue: string[]) {
+  return CONNECT_REQUIREMENT_GROUPS.map((group) => {
+    const dueFields = requirementsDue.filter((field) =>
+      group.matches.some((prefix) => field === prefix || field.startsWith(prefix))
+    );
+    return {
+      ...group,
+      dueFields,
+      complete: dueFields.length === 0,
+    };
+  });
+}
+
+function connectReturnUrl() {
+  return `${window.location.origin}/billing?connect=return`;
+}
+
+function connectRefreshUrl() {
+  return `${window.location.origin}/billing/connect/refresh`;
+}
+
 function statusTone(status: string) {
   if (["active", "current", "paid", "succeeded", "charges_enabled", "trialing", "externally_recorded", "externally_paid"].includes(status)) {
     return "border-success/20 bg-success/10 text-success";
@@ -531,7 +600,8 @@ function ProgramChip({ program }: { program: BillingPlan["programs"][number] }) 
 }
 
 export default function BillingPage() {
-  const { isPreviewMode, token } = useConfigStore();
+  const router = useRouter();
+  const { isPreviewMode, token, markSubscriptionRequired } = useConfigStore();
   const { currentRole } = useStudioStore();
   const { programs, programsLoaded, refreshPrograms } = useProgramStore();
   const { students, studentsLoaded } = useStudentStore();
@@ -546,7 +616,9 @@ export default function BillingPage() {
   const [payments, setPayments] = useState<BillingPayment[]>([]);
   const [exportJobs, setExportJobs] = useState<ExportJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [showConnectEntityModal, setShowConnectEntityModal] = useState(false);
+  const [connectEntityType, setConnectEntityType] = useState<ConnectBusinessEntityType>("company");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -582,6 +654,8 @@ export default function BillingPage() {
   const canManageKoaryuSubscription = currentRole === "admin";
   const canManageStudioBilling = currentRole === "admin" || currentRole === "front_desk";
   const isLiveRestricted = !isPreviewMode && currentRole !== null && !canManageStudioBilling;
+  const isActionLoading = activeAction !== null;
+  const isLoadingAction = (action: string) => activeAction === action;
 
   const liveDataReady = isPreviewMode || paymentAccount !== null || isLoading;
   const billingPlatform = isPreviewMode ? PREVIEW_PLATFORM : platformBilling;
@@ -608,6 +682,10 @@ export default function BillingPage() {
   const connectActionLabel = needsConnectOnboarding
     ? "Continue onboarding"
     : "Connect Stripe";
+  const connectRequirementItems = useMemo(
+    () => requirementGroupItems(billingConnect?.requirements_due ?? []),
+    [billingConnect?.requirements_due]
+  );
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at && !program.is_system),
     [programs]
@@ -722,6 +800,15 @@ export default function BillingPage() {
       ] = results;
 
       const failures: string[] = [];
+      const subscriptionRequired = results.some((result) =>
+        result.status === "rejected" && isSubscriptionRequiredError(result.reason)
+      );
+      if (subscriptionRequired) {
+        markSubscriptionRequired();
+        router.replace("/subscription-required");
+        return;
+      }
+
       const applyResult = <T,>(
         label: string,
         result: PromiseSettledResult<T>,
@@ -754,7 +841,33 @@ export default function BillingPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [canManageKoaryuSubscription, canManageStudioBilling, isPreviewMode, token]);
+  }, [canManageKoaryuSubscription, canManageStudioBilling, isPreviewMode, markSubscriptionRequired, router, token]);
+
+  const refreshConnectStatus = useCallback(async ({ sync = false }: { sync?: boolean } = {}) => {
+    if (isPreviewMode || !token || !canManageStudioBilling) {
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      const account = sync
+        ? await api.post<StudioPaymentAccount>("/billing/connect/sync", {}, token, { timeoutMs: 30000 })
+        : await api.get<StudioPaymentAccount>("/billing/connect/status", token);
+      setPaymentAccount(account);
+      if (sync) {
+        setMessage(account.charges_enabled ? "Stripe verification is complete." : "Stripe account status updated.");
+      }
+    } catch (err) {
+      if (isSubscriptionRequiredError(err)) {
+        markSubscriptionRequired();
+        router.replace("/subscription-required");
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Stripe Connect status could not be loaded.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [canManageStudioBilling, isPreviewMode, markSubscriptionRequired, router, token]);
 
   useEffect(() => {
     if (!programsLoaded) {
@@ -764,10 +877,15 @@ export default function BillingPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("connect") === "return") {
+        void refreshConnectStatus({ sync: true });
+        return;
+      }
       void refreshBilling();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refreshBilling]);
+  }, [refreshBilling, refreshConnectStatus]);
 
   function togglePlanProgram(programId: string) {
     setPlanProgramIds((current) =>
@@ -777,13 +895,13 @@ export default function BillingPage() {
     );
   }
 
-  async function openBillingLink(path: string, body: Record<string, string | undefined>) {
+  async function openBillingLink(path: string, body: Record<string, string | undefined>, action = "stripe-link") {
     if (isPreviewMode) {
       setMessage("Demo mode uses Stripe-hosted surfaces in production.");
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction(action);
     setError("");
     setMessage("");
     try {
@@ -792,17 +910,42 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Stripe link could not be created.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
-  async function postBillingAction<T>(path: string, body: Record<string, unknown> = {}, successMessage: string) {
+  async function openConnectOnboarding(businessEntityType?: ConnectBusinessEntityType) {
+    await openBillingLink(
+      "/billing/connect/onboarding-link",
+      {
+        return_url: connectReturnUrl(),
+        refresh_url: connectRefreshUrl(),
+        business_entity_type: businessEntityType,
+      },
+      "connect"
+    );
+  }
+
+  function handleConnectClick() {
+    if (!hasStripeConnectedAccount) {
+      setShowConnectEntityModal(true);
+      return;
+    }
+    void openConnectOnboarding();
+  }
+
+  async function handleConfirmConnectEntity() {
+    setShowConnectEntityModal(false);
+    await openConnectOnboarding(connectEntityType);
+  }
+
+  async function postBillingAction<T>(path: string, body: Record<string, unknown> = {}, successMessage: string, action = "billing-action") {
     if (isPreviewMode) {
       setMessage(successMessage);
       return null;
     }
     if (!token) return null;
-    setIsActionLoading(true);
+    setActiveAction(action);
     setError("");
     setMessage("");
     try {
@@ -814,23 +957,24 @@ export default function BillingPage() {
       setError(err instanceof Error ? err.message : "Billing action could not be completed.");
       return null;
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
   async function handlePlanSync(planId: string) {
-    await postBillingAction<BillingPlan>(`/billing/plans/${planId}/sync`, {}, "Plan sync requested.");
+    await postBillingAction<BillingPlan>(`/billing/plans/${planId}/sync`, {}, "Plan sync requested.", `plan-sync:${planId}`);
   }
 
   async function handlePayerSync(payerId: string) {
-    await postBillingAction<BillingPayer>(`/billing/payers/${payerId}/sync`, {}, "Payer sync requested.");
+    await postBillingAction<BillingPayer>(`/billing/payers/${payerId}/sync`, {}, "Payer sync requested.", `payer-sync:${payerId}`);
   }
 
   async function handleAutopaySetup(payerId: string) {
     const link = await postBillingAction<BillingLinkResponse>(
       `/billing/payers/${payerId}/autopay/setup-link`,
       { return_url: window.location.href },
-      "Opening Stripe autopay setup."
+      "Opening Stripe autopay setup.",
+      `autopay-setup:${payerId}`
     );
     if (link?.url) {
       window.location.assign(link.url);
@@ -838,11 +982,16 @@ export default function BillingPage() {
   }
 
   async function handleAutopayDisable(payerId: string) {
-    await postBillingAction<BillingPayer>(`/billing/payers/${payerId}/autopay/disable`, {}, "Autopay disabled.");
+    await postBillingAction<BillingPayer>(`/billing/payers/${payerId}/autopay/disable`, {}, "Autopay disabled.", `autopay-disable:${payerId}`);
   }
 
   async function handleEnrollmentAction(enrollmentId: string, action: "pause" | "resume" | "cancel") {
-    await postBillingAction<StudentBillingEnrollment>(`/billing/enrollments/${enrollmentId}/${action}`, {}, `Enrollment ${action} requested.`);
+    await postBillingAction<StudentBillingEnrollment>(
+      `/billing/enrollments/${enrollmentId}/${action}`,
+      {},
+      `Enrollment ${action} requested.`,
+      `enrollment:${enrollmentId}:${action}`
+    );
   }
 
   async function handleEnrollmentModeUpdate(enrollmentId: string, collectionMode: StudentBillingEnrollment["collection_mode"]) {
@@ -851,7 +1000,7 @@ export default function BillingPage() {
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction(`enrollment-mode:${enrollmentId}`);
     setError("");
     setMessage("");
     try {
@@ -861,12 +1010,17 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enrollment could not be updated.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
   async function handleInvoiceAction(invoiceId: string, action: "finalize" | "void" | "retry" | "reconcile") {
-    await postBillingAction<BillingInvoice>(`/billing/invoices/${invoiceId}/${action}`, {}, `Invoice ${action} requested.`);
+    await postBillingAction<BillingInvoice>(
+      `/billing/invoices/${invoiceId}/${action}`,
+      {},
+      `Invoice ${action} requested.`,
+      `invoice:${invoiceId}:${action}`
+    );
   }
 
   async function handleCreatePlan(event: React.FormEvent) {
@@ -907,7 +1061,7 @@ export default function BillingPage() {
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction("create-plan");
     try {
       const payload: BillingPlanCreate = {
         name: planName.trim(),
@@ -932,7 +1086,7 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Billing plan could not be created.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
@@ -952,7 +1106,7 @@ export default function BillingPage() {
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction("create-payer");
     try {
       const payload: BillingPayerCreate = {
         display_name: payerName.trim(),
@@ -968,7 +1122,7 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Family payer could not be created.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
@@ -989,7 +1143,7 @@ export default function BillingPage() {
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction("create-enrollment");
     try {
       const payload: StudentBillingEnrollmentCreate = {
         student_id: enrollmentStudentId,
@@ -1013,7 +1167,7 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enrollment could not be created.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
@@ -1037,7 +1191,7 @@ export default function BillingPage() {
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction("create-invoice");
     try {
       const payload: BillingInvoiceCreate = {
         payer_id: invoicePayerId,
@@ -1058,7 +1212,7 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invoice could not be created.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
@@ -1068,7 +1222,7 @@ export default function BillingPage() {
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction(`export:${exportType}`);
     setError("");
     setMessage("");
     try {
@@ -1078,7 +1232,7 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export could not be queued.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
@@ -1106,7 +1260,7 @@ export default function BillingPage() {
       return;
     }
     if (!token) return;
-    setIsActionLoading(true);
+    setActiveAction("record-external");
     try {
       await api.post<BillingPayment>("/billing/payments/external", {
         payer_id: externalPayerId,
@@ -1122,16 +1276,72 @@ export default function BillingPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "External payment could not be recorded.");
     } finally {
-      setIsActionLoading(false);
+      setActiveAction(null);
     }
   }
 
   return (
     <>
+      {showConnectEntityModal ? (
+        <div className="koaryu-modal-root p-4">
+          <div className="koaryu-modal-backdrop" onClick={() => setShowConnectEntityModal(false)} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="connect-entity-title"
+            className="koaryu-modal-panel w-full max-w-md rounded-[6px] border border-border bg-bg p-5 shadow-2xl"
+          >
+            <h2 id="connect-entity-title" className="text-base font-semibold text-text-primary">Connect Stripe payments</h2>
+            <p className="mt-2 text-sm text-muted">
+              Choose the legal account type before Koaryu creates the Stripe account. You can change this choice here until the account is created; afterward, legal entity changes happen in Stripe or by reconnecting a new account.
+            </p>
+            <div className="mt-4 grid gap-2">
+              {([
+                ["company", "Registered business / company", "Use this for LLCs, corporations, partnerships, and incorporated studios."],
+                ["individual", "Sole proprietor / individual", "Use this when the studio operates under an individual owner without a separate legal company."],
+              ] as const).map(([value, label, description]) => (
+                <label
+                  key={value}
+                  className={`cursor-pointer rounded-[6px] border px-3 py-3 transition-colors ${
+                    connectEntityType === value
+                      ? "border-accent bg-accent/10"
+                      : "border-border bg-surface hover:bg-surface-hover"
+                  }`}
+                >
+                  <span className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="connect-entity-type"
+                      value={value}
+                      checked={connectEntityType === value}
+                      onChange={() => setConnectEntityType(value)}
+                      className="mt-1 accent-[#E5C15C]"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-text-primary">{label}</span>
+                      <span className="mt-1 block text-xs leading-5 text-muted">{description}</span>
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button variant="ghost" size="sm" disabled={isActionLoading} onClick={() => setShowConnectEntityModal(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" isLoading={isLoadingAction("connect")} disabled={isActionLoading} onClick={() => void handleConfirmConnectEntity()}>
+                <Link2 className="h-3.5 w-3.5" />
+                {isLoadingAction("connect") ? "Opening Stripe..." : "Create Stripe account"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <Header title="Billing" description="Koaryu Core, family payments, invoices, and revenue reporting.">
-        <Button variant="ghost" size="sm" onClick={() => void refreshBilling()} disabled={isPreviewMode || isLoading || !canManageStudioBilling}>
+        <Button variant="ghost" size="sm" onClick={() => void refreshBilling()} disabled={isPreviewMode || isLoading || !canManageStudioBilling} isLoading={isLoading}>
           <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
-          Refresh
+          {isLoading ? "Refreshing..." : "Refresh"}
         </Button>
       </Header>
 
@@ -1234,25 +1444,27 @@ export default function BillingPage() {
                           variant="primary"
                           size="sm"
                           disabled={!canManageKoaryuSubscription || isActionLoading}
+                          isLoading={isLoadingAction("checkout")}
                           onClick={() => void openBillingLink("/platform-billing/checkout", {
                             success_url: window.location.href,
                             cancel_url: window.location.href,
-                          })}
+                          }, "checkout")}
                         >
                           <CreditCard className="h-3.5 w-3.5" />
-                          Start checkout
+                          {isLoadingAction("checkout") ? "Opening Stripe..." : "Start checkout"}
                         </Button>
                         <Button
                           variant="secondary"
                           size="sm"
                           disabled={!canOpenCustomerPortal || isActionLoading}
+                          isLoading={isLoadingAction("portal")}
                           title={canOpenCustomerPortal ? undefined : "Available after Koaryu Core checkout creates a Stripe customer."}
                           onClick={() => void openBillingLink("/platform-billing/portal", {
                             return_url: window.location.href,
-                          })}
+                          }, "portal")}
                         >
                           <ArrowUpRight className="h-3.5 w-3.5" />
-                          Customer portal
+                          {isLoadingAction("portal") ? "Opening portal..." : "Customer portal"}
                         </Button>
                       </div>
                     </section>
@@ -1286,36 +1498,54 @@ export default function BillingPage() {
                           <p className="mt-1 text-sm text-text-primary">{formatMoney(externalPaymentTotal)}</p>
                         </div>
                       </div>
-                      {billingConnect?.requirements_due?.length ? (
-                        <p className="mt-4 rounded-[6px] border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning">
-                          Stripe needs: {billingConnect.requirements_due.join(", ")}
-                        </p>
+                      {billingConnect?.stripe_connected_account_id ? (
+                        <div className="mt-4 rounded-[6px] border border-border bg-surface-raised/60 p-3">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-xs font-medium text-text-secondary">Stripe onboarding checklist</p>
+                            <span className="text-[11px] text-muted">
+                              {connectRequirementItems.filter((item) => item.complete).length} / {connectRequirementItems.length} complete
+                            </span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {connectRequirementItems.map((item) => (
+                              <div key={item.id} className="flex items-start gap-2 rounded-[6px] border border-border bg-bg/40 px-2.5 py-2">
+                                {item.complete ? (
+                                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-success" />
+                                ) : (
+                                  <Clock3 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-warning" />
+                                )}
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium text-text-primary">{item.label}</p>
+                                  <p className="mt-0.5 text-[11px] leading-4 text-muted">{item.complete ? "Received by Stripe" : item.description}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       ) : null}
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Button
                           variant="primary"
                           size="sm"
                           disabled={!canManageKoaryuSubscription || isActionLoading}
-                          onClick={() => void openBillingLink("/billing/connect/onboarding-link", {
-                            return_url: window.location.href,
-                            refresh_url: window.location.href,
-                            cancel_url: window.location.href,
-                          })}
+                          isLoading={isLoadingAction("connect")}
+                          onClick={handleConnectClick}
                         >
                           <Link2 className="h-3.5 w-3.5" />
-                          {connectActionLabel}
+                          {isLoadingAction("connect") ? "Opening Stripe..." : connectActionLabel}
                         </Button>
                         <Button
                           variant="secondary"
                           size="sm"
                           disabled={!canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+                          isLoading={isLoadingAction("dashboard")}
                           title={canOpenStripeDashboard ? "Open Stripe to review account status, requirements, payments, and payouts." : "Available after Stripe Connect creates an account."}
                           onClick={() => void openBillingLink("/billing/connect/dashboard-link", {
                             return_url: window.location.href,
-                          })}
+                          }, "dashboard")}
                         >
                           <ArrowUpRight className="h-3.5 w-3.5" />
-                          Stripe dashboard
+                          {isLoadingAction("dashboard") ? "Opening Stripe..." : "Stripe dashboard"}
                         </Button>
                       </div>
                     </section>
@@ -1391,9 +1621,9 @@ export default function BillingPage() {
                         </div>
                       </div>
                       <div className="lg:col-span-5">
-                        <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || activePrograms.length === 0}>
+                        <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || activePrograms.length === 0} isLoading={isLoadingAction("create-plan")}>
                           <Plus className="h-3.5 w-3.5" />
-                          Create plan
+                          {isLoadingAction("create-plan") ? "Creating..." : "Create plan"}
                         </Button>
                       </div>
                     </form>
@@ -1438,10 +1668,11 @@ export default function BillingPage() {
                               size="sm"
                               className="mt-2"
                               disabled={!canManageStudioBilling || isActionLoading}
+                              isLoading={isLoadingAction(`plan-sync:${plan.id}`)}
                               onClick={() => void handlePlanSync(plan.id)}
                             >
                               <RefreshCw className="h-3.5 w-3.5" />
-                              Sync
+                              {isLoadingAction(`plan-sync:${plan.id}`) ? "Syncing..." : "Sync"}
                             </Button>
                           ) : null}
                         </div>
@@ -1462,9 +1693,9 @@ export default function BillingPage() {
                       <Input label="Name" value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Family or payer name" disabled={!canManageStudioBilling} />
                       <Input label="Email" value={payerEmail} onChange={(event) => setPayerEmail(event.target.value)} placeholder="payer@example.com" disabled={!canManageStudioBilling} />
                       <Input label="Phone" value={payerPhone} onChange={(event) => setPayerPhone(event.target.value)} placeholder="Optional" disabled={!canManageStudioBilling} />
-                      <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading}>
+                      <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction("create-payer")}>
                         <Plus className="h-3.5 w-3.5" />
-                        Create
+                        {isLoadingAction("create-payer") ? "Creating..." : "Create"}
                       </Button>
                     </form>
                   </section>
@@ -1502,16 +1733,16 @@ export default function BillingPage() {
                         </div>
                         <StatusPill status={payer.autopay_status} />
                         <div className="flex flex-wrap justify-end gap-2">
-                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading} onClick={() => void handlePayerSync(payer.id)}>
+                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction(`payer-sync:${payer.id}`)} onClick={() => void handlePayerSync(payer.id)}>
                             <RefreshCw className="h-3.5 w-3.5" />
-                            Sync
+                            {isLoadingAction(`payer-sync:${payer.id}`) ? "Syncing..." : "Sync"}
                           </Button>
-                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading} onClick={() => void handleAutopaySetup(payer.id)}>
+                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction(`autopay-setup:${payer.id}`)} onClick={() => void handleAutopaySetup(payer.id)}>
                             <CreditCard className="h-3.5 w-3.5" />
-                            Setup
+                            {isLoadingAction(`autopay-setup:${payer.id}`) ? "Opening..." : "Setup"}
                           </Button>
-                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || payer.autopay_status !== "enabled"} onClick={() => void handleAutopayDisable(payer.id)}>
-                            Disable
+                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || payer.autopay_status !== "enabled"} isLoading={isLoadingAction(`autopay-disable:${payer.id}`)} onClick={() => void handleAutopayDisable(payer.id)}>
+                            {isLoadingAction(`autopay-disable:${payer.id}`) ? "Disabling..." : "Disable"}
                           </Button>
                         </div>
                       </div>
@@ -1587,9 +1818,9 @@ export default function BillingPage() {
                       <Input label="Start" type="date" value={enrollmentStartDate} onChange={(event) => setEnrollmentStartDate(event.target.value)} disabled={!canManageStudioBilling} />
                       <Input label="End" type="date" value={enrollmentEndDate} onChange={(event) => setEnrollmentEndDate(event.target.value)} disabled={!canManageStudioBilling} />
                       <Input label="Next bill" type="date" value={enrollmentNextBillDate} onChange={(event) => setEnrollmentNextBillDate(event.target.value)} disabled={!canManageStudioBilling} />
-                      <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || billingPayers.length === 0 || billingPlans.length === 0}>
+                      <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || billingPayers.length === 0 || billingPlans.length === 0} isLoading={isLoadingAction("create-enrollment")}>
                         <Plus className="h-3.5 w-3.5" />
-                        Attach
+                        {isLoadingAction("create-enrollment") ? "Attaching..." : "Attach"}
                       </Button>
                     </form>
                   </section>
@@ -1634,14 +1865,14 @@ export default function BillingPage() {
                           <p className="truncate">{enrollment.stripe_subscription_item_id || "No item"}</p>
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
-                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || enrollment.status === "paused"} onClick={() => void handleEnrollmentAction(enrollment.id, "pause")}>
-                            Pause
+                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || enrollment.status === "paused"} isLoading={isLoadingAction(`enrollment:${enrollment.id}:pause`)} onClick={() => void handleEnrollmentAction(enrollment.id, "pause")}>
+                            {isLoadingAction(`enrollment:${enrollment.id}:pause`) ? "Pausing..." : "Pause"}
                           </Button>
-                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || enrollment.status !== "paused"} onClick={() => void handleEnrollmentAction(enrollment.id, "resume")}>
-                            Resume
+                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || enrollment.status !== "paused"} isLoading={isLoadingAction(`enrollment:${enrollment.id}:resume`)} onClick={() => void handleEnrollmentAction(enrollment.id, "resume")}>
+                            {isLoadingAction(`enrollment:${enrollment.id}:resume`) ? "Resuming..." : "Resume"}
                           </Button>
-                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || enrollment.status === "canceled"} onClick={() => void handleEnrollmentAction(enrollment.id, "cancel")}>
-                            Cancel
+                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || enrollment.status === "canceled"} isLoading={isLoadingAction(`enrollment:${enrollment.id}:cancel`)} onClick={() => void handleEnrollmentAction(enrollment.id, "cancel")}>
+                            {isLoadingAction(`enrollment:${enrollment.id}:cancel`) ? "Canceling..." : "Cancel"}
                           </Button>
                         </div>
                       </div>
@@ -1716,9 +1947,9 @@ export default function BillingPage() {
                           />
                           Send
                         </label>
-                        <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || billingPayers.length === 0}>
+                        <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || billingPayers.length === 0} isLoading={isLoadingAction("create-invoice")}>
                           <Plus className="h-3.5 w-3.5" />
-                          Create
+                          {isLoadingAction("create-invoice") ? "Creating..." : "Create"}
                         </Button>
                       </div>
                     </form>
@@ -1771,8 +2002,8 @@ export default function BillingPage() {
                         <p className="font-medium text-text-primary">{formatMoney(invoice.amount_due_cents, invoice.currency)}</p>
                         <StatusPill status={invoice.status} />
                         <div className="flex flex-wrap justify-end gap-2">
-                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status !== "draft"} onClick={() => void handleInvoiceAction(invoice.id, "finalize")}>
-                            Finalize
+                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status !== "draft"} isLoading={isLoadingAction(`invoice:${invoice.id}:finalize`)} onClick={() => void handleInvoiceAction(invoice.id, "finalize")}>
+                            {isLoadingAction(`invoice:${invoice.id}:finalize`) ? "Finalizing..." : "Finalize"}
                           </Button>
                           {invoice.hosted_invoice_url && !isPreviewMode ? (
                             <Button asChild variant="secondary" size="sm">
@@ -1782,14 +2013,14 @@ export default function BillingPage() {
                               </a>
                             </Button>
                           ) : null}
-                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status !== "open"} onClick={() => void handleInvoiceAction(invoice.id, "retry")}>
-                            Retry
+                          <Button variant="secondary" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status !== "open"} isLoading={isLoadingAction(`invoice:${invoice.id}:retry`)} onClick={() => void handleInvoiceAction(invoice.id, "retry")}>
+                            {isLoadingAction(`invoice:${invoice.id}:retry`) ? "Retrying..." : "Retry"}
                           </Button>
-                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status === "void" || invoice.status === "paid"} onClick={() => void handleInvoiceAction(invoice.id, "void")}>
-                            Void
+                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status === "void" || invoice.status === "paid"} isLoading={isLoadingAction(`invoice:${invoice.id}:void`)} onClick={() => void handleInvoiceAction(invoice.id, "void")}>
+                            {isLoadingAction(`invoice:${invoice.id}:void`) ? "Voiding..." : "Void"}
                           </Button>
-                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status !== "paid"} onClick={() => void handleInvoiceAction(invoice.id, "reconcile")}>
-                            Reconcile
+                          <Button variant="ghost" size="sm" disabled={!canManageStudioBilling || isActionLoading || invoice.status !== "paid"} isLoading={isLoadingAction(`invoice:${invoice.id}:reconcile`)} onClick={() => void handleInvoiceAction(invoice.id, "reconcile")}>
+                            {isLoadingAction(`invoice:${invoice.id}:reconcile`) ? "Reconciling..." : "Reconcile"}
                           </Button>
                         </div>
                       </div>
@@ -1809,17 +2040,17 @@ export default function BillingPage() {
                   <section className="border border-border bg-surface rounded-[6px] p-5">
                     <SectionHeader icon={Download} title="Async exports" description="Large billing exports are queued instead of held in an in-memory browser request." />
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="secondary" disabled={isActionLoading} onClick={() => void handleCreateExport("revenue")}>
+                      <Button size="sm" variant="secondary" disabled={isActionLoading} isLoading={isLoadingAction("export:revenue")} onClick={() => void handleCreateExport("revenue")}>
                         <FileText className="h-3.5 w-3.5" />
-                        Revenue CSV
+                        {isLoadingAction("export:revenue") ? "Queueing..." : "Revenue CSV"}
                       </Button>
-                      <Button size="sm" variant="secondary" disabled={isActionLoading} onClick={() => void handleCreateExport("invoices")}>
+                      <Button size="sm" variant="secondary" disabled={isActionLoading} isLoading={isLoadingAction("export:invoices")} onClick={() => void handleCreateExport("invoices")}>
                         <FileText className="h-3.5 w-3.5" />
-                        Invoice CSV
+                        {isLoadingAction("export:invoices") ? "Queueing..." : "Invoice CSV"}
                       </Button>
-                      <Button size="sm" variant="secondary" disabled={isActionLoading} onClick={() => void handleCreateExport("failed_payments")}>
+                      <Button size="sm" variant="secondary" disabled={isActionLoading} isLoading={isLoadingAction("export:failed_payments")} onClick={() => void handleCreateExport("failed_payments")}>
                         <FileText className="h-3.5 w-3.5" />
-                        Failed payments CSV
+                        {isLoadingAction("export:failed_payments") ? "Queueing..." : "Failed payments CSV"}
                       </Button>
                     </div>
                     {exportJobs.length ? (
@@ -1860,9 +2091,9 @@ export default function BillingPage() {
                       <Input label="Amount" value={externalAmount} onChange={(event) => setExternalAmount(event.target.value)} placeholder="129" inputMode="decimal" disabled={!canManageStudioBilling} />
                       <Input label="Method" value={externalMethod} onChange={(event) => setExternalMethod(event.target.value)} placeholder="Zelle" disabled={!canManageStudioBilling} />
                       <Input label="Note" value={externalNote} onChange={(event) => setExternalNote(event.target.value)} placeholder="Optional" disabled={!canManageStudioBilling} />
-                      <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || billingPayers.length === 0}>
+                      <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || billingPayers.length === 0} isLoading={isLoadingAction("record-external")}>
                         <Plus className="h-3.5 w-3.5" />
-                        Record
+                        {isLoadingAction("record-external") ? "Recording..." : "Record"}
                       </Button>
                     </form>
                   </section>

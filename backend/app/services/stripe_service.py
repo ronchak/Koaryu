@@ -451,28 +451,50 @@ class StripeService:
         params = {"expand": expand or ["items.data"]}
         return stripe.Subscription.retrieve(subscription_id, **params)
 
-    def create_connect_account(self, *, studio_id: str, business_name: str, contact_email: Optional[str] = None):
+    def create_connect_account(
+        self,
+        *,
+        studio_id: str,
+        business_name: str,
+        contact_email: Optional[str] = None,
+        business_entity_type: str = "company",
+    ):
         try:
             return self._create_connect_account_v2(
                 studio_id=studio_id,
                 business_name=business_name,
                 contact_email=contact_email,
+                business_entity_type=business_entity_type,
             )
         except _StripeV2RequestError as exc:
             if exc.code != "accounts_v2_access_blocked":
                 self._raise_connect_account_error(exc, "create a connected account")
 
-        return self._create_connect_account_v1(studio_id=studio_id, business_name=business_name)
+        return self._create_connect_account_v1(
+            studio_id=studio_id,
+            business_name=business_name,
+            business_entity_type=business_entity_type,
+        )
 
-    def _create_connect_account_v2(self, *, studio_id: str, business_name: str, contact_email: Optional[str] = None) -> dict[str, Any]:
+    def _create_connect_account_v2(
+        self,
+        *,
+        studio_id: str,
+        business_name: str,
+        contact_email: Optional[str] = None,
+        business_entity_type: str = "company",
+    ) -> dict[str, Any]:
+        identity: dict[str, Any] = {
+            "country": "us",
+            "entity_type": business_entity_type,
+        }
+        if business_entity_type == "company":
+            identity["business_details"] = {"registered_name": business_name}
+
         payload: dict[str, Any] = {
             "display_name": business_name,
             "dashboard": "full",
-            "identity": {
-                "country": "us",
-                "entity_type": "company",
-                "business_details": {"registered_name": business_name},
-            },
+            "identity": identity,
             "configuration": {
                 "merchant": {
                     "capabilities": {
@@ -495,6 +517,7 @@ class StripeService:
             "metadata": {
                 "studio_id": studio_id,
                 "product": "koaryu_payments",
+                "business_entity_type": business_entity_type,
             },
             "include": ["configuration.merchant", "identity", "defaults", "requirements"],
         }
@@ -506,12 +529,13 @@ class StripeService:
             idempotency_key=f"koaryu-connect-account-{studio_id}",
         )
 
-    def _create_connect_account_v1(self, *, studio_id: str, business_name: str):
+    def _create_connect_account_v1(self, *, studio_id: str, business_name: str, business_entity_type: str = "company"):
         stripe = self._stripe()
         try:
             return stripe.Account.create(
                 type="express",
-                metadata={"studio_id": studio_id},
+                metadata={"studio_id": studio_id, "business_entity_type": business_entity_type},
+                business_type=business_entity_type,
                 business_profile={"name": business_name},
                 capabilities={
                     "card_payments": {"requested": True},

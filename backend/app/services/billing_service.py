@@ -76,32 +76,52 @@ class BillingService:
         actor_id: str,
         refresh_url: Optional[str] = None,
         return_url: Optional[str] = None,
+        business_entity_type: Optional[str] = None,
     ) -> BillingLinkResponse:
         account = self._ensure_payment_account_row(studio_id)
-        studio = self._get_studio(studio_id)
         stripe_account_id = account.get("stripe_connected_account_id")
         stripe_service = StripeService()
 
         if not stripe_account_id:
+            if business_entity_type not in {"company", "individual"}:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Choose whether this Stripe account is for a company or a sole proprietor.",
+                )
+            studio = self._get_studio(studio_id)
             stripe_account = stripe_service.create_connect_account(
                 studio_id=studio_id,
                 business_name=studio.get("name") or "Koaryu studio",
                 contact_email=self._get_user_email(actor_id) or self._get_user_email(studio.get("owner_id")),
+                business_entity_type=business_entity_type,
             )
             stripe_account_id = stripe_account["id"] if isinstance(stripe_account, dict) else stripe_account.id
+            metadata = dict(account.get("metadata") or {})
+            metadata["business_entity_type"] = business_entity_type
             account = self._update_payment_account(studio_id, {
                 "stripe_connected_account_id": stripe_account_id,
                 "status": "onboarding_incomplete",
+                "metadata": metadata,
             })
 
         frontend_url = self.settings.FRONTEND_URL.rstrip("/")
         link = stripe_service.create_connect_onboarding_link(
             account_id=stripe_account_id,
-            refresh_url=refresh_url or f"{frontend_url}/billing?connect=refresh",
+            refresh_url=refresh_url or f"{frontend_url}/billing/connect/refresh",
             return_url=return_url or f"{frontend_url}/billing?connect=return",
         )
-        self._audit(studio_id, actor_id, "billing.connect_onboarding_started", studio_id, {"stripe_account_id": stripe_account_id})
+        self._audit_best_effort(studio_id, actor_id, "billing.connect_onboarding_started", studio_id, {"stripe_account_id": stripe_account_id})
         return BillingLinkResponse(url=link["url"] if isinstance(link, dict) else link.url)
+
+    async def sync_connect_account(self, studio_id: str) -> StudioPaymentAccountResponse:
+        account = self._ensure_payment_account_row(studio_id)
+        stripe_account_id = account.get("stripe_connected_account_id")
+        if not stripe_account_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before syncing the account status.")
+
+        stripe_account = StripeService().retrieve_account(account_id=stripe_account_id)
+        account = self._update_payment_account(studio_id, self._connect_account_update_from_stripe(stripe_account))
+        return self._payment_account_response(account)
 
     async def create_connect_dashboard_link(self, studio_id: str, actor_id: str) -> BillingLinkResponse:
         account = self._ensure_payment_account_row(studio_id)
@@ -109,7 +129,7 @@ class BillingService:
         if not stripe_account_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before opening the Stripe dashboard.")
         url = StripeService().create_connect_dashboard_url(account_id=stripe_account_id)
-        self._audit(studio_id, actor_id, "billing.connect_dashboard_opened", studio_id, {"stripe_account_id": stripe_account_id})
+        self._audit_best_effort(studio_id, actor_id, "billing.connect_dashboard_opened", studio_id, {"stripe_account_id": stripe_account_id})
         return BillingLinkResponse(url=url)
 
     async def list_plans(self, studio_id: str) -> list[BillingPlanResponse]:
@@ -769,18 +789,10 @@ class BillingService:
             return
         if event_type == "account.updated":
             account_id = account_id or data_object.get("id")
-            requirements = data_object.get("requirements") or {}
-            due = requirements.get("currently_due") or []
-            charges_enabled = bool(data_object.get("charges_enabled"))
-            details_submitted = bool(data_object.get("details_submitted"))
-            status_value = "charges_enabled" if charges_enabled else ("action_required" if due else "onboarding_incomplete")
-            self._update_payment_account_by_stripe_account(account_id, {
-                "status": status_value,
-                "charges_enabled": charges_enabled,
-                "payouts_enabled": bool(data_object.get("payouts_enabled")),
-                "details_submitted": details_submitted,
-                "requirements_due": due,
-            })
+            self._update_payment_account_by_stripe_account(
+                account_id,
+                self._connect_account_update_from_stripe(data_object),
+            )
             return
         if event_type == "checkout.session.completed":
             self._project_checkout_session(data_object, account_id)
@@ -1908,6 +1920,20 @@ class BillingService:
             return
         self.supabase.table("studio_payment_accounts").update(update).eq("stripe_connected_account_id", account_id).execute()
 
+    def _connect_account_update_from_stripe(self, stripe_account: Any) -> dict[str, Any]:
+        requirements = _object_get(stripe_account, "requirements") or {}
+        due = _object_get(requirements, "currently_due") or []
+        charges_enabled = bool(_object_get(stripe_account, "charges_enabled"))
+        details_submitted = bool(_object_get(stripe_account, "details_submitted"))
+        status_value = "charges_enabled" if charges_enabled else ("action_required" if due else "onboarding_incomplete")
+        return {
+            "status": status_value,
+            "charges_enabled": charges_enabled,
+            "payouts_enabled": bool(_object_get(stripe_account, "payouts_enabled")),
+            "details_submitted": details_submitted,
+            "requirements_due": list(due),
+        }
+
     def _payment_account_response(self, row: dict[str, Any]) -> StudioPaymentAccountResponse:
         return StudioPaymentAccountResponse(
             studio_id=row["studio_id"],
@@ -2013,3 +2039,9 @@ class BillingService:
             "entity_id": entity_id,
             "metadata": metadata,
         }).execute()
+
+    def _audit_best_effort(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
+        try:
+            self._audit(studio_id, actor_id, action, entity_id, metadata)
+        except Exception:
+            return
