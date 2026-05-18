@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -11,6 +11,9 @@ from app.schemas.billing import WebhookProcessResponse
 from app.services.billing_service import BillingService
 from app.services.platform_billing_service import PlatformBillingService
 from app.services.stripe_service import StripeService
+
+
+WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
 
 
 class StripeWebhookService:
@@ -51,7 +54,7 @@ class StripeWebhookService:
 
         existing_query = (
             self.supabase.table("stripe_events")
-            .select("id, processing_status")
+            .select("id, processing_status, created_at")
             .eq("stripe_event_id", event_id)
             .limit(1)
         )
@@ -63,7 +66,11 @@ class StripeWebhookService:
         existing = existing_query.execute()
         if existing.data and existing.data[0].get("processing_status") == "processed":
             return WebhookProcessResponse(status="already_processed")
-        if existing.data and existing.data[0].get("processing_status") == "processing":
+        if (
+            existing.data
+            and existing.data[0].get("processing_status") == "processing"
+            and not self._is_stale_processing_event(existing.data[0])
+        ):
             return WebhookProcessResponse(status="already_processing")
 
         row_id = existing.data[0]["id"] if existing.data else None
@@ -83,7 +90,7 @@ class StripeWebhookService:
                     raise
                 duplicate_query = (
                     self.supabase.table("stripe_events")
-                    .select("id, processing_status")
+                    .select("id, processing_status, created_at")
                     .eq("stripe_event_id", event_id)
                     .limit(1)
                 )
@@ -95,7 +102,11 @@ class StripeWebhookService:
                 duplicate = duplicate_query.execute()
                 if duplicate.data and duplicate.data[0].get("processing_status") == "processed":
                     return WebhookProcessResponse(status="already_processed")
-                if duplicate.data and duplicate.data[0].get("processing_status") == "processing":
+                if (
+                    duplicate.data
+                    and duplicate.data[0].get("processing_status") == "processing"
+                    and not self._is_stale_processing_event(duplicate.data[0])
+                ):
                     return WebhookProcessResponse(status="already_processing")
                 row_id = duplicate.data[0]["id"] if duplicate.data else None
             else:
@@ -107,7 +118,7 @@ class StripeWebhookService:
                 self.supabase.table("stripe_events")
                 .update({"processing_status": "processing", "error": None})
                 .eq("id", row_id)
-                .in_("processing_status", ["pending", "failed"])
+                .in_("processing_status", ["pending", "failed", "processing"])
                 .execute()
             )
             if not claim.data:
@@ -130,6 +141,24 @@ class StripeWebhookService:
         if not row_id:
             return
         self.supabase.table("stripe_events").update(update).eq("id", row_id).execute()
+
+    @staticmethod
+    def _is_stale_processing_event(row: dict[str, Any]) -> bool:
+        created_at = row.get("created_at")
+        if not created_at:
+            return False
+        if isinstance(created_at, datetime):
+            created = created_at
+        elif isinstance(created_at, str):
+            try:
+                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                return False
+        else:
+            return False
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - created >= WEBHOOK_PROCESSING_STALE_AFTER
 
     @staticmethod
     def _event_get(event: Any, key: str) -> Any:
