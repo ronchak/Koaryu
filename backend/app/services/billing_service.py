@@ -1606,6 +1606,14 @@ class BillingService:
             _stripe_id(intent),
             invoice_id,
         )
+        if not local_invoice and not invoice_id:
+            local_invoice = self._find_invoice_by_customer_amount(
+                account_id,
+                _stripe_id(intent.get("customer")),
+                int(intent.get("amount_received") or intent.get("amount") or 0),
+                intent.get("currency") or "usd",
+            )
+            invoice_id = (local_invoice or {}).get("stripe_invoice_id")
         studio_id = metadata.get("studio_id") or (local_invoice or {}).get("studio_id")
         if not studio_id:
             return
@@ -1661,6 +1669,7 @@ class BillingService:
                     "status": "paid",
                     "amount_paid_cents": max(int(local_invoice.get("amount_paid_cents") or 0), row["amount_cents"]),
                     "amount_remaining_cents": 0,
+                    "stripe_payment_intent_id": _stripe_id(intent),
                     "paid_at": datetime.now(timezone.utc).isoformat(),
                 })
             self.supabase.table("billing_invoices").update(update).eq("id", local_invoice["id"]).execute()
@@ -1956,6 +1965,34 @@ class BillingService:
             result = query.execute()
             if result.data:
                 return result.data[0]
+        return None
+
+    def _find_invoice_by_customer_amount(
+        self,
+        account_id: Optional[str],
+        customer_id: Optional[str],
+        amount_cents: int,
+        currency: str,
+    ) -> Optional[dict[str, Any]]:
+        if not customer_id or amount_cents <= 0:
+            return None
+        query = (
+            self.supabase.table("billing_invoices")
+            .select("*")
+            .eq("stripe_customer_id", customer_id)
+            .eq("amount_due_cents", amount_cents)
+            .eq("currency", currency)
+            .in_("status", ["draft", "open", "paid"])
+            .order("created_at", desc=True)
+            .limit(5)
+        )
+        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        result = query.execute()
+        for row in result.data or []:
+            if row.get("stripe_payment_intent_id"):
+                continue
+            if int(row.get("amount_remaining_cents") or 0) in {0, amount_cents}:
+                return row
         return None
 
     def _find_payment_by_charge(self, account_id: Optional[str], charge_id: Optional[str]) -> Optional[dict[str, Any]]:

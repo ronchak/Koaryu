@@ -420,6 +420,52 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(service.supabase.tables["billing_payments"][0]["status"], "succeeded")
         self.assertEqual(service.supabase.tables["billing_payments"][0]["processed_at"], "2026-04-28T00:00:00Z")
 
+    def test_payment_intent_without_invoice_id_matches_open_invoice_by_customer_amount(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_payments": [],
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+                "status": "open",
+                "amount_due_cents": 50,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 50,
+                "currency": "usd",
+                "application_fee_amount_cents": 0,
+                "created_at": "2026-05-18T19:00:00Z",
+            }],
+            "billing_disputes": [],
+            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
+        })
+
+        service._project_payment_intent({
+            "id": "pi_1",
+            "status": "succeeded",
+            "amount": 50,
+            "amount_received": 50,
+            "currency": "usd",
+            "customer": "cus_1",
+            "latest_charge": "ch_1",
+            "payment_method_types": ["card"],
+            "metadata": {},
+        }, "acct_1", "payment_intent.succeeded")
+
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        self.assertEqual(payment["invoice_id"], "invoice_1")
+        self.assertEqual(payment["stripe_invoice_id"], "in_1")
+        self.assertEqual(payment["stripe_payment_intent_id"], "pi_1")
+        self.assertEqual(payment["stripe_charge_id"], "ch_1")
+        self.assertEqual(payment["status"], "succeeded")
+        self.assertEqual(invoice["status"], "paid")
+        self.assertEqual(invoice["stripe_payment_intent_id"], "pi_1")
+        self.assertEqual(invoice["amount_paid_cents"], 50)
+
     def test_stale_invoice_event_is_ignored(self):
         service = self.service()
         service.supabase = _FakeSupabase({
