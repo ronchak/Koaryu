@@ -238,6 +238,21 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(projection["amount_remaining_cents"], 0)
         self.assertEqual(projection["application_fee_amount_cents"], 0)
 
+    def test_invoice_projection_does_not_clear_missing_application_fee(self):
+        service = self.service()
+
+        projection = service._invoice_projection({
+            "id": "in_123",
+            "status": "paid",
+            "amount_due": 200,
+            "amount_paid": 200,
+            "amount_remaining": 0,
+            "currency": "usd",
+            "application_fee_amount": None,
+        }, "acct_123")
+
+        self.assertNotIn("application_fee_amount_cents", projection)
+
     def test_non_card_payment_method_summary_uses_method_type(self):
         service = self.service()
 
@@ -448,6 +463,7 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
             "status": "succeeded",
             "amount": 50,
             "amount_received": 50,
+            "application_fee_amount": 1,
             "currency": "usd",
             "customer": "cus_1",
             "latest_charge": "ch_1",
@@ -462,8 +478,10 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(payment["stripe_payment_intent_id"], "pi_1")
         self.assertEqual(payment["stripe_charge_id"], "ch_1")
         self.assertEqual(payment["status"], "succeeded")
+        self.assertEqual(payment["application_fee_amount_cents"], 1)
         self.assertEqual(invoice["status"], "paid")
         self.assertEqual(invoice["stripe_payment_intent_id"], "pi_1")
+        self.assertEqual(invoice["application_fee_amount_cents"], 1)
         self.assertEqual(invoice["amount_paid_cents"], 50)
 
     def test_stale_invoice_event_is_ignored(self):

@@ -1637,7 +1637,11 @@ class BillingService:
             "receipt_url": _object_get(charge, "receipt_url"),
             "failure_code": _object_get(_object_get(intent, "last_payment_error"), "code"),
             "failure_message": _object_get(_object_get(intent, "last_payment_error"), "message"),
-            "application_fee_amount_cents": int((local_invoice or {}).get("application_fee_amount_cents") or 0),
+            "application_fee_amount_cents": int(
+                intent.get("application_fee_amount")
+                if intent.get("application_fee_amount") is not None
+                else (local_invoice or {}).get("application_fee_amount_cents") or 0
+            ),
             "processed_at": datetime.now(timezone.utc).isoformat() if status_value == "succeeded" else None,
         }
         existing = (
@@ -1670,6 +1674,7 @@ class BillingService:
                     "amount_paid_cents": max(int(local_invoice.get("amount_paid_cents") or 0), row["amount_cents"]),
                     "amount_remaining_cents": 0,
                     "stripe_payment_intent_id": _stripe_id(intent),
+                    "application_fee_amount_cents": row["application_fee_amount_cents"],
                     "paid_at": datetime.now(timezone.utc).isoformat(),
                 })
             self.supabase.table("billing_invoices").update(update).eq("id", local_invoice["id"]).execute()
@@ -1881,12 +1886,11 @@ class BillingService:
         amount_due = int(_object_get(invoice, "amount_due") or 0)
         amount_paid = int(_object_get(invoice, "amount_paid") or 0)
         amount_remaining = int(_object_get(invoice, "amount_remaining") or 0)
-        application_fee_amount = int(_object_get(invoice, "application_fee_amount") or 0)
+        application_fee_amount = _object_get(invoice, "application_fee_amount")
         if _object_get(invoice, "paid_out_of_band"):
             amount_paid = amount_due
             amount_remaining = 0
-            application_fee_amount = 0
-        return {
+        projection = {
             "stripe_invoice_id": invoice_id,
             "stripe_account_id": account_id,
             "stripe_customer_id": _stripe_id(_object_get(invoice, "customer")),
@@ -1906,8 +1910,12 @@ class BillingService:
             "voided_at": self._timestamp(_object_get(_object_get(invoice, "status_transitions") or {}, "voided_at")),
             "collection_method": _object_get(invoice, "collection_method"),
             "last_payment_error": last_error,
-            "application_fee_amount_cents": application_fee_amount,
         }
+        if _object_get(invoice, "paid_out_of_band"):
+            projection["application_fee_amount_cents"] = 0
+        elif application_fee_amount is not None:
+            projection["application_fee_amount_cents"] = int(application_fee_amount)
+        return projection
 
     def _project_payment_from_invoice(self, invoice: dict[str, Any], account_id: Optional[str], local_invoice: dict[str, Any]) -> None:
         payment_intent_id = _stripe_id(invoice.get("payment_intent"))
