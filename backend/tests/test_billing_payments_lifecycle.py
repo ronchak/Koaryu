@@ -59,7 +59,7 @@ class _FakeQuery:
         return self
 
     def eq(self, key, value):
-        self.filters.append(lambda row, key=key, value=value: row.get(key) == value)
+        self.filters.append(lambda row, key=key, value=value: self._value_for_key(row, key) == value)
         return self
 
     def is_(self, key, value):
@@ -84,6 +84,23 @@ class _FakeQuery:
     def not_(self):
         self.negate_next_is = True
         return self
+
+    def _value_for_key(self, row, key):
+        if "->" not in key:
+            return row.get(key)
+        value = row
+        parts = key.split("->")
+        for index, part in enumerate(parts):
+            text_value = part.startswith(">")
+            if text_value:
+                part = part[1:]
+            if isinstance(value, dict):
+                value = value.get(part)
+            else:
+                return None
+            if text_value or index == len(parts) - 1:
+                return str(value) if value is not None and text_value else value
+        return value
 
     def execute(self):
         matched = [row for row in self.rows if all(match(row) for match in self.filters)]
@@ -1765,6 +1782,136 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(response.status, "open")
         self.assertEqual(service.supabase.tables["billing_invoices"][0]["amount_due_cents"], 123)
         self.assertEqual(service.supabase.tables["billing_payers"][0]["balance_cents"], 123)
+
+    def test_reconcile_invoice_falls_back_to_stored_subscription_webhook_shape(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_existing",
+                "payer_id": "payer_1",
+                "student_id": None,
+                "enrollment_id": None,
+                "invoice_type": "manual",
+                "status": "paid",
+                "amount_due_cents": 0,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 0,
+                "currency": "usd",
+            }],
+            "billing_subscriptions": [{
+                "id": "subscription_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_existing",
+                "stripe_subscription_id": "sub_1",
+                "current_period_start": None,
+                "current_period_end": None,
+            }],
+            "student_billing_enrollments": [{
+                "id": "enrollment_1",
+                "studio_id": "studio_1",
+                "student_id": "student_1",
+                "stripe_subscription_item_id": "si_1",
+            }],
+            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1", "billing_status": "current", "balance_cents": 0}],
+            "billing_payments": [],
+            "stripe_events": [{
+                "stripe_account_id": "acct_existing",
+                "type": "invoice.paid",
+                "created_at": "2026-05-18T21:37:49+00:00",
+                "payload": {"data": {"object": {
+                    "id": "in_1",
+                    "status": "paid",
+                    "amount_due": 200,
+                    "amount_paid": 200,
+                    "amount_remaining": 0,
+                    "currency": "usd",
+                    "customer": "cus_1",
+                    "metadata": {},
+                    "parent": {
+                        "type": "subscription_details",
+                        "subscription_details": {
+                            "subscription": "sub_1",
+                            "metadata": {
+                                "studio_id": "studio_1",
+                                "payer_id": "payer_1",
+                                "billing_subscription_id": "subscription_1",
+                                "product": "koaryu_payments",
+                            },
+                        },
+                    },
+                    "lines": {"data": [{
+                        "metadata": {
+                            "studio_id": "studio_1",
+                            "payer_id": "payer_1",
+                            "billing_subscription_id": "subscription_1",
+                            "product": "koaryu_payments",
+                        },
+                        "parent": {
+                            "type": "subscription_item_details",
+                            "subscription_item_details": {
+                                "subscription": "sub_1",
+                                "subscription_item": "si_1",
+                                "proration": False,
+                            },
+                        },
+                        "period": {"start": 1779140262, "end": 1781818662},
+                    }]},
+                    "created": 300,
+                }}},
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_existing",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        _FakeStripeService.invoice_response = {
+            "id": "in_1",
+            "status": "paid",
+            "amount_due": 200,
+            "amount_paid": 200,
+            "amount_remaining": 0,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {},
+            "created": 300,
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            response = asyncio.run(service.reconcile_stripe_object(
+                BillingReconcileRequest(object_type="invoice", stripe_object_id="in_1"),
+                "studio_1",
+                "user_1",
+            ))
+
+        invoice = service.supabase.tables["billing_invoices"][0]
+        subscription = service.supabase.tables["billing_subscriptions"][0]
+        self.assertEqual(response.local_object_id, "invoice_1")
+        self.assertEqual(invoice["stripe_subscription_id"], "sub_1")
+        self.assertEqual(invoice["status"], "paid")
+        self.assertEqual(invoice["amount_paid_cents"], 200)
+        self.assertEqual(invoice["invoice_type"], "tuition")
+        self.assertEqual(invoice["student_id"], "student_1")
+        self.assertEqual(invoice["enrollment_id"], "enrollment_1")
+        self.assertEqual(subscription["current_period_start"], "2026-05-18T21:37:42+00:00")
+        self.assertEqual(subscription["current_period_end"], "2026-06-18T21:37:42+00:00")
 
     def test_connect_reset_clears_stale_account_when_no_stripe_history_exists(self):
         service = self.service()

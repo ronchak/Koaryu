@@ -320,6 +320,13 @@ class BillingService:
                 expand=["payment_intent"],
             )
             invoice = self._stripe_object_to_dict(stripe_invoice)
+            stored_invoice = self._stored_stripe_event_object(
+                account_id,
+                data.stripe_object_id,
+                ["invoice.paid", "invoice.finalized", "invoice.created"],
+            )
+            if stored_invoice and self._invoice_subscription_id(stored_invoice) and not self._invoice_subscription_id(invoice):
+                invoice = self._merge_invoice_identity_from_stored_event(invoice, stored_invoice)
             event_type = "invoice.paid" if invoice.get("status") == "paid" else "invoice.finalized"
             self._project_invoice_event(invoice, account_id, event_type, event_created=invoice.get("created"))
             local = self._find_invoice_for_stripe(invoice, account_id)
@@ -2001,6 +2008,16 @@ class BillingService:
         merged.update(_object_get(invoice, "metadata") or {})
         return merged
 
+    def _merge_invoice_identity_from_stored_event(self, invoice: dict[str, Any], stored_invoice: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(invoice)
+        if not self._invoice_parent_subscription_details(merged) and self._invoice_parent_subscription_details(stored_invoice):
+            merged["parent"] = stored_invoice.get("parent")
+        if not self._invoice_lines(merged) and self._invoice_lines(stored_invoice):
+            merged["lines"] = stored_invoice.get("lines")
+        if not (merged.get("metadata") or {}) and (stored_invoice.get("metadata") or {}):
+            merged["metadata"] = stored_invoice.get("metadata")
+        return merged
+
     def _invoice_parent_subscription_details(self, invoice: Any) -> dict[str, Any]:
         parent = _object_get(invoice, "parent") or {}
         if _object_get(parent, "type") != "subscription_details":
@@ -2339,6 +2356,32 @@ class BillingService:
         if hasattr(value, "to_dict"):
             return value.to_dict()
         return dict(value)
+
+    def _stored_stripe_event_object(
+        self,
+        account_id: Optional[str],
+        object_id: str,
+        event_types: list[str],
+    ) -> Optional[dict[str, Any]]:
+        try:
+            query = (
+                self.supabase.table("stripe_events")
+                .select("payload, type, created_at")
+                .eq("payload->data->object->>id", object_id)
+                .in_("type", event_types)
+                .order("created_at", desc=True)
+                .limit(10)
+            )
+            query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+            result = query.execute()
+        except Exception:
+            return None
+        for row in result.data or []:
+            payload = row.get("payload") or {}
+            data_object = ((payload.get("data") or {}).get("object") or {})
+            if _stripe_id(data_object) == object_id:
+                return data_object
+        return None
 
     def _find_subscription_for_stripe(self, subscription: dict[str, Any], account_id: Optional[str]) -> Optional[dict[str, Any]]:
         metadata = subscription.get("metadata") or {}
