@@ -1605,7 +1605,8 @@ class BillingService:
         event_created: Optional[int] = None,
     ) -> None:
         local = self._find_invoice_for_stripe(invoice, account_id)
-        studio_id = (invoice.get("metadata") or {}).get("studio_id") or (local or {}).get("studio_id")
+        metadata = self._invoice_metadata(invoice)
+        studio_id = metadata.get("studio_id") or (local or {}).get("studio_id")
         if not studio_id:
             account = self._payment_account_by_stripe_account(account_id)
             studio_id = account.get("studio_id") if account else None
@@ -1619,13 +1620,16 @@ class BillingService:
                 local = self._update_invoice_last_event(local, studio_id, event_created)
         else:
             local = self._insert_invoice_from_stripe(studio_id, invoice, account_id, event_created)
+        self._update_subscription_period_from_invoice(studio_id, invoice, account_id)
         if event_type == "invoice.paid":
             self._project_payment_from_invoice(invoice, account_id, local)
+            self._link_orphan_payment_to_invoice(invoice, account_id, local)
         if local.get("payer_id"):
             self._recompute_payer_balance(studio_id, local.get("payer_id"))
 
     def _project_payment_intent(self, intent: dict[str, Any], account_id: Optional[str], event_type: str) -> None:
         metadata = intent.get("metadata") or {}
+        customer_id = _stripe_id(intent.get("customer"))
         invoice_id = _stripe_id(intent.get("invoice")) or metadata.get("invoice_id")
         local_invoice = self._find_invoice_by_payment_intent_or_invoice(
             account_id,
@@ -1635,22 +1639,28 @@ class BillingService:
         if not local_invoice and not invoice_id:
             local_invoice = self._find_invoice_by_customer_amount(
                 account_id,
-                _stripe_id(intent.get("customer")),
+                customer_id,
                 int(intent.get("amount_received") or intent.get("amount") or 0),
                 intent.get("currency") or "usd",
             )
             invoice_id = (local_invoice or {}).get("stripe_invoice_id")
         studio_id = metadata.get("studio_id") or (local_invoice or {}).get("studio_id")
         if not studio_id:
+            account = self._payment_account_by_stripe_account(account_id)
+            studio_id = account.get("studio_id") if account else None
+        if not studio_id:
+            return
+        payer_id = metadata.get("payer_id") or (local_invoice or {}).get("payer_id") or self._payer_id_for_customer(studio_id, account_id, customer_id)
+        if not payer_id and not local_invoice and metadata.get("product") != "koaryu_payments":
             return
         status_value = "processing" if event_type == "payment_intent.processing" else ("succeeded" if event_type == "payment_intent.succeeded" else "failed")
         charge = self._latest_charge(intent)
         charge_id = _stripe_id(charge)
         row = {
             "studio_id": studio_id,
-            "payer_id": metadata.get("payer_id") or (local_invoice or {}).get("payer_id"),
+            "payer_id": payer_id,
             "invoice_id": (local_invoice or {}).get("id"),
-            "stripe_customer_id": _stripe_id(intent.get("customer")),
+            "stripe_customer_id": customer_id,
             "stripe_invoice_id": invoice_id,
             "stripe_payment_intent_id": _stripe_id(intent),
             "stripe_charge_id": charge_id,
@@ -1845,6 +1855,7 @@ class BillingService:
         if local and self._is_stale_stripe_event(local, event_created):
             return local
         status_value = "canceled" if event_type == "customer.subscription.deleted" else subscription.get("status", "active")
+        period_start, period_end = self._subscription_period_bounds(subscription)
         update = {
             "studio_id": studio_id,
             "payer_id": payer_id,
@@ -1852,8 +1863,8 @@ class BillingService:
             "stripe_customer_id": _stripe_id(subscription.get("customer")),
             "stripe_subscription_id": _stripe_id(subscription),
             "status": status_value,
-            "current_period_start": self._timestamp(subscription.get("current_period_start")),
-            "current_period_end": self._timestamp(subscription.get("current_period_end")),
+            "current_period_start": self._timestamp(period_start) or (local or {}).get("current_period_start"),
+            "current_period_end": self._timestamp(period_end) or (local or {}).get("current_period_end"),
             "cancel_at_period_end": bool(subscription.get("cancel_at_period_end")),
             "application_fee_percent": subscription.get("application_fee_percent"),
             "last_stripe_event_created": event_created,
@@ -1880,6 +1891,12 @@ class BillingService:
         account_id: Optional[str],
     ) -> dict[str, Any]:
         update = self._invoice_projection(invoice, account_id)
+        current_rows = self.supabase.table("billing_invoices").select("*").eq("id", invoice_id).eq("studio_id", studio_id).limit(1).execute()
+        current = current_rows.data[0] if current_rows.data else {}
+        for stable_field in ("stripe_payment_intent_id", "stripe_subscription_id"):
+            if update.get(stable_field) is None and current.get(stable_field):
+                update[stable_field] = current[stable_field]
+        update.update(self._invoice_identity_projection(studio_id, invoice, account_id, current=current))
         result = (
             self.supabase.table("billing_invoices")
             .update(update)
@@ -1896,17 +1913,18 @@ class BillingService:
         account_id: Optional[str],
         event_created: Optional[int] = None,
     ) -> dict[str, Any]:
-        metadata = invoice.get("metadata") or {}
+        metadata = self._invoice_metadata(invoice)
         row = {
             "studio_id": studio_id,
-            "payer_id": metadata.get("payer_id") or self._payer_id_for_customer(studio_id, account_id, _stripe_id(invoice.get("customer"))),
-            "student_id": metadata.get("student_id") or None,
-            "enrollment_id": metadata.get("enrollment_id") or None,
-            "invoice_type": metadata.get("invoice_type") or ("tuition" if invoice.get("subscription") else "manual"),
+            "payer_id": None,
+            "student_id": None,
+            "enrollment_id": None,
+            "invoice_type": metadata.get("invoice_type") or "manual",
             "external": False,
             "last_stripe_event_created": event_created,
             **self._invoice_projection(invoice, account_id),
         }
+        row.update(self._invoice_identity_projection(studio_id, invoice, account_id))
         result = self.supabase.table("billing_invoices").insert(row).execute()
         return result.data[0] if result.data else row
 
@@ -1928,7 +1946,7 @@ class BillingService:
             "stripe_invoice_id": invoice_id,
             "stripe_account_id": account_id,
             "stripe_customer_id": _stripe_id(_object_get(invoice, "customer")),
-            "stripe_subscription_id": _stripe_id(_object_get(invoice, "subscription")),
+            "stripe_subscription_id": self._invoice_subscription_id(invoice),
             "stripe_payment_intent_id": _stripe_id(payment_intent),
             "invoice_number": _object_get(invoice, "number"),
             "status": self._local_invoice_status(status_value),
@@ -1973,8 +1991,192 @@ class BillingService:
             }
         self._project_payment_intent(intent if isinstance(intent, dict) else intent.to_dict_recursive(), account_id, "payment_intent.succeeded")
 
+    def _invoice_metadata(self, invoice: Any) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        parent_details = self._invoice_parent_subscription_details(invoice)
+        merged.update(_object_get(parent_details, "metadata") or {})
+        single_line = self._single_invoice_line(invoice)
+        if single_line:
+            merged.update(_object_get(single_line, "metadata") or {})
+        merged.update(_object_get(invoice, "metadata") or {})
+        return merged
+
+    def _invoice_parent_subscription_details(self, invoice: Any) -> dict[str, Any]:
+        parent = _object_get(invoice, "parent") or {}
+        if _object_get(parent, "type") != "subscription_details":
+            return {}
+        return _object_get(parent, "subscription_details") or {}
+
+    def _invoice_subscription_id(self, invoice: Any) -> Optional[str]:
+        direct = _stripe_id(_object_get(invoice, "subscription"))
+        if direct:
+            return direct
+        parent_details = self._invoice_parent_subscription_details(invoice)
+        parent_subscription = _stripe_id(_object_get(parent_details, "subscription"))
+        if parent_subscription:
+            return parent_subscription
+        line_subscriptions = {
+            _stripe_id(_object_get(_object_get(_object_get(line, "parent") or {}, "subscription_item_details") or {}, "subscription"))
+            or _stripe_id(_object_get(line, "subscription"))
+            for line in self._invoice_lines(invoice)
+        }
+        line_subscriptions.discard(None)
+        return next(iter(line_subscriptions)) if len(line_subscriptions) == 1 else None
+
+    def _invoice_subscription_item_id(self, invoice: Any) -> Optional[str]:
+        line_items = {
+            _stripe_id(_object_get(_object_get(_object_get(line, "parent") or {}, "subscription_item_details") or {}, "subscription_item"))
+            or _stripe_id(_object_get(line, "subscription_item"))
+            for line in self._invoice_lines(invoice)
+        }
+        line_items.discard(None)
+        return next(iter(line_items)) if len(line_items) == 1 else None
+
+    def _invoice_line_period_bounds(self, invoice: Any) -> tuple[Optional[Any], Optional[Any]]:
+        period_pairs: set[tuple[Any, Any]] = set()
+        for line in self._invoice_lines(invoice):
+            if _object_get(line, "proration"):
+                continue
+            period = _object_get(line, "period") or {}
+            start = _object_get(period, "start")
+            end = _object_get(period, "end")
+            if start and end:
+                period_pairs.add((start, end))
+        if len(period_pairs) != 1:
+            return None, None
+        return next(iter(period_pairs))
+
+    def _invoice_lines(self, invoice: Any) -> list[Any]:
+        lines = _object_get(invoice, "lines") or {}
+        return list(_object_get(lines, "data") or [])
+
+    def _single_invoice_line(self, invoice: Any) -> Optional[Any]:
+        lines = self._invoice_lines(invoice)
+        return lines[0] if len(lines) == 1 else None
+
+    def _subscription_period_bounds(self, subscription: dict[str, Any]) -> tuple[Optional[Any], Optional[Any]]:
+        start = subscription.get("current_period_start")
+        end = subscription.get("current_period_end")
+        if start and end:
+            return start, end
+        item_starts: list[Any] = []
+        item_ends: list[Any] = []
+        for item in ((subscription.get("items") or {}).get("data") or []):
+            item_start = item.get("current_period_start")
+            item_end = item.get("current_period_end")
+            if item_start:
+                item_starts.append(item_start)
+            if item_end:
+                item_ends.append(item_end)
+        return (start or (min(item_starts) if item_starts else None), end or (max(item_ends) if item_ends else None))
+
+    def _invoice_identity_projection(
+        self,
+        studio_id: str,
+        invoice: Any,
+        account_id: Optional[str],
+        *,
+        current: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        current = current or {}
+        metadata = self._invoice_metadata(invoice)
+        enrollment = self._invoice_enrollment(studio_id, invoice)
+        subscription_id = self._invoice_subscription_id(invoice)
+        projection: dict[str, Any] = {}
+        payer_id = metadata.get("payer_id") or current.get("payer_id") or self._payer_id_for_customer(studio_id, account_id, _stripe_id(_object_get(invoice, "customer")))
+        enrollment_id = metadata.get("enrollment_id") or (enrollment or {}).get("id")
+        student_id = metadata.get("student_id") or (enrollment or {}).get("student_id")
+        invoice_type = metadata.get("invoice_type") or ("tuition" if subscription_id else None)
+        if payer_id and not current.get("payer_id"):
+            projection["payer_id"] = payer_id
+        if enrollment_id and not current.get("enrollment_id"):
+            projection["enrollment_id"] = enrollment_id
+        if student_id and not current.get("student_id"):
+            projection["student_id"] = student_id
+        if invoice_type and (not current.get("invoice_type") or current.get("invoice_type") == "manual"):
+            projection["invoice_type"] = invoice_type
+        return projection
+
+    def _invoice_enrollment(self, studio_id: str, invoice: Any) -> Optional[dict[str, Any]]:
+        item_id = self._invoice_subscription_item_id(invoice)
+        if not item_id:
+            return None
+        result = (
+            self.supabase.table("student_billing_enrollments")
+            .select("id, student_id")
+            .eq("studio_id", studio_id)
+            .eq("stripe_subscription_item_id", item_id)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    def _update_subscription_period_from_invoice(self, studio_id: str, invoice: Any, account_id: Optional[str]) -> None:
+        subscription_id = self._invoice_subscription_id(invoice)
+        if not subscription_id:
+            return
+        period_start, period_end = self._invoice_line_period_bounds(invoice)
+        if not period_start and not period_end:
+            return
+        query = (
+            self.supabase.table("billing_subscriptions")
+            .select("*")
+            .eq("studio_id", studio_id)
+            .eq("stripe_subscription_id", subscription_id)
+            .limit(1)
+        )
+        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        result = query.execute()
+        if not result.data:
+            return
+        current = result.data[0]
+        update: dict[str, Any] = {}
+        current_end = self._epoch_seconds(current.get("current_period_end"))
+        incoming_end = self._epoch_seconds(period_end)
+        should_update = not current.get("current_period_end") or (
+            incoming_end is not None and (current_end is None or incoming_end >= current_end)
+        )
+        if period_start and should_update:
+            update["current_period_start"] = self._timestamp(period_start)
+        if period_end and should_update:
+            update["current_period_end"] = self._timestamp(period_end)
+        if update:
+            self.supabase.table("billing_subscriptions").update(update).eq("id", current["id"]).execute()
+
+    def _link_orphan_payment_to_invoice(self, invoice: dict[str, Any], account_id: Optional[str], local_invoice: dict[str, Any]) -> None:
+        if not local_invoice or not local_invoice.get("id"):
+            return
+        payment_intent_id = _stripe_id(invoice.get("payment_intent"))
+        payment = self._find_payment_by_intent(account_id, payment_intent_id) if payment_intent_id else None
+        if not payment:
+            payment = self._find_unlinked_payment_by_customer_amount(
+                account_id,
+                _stripe_id(invoice.get("customer")),
+                int(invoice.get("amount_paid") or invoice.get("amount_due") or 0),
+                invoice.get("currency") or "usd",
+            )
+        if not payment:
+            return
+        payment_update = {
+            "invoice_id": local_invoice["id"],
+            "stripe_invoice_id": local_invoice.get("stripe_invoice_id") or _stripe_id(invoice),
+        }
+        if local_invoice.get("payer_id") and not payment.get("payer_id"):
+            payment_update["payer_id"] = local_invoice["payer_id"]
+        self.supabase.table("billing_payments").update(payment_update).eq("id", payment["id"]).execute()
+        invoice_update: dict[str, Any] = {}
+        if payment.get("stripe_payment_intent_id") and not local_invoice.get("stripe_payment_intent_id"):
+            invoice_update["stripe_payment_intent_id"] = payment["stripe_payment_intent_id"]
+        existing_fee = local_invoice.get("application_fee_amount_cents")
+        payment_fee = payment.get("application_fee_amount_cents")
+        if payment_fee is not None and (int(payment_fee or 0) > 0 or existing_fee is None):
+            invoice_update["application_fee_amount_cents"] = int(payment.get("application_fee_amount_cents") or 0)
+        if invoice_update:
+            self.supabase.table("billing_invoices").update(invoice_update).eq("id", local_invoice["id"]).execute()
+            local_invoice.update(invoice_update)
+
     def _find_invoice_for_stripe(self, invoice: dict[str, Any], account_id: Optional[str]) -> Optional[dict[str, Any]]:
-        metadata = invoice.get("metadata") or {}
+        metadata = self._invoice_metadata(invoice)
         local_id = metadata.get("invoice_id")
         studio_id = metadata.get("studio_id")
         if local_id and studio_id:
@@ -2030,12 +2232,41 @@ class BillingService:
         )
         query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
         result = query.execute()
+        candidates = []
         for row in result.data or []:
             if row.get("stripe_payment_intent_id"):
                 continue
             if int(row.get("amount_remaining_cents") or 0) in {0, amount_cents}:
-                return row
-        return None
+                candidates.append(row)
+        return candidates[0] if len(candidates) == 1 else None
+
+    def _find_unlinked_payment_by_customer_amount(
+        self,
+        account_id: Optional[str],
+        customer_id: Optional[str],
+        amount_cents: int,
+        currency: str,
+    ) -> Optional[dict[str, Any]]:
+        if not customer_id or amount_cents <= 0:
+            return None
+        query = (
+            self.supabase.table("billing_payments")
+            .select("*")
+            .eq("stripe_customer_id", customer_id)
+            .eq("amount_cents", amount_cents)
+            .eq("currency", currency)
+            .in_("status", ["processing", "succeeded"])
+            .order("processed_at", desc=True)
+            .limit(5)
+        )
+        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        result = query.execute()
+        candidates = []
+        for row in result.data or []:
+            if row.get("invoice_id") or row.get("stripe_invoice_id"):
+                continue
+            candidates.append(row)
+        return candidates[0] if len(candidates) == 1 else None
 
     def _find_payment_by_charge(self, account_id: Optional[str], charge_id: Optional[str]) -> Optional[dict[str, Any]]:
         if not charge_id:
@@ -2486,6 +2717,22 @@ class BillingService:
         if isinstance(value, datetime):
             return value.isoformat()
         return str(value)
+
+    def _epoch_seconds(self, value: Any) -> Optional[float]:
+        if not value:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            try:
+                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
 
     def _date_from_epoch(self, value: Any) -> Optional[str]:
         if not value:
