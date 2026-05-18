@@ -62,6 +62,10 @@ class _FakeQuery:
         self.filters.append(lambda row, key=key, value=value: self._value_for_key(row, key) == value)
         return self
 
+    def neq(self, key, value):
+        self.filters.append(lambda row, key=key, value=value: self._value_for_key(row, key) != value)
+        return self
+
     def is_(self, key, value):
         if value == "null":
             if self.negate_next_is:
@@ -163,6 +167,9 @@ class _FakeStripeWithMismatchedAccount:
 class _FakeStripeService:
     onboarding_calls = []
     setup_calls = []
+    subscription_item_update_calls = []
+    subscription_item_delete_calls = []
+    subscription_cancel_calls = []
     retrieve_calls = []
     retrieve_account_response = None
     invoice_response = None
@@ -224,6 +231,18 @@ class _FakeStripeService:
     def create_setup_checkout_session(self, **payload):
         self.__class__.setup_calls.append(payload)
         return {"url": "https://checkout.stripe.test/setup"}
+
+    def update_connected_subscription_item(self, **payload):
+        self.__class__.subscription_item_update_calls.append(payload)
+        return {"id": payload["subscription_item_id"]}
+
+    def delete_connected_subscription_item(self, **payload):
+        self.__class__.subscription_item_delete_calls.append(payload)
+        return {"id": payload["subscription_item_id"], "deleted": True}
+
+    def cancel_connected_subscription(self, **payload):
+        self.__class__.subscription_cancel_calls.append(payload)
+        return {"id": payload["subscription_id"], "status": "canceled"}
 
     def update_connected_customer(self, **_payload):
         return {"id": _payload["customer_id"]}
@@ -1354,6 +1373,126 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("accepted autopay terms", context.exception.detail)
+
+    def test_cancel_last_subscription_enrollment_cancels_subscription_without_deleting_last_item(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+            }],
+            "student_billing_enrollments": [{
+                "id": "enrollment_1",
+                "studio_id": "studio_1",
+                "student_id": "student_1",
+                "payer_id": "payer_1",
+                "billing_plan_id": "plan_1",
+                "billing_subscription_id": "subscription_1",
+                "stripe_subscription_id": "sub_1",
+                "stripe_subscription_item_id": "si_1",
+                "collection_mode": "autopay",
+                "status": "active",
+                "billing_status": "current",
+                "start_date": "2026-05-18",
+                "created_at": "2026-05-18T00:00:00Z",
+                "updated_at": "2026-05-18T00:00:00Z",
+            }],
+            "billing_subscriptions": [{
+                "id": "subscription_1",
+                "studio_id": "studio_1",
+                "status": "active",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.subscription_cancel_calls = []
+        _FakeStripeService.subscription_item_delete_calls = []
+        _FakeStripeService.subscription_item_update_calls = []
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            response = asyncio.run(service.set_enrollment_status(
+                "enrollment_1",
+                "canceled",
+                "studio_1",
+                "user_1",
+            ))
+
+        self.assertEqual(response.status, "canceled")
+        self.assertIsNone(service.supabase.tables["student_billing_enrollments"][0]["stripe_subscription_item_id"])
+        self.assertEqual(service.supabase.tables["billing_subscriptions"][0]["status"], "canceled")
+        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [{
+            "account_id": "acct_1",
+            "subscription_id": "sub_1",
+        }])
+        self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [])
+        self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])
+
+    def test_cancel_one_of_multiple_subscription_enrollments_deletes_only_that_item(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+            }],
+            "student_billing_enrollments": [
+                {
+                    "id": "enrollment_1",
+                    "studio_id": "studio_1",
+                    "student_id": "student_1",
+                    "payer_id": "payer_1",
+                    "billing_plan_id": "plan_1",
+                    "billing_subscription_id": "subscription_1",
+                    "stripe_subscription_id": "sub_1",
+                    "stripe_subscription_item_id": "si_1",
+                    "collection_mode": "autopay",
+                    "status": "active",
+                    "billing_status": "current",
+                    "start_date": "2026-05-18",
+                    "created_at": "2026-05-18T00:00:00Z",
+                    "updated_at": "2026-05-18T00:00:00Z",
+                },
+                {
+                    "id": "enrollment_2",
+                    "studio_id": "studio_1",
+                    "student_id": "student_2",
+                    "payer_id": "payer_1",
+                    "billing_plan_id": "plan_2",
+                    "billing_subscription_id": "subscription_1",
+                    "stripe_subscription_id": "sub_1",
+                    "stripe_subscription_item_id": "si_2",
+                    "collection_mode": "autopay",
+                    "status": "active",
+                    "billing_status": "current",
+                    "start_date": "2026-05-18",
+                    "created_at": "2026-05-18T00:00:00Z",
+                    "updated_at": "2026-05-18T00:00:00Z",
+                },
+            ],
+            "billing_subscriptions": [{
+                "id": "subscription_1",
+                "studio_id": "studio_1",
+                "status": "active",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.subscription_cancel_calls = []
+        _FakeStripeService.subscription_item_delete_calls = []
+        _FakeStripeService.subscription_item_update_calls = []
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            response = asyncio.run(service.set_enrollment_status(
+                "enrollment_1",
+                "canceled",
+                "studio_1",
+                "user_1",
+            ))
+
+        self.assertEqual(response.status, "canceled")
+        self.assertEqual(service.supabase.tables["billing_subscriptions"][0]["status"], "active")
+        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
+        self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [{
+            "account_id": "acct_1",
+            "subscription_item_id": "si_1",
+        }])
 
     def test_stale_invoice_event_is_ignored(self):
         service = self.service()

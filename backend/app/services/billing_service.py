@@ -1443,26 +1443,10 @@ class BillingService:
     def _detach_enrollment_from_subscription(self, enrollment: dict[str, Any]) -> None:
         item_id = enrollment.get("stripe_subscription_item_id")
         subscription_id = enrollment.get("stripe_subscription_id")
-        if item_id and subscription_id:
-            account_id = self._stripe_account_for_studio(enrollment["studio_id"])
-            if account_id:
-                remaining_same_item = self._active_enrollment_count_for_subscription_item(
-                    enrollment["studio_id"],
-                    enrollment.get("billing_subscription_id"),
-                    item_id,
-                    exclude_enrollment_id=enrollment["id"],
-                )
-                if remaining_same_item:
-                    StripeService().update_connected_subscription_item(
-                        account_id=account_id,
-                        subscription_item_id=item_id,
-                        quantity=remaining_same_item,
-                        proration_behavior="none",
-                    )
-                else:
-                    StripeService().delete_connected_subscription_item(account_id=account_id, subscription_item_id=item_id)
+        account_id = self._stripe_account_for_studio(enrollment["studio_id"]) if subscription_id else None
+        remaining = []
         if enrollment.get("billing_subscription_id"):
-            remaining = (
+            result = (
                 self.supabase.table("student_billing_enrollments")
                 .select("id")
                 .eq("studio_id", enrollment["studio_id"])
@@ -1471,11 +1455,29 @@ class BillingService:
                 .in_("status", ["pending", "active"])
                 .execute()
             )
-            if not remaining.data and subscription_id:
-                account_id = self._stripe_account_for_studio(enrollment["studio_id"])
-                if account_id:
-                    StripeService().cancel_connected_subscription(account_id=account_id, subscription_id=subscription_id)
+            remaining = result.data or []
+        if not remaining and subscription_id:
+            if account_id:
+                StripeService().cancel_connected_subscription(account_id=account_id, subscription_id=subscription_id)
+            if enrollment.get("billing_subscription_id"):
                 self.supabase.table("billing_subscriptions").update({"status": "canceled"}).eq("id", enrollment["billing_subscription_id"]).execute()
+            return
+        if item_id and subscription_id and account_id:
+            remaining_same_item = self._active_enrollment_count_for_subscription_item(
+                enrollment["studio_id"],
+                enrollment.get("billing_subscription_id"),
+                item_id,
+                exclude_enrollment_id=enrollment["id"],
+            )
+            if remaining_same_item:
+                StripeService().update_connected_subscription_item(
+                    account_id=account_id,
+                    subscription_item_id=item_id,
+                    quantity=remaining_same_item,
+                    proration_behavior="none",
+                )
+            else:
+                StripeService().delete_connected_subscription_item(account_id=account_id, subscription_item_id=item_id)
 
     def _create_paid_in_full_invoice(self, enrollment: dict[str, Any], plan: dict[str, Any], payer: dict[str, Any], account: dict[str, Any]) -> None:
         invoice = BillingInvoiceCreate(
