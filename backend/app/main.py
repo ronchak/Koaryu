@@ -41,6 +41,6 @@ async def root():
     return {"name": "Koaryu API", "version": "1.0.0"}
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def root_health():
     return {"status": "ok", "version": "1.0.0", "service": "koaryu-api"}
