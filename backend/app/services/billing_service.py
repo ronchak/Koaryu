@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -563,6 +564,8 @@ class BillingService:
         studio_id: str,
         actor_id: str,
     ) -> BillingLinkResponse:
+        if not data.terms_accepted:
+            raise HTTPException(status_code=400, detail="Autopay setup requires accepted autopay terms.")
         payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
         account = self._ensure_connect_ready(studio_id)
         payer = self._sync_payer_customer(payer, account)
@@ -577,8 +580,8 @@ class BillingService:
         link = StripeService().create_setup_checkout_session(
             account_id=account["stripe_connected_account_id"],
             customer_id=payer["stripe_customer_id"],
-            success_url=data.success_url or data.return_url or f"{frontend_url}/billing?autopay=success",
-            cancel_url=data.cancel_url or data.return_url or f"{frontend_url}/billing?autopay=cancelled",
+            success_url=self._safe_redirect_url(data.success_url or data.return_url, f"{frontend_url}/billing?autopay=success"),
+            cancel_url=self._safe_redirect_url(data.cancel_url or data.return_url, f"{frontend_url}/billing?autopay=cancelled"),
             metadata={
                 "studio_id": studio_id,
                 "payer_id": payer_id,
@@ -772,6 +775,8 @@ class BillingService:
         payer = self._sync_payer_customer(payer, account)
         if data.collection_mode == "autopay" and not payer.get("default_payment_method_id"):
             raise HTTPException(status_code=409, detail="Autopay requires a saved payer payment method.")
+        if data.collection_mode == "autopay" and not self._payer_autopay_authorized(payer):
+            raise HTTPException(status_code=409, detail="Autopay requires accepted autopay terms before charging this payer.")
 
         if not data.items and not data.amount_cents:
             raise HTTPException(status_code=400, detail="Invoice needs at least one line item or amount.")
@@ -1256,8 +1261,7 @@ class BillingService:
             **payment_fields,
         }
         if payment_fields.get("default_payment_method_id") and payer.get("autopay_status") in {"not_configured", "pending"}:
-            update["autopay_status"] = "enabled"
-            update["autopay_authorized_at"] = datetime.now(timezone.utc).isoformat()
+            update["billing_status"] = "current"
         result = (
             self.supabase.table("billing_payers")
             .update(update)
@@ -1278,6 +1282,10 @@ class BillingService:
         )
         if enrollment.get("collection_mode") == "autopay" and not payer.get("default_payment_method_id"):
             raise HTTPException(status_code=409, detail="Autopay requires a saved payer payment method.")
+        if enrollment.get("collection_mode") == "autopay" and (
+            not self._payer_autopay_authorized(payer)
+        ):
+            raise HTTPException(status_code=409, detail="Autopay requires accepted autopay terms before enrollment.")
         if plan.get("billing_interval") == "paid_in_full":
             self._create_paid_in_full_invoice(enrollment, plan, payer, account)
             return self._update_enrollment(enrollment["id"], studio_id, {"billing_status": "upcoming"})
@@ -1542,6 +1550,7 @@ class BillingService:
             return
         setup_intent_id = _stripe_id(session.get("setup_intent"))
         customer_id = _stripe_id(session.get("customer"))
+        payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
         payment_fields: dict[str, Any] = {}
         if setup_intent_id and account_id:
             try:
@@ -1565,10 +1574,14 @@ class BillingService:
         update = {
             "stripe_account_id": account_id,
             "stripe_customer_id": customer_id,
-            "autopay_status": "enabled",
-            "autopay_authorized_at": datetime.now(timezone.utc).isoformat(),
             **{k: v for k, v in payment_fields.items() if v is not None},
         }
+        if payer.get("autopay_terms_accepted_at"):
+            update["autopay_status"] = "enabled"
+            update["autopay_authorized_at"] = datetime.now(timezone.utc).isoformat()
+            update["billing_status"] = "current"
+        else:
+            update["autopay_status"] = "pending"
         self.supabase.table("billing_payers").update(update).eq("id", payer_id).eq("studio_id", studio_id).execute()
 
     def _project_invoice_event(
@@ -2343,8 +2356,31 @@ class BillingService:
         bps = account.get("platform_fee_bps") or self.settings.BILLING_PLATFORM_FEE_BPS
         return int(round(amount_cents * bps / 10000))
 
+    def _payer_autopay_authorized(self, payer: dict[str, Any]) -> bool:
+        return payer.get("autopay_status") == "enabled" and bool(payer.get("autopay_terms_accepted_at"))
+
     def _idempotency_key(self, *parts: str) -> str:
         return "koaryu:" + ":".join(str(part).replace(":", "_") for part in parts if part is not None)
+
+    def _safe_redirect_url(self, value: Optional[str], default: str) -> str:
+        url = (value or default).strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise HTTPException(status_code=400, detail="Billing redirect URL must be absolute.")
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin not in self._allowed_redirect_origins():
+            raise HTTPException(status_code=400, detail="Billing redirect URL is not allowed.")
+        return url
+
+    def _allowed_redirect_origins(self) -> set[str]:
+        parsed = urlparse(self.settings.FRONTEND_URL.rstrip("/"))
+        if not parsed.scheme or not parsed.netloc:
+            return set()
+        origins = {f"{parsed.scheme}://{parsed.netloc}"}
+        if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"} and parsed.port:
+            alternate_host = "127.0.0.1" if parsed.hostname == "localhost" else "localhost"
+            origins.add(f"http://{alternate_host}:{parsed.port}")
+        return origins
 
     def _normalize_idempotency_key(self, value: Optional[str]) -> Optional[str]:
         if value is None:

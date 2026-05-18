@@ -254,7 +254,7 @@ class BillingPayerAutopaySetupRequest(BaseModel):
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
     return_url: Optional[str] = None
-    terms_accepted: bool = True
+    terms_accepted: bool = False
 
 
 class BillingSubscriptionResponse(BaseModel):

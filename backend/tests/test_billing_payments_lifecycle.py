@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.schemas.billing import (
     BillingInvoiceCreate,
+    BillingPayerAutopaySetupRequest,
     BillingReconcileRequest,
     BillingInvoiceResponse,
     StudentBillingEnrollmentCreate,
@@ -30,6 +31,7 @@ class _FakeQuery:
         self.filters = []
         self.update_values = None
         self.negate_next_is = False
+        self.single_row = False
 
     def select(self, *_args):
         return self
@@ -38,9 +40,11 @@ class _FakeQuery:
         return self
 
     def single(self):
+        self.single_row = True
         return self
 
     def maybe_single(self):
+        self.single_row = True
         return self
 
     def insert(self, values):
@@ -86,6 +90,8 @@ class _FakeQuery:
         if self.update_values is not None:
             for row in matched:
                 row.update(self.update_values)
+        if self.single_row:
+            return _FakeResponse(matched[0] if matched else None)
         return _FakeResponse(matched)
 
 
@@ -139,6 +145,7 @@ class _FakeStripeWithMismatchedAccount:
 
 class _FakeStripeService:
     onboarding_calls = []
+    setup_calls = []
     retrieve_calls = []
     retrieve_account_response = None
     invoice_response = None
@@ -195,6 +202,28 @@ class _FakeStripeService:
             "currency": "usd",
             "customer": "cus_1",
             "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+        }
+
+    def create_setup_checkout_session(self, **payload):
+        self.__class__.setup_calls.append(payload)
+        return {"url": "https://checkout.stripe.test/setup"}
+
+    def update_connected_customer(self, **_payload):
+        return {"id": _payload["customer_id"]}
+
+    def create_connected_customer(self, **_payload):
+        return {"id": "cus_created"}
+
+    def retrieve_connected_customer(self, *, account_id: str, customer_id: str, expand=None):
+        return {
+            "id": customer_id,
+            "invoice_settings": {
+                "default_payment_method": {
+                    "id": "pm_123",
+                    "type": "card",
+                    "card": {"brand": "visa", "last4": "2167", "exp_month": 12, "exp_year": 2030},
+                }
+            },
         }
 
 
@@ -540,6 +569,209 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(payer["default_payment_method_brand"], "visa")
         self.assertEqual(payer["default_payment_method_last4"], "2167")
         self.assertEqual(payer["autopay_status"], "not_configured")
+
+    def test_payer_sync_stores_saved_card_without_enabling_autopay(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Rehearsal Payer",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "not_configured",
+                "billing_status": "no_payment_method",
+            }],
+        })
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            payer = service._sync_payer_customer(
+                service.supabase.tables["billing_payers"][0],
+                {"stripe_connected_account_id": "acct_1"},
+            )
+
+        self.assertEqual(payer["default_payment_method_id"], "pm_123")
+        self.assertEqual(payer["default_payment_method_last4"], "2167")
+        self.assertEqual(payer["autopay_status"], "not_configured")
+
+    def test_autopay_setup_requires_explicit_terms_acceptance(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("accepted autopay terms", context.exception.detail)
+
+    def test_autopay_setup_uses_explicit_terms_and_allowed_redirect(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Rehearsal Payer",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "not_configured",
+                "billing_status": "current",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        _FakeStripeService.setup_calls = []
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            link = asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(
+                    return_url="https://app.koaryu.test/billing",
+                    terms_accepted=True,
+                ),
+                "studio_1",
+                "user_1",
+            ))
+
+        self.assertEqual(link.url, "https://checkout.stripe.test/setup")
+        self.assertEqual(service.supabase.tables["billing_payers"][0]["autopay_status"], "pending")
+        self.assertIsNotNone(service.supabase.tables["billing_payers"][0]["autopay_terms_accepted_at"])
+        self.assertEqual(_FakeStripeService.setup_calls[0]["success_url"], "https://app.koaryu.test/billing")
+
+    def test_autopay_invoice_requires_authorized_payer_terms(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Rehearsal Payer",
+                "stripe_customer_id": "cus_1",
+                "default_payment_method_id": "pm_123",
+                "autopay_status": "not_configured",
+                "billing_status": "current",
+            }],
+            "billing_invoices": [],
+            "billing_invoice_items": [],
+        })
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_invoice(
+                    BillingInvoiceCreate(
+                        payer_id="payer_1",
+                        collection_mode="autopay",
+                        amount_cents=200,
+                        description="Autopay consent rehearsal",
+                    ),
+                    "studio_1",
+                    "user_1",
+                ))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("accepted autopay terms", context.exception.detail)
+
+    def test_autopay_enrollment_requires_authorized_payer_terms(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Rehearsal Payer",
+                "stripe_customer_id": "cus_1",
+                "default_payment_method_id": "pm_123",
+                "autopay_status": "not_configured",
+                "billing_status": "current",
+            }],
+        })
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                service._activate_stripe_enrollment(
+                    {
+                        "id": "enrollment_1",
+                        "studio_id": "studio_1",
+                        "student_id": "student_1",
+                        "payer_id": "payer_1",
+                        "collection_mode": "autopay",
+                    },
+                    {
+                        "id": "plan_1",
+                        "studio_id": "studio_1",
+                        "name": "Live Autopay Rehearsal",
+                        "amount_cents": 200,
+                        "currency": "usd",
+                        "billing_interval": "monthly",
+                        "trial_days": 0,
+                        "stripe_price_id": "price_1",
+                    },
+                    "studio_1",
+                )
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("accepted autopay terms", context.exception.detail)
 
     def test_stale_invoice_event_is_ignored(self):
         service = self.service()

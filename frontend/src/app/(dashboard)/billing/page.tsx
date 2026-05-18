@@ -997,9 +997,11 @@ export default function BillingPage() {
   }
 
   async function handleAutopaySetup(payerId: string) {
+    const accepted = window.confirm("Confirm this payer has authorized Koaryu autopay terms for future charges.");
+    if (!accepted) return;
     const link = await postBillingAction<BillingLinkResponse>(
       `/billing/payers/${payerId}/autopay/setup-link`,
-      { return_url: window.location.href },
+      { return_url: window.location.href, terms_accepted: true },
       "Opening Stripe autopay setup.",
       `autopay-setup:${payerId}`
     );
