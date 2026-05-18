@@ -328,7 +328,7 @@ class BillingService:
             if stored_invoice and self._invoice_subscription_id(stored_invoice) and not self._invoice_subscription_id(invoice):
                 invoice = self._merge_invoice_identity_from_stored_event(invoice, stored_invoice)
             event_type = "invoice.paid" if invoice.get("status") == "paid" else "invoice.finalized"
-            self._project_invoice_event(invoice, account_id, event_type, event_created=invoice.get("created"))
+            self._project_invoice_event(invoice, account_id, event_type, event_created=None)
             local = self._find_invoice_for_stripe(invoice, account_id)
             self._audit(studio_id, actor_id, "billing.reconcile_invoice", local.get("id") if local else data.stripe_object_id, {
                 "stripe_invoice_id": data.stripe_object_id,
@@ -348,7 +348,7 @@ class BillingService:
                 expand=["items.data"],
             )
             subscription = self._stripe_object_to_dict(stripe_subscription)
-            local = self._project_subscription(subscription, account_id, "customer.subscription.updated", subscription.get("created"))
+            local = self._project_subscription(subscription, account_id, "customer.subscription.updated", None)
             self._audit(studio_id, actor_id, "billing.reconcile_subscription", (local or {}).get("id") or data.stripe_object_id, {
                 "stripe_subscription_id": data.stripe_object_id,
             })
@@ -1874,7 +1874,7 @@ class BillingService:
             "current_period_end": self._timestamp(period_end) or (local or {}).get("current_period_end"),
             "cancel_at_period_end": bool(subscription.get("cancel_at_period_end")),
             "application_fee_percent": subscription.get("application_fee_percent"),
-            "last_stripe_event_created": event_created,
+            "last_stripe_event_created": event_created if event_created is not None else (local or {}).get("last_stripe_event_created"),
         }
         if local:
             result = self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"]).execute()

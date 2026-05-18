@@ -1811,6 +1811,7 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
                 "amount_paid_cents": 0,
                 "amount_remaining_cents": 0,
                 "currency": "usd",
+                "last_stripe_event_created": 400,
             }],
             "billing_subscriptions": [{
                 "id": "subscription_1",
@@ -1819,6 +1820,7 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
                 "stripe_subscription_id": "sub_1",
                 "current_period_start": None,
                 "current_period_end": None,
+                "last_stripe_event_created": 400,
             }],
             "student_billing_enrollments": [{
                 "id": "enrollment_1",
@@ -1912,6 +1914,7 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(invoice["enrollment_id"], "enrollment_1")
         self.assertEqual(subscription["current_period_start"], "2026-05-18T21:37:42+00:00")
         self.assertEqual(subscription["current_period_end"], "2026-06-18T21:37:42+00:00")
+        self.assertEqual(subscription["last_stripe_event_created"], 400)
 
     def test_connect_reset_clears_stale_account_when_no_stripe_history_exists(self):
         service = self.service()
