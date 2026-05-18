@@ -618,7 +618,7 @@ export default function BillingPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [showConnectEntityModal, setShowConnectEntityModal] = useState(false);
-  const [connectEntityType, setConnectEntityType] = useState<ConnectBusinessEntityType>("company");
+  const [connectEntityType, setConnectEntityType] = useState<ConnectBusinessEntityType>("individual");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -1331,12 +1331,12 @@ export default function BillingPage() {
           >
             <h2 id="connect-entity-title" className="text-base font-semibold text-text-primary">Connect Stripe payments</h2>
             <p className="mt-2 text-sm text-muted">
-              Choose the legal account type before Koaryu creates the Stripe account. You can change this choice here until the account is created; afterward, legal entity changes happen in Stripe or by reconnecting a new account.
+              Choose the legal account type before Koaryu creates the Stripe account. If the studio is not registered yet, use the sole proprietor option. After the account is created, legal entity changes happen in Stripe or by reconnecting a new account before payment history exists.
             </p>
             <div className="mt-4 grid gap-2">
               {([
-                ["company", "Registered business / company", "Use this for LLCs, corporations, partnerships, and incorporated studios."],
                 ["individual", "Sole proprietor / individual", "Use this when the studio operates under an individual owner without a separate legal company."],
+                ["company", "Registered business / company", "Use this for LLCs, corporations, partnerships, and incorporated studios with their own legal/tax details."],
               ] as const).map(([value, label, description]) => (
                 <label
                   key={value}
@@ -1585,13 +1585,13 @@ export default function BillingPage() {
                           <ArrowUpRight className="h-3.5 w-3.5" />
                           {isLoadingAction("dashboard") ? "Opening Stripe..." : "Stripe dashboard"}
                         </Button>
-                        {hasStripeConnectedAccount && !billingConnect?.charges_enabled ? (
+                        {hasStripeConnectedAccount ? (
                           <Button
                             variant="ghost"
                             size="sm"
                             disabled={!canManageKoaryuSubscription || isActionLoading}
                             isLoading={isLoadingAction("connect-reset")}
-                            title="Use only when the stored Stripe account no longer belongs to the active Koaryu Stripe platform."
+                            title="Use only before real Stripe billing history exists. Koaryu blocks reconnects once this studio has live Stripe billing history."
                             onClick={() => void handleConnectReset()}
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
