@@ -133,6 +133,7 @@ class _FakeStripeWithMismatchedAccount:
 
 class _FakeStripeService:
     onboarding_calls = []
+    retrieve_calls = []
     retrieve_account_response = None
 
     def create_connect_onboarding_link(self, *, account_id: str, refresh_url: str, return_url: str):
@@ -144,6 +145,7 @@ class _FakeStripeService:
         return {"url": f"https://connect.stripe.test/setup/{account_id}"}
 
     def retrieve_account(self, *, account_id: str):
+        self.__class__.retrieve_calls.append(account_id)
         return self.__class__.retrieve_account_response or {
             "id": account_id,
             "charges_enabled": False,
@@ -573,6 +575,7 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
                 "metadata": {},
             }],
         })
+        _FakeStripeService.retrieve_calls = []
         _FakeStripeService.retrieve_account_response = {
             "id": "acct_existing",
             "charges_enabled": False,
@@ -585,10 +588,76 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
             response = asyncio.run(service.sync_connect_account("studio_1"))
 
         self.assertEqual(response.status, "action_required")
+        self.assertEqual(_FakeStripeService.retrieve_calls, ["acct_existing"])
         self.assertFalse(response.charges_enabled)
         self.assertTrue(response.payouts_enabled)
         self.assertTrue(response.details_submitted)
         self.assertEqual(response.requirements_due, ["external_account"])
+
+    def test_get_payment_account_refreshes_stale_connected_account(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+                "updated_at": "2026-01-01T00:00:00+00:00",
+            }],
+        })
+        _FakeStripeService.retrieve_calls = []
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_existing",
+            "charges_enabled": False,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": ["individual.id_number"]},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            response = asyncio.run(service.get_payment_account("studio_1"))
+
+        self.assertEqual(_FakeStripeService.retrieve_calls, ["acct_existing"])
+        self.assertEqual(response.status, "action_required")
+        self.assertFalse(response.charges_enabled)
+        self.assertEqual(response.requirements_due, ["individual.id_number"])
+
+    def test_connect_ready_uses_live_stripe_status_before_hosted_actions(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+        })
+        _FakeStripeService.retrieve_calls = []
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_existing",
+            "charges_enabled": False,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": ["external_account"]},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                service._ensure_connect_ready("studio_1")
+
+        self.assertEqual(_FakeStripeService.retrieve_calls, ["acct_existing"])
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("charges are not enabled", context.exception.detail)
 
     def test_connect_reset_clears_stale_account_when_no_stripe_history_exists(self):
         service = self.service()

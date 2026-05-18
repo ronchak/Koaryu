@@ -38,6 +38,9 @@ from app.schemas.billing import (
 from app.services.stripe_service import StripeService
 
 
+CONNECT_STATUS_STALE_AFTER = timedelta(minutes=15)
+
+
 def _to_text(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -70,7 +73,10 @@ class BillingService:
         self.settings = get_settings()
 
     async def get_payment_account(self, studio_id: str) -> StudioPaymentAccountResponse:
-        return self._payment_account_response(self._ensure_payment_account_row(studio_id))
+        account = self._ensure_payment_account_row(studio_id)
+        if self._should_refresh_connect_account(account):
+            account = self._refresh_connect_account_status(account, strict=False)
+        return self._payment_account_response(account)
 
     async def create_connect_onboarding_link(
         self,
@@ -118,12 +124,10 @@ class BillingService:
 
     async def sync_connect_account(self, studio_id: str) -> StudioPaymentAccountResponse:
         account = self._ensure_payment_account_row(studio_id)
-        stripe_account_id = account.get("stripe_connected_account_id")
-        if not stripe_account_id:
+        if not account.get("stripe_connected_account_id"):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before syncing the account status.")
 
-        stripe_account = StripeService().retrieve_account(account_id=stripe_account_id)
-        account = self._update_payment_account(studio_id, self._connect_account_update_from_stripe(stripe_account))
+        account = self._refresh_connect_account_status(account, strict=True)
         return self._payment_account_response(account)
 
     async def reset_connect_account(self, studio_id: str, actor_id: str) -> StudioPaymentAccountResponse:
@@ -198,8 +202,8 @@ class BillingService:
     async def create_plan(self, data: BillingPlanCreate, studio_id: str, actor_id: str) -> BillingPlanResponse:
         self._ensure_programs_in_studio(studio_id, data.program_ids)
         account = self._ensure_payment_account_row(studio_id)
-        if account.get("charges_enabled"):
-            self._validate_connect_account_access(account)
+        if account.get("stripe_connected_account_id"):
+            account = self._refresh_connect_account_status(account, strict=True)
         plan_row = data.model_dump(exclude={"program_ids"})
         plan_row["studio_id"] = studio_id
         plan_row["name"] = " ".join(data.name.strip().split())
@@ -229,12 +233,12 @@ class BillingService:
         if "currency" in update and update["currency"]:
             update["currency"] = update["currency"].lower()
         account = self._ensure_payment_account_row(studio_id)
+        if account.get("stripe_connected_account_id"):
+            account = self._refresh_connect_account_status(account, strict=True)
         should_sync_after_update = account.get("charges_enabled") and (
             not current.get("stripe_price_id")
             or any(key in update for key in ("amount_cents", "currency", "billing_interval", "name", "description"))
         )
-        if should_sync_after_update:
-            self._validate_connect_account_access(account)
         if current.get("status") == "pending" and account.get("charges_enabled") and current.get("stripe_price_id"):
             update.setdefault("status", "active")
         if update:
@@ -903,9 +907,9 @@ class BillingService:
         account = self._ensure_payment_account_row(studio_id)
         if not account.get("stripe_connected_account_id"):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before using hosted payments.")
+        account = self._refresh_connect_account_status(account, strict=True)
         if not account.get("charges_enabled"):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Stripe Connect charges are not enabled yet.")
-        self._validate_connect_account_access(account)
         return account
 
     def _validate_connect_account_access(self, account: dict[str, Any]) -> None:
@@ -2143,6 +2147,38 @@ class BillingService:
         if not account_id:
             return
         self.supabase.table("studio_payment_accounts").update(update).eq("stripe_connected_account_id", account_id).execute()
+
+    def _refresh_connect_account_status(self, account: dict[str, Any], *, strict: bool) -> dict[str, Any]:
+        account_id = account.get("stripe_connected_account_id")
+        if not account_id:
+            return account
+        try:
+            stripe_account = StripeService().retrieve_account(account_id=account_id)
+        except HTTPException:
+            if strict:
+                raise
+            return account
+        update = self._connect_account_update_from_stripe(stripe_account)
+        return self._update_payment_account(account["studio_id"], update)
+
+    def _should_refresh_connect_account(self, account: dict[str, Any]) -> bool:
+        if not account.get("stripe_connected_account_id"):
+            return False
+        if not account.get("charges_enabled") or account.get("requirements_due"):
+            return True
+        updated_at = account.get("updated_at")
+        if isinstance(updated_at, datetime):
+            updated = updated_at
+        elif isinstance(updated_at, str):
+            try:
+                updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            except ValueError:
+                return True
+        else:
+            return True
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - updated >= CONNECT_STATUS_STALE_AFTER
 
     def _connect_account_update_from_stripe(self, stripe_account: Any) -> dict[str, Any]:
         requirements = _object_get(stripe_account, "requirements") or {}
