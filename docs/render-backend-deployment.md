@@ -49,6 +49,8 @@ STRIPE_KOARYU_CORE_PRICE_ID=
 STRIPE_CONNECT_CLIENT_ID=
 ```
 
+`STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
+
 ## Verify Render
 
 After the first deploy finishes:
@@ -149,7 +151,7 @@ Copy the resulting `whsec_...` values back into Render:
 
 ```env
 STRIPE_PLATFORM_WEBHOOK_SECRET=
-STRIPE_CONNECT_WEBHOOK_SECRET=
+STRIPE_CONNECT_WEBHOOK_SECRET=whsec_connect_platform_scope,whsec_connect_connected_scope
 ```
 
 Then redeploy the backend so FastAPI verifies signatures with the new secrets.

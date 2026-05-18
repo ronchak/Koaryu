@@ -751,7 +751,8 @@ class StripeService:
             raise
 
     def construct_webhook_event(self, *, payload: bytes, signature: Optional[str], secret: str):
-        if not secret:
+        secrets = self._webhook_secrets(secret)
+        if not secrets:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Stripe webhook secret is not configured.",
@@ -759,10 +760,23 @@ class StripeService:
         if not signature:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Stripe signature.")
         stripe = self._stripe()
-        try:
-            return stripe.Webhook.construct_event(payload, signature, secret)
-        except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook signature.") from exc
+        last_error: Optional[Exception] = None
+        for candidate in secrets:
+            try:
+                return stripe.Webhook.construct_event(payload, signature, candidate)
+            except Exception as exc:
+                last_error = exc
+                continue
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook signature.") from last_error
+
+    @staticmethod
+    def _webhook_secrets(secret: str) -> list[str]:
+        secrets: list[str] = []
+        for chunk in secret.replace("\n", ",").split(","):
+            value = chunk.strip()
+            if value:
+                secrets.append(value)
+        return secrets
 
     @staticmethod
     def _object_get(obj: Any, key: str) -> Any:

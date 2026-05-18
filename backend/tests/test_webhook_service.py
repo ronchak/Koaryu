@@ -4,6 +4,9 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
+from app.services.stripe_service import StripeService
 from app.services.webhook_service import StripeWebhookService
 
 
@@ -73,6 +76,18 @@ class _FakeBillingService:
         self.__class__.calls += 1
 
 
+class _FakeWebhook:
+    @staticmethod
+    def construct_event(payload, signature, secret):
+        if secret != "whsec_second":
+            raise ValueError("wrong secret")
+        return {"id": "evt_1", "payload": payload.decode(), "signature": signature}
+
+
+class _FakeStripeModule:
+    Webhook = _FakeWebhook
+
+
 class WebhookServiceTest(unittest.TestCase):
     def service(self, rows):
         service = object.__new__(StripeWebhookService)
@@ -124,3 +139,26 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["processing_status"], "processed")
         self.assertIsNone(rows[0]["error"])
         self.assertIsNotNone(rows[0]["processed_at"])
+
+    def test_construct_webhook_event_accepts_rotated_secret_list(self):
+        service = StripeService()
+        with patch.object(service, "_stripe", return_value=_FakeStripeModule):
+            event = service.construct_webhook_event(
+                payload=b"{}",
+                signature="sig",
+                secret="whsec_first, whsec_second",
+            )
+
+        self.assertEqual(event["id"], "evt_1")
+
+    def test_construct_webhook_event_rejects_when_no_secret_matches(self):
+        service = StripeService()
+        with patch.object(service, "_stripe", return_value=_FakeStripeModule):
+            with self.assertRaises(HTTPException) as raised:
+                service.construct_webhook_event(
+                    payload=b"{}",
+                    signature="sig",
+                    secret="whsec_first\nwhsec_third",
+                )
+
+        self.assertEqual(raised.exception.status_code, 400)
