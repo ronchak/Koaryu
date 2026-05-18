@@ -1008,6 +1008,46 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(subscription["current_period_start"], "2026-05-18T21:37:42+00:00")
         self.assertEqual(subscription["current_period_end"], "2026-06-18T21:37:42+00:00")
 
+    def test_canceled_subscription_projection_does_not_reattach_canceled_enrollment_item(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_subscriptions": [{
+                "id": "subscription_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_account_id": "acct_1",
+                "stripe_subscription_id": "sub_1",
+                "status": "active",
+                "current_period_start": "2026-05-18T21:37:42+00:00",
+                "current_period_end": "2026-06-18T21:37:42+00:00",
+            }],
+            "student_billing_enrollments": [{
+                "id": "enrollment_1",
+                "studio_id": "studio_1",
+                "billing_subscription_id": "subscription_1",
+                "stripe_subscription_id": "sub_1",
+                "stripe_subscription_item_id": None,
+                "status": "canceled",
+                "billing_status": "upcoming",
+            }],
+        })
+
+        service._project_subscription({
+            "id": "sub_1",
+            "status": "canceled",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+            "items": {"data": [{
+                "id": "si_1",
+                "metadata": {"enrollment_id": "enrollment_1"},
+            }]},
+        }, "acct_1", "customer.subscription.deleted")
+
+        enrollment = service.supabase.tables["student_billing_enrollments"][0]
+        self.assertEqual(enrollment["status"], "canceled")
+        self.assertEqual(enrollment["billing_status"], "upcoming")
+        self.assertIsNone(enrollment["stripe_subscription_item_id"])
+
     def test_old_invoice_period_does_not_regress_subscription_period(self):
         service = self.service()
         service.supabase = _FakeSupabase({
