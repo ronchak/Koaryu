@@ -4,6 +4,8 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 from app.services.platform_billing_service import PlatformBillingService
 
 
@@ -17,6 +19,8 @@ class FakeSupabase:
         self.tables = {
             "studio_subscriptions": rows,
             "email_usage_events": [],
+            "studios": [{"id": "studio_1", "name": "Koaryu Test Studio"}],
+            "audit_logs": [],
         }
 
     def table(self, name: str):
@@ -87,7 +91,54 @@ class PlatformBillingServiceTest(unittest.TestCase):
     def service(self, rows: list[dict]) -> PlatformBillingService:
         service = object.__new__(PlatformBillingService)
         service.supabase = FakeSupabase(rows)
+        service.settings = type("Settings", (), {
+            "FRONTEND_URL": "https://koaryu.test",
+            "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
+        })()
         return service
+
+    def test_create_checkout_uses_idempotent_customer_and_session_keys(self):
+        rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]
+        service = self.service(rows)
+        calls = []
+
+        class FakeStripeService:
+            def create_customer(self, *, name, metadata, idempotency_key=None):
+                calls.append(("customer", name, metadata, idempotency_key))
+                return {"id": "cus_123"}
+
+            def create_core_checkout_session(self, **payload):
+                calls.append(("checkout", payload))
+                return {"url": "https://checkout.stripe.test/session"}
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.create_checkout_link(
+                "studio_1",
+                "user_1",
+                "https://koaryu.test/billing?success",
+                "https://koaryu.test/billing?cancel",
+                "click-key",
+            ))
+
+        self.assertEqual(response.url, "https://checkout.stripe.test/session")
+        self.assertEqual(calls[0][3], "koaryu:core-customer:studio_1")
+        self.assertEqual(calls[1][1]["idempotency_key"], "koaryu:core-checkout:studio_1:click-key")
+        self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
+
+    def test_create_checkout_blocks_when_core_subscription_is_live(self):
+        service = self.service([{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": "sub_123",
+            "status": "active",
+            "comped": False,
+        }])
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("already active", context.exception.detail)
 
     def test_project_subscription_uses_item_period_bounds_and_clears_trial_fields(self):
         service = self.service([])
@@ -146,6 +197,58 @@ class PlatformBillingServiceTest(unittest.TestCase):
         self.assertIsNone(rows[0]["trial_end"])
         self.assertEqual(rows[0]["current_period_start"], "1970-01-01T00:01:40+00:00")
         self.assertEqual(rows[0]["current_period_end"], "1970-01-01T00:03:20+00:00")
+
+    def test_stale_subscription_webhook_does_not_regress_core_status(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "active",
+            "last_stripe_event_created": 200,
+        }]
+        service = self.service(rows)
+
+        service.project_subscription_event({
+            "id": "evt_old",
+            "created": 100,
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_123",
+                    "customer": "cus_123",
+                    "status": "canceled",
+                },
+            },
+        })
+
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["last_stripe_event_created"], 200)
+
+    def test_newer_subscription_webhook_records_event_created(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "trialing",
+            "last_stripe_event_created": 100,
+        }]
+        service = self.service(rows)
+
+        service.project_subscription_event({
+            "id": "evt_new",
+            "created": 200,
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_123",
+                    "customer": "cus_123",
+                    "status": "active",
+                },
+            },
+        })
+
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["last_stripe_event_created"], 200)
 
     def test_checkout_completed_fetches_subscription_projection_when_available(self):
         rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]

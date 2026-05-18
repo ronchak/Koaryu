@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -48,8 +50,14 @@ class PlatformBillingService:
         actor_id: str,
         success_url: Optional[str] = None,
         cancel_url: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> BillingLinkResponse:
         row = self._ensure_subscription_row(studio_id)
+        if row.get("stripe_subscription_id") and (row.get("status") or "") in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.",
+            )
         studio = self._get_studio(studio_id)
         customer_id = row.get("stripe_customer_id")
         stripe_service = StripeService()
@@ -62,19 +70,33 @@ class PlatformBillingService:
             "success_url": success_url or f"{frontend_url}/billing?koaryu_checkout=success",
             "cancel_url": cancel_url or f"{frontend_url}/billing?koaryu_checkout=cancelled",
         }
+        checkout_key = self._core_checkout_idempotency_key(
+            studio_id,
+            customer_id,
+            checkout_urls,
+            idempotency_key,
+        )
         try:
             session = stripe_service.create_core_checkout_session(
                 customer_id=customer_id,
                 studio_id=studio_id,
+                idempotency_key=checkout_key,
                 **checkout_urls,
             )
         except Exception as exc:
             if not self._is_missing_stripe_customer_error(exc):
                 raise
             customer_id = self._create_platform_customer(stripe_service, studio_id, studio)
+            checkout_key = self._core_checkout_idempotency_key(
+                studio_id,
+                customer_id,
+                checkout_urls,
+                idempotency_key,
+            )
             session = stripe_service.create_core_checkout_session(
                 customer_id=customer_id,
                 studio_id=studio_id,
+                idempotency_key=checkout_key,
                 **checkout_urls,
             )
         self._audit(studio_id, actor_id, "platform_billing.checkout_created", studio_id, {"customer_id": customer_id})
@@ -103,12 +125,16 @@ class PlatformBillingService:
 
     def project_subscription_event(self, event: dict[str, Any]) -> None:
         event_type = event.get("type") or ""
+        event_created = event.get("created")
         data_object = ((event.get("data") or {}).get("object") or {})
 
         if event_type == "checkout.session.completed":
             metadata = data_object.get("metadata") or {}
             studio_id = metadata.get("studio_id")
             if not studio_id:
+                return
+            row = self._ensure_subscription_row(studio_id)
+            if self._is_stale_stripe_event(row, event_created):
                 return
             subscription_id = self._stripe_id(data_object.get("subscription"))
             update = {
@@ -118,11 +144,14 @@ class PlatformBillingService:
                 "comped": False,
                 "last_payment_status": data_object.get("payment_status"),
             }
+            self._mark_event_created(update, event_created)
             self._update_subscription_row(studio_id, {k: v for k, v in update.items() if v is not None})
             if subscription_id:
                 try:
                     subscription = StripeService().retrieve_subscription(subscription_id)
-                    self._update_subscription_row(studio_id, self._project_subscription(subscription))
+                    projection = self._project_subscription(subscription)
+                    self._mark_event_created(projection, event_created)
+                    self._update_subscription_row(studio_id, projection)
                 except Exception:
                     pass
             return
@@ -135,15 +164,24 @@ class PlatformBillingService:
                 studio_id = row.get("studio_id") if row else None
             if not studio_id:
                 return
-            self._update_subscription_row(studio_id, self._project_subscription(data_object))
+            row = self._ensure_subscription_row(studio_id)
+            if self._is_stale_stripe_event(row, event_created):
+                return
+            update = self._project_subscription(data_object)
+            self._mark_event_created(update, event_created)
+            self._update_subscription_row(studio_id, update)
             return
 
         if event_type in {"invoice.paid", "invoice.payment_failed"}:
             row = self._find_subscription_by_stripe_id(data_object.get("subscription"), data_object.get("customer"))
             if not row:
                 return
+            if self._is_stale_stripe_event(row, event_created):
+                return
             status_value = "paid" if event_type == "invoice.paid" else "failed"
-            self._update_subscription_row(row["studio_id"], {"last_payment_status": status_value})
+            update = {"last_payment_status": status_value}
+            self._mark_event_created(update, event_created)
+            self._update_subscription_row(row["studio_id"], update)
 
     def _ensure_subscription_row(self, studio_id: str) -> dict[str, Any]:
         result = (
@@ -168,6 +206,7 @@ class PlatformBillingService:
         customer = stripe_service.create_customer(
             name=studio.get("name") or "Koaryu studio",
             metadata={"studio_id": studio_id, "product": "koaryu_core"},
+            idempotency_key=self._idempotency_key("core-customer", studio_id),
         )
         customer_id = customer["id"] if isinstance(customer, dict) else customer.id
         self._update_subscription_row(
@@ -175,6 +214,42 @@ class PlatformBillingService:
             {"stripe_customer_id": customer_id, "comped": False, "status": "incomplete"},
         )
         return customer_id
+
+    def _core_checkout_idempotency_key(
+        self,
+        studio_id: str,
+        customer_id: str,
+        checkout_urls: dict[str, str],
+        request_key: Optional[str],
+    ) -> str:
+        normalized = self._normalize_idempotency_key(request_key)
+        if normalized:
+            return self._idempotency_key("core-checkout", studio_id, normalized)
+        request_hash = self._stable_hash({
+            "customer_id": customer_id,
+            "price_id": self.settings.STRIPE_KOARYU_CORE_PRICE_ID,
+            "success_url": checkout_urls["success_url"],
+            "cancel_url": checkout_urls["cancel_url"],
+        })
+        return self._idempotency_key("core-checkout", studio_id, request_hash)
+
+    def _normalize_idempotency_key(self, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if len(normalized) > 255:
+            raise HTTPException(status_code=400, detail="Idempotency-Key must be 255 characters or fewer.")
+        return normalized
+
+    @staticmethod
+    def _stable_hash(payload: dict[str, Any]) -> str:
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _idempotency_key(self, *parts: str) -> str:
+        return "koaryu:" + ":".join(str(part).replace(":", "_") for part in parts if part is not None)
 
     @staticmethod
     def _is_missing_stripe_customer_error(exc: Exception) -> bool:
@@ -193,6 +268,18 @@ class PlatformBillingService:
         if not result.data:
             raise HTTPException(status_code=404, detail="Koaryu Core billing record not found.")
         return result.data[0]
+
+    @staticmethod
+    def _is_stale_stripe_event(row: dict[str, Any], event_created: Optional[int]) -> bool:
+        if event_created is None:
+            return False
+        last_created = row.get("last_stripe_event_created")
+        return last_created is not None and int(last_created) > int(event_created)
+
+    @staticmethod
+    def _mark_event_created(update: dict[str, Any], event_created: Optional[int]) -> None:
+        if event_created is not None:
+            update["last_stripe_event_created"] = event_created
 
     def _find_subscription_by_stripe_id(self, subscription_id: Optional[str], customer_id: Optional[str]) -> Optional[dict[str, Any]]:
         query = self.supabase.table("studio_subscriptions").select("*")

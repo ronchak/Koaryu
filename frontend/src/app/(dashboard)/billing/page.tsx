@@ -629,6 +629,7 @@ export default function BillingPage() {
   const [planDescription, setPlanDescription] = useState("");
   const [planInterval, setPlanInterval] = useState<BillingPlan["billing_interval"]>("monthly");
   const [planProgramIds, setPlanProgramIds] = useState<string[]>([]);
+  const [coreCheckoutRequestKey, setCoreCheckoutRequestKey] = useState<string | null>(null);
   const [payerName, setPayerName] = useState("");
   const [payerEmail, setPayerEmail] = useState("");
   const [payerPhone, setPayerPhone] = useState("");
@@ -646,6 +647,7 @@ export default function BillingPage() {
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
   const [invoiceDescription, setInvoiceDescription] = useState("");
   const [invoiceSendHosted, setInvoiceSendHosted] = useState(true);
+  const [invoiceRequestKey, setInvoiceRequestKey] = useState<string | null>(null);
   const [externalPayerId, setExternalPayerId] = useState("");
   const [externalAmount, setExternalAmount] = useState("");
   const [externalMethod, setExternalMethod] = useState("Zelle");
@@ -905,7 +907,23 @@ export default function BillingPage() {
     setError("");
     setMessage("");
     try {
-      const link = await api.post<BillingLinkResponse>(path, body, token, { timeoutMs: 30000 });
+      const requestKey = action === "checkout"
+        ? coreCheckoutRequestKey ?? (
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `core-checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        )
+        : null;
+      if (action === "checkout" && requestKey && !coreCheckoutRequestKey) {
+        setCoreCheckoutRequestKey(requestKey);
+      }
+      const link = await api.post<BillingLinkResponse>(path, body, token, {
+        timeoutMs: 30000,
+        headers: requestKey ? { "Idempotency-Key": requestKey } : undefined,
+      });
+      if (action === "checkout") {
+        setCoreCheckoutRequestKey(null);
+      }
       window.location.assign(link.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Stripe link could not be created.");
@@ -963,6 +981,15 @@ export default function BillingPage() {
 
   async function handlePlanSync(planId: string) {
     await postBillingAction<BillingPlan>(`/billing/plans/${planId}/sync`, {}, "Plan sync requested.", `plan-sync:${planId}`);
+  }
+
+  async function handleConnectReset() {
+    await postBillingAction<StudioPaymentAccount>(
+      "/billing/connect/reset",
+      {},
+      "Stripe connection cleared. Start onboarding again to connect the active Stripe platform.",
+      "connect-reset"
+    );
   }
 
   async function handlePayerSync(payerId: string) {
@@ -1193,6 +1220,14 @@ export default function BillingPage() {
     if (!token) return;
     setActiveAction("create-invoice");
     try {
+      const requestKey = invoiceRequestKey ?? (
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `invoice-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      );
+      if (!invoiceRequestKey) {
+        setInvoiceRequestKey(requestKey);
+      }
       const payload: BillingInvoiceCreate = {
         payer_id: invoicePayerId,
         enrollment_id: invoiceEnrollmentId || undefined,
@@ -1204,8 +1239,11 @@ export default function BillingPage() {
         description: invoiceDescription.trim() || undefined,
         send_hosted_invoice: invoiceSendHosted,
       };
-      await api.post<BillingInvoice>("/billing/invoices", payload, token);
+      await api.post<BillingInvoice>("/billing/invoices", payload, token, {
+        headers: { "Idempotency-Key": requestKey },
+      });
       setMessage(invoiceSendHosted ? "Hosted invoice created." : "Invoice drafted.");
+      setInvoiceRequestKey(null);
       setInvoiceAmount("");
       setInvoiceDescription("");
       await refreshBilling();
@@ -1547,6 +1585,19 @@ export default function BillingPage() {
                           <ArrowUpRight className="h-3.5 w-3.5" />
                           {isLoadingAction("dashboard") ? "Opening Stripe..." : "Stripe dashboard"}
                         </Button>
+                        {hasStripeConnectedAccount && !billingConnect?.charges_enabled ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!canManageKoaryuSubscription || isActionLoading}
+                            isLoading={isLoadingAction("connect-reset")}
+                            title="Use only when the stored Stripe account no longer belongs to the active Koaryu Stripe platform."
+                            onClick={() => void handleConnectReset()}
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            {isLoadingAction("connect-reset") ? "Clearing..." : "Reconnect Stripe"}
+                          </Button>
+                        ) : null}
                       </div>
                     </section>
                   </div>
@@ -1891,7 +1942,10 @@ export default function BillingPage() {
                         <select
                           id="invoice-payer"
                           value={invoicePayerId}
-                          onChange={(event) => setInvoicePayerId(event.target.value)}
+                          onChange={(event) => {
+                            setInvoicePayerId(event.target.value);
+                            setInvoiceRequestKey(null);
+                          }}
                           disabled={!canManageStudioBilling || billingPayers.length === 0}
                           className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
                         >
@@ -1906,7 +1960,10 @@ export default function BillingPage() {
                         <select
                           id="invoice-enrollment"
                           value={invoiceEnrollmentId}
-                          onChange={(event) => setInvoiceEnrollmentId(event.target.value)}
+                          onChange={(event) => {
+                            setInvoiceEnrollmentId(event.target.value);
+                            setInvoiceRequestKey(null);
+                          }}
                           disabled={!canManageStudioBilling}
                           className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
                         >
@@ -1923,7 +1980,10 @@ export default function BillingPage() {
                         <select
                           id="invoice-student"
                           value={invoiceStudentId}
-                          onChange={(event) => setInvoiceStudentId(event.target.value)}
+                          onChange={(event) => {
+                            setInvoiceStudentId(event.target.value);
+                            setInvoiceRequestKey(null);
+                          }}
                           disabled={!canManageStudioBilling}
                           className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
                         >
@@ -1933,15 +1993,46 @@ export default function BillingPage() {
                           ))}
                         </select>
                       </div>
-                      <Input label="Amount" value={invoiceAmount} onChange={(event) => setInvoiceAmount(event.target.value)} placeholder="129" inputMode="decimal" disabled={!canManageStudioBilling} />
-                      <Input label="Due date" type="date" value={invoiceDueDate} onChange={(event) => setInvoiceDueDate(event.target.value)} disabled={!canManageStudioBilling} />
-                      <Input label="Memo" value={invoiceDescription} onChange={(event) => setInvoiceDescription(event.target.value)} placeholder="Optional" disabled={!canManageStudioBilling} />
+                      <Input
+                        label="Amount"
+                        value={invoiceAmount}
+                        onChange={(event) => {
+                          setInvoiceAmount(event.target.value);
+                          setInvoiceRequestKey(null);
+                        }}
+                        placeholder="129"
+                        inputMode="decimal"
+                        disabled={!canManageStudioBilling}
+                      />
+                      <Input
+                        label="Due date"
+                        type="date"
+                        value={invoiceDueDate}
+                        onChange={(event) => {
+                          setInvoiceDueDate(event.target.value);
+                          setInvoiceRequestKey(null);
+                        }}
+                        disabled={!canManageStudioBilling}
+                      />
+                      <Input
+                        label="Memo"
+                        value={invoiceDescription}
+                        onChange={(event) => {
+                          setInvoiceDescription(event.target.value);
+                          setInvoiceRequestKey(null);
+                        }}
+                        placeholder="Optional"
+                        disabled={!canManageStudioBilling}
+                      />
                       <div className="flex items-center gap-3">
                         <label className="inline-flex items-center gap-2 text-sm text-text-secondary">
                           <input
                             type="checkbox"
                             checked={invoiceSendHosted}
-                            onChange={(event) => setInvoiceSendHosted(event.target.checked)}
+                            onChange={(event) => {
+                              setInvoiceSendHosted(event.target.checked);
+                              setInvoiceRequestKey(null);
+                            }}
                             disabled={!canManageStudioBilling}
                             className="accent-[#E5C15C]"
                           />

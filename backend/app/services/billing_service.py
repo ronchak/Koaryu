@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 
@@ -89,11 +91,13 @@ class BillingService:
                     detail="Choose whether this Stripe account is for a company or a sole proprietor.",
                 )
             studio = self._get_studio(studio_id)
+            account_generation = int((account.get("metadata") or {}).get("connect_account_generation") or 1)
             stripe_account = stripe_service.create_connect_account(
                 studio_id=studio_id,
                 business_name=studio.get("name") or "Koaryu studio",
                 contact_email=self._get_user_email(actor_id) or self._get_user_email(studio.get("owner_id")),
                 business_entity_type=business_entity_type,
+                account_generation=account_generation,
             )
             stripe_account_id = stripe_account["id"] if isinstance(stripe_account, dict) else stripe_account.id
             metadata = dict(account.get("metadata") or {})
@@ -110,7 +114,6 @@ class BillingService:
             refresh_url=refresh_url or f"{frontend_url}/billing/connect/refresh",
             return_url=return_url or f"{frontend_url}/billing?connect=return",
         )
-        self._audit_best_effort(studio_id, actor_id, "billing.connect_onboarding_started", studio_id, {"stripe_account_id": stripe_account_id})
         return BillingLinkResponse(url=link["url"] if isinstance(link, dict) else link.url)
 
     async def sync_connect_account(self, studio_id: str) -> StudioPaymentAccountResponse:
@@ -123,14 +126,63 @@ class BillingService:
         account = self._update_payment_account(studio_id, self._connect_account_update_from_stripe(stripe_account))
         return self._payment_account_response(account)
 
+    async def reset_connect_account(self, studio_id: str, actor_id: str) -> StudioPaymentAccountResponse:
+        account = self._ensure_payment_account_row(studio_id)
+        stripe_account_id = account.get("stripe_connected_account_id")
+        if not stripe_account_id:
+            return self._payment_account_response(account)
+        if self._has_stripe_billing_history(studio_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Reconnect requires support because this studio already has Stripe billing history.",
+            )
+
+        metadata = dict(account.get("metadata") or {})
+        previous_accounts = list(metadata.get("previous_stripe_connected_account_ids") or [])
+        previous_accounts.append(stripe_account_id)
+        metadata["previous_stripe_connected_account_ids"] = list(dict.fromkeys(previous_accounts))
+        metadata["connect_account_generation"] = int(metadata.get("connect_account_generation") or 1) + 1
+        account = self._update_payment_account(studio_id, {
+            "stripe_connected_account_id": None,
+            "status": "not_connected",
+            "charges_enabled": False,
+            "payouts_enabled": False,
+            "details_submitted": False,
+            "requirements_due": [],
+            "metadata": metadata,
+        })
+        self._audit(studio_id, actor_id, "billing.connect_account_reset", studio_id, {
+            "previous_stripe_account_id": stripe_account_id,
+        })
+        return self._payment_account_response(account)
+
     async def create_connect_dashboard_link(self, studio_id: str, actor_id: str) -> BillingLinkResponse:
         account = self._ensure_payment_account_row(studio_id)
         stripe_account_id = account.get("stripe_connected_account_id")
         if not stripe_account_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before opening the Stripe dashboard.")
         url = StripeService().create_connect_dashboard_url(account_id=stripe_account_id)
-        self._audit_best_effort(studio_id, actor_id, "billing.connect_dashboard_opened", studio_id, {"stripe_account_id": stripe_account_id})
         return BillingLinkResponse(url=url)
+
+    def audit_connect_onboarding_started(self, studio_id: str, actor_id: str) -> None:
+        account = self._ensure_payment_account_row(studio_id)
+        self._audit_best_effort(
+            studio_id,
+            actor_id,
+            "billing.connect_onboarding_started",
+            studio_id,
+            {"stripe_account_id": account.get("stripe_connected_account_id")},
+        )
+
+    def audit_connect_dashboard_opened(self, studio_id: str, actor_id: str) -> None:
+        account = self._ensure_payment_account_row(studio_id)
+        self._audit_best_effort(
+            studio_id,
+            actor_id,
+            "billing.connect_dashboard_opened",
+            studio_id,
+            {"stripe_account_id": account.get("stripe_connected_account_id")},
+        )
 
     async def list_plans(self, studio_id: str) -> list[BillingPlanResponse]:
         account = self._ensure_payment_account_row(studio_id)
@@ -407,7 +459,15 @@ class BillingService:
         row = data.model_dump(exclude_none=True)
         row["studio_id"] = studio_id
         row.setdefault("billing_status", "externally_paid" if data.collection_mode == "external" else "no_payment_method")
-        result = self.supabase.table("student_billing_enrollments").insert(row).execute()
+        try:
+            result = self.supabase.table("student_billing_enrollments").insert(row).execute()
+        except PostgrestAPIError as exc:
+            if exc.code == "23505":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This student already has an active billing enrollment for the selected plan and payer.",
+                ) from exc
+            raise
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to add student billing enrollment.")
         enrollment = result.data[0]
@@ -484,7 +544,13 @@ class BillingService:
         self._audit(studio_id, actor_id, f"billing.student_enrollment_{status_value}", enrollment_id, {})
         return StudentBillingEnrollmentResponse(**result.data[0])
 
-    async def create_invoice(self, data: BillingInvoiceCreate, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
+    async def create_invoice(
+        self,
+        data: BillingInvoiceCreate,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> BillingInvoiceResponse:
         payer = self._get_row_or_404("billing_payers", data.payer_id, studio_id, "Payer not found.")
         if data.student_id:
             self._ensure_record_in_studio("students", data.student_id, studio_id, "Student not found.")
@@ -508,6 +574,8 @@ class BillingService:
         ]
         amount_due = sum(int(item["amount_cents"]) * int(item.get("quantity") or 1) for item in items)
         application_fee = self._application_fee_amount(amount_due, account)
+        normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
+        request_hash = self._invoice_request_hash(data)
         invoice_row = {
             "studio_id": studio_id,
             "payer_id": data.payer_id,
@@ -525,11 +593,17 @@ class BillingService:
             "collection_method": "charge_automatically" if data.collection_mode == "autopay" else "send_invoice",
             "application_fee_amount_cents": application_fee,
             "external": False,
+            "idempotency_key": normalized_idempotency_key,
+            "request_hash": request_hash if normalized_idempotency_key else None,
         }
-        inserted = self.supabase.table("billing_invoices").insert(invoice_row).execute()
-        if not inserted.data:
-            raise HTTPException(status_code=500, detail="Failed to create invoice.")
-        local_invoice = inserted.data[0]
+        local_invoice = self._claim_invoice_create_request(
+            studio_id,
+            normalized_idempotency_key,
+            request_hash,
+            invoice_row,
+        )
+        if local_invoice.get("stripe_invoice_id"):
+            return BillingInvoiceResponse(**local_invoice)
 
         stripe_service = StripeService()
         stripe_invoice = stripe_service.create_connected_invoice(
@@ -568,7 +642,7 @@ class BillingService:
                 idempotency_key=self._idempotency_key("invoice-item", local_invoice["id"], str(index)),
                 invoice_id=stripe_invoice_id,
             )
-            self.supabase.table("billing_invoice_items").insert({
+            self._insert_invoice_item_once({
                 "studio_id": studio_id,
                 "invoice_id": local_invoice["id"],
                 "student_id": item.get("student_id"),
@@ -580,7 +654,7 @@ class BillingService:
                 "amount_cents": amount,
                 "stripe_invoice_item_id": _stripe_id(stripe_item),
                 "metadata": metadata,
-            }).execute()
+            })
 
         stripe_invoice = stripe_service.retrieve_connected_invoice(
             account_id=account["stripe_connected_account_id"],
@@ -721,8 +795,8 @@ class BillingService:
                         invoice_id=invoice["stripe_invoice_id"],
                         paid_out_of_band=True,
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    invoice_update["last_payment_error"] = f"External payment recorded locally but Stripe sync failed: {exc}"
             self.supabase.table("billing_invoices").update(invoice_update).eq("id", data.invoice_id).eq("studio_id", studio_id).execute()
             self._recompute_payer_balance(studio_id, invoice.get("payer_id"))
         elif data.payer_id:
@@ -778,6 +852,7 @@ class BillingService:
     def project_connect_event(self, event: dict[str, Any]) -> None:
         event_type = event.get("type") or ""
         account_id = event.get("account")
+        event_created = event.get("created")
         data_object = ((event.get("data") or {}).get("object") or {})
         if event_type == "account.application.deauthorized":
             account_id = account_id or data_object.get("id")
@@ -805,7 +880,7 @@ class BillingService:
             "invoice.voided",
             "invoice.marked_uncollectible",
         }:
-            self._project_invoice_event(data_object, account_id, event_type)
+            self._project_invoice_event(data_object, account_id, event_type, event_created)
             return
         if event_type in {
             "payment_intent.processing",
@@ -821,7 +896,7 @@ class BillingService:
             self._project_dispute(data_object, account_id)
             return
         if event_type.startswith("customer.subscription."):
-            self._project_subscription(data_object, account_id, event_type)
+            self._project_subscription(data_object, account_id, event_type, event_created)
             return
 
     def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
@@ -1100,7 +1175,27 @@ class BillingService:
             "status": "pending",
             "default_payment_method_id": payer.get("default_payment_method_id"),
             "application_fee_percent": self._application_fee_percent(account),
-        }).execute()
+        })
+        try:
+            inserted = inserted.execute()
+        except PostgrestAPIError as exc:
+            if exc.code != "23505":
+                raise
+            retry = (
+                self.supabase.table("billing_subscriptions")
+                .select("*")
+                .eq("studio_id", enrollment["studio_id"])
+                .eq("payer_id", payer["id"])
+                .eq("collection_mode", enrollment.get("collection_mode") or "invoice_link")
+                .eq("billing_interval", plan.get("billing_interval") or "monthly")
+                .eq("currency", plan.get("currency") or "usd")
+                .in_("status", ["pending", "trialing", "active", "incomplete", "past_due"])
+                .limit(1)
+                .execute()
+            )
+            if retry.data:
+                return retry.data[0]
+            raise
         if not inserted.data:
             raise HTTPException(status_code=500, detail="Failed to create billing subscription.")
         return inserted.data[0]
@@ -1117,18 +1212,15 @@ class BillingService:
                     item_id,
                     exclude_enrollment_id=enrollment["id"],
                 )
-                try:
-                    if remaining_same_item:
-                        StripeService().update_connected_subscription_item(
-                            account_id=account_id,
-                            subscription_item_id=item_id,
-                            quantity=remaining_same_item,
-                            proration_behavior="none",
-                        )
-                    else:
-                        StripeService().delete_connected_subscription_item(account_id=account_id, subscription_item_id=item_id)
-                except Exception:
-                    pass
+                if remaining_same_item:
+                    StripeService().update_connected_subscription_item(
+                        account_id=account_id,
+                        subscription_item_id=item_id,
+                        quantity=remaining_same_item,
+                        proration_behavior="none",
+                    )
+                else:
+                    StripeService().delete_connected_subscription_item(account_id=account_id, subscription_item_id=item_id)
         if enrollment.get("billing_subscription_id"):
             remaining = (
                 self.supabase.table("student_billing_enrollments")
@@ -1142,10 +1234,7 @@ class BillingService:
             if not remaining.data and subscription_id:
                 account_id = self._stripe_account_for_studio(enrollment["studio_id"])
                 if account_id:
-                    try:
-                        StripeService().cancel_connected_subscription(account_id=account_id, subscription_id=subscription_id)
-                    except Exception:
-                        pass
+                    StripeService().cancel_connected_subscription(account_id=account_id, subscription_id=subscription_id)
                 self.supabase.table("billing_subscriptions").update({"status": "canceled"}).eq("id", enrollment["billing_subscription_id"]).execute()
 
     def _create_paid_in_full_invoice(self, enrollment: dict[str, Any], plan: dict[str, Any], payer: dict[str, Any], account: dict[str, Any]) -> None:
@@ -1270,7 +1359,13 @@ class BillingService:
         }
         self.supabase.table("billing_payers").update(update).eq("id", payer_id).eq("studio_id", studio_id).execute()
 
-    def _project_invoice_event(self, invoice: dict[str, Any], account_id: Optional[str], event_type: str) -> None:
+    def _project_invoice_event(
+        self,
+        invoice: dict[str, Any],
+        account_id: Optional[str],
+        event_type: str,
+        event_created: Optional[int] = None,
+    ) -> None:
         local = self._find_invoice_for_stripe(invoice, account_id)
         studio_id = (invoice.get("metadata") or {}).get("studio_id") or (local or {}).get("studio_id")
         if not studio_id:
@@ -1278,10 +1373,14 @@ class BillingService:
             studio_id = account.get("studio_id") if account else None
         if not studio_id:
             return
+        if local and self._is_stale_stripe_event(local, event_created):
+            return
         if local:
             local = self._update_invoice_from_stripe(local["id"], studio_id, invoice, account_id)
+            if event_created is not None:
+                local = self._update_invoice_last_event(local, studio_id, event_created)
         else:
-            local = self._insert_invoice_from_stripe(studio_id, invoice, account_id)
+            local = self._insert_invoice_from_stripe(studio_id, invoice, account_id, event_created)
         if event_type == "invoice.paid":
             self._project_payment_from_invoice(invoice, account_id, local)
         if local.get("payer_id"):
@@ -1332,8 +1431,11 @@ class BillingService:
         )
         if existing.data:
             existing_payment = existing.data[0]
-            if status_value == "succeeded" and existing_payment.get("status") in {"disputed", "refunded"}:
+            if existing_payment.get("status") in {"disputed", "refunded"}:
                 row["status"] = existing_payment["status"]
+                row["processed_at"] = existing_payment.get("processed_at") or row.get("processed_at")
+            elif existing_payment.get("status") == "succeeded" and status_value in {"processing", "failed"}:
+                row["status"] = "succeeded"
                 row["processed_at"] = existing_payment.get("processed_at") or row.get("processed_at")
             result = self.supabase.table("billing_payments").update(row).eq("id", existing_payment["id"]).execute()
         else:
@@ -1467,12 +1569,20 @@ class BillingService:
         if payment:
             self.supabase.table("billing_payments").update({"status": "disputed"}).eq("id", payment["id"]).execute()
 
-    def _project_subscription(self, subscription: dict[str, Any], account_id: Optional[str], event_type: str = "") -> Optional[dict[str, Any]]:
+    def _project_subscription(
+        self,
+        subscription: dict[str, Any],
+        account_id: Optional[str],
+        event_type: str = "",
+        event_created: Optional[int] = None,
+    ) -> Optional[dict[str, Any]]:
         metadata = subscription.get("metadata") or {}
         local = self._find_subscription_for_stripe(subscription, account_id)
         studio_id = metadata.get("studio_id") or (local or {}).get("studio_id")
         payer_id = metadata.get("payer_id") or (local or {}).get("payer_id")
         if not studio_id or not payer_id:
+            return local
+        if local and self._is_stale_stripe_event(local, event_created):
             return local
         status_value = "canceled" if event_type == "customer.subscription.deleted" else subscription.get("status", "active")
         update = {
@@ -1486,6 +1596,7 @@ class BillingService:
             "current_period_end": self._timestamp(subscription.get("current_period_end")),
             "cancel_at_period_end": bool(subscription.get("cancel_at_period_end")),
             "application_fee_percent": subscription.get("application_fee_percent"),
+            "last_stripe_event_created": event_created,
         }
         if local:
             result = self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"]).execute()
@@ -1518,7 +1629,13 @@ class BillingService:
         )
         return result.data[0] if result.data else update
 
-    def _insert_invoice_from_stripe(self, studio_id: str, invoice: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
+    def _insert_invoice_from_stripe(
+        self,
+        studio_id: str,
+        invoice: dict[str, Any],
+        account_id: Optional[str],
+        event_created: Optional[int] = None,
+    ) -> dict[str, Any]:
         metadata = invoice.get("metadata") or {}
         row = {
             "studio_id": studio_id,
@@ -1527,6 +1644,7 @@ class BillingService:
             "enrollment_id": metadata.get("enrollment_id") or None,
             "invoice_type": metadata.get("invoice_type") or ("tuition" if invoice.get("subscription") else "manual"),
             "external": False,
+            "last_stripe_event_created": event_created,
             **self._invoice_projection(invoice, account_id),
         }
         result = self.supabase.table("billing_invoices").insert(row).execute()
@@ -1775,6 +1893,29 @@ class BillingService:
         account = self._ensure_payment_account_row(studio_id)
         return account.get("stripe_connected_account_id")
 
+    def _has_stripe_billing_history(self, studio_id: str) -> bool:
+        checks = (
+            ("billing_plans", "stripe_price_id"),
+            ("billing_payers", "stripe_customer_id"),
+            ("billing_subscriptions", "stripe_subscription_id"),
+            ("billing_invoices", "stripe_invoice_id"),
+            ("billing_payments", "stripe_payment_intent_id"),
+            ("billing_refunds", "stripe_refund_id"),
+            ("billing_disputes", "stripe_dispute_id"),
+        )
+        for table, column in checks:
+            result = (
+                self.supabase.table(table)
+                .select("id")
+                .eq("studio_id", studio_id)
+                .not_.is_(column, "null")
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return True
+        return False
+
     def _payment_method_fields_from_customer(self, customer: Any) -> dict[str, Any]:
         invoice_settings = _object_get(customer, "invoice_settings") or {}
         payment_method = _object_get(invoice_settings, "default_payment_method")
@@ -1840,6 +1981,89 @@ class BillingService:
 
     def _idempotency_key(self, *parts: str) -> str:
         return "koaryu:" + ":".join(str(part).replace(":", "_") for part in parts if part is not None)
+
+    def _normalize_idempotency_key(self, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if len(normalized) > 255:
+            raise HTTPException(status_code=400, detail="Idempotency-Key must be 255 characters or fewer.")
+        return normalized
+
+    def _invoice_request_hash(self, data: BillingInvoiceCreate) -> str:
+        payload = data.model_dump(mode="json", exclude_none=True)
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _is_stale_stripe_event(self, row: dict[str, Any], event_created: Optional[int]) -> bool:
+        if event_created is None:
+            return False
+        last_created = row.get("last_stripe_event_created")
+        return last_created is not None and int(last_created) > int(event_created)
+
+    def _update_invoice_last_event(self, invoice: dict[str, Any], studio_id: str, event_created: int) -> dict[str, Any]:
+        result = (
+            self.supabase.table("billing_invoices")
+            .update({"last_stripe_event_created": event_created})
+            .eq("id", invoice["id"])
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+        return result.data[0] if result.data else {**invoice, "last_stripe_event_created": event_created}
+
+    def _claim_invoice_create_request(
+        self,
+        studio_id: str,
+        idempotency_key: Optional[str],
+        request_hash: str,
+        invoice_row: dict[str, Any],
+    ) -> dict[str, Any]:
+        if idempotency_key:
+            existing = self._find_invoice_by_idempotency_key(studio_id, idempotency_key)
+            if existing:
+                if existing.get("request_hash") != request_hash:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This idempotency key is already in use for a different invoice request.",
+                    )
+                return existing
+        try:
+            inserted = self.supabase.table("billing_invoices").insert(invoice_row).execute()
+        except PostgrestAPIError as exc:
+            if exc.code != "23505" or not idempotency_key:
+                raise
+            existing = self._find_invoice_by_idempotency_key(studio_id, idempotency_key)
+            if not existing:
+                raise
+            if existing.get("request_hash") != request_hash:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This idempotency key is already in use for a different invoice request.",
+                ) from exc
+            return existing
+        if not inserted.data:
+            raise HTTPException(status_code=500, detail="Failed to create invoice.")
+        return inserted.data[0]
+
+    def _find_invoice_by_idempotency_key(self, studio_id: str, idempotency_key: str) -> Optional[dict[str, Any]]:
+        result = (
+            self.supabase.table("billing_invoices")
+            .select("*")
+            .eq("studio_id", studio_id)
+            .eq("idempotency_key", idempotency_key)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    def _insert_invoice_item_once(self, row: dict[str, Any]) -> None:
+        try:
+            self.supabase.table("billing_invoice_items").insert(row).execute()
+        except PostgrestAPIError as exc:
+            if exc.code != "23505":
+                raise
 
     def _timestamp(self, value: Any) -> Optional[str]:
         if not value:

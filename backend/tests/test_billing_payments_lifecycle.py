@@ -7,12 +7,14 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.schemas.billing import (
+    BillingInvoiceCreate,
     BillingInvoiceResponse,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentResponse,
 )
 from app.services.billing_service import BillingService
 from app.services.stripe_service import StripeService
+from app.services.stripe_service import _StripeV2RequestError
 
 
 class _FakeResponse:
@@ -25,6 +27,7 @@ class _FakeQuery:
         self.rows = rows
         self.filters = []
         self.update_values = None
+        self.negate_next_is = False
 
     def select(self, *_args):
         return self
@@ -55,12 +58,21 @@ class _FakeQuery:
 
     def is_(self, key, value):
         if value == "null":
-            self.filters.append(lambda row, key=key: row.get(key) is None)
+            if self.negate_next_is:
+                self.filters.append(lambda row, key=key: row.get(key) is not None)
+            else:
+                self.filters.append(lambda row, key=key: row.get(key) is None)
+        self.negate_next_is = False
         return self
 
     def in_(self, key, values):
         values = set(values)
         self.filters.append(lambda row, key=key, values=values: row.get(key) in values)
+        return self
+
+    @property
+    def not_(self):
+        self.negate_next_is = True
         return self
 
     def execute(self):
@@ -244,6 +256,60 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
 
         self.assertEqual(response.number, "INV-001")
 
+    def test_invoice_request_hash_is_stable_for_equivalent_payloads(self):
+        service = self.service()
+
+        first = BillingInvoiceCreate(payer_id="payer_1", amount_cents=12900, description="May tuition")
+        second = BillingInvoiceCreate.model_validate({
+            "description": "May tuition",
+            "amount_cents": 12900,
+            "payer_id": "payer_1",
+        })
+
+        self.assertEqual(service._invoice_request_hash(first), service._invoice_request_hash(second))
+
+    def test_claim_invoice_create_request_reuses_matching_idempotency_key(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "idempotency_key": "invoice-key",
+                "request_hash": "same-hash",
+            }],
+        })
+
+        invoice = service._claim_invoice_create_request(
+            "studio_1",
+            "invoice-key",
+            "same-hash",
+            {"studio_id": "studio_1", "idempotency_key": "invoice-key", "request_hash": "same-hash"},
+        )
+
+        self.assertEqual(invoice["id"], "invoice_1")
+        self.assertEqual(len(service.supabase.tables["billing_invoices"]), 1)
+
+    def test_claim_invoice_create_request_rejects_reused_key_for_different_payload(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "idempotency_key": "invoice-key",
+                "request_hash": "original-hash",
+            }],
+        })
+
+        with self.assertRaises(HTTPException) as exc:
+            service._claim_invoice_create_request(
+                "studio_1",
+                "invoice-key",
+                "different-hash",
+                {"studio_id": "studio_1", "idempotency_key": "invoice-key", "request_hash": "different-hash"},
+            )
+
+        self.assertEqual(exc.exception.status_code, 409)
+
     def test_late_payment_intent_links_existing_dispute_and_marks_payment_disputed(self):
         service = self.service()
         service.supabase = _FakeSupabase({
@@ -282,6 +348,59 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(dispute["payment_id"], "payment_1")
         self.assertEqual(dispute["stripe_payment_intent_id"], "pi_1")
 
+    def test_stale_failed_payment_intent_does_not_regress_succeeded_payment(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_payment_intent_id": "pi_1",
+                "status": "succeeded",
+                "processed_at": "2026-04-28T00:00:00Z",
+            }],
+            "billing_invoices": [],
+            "billing_disputes": [],
+            "billing_payers": [],
+        })
+
+        service._project_payment_intent({
+            "id": "pi_1",
+            "amount": 12900,
+            "currency": "usd",
+            "metadata": {"studio_id": "studio_1"},
+            "last_payment_error": {"message": "Declined"},
+        }, "acct_1", "payment_intent.payment_failed")
+
+        self.assertEqual(service.supabase.tables["billing_payments"][0]["status"], "succeeded")
+        self.assertEqual(service.supabase.tables["billing_payments"][0]["processed_at"], "2026-04-28T00:00:00Z")
+
+    def test_stale_invoice_event_is_ignored(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "payer_id": None,
+                "status": "paid",
+                "last_stripe_event_created": 200,
+            }],
+        })
+
+        service._project_invoice_event({
+            "id": "in_1",
+            "status": "open",
+            "amount_due": 12900,
+            "amount_paid": 0,
+            "amount_remaining": 12900,
+            "currency": "usd",
+            "metadata": {"studio_id": "studio_1"},
+        }, "acct_1", "invoice.finalized", event_created=100)
+
+        self.assertEqual(service.supabase.tables["billing_invoices"][0]["status"], "paid")
+
     def test_standard_connect_account_uses_platform_dashboard_url(self):
         service = StripeService()
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
@@ -315,7 +434,7 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(account["id"], "acct_v2")
         path, payload, idempotency_key = calls[0]
         self.assertEqual(path, "/v2/core/accounts")
-        self.assertEqual(idempotency_key, "koaryu-connect-account-studio_1")
+        self.assertEqual(idempotency_key, "koaryu-connect-account-studio_1-g1")
         self.assertEqual(payload["dashboard"], "full")
         self.assertEqual(payload["contact_email"], "owner@example.com")
         self.assertEqual(payload["identity"]["entity_type"], "company")
@@ -347,6 +466,69 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertNotIn("business_details", payload["identity"])
         self.assertEqual(payload["metadata"]["business_entity_type"], "individual")
 
+    def test_connected_account_branding_update_uses_accounts_v2(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        calls = []
+
+        def fake_v2_patch(path, payload, *, idempotency_key=None):
+            calls.append((path, payload, idempotency_key))
+            return {"id": "acct_v2"}
+
+        service._stripe_v2_patch = fake_v2_patch
+
+        service.update_connect_account_branding(
+            account_id="acct_v2",
+            primary_color="#0B0D10",
+            secondary_color="#D6B25E",
+            icon_file_id="file_icon",
+            logo_file_id="file_logo",
+        )
+
+        path, payload, idempotency_key = calls[0]
+        self.assertEqual(path, "/v2/core/accounts/acct_v2")
+        self.assertEqual(idempotency_key, "koaryu-connect-branding-acct_v2")
+        self.assertEqual(payload["configuration"]["merchant"]["branding"], {
+            "primary_color": "#0B0D10",
+            "secondary_color": "#D6B25E",
+            "icon": "file_icon",
+            "logo": "file_logo",
+        })
+
+    def test_connected_account_branding_update_falls_back_to_accounts_v1(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        calls = []
+
+        class _BrandingAccount:
+            @staticmethod
+            def modify(account_id, **payload):
+                calls.append((account_id, payload))
+                return {"id": account_id}
+
+        class _BrandingStripe:
+            Account = _BrandingAccount()
+
+        def fake_v2_patch(*_args, **_kwargs):
+            raise _StripeV2RequestError(code="accounts_v2_access_blocked", message="blocked")
+
+        service._stripe_v2_patch = fake_v2_patch
+        service._stripe = lambda: _BrandingStripe
+
+        service.update_connect_account_branding(
+            account_id="acct_v1",
+            primary_color="#0B0D10",
+            secondary_color="#D6B25E",
+        )
+
+        account_id, payload = calls[0]
+        self.assertEqual(account_id, "acct_v1")
+        self.assertEqual(payload["settings"]["branding"], {
+            "primary_color": "#0B0D10",
+            "secondary_color": "#D6B25E",
+        })
+        self.assertEqual(payload["idempotency_key"], "koaryu-connect-branding-acct_v1")
+
     def test_existing_connect_account_uses_default_refresh_and_return_urls_without_studio_lookup(self):
         service = self.service()
         service.settings = type("Settings", (), {
@@ -367,6 +549,7 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
             }],
         })
         _FakeStripeService.onboarding_calls = []
+        service._audit = lambda *_args, **_kwargs: self.fail("Hot onboarding path should not wait on audit writes.")
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             link = asyncio.run(service.create_connect_onboarding_link("studio_1", "user_1", business_entity_type="individual"))
@@ -406,6 +589,72 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertTrue(response.payouts_enabled)
         self.assertTrue(response.details_submitted)
         self.assertEqual(response.requirements_due, ["external_account"])
+
+    def test_connect_reset_clears_stale_account_when_no_stripe_history_exists(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_stale",
+                "status": "action_required",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": ["external_account"],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_plans": [],
+            "billing_payers": [],
+            "billing_subscriptions": [],
+            "billing_invoices": [],
+            "billing_payments": [],
+            "billing_refunds": [],
+            "billing_disputes": [],
+            "audit_logs": [],
+        })
+
+        response = asyncio.run(service.reset_connect_account("studio_1", "user_1"))
+
+        self.assertEqual(response.status, "not_connected")
+        self.assertIsNone(response.stripe_connected_account_id)
+        self.assertEqual(
+            service.supabase.tables["studio_payment_accounts"][0]["metadata"]["previous_stripe_connected_account_ids"],
+            ["acct_stale"],
+        )
+        self.assertEqual(
+            service.supabase.tables["studio_payment_accounts"][0]["metadata"]["connect_account_generation"],
+            2,
+        )
+
+    def test_connect_reset_blocks_when_stripe_history_exists(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_stale",
+                "status": "action_required",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_plans": [{"id": "plan_1", "studio_id": "studio_1", "stripe_price_id": "price_1"}],
+            "billing_payers": [],
+            "billing_subscriptions": [],
+            "billing_invoices": [],
+            "billing_payments": [],
+            "billing_refunds": [],
+            "billing_disputes": [],
+        })
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.reset_connect_account("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("already has Stripe billing history", context.exception.detail)
 
     def test_stale_connected_account_returns_actionable_conflict(self):
         service = StripeService()

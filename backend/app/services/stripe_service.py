@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Optional
 
@@ -44,9 +45,13 @@ class StripeService:
         stripe.api_key = self.settings.STRIPE_SECRET_KEY
         return stripe
 
-    def create_customer(self, *, name: str, metadata: dict[str, Any]):
+    def create_customer(self, *, name: str, metadata: dict[str, Any], idempotency_key: Optional[str] = None):
         stripe = self._stripe()
-        return stripe.Customer.create(name=name, metadata=metadata)
+        return stripe.Customer.create(
+            name=name,
+            metadata=metadata,
+            **self._request_options(idempotency_key=idempotency_key),
+        )
 
     @staticmethod
     def _request_options(*, account_id: Optional[str] = None, idempotency_key: Optional[str] = None) -> dict[str, str]:
@@ -422,6 +427,7 @@ class StripeService:
         studio_id: str,
         success_url: str,
         cancel_url: str,
+        idempotency_key: Optional[str] = None,
     ):
         if not self.settings.STRIPE_KOARYU_CORE_PRICE_ID:
             raise HTTPException(
@@ -440,6 +446,7 @@ class StripeService:
             metadata={"studio_id": studio_id, "product": "koaryu_core"},
             success_url=success_url,
             cancel_url=cancel_url,
+            **self._request_options(idempotency_key=idempotency_key),
         )
 
     def create_customer_portal_session(self, *, customer_id: str, return_url: str):
@@ -458,6 +465,7 @@ class StripeService:
         business_name: str,
         contact_email: Optional[str] = None,
         business_entity_type: str = "company",
+        account_generation: int = 1,
     ):
         try:
             return self._create_connect_account_v2(
@@ -465,6 +473,7 @@ class StripeService:
                 business_name=business_name,
                 contact_email=contact_email,
                 business_entity_type=business_entity_type,
+                account_generation=account_generation,
             )
         except _StripeV2RequestError as exc:
             if exc.code != "accounts_v2_access_blocked":
@@ -474,6 +483,7 @@ class StripeService:
             studio_id=studio_id,
             business_name=business_name,
             business_entity_type=business_entity_type,
+            account_generation=account_generation,
         )
 
     def _create_connect_account_v2(
@@ -483,6 +493,7 @@ class StripeService:
         business_name: str,
         contact_email: Optional[str] = None,
         business_entity_type: str = "company",
+        account_generation: int = 1,
     ) -> dict[str, Any]:
         identity: dict[str, Any] = {
             "country": "us",
@@ -526,10 +537,17 @@ class StripeService:
         return self._stripe_v2_post(
             "/v2/core/accounts",
             payload,
-            idempotency_key=f"koaryu-connect-account-{studio_id}",
+            idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}",
         )
 
-    def _create_connect_account_v1(self, *, studio_id: str, business_name: str, business_entity_type: str = "company"):
+    def _create_connect_account_v1(
+        self,
+        *,
+        studio_id: str,
+        business_name: str,
+        business_entity_type: str = "company",
+        account_generation: int = 1,
+    ):
         stripe = self._stripe()
         try:
             return stripe.Account.create(
@@ -541,6 +559,7 @@ class StripeService:
                     "card_payments": {"requested": True},
                     "transfers": {"requested": True},
                 },
+                **self._request_options(idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}"),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):
@@ -548,6 +567,19 @@ class StripeService:
             raise
 
     def _stripe_v2_post(self, path: str, payload: dict[str, Any], *, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        return self._stripe_v2_request("POST", path, payload, idempotency_key=idempotency_key)
+
+    def _stripe_v2_patch(self, path: str, payload: dict[str, Any], *, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        return self._stripe_v2_request("PATCH", path, payload, idempotency_key=idempotency_key)
+
+    def _stripe_v2_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: Optional[str] = None,
+    ) -> dict[str, Any]:
         if not self.settings.STRIPE_SECRET_KEY:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -562,7 +594,8 @@ class StripeService:
             headers["Idempotency-Key"] = idempotency_key
 
         try:
-            response = httpx.post(
+            response = httpx.request(
+                method,
                 f"https://api.stripe.com{path}",
                 headers=headers,
                 json=payload,
@@ -590,6 +623,56 @@ class StripeService:
                 request_id=response.headers.get("Request-Id"),
             )
         return data
+
+    def upload_branding_file(self, *, file_path: str, purpose: str) -> str:
+        stripe = self._stripe()
+        path = Path(file_path)
+        with path.open("rb") as handle:
+            uploaded = stripe.File.create(file=handle, purpose=purpose)
+        return uploaded["id"] if isinstance(uploaded, dict) else uploaded.id
+
+    def update_connect_account_branding(
+        self,
+        *,
+        account_id: str,
+        primary_color: str,
+        secondary_color: str,
+        icon_file_id: Optional[str] = None,
+        logo_file_id: Optional[str] = None,
+    ) -> Any:
+        branding = {
+            "primary_color": primary_color,
+            "secondary_color": secondary_color,
+        }
+        if icon_file_id:
+            branding["icon"] = icon_file_id
+        if logo_file_id:
+            branding["logo"] = logo_file_id
+
+        try:
+            return self._stripe_v2_patch(
+                f"/v2/core/accounts/{quote(account_id)}",
+                {
+                    "configuration": {"merchant": {"branding": branding}},
+                    "include": ["configuration.merchant"],
+                },
+                idempotency_key=f"koaryu-connect-branding-{account_id}",
+            )
+        except _StripeV2RequestError as exc:
+            if exc.code != "accounts_v2_access_blocked":
+                self._raise_connect_account_error(exc, "update connected account branding")
+
+        stripe = self._stripe()
+        try:
+            return stripe.Account.modify(
+                account_id,
+                settings={"branding": branding},
+                **self._request_options(idempotency_key=f"koaryu-connect-branding-{account_id}"),
+            )
+        except Exception as exc:
+            if self._is_stripe_exception(exc):
+                self._raise_connect_account_error(exc, "update connected account branding")
+            raise
 
     def create_connect_onboarding_link(
         self,
@@ -694,6 +777,12 @@ class StripeService:
             detail = (
                 "The stored Stripe connected account is no longer accessible. "
                 "Reconnect Stripe Payments before opening Stripe-hosted billing tools."
+            )
+        elif "does not have access to account" in message or "Application access may have been revoked" in message:
+            detail = (
+                "This Stripe account cannot access the stored connected account. "
+                "Reconnect Stripe Payments so Koaryu can create a connected account "
+                "under the active Stripe platform."
             )
         elif "signed up for Connect" in message or "account_create_activation_required" in message:
             detail = (

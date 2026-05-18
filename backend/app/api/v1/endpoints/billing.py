@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Header
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -80,18 +80,22 @@ async def get_connect_status(
 @router.post("/connect/onboarding-link", response_model=BillingLinkResponse)
 async def create_connect_onboarding_link(
     data: BillingActionRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
-    return await BillingService(supabase).create_connect_onboarding_link(
+    service = BillingService(supabase)
+    link = await service.create_connect_onboarding_link(
         studio_id,
         user_id,
         data.refresh_url,
         data.return_url,
         data.business_entity_type,
     )
+    background_tasks.add_task(service.audit_connect_onboarding_started, studio_id, user_id)
+    return link
 
 
 @router.post("/connect/sync", response_model=StudioPaymentAccountResponse)
@@ -104,14 +108,28 @@ async def sync_connect_status(
     return await BillingService(supabase).sync_connect_account(studio_id)
 
 
-@router.post("/connect/dashboard-link", response_model=BillingLinkResponse)
-async def create_connect_dashboard_link(
+@router.post("/connect/reset", response_model=StudioPaymentAccountResponse)
+async def reset_connect_account(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
-    return await BillingService(supabase).create_connect_dashboard_link(studio_id, user_id)
+    return await BillingService(supabase).reset_connect_account(studio_id, user_id)
+
+
+@router.post("/connect/dashboard-link", response_model=BillingLinkResponse)
+async def create_connect_dashboard_link(
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
+    service = BillingService(supabase)
+    link = await service.create_connect_dashboard_link(studio_id, user_id)
+    background_tasks.add_task(service.audit_connect_dashboard_opened, studio_id, user_id)
+    return link
 
 
 @router.get("/plans", response_model=list[BillingPlanResponse])
@@ -421,12 +439,13 @@ async def list_invoices(
 @router.post("/invoices", response_model=BillingInvoiceResponse, status_code=201)
 async def create_invoice(
     data: BillingInvoiceCreate,
+    request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
-    return await BillingService(supabase).create_invoice(data, studio_id, user_id)
+    return await BillingService(supabase).create_invoice(data, studio_id, user_id, request_idempotency_key)
 
 
 @router.post("/invoices/{invoice_id}/finalize", response_model=BillingInvoiceResponse)

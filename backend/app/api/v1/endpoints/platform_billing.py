@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -42,6 +42,7 @@ async def get_email_usage(
 @router.post("/checkout", response_model=BillingLinkResponse)
 async def create_checkout(
     data: BillingActionRequest,
+    request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
@@ -52,6 +53,7 @@ async def create_checkout(
         user_id,
         data.success_url,
         data.cancel_url,
+        request_idempotency_key,
     )
 
 
