@@ -484,6 +484,63 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(invoice["application_fee_amount_cents"], 1)
         self.assertEqual(invoice["amount_paid_cents"], 50)
 
+    def test_successful_invoice_payment_stores_payment_method_without_enabling_autopay(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_payments": [],
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+                "status": "open",
+                "amount_due_cents": 200,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 200,
+                "currency": "usd",
+                "application_fee_amount_cents": 1,
+                "created_at": "2026-05-18T19:00:00Z",
+            }],
+            "billing_disputes": [],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "autopay_status": "not_configured",
+            }],
+        })
+        service._store_invoice_payment_method = lambda studio_id, payer_id, account_id, customer_id, payment_method: service.supabase.tables["billing_payers"][0].update({
+            "stripe_account_id": account_id,
+            "stripe_customer_id": customer_id,
+            "default_payment_method_id": payment_method["id"],
+            "default_payment_method_brand": payment_method["card"]["brand"],
+            "default_payment_method_last4": payment_method["card"]["last4"],
+        })
+
+        service._project_payment_intent({
+            "id": "pi_1",
+            "status": "succeeded",
+            "amount": 200,
+            "amount_received": 200,
+            "application_fee_amount": 1,
+            "currency": "usd",
+            "customer": "cus_1",
+            "latest_charge": "ch_1",
+            "payment_method": {
+                "id": "pm_1",
+                "type": "card",
+                "card": {"brand": "visa", "last4": "2167"},
+            },
+            "metadata": {},
+        }, "acct_1", "payment_intent.succeeded")
+
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payer["default_payment_method_id"], "pm_1")
+        self.assertEqual(payer["default_payment_method_brand"], "visa")
+        self.assertEqual(payer["default_payment_method_last4"], "2167")
+        self.assertEqual(payer["autopay_status"], "not_configured")
+
     def test_stale_invoice_event_is_ignored(self):
         service = self.service()
         service.supabase = _FakeSupabase({

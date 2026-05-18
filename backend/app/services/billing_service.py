@@ -1678,6 +1678,14 @@ class BillingService:
                     "paid_at": datetime.now(timezone.utc).isoformat(),
                 })
             self.supabase.table("billing_invoices").update(update).eq("id", local_invoice["id"]).execute()
+        if status_value == "succeeded" and row.get("payer_id"):
+            self._store_invoice_payment_method(
+                studio_id,
+                row["payer_id"],
+                account_id,
+                _stripe_id(intent.get("customer")),
+                intent.get("payment_method"),
+            )
         if payment.get("payer_id"):
             self._recompute_payer_balance(studio_id, payment.get("payer_id"))
 
@@ -2260,6 +2268,41 @@ class BillingService:
             "default_payment_method_exp_month": _object_get(card, "exp_month"),
             "default_payment_method_exp_year": _object_get(card, "exp_year"),
         }
+
+    def _store_invoice_payment_method(
+        self,
+        studio_id: str,
+        payer_id: str,
+        account_id: Optional[str],
+        customer_id: Optional[str],
+        payment_method: Any,
+    ) -> None:
+        payment_method_id = _stripe_id(payment_method)
+        if not account_id or not customer_id or not payment_method_id:
+            return
+        try:
+            stripe_service = StripeService()
+            stripe_service.set_connected_customer_default_payment_method(
+                account_id=account_id,
+                customer_id=customer_id,
+                payment_method_id=payment_method_id,
+            )
+            customer = stripe_service.retrieve_connected_customer(
+                account_id=account_id,
+                customer_id=customer_id,
+                expand=["invoice_settings.default_payment_method"],
+            )
+            payment_fields = self._payment_method_fields_from_customer(customer)
+        except Exception:
+            payment_fields = self._payment_method_fields_from_payment_method(payment_method)
+        payment_fields = {key: value for key, value in payment_fields.items() if value is not None}
+        if not payment_fields:
+            return
+        self.supabase.table("billing_payers").update({
+            "stripe_account_id": account_id,
+            "stripe_customer_id": customer_id,
+            **payment_fields,
+        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
 
     def _subscription_item_id_for_enrollment(self, subscription: Any, enrollment_id: str) -> Optional[str]:
         items = (_object_get(_object_get(subscription, "items") or {}, "data") or [])
