@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi import HTTPException
 
 from app.schemas.billing import (
     BillingInvoiceCreate,
+    BillingReconcileRequest,
     BillingInvoiceResponse,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentResponse,
@@ -68,6 +70,10 @@ class _FakeQuery:
     def in_(self, key, values):
         values = set(values)
         self.filters.append(lambda row, key=key, values=values: row.get(key) in values)
+        return self
+
+    def order(self, key, desc=False):
+        self.rows.sort(key=lambda row, key=key: row.get(key) or "", reverse=desc)
         return self
 
     @property
@@ -135,6 +141,9 @@ class _FakeStripeService:
     onboarding_calls = []
     retrieve_calls = []
     retrieve_account_response = None
+    invoice_response = None
+    subscription_response = None
+    payment_intent_response = None
 
     def create_connect_onboarding_link(self, *, account_id: str, refresh_url: str, return_url: str):
         self.__class__.onboarding_calls.append({
@@ -152,6 +161,40 @@ class _FakeStripeService:
             "payouts_enabled": False,
             "details_submitted": False,
             "requirements": {"currently_due": []},
+        }
+
+    def retrieve_connected_invoice(self, *, account_id: str, invoice_id: str, expand=None):
+        return self.__class__.invoice_response or {
+            "id": invoice_id,
+            "status": "open",
+            "amount_due": 123,
+            "amount_paid": 0,
+            "amount_remaining": 123,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
+            "created": 200,
+        }
+
+    def retrieve_connected_subscription(self, *, account_id: str, subscription_id: str, expand=None):
+        return self.__class__.subscription_response or {
+            "id": subscription_id,
+            "status": "active",
+            "customer": "cus_1",
+            "items": {"data": []},
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1", "billing_subscription_id": "subscription_1"},
+            "created": 200,
+        }
+
+    def retrieve_connected_payment_intent(self, *, account_id: str, payment_intent_id: str, expand=None):
+        return self.__class__.payment_intent_response or {
+            "id": payment_intent_id,
+            "status": "succeeded",
+            "amount": 123,
+            "amount_received": 123,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
         }
 
 
@@ -658,6 +701,152 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
         self.assertEqual(_FakeStripeService.retrieve_calls, ["acct_existing"])
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("charges are not enabled", context.exception.detail)
+
+    def test_billing_system_status_reports_live_readiness_and_webhook_health(self):
+        service = self.service()
+        now = datetime.now(timezone.utc)
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "STRIPE_SECRET_KEY": "sk_live_123",
+            "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
+            "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform",
+            "STRIPE_CONNECT_WEBHOOK_SECRET": "whsec_connect",
+        })()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+                "updated_at": now.isoformat(),
+            }],
+            "stripe_events": [
+                {
+                    "stripe_account_id": None,
+                    "type": "customer.subscription.updated",
+                    "processing_status": "processed",
+                    "processed_at": now.isoformat(),
+                    "created_at": now.isoformat(),
+                },
+                {
+                    "stripe_account_id": "acct_existing",
+                    "type": "invoice.paid",
+                    "processing_status": "processed",
+                    "processed_at": now.isoformat(),
+                    "created_at": now.isoformat(),
+                },
+            ],
+        })
+
+        response = asyncio.run(service.get_system_status("studio_1"))
+
+        self.assertTrue(response.ready_for_live_payments)
+        self.assertEqual(response.payment_account.status, "charges_enabled")
+        self.assertEqual(response.connect_webhooks.latest_event_type, "invoice.paid")
+        self.assertFalse([check for check in response.checks if check.status == "fail"])
+
+    def test_billing_system_status_flags_stale_connect_webhook_processing(self):
+        service = self.service()
+        old = datetime.now(timezone.utc) - timedelta(minutes=20)
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "STRIPE_SECRET_KEY": "sk_live_123",
+            "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
+            "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform",
+            "STRIPE_CONNECT_WEBHOOK_SECRET": "whsec_connect",
+        })()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }],
+            "stripe_events": [{
+                "stripe_account_id": "acct_existing",
+                "type": "invoice.paid",
+                "processing_status": "processing",
+                "processed_at": None,
+                "created_at": old.isoformat(),
+            }],
+        })
+
+        response = asyncio.run(service.get_system_status("studio_1"))
+
+        self.assertFalse(response.ready_for_live_payments)
+        self.assertEqual(response.connect_webhooks.stale_processing_count, 1)
+
+    def test_reconcile_invoice_by_stripe_id_repairs_local_projection(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_existing",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_existing",
+                "payer_id": "payer_1",
+                "status": "draft",
+                "amount_due_cents": 0,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 0,
+                "currency": "usd",
+            }],
+            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1", "billing_status": "current", "balance_cents": 0}],
+            "audit_logs": [],
+        })
+        _FakeStripeService.retrieve_calls = []
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_existing",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        _FakeStripeService.invoice_response = {
+            "id": "in_1",
+            "status": "open",
+            "amount_due": 123,
+            "amount_paid": 0,
+            "amount_remaining": 123,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
+            "created": 200,
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            response = asyncio.run(service.reconcile_stripe_object(
+                BillingReconcileRequest(object_type="invoice", stripe_object_id="in_1"),
+                "studio_1",
+                "user_1",
+            ))
+
+        self.assertEqual(response.local_object_id, "invoice_1")
+        self.assertEqual(response.status, "open")
+        self.assertEqual(service.supabase.tables["billing_invoices"][0]["amount_due_cents"], 123)
+        self.assertEqual(service.supabase.tables["billing_payers"][0]["balance_cents"], 123)
 
     def test_connect_reset_clears_stale_account_when_no_stripe_history_exists(self):
         service = self.service()

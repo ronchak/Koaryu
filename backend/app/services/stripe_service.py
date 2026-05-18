@@ -394,6 +394,11 @@ class StripeService:
             payload["expand"] = expand
         return stripe.PaymentIntent.retrieve(payment_intent_id, **payload, **self._request_options(account_id=account_id))
 
+    def retrieve_connected_subscription(self, *, account_id: str, subscription_id: str, expand: Optional[list[str]] = None):
+        stripe = self._stripe()
+        payload: dict[str, Any] = {"expand": expand or ["items.data"]}
+        return stripe.Subscription.retrieve(subscription_id, **payload, **self._request_options(account_id=account_id))
+
     def create_connected_refund(
         self,
         *,

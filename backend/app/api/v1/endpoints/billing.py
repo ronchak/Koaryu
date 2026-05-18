@@ -17,8 +17,11 @@ from app.schemas.billing import (
     BillingPlanCreate,
     BillingPlanResponse,
     BillingPlanUpdate,
+    BillingReconcileRequest,
+    BillingReconcileResponse,
     BillingRefundCreate,
     BillingRefundResponse,
+    BillingSystemStatusResponse,
     BillingSubscriptionResponse,
     ExportJobCreate,
     ExportJobResponse,
@@ -130,6 +133,32 @@ async def create_connect_dashboard_link(
     link = await service.create_connect_dashboard_link(studio_id, user_id)
     background_tasks.add_task(service.audit_connect_dashboard_opened, studio_id, user_id)
     return link
+
+
+@router.get("/system/status", response_model=BillingSystemStatusResponse)
+async def get_billing_system_status(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
+    return await BillingService(supabase).get_system_status(studio_id)
+
+
+@router.post("/reconcile", response_model=BillingReconcileResponse)
+async def reconcile_billing_from_stripe(
+    data: BillingReconcileRequest,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _admin_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return await BillingService(supabase).reconcile_stripe_object(data, studio_id, user_id)
 
 
 @router.get("/plans", response_model=list[BillingPlanResponse])

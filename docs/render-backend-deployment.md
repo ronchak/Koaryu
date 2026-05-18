@@ -195,6 +195,31 @@ Before enabling live Koaryu Payments for a studio:
 - Use Stripe's `pm_card_createDispute` test PaymentMethod and confirm `charge.dispute.created` projects into `billing_disputes`.
 - Run a reconciliation pass for any object whose webhook delivery was missed or delayed.
 
+### Billing Readiness and Recovery
+
+Authenticated studio admins can check the live billing surface with:
+
+```bash
+curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "X-Studio-Id: $STUDIO_ID" \
+  https://koaryu.onrender.com/api/v1/billing/system/status
+```
+
+The response summarizes Stripe env configuration, Connect charge/payout readiness, Supabase reachability, and platform/Connect webhook processing health without returning secrets.
+
+If Stripe has the correct state but Koaryu missed or delayed projection, admins can ask the backend to re-read Stripe and repair the local projection:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "X-Studio-Id: $STUDIO_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"object_type":"invoice","stripe_object_id":"in_..."}' \
+  https://koaryu.onrender.com/api/v1/billing/reconcile
+```
+
+Supported `object_type` values are `connect_account`, `payer`, `invoice`, `subscription`, and `payment_intent`. Use `payer_id` instead of `stripe_object_id` for payer reconciliation.
+
 ### Rollout Risks
 
 - Do not enable new Stripe billing actions for a studio whose Connect account is `deauthorized` or lacks `charges_enabled`.

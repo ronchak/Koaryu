@@ -14,6 +14,8 @@ PayerBillingStatus = Literal["current", "upcoming", "past_due", "failed", "unpai
 AutopayStatus = Literal["not_configured", "pending", "enabled", "disabled"]
 InvoiceStatus = Literal["draft", "open", "paid", "void", "uncollectible", "refunded", "partially_refunded"]
 PaymentStatus = Literal["pending", "processing", "succeeded", "failed", "refunded", "disputed", "externally_recorded"]
+BillingSystemCheckStatus = Literal["pass", "warn", "fail"]
+BillingReconcileObjectType = Literal["connect_account", "payer", "invoice", "subscription", "payment_intent"]
 
 
 class BillingLinkResponse(BaseModel):
@@ -68,6 +70,44 @@ class StudioPaymentAccountResponse(BaseModel):
     liability_note: str = "Disputes and chargebacks on Connect direct charges remain the studio's liability."
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class BillingSystemCheck(BaseModel):
+    name: str
+    status: BillingSystemCheckStatus
+    detail: str
+
+
+class BillingWebhookHealthResponse(BaseModel):
+    stripe_account_id: Optional[str] = None
+    latest_processed_at: Optional[str] = None
+    latest_event_type: Optional[str] = None
+    failed_count: int = 0
+    stale_processing_count: int = 0
+
+
+class BillingSystemStatusResponse(BaseModel):
+    studio_id: str
+    ready_for_live_payments: bool
+    checked_at: str
+    payment_account: StudioPaymentAccountResponse
+    platform_webhooks: BillingWebhookHealthResponse
+    connect_webhooks: BillingWebhookHealthResponse
+    checks: list[BillingSystemCheck]
+
+
+class BillingReconcileRequest(BaseModel):
+    object_type: BillingReconcileObjectType
+    stripe_object_id: Optional[str] = None
+    payer_id: Optional[str] = None
+
+
+class BillingReconcileResponse(BaseModel):
+    object_type: BillingReconcileObjectType
+    stripe_object_id: Optional[str] = None
+    local_object_id: Optional[str] = None
+    status: str
+    detail: str
 
 
 class BillingPlanProgramResponse(BaseModel):

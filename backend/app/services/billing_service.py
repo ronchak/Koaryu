@@ -23,9 +23,14 @@ from app.schemas.billing import (
     BillingPlanProgramResponse,
     BillingPlanResponse,
     BillingPlanUpdate,
+    BillingReconcileRequest,
+    BillingReconcileResponse,
     BillingRefundCreate,
     BillingRefundResponse,
     BillingInvoiceResponse,
+    BillingSystemCheck,
+    BillingSystemStatusResponse,
+    BillingWebhookHealthResponse,
     BillingSubscriptionResponse,
     ExportJobCreate,
     ExportJobResponse,
@@ -39,6 +44,7 @@ from app.services.stripe_service import StripeService
 
 
 CONNECT_STATUS_STALE_AFTER = timedelta(minutes=15)
+BILLING_WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
 
 
 def _to_text(value: Any) -> Optional[str]:
@@ -167,6 +173,208 @@ class BillingService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Connect Stripe before opening the Stripe dashboard.")
         url = StripeService().create_connect_dashboard_url(account_id=stripe_account_id)
         return BillingLinkResponse(url=url)
+
+    async def get_system_status(self, studio_id: str) -> BillingSystemStatusResponse:
+        checked_at = datetime.now(timezone.utc).isoformat()
+        checks: list[BillingSystemCheck] = []
+
+        def add_check(name: str, passed: bool, detail: str, *, warn: bool = False) -> None:
+            checks.append(BillingSystemCheck(
+                name=name,
+                status="pass" if passed else ("warn" if warn else "fail"),
+                detail=detail,
+            ))
+
+        add_check(
+            "Stripe API key",
+            bool(getattr(self.settings, "STRIPE_SECRET_KEY", "")),
+            "Stripe API key is configured." if getattr(self.settings, "STRIPE_SECRET_KEY", "") else "STRIPE_SECRET_KEY is missing.",
+        )
+        add_check(
+            "Koaryu Core price",
+            bool(getattr(self.settings, "STRIPE_KOARYU_CORE_PRICE_ID", "")),
+            "Koaryu Core price ID is configured." if getattr(self.settings, "STRIPE_KOARYU_CORE_PRICE_ID", "") else "STRIPE_KOARYU_CORE_PRICE_ID is missing.",
+        )
+        add_check(
+            "Platform webhook secret",
+            bool(getattr(self.settings, "STRIPE_PLATFORM_WEBHOOK_SECRET", "")),
+            "Platform webhook signature secret is configured." if getattr(self.settings, "STRIPE_PLATFORM_WEBHOOK_SECRET", "") else "STRIPE_PLATFORM_WEBHOOK_SECRET is missing.",
+        )
+        add_check(
+            "Connect webhook secret",
+            bool(getattr(self.settings, "STRIPE_CONNECT_WEBHOOK_SECRET", "")),
+            "Connect webhook signature secret is configured." if getattr(self.settings, "STRIPE_CONNECT_WEBHOOK_SECRET", "") else "STRIPE_CONNECT_WEBHOOK_SECRET is missing.",
+        )
+
+        try:
+            account_response = await self.get_payment_account(studio_id)
+            account_failed = False
+        except Exception as exc:
+            account_failed = True
+            account_row = self._ensure_payment_account_row(studio_id)
+            account_response = self._payment_account_response(account_row)
+            add_check("Connect account refresh", False, f"Could not refresh Stripe Connect account: {exc}")
+
+        if not account_failed:
+            add_check(
+                "Connect account",
+                bool(account_response.stripe_connected_account_id),
+                "Stripe Connect account exists." if account_response.stripe_connected_account_id else "Studio has not connected Stripe Payments.",
+            )
+            add_check(
+                "Connect charges",
+                account_response.charges_enabled,
+                "Connected account can accept charges." if account_response.charges_enabled else "Connected account cannot accept charges yet.",
+            )
+            add_check(
+                "Connect payouts",
+                account_response.payouts_enabled,
+                "Connected account payouts are enabled." if account_response.payouts_enabled else "Connected account payouts are not enabled yet.",
+                warn=account_response.charges_enabled,
+            )
+            add_check(
+                "Connect requirements",
+                not account_response.requirements_due,
+                "No currently due Connect requirements." if not account_response.requirements_due else "Connect has currently due requirements: " + ", ".join(account_response.requirements_due),
+            )
+
+        try:
+            self.supabase.table("studio_payment_accounts").select("studio_id").eq("studio_id", studio_id).limit(1).execute()
+            add_check("Supabase write path", True, "Supabase billing tables are reachable.")
+        except Exception as exc:
+            add_check("Supabase write path", False, f"Supabase billing tables are not reachable: {exc}")
+
+        platform_webhooks = self._webhook_health(None)
+        connect_webhooks = self._webhook_health(account_response.stripe_connected_account_id)
+
+        add_check(
+            "Platform webhook processing",
+            platform_webhooks.failed_count == 0 and platform_webhooks.stale_processing_count == 0,
+            "No failed or stale platform webhook events found." if platform_webhooks.failed_count == 0 and platform_webhooks.stale_processing_count == 0 else "Platform webhook failures or stale processing rows need review.",
+        )
+        add_check(
+            "Connect webhook processing",
+            connect_webhooks.failed_count == 0 and connect_webhooks.stale_processing_count == 0,
+            "No failed or stale Connect webhook events found." if connect_webhooks.failed_count == 0 and connect_webhooks.stale_processing_count == 0 else "Connect webhook failures or stale processing rows need review.",
+        )
+        add_check(
+            "Recent Connect webhook",
+            bool(connect_webhooks.latest_processed_at),
+            "A Connect webhook has processed for this account." if connect_webhooks.latest_processed_at else "No processed Connect webhook row is visible for this account yet.",
+            warn=True,
+        )
+
+        ready = all(check.status == "pass" for check in checks if check.name != "Recent Connect webhook")
+        return BillingSystemStatusResponse(
+            studio_id=studio_id,
+            ready_for_live_payments=ready,
+            checked_at=checked_at,
+            payment_account=account_response,
+            platform_webhooks=platform_webhooks,
+            connect_webhooks=connect_webhooks,
+            checks=checks,
+        )
+
+    async def reconcile_stripe_object(
+        self,
+        data: BillingReconcileRequest,
+        studio_id: str,
+        actor_id: str,
+    ) -> BillingReconcileResponse:
+        if data.object_type == "connect_account":
+            account = await self.sync_connect_account(studio_id)
+            self._audit(studio_id, actor_id, "billing.reconcile_connect_account", studio_id, {
+                "stripe_account_id": account.stripe_connected_account_id,
+            })
+            return BillingReconcileResponse(
+                object_type=data.object_type,
+                stripe_object_id=account.stripe_connected_account_id,
+                local_object_id=studio_id,
+                status=account.status,
+                detail="Connect account status was refreshed from Stripe.",
+            )
+
+        if data.object_type == "payer":
+            if not data.payer_id:
+                raise HTTPException(status_code=400, detail="payer_id is required to reconcile a payer.")
+            payer = await self.sync_payer(data.payer_id, studio_id, actor_id)
+            return BillingReconcileResponse(
+                object_type=data.object_type,
+                stripe_object_id=payer.stripe_customer_id,
+                local_object_id=payer.id,
+                status=payer.billing_status,
+                detail="Payer customer and default payment method were refreshed from Stripe.",
+            )
+
+        if not data.stripe_object_id:
+            raise HTTPException(status_code=400, detail="stripe_object_id is required for this reconciliation.")
+        account = self._ensure_connect_ready(studio_id)
+        account_id = account["stripe_connected_account_id"]
+        stripe_service = StripeService()
+
+        if data.object_type == "invoice":
+            stripe_invoice = stripe_service.retrieve_connected_invoice(
+                account_id=account_id,
+                invoice_id=data.stripe_object_id,
+                expand=["payment_intent"],
+            )
+            invoice = self._stripe_object_to_dict(stripe_invoice)
+            event_type = "invoice.paid" if invoice.get("status") == "paid" else "invoice.finalized"
+            self._project_invoice_event(invoice, account_id, event_type, event_created=invoice.get("created"))
+            local = self._find_invoice_for_stripe(invoice, account_id)
+            self._audit(studio_id, actor_id, "billing.reconcile_invoice", local.get("id") if local else data.stripe_object_id, {
+                "stripe_invoice_id": data.stripe_object_id,
+            })
+            return BillingReconcileResponse(
+                object_type=data.object_type,
+                stripe_object_id=data.stripe_object_id,
+                local_object_id=(local or {}).get("id"),
+                status=(local or {}).get("status") or "reconciled",
+                detail="Invoice was refreshed from Stripe.",
+            )
+
+        if data.object_type == "subscription":
+            stripe_subscription = stripe_service.retrieve_connected_subscription(
+                account_id=account_id,
+                subscription_id=data.stripe_object_id,
+                expand=["items.data"],
+            )
+            subscription = self._stripe_object_to_dict(stripe_subscription)
+            local = self._project_subscription(subscription, account_id, "customer.subscription.updated", subscription.get("created"))
+            self._audit(studio_id, actor_id, "billing.reconcile_subscription", (local or {}).get("id") or data.stripe_object_id, {
+                "stripe_subscription_id": data.stripe_object_id,
+            })
+            return BillingReconcileResponse(
+                object_type=data.object_type,
+                stripe_object_id=data.stripe_object_id,
+                local_object_id=(local or {}).get("id"),
+                status=(local or {}).get("status") or subscription.get("status") or "reconciled",
+                detail="Subscription was refreshed from Stripe.",
+            )
+
+        stripe_intent = stripe_service.retrieve_connected_payment_intent(
+            account_id=account_id,
+            payment_intent_id=data.stripe_object_id,
+            expand=["latest_charge", "payment_method"],
+        )
+        intent = self._stripe_object_to_dict(stripe_intent)
+        event_type = "payment_intent.succeeded"
+        if intent.get("status") == "processing":
+            event_type = "payment_intent.processing"
+        elif intent.get("status") not in {"succeeded", "requires_capture"}:
+            event_type = "payment_intent.payment_failed"
+        self._project_payment_intent(intent, account_id, event_type)
+        local_payment = self._find_payment_by_intent(account_id, data.stripe_object_id)
+        self._audit(studio_id, actor_id, "billing.reconcile_payment_intent", (local_payment or {}).get("id") or data.stripe_object_id, {
+            "stripe_payment_intent_id": data.stripe_object_id,
+        })
+        return BillingReconcileResponse(
+            object_type=data.object_type,
+            stripe_object_id=data.stripe_object_id,
+            local_object_id=(local_payment or {}).get("id"),
+            status=(local_payment or {}).get("status") or intent.get("status") or "reconciled",
+            detail="PaymentIntent was refreshed from Stripe.",
+        )
 
     def audit_connect_onboarding_started(self, studio_id: str, actor_id: str) -> None:
         account = self._ensure_payment_account_row(studio_id)
@@ -1757,6 +1965,70 @@ class BillingService:
         query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
         result = query.execute()
         return result.data[0] if result.data else None
+
+    def _find_payment_by_intent(self, account_id: Optional[str], payment_intent_id: Optional[str]) -> Optional[dict[str, Any]]:
+        if not payment_intent_id:
+            return None
+        query = self.supabase.table("billing_payments").select("*").eq("stripe_payment_intent_id", payment_intent_id).limit(1)
+        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        result = query.execute()
+        return result.data[0] if result.data else None
+
+    def _webhook_health(self, account_id: Optional[str]) -> BillingWebhookHealthResponse:
+        try:
+            query = (
+                self.supabase.table("stripe_events")
+                .select("type, processing_status, processed_at, created_at")
+                .order("created_at", desc=True)
+                .limit(50)
+            )
+            query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+            rows = query.execute().data or []
+        except Exception:
+            return BillingWebhookHealthResponse(
+                stripe_account_id=account_id,
+                failed_count=1,
+                stale_processing_count=0,
+            )
+
+        latest_processed = next((row for row in rows if row.get("processing_status") == "processed"), None)
+        return BillingWebhookHealthResponse(
+            stripe_account_id=account_id,
+            latest_processed_at=_to_text((latest_processed or {}).get("processed_at")),
+            latest_event_type=(latest_processed or {}).get("type"),
+            failed_count=sum(1 for row in rows if row.get("processing_status") == "failed"),
+            stale_processing_count=sum(1 for row in rows if self._is_stale_webhook_processing(row)),
+        )
+
+    @staticmethod
+    def _is_stale_webhook_processing(row: dict[str, Any]) -> bool:
+        if row.get("processing_status") != "processing":
+            return False
+        created_at = row.get("created_at")
+        if not created_at:
+            return False
+        if isinstance(created_at, datetime):
+            created = created_at
+        elif isinstance(created_at, str):
+            try:
+                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                return False
+        else:
+            return False
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - created >= BILLING_WEBHOOK_PROCESSING_STALE_AFTER
+
+    @staticmethod
+    def _stripe_object_to_dict(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "to_dict_recursive"):
+            return value.to_dict_recursive()
+        if hasattr(value, "to_dict"):
+            return value.to_dict()
+        return dict(value)
 
     def _find_subscription_for_stripe(self, subscription: dict[str, Any], account_id: Optional[str]) -> Optional[dict[str, Any]]:
         metadata = subscription.get("metadata") or {}
