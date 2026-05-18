@@ -38,6 +38,7 @@ class PlatformBillingService:
 
     async def get_status(self, studio_id: str) -> PlatformBillingStatusResponse:
         row = self._ensure_subscription_row(studio_id)
+        row = self._repair_missing_subscription(row)
         row = self._repair_subscription_periods(row)
         return self._status_response(row, self._email_usage(studio_id))
 
@@ -302,6 +303,40 @@ class PlatformBillingService:
             return self._update_subscription_row(row["studio_id"], self._project_subscription(subscription))
         except Exception:
             return row
+
+    def _repair_missing_subscription(self, row: dict[str, Any]) -> dict[str, Any]:
+        if row.get("stripe_subscription_id"):
+            return row
+        if not row.get("stripe_customer_id") or bool(row.get("comped", True)):
+            return row
+
+        try:
+            subscriptions = StripeService().list_customer_subscriptions(row["stripe_customer_id"])
+        except Exception:
+            return row
+
+        subscription = self._select_core_subscription(subscriptions, row["studio_id"])
+        if not subscription:
+            return row
+
+        update = self._project_subscription(subscription)
+        return self._update_subscription_row(row["studio_id"], update)
+
+    def _select_core_subscription(self, subscriptions: Any, studio_id: str) -> Optional[Any]:
+        candidates = self._object_get(subscriptions, "data") or subscriptions
+        if not isinstance(candidates, list):
+            return None
+
+        fallback: Optional[Any] = None
+        for subscription in candidates:
+            metadata = self._object_get(subscription, "metadata") or {}
+            if self._object_get(metadata, "studio_id") != studio_id:
+                continue
+            status_value = self._object_get(subscription, "status") or ""
+            if status_value in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
+                return subscription
+            fallback = fallback or subscription
+        return fallback
 
     def _should_repair_subscription_periods(self, row: dict[str, Any]) -> bool:
         if not row.get("stripe_subscription_id"):

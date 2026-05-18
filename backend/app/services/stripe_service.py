@@ -458,6 +458,15 @@ class StripeService:
         params = {"expand": expand or ["items.data"]}
         return stripe.Subscription.retrieve(subscription_id, **params)
 
+    def list_customer_subscriptions(self, customer_id: str, *, limit: int = 5):
+        stripe = self._stripe()
+        return stripe.Subscription.list(
+            customer=customer_id,
+            status="all",
+            limit=limit,
+            expand=["data.items.data"],
+        )
+
     def create_connect_account(
         self,
         *,

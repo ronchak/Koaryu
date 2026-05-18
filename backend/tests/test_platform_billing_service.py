@@ -353,6 +353,66 @@ class PlatformBillingServiceTest(unittest.TestCase):
         self.assertEqual(FakeStripeService.calls, 1)
         self.assertEqual(response.trial_end, "1970-01-01T00:05:00+00:00")
 
+    def test_get_status_repairs_missing_subscription_from_customer(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            calls = 0
+
+            def list_customer_subscriptions(self, customer_id):
+                FakeStripeService.calls += 1
+                assert customer_id == "cus_123"
+                return {
+                    "data": [{
+                        "id": "sub_123",
+                        "customer": "cus_123",
+                        "status": "trialing",
+                        "metadata": {"studio_id": "studio_1", "product": "koaryu_core"},
+                        "trial_start": 50,
+                        "trial_end": 300,
+                        "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+                        "cancel_at_period_end": False,
+                    }]
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.get_status("studio_1"))
+
+        self.assertEqual(FakeStripeService.calls, 1)
+        self.assertEqual(response.status, "trialing")
+        self.assertEqual(response.stripe_subscription_id, "sub_123")
+        self.assertEqual(response.trial_end, "1970-01-01T00:05:00+00:00")
+
+    def test_get_status_does_not_repair_comped_customer(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "comped",
+            "comped": True,
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            calls = 0
+
+            def list_customer_subscriptions(self, customer_id):
+                FakeStripeService.calls += 1
+                return {"data": []}
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.get_status("studio_1"))
+
+        self.assertEqual(FakeStripeService.calls, 0)
+        self.assertEqual(response.status, "comped")
+
 
 if __name__ == "__main__":
     unittest.main()
