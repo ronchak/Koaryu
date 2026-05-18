@@ -660,10 +660,10 @@ class BillingPaymentsLifecycleTest(unittest.TestCase):
                 "user_1",
             ))
 
-        self.assertEqual(link.url, "https://checkout.stripe.test/setup")
-        self.assertEqual(service.supabase.tables["billing_payers"][0]["autopay_status"], "pending")
+        self.assertEqual(link.url, "https://app.koaryu.test/billing")
+        self.assertEqual(service.supabase.tables["billing_payers"][0]["autopay_status"], "enabled")
         self.assertIsNotNone(service.supabase.tables["billing_payers"][0]["autopay_terms_accepted_at"])
-        self.assertEqual(_FakeStripeService.setup_calls[0]["success_url"], "https://app.koaryu.test/billing")
+        self.assertEqual(_FakeStripeService.setup_calls, [])
 
     def test_autopay_invoice_requires_authorized_payer_terms(self):
         service = self.service()

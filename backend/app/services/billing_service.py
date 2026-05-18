@@ -577,6 +577,19 @@ class BillingService:
             "autopay_status": "pending",
             "autopay_terms_accepted_at": now if data.terms_accepted else None,
         }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        return_url = self._safe_redirect_url(data.return_url, f"{frontend_url}/billing?autopay=success")
+        if payer.get("default_payment_method_id"):
+            self.supabase.table("billing_payers").update({
+                "autopay_status": "enabled",
+                "autopay_authorized_at": now,
+                "autopay_terms_accepted_at": now,
+                "billing_status": "current",
+            }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+            self._audit(studio_id, actor_id, "billing.autopay_authorized_existing_payment_method", payer_id, {
+                "stripe_customer_id": payer.get("stripe_customer_id"),
+                "default_payment_method_id": payer.get("default_payment_method_id"),
+            })
+            return BillingLinkResponse(url=return_url)
         link = StripeService().create_setup_checkout_session(
             account_id=account["stripe_connected_account_id"],
             customer_id=payer["stripe_customer_id"],
