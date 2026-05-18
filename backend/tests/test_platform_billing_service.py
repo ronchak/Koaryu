@@ -107,6 +107,10 @@ class PlatformBillingServiceTest(unittest.TestCase):
                 calls.append(("customer", name, metadata, idempotency_key))
                 return {"id": "cus_123"}
 
+            def list_customer_subscriptions(self, customer_id):
+                calls.append(("subscriptions", customer_id))
+                return {"data": []}
+
             def create_core_checkout_session(self, **payload):
                 calls.append(("checkout", payload))
                 return {"url": "https://checkout.stripe.test/session"}
@@ -122,8 +126,92 @@ class PlatformBillingServiceTest(unittest.TestCase):
 
         self.assertEqual(response.url, "https://checkout.stripe.test/session")
         self.assertEqual(calls[0][3], "koaryu:core-customer:studio_1")
+        self.assertEqual(calls[1][0], "checkout")
         self.assertEqual(calls[1][1]["idempotency_key"], "koaryu:core-checkout:studio_1:click-key")
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
+
+    def test_create_checkout_repairs_missing_live_subscription_before_opening_new_session(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, customer_id):
+                return {
+                    "data": [{
+                        "id": "sub_123",
+                        "customer": customer_id,
+                        "status": "trialing",
+                        "metadata": {"studio_id": "studio_1"},
+                        "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+                    }]
+                }
+
+            def create_core_checkout_session(self, **_payload):
+                raise AssertionError("should not create checkout when Stripe already has a live Core subscription")
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(rows[0]["stripe_subscription_id"], "sub_123")
+
+    def test_create_checkout_reuses_pending_session_for_second_device(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+        calls = []
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, customer_id):
+                calls.append(("subscriptions", customer_id))
+                return {"data": []}
+
+            def create_core_checkout_session(self, **payload):
+                calls.append(("checkout", payload))
+                return {
+                    "id": "cs_123",
+                    "url": "https://checkout.stripe.test/session",
+                    "expires_at": 9999999999,
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            first = asyncio.run(service.create_checkout_link("studio_1", "user_1", idempotency_key="tab-one"))
+            second = asyncio.run(service.create_checkout_link("studio_1", "user_1", idempotency_key="tab-two"))
+
+        self.assertEqual(first.url, "https://checkout.stripe.test/session")
+        self.assertEqual(second.url, "https://checkout.stripe.test/session")
+        self.assertEqual([call[0] for call in calls].count("checkout"), 1)
+
+    def test_create_checkout_rejects_external_redirect_urls(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": "sub_canceled",
+            "status": "canceled",
+            "comped": False,
+        }]
+        service = self.service(rows)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.create_checkout_link(
+                "studio_1",
+                "user_1",
+                success_url="https://evil.test/billing",
+            ))
+
+        self.assertEqual(context.exception.status_code, 400)
 
     def test_create_checkout_blocks_when_core_subscription_is_live(self):
         service = self.service([{
@@ -205,6 +293,34 @@ class PlatformBillingServiceTest(unittest.TestCase):
             "stripe_customer_id": "cus_123",
             "status": "active",
             "last_stripe_event_created": 200,
+            "metadata": {"core_subscription_event_created": 200},
+        }]
+        service = self.service(rows)
+
+        service.project_subscription_event({
+            "id": "evt_old",
+            "created": 100,
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_123",
+                    "customer": "cus_123",
+                    "status": "canceled",
+                },
+            },
+        })
+
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["last_stripe_event_created"], 200)
+
+    def test_legacy_last_event_watermark_still_blocks_stale_subscription_webhook(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "active",
+            "last_stripe_event_created": 200,
+            "metadata": {},
         }]
         service = self.service(rows)
 
@@ -249,6 +365,197 @@ class PlatformBillingServiceTest(unittest.TestCase):
 
         self.assertEqual(rows[0]["status"], "active")
         self.assertEqual(rows[0]["last_stripe_event_created"], 200)
+        self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
+
+    def test_invoice_event_does_not_make_subscription_update_stale(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "trialing",
+            "last_stripe_event_created": 100,
+            "metadata": {"core_subscription_event_created": 100},
+        }]
+        service = self.service(rows)
+
+        service.project_subscription_event({
+            "id": "evt_invoice",
+            "created": 300,
+            "type": "invoice.paid",
+            "data": {"object": {"subscription": "sub_123", "customer": "cus_123"}},
+        })
+        service.project_subscription_event({
+            "id": "evt_subscription",
+            "created": 200,
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_123",
+                    "customer": "cus_123",
+                    "status": "active",
+                },
+            },
+        })
+
+        self.assertEqual(rows[0]["last_payment_status"], "paid")
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
+
+    def test_old_checkout_completion_does_not_regress_newer_subscription_status(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "active",
+            "last_stripe_event_created": 200,
+            "metadata": {"core_subscription_event_created": 200},
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def retrieve_subscription(self, subscription_id):
+                raise RuntimeError("temporary Stripe retrieve failure")
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "id": "evt_checkout_old",
+                "created": 100,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "customer": "cus_123",
+                        "subscription": "sub_123",
+                        "payment_status": "paid",
+                        "metadata": {"studio_id": "studio_1"},
+                    },
+                },
+            })
+
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["last_payment_status"], "paid")
+        self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
+
+    def test_old_checkout_subscription_fetch_does_not_lower_subscription_watermark(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "active",
+            "last_stripe_event_created": 200,
+            "metadata": {"core_subscription_event_created": 200},
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def retrieve_subscription(self, subscription_id):
+                return {
+                    "id": subscription_id,
+                    "customer": "cus_123",
+                    "status": "trialing",
+                    "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "id": "evt_checkout_old",
+                "created": 100,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "customer": "cus_123",
+                        "subscription": "sub_123",
+                        "payment_status": "paid",
+                        "metadata": {"studio_id": "studio_1"},
+                    },
+                },
+            })
+
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
+
+    def test_old_checkout_completion_does_not_replace_newer_subscription_identity(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_new",
+            "stripe_customer_id": "cus_new",
+            "status": "active",
+            "comped": False,
+            "last_stripe_event_created": 200,
+            "metadata": {"core_subscription_event_created": 200},
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def retrieve_subscription(self, subscription_id):
+                raise AssertionError("stale checkout should not retrieve and project subscription details")
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "id": "evt_checkout_old",
+                "created": 100,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "customer": "cus_old",
+                        "subscription": "sub_old",
+                        "payment_status": "paid",
+                        "metadata": {"studio_id": "studio_1"},
+                    },
+                },
+            })
+
+        self.assertEqual(rows[0]["stripe_customer_id"], "cus_new")
+        self.assertEqual(rows[0]["stripe_subscription_id"], "sub_new")
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["last_payment_status"], "paid")
+
+    def test_fresh_checkout_completion_marks_subscription_watermark_before_retrieve(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": None,
+            "stripe_customer_id": "cus_123",
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {},
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def retrieve_subscription(self, subscription_id):
+                raise RuntimeError("temporary Stripe retrieve failure")
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "id": "evt_checkout_new",
+                "created": 200,
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "customer": "cus_123",
+                        "subscription": "sub_new",
+                        "payment_status": "paid",
+                        "metadata": {"studio_id": "studio_1"},
+                    },
+                },
+            })
+            service.project_subscription_event({
+                "id": "evt_subscription_old",
+                "created": 100,
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_new",
+                        "customer": "cus_123",
+                        "status": "canceled",
+                        "metadata": {"studio_id": "studio_1"},
+                    },
+                },
+            })
+
+        self.assertEqual(rows[0]["stripe_subscription_id"], "sub_new")
+        self.assertEqual(rows[0]["status"], "trialing")
+        self.assertEqual(rows[0]["last_payment_status"], "paid")
+        self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
 
     def test_checkout_completed_fetches_subscription_projection_when_available(self):
         rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]
@@ -412,6 +719,54 @@ class PlatformBillingServiceTest(unittest.TestCase):
 
         self.assertEqual(FakeStripeService.calls, 0)
         self.assertEqual(response.status, "comped")
+
+    def test_create_portal_returns_session_for_valid_customer(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "status": "trialing",
+            "comped": False,
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def create_customer_portal_session(self, *, customer_id, return_url):
+                return {"url": f"https://billing.stripe.test/session?customer={customer_id}&return={return_url}"}
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.create_portal_link("studio_1", "user_1", "https://koaryu.test/billing"))
+
+        self.assertIn("https://billing.stripe.test/session", response.url)
+
+    def test_create_portal_repairs_stale_customer_and_blocks_for_checkout(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_deleted",
+            "stripe_subscription_id": "sub_deleted",
+            "status": "trialing",
+            "comped": False,
+            "metadata": {"core_checkout_session": {"url": "old", "expires_at": 9999999999}},
+        }]
+        service = self.service(rows)
+
+        class NoSuchCustomerError(Exception):
+            __module__ = "stripe.error"
+
+        class FakeStripeService:
+            def create_customer_portal_session(self, *, customer_id, return_url):
+                raise NoSuchCustomerError("No such customer: cus_deleted")
+
+            def create_customer(self, *, name, metadata, idempotency_key=None):
+                return {"id": "cus_new"}
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_portal_link("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(rows[0]["stripe_customer_id"], "cus_new")
+        self.assertIsNone(rows[0]["stripe_subscription_id"])
+        self.assertNotIn("core_checkout_session", rows[0]["metadata"])
 
 
 if __name__ == "__main__":

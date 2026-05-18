@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -21,6 +22,8 @@ EMAIL_INCLUDED_PER_MONTH = 500
 EMAIL_OVERAGE_RATE_CENTS = 0.2
 LIVE_STRIPE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid", "paused"}
 MISSING = object()
+PENDING_CHECKOUT_METADATA_KEY = "core_checkout_session"
+SUBSCRIPTION_EVENT_METADATA_KEY = "core_subscription_event_created"
 
 
 def _to_text(value: Any) -> Optional[str]:
@@ -54,6 +57,8 @@ class PlatformBillingService:
         idempotency_key: Optional[str] = None,
     ) -> BillingLinkResponse:
         row = self._ensure_subscription_row(studio_id)
+        row = self._repair_missing_subscription(row)
+        row = self._repair_subscription_periods(row)
         if row.get("stripe_subscription_id") and (row.get("status") or "") in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -68,9 +73,13 @@ class PlatformBillingService:
 
         frontend_url = self.settings.FRONTEND_URL.rstrip("/")
         checkout_urls = {
-            "success_url": success_url or f"{frontend_url}/billing?koaryu_checkout=success",
-            "cancel_url": cancel_url or f"{frontend_url}/billing?koaryu_checkout=cancelled",
+            "success_url": self._safe_redirect_url(success_url, f"{frontend_url}/billing?koaryu_checkout=success"),
+            "cancel_url": self._safe_redirect_url(cancel_url, f"{frontend_url}/billing?koaryu_checkout=cancelled"),
         }
+        pending_url = self._pending_checkout_url(row)
+        if pending_url:
+            self._audit(studio_id, actor_id, "platform_billing.checkout_reused", studio_id, {"customer_id": customer_id})
+            return BillingLinkResponse(url=pending_url)
         checkout_key = self._core_checkout_idempotency_key(
             studio_id,
             customer_id,
@@ -100,8 +109,12 @@ class PlatformBillingService:
                 idempotency_key=checkout_key,
                 **checkout_urls,
             )
+        session_url = session["url"] if isinstance(session, dict) else session.url
+        session_id = session.get("id") if isinstance(session, dict) else getattr(session, "id", None)
+        expires_at = session.get("expires_at") if isinstance(session, dict) else getattr(session, "expires_at", None)
+        self._store_pending_checkout(row, session_id=session_id, session_url=session_url, expires_at=expires_at)
         self._audit(studio_id, actor_id, "platform_billing.checkout_created", studio_id, {"customer_id": customer_id})
-        return BillingLinkResponse(url=session["url"] if isinstance(session, dict) else session.url)
+        return BillingLinkResponse(url=session_url)
 
     async def create_portal_link(
         self,
@@ -117,10 +130,29 @@ class PlatformBillingService:
                 detail="Add a Koaryu Core payment method before opening the billing portal.",
             )
         frontend_url = self.settings.FRONTEND_URL.rstrip("/")
-        session = StripeService().create_customer_portal_session(
-            customer_id=customer_id,
-            return_url=return_url or f"{frontend_url}/billing",
-        )
+        stripe_service = StripeService()
+        try:
+            session = stripe_service.create_customer_portal_session(
+                customer_id=customer_id,
+                return_url=self._safe_redirect_url(return_url, f"{frontend_url}/billing"),
+            )
+        except Exception as exc:
+            if not self._is_missing_stripe_customer_error(exc):
+                raise
+            studio = self._get_studio(studio_id)
+            self._create_platform_customer(stripe_service, studio_id, studio)
+            self._update_subscription_row(
+                studio_id,
+                {
+                    "stripe_subscription_id": None,
+                    "status": "incomplete",
+                    "metadata": self._metadata_with(row, {PENDING_CHECKOUT_METADATA_KEY: None}),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Koaryu Core billing customer was repaired. Start checkout again to restore this subscription.",
+            ) from exc
         self._audit(studio_id, actor_id, "platform_billing.portal_created", studio_id, {"customer_id": customer_id})
         return BillingLinkResponse(url=session["url"] if isinstance(session, dict) else session.url)
 
@@ -135,23 +167,25 @@ class PlatformBillingService:
             if not studio_id:
                 return
             row = self._ensure_subscription_row(studio_id)
-            if self._is_stale_stripe_event(row, event_created):
-                return
+            stale_for_subscription_state = self._is_stale_subscription_event(row, event_created)
             subscription_id = self._stripe_id(data_object.get("subscription"))
             update = {
-                "stripe_customer_id": self._stripe_id(data_object.get("customer")),
-                "stripe_subscription_id": subscription_id,
-                "status": "trialing",
-                "comped": False,
                 "last_payment_status": data_object.get("payment_status"),
+                "metadata": self._metadata_with(row, {PENDING_CHECKOUT_METADATA_KEY: None}),
             }
-            self._mark_event_created(update, event_created)
+            if not stale_for_subscription_state:
+                update["stripe_customer_id"] = self._stripe_id(data_object.get("customer"))
+                update["stripe_subscription_id"] = subscription_id
+                update["comped"] = False
+                update["status"] = "trialing"
+                self._mark_subscription_event_created(update, row, event_created)
             self._update_subscription_row(studio_id, {k: v for k, v in update.items() if v is not None})
-            if subscription_id:
+            if subscription_id and not stale_for_subscription_state:
                 try:
                     subscription = StripeService().retrieve_subscription(subscription_id)
                     projection = self._project_subscription(subscription)
-                    self._mark_event_created(projection, event_created)
+                    row = self._ensure_subscription_row(studio_id)
+                    self._mark_subscription_event_created(projection, row, event_created)
                     self._update_subscription_row(studio_id, projection)
                 except Exception:
                     pass
@@ -166,10 +200,10 @@ class PlatformBillingService:
             if not studio_id:
                 return
             row = self._ensure_subscription_row(studio_id)
-            if self._is_stale_stripe_event(row, event_created):
+            if self._is_stale_subscription_event(row, event_created):
                 return
             update = self._project_subscription(data_object)
-            self._mark_event_created(update, event_created)
+            self._mark_subscription_event_created(update, row, event_created)
             self._update_subscription_row(studio_id, update)
             return
 
@@ -177,11 +211,8 @@ class PlatformBillingService:
             row = self._find_subscription_by_stripe_id(data_object.get("subscription"), data_object.get("customer"))
             if not row:
                 return
-            if self._is_stale_stripe_event(row, event_created):
-                return
             status_value = "paid" if event_type == "invoice.paid" else "failed"
             update = {"last_payment_status": status_value}
-            self._mark_event_created(update, event_created)
             self._update_subscription_row(row["studio_id"], update)
 
     def _ensure_subscription_row(self, studio_id: str) -> dict[str, Any]:
@@ -252,6 +283,76 @@ class PlatformBillingService:
     def _idempotency_key(self, *parts: str) -> str:
         return "koaryu:" + ":".join(str(part).replace(":", "_") for part in parts if part is not None)
 
+    def _safe_redirect_url(self, value: Optional[str], default: str) -> str:
+        url = (value or default).strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise HTTPException(status_code=400, detail="Billing redirect URL must be absolute.")
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin not in self._allowed_redirect_origins():
+            raise HTTPException(status_code=400, detail="Billing redirect URL is not allowed.")
+        return url
+
+    def _allowed_redirect_origins(self) -> set[str]:
+        parsed = urlparse(self.settings.FRONTEND_URL.rstrip("/"))
+        if not parsed.scheme or not parsed.netloc:
+            return set()
+        origins = {f"{parsed.scheme}://{parsed.netloc}"}
+        if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"} and parsed.port:
+            alternate_host = "127.0.0.1" if parsed.hostname == "localhost" else "localhost"
+            origins.add(f"http://{alternate_host}:{parsed.port}")
+        return origins
+
+    def _metadata(self, row: dict[str, Any]) -> dict[str, Any]:
+        metadata = row.get("metadata")
+        return dict(metadata) if isinstance(metadata, dict) else {}
+
+    def _metadata_with(self, row: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+        metadata = self._metadata(row)
+        for key, value in patch.items():
+            if value is None:
+                metadata.pop(key, None)
+            else:
+                metadata[key] = value
+        return metadata
+
+    def _pending_checkout_url(self, row: dict[str, Any]) -> Optional[str]:
+        pending = self._metadata(row).get(PENDING_CHECKOUT_METADATA_KEY)
+        if not isinstance(pending, dict):
+            return None
+        session_url = pending.get("url")
+        expires_at = pending.get("expires_at")
+        if not session_url or not expires_at:
+            return None
+        try:
+            expires_epoch = int(expires_at)
+        except (TypeError, ValueError):
+            return None
+        if expires_epoch <= int(datetime.now(timezone.utc).timestamp()) + 60:
+            return None
+        return str(session_url)
+
+    def _store_pending_checkout(
+        self,
+        row: dict[str, Any],
+        *,
+        session_id: Optional[str],
+        session_url: str,
+        expires_at: Optional[int],
+    ) -> None:
+        if not expires_at:
+            return
+        pending = {
+            "id": session_id,
+            "url": session_url,
+            "expires_at": int(expires_at),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._update_subscription_row(
+            row["studio_id"],
+            {"metadata": self._metadata_with(row, {PENDING_CHECKOUT_METADATA_KEY: pending})},
+        )
+
     @staticmethod
     def _is_missing_stripe_customer_error(exc: Exception) -> bool:
         if not exc.__class__.__module__.startswith("stripe"):
@@ -270,17 +371,30 @@ class PlatformBillingService:
             raise HTTPException(status_code=404, detail="Koaryu Core billing record not found.")
         return result.data[0]
 
-    @staticmethod
-    def _is_stale_stripe_event(row: dict[str, Any], event_created: Optional[int]) -> bool:
+    def _is_stale_subscription_event(self, row: dict[str, Any], event_created: Optional[int]) -> bool:
         if event_created is None:
             return False
-        last_created = row.get("last_stripe_event_created")
+        last_created = self._metadata(row).get(SUBSCRIPTION_EVENT_METADATA_KEY)
+        if last_created is None:
+            last_created = row.get("last_stripe_event_created")
         return last_created is not None and int(last_created) > int(event_created)
 
-    @staticmethod
-    def _mark_event_created(update: dict[str, Any], event_created: Optional[int]) -> None:
-        if event_created is not None:
-            update["last_stripe_event_created"] = event_created
+    def _mark_subscription_event_created(
+        self,
+        update: dict[str, Any],
+        row: dict[str, Any],
+        event_created: Optional[int],
+    ) -> None:
+        if event_created is None:
+            return
+        event_created_int = int(event_created)
+        previous = self._metadata(row).get(SUBSCRIPTION_EVENT_METADATA_KEY)
+        if previous is None:
+            previous = row.get("last_stripe_event_created")
+        if previous is not None and int(previous) > event_created_int:
+            return
+        update["last_stripe_event_created"] = event_created_int
+        update["metadata"] = self._metadata_with(row, {SUBSCRIPTION_EVENT_METADATA_KEY: event_created_int})
 
     def _find_subscription_by_stripe_id(self, subscription_id: Optional[str], customer_id: Optional[str]) -> Optional[dict[str, Any]]:
         query = self.supabase.table("studio_subscriptions").select("*")
