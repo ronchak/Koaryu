@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Koaryu, Investor &amp; Competition Pitch Document</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --background: #0B0D10;
+    --surface: #12161B;
+    --surface-raised: #171C22;
+    --border: #232A33;
+    --text-primary: #F3F5F7;
+    --text-secondary: #98A2B3;
+    --muted: #667085;
+    --accent: #D6B25E;
+    --success: #4CAF7D;
+    --warning: #E8A23A;
+    --danger: #E05A5A;
+    --radius: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--background);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 16px;
+    line-height: 1.7;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  .mono { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; }
+
+  /* Top fixed nav */
+  .top-nav {
+    position: fixed;
+    top: 16px;
+    right: 24px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(18, 22, 27, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+  }
+  .top-nav a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 2px 0;
+    display: flex;
+    gap: 10px;
+    transition: color 0.15s;
+  }
+  .top-nav a:hover { color: var(--accent); }
+  .top-nav .num { color: var(--accent); min-width: 20px; }
+  @media (max-width: 900px) { .top-nav { display: none; } }
+
+  /* Hero header */
+  .hero {
+    background: var(--background);
+    border-bottom: 1px solid var(--border);
+    padding: 96px 40px 72px;
+  }
+  .hero-inner {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .hero-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .wordmark {
+    font-size: 32px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .wordmark .dot {
+    color: var(--accent);
+    font-size: 40px;
+    line-height: 1;
+  }
+  .tagline {
+    font-size: 18px;
+    color: var(--text-secondary);
+    max-width: 640px;
+    margin-bottom: 32px;
+  }
+  .gold-rule {
+    width: 60px;
+    height: 1px;
+    background: var(--accent);
+    margin: 40px 0 24px;
+  }
+  h1.doc-title {
+    font-size: 48px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin-bottom: 20px;
+  }
+  .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-top: 24px;
+  }
+  .meta span strong {
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  /* Body container */
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 40px;
+  }
+
+  section {
+    padding: 64px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-child { border-bottom: none; }
+
+  .section-num {
+    display: inline-block;
+    padding: 4px 10px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    margin-bottom: 16px;
+  }
+
+  h2 {
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    padding-left: 16px;
+    border-left: 3px solid var(--accent);
+    margin-bottom: 24px;
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 32px 0 12px;
+    letter-spacing: 0.01em;
+  }
+
+  h4 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 24px 0 8px;
+  }
+
+  p {
+    color: var(--text-primary);
+    margin-bottom: 16px;
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--accent);
+  }
+  a:hover { border-bottom-style: solid; }
+
+  ul, ol { margin: 12px 0 20px 22px; }
+  li { margin-bottom: 8px; color: var(--text-primary); }
+
+  strong { color: var(--text-primary); font-weight: 600; }
+
+  .label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .caption {
+    font-size: 13px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 8px;
+  }
+
+  /* Callout */
+  .callout {
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+    padding: 16px 20px;
+    margin: 24px 0;
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 24px;
+    margin: 24px 0;
+  }
+  .stat {
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+    padding: 16px 20px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .stat .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 32px;
+    font-weight: 500;
+    color: var(--accent);
+    display: block;
+    line-height: 1.1;
+  }
+  .stat .lbl {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    display: block;
+  }
+
+  /* Tables */
+  table { table-layout: auto; }
+  .compact-table table { font-size: 12.5px; }
+  .compact-table thead th { padding: 10px 10px; font-size: 11px; }
+  .compact-table tbody td { padding: 10px 10px; }
+  .table-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 24px 0;
+    background: var(--surface);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  thead tr {
+    background: var(--surface-raised);
+  }
+  thead th {
+    text-align: left;
+    padding: 12px 16px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+  }
+  thead th.right { text-align: right; }
+  tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+    vertical-align: top;
+  }
+  tbody td.right { text-align: right; }
+  tbody tr:nth-child(even) { background: var(--surface-raised); }
+  tbody tr:nth-child(odd)  { background: var(--surface); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  td.num, th.num {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+  }
+  td.price-high {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--danger);
+  }
+  td.price-low {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--success);
+  }
+  td.price-mid {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--warning);
+  }
+  .check { color: var(--success); font-weight: 600; }
+  .cross { color: var(--danger); font-weight: 600; }
+  .partial { color: var(--warning); font-weight: 600; }
+
+  /* Koaryu row in compare table */
+  tr.koaryu-row td {
+    background: var(--surface-raised) !important;
+    border-left: 3px solid var(--accent);
+    font-weight: 500;
+  }
+  tr.koaryu-row td:first-child { border-left: 3px solid var(--accent); }
+
+  /* Revenue table */
+  .rev .milestone { color: var(--accent); font-weight: 500; }
+  .rev td.rev-num { color: var(--success); font-family: 'JetBrains Mono', monospace; }
+
+  /* Reveal animation */
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .reveal.in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Two-column grid */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin: 24px 0;
+  }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .card h4 { margin-top: 0; color: var(--accent); text-transform: none; letter-spacing: 0; font-size: 16px; }
+
+  /* Footer */
+  footer {
+    padding: 48px 40px 64px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Footnotes */
+  .footnotes {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+  .footnotes ol { margin-left: 20px; }
+  .footnotes li { margin-bottom: 6px; word-break: break-word; }
+  sup a {
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    border: none;
+    padding: 0 2px;
+  }
+
+  /* Print styles */
+  @media print {
+    :root {
+      --background: #ffffff;
+      --surface: #f5f5f5;
+      --surface-raised: #eeeeee;
+      --border: #cccccc;
+      --text-primary: #111111;
+      --text-secondary: #444444;
+      --muted: #666666;
+      --accent: #8B6914;
+      --success: #1e6b3f;
+      --warning: #a86400;
+      --danger: #8a1d1d;
+    }
+    body {
+      background: #ffffff;
+      color: #111111;
+    }
+    .top-nav { display: none !important; }
+    .reveal { opacity: 1 !important; transform: none !important; }
+    section {
+      break-before: page;
+      page-break-before: always;
+      border-bottom: none;
+      padding: 24px 0;
+    }
+    section:first-of-type { break-before: auto; page-break-before: auto; }
+    .hero {
+      padding: 24px 0 32px;
+      border-bottom: 2px solid #8B6914;
+      break-after: page;
+      page-break-after: always;
+    }
+    h2 { color: #111111; border-left-color: #8B6914; }
+    h3 { color: #8B6914; }
+    .hero-badge, .section-num { color: #8B6914; background: #eeeeee; border-color: #cccccc; }
+    .stat .num, td.num, .mono { color: #8B6914; }
+    td.price-high { color: #8a1d1d; }
+    td.price-low { color: #1e6b3f; }
+    .rev td.rev-num { color: #1e6b3f; }
+    tr.koaryu-row td { background: #eeeeee !important; border-left-color: #8B6914; }
+    a { color: #8B6914; border-bottom: none; }
+    @page { margin: 0.7in; }
+    body { font-size: 11.5px; }
+    h1.doc-title { font-size: 30px; }
+    h2 { font-size: 22px; }
+    h3 { font-size: 15px; }
+    table { font-size: 9.5px; table-layout: fixed; width: 100%; }
+    thead th, tbody td { padding: 6px 8px; word-wrap: break-word; overflow-wrap: break-word; }
+    thead th { font-size: 9px; letter-spacing: 0.04em; }
+    .table-wrap { margin: 14px 0; }
+    main { padding: 0 20px; }
+    .stat .num { font-size: 24px; }
+    .stat-row { gap: 16px; page-break-inside: avoid; break-inside: avoid; }
+    .stat { page-break-inside: avoid; break-inside: avoid; }
+    .two-col { gap: 16px; }
+    .card { padding: 14px; page-break-inside: avoid; break-inside: avoid; }
+    tr, thead, .callout, .footnotes li { page-break-inside: avoid; break-inside: avoid; }
+    section { padding: 16px 0; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="top-nav" aria-hidden="true">
+  <a href="#s1"><span class="num">01</span><span>Summary</span></a>
+  <a href="#s2"><span class="num">02</span><span>Problem</span></a>
+  <a href="#s3"><span class="num">03</span><span>Market</span></a>
+  <a href="#s4"><span class="num">04</span><span>Product</span></a>
+  <a href="#s5"><span class="num">05</span><span>Competition</span></a>
+  <a href="#s6"><span class="num">06</span><span>Business</span></a>
+  <a href="#s7"><span class="num">07</span><span>GTM</span></a>
+  <a href="#s8"><span class="num">08</span><span>Economics</span></a>
+  <a href="#s9"><span class="num">09</span><span>Team</span></a>
+  <a href="#s10"><span class="num">10</span><span>Roadmap</span></a>
+  <a href="#s11"><span class="num">11</span><span>Risks</span></a>
+  <a href="#s12"><span class="num">12</span><span>Ask</span></a>
+</nav>
+
+<header class="hero">
+  <div class="hero-inner">
+    <span class="hero-badge">Investor &amp; Competition Pitch Document</span>
+    <div class="wordmark">Koaryu<span class="dot">.</span></div>
+    <p class="tagline">The daily operating system for independent martial arts studios.</p>
+
+    <div class="gold-rule"></div>
+
+    <h1 class="doc-title">A flat-rate $27/month vertical SaaS with embedded Stripe Connect payments, built to replace $197/month incumbents, per-student pricing traps, and spreadsheet workarounds in the 76,000-studio U.S. martial arts market.</h1>
+
+    <div class="meta">
+      <span><strong>Build date</strong> &nbsp; May 2026</span>
+      <span><strong>Document version</strong> &nbsp; v2.0</span>
+      <span><strong>Status</strong> &nbsp; Private Beta · Stripe Connect live · 30-day trial</span>
+      <span><strong>Repository</strong> &nbsp; github.com/ronchak/Koaryu</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- =========================== SECTION 1 =========================== -->
+<section id="s1" class="reveal">
+  <span class="section-num">01 / Executive Summary</span>
+  <h2>Executive Summary</h2>
+
+  <p>Koaryu is a flat-rate, vertical SaaS platform purpose-built for independent martial arts studios with 30 to 200 active students. It replaces the three tools that dojo owners currently patch together: expensive legacy software like RainMaker, now rebranded as Zivvy and commonly sold at $197 per month (<a href="https://www.softwareadvice.com/martial-arts/rainmaker-profile/">Software Advice, RainMaker pricing</a>); generic gym platforms such as Mindbody that start at $139 per month and scale to $599 per month before add-ons (<a href="https://thesalonbusiness.com/mindbody-software-review/">The Salon Business, Mindbody Review</a>); and a long tail of Google Sheets, Notion docs, and handwritten belt ladders that quietly run the majority of schools in the country.</p>
+
+  <p>The core thesis is simple. Martial arts studios have domain-specific operational needs, especially around belt progression, attendance-driven testing readiness, youth guardian records, and promotion history, that horizontal fitness software consistently handles poorly. At the same time, the vertical platforms that do understand those workflows have priced themselves out of reach for the typical owner-operator. Koaryu is positioned precisely in that gap: deep domain fit, flat $27/month pricing that does not punish growth, embedded Stripe Connect payments that let studios collect tuition without a second payment vendor, and a UI that feels like a modern developer tool rather than a legacy admin panel.</p>
+
+  <p>Since the previous pitch revision in April 2026, the product has shipped a complete Stripe Connect billing layer marketed as Koaryu Payments, family payer and plan-enrollment data model, first-class programs with per-program belt ladders, staff invites with admin / front desk / instructor roles, light and dark themes, custom error pages, a public landing page, and a tightened single-Uvicorn Render backend deploy. The repository now contains roughly 17,500 lines of Python across 17 services and 16 endpoint groups, 24,500 lines of TypeScript across the frontend, and 29 sequential Supabase migrations applied in order.</p>
+
+  <div class="stat-row">
+    <div class="stat">
+      <span class="num">72,029</span>
+      <span class="lbl">U.S. martial arts studios, 2025, with 76,364 projected in 2026 <a href="https://www.ibisworld.com/united-states/number-of-businesses/martial-arts-studios/4187/"><sup>1</sup></a></span>
+    </div>
+    <div class="stat">
+      <span class="num">$21.0B</span>
+      <span class="lbl">U.S. Martial Arts Studios industry market size in 2026 <a href="https://www.ibisworld.com/united-states/industry/martial-arts-studios/4187/"><sup>2</sup></a></span>
+    </div>
+    <div class="stat">
+      <span class="num">$197</span>
+      <span class="lbl">Publicly listed RainMaker / Zivvy price, the incumbent Koaryu undercuts <a href="https://www.softwareadvice.com/martial-arts/rainmaker-profile/"><sup>3</sup></a></span>
+    </div>
+    <div class="stat">
+      <span class="num">$27</span>
+      <span class="lbl">Koaryu flat platform price, every feature included, 30-day trial, no per-student tax</span>
+    </div>
+  </div>
+
+  <h3>What is in the product today</h3>
+  <p>The current repository (github.com/ronchak/Koaryu) ships a working Next.js App Router frontend in TypeScript with a 917-line public landing page, light and dark themes with first-paint hydration, and a complete authenticated dashboard. The backend is a FastAPI service with sixteen endpoint modules (auth, students, leads, schedule, belts, programs, billing, platform_billing, webhooks, dashboard, demo, staff, studios, reports, health) and seventeen tenant-scoped service classes including a 2,015-line BillingService and a 690-line StripeService. The Supabase Postgres database is governed by twenty-nine sequential migrations covering row-level security, tenant hardening, function security hardening that moves RLS helpers out of the public schema, optimized RLS init plans, and a 690-line billing foundation migration that adds payers, plans, plan programs, enrollments, invoices, payments, refunds, disputes, adjustments, Stripe event log, and export jobs.</p>
+
+  <p>Stripe Connect onboarding is fully live: a studio can create a Stripe Express or Accounts v2 connected account directly from Koaryu, complete onboarding, accept charges, and have invoices, payments, refunds, and disputes projected back into the local database through signature-verified webhooks. Platform-level Koaryu Core billing runs on its own Stripe Checkout flow at $27 per studio per month with a 30-day trial. The 50-basis-point Koaryu platform fee on Connect charges is configurable per account. The dev verification pass covers fresh-account onboarding, multi-studio tenant isolation, atomic belt-ladder sync, bulk attendance reads, and end-to-end Stripe webhook idempotency. A dedicated belt-ladder Playwright regression lives at <span class="mono">frontend/e2e/atomic-belt-ladder.spec.ts</span>.</p>
+
+  <h3>What we are asking for</h3>
+  <p>We are raising a small pre-seed round to convert the now-fully-built product into a commercially validated business with paying design-partner studios and a clean path to roughly $14k combined MRR (platform plus Koaryu Payments) within twelve months of launch. Details on use of funds, milestones, and unit economics appear in <a href="#s12">Section 12</a>.</p>
+</section>
+
+<!-- =========================== SECTION 2 =========================== -->
+<section id="s2" class="reveal">
+  <span class="section-num">02 / The Problem</span>
+  <h2>The problem we are solving</h2>
+
+  <p>Independent martial arts studios are small businesses with big operational complexity. A typical owner-operator teaches classes, runs billing, answers parent emails, tracks belt progression across several programs, and still has to decide every few weeks who is ready to test. The software market has given them two bad options and no good one.</p>
+
+  <h3>Option one: expensive legacy vertical tools</h3>
+  <p>Tools like RainMaker (now Zivvy), Zen Planner, and MyStudio understand belt tracking, but they price like enterprise software. RainMaker is listed at $197 per month or $2,197 per year (<a href="https://angelrated.com/reviews/340/rainmaker">Angel Rated, Rainmaker Customer Reviews</a>). Zen Planner starts at $99 and commonly lands near $169 per month for a 150-student martial arts school with rank tracking (<a href="https://zenplanner.com/blogs/zen-planner-pricing-for-martial-arts-and-yoga-studios/">Zen Planner, Pricing Breakdown</a>). MyStudio lists $79, $159, and $239 plans (<a href="https://www.mystudio.io/pricing/single-location">MyStudio, Single Location Pricing</a>). Spark Membership publishes a $249 per month price after an introductory trial (<a href="https://sparkmembership.com/pricing/">Spark Membership, Pricing</a>). Several of these platforms also meter based on student count, so software gets more expensive precisely when the school is growing.</p>
+
+  <h3>Option two: generic gym platforms</h3>
+  <p>Mindbody, Gymdesk, and similar platforms are broad and capable but miss martial-arts-native workflows. Mindbody&rsquo;s Starter plan begins at $139 per month, Accelerate at $289, and Ultimate Plus at $599 (<a href="https://thesalonbusiness.com/mindbody-software-review/">The Salon Business, Mindbody Review</a>). Gymdesk scales from $75 to $200 per month strictly by member count and bolts on SMS and payment fees on top (<a href="https://www.wodify.com/blog/gymdesk-pricing">Wodify, Gymdesk Pricing</a>). None of these treat a belt ladder, a tip, or a promotion ceremony as a first-class database object. Owners end up maintaining a side spreadsheet just to decide who tests next month.</p>
+
+  <h3>Option three, the silent default: spreadsheets</h3>
+  <p>A large share of U.S. studios still run on Google Sheets, paper rosters, and memory. There are roughly 15,900 to 28,530 active martial arts schools in the country depending on the counting methodology (<a href="https://www.gokenko.com/articles/martial-arts-industry-in-the-usa">Kenko, Martial Arts Industry Stats</a>; <a href="https://bytescraper.com/b2b-database/list-of-martial-arts-schools-in-united-states">ByteScraper, List of U.S. Martial Arts Schools</a>), and IBISWorld counts 72,029 establishments including single-instructor studios and micro-schools (<a href="https://www.ibisworld.com/united-states/number-of-businesses/martial-arts-studios/4187/">IBISWorld, Number of Businesses</a>). Of those, only 20,718 have websites at all (<a href="https://bytescraper.com/b2b-database/list-of-martial-arts-schools-in-united-states">ByteScraper</a>). This is a market with a long tail of extremely small operators for whom a $49 product that replaces a spreadsheet is more valuable than a $199 product that replaces another $199 product.</p>
+
+  <h3>The consequences of bad software</h3>
+  <p>These three failure modes produce concrete, measurable pain.</p>
+  <ul>
+    <li><strong>Retention leakage.</strong> About 50% of new martial arts members quit within the first six months (<a href="https://membersolutions.com/martial-arts-gym-client-retention-strategies/">Member Solutions, Client Retention</a>). Healthy annual retention is 65% to 75% (<a href="https://blackbeltcrm.com/martial-arts-school-business-benchmark-report/">Black Belt CRM, Benchmark Report 2026</a>). Attendance signals that predict churn are trapped in spreadsheets that no one reviews.</li>
+    <li><strong>Promotion bottlenecks.</strong> Instructors spend hours reconciling class attendance against rank thresholds before a belt test. The industry knows this is a solved problem on paper but unsolved in software that real studios can afford.</li>
+    <li><strong>Revenue drag from failed payments.</strong> Without webhook-driven dunning, failed Stripe charges sit as unresolved line items for days or weeks, which SMBs with 3% to 7% monthly SaaS churn benchmarks (<a href="https://www.hubifi.com/blog/calculate-saas-churn-rate">HubiFi, SaaS Churn Rates</a>) cannot afford.</li>
+    <li><strong>Switching cost.</strong> Legacy tools are painful to migrate off because exports are incomplete and CSV imports in competitors are famously fragile. The tax is real; the pain is compounded by long contracts.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Stated plainly.</strong> The average small martial arts studio pays too much for software it does not fully use, or it pays nothing and runs on spreadsheets that quietly lose it students. Koaryu closes that gap with a product priced for the market that actually exists.
+  </div>
+</section>
+
+<!-- =========================== SECTION 3 =========================== -->
+<section id="s3" class="reveal">
+  <span class="section-num">03 / Market</span>
+  <h2>Market size and target customer</h2>
+
+  <h3>Top-down sizing</h3>
+  <p>The U.S. Martial Arts Studios industry is $21.0B in revenue in 2026 with 76,364 business establishments, an increase of 6.0% from 2025 (<a href="https://www.ibisworld.com/united-states/industry/martial-arts-studios/4187/">IBISWorld, Industry Analysis</a>; <a href="https://www.ibisworld.com/united-states/number-of-businesses/martial-arts-studios/4187/">IBISWorld, Number of Businesses</a>). Establishment counts have compounded at roughly 15.3% CAGR between 2021 and 2026 as participation recovered post-pandemic (<a href="https://www.ibisworld.com/united-states/industry/martial-arts-studios/4187/">IBISWorld</a>). Industry revenue per student and category mix vary, but top schools report $140 to $200+ per active student per month in tuition and ancillary revenue (<a href="https://blackbeltcrm.com/martial-arts-school-business-benchmark-report/">Black Belt CRM Benchmark Report</a>).</p>
+
+  <p>On the software side, Vertical SaaS globally was valued at $106.05B in 2024 and is forecast to reach $369.24B by 2033 at a 16.3% CAGR (<a href="https://www.businessresearchinsights.com/market-reports/vertical-saas-market-117289">Business Research Insights, Vertical SaaS Market</a>). The U.S. vertical software market alone was $40.27B in 2024 with a path to $106.40B by 2032 at 12.91% CAGR (<a href="https://finance.yahoo.com/news/vertical-software-market-expected-surpass-133000617.html">Yahoo Finance / Vertical Software Market Report</a>). Category tailwinds are real; the question is execution.</p>
+
+  <h3>Addressable market model</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Layer</th>
+          <th>Definition</th>
+          <th class="right">Count</th>
+          <th class="right">ARPU / yr</th>
+          <th class="right">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>TAM</strong></td>
+          <td>All U.S. martial arts studios tracked by IBISWorld</td>
+          <td class="right num">76,364</td>
+          <td class="right num">$324</td>
+          <td class="right num">$24.7M</td>
+        </tr>
+        <tr>
+          <td><strong>SAM</strong></td>
+          <td>U.S. studios with a website &amp; active online presence, a useful proxy for software-buying readiness (<a href="https://bytescraper.com/b2b-database/list-of-martial-arts-schools-in-united-states">ByteScraper</a>)</td>
+          <td class="right num">20,718</td>
+          <td class="right num">$324</td>
+          <td class="right num">$6.7M</td>
+        </tr>
+        <tr>
+          <td><strong>SOM yr 1</strong></td>
+          <td>Independent, single-location schools with 30–200 students currently on spreadsheets or a tool they dislike</td>
+          <td class="right num">~300</td>
+          <td class="right num">$324</td>
+          <td class="right num">$97K</td>
+        </tr>
+        <tr>
+          <td><strong>SOM yr 3</strong></td>
+          <td>Target capture at steady-state early traction</td>
+          <td class="right num">~3,000</td>
+          <td class="right num">$324</td>
+          <td class="right num">$972K</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Platform subscription is a flat $27/mo ($324/yr) per studio. The TAM model excludes Koaryu Payments revenue, which adds a 50 basis point platform fee on processed Connect tuition. Industry-wide tuition collection at the modeled SOM-yr-3 scale represents a multi-million-dollar additional revenue surface separate from platform subscription.</p>
+
+  <h3>Who the early customer actually is</h3>
+  <p>The primary Koaryu customer is an owner-operator running a single-location karate, taekwondo, BJJ, or hybrid family martial arts studio with 30 to 200 active students. They teach most classes themselves or alongside one or two instructors, handle parent communication directly, and are highly sensitive to software cost because tuition margins are already tight. They usually own their email list but not their operational data. Their current stack is one of:</p>
+  <ul>
+    <li>A paid legacy tool they consider overpriced and overbuilt (RainMaker / Zivvy, Mindbody, Zen Planner).</li>
+    <li>A flat-rate competitor with weaker belt tracking or weaker CRM (Kicksite, Spark, Gymdesk).</li>
+    <li>A Google Sheet, Notion database, or paper roster that loses critical retention signals every week.</li>
+  </ul>
+
+  <h3>Why this customer will switch</h3>
+  <p>Three reasons, in decreasing order: price, belt tracking that actually matches how they run tests, and setup fast enough that they can be operational the same day. Studios are not asking for a seventh dashboard. They are asking for the first one that feels like it was built by someone who has stood on a mat and run a belt test.</p>
+</section>
+
+<!-- =========================== SECTION 4 =========================== -->
+<section id="s4" class="reveal">
+  <span class="section-num">04 / Product</span>
+  <h2>Product</h2>
+
+  <p>Koaryu ships nine integrated modules in the current build. They cover the overwhelming majority of daily studio operations and are designed as deterministic, database-backed workflows rather than LLM-dependent runtime features. This matters for cost, reliability, and trust with studios that handle minors&rsquo; data.</p>
+
+  <div class="two-col">
+    <div class="card">
+      <h4>1. Student CRM</h4>
+      <p>Canonical student profile with legal name, preferred name, date of birth, guardian fields for minors, membership status, program memberships, current belt rank, tags, attendance history, payment status, belt history, student photos, and promotion history in one place. Search, filter, bulk actions, CSV export, soft-delete for auditability.</p>
+    </div>
+    <div class="card">
+      <h4>2. Belt progression engine</h4>
+      <p>Configurable belt ladders with ordered ranks, color metadata, tips, minimum classes, minimum months at current rank, optional age brackets, and manual instructor approval flags. Ladders are program-aware: a school running a Tiny Tigers ladder alongside an Adult Black Belt ladder gets independent rank sets. Promotion readiness is computed from actual attendance via a set-based query. Promotions write to an immutable log with prior rank, new rank, date, and staff actor.</p>
+    </div>
+    <div class="card">
+      <h4>3. Programs as first-class objects</h4>
+      <p>Every student belongs to one or more programs; every class, lead, and billing plan ties back to a program. The system seeds an &ldquo;Unassigned&rdquo; program automatically so legacy data is never orphaned, and integrity triggers prevent cross-program attendance from being silently lost. Reporting and pipelines roll up cleanly by program without manual tag hygiene.</p>
+    </div>
+    <div class="card">
+      <h4>4. Lead pipeline</h4>
+      <p>Visual pipeline with Inquiry, Trial Scheduled, Trial Completed, Offer Sent, Enrolled, and Closed Lost stages. Guardian-aware intake for youth leads. Source attribution for referral, social, search, and walk-in. Closed-lost reason codes. Conversion metrics by source, stage, and program.</p>
+    </div>
+    <div class="card">
+      <h4>5. Scheduling and attendance</h4>
+      <p>Weekly recurring classes with soft-delete and series semantics, one-off events, instructor assignment, capacity caps, program labels. Mobile-friendly roster with sub-10-second check-in. Bulk attendance reads collapse a schedule range into a single query rather than per-session fan-out. Attendance feeds promotion readiness, inactivity alerts, class utilization, and profile history.</p>
+    </div>
+    <div class="card">
+      <h4>6. Koaryu Payments · Stripe Connect</h4>
+      <p>Full embedded billing on Stripe Connect, with Accounts v2 (<span class="mono">2026-03-25.dahlia</span>) preferred and Express fallback. Studios onboard their own Stripe account from inside Koaryu, then accept tuition with hosted invoices, autopay, and external-payment recording. Family payers, plans tied to programs, and student enrollments form a clean hierarchy. Refunds, disputes, and adjustments are first-class. Webhook signatures are verified separately for platform and Connect events with idempotent projection.</p>
+    </div>
+    <div class="card">
+      <h4>7. Staff roles and invites</h4>
+      <p>Role-based access for admin, front desk, and instructor accounts with email invites. Recursion-safe staff_roles policies. Audit log captures every billing action with actor identity, entity, and metadata for compliance and forensics.</p>
+    </div>
+    <div class="card">
+      <h4>8. Communications and automations</h4>
+      <p>Rules-based email automations via Resend with monthly per-studio quota tracking baked into the schema (<span class="mono">email_usage_events</span>). Triggers include trial reminder, missed-class nudge, payment failed, payment recovered, membership ending soon, belt test announcement, and promotion congratulations. Every automation toggleable by studio admins. Templated merge fields, no LLM-generated body text in the critical path.</p>
+    </div>
+    <div class="card">
+      <h4>9. Reports and exports</h4>
+      <p>Dashboard insights and printable reports across roster, retention risk, billing status, attendance trends, and the upcoming belt test list. Export jobs are tracked through their own table and produce CSVs for accountants, instructors, and studio audits.</p>
+    </div>
+  </div>
+
+  <h3>Architecture</h3>
+  <p>The repository at github.com/ronchak/Koaryu ships a production-oriented architecture:</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Layer</th><th>Technology</th><th>Rationale</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Frontend</td><td class="mono">Next.js App Router, TypeScript, Tailwind, lucide-react, light/dark theme system</td><td>Server components, minimal JS, fast shell render. First-paint theme hydration. Custom 404/500/502/503/504 error pages for trust under load.</td></tr>
+        <tr><td>Backend</td><td class="mono">FastAPI + Pydantic v2 (Python 3.11), single Uvicorn process</td><td>Typed models, sixteen endpoint modules, seventeen tenant-scoped services. Single Uvicorn process replaces a four-worker Gunicorn config for better cold-start headroom on small Render instances.</td></tr>
+        <tr><td>Database</td><td class="mono">PostgreSQL via Supabase, 29 sequential migrations</td><td>Row-level security at the database layer. RLS helpers moved out of the public schema with pinned search_path to harden function security. Init plans optimized to avoid per-row <span class="mono">auth.uid()</span> re-evaluation.</td></tr>
+        <tr><td>Auth</td><td class="mono">Supabase Auth (email/password + magic link)</td><td>Battle-tested; frontend middleware validates sessions server-side. Public landing page intentionally outside the auth gate for fast informational paint.</td></tr>
+        <tr><td>Platform billing</td><td class="mono">Stripe Checkout + Customer Portal, 30-day trial</td><td>$27/mo platform subscription per studio. Platform webhooks projected into <span class="mono">studio_subscriptions</span> with status, trial dates, and payment outcomes.</td></tr>
+        <tr><td>Studio billing</td><td class="mono">Stripe Connect, Accounts v2 with Express fallback</td><td>Each studio onboards its own connected account. Koaryu Payments projects customers, prices, subscriptions, invoices, refunds, disputes, and adjustments locally. 50 bps platform fee, configurable per account.</td></tr>
+        <tr><td>Email</td><td class="mono">Resend with per-studio quota events</td><td>Transactional deliverability with low fixed cost; monthly usage tracked in <span class="mono">email_usage_events</span>.</td></tr>
+        <tr><td>Deploy</td><td class="mono">Vercel (frontend) + Render (backend), <span class="mono">koaryu.app</span></td><td>One-command local startup via <span class="mono">npm run dev:up</span> (frontend on :4000, backend on :8001). <span class="mono">www.koaryu.app</span> redirects to the apex.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Tenant model and security</h3>
+  <p>Studio membership is the tenant boundary. Every row containing customer data carries a <span class="mono">studio_id</span>. Backend services and RLS policies enforce scope. The live frontend onboarding gate relies on the backend auth profile rather than a fragile direct <span class="mono">staff_roles</span> query, after a real recursion bug surfaced during verification and was patched across migrations <span class="mono">20260421000007</span> and <span class="mono">20260421000008</span>. Repair migrations <span class="mono">20260421000013</span> through <span class="mono">20260421000015</span> harden the atomic belt-ladder sync RPC. Migration <span class="mono">20260427000026</span> moves RLS helper functions out of the public schema entirely and pins <span class="mono">search_path</span> on every security-definer function, closing a class of search-path attack. Migration <span class="mono">20260427000027</span> wraps <span class="mono">auth.uid()</span> in subqueries to avoid per-row re-evaluation under large policy scans, which is a common Supabase performance footgun. Validation triggers across the billing schema enforce that every payer, plan, enrollment, invoice, payment, and adjustment belongs to the same studio.</p>
+
+  <h3>Stripe Connect data model</h3>
+  <p>Koaryu Payments is layered on top of Stripe Connect. A studio onboards a connected account via Accounts v2 with automatic fallback to Express. Local tables form a clean hierarchy: <span class="mono">studio_payment_accounts</span> records the connected-account state (charges enabled, payouts enabled, requirements due, platform fee in basis points). <span class="mono">billing_payers</span> hold a family payer with a Stripe customer ID. <span class="mono">billing_plans</span> tie tuition product offers to one or more programs; <span class="mono">billing_plan_prices</span> records each historical Stripe price ID so a plan can be edited without breaking existing subscriptions. <span class="mono">student_billing_enrollments</span> link a student, a plan, a payer, and a Stripe subscription item; siblings on the same plan can share a subscription item under migration <span class="mono">20260428000029</span>. <span class="mono">billing_invoices</span>, <span class="mono">billing_payments</span>, <span class="mono">billing_refunds</span>, and <span class="mono">billing_disputes</span> mirror Stripe state. Every Stripe event lands in <span class="mono">stripe_events</span> with idempotent processing status, so retries and out-of-order webhooks are safe.</p>
+
+  <h3>Design system</h3>
+  <p>The UI is dark-mode first, minimal, utilitarian, and information-dense. It is designed to look like a tool a serious operator would leave open all day, not a marketing microsite. Inter for all body text, JetBrains Mono for IDs, currency values, and metadata. 6px border radius. No shadows. One warm gold accent (#D6B25E) against a restrained neutral palette. This document you are reading is a direct reflection of that visual system.</p>
+
+  <h3>What is intentionally out of scope in v1</h3>
+  <p>Point-of-sale hardware, advanced e-commerce, franchise-wide multi-location management, full accounting, a native mobile app, and AI chat. These are not rejections; they are deferred. Every one of them adds implementation and support burden without strengthening the initial wedge, which is a single-location studio replacing a spreadsheet or a $197 tool with something cheaper and tighter.</p>
+
+  <h3>Engineering footprint</h3>
+  <div class="stat-row">
+    <div class="stat"><span class="num">17,470</span><span class="lbl">Lines of Python in the FastAPI backend</span></div>
+    <div class="stat"><span class="num">24,545</span><span class="lbl">Lines of TypeScript/TSX across the frontend</span></div>
+    <div class="stat"><span class="num">29</span><span class="lbl">Sequential Supabase migrations, 25 feature commits since April 2026</span></div>
+  </div>
+</section>
+
+<!-- =========================== SECTION 5 =========================== -->
+<section id="s5" class="reveal">
+  <span class="section-num">05 / Competition</span>
+  <h2>Competitive landscape</h2>
+
+  <p>The market breaks into three bands: premium vertical legacy tools, per-student scaling tools, and flat-rate challengers. Koaryu is the only entrant offering a single flat $27 platform fee, an integrated Stripe Connect tuition rail with a transparent 50 basis point platform take, and martial-arts-native data objects in the same product.</p>
+
+  <h3>Verified competitor pricing</h3>
+  <div class="table-wrap compact-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Competitor</th>
+          <th class="right">Entry price</th>
+          <th class="right">Top tier</th>
+          <th>Pricing model</th>
+          <th>Belt ladders</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="koaryu-row">
+          <td><strong>Koaryu</strong></td>
+          <td class="right price-low">$27/mo</td>
+          <td class="right price-low">$27/mo</td>
+          <td>Single flat plan, 30-day free trial, 50 bps platform fee on Connect tuition</td>
+          <td><span class="check">✓ Native, program-aware</span></td>
+          <td><a href="https://github.com/ronchak/Koaryu">Repo</a></td>
+        </tr>
+        <tr>
+          <td>RainMaker / Zivvy</td>
+          <td class="right price-high">$197/mo</td>
+          <td class="right price-high">$197+/mo</td>
+          <td>Flat, high</td>
+          <td><span class="check">✓</span></td>
+          <td><a href="https://www.softwareadvice.com/martial-arts/rainmaker-profile/">Software Advice</a> <a href="https://angelrated.com/reviews/340/rainmaker">Angel Rated</a></td>
+        </tr>
+        <tr>
+          <td>Zen Planner</td>
+          <td class="right price-low">$99/mo</td>
+          <td class="right price-high">~$200/mo</td>
+          <td>Scales with members</td>
+          <td><span class="check">✓</span></td>
+          <td><a href="https://zenplanner.com/martial-arts/">Zen Planner</a> <a href="https://zenplanner.com/blogs/zen-planner-pricing-for-martial-arts-and-yoga-studios/">Pricing blog</a></td>
+        </tr>
+        <tr>
+          <td>MyStudio</td>
+          <td class="right price-low">$79/mo</td>
+          <td class="right price-high">$239/mo</td>
+          <td>Flat, 3 tiers</td>
+          <td><span class="partial">~ Configurable</span></td>
+          <td><a href="https://www.mystudio.io/pricing/single-location">MyStudio</a></td>
+        </tr>
+        <tr>
+          <td>Mindbody</td>
+          <td class="right price-high">$139/mo</td>
+          <td class="right price-high">$599/mo</td>
+          <td>Tiered, add-ons</td>
+          <td><span class="partial">~ Generic</span></td>
+          <td><a href="https://thesalonbusiness.com/mindbody-software-review/">The Salon Business</a></td>
+        </tr>
+        <tr>
+          <td>Kicksite</td>
+          <td class="right price-low">$49/mo</td>
+          <td class="right price-high">$199/mo</td>
+          <td>Per-student tiers</td>
+          <td><span class="check">✓</span></td>
+          <td><a href="https://www.exercise.com/grow/how-much-does-kicksite-cost/">Exercise.com</a></td>
+        </tr>
+        <tr>
+          <td>Martialytics</td>
+          <td class="right price-low">$69/mo</td>
+          <td class="right price-high">$199/mo</td>
+          <td>Per-student tiers</td>
+          <td><span class="check">✓</span></td>
+          <td><a href="https://www.martialytics.com/pricing">Martialytics</a></td>
+        </tr>
+        <tr>
+          <td>Spark Membership</td>
+          <td class="right price-high">$249/mo</td>
+          <td class="right price-high">$249/mo</td>
+          <td>Flat, post-trial</td>
+          <td><span class="check">✓</span></td>
+          <td><a href="https://sparkmembership.com/pricing/">Spark</a></td>
+        </tr>
+        <tr>
+          <td>Gymdesk</td>
+          <td class="right price-low">$75/mo</td>
+          <td class="right price-high">$200/mo</td>
+          <td>Per-member tiers</td>
+          <td><span class="partial">~ Generic</span></td>
+          <td><a href="https://www.wodify.com/blog/gymdesk-pricing">Wodify review</a></td>
+        </tr>
+        <tr>
+          <td>JibaSoft / OnMat</td>
+          <td class="right price-low">$17/mo</td>
+          <td class="right price-low">$69/mo</td>
+          <td>Flat, minimal feature set</td>
+          <td><span class="partial">~ Limited</span></td>
+          <td><a href="https://www.krowdbase.com/software/onmat">Krowdbase</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Prices verified May 2026. Mindbody no longer publishes pricing publicly on its website; the $139 and $599 anchors come from a third-party review that walked through the live quoting funnel. Koaryu&rsquo;s $27 price is the single platform fee charged through Stripe to the studio; tuition collected from end families flows through Stripe Connect with a 50 basis point Koaryu platform fee on top of standard Stripe processing.</p>
+
+  <h3>Feature comparison: what actually matters to a dojo owner</h3>
+  <div class="table-wrap compact-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>Koaryu</th>
+          <th>RainMaker</th>
+          <th>Zen Planner</th>
+          <th>Mindbody</th>
+          <th>Kicksite</th>
+          <th>Sheets</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="koaryu-row">
+          <td>Single flat plan under $30/mo</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr>
+          <td>Native belt ladders with tips</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="cross">✗</span></td>
+        </tr>
+        <tr>
+          <td>Attendance-driven promotion readiness</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="cross">✗</span></td>
+        </tr>
+        <tr>
+          <td>Guardian-aware minor records</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="cross">✗</span></td>
+        </tr>
+        <tr>
+          <td>Self-serve signup and same-day setup</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr>
+          <td>RLS-enforced multi-tenant isolation</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="cross">✗</span></td>
+        </tr>
+        <tr>
+          <td>Modern developer-grade UI</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="cross">✗</span></td>
+        </tr>
+        <tr>
+          <td>CSV-first migration path</td>
+          <td><span class="check">✓</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Where Koaryu wins and where it does not</h3>
+  <p>Koaryu wins on price, clarity, belt-ladder fidelity, tenant security posture, setup speed, and integrated tuition processing through Stripe Connect. Koaryu does not win today on multi-location rollups, franchise operators, integrated branded mobile apps, or SMS-first marketing automation. Those are legitimate incumbent advantages and are mapped into the post-launch roadmap in <a href="#s10">Section 10</a>.</p>
+
+  <div class="callout">
+    <strong>The positioning in one sentence.</strong> Koaryu is what a smart owner-operator would ask for if they described RainMaker to a modern product engineer and told them to rebuild it for one seventh of the price, without the per-student tax, with tuition processing built in, and with an interface that does not feel like 2009.
+  </div>
+</section>
+
+<!-- =========================== SECTION 6 =========================== -->
+<section id="s6" class="reveal">
+  <span class="section-num">06 / Business Model</span>
+  <h2>Business model and pricing</h2>
+
+  <p>Koaryu launches on a single flat-rate platform plan plus an embedded Stripe Connect tuition rail. Pricing is deliberately calibrated to sit far below every vertical incumbent (RainMaker $197, Mindbody $139, MyStudio $79, Kicksite $49 entry) and to fully decouple software cost from student count. The second revenue stream is Koaryu Payments, a 50 basis point platform fee on tuition collected through Stripe Connect.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Revenue stream</th>
+          <th class="right">Price</th>
+          <th>What is included</th>
+          <th>How it is billed</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong class="mono" style="color:var(--accent)">Platform plan</strong></td>
+          <td class="right num">$27/mo</td>
+          <td>Full product: student and family CRM, programs, belt ladders, attendance, leads, family billing with payers and plans, staff roles and invites, theming, reports. Unlimited active students, unlimited staff seats.</td>
+          <td>One Stripe subscription per studio, billed monthly, 30-day free trial</td>
+        </tr>
+        <tr>
+          <td><strong class="mono" style="color:var(--accent)">Koaryu Payments</strong></td>
+          <td class="right num">50 bps</td>
+          <td>Embedded Stripe Connect (Accounts v2 with v1 Express fallback). Studios collect tuition, drops, and one-off invoices from families through Koaryu. Funds settle directly to the studio Connect account. Koaryu takes a 50 basis point application fee per charge.</td>
+          <td>Application fee deducted at charge time, no separate invoice</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption"><span class="mono">BILLING_PLATFORM_FEE_BPS=50</span> is the live configuration variable in <span class="mono">backend/app/services/billing_service.py</span>. Standard Stripe processing fees (2.9% plus 30 cents in the US) are a pass-through cost borne by the studio, identical to what a direct Stripe integration would charge.</p>
+
+  <h3>Why a single flat platform price, not per-student tiers</h3>
+  <p>Per-student pricing is the single most frequently cited frustration with current vertical tools (<a href="https://www.capterra.com/p/130861/RainMaker/reviews/">Capterra Reviews of RainMaker</a>; <a href="https://joinit.com/blog/best-martial-arts-membership-software">JoinIt on martial arts membership software</a>). It makes software a tax on growth at exactly the moment a studio needs to reinvest. Koaryu collapses platform pricing down to one number that a 30-student studio and a 300-student studio both pay the same. The Payments take grows naturally with the studio, but it is tied to tuition processed, not seat count, and only applies when the studio chooses to run tuition through Koaryu.</p>
+
+  <h3>Why a 50 bps Payments take</h3>
+  <p>Koaryu Payments is priced like a piece of infrastructure, not a margin tower. At 50 basis points on a studio that processes $10,500 of tuition per month (75 active students at $140 ARPU per <a href="https://blackbeltcrm.com/martial-arts-school-business-benchmark-report/">Black Belt CRM benchmarks</a>), Koaryu earns approximately $52.50 per month on top of the $27 platform fee. The total cost to the studio is approximately $79.50 per month for both software and tuition rail combined, which is still below the Mindbody Starter plan alone and roughly half of RainMaker.</p>
+
+  <h3>Expected ARPU</h3>
+  <p>Year 1 blended ARPU is modeled at approximately $48 per paying studio per month: $27 platform fee plus roughly $21 in Payments fees. The Payments component assumes only 60% Connect adoption among paying studios in Year 1 and an average $7,000 of monthly tuition processed per adopting studio. Adoption climbs to roughly 85% by the end of Year 2 as Koaryu Payments becomes the default path for new signups, lifting blended ARPU to roughly $66.</p>
+
+  <h3>Future expansion surfaces</h3>
+  <ul>
+    <li><strong>Multi-location add-on:</strong> $15/mo per additional location, unlocking franchise and multi-campus studios.</li>
+    <li><strong>Branded student PWA:</strong> $25/mo add-on, modeled after MyStudio and Mindbody add-ons but priced lower.</li>
+    <li><strong>SMS credits:</strong> passthrough plus small margin, metered per message.</li>
+    <li><strong>Higher-volume Payments tier:</strong> studios processing more than $50k/month in tuition can negotiate to 30 bps, mirroring mature embedded-finance pricing curves.</li>
+  </ul>
+</section>
+
+<!-- =========================== SECTION 7 =========================== -->
+<section id="s7" class="reveal">
+  <span class="section-num">07 / Go-To-Market</span>
+  <h2>Go-to-market strategy</h2>
+
+  <h3>Wedge: the spreadsheet school</h3>
+  <p>The most efficient initial GTM is direct outreach to studios that are currently not paying for vertical software at all. There are at least 7,812 U.S. schools without a website (<a href="https://bytescraper.com/b2b-database/list-of-martial-arts-schools-in-united-states">ByteScraper</a>) and likely a multiple of that running on paper or spreadsheets inside studios that do have a website. These operators have no switching-cost inertia and no contract to break. The pitch is not &ldquo;switch from RainMaker&rdquo;; it is &ldquo;replace your spreadsheet, get a clean attendance dashboard and belt ladder, and run tuition through one tool, for $27 a month after a 30-day free trial.&rdquo;</p>
+
+  <h3>Three-channel launch plan</h3>
+  <div class="two-col">
+    <div class="card">
+      <h4>Channel 1 · Founder-led outreach</h4>
+      <p>Direct email and phone to 500 independent studios in the Midwest, leveraging the founder&rsquo;s prior work experience inside a martial arts studio. Goal for Month 1–3: 15 design-partner studios on the standard $27 plan after the 30-day trial, with full roadmap input and waived Payments fees for their first 90 days on Connect.</p>
+    </div>
+    <div class="card">
+      <h4>Channel 2 · Community proof</h4>
+      <p>Dojo-owner Facebook groups, MartialTalk, r/martialarts, and regional instructor associations. Share case studies, teardown videos of competitor pricing, and open office hours. Trust compounds in this community; the ROI on visibility is high.</p>
+    </div>
+    <div class="card">
+      <h4>Channel 3 · Content moat</h4>
+      <p>Long-form educational content on attendance-driven promotion workflows, retention benchmarks, and CSV migration guides from every major competitor. SEO targets include &ldquo;RainMaker alternative&rdquo;, &ldquo;Zen Planner pricing&rdquo;, &ldquo;martial arts belt tracking software&rdquo;, &ldquo;martial arts CRM for spreadsheets&rdquo;.</p>
+    </div>
+    <div class="card">
+      <h4>Channel 4 · Referrals</h4>
+      <p>One free month for each paid referred studio. Owner-operators talk to each other constantly. Flat-rate pricing makes referral math trivial to explain and removes the fear of a bait-and-switch quote later.</p>
+    </div>
+  </div>
+
+  <h3>Positioning and messaging</h3>
+  <p>Three outcomes, in order, form the entire messaging framework: lower monthly software cost, simpler daily operations, and built-in belt progression workflows. Anything that does not directly support one of those three messages gets cut from landing pages, emails, and sales calls.</p>
+
+  <h3>Migration playbook</h3>
+  <p>CSV-first migration is a first-class product feature, not a services offering. Studios can map spreadsheet columns to Koaryu fields in a dedicated import wizard, commit partial records, and clean up missing fields later. A clear on-ramp from the two most common spreadsheet formats (student roster tab plus attendance tab) is the single highest-leverage GTM investment short of paid ads.</p>
+</section>
+
+<!-- =========================== SECTION 8 =========================== -->
+<section id="s8" class="reveal">
+  <span class="section-num">08 / Economics</span>
+  <h2>Unit economics and projections</h2>
+
+  <h3>Cost structure</h3>
+  <p>Koaryu&rsquo;s infrastructure cost per studio is dominated by three line items: Supabase (database and auth), Render (FastAPI host), and Resend (transactional email). Supabase Pro starts at $25 per project per month and handles thousands of tenants on one project at early scale (<a href="https://supabase.com/pricing">Supabase, Pricing</a>). Render&rsquo;s backend tier and Vercel&rsquo;s Pro tier add roughly another $20 to $50 per month combined. Stripe fees are pass-through and never touched by Koaryu&rsquo;s P&amp;L. Total infrastructure cost per paying studio is modeled at under $3 per month at 100 studios and drops further at scale.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Line item</th>
+          <th class="right">Mo 1</th>
+          <th class="right">Yr 1</th>
+          <th class="right">Yr 2 target</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Supabase Pro</td><td class="right num">$25</td><td class="right num">$300</td><td class="right num">$599</td><td>One shared project, scaling compute at 500+ tenants</td></tr>
+        <tr><td>Render backend</td><td class="right num">$19</td><td class="right num">$228</td><td class="right num">$360</td><td>Standard instance sufficient through mid-scale</td></tr>
+        <tr><td>Vercel Pro</td><td class="right num">$20</td><td class="right num">$240</td><td class="right num">$240</td><td>One seat covers preview + prod</td></tr>
+        <tr><td>Resend</td><td class="right num">$20</td><td class="right num">$240</td><td class="right num">$600</td><td>Tiered by volume; 100k emails well within Pro</td></tr>
+        <tr><td>Domain + DNS + misc</td><td class="right num">$10</td><td class="right num">$120</td><td class="right num">$180</td><td>Cloudflare, Postmark fallback, monitoring</td></tr>
+        <tr><td><strong>Total fixed COGS</strong></td><td class="right num"><strong>$94</strong></td><td class="right num"><strong>$1,128</strong></td><td class="right num"><strong>$1,979</strong></td><td>Fixed COGS scales sublinearly with paying accounts</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Revenue projection</h3>
+  <p>The model below decomposes revenue into the platform fee ($27 per studio per month) and Koaryu Payments (50 basis points on tuition processed through Stripe Connect). Payments adoption ramps from 40% of paying studios at design-partner stage to 85% by Year 3, with an average $7,000 of monthly tuition processed per adopting studio. Logo churn is held at a conservative 4% per month floor drawn from SMB SaaS benchmarks (<a href="https://churnfree.com/blog/b2b-saas-churn-rate-benchmarks/">Churnfree benchmarks</a>; <a href="https://www.hubifi.com/blog/calculate-saas-churn-rate">HubiFi on SaaS churn</a>). Numbers are projections, not guarantees.</p>
+
+  <div class="table-wrap rev">
+    <table>
+      <thead>
+        <tr>
+          <th>Milestone</th>
+          <th class="right">Paying studios</th>
+          <th class="right">Platform MRR</th>
+          <th class="right">Payments MRR</th>
+          <th class="right">Total MRR</th>
+          <th class="right">ARR</th>
+          <th class="right">Gross margin</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="milestone">Design partners (M3)</td>
+          <td class="right num">15</td>
+          <td class="right rev-num">$405</td>
+          <td class="right rev-num">$210</td>
+          <td class="right rev-num">$615</td>
+          <td class="right rev-num">$7,380</td>
+          <td class="right num">85%</td>
+        </tr>
+        <tr>
+          <td class="milestone">Public launch (M6)</td>
+          <td class="right num">50</td>
+          <td class="right rev-num">$1,350</td>
+          <td class="right rev-num">$875</td>
+          <td class="right rev-num">$2,225</td>
+          <td class="right rev-num">$26,700</td>
+          <td class="right num">93%</td>
+        </tr>
+        <tr>
+          <td class="milestone">Year 1 goal (M12)</td>
+          <td class="right num">300</td>
+          <td class="right rev-num">$8,100</td>
+          <td class="right rev-num">$6,300</td>
+          <td class="right rev-num">$14,400</td>
+          <td class="right rev-num">$172,800</td>
+          <td class="right num">98%</td>
+        </tr>
+        <tr>
+          <td class="milestone">Year 2 goal</td>
+          <td class="right num">1,000</td>
+          <td class="right rev-num">$27,000</td>
+          <td class="right rev-num">$26,250</td>
+          <td class="right rev-num">$53,250</td>
+          <td class="right rev-num">$639,000</td>
+          <td class="right num">99%</td>
+        </tr>
+        <tr>
+          <td class="milestone">Year 3 goal</td>
+          <td class="right num">2,500</td>
+          <td class="right rev-num">$67,500</td>
+          <td class="right rev-num">$74,375</td>
+          <td class="right rev-num">$141,875</td>
+          <td class="right rev-num">$1,702,500</td>
+          <td class="right num">99%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Payments MRR assumes 60% Connect adoption at Y1, 75% at Y2, 85% at Y3, $7,000 average monthly tuition per adopting studio, and a 50 bps platform application fee. Stripe processing fees (2.9% plus 30 cents) are pass-through to the studio and not included in Koaryu revenue. Gross margin excludes founder salary and variable customer-support cost.</p>
+
+  <h3>CAC, LTV, and payback</h3>
+  <p>Founder-led outreach and referrals drive an assumed blended CAC of $120 per studio through Month 12, mostly in the form of founder time rather than paid ads. At a blended $48 ARPU in Year 1 ($27 platform + $21 Payments) and a modeled 30-month average tenure (4% monthly logo churn, assuming the product meaningfully reduces the 50%-in-six-months customer-retention problem studios face), modeled LTV per paying studio is approximately $1,440. Payback period is roughly 2.5 months. By Year 2 the same studio is worth approximately $1,980 in LTV as Connect adoption deepens. These are projections and will be updated with real cohort data from the first 50 paying studios.</p>
+
+  <div class="stat-row">
+    <div class="stat"><span class="num">$120</span><span class="lbl">Projected blended CAC per studio, Y1</span></div>
+    <div class="stat"><span class="num">~30 mo</span><span class="lbl">Modeled avg customer tenure at 4% monthly churn</span></div>
+    <div class="stat"><span class="num">$1,440</span><span class="lbl">Modeled Y1 LTV per studio (rises to ~$1,980 by Y2)</span></div>
+    <div class="stat"><span class="num">~2.5 mo</span><span class="lbl">Projected CAC payback</span></div>
+  </div>
+</section>
+
+<!-- =========================== SECTION 9 =========================== -->
+<section id="s9" class="reveal">
+  <span class="section-num">09 / Team</span>
+  <h2>Founder &amp; team</h2>
+
+  <h3>Founder</h3>
+  <p>Ronak Chak is the founder of Koaryu. He is a senior at Indiana University&rsquo;s Kelley School of Business pursuing a dual focus in Finance and IT / Computer Science, with expected graduation in May. His first paid job was inside a martial arts studio, where he first encountered the overpriced, underbuilt software that motivated this product. Since then he has shipped multiple production SaaS products using FastAPI, Next.js, TypeScript, and React, with cloud deployment across Vercel, Render, and DigitalOcean.</p>
+
+  <h3>Relevant prior work</h3>
+  <ul>
+    <li><strong>Sparse Halo.</strong> Portfolio management and trading platform built end-to-end.</li>
+    <li><strong>Martial arts studio CRM / SaaS.</strong> The direct predecessor to Koaryu, building forward from firsthand operational experience inside a dojo.</li>
+    <li><strong>Chrome extension development.</strong> Browser-extension distribution and Chrome Web Store publishing.</li>
+    <li><strong>Full-stack workflow.</strong> Advanced fluency in Python (FastAPI), TypeScript/React, Supabase, Postgres, Git-based CI/CD.</li>
+  </ul>
+
+  <h3>Why this founder for this market</h3>
+  <p>Founder-market fit is not a marketing line in this case. The person building Koaryu has worked inside the exact kind of studio he is now selling to, has lived through the specific frustrations that legacy software creates for an owner-operator, and has the engineering stack already internalized. That combination materially compresses the feedback loop between &ldquo;instructor notices a workflow is broken&rdquo; and &ldquo;feature ships to fix it.&rdquo;</p>
+
+  <h3>Planned hires with funding</h3>
+  <ul>
+    <li><strong>Part-time customer success lead</strong> with martial arts studio operations background, hired at Month 4–6 once design partners convert to paid.</li>
+    <li><strong>Contract designer</strong> (10–15 hrs/week) to harden the dashboard and reports modules and own the landing page system.</li>
+    <li><strong>Second full-stack engineer</strong> at approximately $15k combined MRR to accelerate multi-location, deeper reporting, and PWA work.</li>
+  </ul>
+</section>
+
+<!-- =========================== SECTION 10 =========================== -->
+<section id="s10" class="reveal">
+  <span class="section-num">10 / Roadmap</span>
+  <h2>Build order and roadmap</h2>
+
+  <p>The build order is sequenced so that system-of-record functionality exists before monetization and automation. The first eleven phases below are already live in production. The remaining items are sequenced for the funded twelve-month plan.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th class="right">Phase</th><th>Scope</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="right num">01</td><td>Studio auth, onboarding, multi-tenant model, RLS hardening</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">02</td><td>Student CRM + CSV import (live-mode persistence)</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">03</td><td>Schedule + attendance (mobile-friendly check-in)</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">04</td><td>Belt ladder config + atomic promotion engine with tips</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">05</td><td>Lead pipeline + conversion into students</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">06</td><td>Programs system: first-class program objects, program-aware belt ladders, Unassigned fallback, cross-program attendance integrity</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">07</td><td>Platform billing: Stripe subscription for the $27 studio plan, 30-day trial, webhook state sync, trial countdown UI</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">08</td><td>Koaryu Payments: full Stripe Connect integration, Accounts v2 with v1 Express fallback, payers / plans / enrollments / invoices / payments family billing hierarchy</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">09</td><td>Staff roles + email invites: admin, front_desk, instructor with route-level RBAC enforcement</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">10</td><td>Theme system (light, dark, system) with first-paint hydration, custom branded error pages for 404 / 500 / 502 / 503 / 504</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">11</td><td>Function security hardening (search_path pinning), RLS init plan optimization (auth.uid subquery wrap), session-scoped studio context</td><td><span class="check">Shipped</span></td></tr>
+        <tr><td class="right num">12</td><td>Email automations via Resend: full template library, dunning sequences, attendance and promotion triggers, deliverability monitoring</td><td><span class="partial">In progress</span></td></tr>
+        <tr><td class="right num">13</td><td>Operational reports v2: cohort retention, revenue waterfall, instructor performance, multi-program rollups, scheduled CSV exports</td><td>Planned M3</td></tr>
+        <tr><td class="right num">14</td><td>Migration polish: RainMaker, Zen Planner, MyStudio, and Mindbody importers</td><td>Planned M6</td></tr>
+        <tr><td class="right num">15</td><td>Multi-location add-on + franchise rollups</td><td>Year 2</td></tr>
+        <tr><td class="right num">16</td><td>Branded student PWA + SMS automations</td><td>Year 2</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Recent live-mode improvements</h3>
+  <p>The repository CHANGELOG and the last 25 commits document the platform&rsquo;s move from prototype to production. Recent work shipped the full Stripe Connect data model (migrations <span class="mono">20260306000010_stripe_connect.sql</span>, <span class="mono">20260408000017_family_billing.sql</span>, <span class="mono">20260413000018_lead_pipeline_phase.sql</span>), tightened RLS plan performance (<span class="mono">20260427000027_rls_init_plan_optimization.sql</span>), and hardened function security (<span class="mono">20260427000026_harden_function_security.sql</span>) by pinning search_path on every helper and moving them out of the public schema. A targeted e2e regression for atomic belt-ladder sync lives at <span class="mono">frontend/e2e/atomic-belt-ladder.spec.ts</span>. This means the riskiest piece of martial-arts-native logic, the ladder sync RPC, already has a regression proof that will catch breakage as new belt-related features land.</p>
+</section>
+
+<!-- =========================== SECTION 11 =========================== -->
+<section id="s11" class="reveal">
+  <span class="section-num">11 / Risks</span>
+  <h2>Risks and mitigations</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Risk</th><th>Likelihood</th><th>Mitigation</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Incumbent price drop (RainMaker or Zen Planner introduces a $49 plan)</td>
+          <td><span class="partial">Medium</span></td>
+          <td>Koaryu&rsquo;s moat is not price alone; it is also UX density, setup speed, and flat-rate guarantees. A competitor price cut still leaves their UI and onboarding intact.</td>
+        </tr>
+        <tr>
+          <td>Slow organic growth in a non-tech-native buyer market</td>
+          <td><span class="partial">Medium</span></td>
+          <td>Founder-led sales in Months 1–6 does not assume content SEO or viral loops. Every early studio is hand-recruited through direct outreach and community presence.</td>
+        </tr>
+        <tr>
+          <td>Supabase pricing or platform risk</td>
+          <td><span class="check">Low</span></td>
+          <td>Architecture is portable: schema is vanilla Postgres, auth can migrate to Clerk or Auth0, RLS policies are standard Postgres.</td>
+        </tr>
+        <tr>
+          <td>Customer support load outpacing a small team</td>
+          <td><span class="partial">Medium</span></td>
+          <td>Self-serve onboarding is explicitly a v1 product principle. Help docs, in-app empty states, and CSV import wizard are built to minimize ticket volume.</td>
+        </tr>
+        <tr>
+          <td>Legal exposure around minor records and parent data</td>
+          <td><span class="partial">Medium</span></td>
+          <td>RLS-enforced tenant isolation, rate-limited auth, Stripe-hosted card data, PII export and deletion workflows planned pre-launch.</td>
+        </tr>
+        <tr>
+          <td>Churn higher than modeled</td>
+          <td><span class="partial">Medium</span></td>
+          <td>Koaryu itself reduces the dominant churn driver: missed retention signals. Even at 7% monthly SMB churn (<a href="https://churnfree.com/blog/b2b-saas-churn-rate-benchmarks/">Churnfree</a>), LTV still covers modeled CAC with margin.</td>
+        </tr>
+        <tr>
+          <td>Scope creep into generic gym features</td>
+          <td><span class="cross">High if unmanaged</span></td>
+          <td>The v1 exclusions list (POS, franchise, mobile app, AI chat) is treated as a commitment, not a preference. New surface area must pass a &ldquo;does this help a single-location martial arts studio before everything else?&rdquo; test.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>What would kill the business</h3>
+  <p>The single most dangerous failure mode is trying to be everything at once. A version-one Koaryu that tries to compete on franchise management, branded mobile apps, SMS marketing, and an AI agent simultaneously will ship none of them well and lose against focused incumbents on each axis. The antidote is ruthless sequencing: win the single-location belt-tracking wedge first, then expand on real customer pull, not investor-deck speculation.</p>
+</section>
+
+<!-- =========================== SECTION 12 =========================== -->
+<section id="s12" class="reveal">
+  <span class="section-num">12 / The Ask</span>
+  <h2>The ask</h2>
+
+  <p>Koaryu is raising a small pre-seed round to convert a fully built and shipped product into a commercially validated business with 300 paying studios and roughly $14k MRR (combined platform plus Payments) within twelve months of public launch. The capital is intentionally modest; the business is a vertical SaaS with a flat platform fee plus a small embedded-finance take rate and near-zero marginal cost, not a cash-burning marketplace.</p>
+
+  <h3>Use of funds</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Category</th><th class="right">Allocation</th><th>What it funds</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Founder runway (12 months)</td><td class="right num">55%</td><td>Full-time execution through public launch and first 300 studios</td></tr>
+        <tr><td>Part-time customer success lead</td><td class="right num">15%</td><td>Hired M4–M6 to onboard design partners and reduce founder support load</td></tr>
+        <tr><td>Contract design</td><td class="right num">10%</td><td>Dashboard, reports module, landing-page system, marketing site</td></tr>
+        <tr><td>Infrastructure + tooling</td><td class="right num">5%</td><td>Supabase Pro, Render, Vercel, Resend, Stripe setup, monitoring</td></tr>
+        <tr><td>Targeted outreach + content</td><td class="right num">10%</td><td>Direct mail to a curated list of 2,500 independent studios, migration-guide content</td></tr>
+        <tr><td>Legal + compliance</td><td class="right num">5%</td><td>Privacy policy, ToS, minor-data DPAs, delete-workflow review</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>12-month milestones we commit to</h3>
+  <ul>
+    <li><strong>Month 3:</strong> 15 paid design-partner studios on the standard $27 plan after their 30-day trial, all using belt ladders end to end, at least 6 of them processing tuition through Koaryu Payments.</li>
+    <li><strong>Month 6:</strong> Public self-serve launch. 50 paying studios, approximately $2.2k MRR combined platform plus Payments. Resend automations and operational reports v2 fully live in production.</li>
+    <li><strong>Month 9:</strong> 150 paying studios, RainMaker and MyStudio importers shipped, first cohort retention data published internally, 60% of paying studios on Koaryu Payments.</li>
+    <li><strong>Month 12:</strong> 300 paying studios, approximately $14.4k MRR ($8.1k platform plus $6.3k Payments), under 5% monthly logo churn, NPS baseline established, Payments processing run-rate of approximately $1.2M per month of tuition volume.</li>
+  </ul>
+
+  <h3>Why now</h3>
+  <p>Three converging forces make this the right moment. First, the U.S. martial arts studios industry grew at 15.3% CAGR in establishment count from 2021 to 2026 as participation rebounded post-pandemic (<a href="https://www.ibisworld.com/united-states/industry/martial-arts-studios/4187/">IBISWorld</a>). Second, the incumbent price umbrella remains structurally elevated, with RainMaker still selling at $197 and Mindbody pushing new customers to $139 floors (<a href="https://www.softwareadvice.com/martial-arts/rainmaker-profile/">Software Advice</a>; <a href="https://thesalonbusiness.com/mindbody-software-review/">The Salon Business</a>). Third, vertical SaaS as a category is compounding at 16.3% globally and 12.9% in the U.S. (<a href="https://www.businessresearchinsights.com/market-reports/vertical-saas-market-117289">Business Research Insights</a>; <a href="https://finance.yahoo.com/news/vertical-software-market-expected-surpass-133000617.html">Vertical Software Market Report</a>). The window to take share in this specific vertical with this specific wedge, founder-market fit plus aggressive flat pricing plus deep domain modeling, is open now and will not be as open in three years after someone else has already taken it.</p>
+
+  <div class="callout">
+    <strong>Closing statement.</strong> Koaryu is a calm, focused bet on a durable truth: independent martial arts studios deserve software that matches how they actually run, priced in a way that does not punish their growth, built by someone who has stood on the mat. The prototype exists. The market is large, fragmented, and underserved. The economics are clean. The next twelve months turn it into a real business.
+  </div>
+</section>
+
+<!-- =========================== FOOTNOTES =========================== -->
+<section id="footnotes" class="reveal">
+  <span class="section-num">Appendix / Sources</span>
+  <h2>Primary sources and citations</h2>
+
+  <div class="footnotes">
+    <ol>
+      <li><a href="https://www.ibisworld.com/united-states/number-of-businesses/martial-arts-studios/4187/">IBISWorld, Martial Arts Studios in the US, Number of Businesses Statistics (2026)</a>. 72,029 establishments in 2025, 76,364 projected in 2026, a 6.0% YoY increase.</li>
+      <li><a href="https://www.ibisworld.com/united-states/industry/martial-arts-studios/4187/">IBISWorld, Martial Arts Studios in the US Industry Analysis (2026)</a>. U.S. market size: $21.0B in 2026; 15.3% CAGR on establishment count 2021–2026.</li>
+      <li><a href="https://www.softwareadvice.com/martial-arts/rainmaker-profile/">Software Advice, RainMaker Reviews, Demo &amp; Pricing (2026)</a>. Starting price: $197.00 per month.</li>
+      <li><a href="https://angelrated.com/reviews/340/rainmaker">Angel Rated, Rainmaker Customer Reviews</a>. Pricing plan: $197/mo or $2,197/yr for unlimited capacity.</li>
+      <li><a href="https://www.capterra.com/p/130861/RainMaker/reviews/">Capterra, RainMaker Reviews (2026)</a>. Verified user reviews citing price concerns.</li>
+      <li><a href="https://zenplanner.com/martial-arts/">Zen Planner, Martial Arts Management Software</a>. &ldquo;Zen Planner starts at $99 per month.&rdquo;</li>
+      <li><a href="https://zenplanner.com/blogs/zen-planner-pricing-for-martial-arts-and-yoga-studios/">Zen Planner, Pricing for Martial Arts and Yoga Studios</a>. Typical range $99–$200/mo; ~$169 for a 150-student martial arts school.</li>
+      <li><a href="https://www.mystudio.io/pricing/single-location">MyStudio, Single Location Pricing</a>. Starter $79, Growth $159, Scale $239.</li>
+      <li><a href="https://thesalonbusiness.com/mindbody-software-review/">The Salon Business, Mindbody Software Review (2026)</a>. Starter $139/mo, Accelerate $289/mo, Ultimate Plus $599/mo.</li>
+      <li><a href="https://www.exercise.com/grow/how-much-does-kicksite-cost/">Exercise.com, Kicksite Pricing</a>. $49/mo (0–25 students) to $199/mo (101+ students).</li>
+      <li><a href="https://www.martialytics.com/pricing">Martialytics, Pricing page</a>. $69/mo for 50 students, $129/mo for 101–200, $199/mo for 200+.</li>
+      <li><a href="https://www.wodify.com/blog/gymdesk-pricing">Wodify, Gymdesk Pricing</a>. $75 to $200/mo by active member count.</li>
+      <li><a href="https://sparkmembership.com/pricing/">Spark Membership, Pricing</a>. Post-trial price $249/mo.</li>
+      <li><a href="https://www.krowdbase.com/software/onmat">Krowdbase, OnMat (JibaSoft)</a>. Starting at $17/month.</li>
+      <li><a href="https://bytescraper.com/b2b-database/list-of-martial-arts-schools-in-united-states">ByteScraper, List of Martial Arts Schools in the United States</a>. 28,530 schools, 20,718 with websites, 7,812 without.</li>
+      <li><a href="https://www.gokenko.com/articles/martial-arts-industry-in-the-usa">Kenko, Martial Arts Industry in the USA</a>. Approximately 3.9M U.S. participants, ~15,900 schools active.</li>
+      <li><a href="https://membersolutions.com/martial-arts-gym-client-retention-strategies/">Member Solutions, Client Retention Strategies</a>. ~50% of new members leave within first six months.</li>
+      <li><a href="https://blackbeltcrm.com/martial-arts-school-business-benchmark-report/">Black Belt CRM, Martial Arts School Business Benchmark Report (2026)</a>. Healthy annual retention 65–75%; ARPU $140–$200 per student.</li>
+      <li><a href="https://churnfree.com/blog/b2b-saas-churn-rate-benchmarks/">Churnfree, B2B SaaS Churn Rate Benchmarks (2026)</a>. SMB monthly churn benchmarks 3–7%.</li>
+      <li><a href="https://www.hubifi.com/blog/calculate-saas-churn-rate">HubiFi, SaaS Churn Rate Calculations</a>. SMB annualized churn 31–58%; Baremetrics dataset shows 7.5% monthly median.</li>
+      <li><a href="https://www.businessresearchinsights.com/market-reports/vertical-saas-market-117289">Business Research Insights, Vertical SaaS Market Size</a>. Global vertical SaaS $106.05B in 2024; $369.24B projected by 2033 at 16.3% CAGR.</li>
+      <li><a href="https://finance.yahoo.com/news/vertical-software-market-expected-surpass-133000617.html">Yahoo Finance, Vertical Software Market Report (Oct 2025)</a>. U.S. vertical software $40.27B in 2024 → $106.40B by 2032 at 12.91% CAGR.</li>
+      <li><a href="https://supabase.com/pricing">Supabase, Pricing and Fees</a>. Pro tier from $25/project/mo.</li>
+      <li><a href="https://github.com/ronchak/Koaryu">Koaryu Repository</a>. Source of truth for architecture, verified tech stack, CHANGELOG, and PRD.</li>
+    </ol>
+  </div>
+
+  <p style="margin-top:32px" class="caption">All citations in this document are inline and link directly to primary sources. Every statistic listed as a specific number has been verified against the cited source as of May 2026. Internal projections (CAC, LTV, payback, revenue milestones, Payments adoption ramp) are clearly labeled as projections and carry no source citation because they are the founder&rsquo;s model, not third-party data.</p>
+</section>
+
+</main>
+
+<footer>
+  <p>Koaryu · A warrior&rsquo;s flow.</p>
+  <p style="margin-top:8px">Prepared May 2026 · v2.0 · Confidential · Proprietary, all rights reserved.</p>
+</footer>
+
+<script>
+  // IntersectionObserver fade-in
+  const reveals = document.querySelectorAll('.reveal');
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+  reveals.forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>

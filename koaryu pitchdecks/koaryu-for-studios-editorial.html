@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Koaryu for studios</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAF7F2;
+    --paper-shade: #F1ECE2;
+    --ink: #14110D;
+    --ink-soft: #4A4338;
+    --ink-mute: #8A7F70;
+    --rule: #DCD3C2;
+    --gold: #B8893B;
+    --gold-soft: #C9A267;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 400;
+    font-size: 15.5px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 56px;
+  }
+
+  /* Pages */
+  .page {
+    min-height: calc(100vh - 0px);
+    padding: 96px 0 80px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+  }
+  .page:last-child { border-bottom: none; }
+
+  .page-grow { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+  /* Typography */
+  .display {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-optical-sizing: auto;
+    font-variation-settings: 'opsz' 96;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+
+  h1.display {
+    font-size: 72px;
+    margin: 0 0 8px;
+    font-weight: 500;
+  }
+
+  h2.display {
+    font-size: 44px;
+    margin: 0 0 28px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  h3 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+  }
+
+  p {
+    margin: 0 0 18px;
+    color: var(--ink);
+    max-width: 60ch;
+  }
+  p.lead {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 400;
+    font-size: 22px;
+    line-height: 1.45;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    max-width: 30ch;
+  }
+  p.lede {
+    font-size: 17.5px;
+    line-height: 1.65;
+    color: var(--ink-soft);
+    max-width: 56ch;
+  }
+  .muted { color: var(--ink-mute); }
+  .small { font-size: 13px; line-height: 1.6; }
+
+  .mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* Eyebrow */
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 28px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .eyebrow::before {
+    content: "";
+    display: inline-block;
+    width: 28px;
+    height: 1px;
+    background: var(--gold);
+  }
+
+  /* Hero */
+  .hero-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .hero-title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 96px;
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: -0.035em;
+    margin: 0;
+  }
+  .hero-title .dot { color: var(--gold); }
+  .hero-sub {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 26px;
+    line-height: 1.35;
+    color: var(--ink-soft);
+    font-weight: 400;
+    margin: 28px 0 0;
+    max-width: 26ch;
+    letter-spacing: -0.01em;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 40px;
+    margin-top: 64px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .hero-meta strong {
+    display: block;
+    color: var(--ink);
+    font-weight: 500;
+    margin-top: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  /* Hairline divider */
+  .hairline {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 40px 0;
+  }
+  .hairline.short { width: 56px; margin: 0 0 36px; border-top: 1px solid var(--ink); }
+  .hairline.gold { border-top: 1px solid var(--gold); width: 56px; margin: 0 0 36px; }
+
+  /* Two-up layouts */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    margin: 24px 0 0;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 40px;
+    margin: 24px 0 0;
+  }
+
+  .feature {
+    padding-top: 2px;
+  }
+  .feature .num {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 13px;
+    color: var(--gold);
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+  }
+  .feature h4 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+  }
+  .feature p {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* The price slab */
+  .price-block {
+    text-align: left;
+    padding: 0;
+    margin: 32px 0 0;
+  }
+  .price-number {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 144px;
+    font-weight: 500;
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    color: var(--ink);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .price-number .sym {
+    font-size: 56px;
+    line-height: 1.2;
+    color: var(--gold);
+    margin-top: 16px;
+    font-weight: 400;
+  }
+  .price-number .unit {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    color: var(--ink-mute);
+    font-weight: 400;
+    align-self: flex-end;
+    margin-bottom: 24px;
+    letter-spacing: 0;
+  }
+  .price-tag {
+    margin-top: 18px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  /* The comparison row */
+  .compare {
+    margin-top: 40px;
+    border-top: 1px solid var(--rule);
+  }
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule);
+    column-gap: 24px;
+  }
+  .compare-row .name {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    color: var(--ink);
+  }
+  .compare-row .name .sub {
+    color: var(--ink-mute);
+    margin-left: 8px;
+    font-size: 13px;
+  }
+  .compare-row .price {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 22px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-weight: 500;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .compare-row.us { background: transparent; }
+  .compare-row.us .name {
+    font-weight: 500;
+  }
+  .compare-row.us .name .badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    border: 1px solid var(--gold);
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 10px;
+    vertical-align: 2px;
+  }
+  .compare-row.us .price { color: var(--gold); }
+  .compare-source {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--ink-mute);
+    margin-left: 8px;
+    text-transform: uppercase;
+  }
+
+  /* Pull quote */
+  .quote {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 30px;
+    line-height: 1.35;
+    color: var(--ink);
+    letter-spacing: -0.015em;
+    font-weight: 400;
+    max-width: 28ch;
+    margin: 0;
+  }
+  .quote::before { content: "\201C"; color: var(--gold); margin-right: 4px; }
+  .quote::after { content: "\201D"; color: var(--gold); margin-left: 4px; }
+  .quote-attr {
+    margin-top: 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  /* Step list */
+  .steps {
+    list-style: none;
+    padding: 0;
+    margin: 24px 0 0;
+    counter-reset: step;
+  }
+  .steps li {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 20px;
+    padding: 22px 0;
+    border-top: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .steps li:last-child { border-bottom: 1px solid var(--rule); }
+  .steps li::before {
+    counter-increment: step;
+    content: counter(step, decimal-leading-zero);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--gold);
+    letter-spacing: 0.06em;
+    padding-top: 4px;
+  }
+  .steps h4 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500;
+    font-size: 20px;
+    margin: 0 0 6px;
+    letter-spacing: -0.005em;
+    line-height: 1.3;
+  }
+  .steps p {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* CTA card */
+  .cta {
+    margin-top: 36px;
+    padding: 36px 40px;
+    background: var(--paper-shade);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 24px;
+  }
+  .cta h4 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 26px;
+    font-weight: 500;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  .cta p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14.5px;
+    max-width: 40ch;
+  }
+  .btn {
+    display: inline-block;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 14px 22px;
+    border-radius: 2px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+    border: 1px solid var(--ink);
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--gold); border-color: var(--gold); }
+
+  .signoff {
+    margin-top: 56px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-top: 1px solid var(--rule);
+    padding-top: 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .signoff .right { text-align: right; }
+  .signoff strong {
+    display: block;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0;
+    text-transform: none;
+    margin-bottom: 4px;
+  }
+
+  /* Page index dot */
+  .page-mark {
+    position: relative;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+    letter-spacing: 0.2em;
+    margin-bottom: 56px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .page-mark::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+  .page-mark .of { color: var(--gold); margin-right: 4px; }
+
+  /* PRINT */
+  @media print {
+    :root { --paper: #FBF8F3; }
+    body {
+      font-size: 11.5px;
+      line-height: 1.6;
+      background: var(--paper);
+    }
+    main { max-width: none; padding: 0; }
+    .page {
+      page-break-after: always;
+      break-after: page;
+      min-height: 0;
+      padding: 0;
+      border-bottom: none;
+      padding: 48px 64px 48px;
+    }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+    h1.display { font-size: 56px; }
+    h2.display { font-size: 34px; margin-bottom: 22px; }
+    .hero-title { font-size: 78px; }
+    .hero-sub { font-size: 20px; }
+    .hero-meta { margin-top: 44px; gap: 28px; font-size: 9.5px; }
+    p.lead { font-size: 18px; }
+    p.lede { font-size: 14px; }
+    p { font-size: 12px; }
+    .price-number { font-size: 110px; }
+    .price-number .sym { font-size: 44px; }
+    .quote { font-size: 24px; }
+    .compare-row .price { font-size: 18px; }
+    .feature h4 { font-size: 18px; }
+    .feature p { font-size: 12px; }
+    .steps h4 { font-size: 17px; }
+    .steps p { font-size: 12px; }
+    .cta { padding: 26px 30px; }
+    .cta h4 { font-size: 22px; }
+    .btn { padding: 11px 18px; font-size: 12px; }
+    @page { size: letter; margin: 0; }
+    section, .grid-2, .grid-3, .steps li, .feature, .cta, .compare-row, .price-block, .hero-wrap { page-break-inside: avoid; break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<main>
+
+<!-- ===================== PAGE 1 / COVER ===================== -->
+<section class="page">
+  <div class="page-mark"><span><span class="of">01</span> /  06</span><span>For independent martial arts studios</span></div>
+
+  <div class="hero-wrap">
+    <p class="eyebrow">A quiet introduction</p>
+    <h1 class="hero-title">Koaryu<span class="dot">.</span></h1>
+    <p class="hero-sub">The calm, modern way to run your dojo. One tool for students, attendance, belts, and tuition.</p>
+  </div>
+
+  <div class="hero-meta">
+    <div>From<strong>$27 a month</strong></div>
+    <div>Free trial<strong>30 days, full access</strong></div>
+    <div>Setup<strong>Same day, by you</strong></div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 2 / WHAT IT IS ===================== -->
+<section class="page">
+  <div class="page-mark"><span><span class="of">02</span> /  06</span><span>What Koaryu is</span></div>
+
+  <hr class="hairline gold" />
+  <h2 class="display">Built for the way a dojo actually runs.</h2>
+
+  <p class="lede">Most studio software was made for big-box gyms and then dressed up with a belt chart. Koaryu starts from the mat. Belts, attendance, promotions, and family tuition are first-class, not afterthoughts.</p>
+
+  <p class="lede">You should not need an IT person, a bookkeeper, and a marketing tool to run a thirty-student school. Koaryu is one quiet workspace that holds the whole studio in one place.</p>
+
+  <div class="grid-3" style="margin-top: 48px;">
+    <div class="feature">
+      <div class="num">i.</div>
+      <h4>Made for one studio</h4>
+      <p>No franchise dashboards. No multi-location complexity in your face. Just your school, clearly laid out.</p>
+    </div>
+    <div class="feature">
+      <div class="num">ii.</div>
+      <h4>Belt-first</h4>
+      <p>Your ranks, your tips, your testing rules. Promotion readiness is calculated for you, not buried in a spreadsheet.</p>
+    </div>
+    <div class="feature">
+      <div class="num">iii.</div>
+      <h4>One flat price</h4>
+      <p>Software cost does not grow when your school does. The same $27 at thirty students or three hundred.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 3 / FEATURES ===================== -->
+<section class="page">
+  <div class="page-mark"><span><span class="of">03</span> /  06</span><span>Everything you need</span></div>
+
+  <hr class="hairline gold" />
+  <h2 class="display">Quietly complete.</h2>
+  <p class="lede" style="margin-bottom: 8px;">Every feature most studios actually use, included from day one.</p>
+
+  <div class="grid-2" style="margin-top: 40px;">
+    <div class="feature">
+      <div class="num">01</div>
+      <h4>Students &amp; families</h4>
+      <p>Profiles for every student, with guardian records, contact details, medical notes, and emergency contacts. Siblings linked under one family payer.</p>
+    </div>
+    <div class="feature">
+      <div class="num">02</div>
+      <h4>Attendance in seconds</h4>
+      <p>A clean check-in screen works on the front-desk laptop or a tablet. Instructors see who is here, who is close to testing, and who has not shown up in a while.</p>
+    </div>
+    <div class="feature">
+      <div class="num">03</div>
+      <h4>Belt ladders, your way</h4>
+      <p>Set up your ranks once. Tips, stripes, time-in-rank requirements, and attendance minimums all live in the system. Promotion lists generate themselves.</p>
+    </div>
+    <div class="feature">
+      <div class="num">04</div>
+      <h4>Programs and schedules</h4>
+      <p>Run jiu-jitsu, karate, kids, and adults as separate programs with their own ladders, schedules, and rosters. Cross-program attendance stays clean.</p>
+    </div>
+    <div class="feature">
+      <div class="num">05</div>
+      <h4>Leads and inquiries</h4>
+      <p>Trials, walk-ins, and form submissions land in one pipeline. Convert a lead into a paying student in one click and keep their history intact.</p>
+    </div>
+    <div class="feature">
+      <div class="num">06</div>
+      <h4>Tuition that just works</h4>
+      <p>Family billing through Stripe. Monthly plans, sibling discounts, drop-ins, and one-off invoices. Cards, ACH, and Apple Pay accepted. Money lands in your bank account, not ours.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 4 / PRICING ===================== -->
+<section class="page">
+  <div class="page-mark"><span><span class="of">04</span> /  06</span><span>One price, no surprises</span></div>
+
+  <hr class="hairline gold" />
+  <h2 class="display">A fair price, kept simple.</h2>
+
+  <div class="grid-2" style="align-items: start; gap: 64px;">
+    <div>
+      <p class="lede">No per-student tax. No tier you grow out of. Try everything for thirty days. Cancel any time, no contract.</p>
+
+      <div class="price-block">
+        <div class="price-number">
+          <span class="sym">$</span><span>27</span><span class="unit">/ month</span>
+        </div>
+        <div class="price-tag">Unlimited students. Unlimited staff seats. Every feature included.</div>
+      </div>
+
+      <p class="small muted" style="margin-top: 28px; max-width: 36ch;">For studios that choose Koaryu Payments to handle tuition, a 0.5% platform fee is added to standard Stripe processing. No hidden cuts, no monthly minimums.</p>
+    </div>
+
+    <div>
+      <h3>How that compares</h3>
+      <div class="compare">
+        <div class="compare-row us">
+          <div class="name">Koaryu<span class="badge">You are here</span></div>
+          <div class="price">$27<span class="muted small">/mo</span></div>
+        </div>
+        <div class="compare-row">
+          <div class="name">Kicksite<span class="sub">entry tier</span></div>
+          <div class="price">$49<span class="muted small">/mo</span></div>
+        </div>
+        <div class="compare-row">
+          <div class="name">MyStudio<span class="sub">Starter</span></div>
+          <div class="price">$79<span class="muted small">/mo</span></div>
+        </div>
+        <div class="compare-row">
+          <div class="name">Zen Planner<span class="sub">from</span></div>
+          <div class="price">$99<span class="muted small">/mo</span></div>
+        </div>
+        <div class="compare-row">
+          <div class="name">Mindbody<span class="sub">Starter</span></div>
+          <div class="price">$139<span class="muted small">/mo</span></div>
+        </div>
+        <div class="compare-row">
+          <div class="name">RainMaker / Zivvy</div>
+          <div class="price">$197<span class="muted small">/mo</span></div>
+        </div>
+      </div>
+      <p class="small muted" style="margin-top: 16px;">Competitor pricing from each provider&rsquo;s public page or verified review, May 2026.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 5 / GETTING STARTED + QUOTE ===================== -->
+<section class="page">
+  <div class="page-mark"><span><span class="of">05</span> /  06</span><span>How to start</span></div>
+
+  <hr class="hairline gold" />
+  <h2 class="display">From signup to first class, the same afternoon.</h2>
+
+  <ol class="steps">
+    <li>
+      <div>
+        <h4>Create your studio</h4>
+        <p>One email, one password, and you have a private workspace. No call required, no sales rep on the line.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <h4>Bring your roster in</h4>
+        <p>Upload a CSV from your spreadsheet, or from RainMaker, Zen Planner, MyStudio, or Mindbody. Map columns once, commit, and you are live.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <h4>Set your belt ladders</h4>
+        <p>Use a preset for your style or build your own. Tips and stripes, time-in-rank, and attendance requirements live in one place.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <h4>Invite your staff and start teaching</h4>
+        <p>Add instructors and front-desk staff with the right level of access. Check students in tonight. We will handle the rest quietly in the background.</p>
+      </div>
+    </li>
+  </ol>
+
+  <figure style="margin: 56px 0 0; padding: 0;">
+    <p class="quote">Software should match how a school actually runs, not how a developer thinks it should.</p>
+    <div class="quote-attr">Ronak Chak, founder. First job was inside a dojo.</div>
+  </figure>
+</section>
+
+<!-- ===================== PAGE 6 / CTA ===================== -->
+<section class="page">
+  <div class="page-mark"><span><span class="of">06</span> /  06</span><span>Try it on us</span></div>
+
+  <div class="page-grow">
+    <hr class="hairline gold" />
+    <h2 class="display" style="max-width: 16ch;">Thirty days. Your studio. No card to start.</h2>
+
+    <p class="lede" style="max-width: 50ch;">Open a Koaryu workspace tonight, import your roster this weekend, run your first attendance on Monday. If it is not the calmest your studio has felt in years, walk away. Nothing to cancel, nothing owed.</p>
+
+    <div class="cta">
+      <div>
+        <h4>Start your studio at koaryu.app</h4>
+        <p>Thirty days free. $27 a month after. Cancel any time, your data exports cleanly.</p>
+      </div>
+      <a class="btn" href="https://koaryu.app">Open Koaryu</a>
+    </div>
+
+    <div class="grid-3" style="margin-top: 56px; gap: 40px;">
+      <div class="feature">
+        <h3 style="margin-bottom: 8px;">Talk to a person</h3>
+        <p style="color: var(--ink); font-size: 14.5px;">Email <span class="mono">hello@koaryu.app</span> and a real human will reply, usually the same day. We answer real questions about real schools.</p>
+      </div>
+      <div class="feature">
+        <h3 style="margin-bottom: 8px;">Migrate with us</h3>
+        <p style="color: var(--ink); font-size: 14.5px;">Send us a CSV from your current tool and we will help you map it. Most studios are fully migrated in an afternoon.</p>
+      </div>
+      <div class="feature">
+        <h3 style="margin-bottom: 8px;">Bring your staff</h3>
+        <p style="color: var(--ink); font-size: 14.5px;">Unlimited seats. Owner, front desk, and instructor roles are built in, each with the access that role should have.</p>
+      </div>
+    </div>
+
+    <div class="signoff">
+      <div>
+        <strong>Koaryu</strong>
+        A warrior&rsquo;s flow.
+      </div>
+      <div class="right">
+        <strong>koaryu.app</strong>
+        Prepared May 2026
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+</body>
+</html>
