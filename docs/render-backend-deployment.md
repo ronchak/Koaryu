@@ -21,6 +21,8 @@ Render should use Python `3.11`. The backend includes both `backend/runtime.txt`
 
 The free Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
+For a live dojo-floor demo, use a paid/warm Render instance or another always-on backend. The free tier can still cold-start slowly enough that the first authenticated or billing click feels broken even when the service is healthy.
+
 ## Config Vars
 
 Render will prompt for values marked `sync: false` in `render.yaml`. Use `backend/.env.render.example` as the checklist.
@@ -50,6 +52,21 @@ STRIPE_CONNECT_CLIENT_ID=
 ```
 
 `STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
+
+### Production Startup Guard
+
+When `ENVIRONMENT=production`, FastAPI validates critical live-service configuration during import. The service refuses to boot if any of the following are blank, placeholder, or invalid for production:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_JWT_SECRET`
+- `FRONTEND_URL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_PLATFORM_WEBHOOK_SECRET`
+- `STRIPE_CONNECT_WEBHOOK_SECRET`
+- `STRIPE_KOARYU_CORE_PRICE_ID`
+
+`FRONTEND_URL` must be a public HTTPS origin in production. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for `Production configuration is incomplete` and fix the named config vars before redeploying.
 
 ## Verify Render
 
@@ -84,6 +101,13 @@ Before tagging or announcing a release:
 ```bash
 cd backend
 ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
+  SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co \
+  SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
+  SUPABASE_JWT_SECRET="$SUPABASE_JWT_SECRET" \
+  STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+  STRIPE_PLATFORM_WEBHOOK_SECRET="$STRIPE_PLATFORM_WEBHOOK_SECRET" \
+  STRIPE_CONNECT_WEBHOOK_SECRET="$STRIPE_CONNECT_WEBHOOK_SECRET" \
+  STRIPE_KOARYU_CORE_PRICE_ID="$STRIPE_KOARYU_CORE_PRICE_ID" \
   venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
@@ -99,6 +123,18 @@ For frontend changes, run at least the targeted lint pass for the release surfac
 ```bash
 cd frontend
 npm run lint -- src/app/page.tsx src/components/backend-warmup.tsx src/lib/supabase/middleware.ts src/proxy.ts
+```
+
+For broad launch-readiness changes, use the fuller local verification pass:
+
+```bash
+cd backend
+venv/bin/python -m pytest tests
+
+cd ../frontend
+npm audit --omit=dev
+npm run lint
+npm run build
 ```
 
 ## Stripe Webhooks
@@ -195,6 +231,18 @@ Before enabling live Koaryu Payments for a studio:
 - Use Stripe's `pm_card_createDispute` test PaymentMethod and confirm `charge.dispute.created` projects into `billing_disputes`.
 - Run a reconciliation pass for any object whose webhook delivery was missed or delayed.
 
+### Dojo Demo Checklist
+
+Before walking into a dojo with billing enabled:
+
+- Confirm Render and Vercel both deployed the same intended commit.
+- Confirm `/health` and `/api/v1/health` are green from the demo network or hotspot.
+- Open the app on the actual demo device and complete login, dashboard load, Settings load, Billing load, and a billing status check.
+- Confirm the target studio's Connect account reports `charges_enabled`, `payouts_enabled`, `details_submitted`, and no currently due requirements.
+- Confirm Stripe Dashboard shows recent successful deliveries to both platform and Connect webhook endpoints.
+- Use a clean demo studio dataset with realistic plans, students, and payers instead of old verification artifacts.
+- Avoid using demo reset or clear-studio-data against a real studio unless the admin understands the destructive confirmation prompt and the data loss is intended.
+
 ### Billing Readiness and Recovery
 
 Authenticated studio admins can check the live billing surface with:
@@ -227,3 +275,4 @@ Supported `object_type` values are `connect_account`, `payer`, `invoice`, `subsc
 - Stripe and Supabase writes are not atomic. Local intent rows, deterministic Stripe idempotency keys, webhook projection, and reconciliation are all required to repair partial success.
 - Treat plan pricing as immutable. Create a new connected-account Price for amount or interval changes; migrate active subscriptions deliberately.
 - Preserve test data until the verification pass is reviewed. Delete or archive Stripe/Supabase test artifacts only after an explicit cleanup approval.
+- Production startup intentionally fails closed when required billing configuration is absent. Treat a boot failure as a configuration problem to fix, not as a reason to remove the guard.

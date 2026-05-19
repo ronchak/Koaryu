@@ -4,6 +4,7 @@ from app.core.config import get_settings
 from app.api.v1.router import router as v1_router
 
 settings = get_settings()
+settings.validate_production_configuration()
 allowed_origins = {settings.FRONTEND_URL}
 
 if settings.FRONTEND_URL.startswith("http://localhost:"):

@@ -88,6 +88,11 @@ interface DemoResetResponse {
   counts: DemoResetCounts;
 }
 
+interface StudioDataClearResponse {
+  studio_name: string;
+  counts: DemoResetCounts;
+}
+
 type StudentUpdatePayload = Partial<Student> & {
   program_ids?: string[];
 };
@@ -616,6 +621,7 @@ interface StoreContextValue {
   updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
   removeStaff: (id: string) => Promise<void>;
   resetDemoData: () => Promise<DemoResetResponse>;
+  clearStudioData: () => Promise<StudioDataClearResponse>;
 }
 
 type ConfigStoreContextValue = Pick<
@@ -706,6 +712,7 @@ type StudioStoreContextValue = Pick<
   | "updateStaffRole"
   | "removeStaff"
   | "resetDemoData"
+  | "clearStudioData"
 >;
 
 const ConfigStoreContext = createContext<ConfigStoreContextValue | null>(null);
@@ -1126,6 +1133,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
   }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents]);
+
+  const applyClearedStudioData = useCallback((studioNameValue?: string) => {
+    if (studioNameValue) {
+      setStudioNameState(studioNameValue);
+      save(KEYS.studioName, studioNameValue);
+    }
+    commitStudents([]);
+    setPrograms([]);
+    setProgramsLoaded(true);
+    setProgramsLoadError(null);
+    if (isPreviewMode) {
+      save(KEYS.programs, []);
+    }
+    setLeads([]);
+    setBeltLaddersState([]);
+    updateCurrentLadderId(null);
+    setLadderNameState("");
+    setSubRankTermState("Stripe");
+    setBeltRanksState([]);
+    setTemplates([]);
+    setSessions([]);
+    setAttendance([]);
+    clearEligibilityState();
+    clearPromotionHistoryCache();
+  }, [
+    clearEligibilityState,
+    clearPromotionHistoryCache,
+    commitStudents,
+    isPreviewMode,
+    updateCurrentLadderId,
+  ]);
 
   useEffect(() => {
     if (!isPreviewMode) {
@@ -3278,6 +3316,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return response;
   }, [applyDemoResetResponse, isPreviewMode, persistPrograms, token]);
 
+  const clearStudioData = useCallback(async (): Promise<StudioDataClearResponse> => {
+    if (isPreviewMode) {
+      const currentStudioName = studioName || "My Studio";
+      clearPreviewStorage();
+      const response: StudioDataClearResponse = {
+        studio_name: currentStudioName,
+        counts: {
+          students: studentsRef.current.length,
+          leads: leadsRef.current.length,
+          belt_ranks: beltRanksRef.current.length,
+          class_sessions: sessionsRef.current.length,
+          attendance_records: attendanceRef.current.length,
+        },
+      };
+      applyClearedStudioData(currentStudioName);
+      return response;
+    }
+
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const response = await api.delete<StudioDataClearResponse>("/demo/data", token, {
+      timeoutMs: 60000,
+      timeoutMessage: "Studio data clear is taking longer than expected. Please try again in a moment.",
+    });
+    applyClearedStudioData(response.studio_name);
+    return response;
+  }, [applyClearedStudioData, isPreviewMode, studioName, token]);
+
   // ── Context values ──
   const configValue = useMemo<ConfigStoreContextValue>(() => ({
     isPreviewMode,
@@ -3434,9 +3502,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateStaffRole,
     removeStaff,
     resetDemoData,
+    clearStudioData,
     setStudioName,
   }), [
     activeUserId,
+    clearStudioData,
     currentRole,
     currentUser,
     inviteStaff,

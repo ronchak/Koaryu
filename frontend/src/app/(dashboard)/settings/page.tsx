@@ -6,22 +6,27 @@ import { Button } from "@/components/ui/button";
 import { ProgramsSection } from "@/components/settings/programs-section";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
 import { useConfigStore, useStudioStore } from "@/lib/store";
-import { Save, Check, RotateCcw } from "lucide-react";
+import { AlertTriangle, Save, Check, RotateCcw, Trash2 } from "lucide-react";
 
 export default function SettingsPage() {
   const { isPreviewMode } = useConfigStore();
-  const { studioName, setStudioName, resetDemoData } = useStudioStore();
+  const { currentRole, studioName, setStudioName, resetDemoData, clearStudioData } = useStudioStore();
   const [nameDraft, setNameDraft] = useState("");
   const [hasEditedName, setHasEditedName] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingDemo, setIsResettingDemo] = useState(false);
+  const [isClearingData, setIsClearingData] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [demoResetMessage, setDemoResetMessage] = useState("");
   const [demoResetError, setDemoResetError] = useState("");
+  const [clearDataMessage, setClearDataMessage] = useState("");
+  const [clearDataError, setClearDataError] = useState("");
   const savedTimeoutRef = useRef<number | null>(null);
   const demoResetTimeoutRef = useRef<number | null>(null);
+  const clearDataTimeoutRef = useRef<number | null>(null);
   const name = hasEditedName ? nameDraft : studioName;
+  const canManageStudioData = currentRole === "admin";
 
   async function handleSave() {
     const nextName = name.trim();
@@ -57,9 +62,16 @@ export default function SettingsPage() {
   }
 
   async function handleDemoReset() {
+    const confirmed = window.confirm(
+      "This will replace the current studio data with demo students, leads, belts, classes, and billing examples. Continue?"
+    );
+    if (!confirmed) return;
+
     setIsResettingDemo(true);
     setDemoResetError("");
     setDemoResetMessage("");
+    setClearDataError("");
+    setClearDataMessage("");
 
     try {
       const result = await resetDemoData();
@@ -81,6 +93,39 @@ export default function SettingsPage() {
       setDemoResetError(err instanceof Error ? err.message : "Failed to reset demo data");
     } finally {
       setIsResettingDemo(false);
+    }
+  }
+
+  async function handleClearData() {
+    const confirmed = window.confirm("Are you sure this is going to delete everything?");
+    if (!confirmed) return;
+
+    setIsClearingData(true);
+    setClearDataError("");
+    setClearDataMessage("");
+    setDemoResetError("");
+    setDemoResetMessage("");
+
+    try {
+      const result = await clearStudioData();
+      setNameDraft(result.studio_name);
+      setHasEditedName(false);
+      setClearDataMessage(
+        `Cleared: ${result.counts.students} students, ${result.counts.leads} leads, ${result.counts.class_sessions} classes.`
+      );
+
+      if (clearDataTimeoutRef.current) {
+        window.clearTimeout(clearDataTimeoutRef.current);
+      }
+
+      clearDataTimeoutRef.current = window.setTimeout(() => {
+        setClearDataMessage("");
+        clearDataTimeoutRef.current = null;
+      }, 3500);
+    } catch (err: unknown) {
+      setClearDataError(err instanceof Error ? err.message : "Failed to clear studio data");
+    } finally {
+      setIsClearingData(false);
     }
   }
 
@@ -123,24 +168,62 @@ export default function SettingsPage() {
 
           {/* Data section */}
           <section className="bg-surface border border-border rounded-[6px] p-5">
-            <h3 className="text-sm font-medium text-text-primary mb-1">Demo Data</h3>
-            <p className="text-xs text-muted mb-3">
-              {isPreviewMode
-                ? "Restore the browser preview dataset to a polished demo state."
-                : "Restore the current studio to the polished demo dataset."}
+            <h3 className="text-sm font-medium text-text-primary mb-1">Studio Data</h3>
+            <p className="text-xs text-muted mb-4">
+              Load a demo workspace or permanently clear this studio&apos;s working data.
             </p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={handleDemoReset}
-                isLoading={isResettingDemo}
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                {isResettingDemo ? "Resetting..." : "Reset demo studio"}
-              </Button>
-              {demoResetMessage && <span className="text-xs text-success">{demoResetMessage}</span>}
-              {demoResetError && <span className="text-xs text-danger">{demoResetError}</span>}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-sm font-medium text-text-primary">Demo studio</p>
+                  <p className="text-xs text-muted">
+                    {isPreviewMode
+                      ? "Restore the browser preview dataset to a polished demo state."
+                      : "Replace this studio with demo students, leads, belts, classes, and billing examples."}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleDemoReset}
+                  isLoading={isResettingDemo}
+                  disabled={!canManageStudioData || isClearingData}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  {isResettingDemo ? "Loading..." : "Load demo studio"}
+                </Button>
+              </div>
+              {demoResetMessage && <p className="text-xs text-success">{demoResetMessage}</p>}
+              {demoResetError && <p className="text-xs text-danger">{demoResetError}</p>}
+
+              <div className="border border-danger/25 bg-danger/5 rounded-[6px] p-4">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-danger">Danger zone</p>
+                      <p className="text-xs text-muted mt-1">
+                        Permanently deletes students, leads, programs, belts, schedule, attendance, and studio billing records. This cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={handleClearData}
+                    isLoading={isClearingData}
+                    disabled={!canManageStudioData || isResettingDemo}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    {isClearingData ? "Clearing..." : "Clear studio data"}
+                  </Button>
+                </div>
+                {!canManageStudioData && (
+                  <p className="text-xs text-muted mt-3">Only studio admins can change studio data.</p>
+                )}
+                {clearDataMessage && <p className="text-xs text-success mt-3">{clearDataMessage}</p>}
+                {clearDataError && <p className="text-xs text-danger mt-3">{clearDataError}</p>}
+              </div>
             </div>
           </section>
         </div>

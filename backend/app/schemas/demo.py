@@ -34,3 +34,8 @@ class DemoResetResponse(BaseModel):
     sessions: list[ClassSessionResponse] = Field(default_factory=list)
     attendance: list[AttendanceResponse] = Field(default_factory=list)
     counts: DemoResetCounts = Field(default_factory=DemoResetCounts)
+
+
+class StudioDataClearResponse(BaseModel):
+    studio_name: str
+    counts: DemoResetCounts = Field(default_factory=DemoResetCounts)

@@ -5,7 +5,7 @@ from typing import Any
 from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
-from app.schemas.demo import DemoResetCounts, DemoResetResponse
+from app.schemas.demo import DemoResetCounts, DemoResetResponse, StudioDataClearResponse
 from app.schemas.schedule import AttendanceResponse
 from app.services.belt_service import BeltService
 from app.services.lead_service import LeadService
@@ -58,6 +58,10 @@ class DemoService:
         result = self.supabase.table(table).select("id").eq("studio_id", studio_id).execute()
         return [row["id"] for row in (result.data or []) if row.get("id")]
 
+    def _count_by_studio(self, table: str, studio_id: str) -> int:
+        result = self.supabase.table(table).select("id").eq("studio_id", studio_id).execute()
+        return len(result.data or [])
+
     def _insert(self, table: str, rows: list[dict[str, Any]]) -> None:
         if rows:
             self.supabase.table(table).insert(rows).execute()
@@ -71,7 +75,23 @@ class DemoService:
             if exc.code not in OPTIONAL_SCHEMA_ERROR_CODES:
                 raise
 
+    def _clear_counts(self, studio_id: str) -> DemoResetCounts:
+        return DemoResetCounts(
+            students=self._count_by_studio("students", studio_id),
+            leads=self._count_by_studio("leads", studio_id),
+            belt_ranks=self._count_by_studio("belt_ranks", studio_id),
+            class_sessions=self._count_by_studio("class_sessions", studio_id),
+            attendance_records=self._count_by_studio("attendance", studio_id),
+        )
+
+    def _studio_name(self, studio_id: str) -> str:
+        result = self.supabase.table("studios").select("name").eq("id", studio_id).maybe_single().execute()
+        return (result.data or {}).get("name") or "My Studio"
+
     def _clear_demo_surface(self, studio_id: str) -> None:
+        self._clear_studio_surface(studio_id, include_platform_rows=False)
+
+    def _clear_studio_surface(self, studio_id: str, *, include_platform_rows: bool) -> None:
         student_ids = self._fetch_ids("students", studio_id)
         guardian_ids = self._fetch_ids("guardians", studio_id)
 
@@ -82,15 +102,19 @@ class DemoService:
             "billing_invoice_items",
             "billing_invoices",
             "student_billing_enrollments",
+            "billing_subscriptions",
             "billing_plan_programs",
+            "billing_plan_prices",
             "billing_plans",
             "billing_payers",
             "email_usage_events",
             "export_jobs",
-            "studio_payment_accounts",
-            "studio_subscriptions",
         ]:
             self._delete_optional_by_studio(table, studio_id)
+
+        if include_platform_rows:
+            for table in ["studio_payment_accounts", "studio_subscriptions"]:
+                self._delete_optional_by_studio(table, studio_id)
 
         self._delete_by_studio("attendance", studio_id)
         self._delete_by_studio("promotions", studio_id)
@@ -111,6 +135,12 @@ class DemoService:
         self._delete_by_studio("belt_ranks", studio_id)
         self._delete_by_studio("belt_ladders", studio_id)
         self._delete_by_studio("programs", studio_id)
+
+    async def clear_studio_data(self, studio_id: str) -> StudioDataClearResponse:
+        counts = self._clear_counts(studio_id)
+        studio_name = self._studio_name(studio_id)
+        self._clear_studio_surface(studio_id, include_platform_rows=False)
+        return StudioDataClearResponse(studio_name=studio_name, counts=counts)
 
     def _seed_programs(self, studio_id: str) -> dict[str, str]:
         now = self._timestamp()
@@ -1182,46 +1212,6 @@ class DemoService:
         else:
             period_end = date(self._today().year, self._today().month + 1, 1).isoformat()
 
-        self._insert_optional(
-            "studio_subscriptions",
-            [
-                {
-                    "studio_id": studio_id,
-                    "stripe_customer_id": "cus_demo_river_city",
-                    "stripe_subscription_id": "sub_demo_koaryu_core",
-                    "status": "active",
-                    "plan_name": "Koaryu Core",
-                    "monthly_price_cents": 2700,
-                    "currency": "usd",
-                    "current_period_start": period_start,
-                    "current_period_end": period_end,
-                    "cancel_at_period_end": False,
-                    "last_payment_status": "paid",
-                    "comped": False,
-                    "metadata": {"demo": True},
-                    "created_at": now,
-                    "updated_at": now,
-                }
-            ],
-        )
-        self._insert_optional(
-            "studio_payment_accounts",
-            [
-                {
-                    "studio_id": studio_id,
-                    "stripe_connected_account_id": "acct_demo_river_city",
-                    "status": "charges_enabled",
-                    "charges_enabled": True,
-                    "payouts_enabled": True,
-                    "details_submitted": True,
-                    "requirements_due": [],
-                    "platform_fee_bps": 50,
-                    "metadata": {"demo": True},
-                    "created_at": now,
-                    "updated_at": now,
-                }
-            ],
-        )
         self._insert_optional(
             "email_usage_events",
             [

@@ -39,6 +39,16 @@ Backend environment variables:
 - `SUPABASE_JWT_SECRET`: used to validate Supabase access tokens
 - `FRONTEND_URL`: primary allowed frontend origin, typically `http://localhost:4000`
 - `ENVIRONMENT`: environment label such as `development` or `production`
+- `DEMO_RESET_ENABLED`: set to `true` only for controlled demo/staging environments where the demo reset endpoint should be available
+- `STRIPE_SECRET_KEY`: Stripe secret key used by Koaryu Core billing and connected-account billing operations
+- `STRIPE_RESTRICTED_KEY`: optional restricted Stripe key for dashboard/API operations that should not need the full secret key
+- `STRIPE_PLATFORM_WEBHOOK_SECRET`: Stripe webhook signing secret for platform billing events
+- `STRIPE_CONNECT_WEBHOOK_SECRET`: Stripe webhook signing secret for Connect events; comma-separated values are supported during secret rotation or split endpoint setup
+- `STRIPE_KOARYU_CORE_PRICE_ID`: recurring Stripe Price ID for the Koaryu Core subscription
+- `STRIPE_CONNECT_CLIENT_ID`: Stripe Connect client ID used for connected-account onboarding
+- `BILLING_PLATFORM_FEE_BPS`: Koaryu platform fee in basis points for student billing; defaults to `50`
+
+When `ENVIRONMENT=production`, the backend fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder, or pointed at a local frontend origin. This is intentional: a broken deploy should fail loudly rather than booting into a half-live billing state.
 
 Local defaults in this repo assume:
 
@@ -84,7 +94,8 @@ npm run dev
 ```bash
 cd backend
 cp .env.example .env
-# Fill in SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, FRONTEND_URL
+# Fill in SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET,
+# FRONTEND_URL, and Stripe billing values if you are testing billing locally
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -116,6 +127,7 @@ Studio membership is the tenant boundary. Backend services and RLS policies are 
 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
 - Render starts the FastAPI backend with a single Uvicorn process in production. Keep the root `render.yaml`, `backend/Procfile`, and `docs/render-backend-deployment.md` start commands aligned.
+- Production backend startup validates required Supabase, Stripe, and frontend origin configuration before serving traffic. If Render deploys but the service exits immediately, check the runtime logs for `Production configuration is incomplete`.
 - The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for Production. Add them in Vercel Project Settings or with:
 
 ```bash
@@ -137,6 +149,27 @@ vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 - Preview mode is for demos only. Live mode now starts empty for new studios and should be used for deployment verification.
 - The repo does not currently ship seeded example CSV imports or a packaged demo tenant. For demos, prepare a small example CSV and/or a dedicated demo studio ahead of time.
 - Repeated public signups against a shared dev Supabase project can hit Supabase email rate limits. For heavy QA loops, use a dedicated project, stagger signups, or create test users through an admin flow instead of repeated public signup attempts.
+- The demo reset and clear-studio-data tools are intentionally dangerous admin utilities. They preserve Koaryu Core subscription/platform access rows, but they can replace or delete working studio data and should only be used against a demo or disposable studio after the confirmation prompt is understood.
+- A dojo-floor demo should run on a paid/warm Render instance or an equivalent always-on backend. Free-tier cold starts can make a correct billing flow look broken during the first click.
+
+## Billing Readiness
+
+Koaryu has two billing surfaces:
+
+- Koaryu Core billing: the studio's subscription to Koaryu.
+- Koaryu Payments: a connected studio charging its own students/payers through Stripe Connect.
+
+Before presenting billing live, verify both surfaces after the latest deploy:
+
+- Render and Vercel deployments are green for the same commit.
+- `/health` and `/api/v1/health` return `200` from the deployed backend.
+- A studio admin can open Koaryu Core checkout or billing portal without creating duplicate active subscriptions.
+- `/api/v1/billing/system/status` reports configured Stripe keys, connected-account readiness, Supabase reachability, and healthy platform/Connect webhook processing for the target studio.
+- Stripe Dashboard shows successful deliveries for the platform and Connect webhook endpoints.
+- The target studio's Stripe Connect account has `charges_enabled`, `payouts_enabled`, `details_submitted`, and no currently due requirements.
+- At least one live or test-mode rehearsal has covered payer creation, saved card/autopay authorization, subscription enrollment, invoice payment projection, and cancellation cleanup.
+
+If Stripe has the right object state but Koaryu looks stale, use the authenticated billing reconciliation endpoint documented in `docs/render-backend-deployment.md`.
 
 ## Recent Live-Mode Improvements
 
@@ -150,6 +183,10 @@ Recent deployment-readiness work in this repo tightened live-mode persistence an
 - belt ladder and related live persistence
 - Render cold-start behavior by replacing the four-worker Gunicorn command with a single Uvicorn process
 - landing-page first paint by removing auth middleware from `/` while keeping a non-blocking backend warmup
+- Koaryu Core checkout/portal duplicate-subscription protection and webhook ordering
+- Koaryu Payments autopay authorization, Connect webhook projection, invoice reconciliation, and cancellation cleanup
+- production startup checks for missing or placeholder Supabase/Stripe/frontend configuration
+- admin-only demo reset and clear-studio-data operations that preserve platform subscription access
 - frontend polish for dark/light theme support, dashboard route transitions, shared modal transitions, and reduced-motion-friendly UI transitions
 
 ## Verification Snapshot
@@ -164,6 +201,9 @@ The current dev verification pass included:
 - fresh studio behavior checks to confirm empty live state instead of mock/demo fallback
 - lint and Python compile checks after the auth/onboarding hardening work
 - targeted frontend lint for landing-page warmup, auth middleware, and proxy changes
+- full backend pytest coverage for the billing hardening and production config checks
+- frontend lint, audit, and production build checks after the current dependency and billing UI changes
+- live Stripe verification for Koaryu Core and Koaryu Payments, including a real small-dollar student billing test and webhook/reconciliation checks
 
 The local Supabase-backed verification also surfaced a real `staff_roles` RLS recursion issue, which is now covered by the migration set and avoided in the live frontend gating path.
 
