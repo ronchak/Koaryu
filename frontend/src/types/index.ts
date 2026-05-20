@@ -52,6 +52,65 @@ export interface StaffRoleUpdate {
   role: StaffRoleName;
 }
 
+// ---- Support ----
+
+export type SupportTicketTopic =
+  | "billing"
+  | "account_access"
+  | "student_records"
+  | "bug_report"
+  | "product_question"
+  | "other";
+
+export type SupportTicketSeverity = "low" | "normal" | "high" | "urgent";
+export type SupportTicketStatus = "open" | "triaging" | "waiting_on_customer" | "resolved" | "closed";
+
+export interface SupportTicketCreate {
+  topic: SupportTicketTopic;
+  severity: SupportTicketSeverity;
+  subject: string;
+  details: string;
+  page_url?: string | null;
+  user_agent?: string | null;
+  browser_context?: Record<string, unknown>;
+}
+
+export interface SupportTicket {
+  id: string;
+  studio_id: string;
+  created_by?: string | null;
+  requester_email: string;
+  requester_name?: string | null;
+  topic: SupportTicketTopic;
+  severity: SupportTicketSeverity;
+  subject: string;
+  details: string;
+  page_url?: string | null;
+  user_agent?: string | null;
+  browser_context: Record<string, unknown>;
+  status: SupportTicketStatus;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string | null;
+}
+
+// ---- Account ----
+
+export type AccountDeletionStatus = "scheduled" | "canceled" | "completed";
+
+export interface AccountDeletionRequest {
+  id: string;
+  user_id: string;
+  studio_id?: string | null;
+  requester_email: string;
+  status: AccountDeletionStatus;
+  requested_at: string;
+  scheduled_for: string;
+  canceled_at?: string | null;
+  completed_at?: string | null;
+  reason?: string | null;
+}
+
 // ---- Billing ----
 
 export type SubscriptionStatus =
@@ -779,7 +838,7 @@ export interface Promotion {
   program_id?: string | null;
   from_rank_id?: string;
   to_rank_id: string;
-  promoted_by: string;
+  promoted_by?: string | null;
   notes?: string;
   promoted_at: string;
   student_name?: string;

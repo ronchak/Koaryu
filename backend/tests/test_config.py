@@ -18,6 +18,8 @@ class ProductionConfigValidationTest(unittest.TestCase):
             STRIPE_PLATFORM_WEBHOOK_SECRET="",
             STRIPE_CONNECT_WEBHOOK_SECRET="",
             STRIPE_KOARYU_CORE_PRICE_ID="",
+            ACCOUNT_DELETION_WORKER_SECRET="",
+            SUPPORT_TRIAGE_SECRET="",
         )
 
         with self.assertRaisesRegex(RuntimeError, "Production configuration is incomplete"):
@@ -34,6 +36,8 @@ class ProductionConfigValidationTest(unittest.TestCase):
             STRIPE_PLATFORM_WEBHOOK_SECRET="whsec_platform",
             STRIPE_CONNECT_WEBHOOK_SECRET="whsec_connect",
             STRIPE_KOARYU_CORE_PRICE_ID="price_core",
+            ACCOUNT_DELETION_WORKER_SECRET="delete-secret",
+            SUPPORT_TRIAGE_SECRET="support-secret",
         )
 
         settings.validate_production_configuration()

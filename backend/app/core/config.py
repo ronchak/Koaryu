@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     STRIPE_KOARYU_CORE_PRICE_ID: str = ""
     STRIPE_CONNECT_CLIENT_ID: str = ""
     BILLING_PLATFORM_FEE_BPS: int = 50
+    ACCOUNT_DELETION_WORKER_SECRET: str = ""
+    SUPPORT_TRIAGE_SECRET: str = ""
 
     # API
     API_V1_PREFIX: str = "/api/v1"
@@ -50,6 +52,8 @@ class Settings(BaseSettings):
             "STRIPE_PLATFORM_WEBHOOK_SECRET": self.STRIPE_PLATFORM_WEBHOOK_SECRET,
             "STRIPE_CONNECT_WEBHOOK_SECRET": self.STRIPE_CONNECT_WEBHOOK_SECRET,
             "STRIPE_KOARYU_CORE_PRICE_ID": self.STRIPE_KOARYU_CORE_PRICE_ID,
+            "ACCOUNT_DELETION_WORKER_SECRET": self.ACCOUNT_DELETION_WORKER_SECRET,
+            "SUPPORT_TRIAGE_SECRET": self.SUPPORT_TRIAGE_SECRET,
         }
 
         for name, value in required_values.items():

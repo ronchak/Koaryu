@@ -93,7 +93,7 @@ class PromotionResponse(BaseModel):
     program_id: Optional[str] = None
     from_rank_id: Optional[str] = None
     to_rank_id: str
-    promoted_by: str
+    promoted_by: Optional[str] = None
     notes: Optional[str] = None
     promoted_at: str
     # Joined names for display

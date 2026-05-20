@@ -167,62 +167,74 @@ export default function SettingsPage() {
           <StaffRolesSection />
 
           {/* Data section */}
-          <section className="bg-surface border border-border rounded-[6px] p-5">
+          <section className="rounded-[6px] border border-danger/25 bg-danger/5 p-5">
             <h3 className="text-sm font-medium text-text-primary mb-1">Studio Data</h3>
-            <p className="text-xs text-muted mb-4">
-              Load a demo workspace or permanently clear this studio&apos;s working data.
+            <p className="text-xs text-text-secondary mb-4">
+              Replace or clear this studio&apos;s working records when preparing a demo or resetting a workspace.
             </p>
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <p className="text-sm font-medium text-text-primary">Demo studio</p>
-                  <p className="text-xs text-muted">
-                    {isPreviewMode
-                      ? "Restore the browser preview dataset to a polished demo state."
-                      : "Replace this studio with demo students, leads, belts, classes, and billing examples."}
-                  </p>
+              <div>
+                <div className="mb-4 flex items-start gap-3">
+                  <AlertTriangle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-danger">Danger zone</p>
+                    <p className="text-xs text-text-secondary mt-1">
+                      These actions replace or permanently remove working studio records. Use them only when you mean
+                      to reset this workspace.
+                    </p>
+                  </div>
                 </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleDemoReset}
-                  isLoading={isResettingDemo}
-                  disabled={!canManageStudioData || isClearingData}
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  {isResettingDemo ? "Loading..." : "Load demo studio"}
-                </Button>
-              </div>
-              {demoResetMessage && <p className="text-xs text-success">{demoResetMessage}</p>}
-              {demoResetError && <p className="text-xs text-danger">{demoResetError}</p>}
 
-              <div className="border border-danger/25 bg-danger/5 rounded-[6px] p-4">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-4 flex-wrap border-t border-danger/15 pt-4">
                     <div>
-                      <p className="text-sm font-medium text-danger">Danger zone</p>
-                      <p className="text-xs text-muted mt-1">
-                        Permanently deletes students, leads, programs, belts, schedule, attendance, and studio billing records. This cannot be undone.
+                      <p className="text-sm font-medium text-text-primary">Load demo studio</p>
+                      <p className="text-xs text-text-secondary">
+                        {isPreviewMode
+                          ? "Restore the browser preview dataset to a polished demo state."
+                          : "Replace this studio with demo students, leads, belts, classes, and billing examples."}
                       </p>
                     </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleDemoReset}
+                      isLoading={isResettingDemo}
+                      disabled={!canManageStudioData || isClearingData}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      {isResettingDemo ? "Loading..." : "Load demo studio"}
+                    </Button>
                   </div>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={handleClearData}
-                    isLoading={isClearingData}
-                    disabled={!canManageStudioData || isResettingDemo}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    {isClearingData ? "Clearing..." : "Clear studio data"}
-                  </Button>
+                  {demoResetMessage && <p role="status" aria-live="polite" className="text-xs text-success">{demoResetMessage}</p>}
+                  {demoResetError && <p role="alert" className="text-xs text-danger">{demoResetError}</p>}
+
+                  <div className="flex items-start justify-between gap-4 flex-wrap border-t border-danger/15 pt-4">
+                    <div>
+                      <p className="text-sm font-medium text-text-primary">Clear studio data</p>
+                      <p className="text-xs text-text-secondary">
+                        Permanently deletes students, leads, programs, belts, schedule, attendance, and studio billing
+                        records. This cannot be undone.
+                      </p>
+                    </div>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={handleClearData}
+                      isLoading={isClearingData}
+                      disabled={!canManageStudioData || isResettingDemo}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {isClearingData ? "Clearing..." : "Clear studio data"}
+                    </Button>
+                  </div>
+                  {clearDataMessage && <p role="status" aria-live="polite" className="text-xs text-success">{clearDataMessage}</p>}
+                  {clearDataError && <p role="alert" className="text-xs text-danger">{clearDataError}</p>}
                 </div>
+
                 {!canManageStudioData && (
-                  <p className="text-xs text-muted mt-3">Only studio admins can change studio data.</p>
+                  <p className="text-xs text-text-secondary mt-3">Only studio admins can change studio data.</p>
                 )}
-                {clearDataMessage && <p className="text-xs text-success mt-3">{clearDataMessage}</p>}
-                {clearDataError && <p className="text-xs text-danger mt-3">{clearDataError}</p>}
               </div>
             </div>
           </section>

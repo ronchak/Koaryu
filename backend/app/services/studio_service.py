@@ -127,6 +127,9 @@ class StudioService:
                 detail="No fields to update",
             )
 
+        if "owner_id" in update_data:
+            self._validate_owner_transfer(studio_id, user_id, update_data["owner_id"])
+
         result = (
             self.supabase.table("studios")
             .update(update_data)
@@ -153,3 +156,52 @@ class StudioService:
         ).execute()
 
         return StudioResponse(**result.data[0])
+
+    def _validate_owner_transfer(self, studio_id: str, actor_id: str, next_owner_id: str) -> None:
+        studio = (
+            self.supabase.table("studios")
+            .select("owner_id")
+            .eq("id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        if not studio.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Studio not found")
+
+        if studio.data[0]["owner_id"] != actor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the current studio owner can transfer ownership.",
+            )
+
+        staff = (
+            self.supabase.table("staff_roles")
+            .select("id, role")
+            .eq("studio_id", studio_id)
+            .eq("user_id", next_owner_id)
+            .eq("role", "admin")
+            .limit(1)
+            .execute()
+        )
+        if not staff.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ownership can only be transferred to another studio admin.",
+            )
+
+        user = self._get_auth_user(next_owner_id)
+        if not (
+            getattr(user, "last_sign_in_at", None)
+            or getattr(user, "confirmed_at", None)
+            or getattr(user, "email_confirmed_at", None)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ownership can only be transferred to an active admin.",
+            )
+
+    def _get_auth_user(self, user_id: str):
+        try:
+            return self.supabase.auth.admin.get_user_by_id(user_id).user
+        except Exception:
+            return None

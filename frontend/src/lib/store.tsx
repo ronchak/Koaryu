@@ -616,6 +616,7 @@ interface StoreContextValue {
   staffLoaded: boolean;
   staffLoadError: string | null;
   setStudioName: (name: string) => Promise<void>;
+  updateUserName: (name: string) => Promise<void>;
   refreshStaff: () => Promise<StaffMember[]>;
   inviteStaff: (data: StaffInviteCreate) => Promise<StaffMember>;
   updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
@@ -626,7 +627,12 @@ interface StoreContextValue {
 
 type ConfigStoreContextValue = Pick<
   StoreContextValue,
-  "isPreviewMode" | "token" | "subscriptionRequired" | "markSubscriptionRequired" | "clearSubscriptionRequired"
+  | "isPreviewMode"
+  | "token"
+  | "subscriptionRequired"
+  | "markSubscriptionRequired"
+  | "clearSubscriptionRequired"
+  | "currentRole"
 >;
 type StudentsStoreContextValue = Pick<
   StoreContextValue,
@@ -707,6 +713,7 @@ type StudioStoreContextValue = Pick<
   | "staffLoaded"
   | "staffLoadError"
   | "setStudioName"
+  | "updateUserName"
   | "refreshStaff"
   | "inviteStaff"
   | "updateStaffRole"
@@ -1342,6 +1349,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       tokenRef.current = session.access_token;
       setToken(session.access_token);
+      setCurrentUser({
+        id: session.user.id,
+        email: session.user.email || "",
+        full_name: session.user.user_metadata?.full_name || null,
+      });
       setHydrated(true);
 
       try {
@@ -3149,6 +3161,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [isPreviewMode, token]);
 
+  const updateUserName = useCallback(async (name: string) => {
+    const nextName = name.trim();
+    if (!nextName) {
+      throw new Error("Display name is required.");
+    }
+
+    if (isPreviewMode) {
+      setCurrentUser((current) => current ? { ...current, full_name: nextName } : current);
+      return;
+    }
+
+    if (!token) throw new Error("Not authenticated");
+
+    const { error } = await supabase.auth.updateUser({
+      data: { full_name: nextName },
+    });
+
+    if (error) {
+      throw new Error(error.message || "Failed to update profile.");
+    }
+
+    setCurrentUser((current) => current ? { ...current, full_name: nextName } : current);
+    setStaffMembers((current) =>
+      current.map((member) =>
+        activeUserId && member.user_id === activeUserId
+          ? { ...member, full_name: nextName, updated_at: new Date().toISOString() }
+          : member
+      )
+    );
+  }, [activeUserId, isPreviewMode, supabase, token]);
+
   const refreshStaff = useCallback(async (): Promise<StaffMember[]> => {
     if (isPreviewMode) {
       const sorted = sortStaffMembers(staffMembers, activeUserId);
@@ -3353,7 +3396,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     subscriptionRequired,
     markSubscriptionRequired,
     clearSubscriptionRequired,
-  }), [clearSubscriptionRequired, isPreviewMode, markSubscriptionRequired, subscriptionRequired, token]);
+    currentRole,
+  }), [clearSubscriptionRequired, currentRole, isPreviewMode, markSubscriptionRequired, subscriptionRequired, token]);
 
   const studentsValue = useMemo<StudentsStoreContextValue>(() => ({
     studentsLoaded,
@@ -3504,6 +3548,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     resetDemoData,
     clearStudioData,
     setStudioName,
+    updateUserName,
   }), [
     activeUserId,
     clearStudioData,
@@ -3518,6 +3563,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     staffLoaded,
     staffMembers,
     studioName,
+    updateUserName,
     updateStaffRole,
   ]);
 

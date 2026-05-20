@@ -38,3 +38,23 @@ services:
         sync: false
       - key: STRIPE_CONNECT_CLIENT_ID
         sync: false
+      - key: ACCOUNT_DELETION_WORKER_SECRET
+        sync: false
+      - key: SUPPORT_TRIAGE_SECRET
+        sync: false
+  - type: cron
+    name: koaryu-account-deletion-worker
+    runtime: python
+    plan: starter
+    region: ohio
+    rootDir: backend
+    schedule: "0 8 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/process_account_deletions.py
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SUPABASE_URL
+        value: https://mimguepumzsgmcaycdsh.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

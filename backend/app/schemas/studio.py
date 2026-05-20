@@ -12,6 +12,7 @@ class StudioUpdate(BaseModel):
     name: Optional[str] = None
     timezone: Optional[str] = None
     logo_url: Optional[str] = None
+    owner_id: Optional[str] = None
 
 
 class StudioResponse(BaseModel):

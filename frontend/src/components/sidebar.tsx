@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AccountMenu } from "@/components/account-menu";
 import { Logo } from "./logo";
-import { ThemeToggle } from "./theme-toggle";
 import { NAV_ITEMS } from "@/lib/constants";
 import {
   LayoutDashboard,
@@ -15,7 +15,6 @@ import {
   Zap,
   BarChart3,
   Settings,
-  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
@@ -36,7 +35,10 @@ const iconMap: Record<string, LucideIcon> = {
 interface SidebarProps {
   userEmail?: string;
   userName?: string;
+  studioName?: string;
+  role?: string | null;
   onSignOut?: () => void;
+  isSigningOut?: boolean;
   isCollapsed?: boolean;
   onToggleCollapsed?: () => void;
 }
@@ -44,13 +46,15 @@ interface SidebarProps {
 export function Sidebar({
   userEmail,
   userName,
+  studioName,
+  role,
   onSignOut,
+  isSigningOut = false,
   isCollapsed = false,
   onToggleCollapsed,
 }: SidebarProps) {
   const pathname = usePathname();
   const displayName = userName || "User";
-  const avatarLetter = (userName || userEmail || "U")[0].toUpperCase();
   const ToggleIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose;
   const toggleLabel = isCollapsed ? "Expand sidebar" : "Collapse sidebar";
 
@@ -66,20 +70,15 @@ export function Sidebar({
             <Logo size="sm" />
           </Link>
           <div className="flex min-w-0 items-center gap-2">
-            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
-              {avatarLetter}
-            </span>
-            <span className="max-w-32 truncate text-sm text-text-primary">
-              {displayName}
-            </span>
-            <ThemeToggle compact />
-            <button
-              onClick={onSignOut}
-              className="p-1 text-muted transition-colors cursor-pointer hover:text-text-secondary"
-              title="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            <AccountMenu
+              userEmail={userEmail}
+              userName={displayName}
+              studioName={studioName}
+              role={role}
+              onSignOut={onSignOut}
+              isSigningOut={isSigningOut}
+              compact
+            />
           </div>
         </div>
 
@@ -257,60 +256,15 @@ export function Sidebar({
             ${isCollapsed ? "px-0 py-4" : "px-3 py-3"}
           `}
         >
-          <div
-            className={`
-              flex items-center rounded-[6px] transition-[background-color,color,border-color] duration-150 ease-out
-              ${isCollapsed ? "h-9 justify-center px-0" : "h-11 gap-3 px-3"}
-            `}
-            title={isCollapsed ? displayName : undefined}
-          >
-            {/* Avatar */}
-            <div
-              className={`
-                rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0
-                ${isCollapsed ? "h-8 w-8" : "h-7 w-7"}
-              `}
-            >
-              <span className="text-xs font-medium text-accent">
-                {avatarLetter}
-              </span>
-            </div>
-            <div
-              className={`
-                min-w-0 flex-1 overflow-hidden transition-[max-width,opacity,transform]
-                duration-150 ease-out motion-reduce:transition-none
-                ${
-                  isCollapsed
-                    ? "max-w-0 -translate-x-1 opacity-0"
-                    : "max-w-36 translate-x-0 opacity-100"
-                }
-              `}
-            >
-              <p className="text-sm text-text-primary truncate">
-                {displayName}
-              </p>
-              <p className="text-xs text-muted truncate">{userEmail}</p>
-            </div>
-            <button
-              onClick={onSignOut}
-              tabIndex={isCollapsed ? -1 : 0}
-              className={`
-                cursor-pointer p-1 text-muted transition-[max-width,opacity,color] duration-150 ease-out
-                hover:text-text-secondary motion-reduce:transition-none
-                ${isCollapsed ? "max-w-0 overflow-hidden opacity-0" : "max-w-7 opacity-100"}
-              `}
-              title="Sign out"
-              aria-hidden={isCollapsed}
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-            {!isCollapsed && <ThemeToggle compact />}
-          </div>
-          {isCollapsed && (
-            <div className="mt-2 flex justify-center">
-              <ThemeToggle compact />
-            </div>
-          )}
+          <AccountMenu
+            userEmail={userEmail}
+            userName={displayName}
+            studioName={studioName}
+            role={role}
+            onSignOut={onSignOut}
+            isSigningOut={isSigningOut}
+            collapsed={isCollapsed}
+          />
         </div>
       </aside>
     </>

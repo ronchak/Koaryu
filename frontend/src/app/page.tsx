@@ -911,6 +911,20 @@ export default function LandingPage() {
           </Button>
         </div>
       </section>
+
+      <footer className="border-t border-border px-6 py-8">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
+          <p>© 2026 Koaryu</p>
+          <nav className="flex flex-wrap gap-x-6 gap-y-2" aria-label="Legal">
+            <Link href="/terms" className="hover:text-text-primary">
+              Terms of Service
+            </Link>
+            <Link href="/privacy" className="hover:text-text-primary">
+              Privacy Policy
+            </Link>
+          </nav>
+        </div>
+      </footer>
     </main>
   );
 }

@@ -147,15 +147,18 @@ class StaffService:
 
         self._ensure_owner_not_demoted_or_removed(studio_id, staff_role["user_id"], data.role)
         if previous_role == "admin" and data.role != "admin":
-            self._ensure_more_than_one_admin(studio_id)
+            self._ensure_more_than_one_admin(studio_id, staff_role["user_id"])
 
-        result = (
-            self.supabase.table("staff_roles")
-            .update({"role": data.role})
-            .eq("id", staff_role_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
+        try:
+            result = (
+                self.supabase.table("staff_roles")
+                .update({"role": data.role})
+                .eq("id", staff_role_id)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
+        except PostgrestAPIError as exc:
+            self._raise_admin_integrity_conflict(exc)
 
         if not result.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
@@ -216,16 +219,19 @@ class StaffService:
         staff_role = self._get_staff_role_or_404(staff_role_id, studio_id)
         self._ensure_owner_not_demoted_or_removed(studio_id, staff_role["user_id"], None)
         if staff_role["role"] == "admin":
-            self._ensure_more_than_one_admin(studio_id)
+            self._ensure_more_than_one_admin(studio_id, staff_role["user_id"])
 
         staff_member = self._hydrate_staff_member(staff_role)
-        result = (
-            self.supabase.table("staff_roles")
-            .delete()
-            .eq("id", staff_role_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
+        try:
+            result = (
+                self.supabase.table("staff_roles")
+                .delete()
+                .eq("id", staff_role_id)
+                .eq("studio_id", studio_id)
+                .execute()
+            )
+        except PostgrestAPIError as exc:
+            self._raise_admin_integrity_conflict(exc)
 
         if not result.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
@@ -312,19 +318,53 @@ class StaffService:
                 detail="The studio owner must remain an admin.",
             )
 
-    def _ensure_more_than_one_admin(self, studio_id: str) -> None:
+    def _ensure_more_than_one_admin(self, studio_id: str, departing_user_id: Optional[str] = None) -> None:
         result = (
             self.supabase.table("staff_roles")
-            .select("id")
+            .select("user_id")
             .eq("studio_id", studio_id)
             .eq("role", "admin")
             .execute()
         )
-        if len(result.data or []) <= 1:
+        active_admins = [
+            row for row in (result.data or [])
+            if (
+                row.get("user_id") != departing_user_id
+                and not self._has_scheduled_account_deletion(row.get("user_id"))
+                and self._auth_user_is_active(row.get("user_id"))
+            )
+        ]
+        if len(active_admins) < 1:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="At least one admin must remain in the studio.",
+                detail="At least one active admin not scheduled for deletion must remain in the studio.",
             )
+
+    def _has_scheduled_account_deletion(self, user_id: Optional[str]) -> bool:
+        if not user_id:
+            return False
+
+        result = (
+            self.supabase.table("account_deletion_requests")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("status", "scheduled")
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+
+    def _auth_user_is_active(self, user_id: Optional[str]) -> bool:
+        user = self._get_auth_user(user_id) if user_id else None
+        return _staff_status(user) == "active"
+
+    def _raise_admin_integrity_conflict(self, exc: PostgrestAPIError) -> None:
+        if exc.code in {"23514", "P0001"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=getattr(exc, "message", None) or "At least one active admin not scheduled for deletion must remain in the studio.",
+            ) from exc
+        raise exc
 
     def _audit(
         self,

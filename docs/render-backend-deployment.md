@@ -49,6 +49,8 @@ STRIPE_PLATFORM_WEBHOOK_SECRET=
 STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
 STRIPE_CONNECT_CLIENT_ID=
+ACCOUNT_DELETION_WORKER_SECRET=
+SUPPORT_TRIAGE_SECRET=
 ```
 
 `STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
@@ -65,8 +67,28 @@ When `ENVIRONMENT=production`, FastAPI validates critical live-service configura
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`
 - `STRIPE_CONNECT_WEBHOOK_SECRET`
 - `STRIPE_KOARYU_CORE_PRICE_ID`
+- `ACCOUNT_DELETION_WORKER_SECRET`
+- `SUPPORT_TRIAGE_SECRET`
 
 `FRONTEND_URL` must be a public HTTPS origin in production. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for `Production configuration is incomplete` and fix the named config vars before redeploying.
+
+### Internal Operations
+
+The Blueprint includes `koaryu-account-deletion-worker`, a daily Render Cron Job that runs `backend/scripts/process_account_deletions.py`.
+If you configure the worker manually instead, call the protected endpoint at least daily:
+
+```bash
+curl -X POST \
+  -H "X-Internal-Secret: $ACCOUNT_DELETION_WORKER_SECRET" \
+  https://koaryu.onrender.com/api/v1/internal/account-deletions/process-due
+```
+
+Support tickets can be polled by an operator or GPT task:
+
+```bash
+curl -H "X-Internal-Secret: $SUPPORT_TRIAGE_SECRET" \
+  https://koaryu.onrender.com/api/v1/internal/support/tickets
+```
 
 ## Verify Render
 

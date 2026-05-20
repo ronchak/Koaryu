@@ -47,6 +47,8 @@ Backend environment variables:
 - `STRIPE_KOARYU_CORE_PRICE_ID`: recurring Stripe Price ID for the Koaryu Core subscription
 - `STRIPE_CONNECT_CLIENT_ID`: Stripe Connect client ID used for connected-account onboarding
 - `BILLING_PLATFORM_FEE_BPS`: Koaryu platform fee in basis points for student billing; defaults to `50`
+- `ACCOUNT_DELETION_WORKER_SECRET`: long random secret required by the internal due-account-deletion processor
+- `SUPPORT_TRIAGE_SECRET`: long random secret required by the internal support ticket triage endpoint
 
 When `ENVIRONMENT=production`, the backend fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder, or pointed at a local frontend origin. This is intentional: a broken deploy should fail loudly rather than booting into a half-live billing state.
 
@@ -151,6 +153,15 @@ vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 - Repeated public signups against a shared dev Supabase project can hit Supabase email rate limits. For heavy QA loops, use a dedicated project, stagger signups, or create test users through an admin flow instead of repeated public signup attempts.
 - The demo reset and clear-studio-data tools are intentionally dangerous admin utilities. They preserve Koaryu Core subscription/platform access rows, but they can replace or delete working studio data and should only be used against a demo or disposable studio after the confirmation prompt is understood.
 - A dojo-floor demo should run on a paid/warm Render instance or an equivalent always-on backend. Free-tier cold starts can make a correct billing flow look broken during the first click.
+
+## Account And Support Operations
+
+- Account deletion is a scheduled workflow. The user-facing button creates a 30-day request; deletion can be canceled before the deadline.
+- A protected worker endpoint processes due requests: `POST /api/v1/internal/account-deletions/process-due` with `X-Internal-Secret: $ACCOUNT_DELETION_WORKER_SECRET`.
+- Configure a Render Cron Job or equivalent scheduler to call that endpoint at least daily. The processor removes Koaryu staff-role rows, deletes the Supabase Auth user, and marks the request completed.
+- Owner accounts must transfer studio ownership to another active admin before deletion. Account Settings includes the ownership transfer control.
+- Support requests are stored as tickets, shown back to the user on the support page, and exposed for operator/GPT triage at `GET /api/v1/internal/support/tickets` with `X-Internal-Secret: $SUPPORT_TRIAGE_SECRET`.
+- The internal support endpoint is intentionally read-only for now. Use it for a simple polling task or manual triage queue until outbound notification tooling is added.
 
 ## Billing Readiness
 
