@@ -84,11 +84,17 @@ curl -X POST \
   https://koaryu.onrender.com/api/v1/internal/account-deletions/process-due
 ```
 
-Support tickets can be polled by an operator or GPT task:
+Support tickets can be polled by an operator:
 
 ```bash
 curl -H "X-Internal-Secret: $SUPPORT_TRIAGE_SECRET" \
   https://koaryu.onrender.com/api/v1/internal/support/tickets
+```
+
+The daily GPT digest should use the Supabase connector to call the sanitized database RPC instead of polling raw backend ticket rows:
+
+```sql
+SELECT public.support_triage_digest(50) AS digest;
 ```
 
 Support tickets can be updated by the internal triage loop:

@@ -58,13 +58,19 @@ Setting a ticket to `resolved` or `closed` sets `resolved_at`. Reopening a ticke
 
 The daily Codex automation runs at 8:00 p.m. local time and only summarizes. It should not mutate tickets automatically.
 
-The preferred local check is:
+The automation uses the Supabase connector, not browser or local CLI state. It should run this read-only SQL against the Koaryu project:
+
+```sql
+SELECT public.support_triage_digest(50) AS digest;
+```
+
+`support_triage_digest` returns only sanitized fields. It does not expose full ticket details, raw requester emails, page URLs, user agents, or browser context. For `student_records` tickets, the digest returns `details withheld` for both subject and summary.
+
+The local helper below is only a manual fallback for developer checks; it calls the same sanitized RPC:
 
 ```bash
 scripts/support-triage-digest.sh
 ```
-
-That script uses the authenticated Supabase CLI, calls `support_triage_list_tickets`, and returns only sanitized digest fields. It does not require the Render `SUPPORT_TRIAGE_SECRET` and does not print full ticket details, raw emails, page URLs, user agents, or browser context.
 
 Privacy rules for the automation:
 
@@ -72,7 +78,7 @@ Privacy rules for the automation:
 - Redact requester emails to a partial form such as `r***@domain.com`.
 - For `student_records` tickets, output metadata only and use `details withheld`; do not summarize the subject or details.
 - Do not include full ticket details, page URLs with query strings, user agents, browser context, or student-record content.
-- If the script cannot produce a sanitized digest, report that the queue could not be checked rather than calling raw support-ticket endpoints from automation.
+- If the Supabase connector cannot call `support_triage_digest`, report that the queue could not be checked rather than calling raw support-ticket endpoints from automation.
 
 ## Verification
 

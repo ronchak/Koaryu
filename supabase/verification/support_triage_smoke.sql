@@ -6,9 +6,12 @@ DECLARE
     v_studio UUID := gen_random_uuid();
     v_ticket_normal UUID := gen_random_uuid();
     v_ticket_urgent UUID := gen_random_uuid();
+    v_ticket_student UUID := gen_random_uuid();
     v_listed_ids UUID[];
     v_updated public.support_tickets%ROWTYPE;
     v_event_count INTEGER;
+    v_digest JSONB;
+    v_student_digest_found BOOLEAN;
 BEGIN
     INSERT INTO auth.users (
         id,
@@ -73,6 +76,19 @@ BEGIN
             'open',
             now(),
             now()
+        ),
+        (
+            v_ticket_student,
+            v_studio,
+            v_owner,
+            'student@example.invalid',
+            'student_records',
+            'high',
+            'Sensitive student subject',
+            'Sensitive student detail that must not appear in automation digests.',
+            'open',
+            now() - interval '30 minutes',
+            now() - interval '30 minutes'
         );
 
     SELECT array_agg(id ORDER BY ordinality)
@@ -100,6 +116,32 @@ BEGIN
 
     IF v_listed_ids[1] <> v_ticket_urgent THEN
         RAISE EXCEPTION 'Urgent ticket was not ordered before normal ticket.';
+    END IF;
+
+    SELECT public.support_triage_digest(10)
+    INTO v_digest;
+
+    IF v_digest->>'ok' <> 'true' THEN
+        RAISE EXCEPTION 'Support triage digest did not return an ok payload.';
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_digest->'tickets') AS ticket
+        WHERE ticket->>'id' = v_ticket_student::TEXT
+          AND ticket->>'subject' = 'details withheld'
+          AND ticket->>'summary_seed' = 'details withheld'
+          AND ticket->>'requester' = 's***@example.invalid'
+    )
+    INTO v_student_digest_found;
+
+    IF NOT v_student_digest_found THEN
+        RAISE EXCEPTION 'Support triage digest did not withhold student-record details.';
+    END IF;
+
+    IF v_digest::TEXT ILIKE '%Sensitive student%'
+       OR v_digest::TEXT ILIKE '%student@example.invalid%' THEN
+        RAISE EXCEPTION 'Support triage digest leaked raw student-record details or full requester email.';
     END IF;
 
     SELECT *

@@ -175,7 +175,7 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - Vercel Cron calls `/api/cron/account-deletions/process-due` once daily from `frontend/vercel.json`. That route requires Vercel's `Authorization: Bearer $CRON_SECRET` header, then calls the protected Render backend endpoint with `ACCOUNT_DELETION_WORKER_SECRET`.
 - The processor removes Koaryu staff-role rows, deletes the Supabase Auth user, and marks the request completed.
 - Owner accounts must transfer studio ownership to another active admin before deletion. Account Settings includes the ownership transfer control.
-- Support requests are stored as tickets, shown back to the user on the support page, and exposed for operator/GPT triage at `GET /api/v1/internal/support/tickets` with `X-Internal-Secret: $SUPPORT_TRIAGE_SECRET`.
+- Support requests are stored as tickets, shown back to the user on the support page, and exposed for operator triage at `GET /api/v1/internal/support/tickets` with `X-Internal-Secret: $SUPPORT_TRIAGE_SECRET`. The daily GPT digest uses the Supabase connector against the sanitized `support_triage_digest(50)` RPC instead of raw ticket rows.
 - Internal support triage actions use `PATCH /api/v1/internal/support/tickets/{ticket_id}`. Status updates and notes are written through a transactional Supabase RPC so the ticket row and event trail stay together.
 - See `docs/support-triage.md` for the support queue, privacy rules, status workflow, and daily automation prompt expectations.
 
