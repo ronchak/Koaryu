@@ -4,7 +4,12 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from supabase import Client
 
-from app.schemas.support import SupportTicketCreate, SupportTicketResponse
+from app.schemas.support import (
+    SupportTicketCreate,
+    SupportTicketResponse,
+    SupportTicketTriageUpdate,
+    SupportTriageFilters,
+)
 from app.services.studio_scope import resolve_admin_staff_role_for_user
 
 
@@ -93,16 +98,47 @@ class SupportService:
         result = query.execute()
         return [self._to_response(row) for row in (result.data or [])]
 
-    async def list_triage_tickets(self, *, limit: int = 100) -> list[SupportTicketResponse]:
-        result = (
-            self.supabase.table("support_tickets")
-            .select("*")
-            .in_("status", ["open", "triaging", "waiting_on_customer"])
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
-        )
+    async def list_triage_tickets(
+        self,
+        filters: Optional[SupportTriageFilters] = None,
+    ) -> list[SupportTicketResponse]:
+        filters = filters or SupportTriageFilters()
+        result = self.supabase.rpc(
+            "support_triage_list_tickets",
+            {
+                "p_statuses": filters.statuses or None,
+                "p_severities": filters.severities or None,
+                "p_topics": filters.topics or None,
+                "p_limit": filters.limit,
+            },
+        ).execute()
         return [self._to_response(row) for row in (result.data or [])]
+
+    async def triage_ticket(
+        self,
+        ticket_id: str,
+        data: SupportTicketTriageUpdate,
+    ) -> SupportTicketResponse:
+        try:
+            result = self.supabase.rpc(
+                "support_triage_update_ticket",
+                {
+                    "p_ticket_id": ticket_id,
+                    "p_status": data.status,
+                    "p_note": data.note,
+                    "p_metadata": data.metadata,
+                },
+            ).execute()
+        except Exception as exc:
+            detail = str(exc) or exc.__class__.__name__
+            if "Support ticket not found" in detail:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support ticket not found.") from exc
+            raise
+
+        row = self._first_rpc_row(result.data)
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support ticket not found.")
+        return self._to_response(row)
 
     def _is_admin(self, user_id: str, requested_studio_id: Optional[str]) -> bool:
         try:
@@ -135,6 +171,13 @@ class SupportService:
             "message": message,
             "metadata": metadata,
         }).execute()
+
+    def _first_rpc_row(self, data: Any) -> Optional[dict[str, Any]]:
+        if isinstance(data, list):
+            return data[0] if data else None
+        if isinstance(data, dict):
+            return data
+        return None
 
     def _to_response(self, row: dict[str, Any]) -> SupportTicketResponse:
         return SupportTicketResponse(

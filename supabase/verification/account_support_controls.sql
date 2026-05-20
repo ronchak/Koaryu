@@ -8,7 +8,8 @@ BEGIN
         ('20260520025149'),
         ('20260520041120'),
         ('20260520065000'),
-        ('20260520070500')
+        ('20260520070500'),
+        ('20260520072000')
     ) AS expected(version)
     WHERE NOT EXISTS (
         SELECT 1
@@ -193,6 +194,26 @@ BEGIN
           AND pg_get_functiondef(proc.oid) ILIKE '%tmp_sync_belt_ranks%'
     ) THEN
         RAISE EXCEPTION 'sync_belt_ladder_ranks still references tmp_sync_belt_ranks; linked db lint will fail.';
+    END IF;
+
+    IF to_regprocedure('public.support_triage_list_tickets(text[], text[], text[], integer)') IS NULL THEN
+        RAISE EXCEPTION 'Missing public.support_triage_list_tickets(text[], text[], text[], integer).';
+    END IF;
+
+    IF to_regprocedure('public.support_triage_update_ticket(uuid, text, text, jsonb)') IS NULL THEN
+        RAISE EXCEPTION 'Missing public.support_triage_update_ticket(uuid, text, text, jsonb).';
+    END IF;
+
+    IF NOT has_function_privilege('service_role', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
+       OR NOT has_function_privilege('service_role', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'service_role must be able to execute support triage RPCs.';
+    END IF;
+
+    IF has_function_privilege('anon', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
+       OR has_function_privilege('anon', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'Support triage RPCs must not be directly executable by anon/authenticated.';
     END IF;
 
     RAISE NOTICE 'Koaryu account/support database controls verification passed.';

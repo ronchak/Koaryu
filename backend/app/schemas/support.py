@@ -60,3 +60,36 @@ class SupportTicketResponse(BaseModel):
     created_at: str
     updated_at: str
     resolved_at: Optional[str] = None
+
+
+class SupportTriageFilters(BaseModel):
+    statuses: list[SupportTicketStatus] = Field(default_factory=list, max_length=5)
+    severities: list[SupportTicketSeverity] = Field(default_factory=list, max_length=4)
+    topics: list[SupportTicketTopic] = Field(default_factory=list, max_length=6)
+    limit: int = Field(default=50, ge=1, le=100)
+
+
+class SupportTicketTriageUpdate(BaseModel):
+    status: Optional[SupportTicketStatus] = None
+    note: Optional[str] = Field(default=None, max_length=2000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def strip_note(cls, value):
+        if value is None:
+            return value
+        text = str(value).strip()
+        return text or None
+
+    @model_validator(mode="after")
+    def require_action_and_limit_metadata(self):
+        if self.status is None and self.note is None:
+            raise ValueError("A status change or note is required.")
+        try:
+            encoded = json.dumps(self.metadata, separators=(",", ":"), default=str)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Metadata must be JSON serializable.") from exc
+        if len(encoded.encode("utf-8")) > 4000:
+            raise ValueError("Metadata is too large.")
+        return self

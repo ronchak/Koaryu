@@ -176,7 +176,8 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - The processor removes Koaryu staff-role rows, deletes the Supabase Auth user, and marks the request completed.
 - Owner accounts must transfer studio ownership to another active admin before deletion. Account Settings includes the ownership transfer control.
 - Support requests are stored as tickets, shown back to the user on the support page, and exposed for operator/GPT triage at `GET /api/v1/internal/support/tickets` with `X-Internal-Secret: $SUPPORT_TRIAGE_SECRET`.
-- The internal support endpoint is intentionally read-only for now. Use it for a simple polling task or manual triage queue until outbound notification tooling is added.
+- Internal support triage actions use `PATCH /api/v1/internal/support/tickets/{ticket_id}`. Status updates and notes are written through a transactional Supabase RPC so the ticket row and event trail stay together.
+- See `docs/support-triage.md` for the support queue, privacy rules, status workflow, and daily automation prompt expectations.
 
 ## Billing Readiness
 

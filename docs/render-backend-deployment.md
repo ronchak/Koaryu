@@ -91,6 +91,18 @@ curl -H "X-Internal-Secret: $SUPPORT_TRIAGE_SECRET" \
   https://koaryu.onrender.com/api/v1/internal/support/tickets
 ```
 
+Support tickets can be updated by the internal triage loop:
+
+```bash
+curl -X PATCH \
+  -H "X-Internal-Secret: $SUPPORT_TRIAGE_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"triaging","note":"Investigating the report.","metadata":{"source":"operator"}}' \
+  https://koaryu.onrender.com/api/v1/internal/support/tickets/<ticket_id>
+```
+
+Use `docs/support-triage.md` as the runbook. Do not post full ticket details, page URLs with query strings, user agents, or browser context into broad notification channels.
+
 ## Verify Render
 
 After the first deploy finishes:
