@@ -29,6 +29,8 @@ Frontend environment variables:
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://localhost:8001/api/v1`
 - `NEXT_PUBLIC_SITE_URL`: public frontend origin used for auth callback links, typically `https://koaryu.app` in production
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key used by frontend billing flows
+- `CRON_SECRET`: server-only Vercel Cron secret used to authenticate scheduled internal maintenance routes
+- `ACCOUNT_DELETION_WORKER_SECRET`: server-only Vercel value that must match the backend worker secret so the scheduled account-deletion route can call the protected backend processor
 - `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls must route through the Next.js proxy instead of calling `NEXT_PUBLIC_API_URL` directly
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): when `true`, bypasses live auth/data bootstrapping and serves preview/demo data only
 
@@ -158,7 +160,8 @@ vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 
 - Account deletion is a scheduled workflow. The user-facing button creates a 30-day request; deletion can be canceled before the deadline.
 - A protected worker endpoint processes due requests: `POST /api/v1/internal/account-deletions/process-due` with `X-Internal-Secret: $ACCOUNT_DELETION_WORKER_SECRET`.
-- Configure a Render Cron Job or equivalent scheduler to call that endpoint at least daily. The processor removes Koaryu staff-role rows, deletes the Supabase Auth user, and marks the request completed.
+- Vercel Cron calls `/api/cron/account-deletions/process-due` once daily from `frontend/vercel.json`. That route requires Vercel's `Authorization: Bearer $CRON_SECRET` header, then calls the protected Render backend endpoint with `ACCOUNT_DELETION_WORKER_SECRET`.
+- The processor removes Koaryu staff-role rows, deletes the Supabase Auth user, and marks the request completed.
 - Owner accounts must transfer studio ownership to another active admin before deletion. Account Settings includes the ownership transfer control.
 - Support requests are stored as tickets, shown back to the user on the support page, and exposed for operator/GPT triage at `GET /api/v1/internal/support/tickets` with `X-Internal-Secret: $SUPPORT_TRIAGE_SECRET`.
 - The internal support endpoint is intentionally read-only for now. Use it for a simple polling task or manual triage queue until outbound notification tooling is added.

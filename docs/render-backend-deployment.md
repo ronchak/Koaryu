@@ -74,8 +74,9 @@ When `ENVIRONMENT=production`, FastAPI validates critical live-service configura
 
 ### Internal Operations
 
-The Blueprint includes `koaryu-account-deletion-worker`, a daily Render Cron Job that runs `backend/scripts/process_account_deletions.py`.
-If you configure the worker manually instead, call the protected endpoint at least daily:
+Account deletion is scheduled from the Vercel frontend project, not as a separate Render Cron service. Vercel Cron calls `/api/cron/account-deletions/process-due` once daily, and that route calls the protected Render backend endpoint with `ACCOUNT_DELETION_WORKER_SECRET`.
+
+If you configure or test the worker manually instead, call the protected endpoint at least daily:
 
 ```bash
 curl -X POST \
