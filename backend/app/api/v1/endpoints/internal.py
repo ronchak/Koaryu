@@ -30,7 +30,13 @@ async def process_due_account_deletions(
 ):
     settings = get_settings()
     _verify_secret(internal_secret, settings.ACCOUNT_DELETION_WORKER_SECRET, "Account deletion worker")
-    return await AccountService(supabase).process_due_deletions()
+    result = await AccountService(supabase).process_due_deletions()
+    if result.failed > 0:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.model_dump(mode="json"),
+        )
+    return result
 
 
 @router.get("/support/tickets", response_model=list[SupportTicketResponse])

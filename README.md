@@ -115,6 +115,15 @@ Apply the SQL files in `supabase/migrations/` in timestamp order. For a deployme
 
 If you are using the Supabase SQL Editor instead of the CLI, run every migration file in order rather than only the initial schema.
 
+For linked-project release checks, run:
+
+```bash
+supabase db lint --linked --fail-on error
+scripts/verify-supabase-account-support.sh
+```
+
+The verification script checks that the support-ticket tables, account-deletion tables, RLS, orphan-prevention triggers, deletion-safe auth-user foreign keys, and lintable belt-ladder sync function are present on the linked Supabase project. It also runs the belt-ladder sync behavior smoke test inside a transaction that rolls back.
+
 ## Auth, Onboarding, And Tenant Model
 
 The current Supabase/auth flow is hardened around a strict fresh-account experience:
@@ -142,9 +151,12 @@ vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 vercel env add NEXT_PUBLIC_API_URL production
 vercel env add NEXT_PUBLIC_SITE_URL production
 vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
+vercel env add CRON_SECRET production
+vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 ```
 
 - Missing Supabase public variables will fail `next build` while prerendering auth pages such as `/login`, because `@supabase/ssr` requires the project URL and anon key when the client is created.
+- `CRON_SECRET` must be pasted without leading or trailing whitespace. The Vercel cron route uses it in an HTTP bearer header, so an accidental newline will break the scheduled worker even if the value looks present in the dashboard.
 - For preview deployments, add the same variables to the Preview environment. With recent Vercel CLI versions, branch-scoped preview variables may require an explicit branch argument.
 - Backend deployments must include `SUPABASE_SERVICE_ROLE_KEY`; the frontend must not receive that key.
 - Keep `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` aligned with the deployed origins so auth redirects, CORS, and middleware checks hit the correct backend.

@@ -131,6 +131,8 @@ ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
   STRIPE_PLATFORM_WEBHOOK_SECRET="$STRIPE_PLATFORM_WEBHOOK_SECRET" \
   STRIPE_CONNECT_WEBHOOK_SECRET="$STRIPE_CONNECT_WEBHOOK_SECRET" \
   STRIPE_KOARYU_CORE_PRICE_ID="$STRIPE_KOARYU_CORE_PRICE_ID" \
+  ACCOUNT_DELETION_WORKER_SECRET="$ACCOUNT_DELETION_WORKER_SECRET" \
+  SUPPORT_TRIAGE_SECRET="$SUPPORT_TRIAGE_SECRET" \
   venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
@@ -158,7 +160,13 @@ cd ../frontend
 npm audit --omit=dev
 npm run lint
 npm run build
+
+cd ..
+supabase db lint --linked --fail-on error
+scripts/verify-supabase-account-support.sh
 ```
+
+`scripts/verify-supabase-account-support.sh` is a focused linked-project database contract check for the account/support release surface. It fails if the support-ticket tables, account-deletion tables, RLS, orphan-prevention triggers, deletion-safe auth-user foreign keys, or lintable belt-ladder sync function are missing. It also runs the belt-ladder sync behavior smoke test inside a transaction that rolls back.
 
 ## Stripe Webhooks
 
