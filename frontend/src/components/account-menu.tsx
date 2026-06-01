@@ -23,14 +23,16 @@ import {
   UserCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme, type ThemePreference } from "@/components/theme-provider";
-import { api } from "@/lib/api";
+import { crmLinkPrefetch } from "@/lib/constants";
 import { useConfigStore } from "@/lib/store";
-import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import type { PlatformBillingStatus } from "@/types";
-
-type AccountSubmenu = "help" | "personalization" | null;
+import styles from "./account-menu.module.css";
+import {
+  useAccountMenuBillingStatus,
+  useAccountMenuController,
+  type AccountSubmenu,
+} from "./account-menu-state";
 
 interface AccountMenuProps {
   userEmail?: string;
@@ -43,14 +45,6 @@ interface AccountMenuProps {
   compact?: boolean;
 }
 
-interface MenuPosition {
-  left: number;
-  top?: number;
-  bottom?: number;
-  maxHeight: number;
-  compactLayout: boolean;
-}
-
 interface MenuLinkItem {
   href: string;
   label: string;
@@ -59,12 +53,11 @@ interface MenuLinkItem {
   external?: boolean;
 }
 
-const MENU_WIDTH = 272;
-const SUBMENU_WIDTH = 260;
-const MENU_GAP = 8;
-const VIEWPORT_GUTTER = 8;
-const COMPACT_BREAKPOINT = 640;
 const ACTIVE_CORE_STATUSES = new Set(["active", "trialing", "comped"]);
+const submenuTitles: Record<Exclude<AccountSubmenu, null>, string> = {
+  help: "Help",
+  personalization: "Personalization",
+};
 
 const helpItems: MenuLinkItem[] = [
   { href: "/help", label: "Help center", icon: CircleHelp },
@@ -91,10 +84,6 @@ function roleLabel(role?: string | null): string {
 
 function avatarLetter(name?: string, email?: string): string {
   return (name || email || "K").trim().charAt(0).toUpperCase() || "K";
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 function formatTheme(preference: ThemePreference): string {
@@ -132,27 +121,31 @@ export function AccountMenu({
 }: AccountMenuProps) {
   const { preference, setTheme } = useTheme();
   const { currentRole, isPreviewMode, token } = useConfigStore();
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeSubmenu, setActiveSubmenu] = useState<AccountSubmenu>(null);
-  const [position, setPosition] = useState<MenuPosition | null>(null);
-  const [platformBillingSnapshot, setPlatformBillingSnapshot] = useState<{
-    key: string;
-    status: PlatformBillingStatus;
-  } | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const {
+    activeSubmenu,
+    closeMenu,
+    compactLayout,
+    isMounted,
+    isOpen,
+    openMenu,
+    panelRef,
+    panelWidth,
+    position,
+    submenuPanelRef,
+    toggleSubmenu,
+    triggerRef,
+  } = useAccountMenuController();
   const displayName = userName || studioName || "Koaryu account";
   const displayEmail = userEmail || "Account settings";
   const letter = avatarLetter(displayName, userEmail);
   const accountRole = roleLabel(role);
   const canViewSubscription = currentRole === "admin";
-  const billingStatusKey = canViewSubscription && !isPreviewMode && token
-    ? `${token}:${getActiveStudioIdCookie() || "default"}`
-    : null;
-  const effectivePlatformBilling =
-    billingStatusKey && platformBillingSnapshot?.key === billingStatusKey
-      ? platformBillingSnapshot.status
-      : null;
+  const effectivePlatformBilling = useAccountMenuBillingStatus({
+    canViewSubscription,
+    isPreviewMode,
+    isOpen,
+    token,
+  });
   const billingCopy = billingLabel(
     isPreviewMode
       ? {
@@ -176,134 +169,6 @@ export function AccountMenu({
       : effectivePlatformBilling,
     canViewSubscription
   );
-  const compactLayout = position?.compactLayout ?? false;
-  const panelWidth = compactLayout
-    ? Math.min(MENU_WIDTH, typeof window === "undefined" ? MENU_WIDTH : window.innerWidth - VIEWPORT_GUTTER * 2)
-    : activeSubmenu
-      ? MENU_WIDTH + SUBMENU_WIDTH + MENU_GAP
-      : MENU_WIDTH;
-
-  const updatePosition = useCallback((nextSubmenu: AccountSubmenu = activeSubmenu) => {
-    const trigger = triggerRef.current;
-    if (!trigger || typeof window === "undefined") return;
-
-    const rect = trigger.getBoundingClientRect();
-    const isCompactLayout = window.innerWidth < COMPACT_BREAKPOINT;
-    const width = isCompactLayout
-      ? Math.min(MENU_WIDTH, window.innerWidth - VIEWPORT_GUTTER * 2)
-      : nextSubmenu
-        ? MENU_WIDTH + SUBMENU_WIDTH + MENU_GAP
-        : MENU_WIDTH;
-    const maxLeft = window.innerWidth - width - VIEWPORT_GUTTER;
-    const left = clamp(rect.left, VIEWPORT_GUTTER, Math.max(VIEWPORT_GUTTER, maxLeft));
-
-    if (rect.top > window.innerHeight / 2) {
-      const bottom = Math.max(VIEWPORT_GUTTER, window.innerHeight - rect.top + MENU_GAP);
-      setPosition({
-        left,
-        compactLayout: isCompactLayout,
-        bottom,
-        maxHeight: Math.max(180, window.innerHeight - bottom - VIEWPORT_GUTTER),
-      });
-      return;
-    }
-
-    const top = Math.min(rect.bottom + MENU_GAP, window.innerHeight - VIEWPORT_GUTTER);
-    setPosition({
-      left,
-      compactLayout: isCompactLayout,
-      top,
-      maxHeight: Math.max(180, window.innerHeight - top - VIEWPORT_GUTTER),
-    });
-  }, [activeSubmenu]);
-
-  const closeMenu = useCallback(() => {
-    setIsOpen(false);
-    setActiveSubmenu(null);
-  }, []);
-
-  function openMenu() {
-    setIsOpen(true);
-    setActiveSubmenu(null);
-    window.requestAnimationFrame(() => updatePosition(null));
-  }
-
-  function toggleSubmenu(next: AccountSubmenu) {
-    const resolved = activeSubmenu === next ? null : next;
-    setActiveSubmenu(resolved);
-    window.requestAnimationFrame(() => updatePosition(resolved));
-  }
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) {
-        return;
-      }
-      closeMenu();
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        closeMenu();
-        triggerRef.current?.focus();
-      }
-    }
-
-    function handleViewportChange() {
-      updatePosition();
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
-    };
-  }, [closeMenu, isOpen, updatePosition]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const timer = window.setTimeout(() => {
-      panelRef.current
-        ?.querySelector<HTMLElement>("a[href], button:not([disabled])")
-        ?.focus();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [activeSubmenu, isOpen]);
-
-  useEffect(() => {
-    if (!isOpen || !billingStatusKey || !token || platformBillingSnapshot?.key === billingStatusKey) {
-      return;
-    }
-
-    const controller = new AbortController();
-    api
-      .get<PlatformBillingStatus>("/platform-billing/status", token, {
-        signal: controller.signal,
-        timeoutMs: 5000,
-      })
-      .then((status) => setPlatformBillingSnapshot({ key: billingStatusKey, status }))
-      .catch((error) => {
-        if (error instanceof Error && error.name === "AbortError") return;
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [billingStatusKey, isOpen, platformBillingSnapshot?.key, token]);
 
   const triggerClasses = compact
     ? "inline-flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1.5 text-left hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
@@ -347,10 +212,12 @@ export function AccountMenu({
         )}
       </button>
 
-      {isOpen && position && (
+      {isMounted && position && (
         <div
           ref={panelRef}
-          className="fixed z-50 flex gap-2 overflow-visible"
+          data-state={isOpen ? "open" : "closed"}
+          data-placement={position.bottom ? "top" : "bottom"}
+          className={`${styles.root} fixed z-50 flex gap-2 overflow-visible`}
           style={{
             left: position.left,
             top: position.top,
@@ -368,10 +235,12 @@ export function AccountMenu({
                 <button
                   type="button"
                   onClick={() => toggleSubmenu(null)}
-                  className="flex h-9 w-full items-center gap-2 rounded-[6px] px-2.5 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary"
+                  aria-label={`Back to account menu from ${submenuTitles[activeSubmenu]}`}
+                  className="group flex h-9 w-full items-center gap-2 rounded-[6px] px-2.5 text-sm text-text-secondary transition-[background-color,color,transform] duration-[180ms] ease-out hover:-translate-y-0.5 hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent motion-reduce:transition-none"
                 >
-                  <ChevronRight className="h-4 w-4 rotate-180 text-muted" />
-                  <span>Account menu</span>
+                  <ChevronRight className="h-4 w-4 rotate-180 text-muted transition-transform duration-[180ms] ease-out group-hover:-translate-x-0.5 motion-reduce:transition-none" />
+                  <span className="text-xs text-muted">Back</span>
+                  <span className="min-w-0 truncate text-text-primary">{submenuTitles[activeSubmenu]}</span>
                 </button>
               </div>
             )}
@@ -379,6 +248,7 @@ export function AccountMenu({
               <>
             <Link
               href="/account"
+              prefetch={crmLinkPrefetch("/account")}
               onClick={closeMenu}
               className="flex items-center gap-3 border-b border-border px-3 py-3 hover:bg-surface-raised"
             >
@@ -430,9 +300,9 @@ export function AccountMenu({
                   closeMenu();
                   onSignOut?.();
                 }}
-                className="flex h-9 w-full items-center gap-3 rounded-[6px] px-2.5 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="group flex h-9 w-full items-center gap-3 rounded-[6px] px-2.5 text-sm text-text-secondary transition-[background-color,color,transform] duration-[180ms] ease-out hover:-translate-y-0.5 hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 motion-reduce:transition-none"
               >
-                <LogOut className="h-4 w-4 text-muted" />
+                <LogOut className="h-4 w-4 text-muted transition-[color,transform] duration-[180ms] ease-out group-hover:-translate-y-0.5 group-hover:text-danger motion-reduce:transition-none" />
                 <span>{isSigningOut ? "Signing out..." : "Log out"}</span>
               </button>
             </div>
@@ -440,7 +310,7 @@ export function AccountMenu({
             )}
 
             {compactLayout && activeSubmenu === "help" && (
-              <div className="p-1.5">
+              <div key="compact-help" className={`${styles.submenuContent} p-1.5`}>
                 {helpItems.map((item) => (
                   <MenuLink key={item.href} {...item} onNavigate={closeMenu} />
                 ))}
@@ -448,17 +318,21 @@ export function AccountMenu({
             )}
 
             {compactLayout && activeSubmenu === "personalization" && (
-              <PersonalizationPanel
-                preference={preference}
-                setTheme={setTheme}
-                onNavigate={closeMenu}
-              />
+              <div key="compact-personalization" className={styles.submenuContent}>
+                <PersonalizationPanel
+                  preference={preference}
+                  setTheme={setTheme}
+                  onNavigate={closeMenu}
+                />
+              </div>
             )}
           </div>
 
           {!compactLayout && activeSubmenu && (
             <div
-              className="w-[260px] overflow-y-auto rounded-[10px] border border-border bg-surface p-1.5 shadow-2xl shadow-black/30"
+              key={activeSubmenu}
+              ref={submenuPanelRef}
+              className={`${styles.submenuPanel} w-[260px] overflow-y-auto rounded-[10px] border border-border bg-surface p-1.5 shadow-2xl shadow-black/30`}
               style={{ maxHeight: position.maxHeight }}
             >
               {activeSubmenu === "help" && (
@@ -494,17 +368,18 @@ function MenuLink({
   return (
     <Link
       href={href}
+      prefetch={external ? false : crmLinkPrefetch(href)}
       onClick={onNavigate}
-      className="flex min-h-9 items-center gap-3 rounded-[6px] px-2.5 py-2 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary"
+      className="group flex min-h-9 items-center gap-3 rounded-[6px] px-2.5 py-2 text-sm text-text-secondary transition-[background-color,color,transform] duration-[180ms] ease-out hover:-translate-y-0.5 hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent motion-reduce:transition-none"
       target={external ? "_blank" : undefined}
       rel={external ? "noreferrer" : undefined}
     >
-      <Icon className="h-4 w-4 flex-shrink-0 text-muted" />
+      <Icon className="h-4 w-4 flex-shrink-0 text-muted transition-[color,transform] duration-[180ms] ease-out group-hover:-translate-y-0.5 group-hover:text-accent motion-reduce:transition-none" />
       <span className="min-w-0 flex-1">
         <span className="block truncate">{label}</span>
         {subtitle && <span className="block truncate text-xs text-muted">{subtitle}</span>}
       </span>
-      {external && <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 text-muted" />}
+      {external && <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 text-muted transition-transform duration-[180ms] ease-out group-hover:translate-x-0.5 motion-reduce:transition-none" />}
     </Link>
   );
 }
@@ -530,16 +405,21 @@ function MenuButton({
       aria-expanded={expanded}
       onClick={onClick}
       className={`
-        flex min-h-9 w-full items-center gap-3 rounded-[6px] px-2.5 py-2 text-sm
+        group flex min-h-9 w-full items-center gap-3 rounded-[6px] px-2.5 py-2 text-sm
+        transition-[background-color,color,transform] duration-[180ms] ease-out focus:outline-none focus-visible:ring-1 focus-visible:ring-accent motion-reduce:transition-none
         ${active ? "bg-surface-raised text-text-primary" : "text-text-secondary hover:bg-surface-raised hover:text-text-primary"}
+        hover:-translate-y-0.5
       `}
     >
-      <Icon className="h-4 w-4 flex-shrink-0 text-muted" />
+      <Icon className={`h-4 w-4 flex-shrink-0 text-muted transition-[color,transform] duration-[180ms] ease-out motion-reduce:transition-none ${active ? "text-accent" : "group-hover:text-accent"}`} />
       <span className="min-w-0 flex-1 text-left">
         <span className="block truncate">{label}</span>
         {detail && <span className="block truncate text-xs text-muted">{detail}</span>}
       </span>
-      <ChevronRight className={`h-4 w-4 flex-shrink-0 text-muted ${active ? "text-text-secondary" : ""}`} />
+      <ChevronRight
+        className={`h-4 w-4 flex-shrink-0 text-muted transition-transform duration-[180ms] ease-out motion-reduce:transition-none ${active ? "text-text-secondary" : ""}`}
+        style={{ transform: active ? "rotate(90deg)" : undefined }}
+      />
     </button>
   );
 }
@@ -564,9 +444,9 @@ function PersonalizationPanel({
           type="button"
           aria-pressed={preference === theme}
           onClick={() => setTheme(theme)}
-          className="flex h-9 w-full items-center gap-3 rounded-[6px] px-2.5 text-sm text-text-secondary hover:bg-surface-raised hover:text-text-primary"
+          className="group flex h-9 w-full items-center gap-3 rounded-[6px] px-2.5 text-sm text-text-secondary transition-[background-color,color,transform] duration-[180ms] ease-out hover:-translate-y-0.5 hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent motion-reduce:transition-none"
         >
-          <span className="flex h-4 w-4 items-center justify-center text-muted">
+          <span className="flex h-4 w-4 items-center justify-center text-muted transition-[color,transform] duration-[180ms] ease-out group-hover:-translate-y-0.5 group-hover:text-accent motion-reduce:transition-none">
             {theme === "system" ? <ThemeIcon preference={preference} /> : <ThemeIcon preference={theme} />}
           </span>
           <span className="flex-1 text-left">{formatTheme(theme)}</span>

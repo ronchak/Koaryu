@@ -88,7 +88,7 @@ The owner opens the belt tracker and sees a filtered list of students who meet c
 
 ### Journey five: handling failed payments
 
-Stripe attempts a recurring tuition charge and returns failure. A webhook records the failed attempt, updates the payment status on the student profile, schedules the retry sequence, and sends the appropriate notification email. If the charge eventually succeeds, the alert disappears automatically. If not, the account is flagged for manual review. The product should eliminate most awkward manual payment chasing.[^24]
+Stripe attempts a recurring tuition charge and returns failure. A webhook records the failed attempt, updates the payment status on the student profile, schedules the retry sequence, and sends the appropriate notification email. If the charge eventually succeeds, the alert disappears automatically. If not, the account is flagged for manual review. The product should eliminate most awkward manual payment chasing.
 
 ## Functional Requirements
 
@@ -118,7 +118,7 @@ Attendance should feed at least four downstream workflows: promotion readiness, 
 
 ### Billing and subscriptions
 
-The system must integrate with Stripe Billing for recurring memberships, one-time charges, discounts, family plans in a future phase, and payment retry logic. In version one, at minimum the system should support monthly tuition, annual tuition, enrollment fees, and manual adjustment notes. Each student should be linked to a Stripe customer and, when relevant, a Stripe subscription id.[^24]
+The system must integrate with Stripe Billing for recurring memberships, one-time charges, discounts, family plans in a future phase, and payment retry logic. In version one, at minimum the system should support monthly tuition, annual tuition, enrollment fees, and manual adjustment notes. Each student should be linked to a Stripe customer and, when relevant, a Stripe subscription id.
 
 Payment statuses should include active, trialing, overdue, canceled, and paused. Staff should be able to view invoice history and upcoming billing dates without leaving the app. Webhook-driven state sync is required so the app remains the operational dashboard while Stripe remains the payment processor of record.
 
@@ -180,7 +180,7 @@ Buttons should be compact and clearly hierarchical. Tables should support sticky
 
 ## Recommended Tech Stack
 
-The user's current production experience is with Next.js and FastAPI, making that the strongest stack choice for delivery speed and maintainability. The recommended architecture is Next.js App Router for the frontend, FastAPI for the backend API, PostgreSQL as the database, Stripe for billing, Resend for transactional email, and Vercel plus Render for deployment.[^24]
+The user's current production experience is with Next.js and FastAPI, making that the strongest stack choice for delivery speed and maintainability. The recommended architecture is Next.js App Router for the frontend, FastAPI for the backend API, PostgreSQL as the database, Stripe for billing, Resend for transactional email, and Vercel plus Render for deployment.
 
 For the database, the strongest default recommendation is Supabase-backed Postgres, especially because it provides auth, row-level security, and a generous free tier that is sufficient for MVP validation. Supabase projects on the free tier pause after inactivity, so the production plan should anticipate moving to the Pro tier once a few paying studios exist. Neon is also viable, especially for a composable Vercel-native setup, but Supabase is the more complete starting platform for this multi-tenant use case.[^28][^29][^30][^31][^21][^22]
 
@@ -254,6 +254,8 @@ A polished import flow is strategically important because it lowers switching co
 
 ## Pricing Recommendation
 
+Archived strategy note: this tiered recommendation is not the current Koaryu Core pricing source of truth. Current public/outreach positioning uses a flat $27/month studio subscription unless product leadership changes it deliberately.
+
 Pricing should explicitly differentiate against high-cost incumbents and per-member pricing frustration. A strong launch structure is:[^2][^6][^4]
 
 | Plan | Monthly price | Limits |
@@ -272,7 +274,7 @@ An especially strong wedge is the promise of replacing spreadsheet-based admin w
 
 ## Security and Compliance
 
-The product will hold personal information, including records for minors and parent contacts, so access control, encrypted transport, and secure credential handling are mandatory. Sensitive actions should be logged. Password resets and magic links should be rate-limited. PII should never be exposed across tenants. Stripe should remain the system of record for card data so the product itself does not handle raw card numbers.[^21][^24]
+The product will hold personal information, including records for minors and parent contacts, so access control, encrypted transport, and secure credential handling are mandatory. Sensitive actions should be logged. Password resets and magic links should be rate-limited. PII should never be exposed across tenants. Stripe should remain the system of record for card data so the product itself does not handle raw card numbers.
 
 Data export should be available at the studio level to build trust and reduce lock-in anxiety. A clear privacy policy and deletion workflow should be planned before launch, especially because parent trust is central in youth-oriented martial arts programs.
 
@@ -306,6 +308,8 @@ This product should be built as a focused vertical SaaS for independent martial 
 ---
 
 ## References
+
+Citation caveat: this PRD is an archived research/planning artifact. The reference list should be treated as discovery context, not verified evidence for every adjacent claim. In particular, visibly mismatched sources should be checked against primary product/vendor documentation before being used in production, investor, or customer-facing material.
 
 1. [Best Martial Arts Management Software 2026 | 8 Platforms Compared](https://1club.ai/blog/best-martial-arts-management-software-2026) - 1club is an AI-native gym management software built to help martial arts school owners run smoother ...
 
@@ -376,4 +380,3 @@ We went over hundreds of user r...
 32. [How to use 100$ credits efficiently to deploy application?](https://learn.microsoft.com/en-us/answers/questions/5830487/how-to-use-100-credits-efficiently-to-deploy-appli) - I want to deploy a web application both backend and database and I have github student education pac...
 
 33. [Deploy a Python FastAPI Web App with PostgreSQL - Azure.cn](https://docs.azure.cn/en-us/app-service/tutorial-python-postgresql-app-fastapi) - In this tutorial, you deploy a data-driven Python web app (FastAPI) to Azure App Service with the Az...
-

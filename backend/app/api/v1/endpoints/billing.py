@@ -5,7 +5,6 @@ from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.schemas.billing import (
-    BillingActionRequest,
     BillingInvoiceCreate,
     BillingInvoiceResponse,
     BillingLinkResponse,
@@ -23,6 +22,7 @@ from app.schemas.billing import (
     BillingRefundResponse,
     BillingSystemStatusResponse,
     BillingSubscriptionResponse,
+    ConnectOnboardingLinkRequest,
     ExportJobCreate,
     ExportJobResponse,
     ExternalPaymentCreate,
@@ -82,7 +82,7 @@ async def get_connect_status(
 
 @router.post("/connect/onboarding-link", response_model=BillingLinkResponse)
 async def create_connect_onboarding_link(
-    data: BillingActionRequest,
+    data: ConnectOnboardingLinkRequest,
     background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
@@ -539,6 +539,7 @@ async def list_payments(
 @router.post("/payments/external", response_model=BillingPaymentResponse, status_code=201)
 async def record_external_payment(
     data: ExternalPaymentCreate,
+    request_idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
@@ -549,7 +550,12 @@ async def record_external_payment(
         requested_studio_id,
         require_platform_subscription=True,
     )
-    return await BillingService(supabase).record_external_payment(data, studio_id, user_id)
+    return await BillingService(supabase).record_external_payment(
+        data,
+        studio_id,
+        user_id,
+        request_idempotency_key,
+    )
 
 
 @router.post("/payments/{payment_id}/refund", response_model=BillingRefundResponse)

@@ -11,6 +11,7 @@ Expected service settings:
 - Service name: `koaryu`
 - Type: Web Service
 - Runtime: Python
+- Plan: `starter`
 - Region: Ohio
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
@@ -19,9 +20,9 @@ Expected service settings:
 
 Render should use Python `3.11`. The backend includes both `backend/runtime.txt` (`python-3.11.9`) and `backend/.python-version` (`3.11`) so Render does not default to a newer Python release that lacks compatible wheels for pinned dependencies.
 
-The free Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
+The configured `starter` Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
-For a live dojo-floor demo, use a paid/warm Render instance or another always-on backend. The free tier can still cold-start slowly enough that the first authenticated or billing click feels broken even when the service is healthy.
+For a live dojo-floor demo, use the configured starter service only after it is warm, or use a larger always-on backend. Cold starts on small Render instances can still make the first authenticated or billing click feel broken even when the service is healthy.
 
 ## Config Vars
 
@@ -34,6 +35,7 @@ FRONTEND_URL=https://koaryu.app
 ENVIRONMENT=production
 API_V1_PREFIX=/api/v1
 DEMO_RESET_ENABLED=false
+DEMO_RESET_STUDIO_IDS=
 BILLING_PLATFORM_FEE_BPS=50
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
 ```
@@ -181,10 +183,10 @@ npm run build
 
 cd ..
 supabase db lint --linked --fail-on error
-scripts/verify-supabase-account-support.sh
+scripts/verify-supabase-contracts.sh
 ```
 
-`scripts/verify-supabase-account-support.sh` is a focused linked-project database contract check for the account/support release surface. It fails if the support-ticket tables, account-deletion tables, RLS, orphan-prevention triggers, deletion-safe auth-user foreign keys, or lintable belt-ladder sync function are missing. It also runs the belt-ladder sync behavior smoke test inside a transaction that rolls back.
+`scripts/verify-supabase-contracts.sh` is the broad database contract check for launch-readiness and defaults to the linked project. Set `SUPABASE_DB_TARGET=local` after `supabase db reset --local` when validating local migrations before they are applied remotely. It fails if the support/account controls, direct-client write lockdown, worker-claim RPCs, promotion RPC, recurring-session soft-delete contract, student program filter contract, atomic onboarding contract, or belt-ladder sync behavior drift from the current migrations. Apply the worker-claim RPC migrations before deploying backend code that processes Stripe webhooks, account deletions, or CSV imports.
 
 ## Stripe Webhooks
 
@@ -246,10 +248,12 @@ Then redeploy the backend so FastAPI verifies signatures with the new secrets.
 With the backend running on `127.0.0.1:8001`, run:
 
 ```bash
-npm run dev:stripe-connect-smoke
+npm run dev:stripe-connect-smoke -- --confirm-stateful-target --account acct_...
 ```
 
 The smoke test signs a synthetic Connect `account.updated` event with `STRIPE_CONNECT_WEBHOOK_SECRET`, posts it to `/api/v1/webhooks/stripe/connect`, and posts the same event again. A passing result returns `processed` first and `already_processed` second, proving the local route, signature validation, projector entrypoint, and `stripe_events` dedupe table.
+
+This script reads `backend/.env` and root `.env`, uses `SUPABASE_SERVICE_ROLE_KEY`, and mutates local billing/webhook rows through the running backend. Pass `--confirm-stateful-target` only after confirming those env files and the backend are pointed at the intended disposable/local target. Pass `--account acct_...` so the smoke cannot silently choose whichever connected account row happens to be newest. Non-loopback webhook endpoints are blocked unless `--allow-remote-endpoint` is supplied for an explicitly intended remote smoke.
 
 For true Stripe delivery in local development, use the Stripe CLI or a trusted HTTPS tunnel:
 
@@ -290,7 +294,7 @@ Before walking into a dojo with billing enabled:
 - Confirm the target studio's Connect account reports `charges_enabled`, `payouts_enabled`, `details_submitted`, and no currently due requirements.
 - Confirm Stripe Dashboard shows recent successful deliveries to both platform and Connect webhook endpoints.
 - Use a clean demo studio dataset with realistic plans, students, and payers instead of old verification artifacts.
-- Avoid using demo reset or clear-studio-data against a real studio unless the admin understands the destructive confirmation prompt and the data loss is intended.
+- Keep `DEMO_RESET_STUDIO_IDS` empty in production; in demo/staging, list only disposable studio IDs that demo reset or clear-studio-data may target.
 
 ### Billing Readiness and Recovery
 

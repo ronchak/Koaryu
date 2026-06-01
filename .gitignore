@@ -51,3 +51,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .vercel
+.koaryu-dev/
+tmp_import_tests/
+frontend/test-results/
+tmp_qa_screenshots/

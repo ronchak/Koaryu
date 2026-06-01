@@ -310,14 +310,10 @@ export function MonthScheduleView({
                       }
 
                       return (
-                        <button
+                        <div
                           key={getEntryKey(entry)}
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onEntryClick?.(entry);
-                          }}
-                          className="flex items-start gap-2 border border-dashed border-border bg-transparent px-2 py-1.5 text-left opacity-80 hover:border-[color:var(--accent)]/40 hover:bg-surface-raised/40 transition-colors"
+                          aria-label={`Pending template slot: ${entry.template.name} at ${formatScheduleTime(entry.template.start_time)}`}
+                          className="flex items-start gap-2 border border-dashed border-border bg-transparent px-2 py-1.5 text-left opacity-80"
                         >
                           <div className="min-w-[50px] text-[10px] font-medium text-muted">
                             {formatScheduleTime(entry.template.start_time)}
@@ -326,7 +322,7 @@ export function MonthScheduleView({
                             <p className="truncate text-[11px] text-text-secondary">{entry.template.name}</p>
                             <p className="mt-1 text-[10px] uppercase tracking-widest text-muted">Template slot</p>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
 

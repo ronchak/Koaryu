@@ -1,6 +1,12 @@
 from pydantic import BaseModel, EmailStr, Field, model_validator
-from typing import Literal, Optional
+from typing import Literal, Optional, get_args
 from datetime import date
+
+StudentStatus = Literal["active", "trialing", "inactive", "paused", "canceled"]
+STUDENT_STATUSES = set(get_args(StudentStatus))
+StudentListSortKey = Literal["name", "status", "membership_start_date", "created_at"]
+StudentListSortDir = Literal["asc", "desc"]
+StudentProgramMembershipStatus = Literal["active", "paused", "ended"]
 
 
 # ---- Guardian ----
@@ -31,7 +37,7 @@ class StudentProgramMembershipResponse(BaseModel):
     program_id: str
     program_name: Optional[str] = None
     program_color_hex: Optional[str] = None
-    status: str
+    status: StudentProgramMembershipStatus
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
     current_belt_rank_id: Optional[str] = None
@@ -43,14 +49,14 @@ class StudentProgramMembershipResponse(BaseModel):
 
 class StudentProgramMembershipCreate(BaseModel):
     program_id: str
-    status: Literal["active", "paused", "ended"] = "active"
+    status: StudentProgramMembershipStatus = "active"
     started_at: Optional[date] = None
     ended_at: Optional[date] = None
     current_belt_rank_id: Optional[str] = None
 
 
 class StudentProgramMembershipUpdate(BaseModel):
-    status: Optional[Literal["active", "paused", "ended"]] = None
+    status: Optional[StudentProgramMembershipStatus] = None
     started_at: Optional[date] = None
     ended_at: Optional[date] = None
     current_belt_rank_id: Optional[str] = None
@@ -74,15 +80,15 @@ class StudentCreate(BaseModel):
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     emergency_contact_relation: Optional[str] = None
-    status: str = "active"
+    status: StudentStatus = "active"
     membership_start_date: Optional[date] = None
     program_id: Optional[str] = None
     program_ids: list[str] = Field(default_factory=list)
     current_belt_rank_id: Optional[str] = None
     notes: Optional[str] = None
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
     # Guardians supplied at creation time (for minors)
-    guardians: list[GuardianCreate] = []
+    guardians: list[GuardianCreate] = Field(default_factory=list)
 
 
 class StudentUpdate(BaseModel):
@@ -101,7 +107,7 @@ class StudentUpdate(BaseModel):
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     emergency_contact_relation: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[StudentStatus] = None
     membership_start_date: Optional[date] = None
     program_id: Optional[str] = None
     program_ids: Optional[list[str]] = None
@@ -129,7 +135,7 @@ class StudentResponse(BaseModel):
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     emergency_contact_relation: Optional[str] = None
-    status: str
+    status: StudentStatus
     membership_start_date: Optional[str] = None
     program_id: Optional[str] = None
     current_belt_rank_id: Optional[str] = None
@@ -138,9 +144,9 @@ class StudentResponse(BaseModel):
     photo_url: Optional[str] = None
     photo_updated_at: Optional[str] = None
     notes: Optional[str] = None
-    tags: list[str] = []
-    guardians: list[GuardianResponse] = []
-    program_memberships: list[StudentProgramMembershipResponse] = []
+    tags: list[str] = Field(default_factory=list)
+    guardians: list[GuardianResponse] = Field(default_factory=list)
+    program_memberships: list[StudentProgramMembershipResponse] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
@@ -150,6 +156,16 @@ class StudentListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class StudentListQueryContract(BaseModel):
+    search: Optional[str] = None
+    status: Optional[StudentStatus] = None
+    program_id: Optional[str] = None
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=50, ge=1, le=200)
+    sort_by: StudentListSortKey = "name"
+    sort_dir: StudentListSortDir = "asc"
 
 
 # ---- CSV Import ----
@@ -197,6 +213,23 @@ class CsvImportActionOptions(BaseModel):
     can_create_missing_belts: bool = False
     can_import_without_unresolved_belt: bool = False
     belt_tracker_href: Optional[str] = None
+
+
+class CsvMappingSuggestion(BaseModel):
+    field: str
+    confidence: Optional[float] = None
+    reason: Optional[str] = None
+    sample_values: list[str] = Field(default_factory=list)
+
+
+class CsvParseResponse(BaseModel):
+    headers: list[str]
+    auto_mapping: dict[str, str]
+    preview_rows: list[dict[str, str]] = Field(default_factory=list)
+    total_rows: int
+    mapping_suggestions: dict[str, CsvMappingSuggestion] = Field(default_factory=dict)
+    warnings: list[CsvImportIssue] = Field(default_factory=list)
+    required_fields: list[str] = Field(default_factory=list)
 
 
 class CsvImportOptions(BaseModel):
@@ -252,4 +285,8 @@ class BulkTagUpdate(BaseModel):
 
 class BulkStatusUpdate(BaseModel):
     student_ids: list[str] = Field(min_length=1)
-    status: str
+    status: StudentStatus
+
+
+class BulkStudentUpdateResponse(BaseModel):
+    updated: int

@@ -1,72 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ProgramPicker } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
+import { ModalFrame } from "@/components/ui/modal-frame";
+import {
+  FULL_DAY_NAMES,
+  buildClassFormInitialState,
+  buildClassFormModeState,
+  buildClassFormResetKey,
+  buildClassFormSubmitDecision,
+  formatDateLabel,
+  formatTimeLabel,
+  type ClassFormField,
+  type ClassFormFieldErrors,
+  type ClassFormInitialValues,
+  type ClassFormMode,
+  type ClassFormState,
+  type ClassFormSubmitPayload,
+  type SingleSessionFormSubmitPayload,
+  type WeeklyClassTemplateSubmitPayload,
+} from "@/lib/class-form-model";
 import type { Program } from "@/types";
 import { Calendar, Clock, Repeat, Users, X } from "lucide-react";
 
-const FULL_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-export type ClassFormMode = "single" | "weekly";
-
-export type ClassFormField =
-  | "name"
-  | "programId"
-  | "date"
-  | "startTime"
-  | "endTime"
-  | "capacity"
-  | "dayOfWeek"
-  | "startDate"
-  | "endDate";
-
-export interface SingleSessionFormSubmitPayload {
-  kind: "single_session";
-  name: string;
-  sessionDate: string;
-  startTime: string;
-  endTime: string;
-  program_id?: string;
-  capacity?: number;
-}
-
-export interface WeeklyClassTemplateSubmitPayload {
-  kind: "weekly_template";
-  name: string;
-  startTime: string;
-  endTime: string;
-  program_id?: string;
-  capacity?: number;
-  recurrence: {
-    frequency: "weekly";
-    dayOfWeek: number;
-    startDate: string;
-    endDate?: string;
-  };
-}
-
-export type ClassFormSubmitPayload =
-  | SingleSessionFormSubmitPayload
-  | WeeklyClassTemplateSubmitPayload;
-
-export interface ClassFormInitialValues {
-  mode?: ClassFormMode;
-  name?: string;
-  date?: string;
-  startTime?: string;
-  endTime?: string;
-  programId?: string | null;
-  program_id?: string | null;
-  capacity?: number;
-  dayOfWeek?: number;
-  startDate?: string;
-  endDate?: string;
-}
-
-type ClassFormFieldErrors = Partial<Record<ClassFormField, string>>;
+export type {
+  ClassFormInitialValues,
+  ClassFormMode,
+  ClassFormSubmitPayload,
+  SingleSessionFormSubmitPayload,
+  WeeklyClassTemplateSubmitPayload,
+} from "@/lib/class-form-model";
 
 interface SharedClassFormModalProps {
   open: boolean;
@@ -96,84 +62,6 @@ interface SplitSubmitProps {
 
 export type ClassFormModalProps = SharedClassFormModalProps & (UnifiedSubmitProps | SplitSubmitProps);
 
-interface FormState {
-  mode: ClassFormMode;
-  name: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  programId: string;
-  capacity: string;
-  dayOfWeek: number;
-  startDate: string;
-  endDate: string;
-}
-
-function todayDateString() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseTimeToMinutes(value: string) {
-  const [hours, minutes] = value.split(":").map(Number);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) return Number.NaN;
-  return hours * 60 + minutes;
-}
-
-function formatTimeLabel(value: string) {
-  if (!value) return "time";
-
-  const [hoursText, minutes] = value.split(":");
-  const hours = Number(hoursText);
-  if (Number.isNaN(hours)) return value;
-
-  const suffix = hours >= 12 ? "PM" : "AM";
-  const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-  return `${hour12}:${minutes} ${suffix}`;
-}
-
-function formatDateLabel(value: string) {
-  if (!value) return "date";
-
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function getDayOfWeekFromDate(value: string) {
-  if (!value) return new Date().getDay();
-
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return new Date().getDay();
-  return date.getDay();
-}
-
-function buildInitialState(initialValues?: ClassFormInitialValues, defaultMode: ClassFormMode = "weekly"): FormState {
-  const today = todayDateString();
-  const date = initialValues?.date || initialValues?.startDate || today;
-
-  return {
-    mode: initialValues?.mode || defaultMode,
-    name: initialValues?.name || "",
-    date,
-    startTime: initialValues?.startTime || "18:00",
-    endTime: initialValues?.endTime || "19:30",
-    programId: initialValues?.programId || initialValues?.program_id || "",
-    capacity: initialValues?.capacity ? String(initialValues.capacity) : "",
-    dayOfWeek: initialValues?.dayOfWeek ?? getDayOfWeekFromDate(date),
-    startDate: initialValues?.startDate || date,
-    endDate: initialValues?.endDate || "",
-  };
-}
-
 function SelectField({
   label,
   value,
@@ -191,12 +79,21 @@ function SelectField({
   onChange: (nextValue: string) => void;
   options: { value: string; label: string }[];
 }) {
+  const generatedId = useId();
+  const selectId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "select"}-${generatedId.replace(/:/g, "")}`;
+  const errorId = error ? `${selectId}-error` : undefined;
+  const hintId = hint && !error ? `${selectId}-hint` : undefined;
+  const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
+
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-sm text-text-secondary font-medium">{label}</label>
+      <label htmlFor={selectId} className="text-sm text-text-secondary font-medium">{label}</label>
       <select
+        id={selectId}
         value={value}
         disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
         onChange={(event) => onChange(event.target.value)}
         className={`w-full px-3 py-2 text-sm bg-surface-raised border rounded-[6px] text-text-primary focus:border-accent focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
           error ? "border-danger" : "border-border"
@@ -208,8 +105,8 @@ function SelectField({
           </option>
         ))}
       </select>
-      {error && <p className="text-xs text-danger">{error}</p>}
-      {hint && !error && <p className="text-xs text-muted">{hint}</p>}
+      {error && <p id={errorId} className="text-xs text-danger">{error}</p>}
+      {hint && !error && <p id={hintId} className="text-xs text-muted">{hint}</p>}
     </div>
   );
 }
@@ -223,19 +120,7 @@ export function ClassFormModal(props: ClassFormModalProps) {
 
   if (!open) return null;
 
-  const resetKey = JSON.stringify([
-    defaultMode,
-    initialValues?.mode || "",
-    initialValues?.name || "",
-    initialValues?.date || "",
-    initialValues?.startTime || "",
-    initialValues?.endTime || "",
-    initialValues?.programId || initialValues?.program_id || "",
-    initialValues?.capacity ?? "",
-    initialValues?.dayOfWeek ?? "",
-    initialValues?.startDate || "",
-    initialValues?.endDate || "",
-  ]);
+  const resetKey = buildClassFormResetKey(initialValues, defaultMode);
 
   return <ClassFormModalContent key={resetKey} {...props} defaultMode={defaultMode} />;
 }
@@ -254,7 +139,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     programs = [],
   } = props;
 
-  const [form, setForm] = useState<FormState>(() => buildInitialState(initialValues, defaultMode));
+  const [form, setForm] = useState<ClassFormState>(() => buildClassFormInitialState(initialValues, defaultMode));
   const [validationErrors, setValidationErrors] = useState<ClassFormFieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -262,7 +147,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     return fieldErrors?.[field] || validationErrors[field];
   }
 
-  function patchForm(nextValues: Partial<FormState>, clearedFields?: ClassFormField[]) {
+  function patchForm(nextValues: Partial<ClassFormState>, clearedFields?: ClassFormField[]) {
     setForm((current) => ({ ...current, ...nextValues }));
     setSubmitError(null);
 
@@ -280,23 +165,8 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
   function handleModeChange(nextMode: ClassFormMode) {
     if (nextMode === form.mode) return;
 
-    if (nextMode === "weekly") {
-      patchForm(
-        {
-          mode: "weekly",
-          dayOfWeek: getDayOfWeekFromDate(form.date),
-          startDate: form.startDate || form.date,
-        },
-        ["date", "dayOfWeek", "startDate", "endDate"]
-      );
-      return;
-    }
-
     patchForm(
-      {
-        mode: "single",
-        date: form.date || form.startDate || todayDateString(),
-      },
+      buildClassFormModeState(form, nextMode),
       ["date", "dayOfWeek", "startDate", "endDate"]
     );
   }
@@ -318,74 +188,15 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const nextErrors: ClassFormFieldErrors = {};
-    const trimmedName = form.name.trim();
-    const capacityValue = form.capacity.trim();
-    const startMinutes = parseTimeToMinutes(form.startTime);
-    const endMinutes = parseTimeToMinutes(form.endTime);
+    const decision = buildClassFormSubmitDecision(form);
 
-    if (!trimmedName) nextErrors.name = "Class name is required.";
-    if (!form.startTime) nextErrors.startTime = "Start time is required.";
-    if (!form.endTime) nextErrors.endTime = "End time is required.";
-
-    if (!Number.isNaN(startMinutes) && !Number.isNaN(endMinutes) && endMinutes <= startMinutes) {
-      nextErrors.endTime = "End time must be after the start time.";
-    }
-
-    if (capacityValue) {
-      const parsedCapacity = Number.parseInt(capacityValue, 10);
-      if (!/^\d+$/.test(capacityValue) || parsedCapacity <= 0) {
-        nextErrors.capacity = "Capacity must be a positive whole number.";
-      }
-    }
-
-    if (form.mode === "single") {
-      if (!form.date) nextErrors.date = "Choose the class date.";
-    } else {
-      if (!Number.isInteger(form.dayOfWeek) || form.dayOfWeek < 0 || form.dayOfWeek > 6) {
-        nextErrors.dayOfWeek = "Choose the weekday for this series.";
-      }
-      if (!form.startDate) nextErrors.startDate = "Choose when the series can begin.";
-      if (form.endDate && form.startDate && form.endDate < form.startDate) {
-        nextErrors.endDate = "End date cannot be before the series start date.";
-      }
-    }
-
-    setValidationErrors(nextErrors);
+    setValidationErrors(decision.errors);
     setSubmitError(null);
 
-    if (Object.keys(nextErrors).length > 0) return;
-
-    const capacity = capacityValue ? Number.parseInt(capacityValue, 10) : undefined;
-    const programId = form.programId || undefined;
-    const payload: ClassFormSubmitPayload =
-      form.mode === "single"
-        ? {
-            kind: "single_session",
-            name: trimmedName,
-            sessionDate: form.date,
-            startTime: form.startTime,
-            endTime: form.endTime,
-            program_id: programId,
-            capacity,
-          }
-        : {
-            kind: "weekly_template",
-            name: trimmedName,
-            startTime: form.startTime,
-            endTime: form.endTime,
-            program_id: programId,
-            capacity,
-            recurrence: {
-              frequency: "weekly",
-              dayOfWeek: form.dayOfWeek,
-              startDate: form.startDate,
-              endDate: form.endDate || undefined,
-            },
-          };
+    if (!decision.payload) return;
 
     try {
-      await dispatchSubmit(payload);
+      await dispatchSubmit(decision.payload);
     } catch (submitFailure) {
       setSubmitError(
         submitFailure instanceof Error ? submitFailure.message : "Could not save this class. Please try again."
@@ -403,20 +214,14 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     submitLabel || (form.mode === "weekly" ? "Create weekly template" : "Create one-off session");
 
   return (
-    <div className="koaryu-modal-root p-4">
-      <div
-        className="koaryu-modal-backdrop"
-        onClick={() => {
-          if (!isLoading) onClose();
-        }}
-      />
-
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="koaryu-modal-panel w-full max-w-[560px] bg-surface border border-border rounded-[8px] shadow-2xl"
-      >
+    <ModalFrame
+      rootClassName="p-4"
+      panelClassName="w-full max-w-[560px] bg-surface border border-border rounded-[8px] shadow-2xl"
+      ariaLabel={title}
+      onBackdropClick={() => {
+        if (!isLoading) onClose();
+      }}
+    >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
             <h2 className="text-base font-semibold text-text-primary">{title}</h2>
@@ -424,6 +229,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
           </div>
           <button
             type="button"
+            aria-label="Close class form dialog"
             onClick={() => {
               if (!isLoading) onClose();
             }}
@@ -614,7 +420,6 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </ModalFrame>
   );
 }

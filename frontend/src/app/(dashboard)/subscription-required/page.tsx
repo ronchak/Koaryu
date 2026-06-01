@@ -8,17 +8,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { useConfigStore } from "@/lib/store";
-import type { BillingLinkResponse, PlatformBillingStatus, StaffRoleName } from "@/types";
-
-interface AuthProfileResponse {
-  user: {
-    id: string;
-    email: string;
-    full_name?: string | null;
-  };
-  studio_id: string | null;
-  role: StaffRoleName | null;
-}
+import type { AuthResponse, BillingLinkResponse, PlatformBillingStatus } from "@/types";
 
 function formatMoney(cents: number, currency = "usd") {
   return new Intl.NumberFormat("en-US", {
@@ -42,7 +32,7 @@ export default function SubscriptionRequiredPage() {
   const router = useRouter();
   const { clearSubscriptionRequired } = useConfigStore();
   const [token, setToken] = useState<string | null>(null);
-  const [authProfile, setAuthProfile] = useState<AuthProfileResponse | null>(null);
+  const [authProfile, setAuthProfile] = useState<AuthResponse | null>(null);
   const [billingStatus, setBillingStatus] = useState<PlatformBillingStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -76,7 +66,7 @@ export default function SubscriptionRequiredPage() {
       setToken(session.access_token);
 
       try {
-        const profile = await api.get<AuthProfileResponse>("/auth/me", session.access_token, {
+        const profile = await api.get<AuthResponse>("/auth/me", session.access_token, {
           omitStudioHeader: false,
         });
         if (!mounted) return;

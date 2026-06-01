@@ -10,24 +10,71 @@ ConnectBusinessEntityType = Literal["company", "individual"]
 BillingPlanStatus = Literal["pending", "active", "archived"]
 BillingInterval = Literal["weekly", "biweekly", "monthly", "annual", "paid_in_full", "fixed_term", "trial"]
 BillingCollectionMode = Literal["autopay", "invoice_link", "external"]
+BillingEnrollmentStatus = Literal["pending", "active", "paused", "ended", "canceled"]
+BillingSubscriptionStatus = Literal["pending", "trialing", "active", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "paused"]
 PayerBillingStatus = Literal["current", "upcoming", "past_due", "failed", "unpaid", "externally_paid", "no_payment_method", "no_billing_plan"]
 AutopayStatus = Literal["not_configured", "pending", "enabled", "disabled"]
 InvoiceStatus = Literal["draft", "open", "paid", "void", "uncollectible", "refunded", "partially_refunded"]
 PaymentStatus = Literal["pending", "processing", "succeeded", "failed", "refunded", "disputed", "externally_recorded"]
 BillingSystemCheckStatus = Literal["pass", "warn", "fail"]
 BillingReconcileObjectType = Literal["connect_account", "payer", "invoice", "subscription", "payment_intent"]
+CARD_BRAND_VALUES = {
+    "amex",
+    "cartes_bancaires",
+    "diners",
+    "discover",
+    "eftpos_au",
+    "jcb",
+    "mastercard",
+    "unionpay",
+    "visa",
+}
+
+
+def _frontend_payment_method_type(value: dict[str, Any]) -> Optional[str]:
+    if not value.get("default_payment_method_id"):
+        return None
+
+    explicit_type = value.get("default_payment_method_type") or value.get("stripe_payment_method_type")
+    if explicit_type:
+        return str(explicit_type)
+
+    brand = value.get("default_payment_method_brand")
+    normalized_brand = str(brand).lower() if brand else None
+    if (
+        value.get("default_payment_method_last4")
+        or value.get("default_payment_method_exp_month")
+        or value.get("default_payment_method_exp_year")
+        or normalized_brand in CARD_BRAND_VALUES
+    ):
+        return "card"
+
+    return str(brand) if brand else None
 
 
 class BillingLinkResponse(BaseModel):
     url: str
 
 
-class BillingActionRequest(BaseModel):
-    success_url: Optional[str] = None
-    cancel_url: Optional[str] = None
+class ConnectOnboardingLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     return_url: Optional[str] = None
     refresh_url: Optional[str] = None
     business_entity_type: Optional[ConnectBusinessEntityType] = None
+
+
+class PlatformCheckoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+
+class PlatformPortalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    return_url: Optional[str] = None
 
 
 class EmailUsageResponse(BaseModel):
@@ -246,7 +293,7 @@ class BillingPayerResponse(BaseModel):
             value.setdefault("stripe_payment_method_id", value.get("default_payment_method_id"))
             value.setdefault("stripe_payment_method_brand", value.get("default_payment_method_brand"))
             value.setdefault("stripe_payment_method_last4", value.get("default_payment_method_last4"))
-            value.setdefault("stripe_payment_method_type", value.get("default_payment_method_brand") if value.get("default_payment_method_id") else None)
+            value.setdefault("stripe_payment_method_type", _frontend_payment_method_type(value))
         return value
 
 
@@ -267,7 +314,7 @@ class BillingSubscriptionResponse(BaseModel):
     collection_mode: BillingCollectionMode = "invoice_link"
     billing_interval: BillingInterval = "monthly"
     currency: str = "usd"
-    status: str = "pending"
+    status: BillingSubscriptionStatus = "pending"
     current_period_start: Optional[str] = None
     current_period_end: Optional[str] = None
     next_bill_date: Optional[str] = None
@@ -286,8 +333,7 @@ class BillingSubscriptionResponse(BaseModel):
         return value
 
 
-class StudentBillingEnrollmentCreate(BaseModel):
-    student_id: Optional[str] = None
+class StudentBillingEnrollmentBaseCreate(BaseModel):
     billing_plan_id: str = Field(validation_alias=AliasChoices("billing_plan_id", "plan_id"))
     payer_id: Optional[str] = None
     collection_mode: BillingCollectionMode = "invoice_link"
@@ -295,7 +341,21 @@ class StudentBillingEnrollmentCreate(BaseModel):
     end_date: Optional[str] = None
     next_bill_on: Optional[str] = Field(default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date"))
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_payer_for_stripe_collection(self):
+        if self.collection_mode != "external" and not self.payer_id:
+            raise ValueError("Payer is required for Stripe billing enrollment.")
+        return self
+
+
+class StudentBillingEnrollmentCreate(StudentBillingEnrollmentBaseCreate):
+    student_id: str
+
+
+class StudentBillingEnrollmentForStudentCreate(StudentBillingEnrollmentBaseCreate):
+    pass
 
 
 class StudentBillingEnrollmentUpdate(BaseModel):
@@ -305,7 +365,7 @@ class StudentBillingEnrollmentUpdate(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     next_bill_on: Optional[str] = Field(default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date"))
-    status: Optional[Literal["pending", "active", "paused", "ended", "canceled"]] = None
+    status: Optional[BillingEnrollmentStatus] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -322,7 +382,7 @@ class StudentBillingEnrollmentResponse(BaseModel):
     billing_subscription_id: Optional[str] = None
     subscription_id: Optional[str] = None
     collection_mode: BillingCollectionMode = "invoice_link"
-    status: str
+    status: BillingEnrollmentStatus
     billing_status: PayerBillingStatus
     start_date: str
     end_date: Optional[str] = None
@@ -443,12 +503,18 @@ class BillingPaymentResponse(BaseModel):
 
 
 class ExternalPaymentCreate(BaseModel):
-    amount_cents: int = Field(ge=0)
+    amount_cents: int = Field(ge=1)
     currency: str = "usd"
     payer_id: Optional[str] = None
     invoice_id: Optional[str] = None
     external_method: str = Field(min_length=1, max_length=80)
     note: Optional[str] = None
+
+    @model_validator(mode="after")
+    def require_payment_target(self) -> "ExternalPaymentCreate":
+        if not self.payer_id and not self.invoice_id:
+            raise ValueError("External payments must target a payer or invoice.")
+        return self
 
 
 class ExportJobCreate(BaseModel):

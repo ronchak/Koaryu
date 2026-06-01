@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import uuid
+from datetime import timedelta
 from typing import Any, Optional
 
-from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
 from app.core.config import get_settings
@@ -11,6 +11,7 @@ from app.schemas.billing import WebhookProcessResponse
 from app.services.billing_service import BillingService
 from app.services.platform_billing_service import PlatformBillingService
 from app.services.stripe_service import StripeService
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
@@ -35,7 +36,7 @@ class StripeWebhookService:
             signature=signature,
             secret=self.settings.STRIPE_CONNECT_WEBHOOK_SECRET,
         )
-        account_id = self._event_get(event, "account")
+        account_id = self._connect_account_id_for_event(event)
         return self._store_and_process(event, stripe_account_id=account_id, processor="connect")
 
     def _store_and_process(
@@ -52,119 +53,93 @@ class StripeWebhookService:
         if not event_id:
             return WebhookProcessResponse(status="ignored")
 
-        existing_query = (
-            self.supabase.table("stripe_events")
-            .select("id, processing_status, created_at")
-            .eq("stripe_event_id", event_id)
-            .limit(1)
+        claim_token = uuid.uuid4().hex
+        claim_status, claimed_event = self._claim_event_for_processing(
+            event_id=event_id,
+            stripe_account_id=stripe_account_id,
+            livemode=livemode,
+            event_type=event_type,
+            payload=event_dict,
+            claim_token=claim_token,
         )
-        existing_query = (
-            existing_query.eq("stripe_account_id", stripe_account_id)
-            if stripe_account_id
-            else existing_query.is_("stripe_account_id", "null")
-        )
-        existing = existing_query.execute()
-        if existing.data and existing.data[0].get("processing_status") == "processed":
+        if claim_status == "already_processed":
             return WebhookProcessResponse(status="already_processed")
-        if (
-            existing.data
-            and existing.data[0].get("processing_status") == "processing"
-            and not self._is_stale_processing_event(existing.data[0])
-        ):
+        if claim_status == "already_processing":
             return WebhookProcessResponse(status="already_processing")
+        if claim_status != "claimed" or not claimed_event:
+            return WebhookProcessResponse(status="ignored")
 
-        row_id = existing.data[0]["id"] if existing.data else None
-        inserted_new_event = False
-        if not row_id:
-            try:
-                result = self.supabase.table("stripe_events").insert({
-                    "stripe_event_id": event_id,
-                    "stripe_account_id": stripe_account_id,
-                    "livemode": livemode,
-                    "type": event_type,
-                    "payload": event_dict,
-                    "processing_status": "processing",
-                }).execute()
-            except PostgrestAPIError as exc:
-                if exc.code != "23505":
-                    raise
-                duplicate_query = (
-                    self.supabase.table("stripe_events")
-                    .select("id, processing_status, created_at")
-                    .eq("stripe_event_id", event_id)
-                    .limit(1)
-                )
-                duplicate_query = (
-                    duplicate_query.eq("stripe_account_id", stripe_account_id)
-                    if stripe_account_id
-                    else duplicate_query.is_("stripe_account_id", "null")
-                )
-                duplicate = duplicate_query.execute()
-                if duplicate.data and duplicate.data[0].get("processing_status") == "processed":
-                    return WebhookProcessResponse(status="already_processed")
-                if (
-                    duplicate.data
-                    and duplicate.data[0].get("processing_status") == "processing"
-                    and not self._is_stale_processing_event(duplicate.data[0])
-                ):
-                    return WebhookProcessResponse(status="already_processing")
-                row_id = duplicate.data[0]["id"] if duplicate.data else None
-            else:
-                row_id = result.data[0]["id"] if result.data else None
-                inserted_new_event = True
-
-        if row_id and not inserted_new_event:
-            claim = (
-                self.supabase.table("stripe_events")
-                .update({"processing_status": "processing", "error": None})
-                .eq("id", row_id)
-                .in_("processing_status", ["pending", "failed", "processing"])
-                .execute()
-            )
-            if not claim.data:
-                return WebhookProcessResponse(status="already_processing")
+        row_id = claimed_event.get("id")
         if not row_id:
             return WebhookProcessResponse(status="ignored")
 
         try:
             if processor == "platform":
-                PlatformBillingService(self.supabase).project_subscription_event(event_dict)
+                PlatformBillingService(self.supabase).project_subscription_event(event_dict, hydrate_subscription=False)
             else:
                 BillingService(self.supabase).project_connect_event(event_dict)
-            self._update_event(row_id, {"processing_status": "processed", "processed_at": datetime.now(timezone.utc).isoformat()})
+            if not self._finish_event_processing(row_id, claim_token, "processed"):
+                raise RuntimeError("Webhook processing lease was lost before the event could be marked processed.")
             return WebhookProcessResponse(status="processed")
         except Exception as exc:
-            self._update_event(row_id, {"processing_status": "failed", "error": str(exc)})
+            self._finish_event_processing(row_id, claim_token, "failed", error=str(exc))
             raise
 
-    def _update_event(self, row_id: Optional[str], update: dict[str, Any]) -> None:
-        if not row_id:
-            return
-        self.supabase.table("stripe_events").update(update).eq("id", row_id).execute()
+    def _claim_event_for_processing(
+        self,
+        *,
+        event_id: str,
+        stripe_account_id: Optional[str],
+        livemode: bool,
+        event_type: str,
+        payload: dict[str, Any],
+        claim_token: str,
+    ) -> tuple[str, Optional[dict[str, Any]]]:
+        result = execute_required_rpc(self.supabase, "claim_stripe_event_for_processing", {
+            "p_stripe_event_id": event_id,
+            "p_stripe_account_id": stripe_account_id,
+            "p_livemode": livemode,
+            "p_type": event_type,
+            "p_payload": payload,
+            "p_processing_token": claim_token,
+            "p_stale_after_seconds": int(WEBHOOK_PROCESSING_STALE_AFTER.total_seconds()),
+        })
+        row = first_rpc_row(result) or {}
+        return str(row.get("claim_status") or "ignored"), row.get("event_row")
 
-    @staticmethod
-    def _is_stale_processing_event(row: dict[str, Any]) -> bool:
-        created_at = row.get("created_at")
-        if not created_at:
-            return False
-        if isinstance(created_at, datetime):
-            created = created_at
-        elif isinstance(created_at, str):
-            try:
-                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            except ValueError:
-                return False
-        else:
-            return False
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - created >= WEBHOOK_PROCESSING_STALE_AFTER
+    def _finish_event_processing(
+        self,
+        row_id: str,
+        processing_token: str,
+        status: str,
+        *,
+        error: Optional[str] = None,
+    ) -> bool:
+        result = execute_required_rpc(self.supabase, "finish_stripe_event_processing", {
+            "p_event_id": row_id,
+            "p_processing_token": processing_token,
+            "p_status": status,
+            "p_error": error,
+        })
+        row = first_rpc_row(result) or {}
+        return bool(row.get("updated"))
 
     @staticmethod
     def _event_get(event: Any, key: str) -> Any:
         if isinstance(event, dict):
             return event.get(key)
         return getattr(event, key, None)
+
+    def _connect_account_id_for_event(self, event: Any) -> Optional[str]:
+        account_id = self._event_get(event, "account")
+        if account_id:
+            return account_id
+        event_dict = self._event_to_dict(event)
+        event_type = event_dict.get("type") or ""
+        if event_type not in {"account.updated", "account.application.deauthorized"}:
+            return None
+        data_object = ((event_dict.get("data") or {}).get("object") or {})
+        return data_object.get("id")
 
     @staticmethod
     def _event_to_dict(event: Any) -> dict[str, Any]:

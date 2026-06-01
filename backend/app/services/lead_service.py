@@ -209,18 +209,13 @@ class LeadService:
             student_result = self.supabase.table("students").insert(student_data).execute()
             if not student_result.data:
                 raise HTTPException(status_code=500, detail="Failed to create student from lead")
-            if program_id:
-                try:
-                    self.supabase.table("student_program_memberships").insert({
-                        "studio_id": studio_id,
-                        "student_id": student_id,
-                        "program_id": program_id,
-                        "status": "active",
-                        "started_at": student_data["membership_start_date"],
-                    }).execute()
-                except PostgrestAPIError as exc:
-                    if exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES:
-                        raise
+
+        self._ensure_converted_student_membership(
+            studio_id,
+            student_id,
+            program_id,
+            started_at=student_data["membership_start_date"],
+        )
 
         # If minor, create guardian from lead data
         if lead.is_minor and lead.guardian_name:
@@ -293,3 +288,58 @@ class LeadService:
         }).execute()
 
         return await self.get_lead(lead_id, studio_id)
+
+    def _ensure_converted_student_membership(
+        self,
+        studio_id: str,
+        student_id: str,
+        program_id: Optional[str],
+        *,
+        started_at: str,
+    ) -> None:
+        if not program_id:
+            return
+
+        try:
+            existing_membership = (
+                self.supabase.table("student_program_memberships")
+                .select("id")
+                .eq("studio_id", studio_id)
+                .eq("student_id", student_id)
+                .eq("program_id", program_id)
+                .is_("ended_at", "null")
+                .maybe_single()
+                .execute()
+            )
+            if existing_membership.data:
+                (
+                    self.supabase.table("student_program_memberships")
+                    .update({"status": "active", "started_at": started_at, "ended_at": None})
+                    .eq("id", existing_membership.data["id"])
+                    .eq("studio_id", studio_id)
+                    .execute()
+                )
+                return
+
+            self.supabase.table("student_program_memberships").insert({
+                "studio_id": studio_id,
+                "student_id": student_id,
+                "program_id": program_id,
+                "status": "active",
+                "started_at": started_at,
+            }).execute()
+        except PostgrestAPIError as exc:
+            if exc.code in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES:
+                return
+            if exc.code == "23505":
+                (
+                    self.supabase.table("student_program_memberships")
+                    .update({"status": "active", "started_at": started_at, "ended_at": None})
+                    .eq("studio_id", studio_id)
+                    .eq("student_id", student_id)
+                    .eq("program_id", program_id)
+                    .is_("ended_at", "null")
+                    .execute()
+                )
+                return
+            raise

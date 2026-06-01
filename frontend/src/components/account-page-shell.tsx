@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
+import { crmLinkPrefetch } from "@/lib/constants";
 import type { LucideIcon } from "lucide-react";
 
 interface AccountPageShellProps {
@@ -79,10 +80,11 @@ export function AccountLinkTile({
   return (
     <Link
       href={href}
-      className="group flex h-full min-h-28 flex-col justify-between rounded-[6px] border border-border bg-surface p-4 transition-colors hover:border-accent/40 hover:bg-surface-raised"
+      prefetch={crmLinkPrefetch(href)}
+      className="group flex h-full min-h-28 flex-col justify-between rounded-[6px] border border-border bg-surface p-4 transition-[background-color,border-color,box-shadow,transform] duration-[220ms] ease-out hover:-translate-y-0.5 hover:border-accent/40 hover:bg-surface-raised hover:shadow-lg hover:shadow-black/10 motion-reduce:transition-none"
     >
       <span className="flex items-start justify-between gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-[6px] bg-accent/10 text-accent">
+        <span className="flex h-9 w-9 items-center justify-center rounded-[6px] bg-accent/10 text-accent transition-transform duration-200 ease-out group-hover:-translate-y-0.5 motion-reduce:transition-none">
           <Icon className="h-4 w-4" />
         </span>
         {badge && <Badge>{badge}</Badge>}

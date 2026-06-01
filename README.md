@@ -8,6 +8,22 @@ Koaryu blends "Koa" (Hawaiian for warrior) with "Ryu" (Japanese for flow / schoo
 
 My first paid job in high school was in a martial arts studio, and I saw firsthand just how suffocating CRM software for Martial Arts was, sometimes costing more than $150-$200 a month. In fact, the absolute cheapest purpose built software for martial arts studios I could find was still $49 a month. I think we can do better (or at the very least, way cheaper).
 
+Current public positioning uses a flat `$27/month` Koaryu Core studio subscription. The `$49/month` note above is market-comparison context for incumbent alternatives, not Koaryu pricing.
+
+## Changelog
+
+### 0.1.1 - In progress
+
+- Added crawlable public informational pages for features, use cases, use-case details, Explore, About, robots, and sitemap support.
+- Added the first studio-type page for family-focused martial arts schools, with related feature and workflow links.
+- Made the public Koaryu logo link back to the landing page across informational pages.
+- Improved public mobile navigation with contextual links and hidden/inert closed-drawer behavior.
+- Improved dashboard startup so critical studio data renders first while heavier summary data loads separately.
+- Added safer dashboard language for partial roster states, including full-roster refresh routing before retention and churn details are treated as exact.
+- Added backend-paged Students roster support and a Postgres RPC path for scalable program filtering.
+- Expanded demo-studio data and dashboard overview patterns for richer product demos.
+- Refined public-page hero visuals, account/menu motion, metric-card motion, and private API proxy cache/download headers.
+
 ## Architecture
 
 ```
@@ -33,6 +49,8 @@ Frontend environment variables:
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only Vercel value that must match the backend worker secret so the scheduled account-deletion route can call the protected backend processor
 - `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls must route through the Next.js proxy instead of calling `NEXT_PUBLIC_API_URL` directly
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): when `true`, bypasses live auth/data bootstrapping and serves preview/demo data only
+- `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER` (optional): defaults to `true`; set to `false` as a rollback switch for the backend-paginated Students roster
+- `NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG` (optional): set to `true` temporarily to log Koaryu performance marks and Web Vitals in production
 
 Backend environment variables:
 
@@ -41,7 +59,8 @@ Backend environment variables:
 - `SUPABASE_JWT_SECRET`: used to validate Supabase access tokens
 - `FRONTEND_URL`: primary allowed frontend origin, typically `http://localhost:4000`
 - `ENVIRONMENT`: environment label such as `development` or `production`
-- `DEMO_RESET_ENABLED`: set to `true` only for controlled demo/staging environments where the demo reset endpoint should be available
+- `DEMO_RESET_ENABLED`: set to `true` only for controlled demo/staging environments where demo data tools should be available
+- `DEMO_RESET_STUDIO_IDS`: comma-separated studio IDs that demo reset and clear-studio-data may target; keep empty in production
 - `STRIPE_SECRET_KEY`: Stripe secret key used by Koaryu Core billing and connected-account billing operations
 - `STRIPE_RESTRICTED_KEY`: optional restricted Stripe key for dashboard/API operations that should not need the full secret key
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`: Stripe webhook signing secret for platform billing events
@@ -63,7 +82,7 @@ Local defaults in this repo assume:
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.13+ for frontend scripts and tests
 - Python 3.11+
 - A Supabase project (free tier works)
 
@@ -79,6 +98,8 @@ That starts:
 
 - frontend at `http://localhost:4000`
 - backend at `http://127.0.0.1:8001`
+
+The dev scripts only stop processes that were recorded by this repo's launcher under `.koaryu-dev/`. If port `4000` or `8001` is already owned by another process, `npm run dev:up` exits and asks you to stop that process manually instead of killing it.
 
 If you prefer to run each service manually, use the commands below.
 
@@ -102,7 +123,7 @@ cp .env.example .env
 # FRONTEND_URL, and Stripe billing values if you are testing billing locally
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8001
 ```
 
@@ -119,10 +140,18 @@ For linked-project release checks, run:
 
 ```bash
 supabase db lint --linked --fail-on error
-scripts/verify-supabase-account-support.sh
+scripts/verify-supabase-contracts.sh
 ```
 
-The verification script checks that the support-ticket tables, account-deletion tables, RLS, orphan-prevention triggers, deletion-safe auth-user foreign keys, and lintable belt-ladder sync function are present on the linked Supabase project. It also runs the belt-ladder sync behavior smoke test inside a transaction that rolls back.
+The verification script defaults to the linked project. Use
+`SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` after
+`supabase db reset --local` when validating migrations before they are applied
+to the linked project. The backend now requires the worker-claim RPC migrations
+before webhook, account-deletion, or CSV-import workers can run. The contract
+checks cover account/support controls, belt-ladder sync, support triage,
+direct-client write lockdown, worker-claim RPCs, promotion RPCs,
+recurring-session soft delete, student program filtering, and atomic studio
+onboarding. Most behavior checks run inside transactions that roll back.
 
 ## Auth, Onboarding, And Tenant Model
 
@@ -165,8 +194,9 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - Preview mode is for demos only. Live mode now starts empty for new studios and should be used for deployment verification.
 - The repo does not currently ship seeded example CSV imports or a packaged demo tenant. For demos, prepare a small example CSV and/or a dedicated demo studio ahead of time.
 - Repeated public signups against a shared dev Supabase project can hit Supabase email rate limits. For heavy QA loops, use a dedicated project, stagger signups, or create test users through an admin flow instead of repeated public signup attempts.
-- The demo reset and clear-studio-data tools are intentionally dangerous admin utilities. They preserve Koaryu Core subscription/platform access rows, but they can replace or delete working studio data and should only be used against a demo or disposable studio after the confirmation prompt is understood.
-- A dojo-floor demo should run on a paid/warm Render instance or an equivalent always-on backend. Free-tier cold starts can make a correct billing flow look broken during the first click.
+- The demo reset and clear-studio-data tools are intentionally dangerous admin utilities. They preserve Koaryu Core subscription/platform access rows, but they can replace or delete working studio data and now require the target studio ID to be listed in `DEMO_RESET_STUDIO_IDS`.
+- A dojo-floor demo should run on the configured Render starter service only after it is warm, or on a larger always-on backend. Cold starts on small Render instances can make a correct billing flow look broken during the first click.
+- Rendering/performance changes for v0.1.1 have rollout switches and a smoke checklist in `docs/performance-rollout.md`. Use that runbook before turning the paged Students roster or dashboard summary changes into a production demo dependency.
 
 ## Account And Support Operations
 
@@ -213,26 +243,8 @@ Recent deployment-readiness work in this repo tightened live-mode persistence an
 - Koaryu Core checkout/portal duplicate-subscription protection and webhook ordering
 - Koaryu Payments autopay authorization, Connect webhook projection, invoice reconciliation, and cancellation cleanup
 - production startup checks for missing or placeholder Supabase/Stripe/frontend configuration
-- admin-only demo reset and clear-studio-data operations that preserve platform subscription access
+- admin-only, studio-allowlisted demo reset and clear-studio-data operations that preserve platform subscription access
 - frontend polish for dark/light theme support, dashboard route transitions, shared modal transitions, and reduced-motion-friendly UI transitions
-
-## Verification Snapshot
-
-The current dev verification pass included:
-
-- health checks against `/health` and `/api/v1/health`
-- local Uvicorn production-command startup against the backend `/health` endpoint
-- fresh-account auth and onboarding flow verification
-- redirect verification for unauthenticated users, new signed-in users, and fully onboarded users
-- multi-user tenant isolation checks across separate studios
-- fresh studio behavior checks to confirm empty live state instead of mock/demo fallback
-- lint and Python compile checks after the auth/onboarding hardening work
-- targeted frontend lint for landing-page warmup, auth middleware, and proxy changes
-- full backend pytest coverage for the billing hardening and production config checks
-- frontend lint, audit, and production build checks after the current dependency and billing UI changes
-- live Stripe verification for Koaryu Core and Koaryu Payments, including a real small-dollar student billing test and webhook/reconciliation checks
-
-The local Supabase-backed verification also surfaced a real `staff_roles` RLS recursion issue, which is now covered by the migration set and avoided in the live frontend gating path.
 
 ## Tech Stack
 

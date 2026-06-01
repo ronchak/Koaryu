@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import type { Program } from "@/types";
 
 interface ProgramPickerProps {
@@ -9,6 +10,7 @@ interface ProgramPickerProps {
   onChange: (programId: string | null) => void;
   onChangeMany?: (programIds: string[]) => void;
   label?: string;
+  id?: string;
   allowEmpty?: boolean;
   multiple?: boolean;
   disabled?: boolean;
@@ -21,18 +23,28 @@ export function ProgramPicker({
   onChange,
   onChangeMany,
   label = "Program",
+  id,
   allowEmpty = false,
   multiple = false,
   disabled = false,
 }: ProgramPickerProps) {
+  const generatedId = useId();
+  const controlId =
+    id ||
+    `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "program"}-${generatedId.replace(/:/g, "")}`;
+  const labelId = `${controlId}-label`;
   const activePrograms = programs.filter((program) => !program.archived_at);
   const selectedValues = values || (value ? [value] : []);
 
   if (multiple) {
     return (
       <div className="flex flex-col gap-1.5">
-        <label className="text-sm text-text-secondary font-medium">{label}</label>
-        <div className="min-h-10 rounded-[6px] border border-border bg-surface-raised p-2">
+        <span id={labelId} className="text-sm text-text-secondary font-medium">{label}</span>
+        <div
+          role="group"
+          aria-labelledby={labelId}
+          className="min-h-10 rounded-[6px] border border-border bg-surface-raised p-2"
+        >
           {activePrograms.length === 0 ? (
             <p className="px-1 py-1 text-sm text-muted">No programs available</p>
           ) : (
@@ -67,8 +79,9 @@ export function ProgramPicker({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-sm text-text-secondary font-medium">{label}</label>
+      <label htmlFor={controlId} className="text-sm text-text-secondary font-medium">{label}</label>
       <select
+        id={controlId}
         value={value || ""}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value || null)}

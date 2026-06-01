@@ -168,7 +168,7 @@ export default function AccountSettingsPage() {
   }
 
   const ownerCandidates = staffMembers.filter(
-    (member) => member.user_id !== currentUserId && member.role === "admin" && member.status === "active"
+    (member) => member.user_id && member.user_id !== currentUserId && member.role === "admin" && member.status === "active"
   );
 
   return (
@@ -269,7 +269,7 @@ export default function AccountSettingsPage() {
               >
                 <option value="">Select an active admin</option>
                 {ownerCandidates.map((member) => (
-                  <option key={member.id} value={member.user_id}>
+                  <option key={member.id} value={member.user_id ?? ""}>
                     {member.full_name || member.email}
                   </option>
                 ))}

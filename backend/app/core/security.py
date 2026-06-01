@@ -30,15 +30,15 @@ def get_user_id_from_token(token: str) -> str:
             detail="Authentication token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except JWTError as exc:
+    except JWTError:
         try:
             response = get_supabase_client().auth.get_user(token)
             if not response or not response.user:
                 raise ValueError("Token is invalid or user not found")
             return response.user.id
-        except Exception as fallback_error:
+        except Exception:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid authentication token: {str(fallback_error or exc)}",
+                detail="Invalid authentication token",
                 headers={"WWW-Authenticate": "Bearer"},
             )

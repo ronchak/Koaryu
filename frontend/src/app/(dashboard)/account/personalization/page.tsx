@@ -7,7 +7,6 @@ import {
   AccountPageShell,
   AccountSection,
 } from "@/components/account-page-shell";
-import { Button } from "@/components/ui/button";
 import { useTheme, type ThemePreference } from "@/components/theme-provider";
 
 function labelTheme(value: ThemePreference) {
@@ -57,34 +56,16 @@ export default function PersonalizationPage() {
       </AccountSection>
 
       <AccountSection title="Workspace feel">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            disabled
-          >
-            Comfortable
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled
-          >
-            Compact
-          </Button>
-        </div>
-        <div className="mt-4">
+        <div>
           <AccountInfoRow
             label="Current theme"
             value={`${labelTheme(preference)} (${resolvedTheme})`}
             detail="Stored in this browser/device."
           />
           <AccountInfoRow
-            label="Density"
-            value="Planned"
-            detail="Compact and comfortable density controls will become active when the layout system consumes them."
+            label="Current density"
+            value="Comfortable"
+            detail="Compact density is planned, but no density preference is active today."
           />
         </div>
       </AccountSection>
@@ -94,31 +75,28 @@ export default function PersonalizationPage() {
         description="Koaryu is currently English-first. Language switching is planned for a later localization pass."
       >
         <div id="language" className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            disabled
+          <div
+            aria-current="true"
             className="rounded-[6px] border border-accent bg-accent/10 p-4 text-left opacity-80"
           >
             <Palette className="mb-3 h-4 w-4 text-accent" />
             <span className="block text-sm font-medium text-text-primary">Default</span>
             <span className="mt-1 block text-xs text-muted">Koaryu currently uses the default English interface.</span>
-          </button>
-          <button
-            type="button"
-            disabled
+          </div>
+          <div
             className="rounded-[6px] border border-border bg-surface-raised p-4 text-left opacity-60"
           >
             <Languages className="mb-3 h-4 w-4 text-accent" />
             <span className="block text-sm font-medium text-text-primary">English (US)</span>
             <span className="mt-1 block text-xs text-muted">Language switching is planned for a later localization pass.</span>
-          </button>
+          </div>
         </div>
       </AccountSection>
 
       <AccountSection title="What this affects">
         <AccountNotice>
-          Theme is active today and stored in this browser/device. Density and language are visible here as planned
-          account settings so users know where those controls will live once implemented.
+          Theme is active today and stored in this browser/device. Density and language are shown as read-only
+          account settings until those preferences are implemented.
         </AccountNotice>
       </AccountSection>
     </AccountPageShell>

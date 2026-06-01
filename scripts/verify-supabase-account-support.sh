@@ -11,6 +11,6 @@ if ! command -v supabase >/dev/null 2>&1; then
   exit 127
 fi
 
-supabase db query --linked "$(cat "$CONTRACT_SQL_FILE")"
-supabase db query --linked "$(cat "$BELT_SYNC_SQL_FILE")"
-supabase db query --linked "$(cat "$SUPPORT_TRIAGE_SQL_FILE")"
+supabase db query --linked --file "$CONTRACT_SQL_FILE"
+supabase db query --linked --file "$BELT_SYNC_SQL_FILE"
+supabase db query --linked --file "$SUPPORT_TRIAGE_SQL_FILE"

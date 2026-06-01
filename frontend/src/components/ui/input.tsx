@@ -1,4 +1,4 @@
-import { InputHTMLAttributes, forwardRef } from "react";
+import { InputHTMLAttributes, forwardRef, useId } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -7,8 +7,14 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, className = "", id, ...props }, ref) => {
-    const inputId = id || label?.toLowerCase().replace(/\s+/g, "-");
+  ({ label, error, hint, className = "", id, "aria-describedby": ariaDescribedBy, "aria-invalid": ariaInvalid, ...props }, ref) => {
+    const generatedId = useId();
+    const inputId =
+      id ||
+      `${label?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "input"}-${generatedId.replace(/:/g, "")}`;
+    const errorId = error ? `${inputId}-error` : undefined;
+    const hintId = hint && !error ? `${inputId}-hint` : undefined;
+    const describedBy = [ariaDescribedBy, errorId, hintId].filter(Boolean).join(" ") || undefined;
 
     return (
       <div className="flex flex-col gap-1.5">
@@ -23,6 +29,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           id={inputId}
+          aria-invalid={error ? true : ariaInvalid}
+          aria-describedby={describedBy}
           className={`
             w-full px-3 py-2 text-sm
             bg-surface-raised border border-border rounded-[6px]
@@ -37,10 +45,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {error && (
-          <p className="text-xs text-danger">{error}</p>
+          <p id={errorId} className="text-xs text-danger">{error}</p>
         )}
         {hint && !error && (
-          <p className="text-xs text-muted">{hint}</p>
+          <p id={hintId} className="text-xs text-muted">{hint}</p>
         )}
       </div>
     );

@@ -1,0 +1,39 @@
+Given,Surname,Student Status,Rank,Last Promoted,Classes Last 30,Emergency Name,Emergency Tel,Parent Email,DOB,Notes
+Ava,Martinez,Current,Yellow Belt,March 12 2026,14,Sofia Martinez,(415) 555-0188,sofia.martinez@example.net,June 3 2014,"Prefers Tuesday/Thursday classes, moving to sparring soon"
+Noah,Kim,Trial,White Belt,,3,Daniel Kim,415.555.0194,dkim-family@example.net,44562,"Trial family asked about sibling discount"
+Maya,Patel,Current,Orange Belt,44991,12,Nisha Patel,415-555-0117,nisha.patel@example.net,September 18 2013,"Strong kata focus
+Needs reminder to bring belt"
+Ethan,Johnson,Frozen,Green Belt,January 27 2026,0,Marcy Johnson,(650) 555-0122,marcyj@example.net,May 11 2012,Paused for soccer season
+Lily,Nguyen,Current,Blue Belt,45230,16,Anh Nguyen,650-555-0101,anh.nguyen@example.net,April 29 2011,"Excellent attendance, helps younger students"
+Lucas,Brown,On Hold,Yellow Belt,October 5 2025,1,Tara Brown,415-555-0155,tara.brown@example.net,43101,"On hold until wrist heals, doctor note on file"
+Zoe,Garcia,Current,Purple Belt,February 2 2026,18,Elena Garcia,(415) 555-0133,elena.garcia@example.net,December 7 2010,"Leadership team candidate, very consistent"
+Mason,Lee,Trial,White Belt,,2,Grace Lee,415-555-0171,grace.lee@example.net,July 22 2015,"Came from summer camp, parent wants schedule by email"
+Aria,Wilson,Current,Green Stripe,45301,10,James Wilson,650-555-0170,jwilson@example.net,August 1 2014,Needs larger uniform top
+Benjamin,Lopez,Current,Brown Belt,April 19 2026,20,Carmen Lopez,415-555-0142,carmen.lopez@example.net,40988,"Tournament prep, forms and board breaking"
+Ella,Davis,Frozen,Orange Belt,December 16 2025,0,Mike Davis,(510) 555-0111,mike.davis@example.net,March 15 2013,"Family travel through June"
+Henry,Anderson,Current,Yellow Belt,45147,9,Paula Anderson,510.555.0124,paula.anderson@example.net,November 9 2016,"Very shy at first, warms up after games"
+Chloe,Thomas,On Hold,Blue Stripe,March 1 2026,4,Renee Thomas,415-555-0129,renee.t@example.net,43844,"Billing note says ""call before reactivating"""
+Jack,Moore,Current,Green Belt,May 4 2026,15,Kevin Moore,(415) 555-0109,kmoore@example.net,February 20 2012,Ready for stripe check next week
+Amelia,Taylor,Trial,White Belt,,4,Heather Taylor,650-555-0199,heather.taylor@example.net,October 30 2017,"Trial pass from school fair, allergic to peanuts"
+Logan,Jackson,Current,Red Belt,44872,22,Monique Jackson,415-555-0168,monique.jackson@example.net,May 5 2010,"Assistant instructor track
+Great with beginners, but forgets attendance card"
+Harper,White,Current,Orange Stripe,April 2 2026,11,Eric White,510-555-0150,eric.white@example.net,43498,"Parent asked for makeup class on Saturdays"
+Sebastian,Harris,Frozen,Purple Belt,September 21 2025,0,Linda Harris,(650) 555-0119,linda.harris@example.net,January 14 2011,Knee rehab
+Mila,Clark,Current,Yellow Stripe,45369,13,Oscar Clark,415.555.0181,oscar.clark@example.net,June 28 2015,"Uniform paid, still waiting on size 1 pants"
+Owen,Lewis,On Hold,Green Belt,November 11 2025,2,Pat Lewis,415-555-0161,pat.lewis@example.net,42127,"Switched schools, schedule uncertain"
+Isabella,Robinson,Current,Black Belt Jr.,March 30 2026,19,Ana Robinson,(510) 555-0195,ana.robinson@example.net,July 4 2009,"Demo team, leadership class, weapons permission signed"
+Levi,Walker,Current,Blue Belt,45043,8,Nate Walker,650-555-0136,nate.walker@example.net,December 19 2012,"Missed two weeks, caught up quickly"
+Sofia,Young,Trial,White Belt,,1,Clara Young,415-555-0190,clara.young@example.net,March 8 2018,"First class was noisy, wants quieter intro class"
+Daniel,Allen,Current,Brown Stripe,May 8 2026,17,Victor Allen,(415) 555-0127,vallen@example.net,40544,"Testing soon, needs board order: 3 pine boards"
+Grace,King,Current,Orange Belt,45102,7,Mel King,510-555-0177,mel.king@example.net,November 2 2014,"Carpool with Harper White, sometimes arrives late"
+Wyatt,Wright,Frozen,Yellow Belt,August 14 2025,0,Sarah Wright,650-555-0145,sarah.wright@example.net,43711,"Medical freeze, expected back in July"
+Nora,Scott,Current,Green Belt,February 24 2026,14,Tom Scott,415.555.0103,tom.scott@example.net,April 6 2013,"Likes weapons class, remind parent about gear fee"
+Mateo,Torres,On Hold,White Belt,,0,Lucia Torres,(415) 555-0186,lucia.torres@example.net,September 9 2016,"On hold after trial, may return after baseball"
+Riley,Hill,Current,Blue Stripe,45288,12,Janet Hill,510-555-0132,janet.hill@example.net,43072,"Needs extra help with roundhouse kick, good effort"
+Scarlett,Green,Current,Purple Belt,January 10 2026,15,Devon Green,650-555-0166,devon.green@example.net,August 23 2011,"Parent email bounced once, phone is best"
+Caleb,Adams,Trial,White Belt,,5,Rachel Adams,415-555-0114,rachel.adams@example.net,December 12 2017,"Trial complete, wants to enroll if Friday class opens"
+Victoria,Baker,Current,Red Stripe,45422,21,Andre Baker,(510) 555-0180,andre.baker@example.net,May 17 2010,"Competition team, check-in name sometimes Vicky"
+Julian,Nelson,Current,Yellow Belt,April 27 2026,10,Priya Nelson,415-555-0149,priya.nelson@example.net,44620,"Shared custody schedule, alternate weeks"
+Layla,Carter,Frozen,Blue Belt,December 3 2025,0,Naomi Carter,650-555-0189,naomi.carter@example.net,February 1 2012,"Freeze requested by email, expires 2026-06-15"
+Gabriel,Mitchell,Current,Green Stripe,March 18 2026,13,Sean Mitchell,415.555.0137,sean.mitchell@example.net,October 13 2013,"Needs new mouthguard, old one lost"
+Penelope,Perez,Current,Orange Belt,45001,9,Marisol Perez,(415) 555-0158,marisol.perez@example.net,June 16 2015,"Loves demo days, nervous during tests"

@@ -27,7 +27,7 @@ function dayOfWeek(offsetDays = 0): number {
   return date.getDay();
 }
 
-const MOCK_BASE_STUDENTS: Student[] = [
+const MOCK_BASE_STUDENTS: Student[] = ([
   {
     id: "mock-1",
     studio_id: "mock-studio",
@@ -216,7 +216,27 @@ const MOCK_BASE_STUDENTS: Student[] = [
     created_at: isoDaysFromToday(-700, "10:30:00"),
     updated_at: isoDaysFromToday(-10, "09:00:00"),
   },
-];
+]).map((student) => ({
+  ...student,
+  status: student.status as Student["status"],
+  program_id: "program-bjj-core",
+  program_memberships: [
+    {
+      id: `${student.id}-program-primary`,
+      studio_id: student.studio_id,
+      student_id: student.id,
+      program_id: "program-bjj-core",
+      program_name: "Brazilian Jiu-Jitsu Core",
+      program_color_hex: "#38BDF8",
+      status: "active",
+      started_at: student.membership_start_date,
+      ended_at: null,
+      current_belt_rank_id: student.current_belt_rank_id ?? null,
+      created_at: student.created_at,
+      updated_at: student.updated_at,
+    },
+  ],
+}));
 
 const MOCK_ADDITIONAL_STUDENTS: Student[] = [
   ["mock-9", "Hana", "Mori", "Hana", "2016-02-08", true, "active", -260, "rank-1a", ["youth", "beginner"]],
@@ -483,6 +503,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-1",
     status: "present",
     checked_in_at: `${todayStr()}T16:00:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Aiko Tanaka",
   },
   {
@@ -492,6 +514,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-5",
     status: "present",
     checked_in_at: `${todayStr()}T16:02:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Priya Sharma",
   },
   {
@@ -501,6 +525,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-3",
     status: "late",
     checked_in_at: `${todayStr()}T16:10:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Sofia Reyes",
   },
   {
@@ -510,6 +536,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-2",
     status: "present",
     checked_in_at: `${todayStr()}T18:01:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Marc Webb",
   },
   {
@@ -519,6 +547,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-4",
     status: "present",
     checked_in_at: `${todayStr()}T18:04:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Derek Kim",
   },
   {
@@ -528,6 +558,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-7",
     status: "present",
     checked_in_at: `${dateDaysFromToday(-21)}T12:05:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Nora Patel",
   },
   {
@@ -537,6 +569,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-19",
     status: "present",
     checked_in_at: `${todayStr()}T17:35:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Omar Haddad",
   },
   {
@@ -546,6 +580,8 @@ export const MOCK_ATTENDANCE: AttendanceRecord[] = [
     student_id: "mock-20",
     status: "present",
     checked_in_at: `${todayStr()}T17:36:00Z`,
+    is_cross_program: false,
+    counts_toward_eligibility: true,
     student_name: "Chloe Park",
   },
 ];

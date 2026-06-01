@@ -8,11 +8,7 @@ from fastapi import HTTPException
 
 from app.schemas.support import SupportTicketCreate, SupportTicketTriageUpdate, SupportTriageFilters
 from app.services.support_service import SupportService
-
-
-class Result:
-    def __init__(self, data):
-        self.data = data
+from tests.fakes.supabase import RpcBackedSupabase
 
 
 class FakeUserResponse:
@@ -33,92 +29,28 @@ class FakeAuth:
     admin = FakeAuthAdmin()
 
 
-class FakeSupabase:
+class FakeSupabase(RpcBackedSupabase):
     def __init__(self):
-        self.auth = FakeAuth()
-        self.tables = {
+        super().__init__({
             "support_tickets": [],
             "support_ticket_events": [],
-        }
-
-    def table(self, name):
-        return FakeTable(self, name)
-
-    def rpc(self, name, params):
-        return FakeRpc(self, name, params)
-
-
-class FakeTable:
-    def __init__(self, supabase, name):
-        self.supabase = supabase
-        self.name = name
-        self.filters = []
-        self.insert_payload = None
-        self.order_args = None
-        self.limit_value = None
-
-    def select(self, *_args, **_kwargs):
-        return self
-
-    def insert(self, payload):
-        self.insert_payload = payload
-        return self
-
-    def eq(self, key, value):
-        self.filters.append((key, value))
-        return self
-
-    def in_(self, key, values):
-        self.filters.append((key, ("in", set(values))))
-        return self
-
-    def order(self, *args, **kwargs):
-        self.order_args = (args, kwargs)
-        return self
-
-    def limit(self, value):
-        self.limit_value = value
-        return self
-
-    def execute(self):
-        rows = self.supabase.tables[self.name]
-        if self.insert_payload is not None:
-            row = {
-                "id": f"{self.name}_1",
+        })
+        self.auth = FakeAuth()
+        self.insert_defaults = {
+            "support_tickets": {
                 "created_at": "2026-05-20T00:00:00+00:00",
                 "updated_at": "2026-05-20T00:00:00+00:00",
-                **self.insert_payload,
-            }
-            rows.append(row)
-            return Result([dict(row)])
+            },
+            "support_ticket_events": {
+                "created_at": "2026-05-20T00:00:00+00:00",
+                "updated_at": "2026-05-20T00:00:00+00:00",
+            },
+        }
 
-        matched = [
-            row for row in rows
-            if all(
-                (row.get(key) in value[1] if isinstance(value, tuple) and value[0] == "in" else row.get(key) == value)
-                for key, value in self.filters
-            )
-        ]
-        return Result([dict(row) for row in matched])
-
-
-class FakeRpc:
-    def __init__(self, supabase, name, params):
-        self.supabase = supabase
-        self.name = name
-        self.params = params
-
-    def execute(self):
-        if self.name == "support_triage_list_tickets":
-            return self._list_triage_tickets()
-        if self.name == "support_triage_update_ticket":
-            return self._update_triage_ticket()
-        raise AssertionError(f"Unexpected RPC {self.name}")
-
-    def _list_triage_tickets(self):
-        statuses = set(self.params.get("p_statuses") or ["open", "triaging", "waiting_on_customer"])
-        severities = set(self.params.get("p_severities") or ["urgent", "high", "normal", "low"])
-        topics = set(self.params.get("p_topics") or [
+    def _rpc_support_triage_list_tickets(self, params):
+        statuses = set(params.get("p_statuses") or ["open", "triaging", "waiting_on_customer"])
+        severities = set(params.get("p_severities") or ["urgent", "high", "normal", "low"])
+        topics = set(params.get("p_topics") or [
             "billing",
             "account_access",
             "student_records",
@@ -126,24 +58,24 @@ class FakeRpc:
             "product_question",
             "other",
         ])
-        limit = self.params.get("p_limit") or 50
+        limit = params.get("p_limit") or 50
         severity_rank = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
         rows = [
             row
-            for row in self.supabase.tables["support_tickets"]
+            for row in self.tables["support_tickets"]
             if row.get("status") in statuses
             and row.get("severity") in severities
             and row.get("topic") in topics
         ]
         rows.sort(key=lambda row: (severity_rank.get(row.get("severity"), 4), row.get("created_at", ""), row.get("id", "")))
-        return Result([dict(row) for row in rows[:limit]])
+        return [dict(row) for row in rows[:limit]]
 
-    def _update_triage_ticket(self):
-        ticket_id = self.params.get("p_ticket_id")
-        status = self.params.get("p_status")
-        note = self.params.get("p_note")
-        metadata = self.params.get("p_metadata") or {}
-        for row in self.supabase.tables["support_tickets"]:
+    def _rpc_support_triage_update_ticket(self, params):
+        ticket_id = params.get("p_ticket_id")
+        status = params.get("p_status")
+        note = params.get("p_note")
+        metadata = params.get("p_metadata") or {}
+        for row in self.tables["support_tickets"]:
             if row.get("id") == ticket_id:
                 previous_status = row.get("status")
                 if status:
@@ -151,7 +83,7 @@ class FakeRpc:
                     row["resolved_at"] = "2026-05-20T01:00:00+00:00" if status in {"resolved", "closed"} else None
                 row["updated_at"] = "2026-05-20T01:00:00+00:00"
                 event_type = "ticket.triaged" if status and note else "ticket.status_changed" if status else "ticket.note_added"
-                self.supabase.tables["support_ticket_events"].append({
+                self.tables["support_ticket_events"].append({
                     "id": "event_1",
                     "ticket_id": ticket_id,
                     "studio_id": row.get("studio_id"),
@@ -166,8 +98,8 @@ class FakeRpc:
                     },
                     "created_at": "2026-05-20T01:00:00+00:00",
                 })
-                return Result([dict(row)])
-        return Result([])
+                return [dict(row)]
+        return []
 
 
 class SupportServiceTest(unittest.TestCase):

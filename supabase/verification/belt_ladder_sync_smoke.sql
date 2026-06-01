@@ -1,13 +1,23 @@
+-- Current-state contract for public.sync_belt_ladder_ranks(uuid, uuid, text, jsonb).
+--
+-- The migration history for this RPC includes several repair migrations. Treat
+-- this smoke file, plus the function/grant checks in account_support_controls.sql,
+-- as the audit entrypoint for the final contract: service-role backend only,
+-- no temp-table dependency, tenant-locked ladder selection, atomic create/update/
+-- remove behavior, and deterministic full-state return.
+
 BEGIN;
 
 DO $$
 DECLARE
     v_owner UUID := gen_random_uuid();
     v_studio UUID := gen_random_uuid();
+    v_other_studio UUID := gen_random_uuid();
     v_ladder UUID := gen_random_uuid();
     v_ranks JSONB;
     v_first_rank UUID;
     v_rank_count INTEGER;
+    v_error_message TEXT;
 BEGIN
     INSERT INTO auth.users (
         id,
@@ -130,6 +140,25 @@ BEGIN
     IF v_rank_count <> 2 THEN
         RAISE EXCEPTION 'Expected two persisted ranks after update sync, got %', v_rank_count;
     END IF;
+
+    BEGIN
+        PERFORM *
+        FROM public.sync_belt_ladder_ranks(
+            v_ladder,
+            v_other_studio,
+            'Stripe',
+            '[]'::jsonb
+        );
+
+        RAISE EXCEPTION 'Expected wrong-studio belt ladder sync to fail.';
+    EXCEPTION
+        WHEN OTHERS THEN
+            GET STACKED DIAGNOSTICS v_error_message = MESSAGE_TEXT;
+
+            IF v_error_message <> 'Belt ladder not found' THEN
+                RAISE EXCEPTION 'Expected wrong-studio sync to fail with Belt ladder not found, got: %', v_error_message;
+            END IF;
+    END;
 END $$;
 
 ROLLBACK;

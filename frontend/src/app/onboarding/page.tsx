@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/logo";
@@ -32,12 +32,76 @@ const TIMEZONES = [
   "Australia/Sydney",
   "Australia/Melbourne",
 ];
+const TIMEZONE_OPTIONS = new Set(TIMEZONES);
+const ONBOARDING_IDEMPOTENCY_STORAGE_KEY = "koaryu:studio-onboarding:idempotency";
+
+function createIdempotencyKey() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `studio-onboarding-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createIdempotencyPayload(name: string, timezone: string) {
+  return JSON.stringify({ name, timezone });
+}
+
+function getStoredIdempotencyKey(payload: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const stored = window.sessionStorage.getItem(ONBOARDING_IDEMPOTENCY_STORAGE_KEY);
+    if (!stored) {
+      return null;
+    }
+
+    const parsed = JSON.parse(stored) as {
+      payload?: unknown;
+      requestKey?: unknown;
+    };
+
+    return parsed.payload === payload && typeof parsed.requestKey === "string"
+      ? parsed.requestKey
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeIdempotencyKey(payload: string, requestKey: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      ONBOARDING_IDEMPOTENCY_STORAGE_KEY,
+      JSON.stringify({ payload, requestKey })
+    );
+  } catch {
+    // Same-page retries still reuse the in-memory key when sessionStorage is unavailable.
+  }
+}
+
+function clearStoredIdempotencyKey() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(ONBOARDING_IDEMPOTENCY_STORAGE_KEY);
+  } catch {
+    // Ignore storage cleanup failures; the payload check prevents stale-key reuse.
+  }
+}
 
 export default function OnboardingPage() {
   const [studioName, setStudioName] = useState("");
   const [timezone, setTimezone] = useState("America/New_York");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -47,6 +111,19 @@ export default function OnboardingPage() {
     setIsLoading(true);
 
     try {
+      const normalizedStudioName = studioName.trim();
+      if (!normalizedStudioName) {
+        setError("Enter your studio name.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!TIMEZONE_OPTIONS.has(timezone)) {
+        setError("Choose a valid timezone.");
+        setIsLoading(false);
+        return;
+      }
+
       if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
         const previewUserId =
           typeof window !== "undefined"
@@ -55,12 +132,20 @@ export default function OnboardingPage() {
         setStudioStateCookie(previewUserId, true);
         setActiveStudioIdCookie(PREVIEW_STUDIO_ID);
         if (typeof window !== "undefined") {
-          window.localStorage.setItem("koaryu:studioName", studioName);
+          window.localStorage.setItem("koaryu:studioName", normalizedStudioName);
         }
         router.push("/dashboard");
         router.refresh();
         return;
       }
+
+      const idempotencyPayload = createIdempotencyPayload(normalizedStudioName, timezone);
+      const requestKey =
+        idempotencyKeyRef.current ??
+        getStoredIdempotencyKey(idempotencyPayload) ??
+        createIdempotencyKey();
+      idempotencyKeyRef.current = requestKey;
+      storeIdempotencyKey(idempotencyPayload, requestKey);
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -71,9 +156,16 @@ export default function OnboardingPage() {
 
       const studio = await api.post<Studio>(
         "/studios",
-        { name: studioName, timezone },
-        session.access_token
+        { name: normalizedStudioName, timezone },
+        session.access_token,
+        {
+          headers: {
+            "Idempotency-Key": requestKey,
+          },
+        }
       );
+      idempotencyKeyRef.current = null;
+      clearStoredIdempotencyKey();
       setStudioStateCookie(session.user.id, true);
       setActiveStudioIdCookie(studio.id);
 
@@ -115,7 +207,11 @@ export default function OnboardingPage() {
               type="text"
               placeholder="Pacific Coast Karate"
               value={studioName}
-              onChange={(e) => setStudioName(e.target.value)}
+              onChange={(e) => {
+                idempotencyKeyRef.current = null;
+                clearStoredIdempotencyKey();
+                setStudioName(e.target.value);
+              }}
               required
             />
 
@@ -129,7 +225,11 @@ export default function OnboardingPage() {
               <select
                 id="timezone"
                 value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
+                onChange={(e) => {
+                  idempotencyKeyRef.current = null;
+                  clearStoredIdempotencyKey();
+                  setTimezone(e.target.value);
+                }}
                 className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
               >
                 {TIMEZONES.map((tz) => (

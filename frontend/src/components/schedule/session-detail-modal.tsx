@@ -14,9 +14,19 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { ModalFrame } from "@/components/ui/modal-frame";
+import {
+  buildAttendanceByStudentId,
+  buildSessionAttendanceSummary,
+  buildSessionLabels,
+  buildSessionRosterSections,
+  SESSION_STATUS_LABELS,
+  type ScheduleSessionDeleteScope,
+  type SessionRosterRow,
+} from "@/lib/session-detail-model";
 import type { AttendanceRecord, AttendanceStatus, ClassSession, Program, Student } from "@/types";
 
-export type ScheduleSessionDeleteScope = "session" | "series";
+export type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 
 export interface ScheduleSessionDetailModalProps {
   open: boolean;
@@ -26,6 +36,9 @@ export interface ScheduleSessionDetailModalProps {
   attendance: AttendanceRecord[];
   attendanceError?: string | null;
   onDismissAttendanceError?: () => void;
+  studentRosterError?: string | null;
+  onDismissStudentRosterError?: () => void;
+  isLoadingStudentRoster?: boolean;
   pendingAttendanceStudentId?: string | null;
   deleteError?: string | null;
   deleteInFlight?: ScheduleSessionDeleteScope | null;
@@ -53,46 +66,6 @@ const STATUS_ACCENT: Record<AttendanceStatus, string> = {
   absent: "bg-danger",
 };
 
-const SESSION_STATUS_LABELS: Record<ClassSession["status"], string> = {
-  scheduled: "Scheduled",
-  in_progress: "In progress",
-  completed: "Completed",
-  canceled: "Canceled",
-};
-
-function formatTime(value: string) {
-  const [hours, minutes] = value.split(":");
-  const hour = parseInt(hours, 10);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  return `${hour12}:${minutes} ${ampm}`;
-}
-
-function formatDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function getStudentName(student: Student) {
-  return `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
-}
-
-function getActiveStudentProgramIds(student: Student) {
-  const membershipProgramIds = (student.program_memberships || [])
-    .filter((membership) => membership.status !== "ended" && !membership.ended_at)
-    .map((membership) => membership.program_id);
-
-  return Array.from(new Set([...membershipProgramIds, student.program_id].filter(Boolean) as string[]));
-}
-
-function studentBelongsToProgram(student: Student, programId: string) {
-  return getActiveStudentProgramIds(student).includes(programId);
-}
-
 export function ScheduleSessionDetailModal({
   open,
   session,
@@ -101,6 +74,9 @@ export function ScheduleSessionDetailModal({
   attendance,
   attendanceError = null,
   onDismissAttendanceError,
+  studentRosterError = null,
+  onDismissStudentRosterError,
+  isLoadingStudentRoster = false,
   pendingAttendanceStudentId = null,
   deleteError = null,
   deleteInFlight = null,
@@ -125,77 +101,25 @@ export function ScheduleSessionDetailModal({
     return () => window.removeEventListener("keydown", handleEscape);
   }, [deleteInFlight, onClose, open]);
 
-  const attendanceSummary = useMemo(() => {
-    if (!open) {
-      return { checkedInCount: 0, absentCount: 0 };
-    }
+  const attendanceSummary = useMemo(
+    () => buildSessionAttendanceSummary(attendance, open),
+    [attendance, open]
+  );
 
-    let checkedInCount = 0;
-    let absentCount = 0;
-
-    for (const record of attendance) {
-      if (record.status === "absent") {
-        absentCount += 1;
-      } else {
-        checkedInCount += 1;
-      }
-    }
-
-    return { checkedInCount, absentCount };
-  }, [attendance, open]);
-
-  const attendanceByStudentId = useMemo(() => {
-    if (!open) {
-      return new Map<string, AttendanceRecord>();
-    }
-
-    return new Map(attendance.map((record) => [record.student_id, record]));
-  }, [attendance, open]);
+  const attendanceByStudentId = useMemo(
+    () => buildAttendanceByStudentId(attendance, open),
+    [attendance, open]
+  );
 
   const rosterSections = useMemo(
-    () => {
-      if (!open || !session) {
-        return { classProgramRows: [], otherProgramRows: [] };
-      }
-
-      const rows = students
-        .map((student) => {
-          const studentProgramIds = getActiveStudentProgramIds(student);
-          return {
-            student,
-            attendanceRecord: attendanceByStudentId.get(student.id),
-            studentName: getStudentName(student),
-            initials: `${student.legal_first_name[0] ?? ""}${student.legal_last_name[0] ?? ""}`,
-            programs: studentProgramIds
-              .map((programId) => programs.find((program) => program.id === programId))
-              .filter(Boolean) as Program[],
-          };
-        })
-        .sort((left, right) => left.studentName.localeCompare(right.studentName));
-
-      if (!session.program_id) {
-        return { classProgramRows: rows, otherProgramRows: [] };
-      }
-
-      return {
-        classProgramRows: rows.filter(({ student }) => studentBelongsToProgram(student, session.program_id!)),
-        otherProgramRows: rows.filter(({ student }) => !studentBelongsToProgram(student, session.program_id!)),
-      };
-    },
+    () => buildSessionRosterSections({ open, session, students, programs, attendanceByStudentId }),
     [attendanceByStudentId, open, programs, session, students]
   );
 
-  const sessionLabels = useMemo(() => {
-    if (!open || !session) {
-      return null;
-    }
-
-    return {
-      date: formatDate(session.date),
-      startTime: formatTime(session.start_time),
-      endTime: formatTime(session.end_time),
-    };
-  }, [open, session]);
+  const sessionLabels = useMemo(
+    () => buildSessionLabels(open, session),
+    [open, session]
+  );
 
   if (!open || !session || !sessionLabels) {
     return null;
@@ -215,7 +139,7 @@ export function ScheduleSessionDetailModal({
   const programColor = activeProgram?.color_hex || "var(--accent)";
 
   function renderRosterRows(
-    rows: typeof rosterSections.classProgramRows,
+    rows: SessionRosterRow[],
     options?: { markDropIns?: boolean }
   ) {
     return rows.map(({ student, attendanceRecord, studentName, initials, programs: studentPrograms }) => {
@@ -324,23 +248,17 @@ export function ScheduleSessionDetailModal({
   }
 
   return (
-    <div className="koaryu-modal-root p-4">
-      <div
-        className="koaryu-modal-backdrop"
-        onClick={() => {
-          if (!isDeleting) {
-            setDeleteConfirmSessionId(null);
-            onClose();
-          }
-        }}
-      />
-
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="schedule-session-detail-title"
-        className="koaryu-modal-panel flex w-full max-w-xl max-h-[85vh] flex-col overflow-hidden border border-border bg-bg"
-      >
+    <ModalFrame
+      rootClassName="p-4"
+      panelClassName="flex w-full max-w-xl max-h-[85vh] flex-col overflow-hidden border border-border bg-bg"
+      ariaLabelledBy="schedule-session-detail-title"
+      onBackdropClick={() => {
+        if (!isDeleting) {
+          setDeleteConfirmSessionId(null);
+          onClose();
+        }
+      }}
+    >
         {/* ── Program color top accent ── */}
         <span
           className="block h-[3px] w-full shrink-0"
@@ -446,12 +364,25 @@ export function ScheduleSessionDetailModal({
             </div>
           ) : null}
 
+          {studentRosterError ? (
+            <div className="px-6 pt-4">
+              <DismissibleNotice
+                tone="danger"
+                onDismiss={() => onDismissStudentRosterError?.()}
+              >
+                {studentRosterError}
+              </DismissibleNotice>
+            </div>
+          ) : null}
+
           {/* ── Roster ── */}
           <div className="px-6 py-5">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-text-primary">Attendance</p>
-                <p className="mt-0.5 text-xs text-muted">Tap any student to toggle check-in</p>
+                <p className="mt-0.5 text-xs text-muted">
+                  {isLoadingStudentRoster ? "Loading complete roster..." : "Tap any student to toggle check-in"}
+                </p>
               </div>
               <span className="text-xs text-muted font-mono">
                 {checkedInCount}{activeSession.capacity ? `/${activeSession.capacity}` : ""} in
@@ -610,7 +541,6 @@ export function ScheduleSessionDetailModal({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </ModalFrame>
   );
 }

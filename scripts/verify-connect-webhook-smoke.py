@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
@@ -39,6 +41,41 @@ def _require_env(name: str) -> str:
     if not value:
         raise SystemExit(f"Missing required environment variable: {name}")
     return value
+
+
+def _is_loopback_endpoint(endpoint: str) -> bool:
+    parsed = urlparse(endpoint)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    hostname = parsed.hostname.lower()
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _require_safety_confirmation(args: argparse.Namespace) -> None:
+    if not args.confirm_stateful_target:
+        raise SystemExit(
+            "This smoke test reads a Supabase service-role key and posts a synthetic "
+            "webhook that mutates billing tables. Re-run with --confirm-stateful-target "
+            "after verifying the loaded .env files and backend point at the intended "
+            "disposable/local target."
+        )
+
+    if not _is_loopback_endpoint(args.endpoint) and not args.allow_remote_endpoint:
+        raise SystemExit(
+            "Refusing to post the smoke webhook to a non-loopback endpoint. Use "
+            "--allow-remote-endpoint only for an explicitly intended remote test target."
+        )
+
+    if not args.account and not args.allow_newest_account:
+        raise SystemExit(
+            "Pass --account acct_... to choose a connected account explicitly, or pass "
+            "--allow-newest-account only when the loaded Supabase target is disposable."
+        )
 
 
 def _supabase_client():
@@ -125,8 +162,24 @@ def main() -> int:
     parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT, help=f"Webhook URL. Default: {DEFAULT_ENDPOINT}")
     parser.add_argument("--account", help="Stripe connected account id to target. Defaults to newest local account row.")
     parser.add_argument("--event-id", default=f"evt_koaryu_connect_smoke_{uuid.uuid4().hex[:24]}")
+    parser.add_argument(
+        "--confirm-stateful-target",
+        action="store_true",
+        help="Required. Confirms the loaded env files/backend target are intentionally disposable for this stateful smoke.",
+    )
+    parser.add_argument(
+        "--allow-newest-account",
+        action="store_true",
+        help="Allow choosing the newest connected account row when --account is omitted.",
+    )
+    parser.add_argument(
+        "--allow-remote-endpoint",
+        action="store_true",
+        help="Allow posting the synthetic webhook to a non-loopback endpoint.",
+    )
     args = parser.parse_args()
 
+    _require_safety_confirmation(args)
     _load_environment()
     secret = _require_env("STRIPE_CONNECT_WEBHOOK_SECRET")
     account = _first_connect_account(args.account)

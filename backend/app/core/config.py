@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:4000"
     ENVIRONMENT: str = "development"
     DEMO_RESET_ENABLED: bool = False
+    DEMO_RESET_STUDIO_IDS: str = ""
     STRIPE_SECRET_KEY: str = ""
     STRIPE_RESTRICTED_KEY: str = ""
     STRIPE_PLATFORM_WEBHOOK_SECRET: str = ""

@@ -4,6 +4,8 @@ Next.js App Router frontend for Koaryu.
 
 The frontend currently targets the Next.js 16 line. Keep `next` and `eslint-config-next` aligned in `package.json`, and keep the checked-in lockfile updated whenever security or framework dependencies change.
 
+Use Node.js 22.13+ for frontend scripts and tests. The Node test runner command uses type stripping for `.ts` imports, so Node 18 is not a supported frontend test baseline.
+
 ## Environment
 
 Create `frontend/.env.local` from the checked-in example:
@@ -23,6 +25,8 @@ Required variables:
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only secret used by the Vercel Cron route when it calls the protected Render account-deletion worker
 - `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls should go through the Next.js proxy route instead of directly using `NEXT_PUBLIC_API_URL`
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): set to `true` for static preview/demo data instead of live auth and backend bootstrapping
+- `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER` (optional): defaults to `true`; set to `false` as a rollback switch for the backend-paginated Students roster
+- `NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG` (optional): set to `true` temporarily to log Koaryu performance marks and Web Vitals in production
 
 The `NEXT_PUBLIC_` variables are read during `next build`, so they must also be configured on Vercel before production deploys. The server-only cron secrets are read by the deployed route at runtime and must not be exposed as `NEXT_PUBLIC_` values.
 
@@ -45,11 +49,43 @@ npm run build
 
 If the build fails with `@supabase/ssr: Your project's URL and API key are required`, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the current environment.
 
+## Stateful E2E Checks
+
+The Playwright belt-ladder check is an opt-in live-stateful smoke test. Run it only against a disposable account and studio name:
+
+```bash
+KOARYU_LIVE_STATEFUL_E2E=true \
+KOARYU_E2E_LOGIN_EMAIL=... \
+KOARYU_E2E_LOGIN_PASSWORD=... \
+KOARYU_E2E_STUDIO_NAME="Disposable Belt Ladder Smoke" \
+npx playwright test e2e/atomic-belt-ladder.spec.ts
+```
+
+Do not point this check at production accounts or reusable customer data. The test intentionally avoids logging account identifiers.
+
+## Bundle Analysis
+
+```bash
+npm run analyze
+```
+
+This uses Next.js 16's built-in Turbopack analyzer (`next build --experimental-analyze`) so bundle checks do not require an extra dependency.
+
+## Performance Rollout
+
+See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let the dashboard summary load after bootstrap, and use the documented switches only for rollback or short diagnostic windows.
+
 ## Landing Page And Backend Warmup
 
 The `/` landing page is intentionally outside the Supabase auth middleware matcher so it can paint immediately as informational UI. After hydration, `BackendWarmup` calls `/api/proxy/health` in the background. That request wakes the Render backend without blocking the landing page or requiring a logged-in session.
 
 Keep `/login`, `/signup`, `/onboarding`, `/subscription-required`, and dashboard routes in the auth proxy matcher. Those routes still depend on the normal Supabase session and backend profile checks.
+
+## API Proxy And Studio Identity
+
+Studio identity is always derived from the authenticated backend user before data access. The `X-Studio-Id` value is only an active-studio selector, and backend dependencies must validate it against the user's `staff_roles` membership before using it.
+
+When `NEXT_PUBLIC_USE_API_PROXY=true`, browser API requests go through `/api/proxy`. In that mode the browser API wrapper does not send `X-Studio-Id`, and the proxy ignores any caller-supplied studio header. The proxy forwards `X-Studio-Id` upstream only from the `koaryu-active-studio` cookie observed by the Next.js server. Direct browser-to-backend mode still attaches the active-studio header because there is no Next.js server boundary to derive it, but the shared browser API helper strips any caller-supplied studio header before it adds the active selector.
 
 ## Vercel
 

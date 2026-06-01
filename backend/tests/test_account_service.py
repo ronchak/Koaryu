@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
 from app.schemas.account import AccountDeletionRequestCreate
 from app.services.account_service import AccountService
-
-
-class Result:
-    def __init__(self, data):
-        self.data = data
+from tests.fakes.supabase import RpcBackedSupabase
 
 
 class FakeUserResponse:
@@ -49,88 +45,66 @@ class FakeAuth:
         self.admin = FakeAuthAdmin(supabase)
 
 
-class FakeSupabase:
+class FakeSupabase(RpcBackedSupabase):
     def __init__(self):
-        self.inactive_user_ids = set()
-        self.deleted_user_ids = []
-        self.auth = FakeAuth(self)
-        self.tables = {
+        super().__init__({
             "account_deletion_requests": [],
             "audit_logs": [],
             "staff_roles": [],
             "studios": [],
-        }
+        })
+        self.inactive_user_ids = set()
+        self.deleted_user_ids = []
+        self.auth = FakeAuth(self)
 
-    def table(self, name):
-        return FakeTable(self, name)
+    def _rpc_claim_due_account_deletion_requests(self, params: dict) -> list[dict]:
+        now = datetime.now(timezone.utc)
+        claimed = []
+        for row in sorted(
+            self.tables["account_deletion_requests"],
+            key=lambda item: (item.get("scheduled_for") or "", item.get("requested_at") or "", item.get("id") or ""),
+        ):
+            if len(claimed) >= params["p_limit"]:
+                break
+            if row.get("status") != "scheduled" or not self._is_due(row, now):
+                continue
+            if row.get("processing_token") and not self._claim_is_stale(row, now):
+                continue
+            row["processing_token"] = params["p_processing_token"]
+            row["processing_started_at"] = now.isoformat()
+            claimed.append(dict(row))
+        return claimed
 
+    def _rpc_finish_account_deletion_request(self, params: dict) -> list[dict]:
+        for row in self.tables["account_deletion_requests"]:
+            if row.get("id") == params["p_request_id"] and row.get("processing_token") == params["p_processing_token"]:
+                row["status"] = params["p_status"]
+                row["processing_token"] = None
+                row["processing_started_at"] = None
+                if params["p_status"] == "completed":
+                    row["completed_at"] = datetime.now(timezone.utc).isoformat()
+                if params["p_status"] == "canceled":
+                    row["canceled_at"] = datetime.now(timezone.utc).isoformat()
+                    row["reason"] = params.get("p_reason")
+                return [{"updated": True, "request_row": dict(row)}]
+        return [{"updated": False, "request_row": None}]
 
-class FakeTable:
-    def __init__(self, supabase, name):
-        self.supabase = supabase
-        self.name = name
-        self.filters = []
-        self.insert_payload = None
-        self.update_payload = None
-        self.delete_requested = False
+    @staticmethod
+    def _parse_datetime(value):
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
-    def select(self, *_args, **_kwargs):
-        return self
+    def _is_due(self, row: dict, now: datetime) -> bool:
+        return self._parse_datetime(row["scheduled_for"]) <= now
 
-    def insert(self, payload):
-        self.insert_payload = payload
-        return self
-
-    def update(self, payload):
-        self.update_payload = payload
-        return self
-
-    def delete(self):
-        self.delete_requested = True
-        return self
-
-    def eq(self, key, value):
-        self.filters.append((key, value))
-        return self
-
-    def lte(self, key, value):
-        self.filters.append((key, ("lte", value)))
-        return self
-
-    def order(self, *_args, **_kwargs):
-        return self
-
-    def limit(self, *_args, **_kwargs):
-        return self
-
-    def execute(self):
-        rows = self.supabase.tables[self.name]
-        if self.insert_payload is not None:
-            row = {
-                "id": f"{self.name}_1",
-                **self.insert_payload,
-            }
-            rows.append(row)
-            return Result([dict(row)])
-
-        matched = [
-            row for row in rows
-            if all(
-                (row.get(key) <= value[1] if isinstance(value, tuple) and value[0] == "lte" else row.get(key) == value)
-                for key, value in self.filters
-            )
-        ]
-
-        if self.delete_requested:
-            self.supabase.tables[self.name] = [row for row in rows if row not in matched]
-            return Result([dict(row) for row in matched])
-
-        if self.update_payload is not None:
-            for row in matched:
-                row.update(self.update_payload)
-            return Result([dict(row) for row in matched])
-
-        return Result([dict(row) for row in matched])
+    def _claim_is_stale(self, row: dict, now: datetime) -> bool:
+        started_at = row.get("processing_started_at")
+        if not started_at:
+            return False
+        return now - self._parse_datetime(started_at) >= timedelta(minutes=30)
 
 
 class AccountServiceTest(unittest.TestCase):
@@ -286,6 +260,88 @@ class AccountServiceTest(unittest.TestCase):
         self.assertEqual(supabase.deleted_user_ids, ["user_1"])
         self.assertEqual(supabase.tables["staff_roles"], [])
         self.assertEqual(supabase.tables["account_deletion_requests"][0]["status"], "completed")
+        self.assertIsNone(supabase.tables["account_deletion_requests"][0]["processing_token"])
+
+    def test_process_due_deletions_skips_fresh_claimed_request(self):
+        supabase = FakeSupabase()
+        supabase.tables["account_deletion_requests"] = [{
+            "id": "delete_1",
+            "user_id": "user_1",
+            "studio_id": "studio_1",
+            "requested_by": "user_1",
+            "requester_email": "user_1@example.com",
+            "status": "scheduled",
+            "requested_at": "2026-04-01T00:00:00+00:00",
+            "scheduled_for": "2026-04-30T00:00:00+00:00",
+            "processing_token": "other-worker",
+            "processing_started_at": datetime.now().astimezone().isoformat(),
+            "reason": None,
+        }]
+        service = AccountService(supabase)
+
+        result = asyncio.run(service.process_due_deletions())
+
+        self.assertEqual(result.processed, 0)
+        self.assertEqual(result.completed, 0)
+        self.assertEqual(supabase.deleted_user_ids, [])
+        self.assertEqual(supabase.tables["account_deletion_requests"][0]["processing_token"], "other-worker")
+
+    def test_process_due_deletions_reclaims_stale_claim(self):
+        supabase = FakeSupabase()
+        supabase.tables["account_deletion_requests"] = [{
+            "id": "delete_1",
+            "user_id": "user_1",
+            "studio_id": "studio_1",
+            "requested_by": "user_1",
+            "requester_email": "user_1@example.com",
+            "status": "scheduled",
+            "requested_at": "2026-04-01T00:00:00+00:00",
+            "scheduled_for": "2026-04-30T00:00:00+00:00",
+            "processing_token": "stale-worker",
+            "processing_started_at": "2026-04-30T00:00:00+00:00",
+            "reason": None,
+        }]
+        supabase.tables["studios"] = [{"id": "studio_1", "owner_id": "owner_1"}]
+        supabase.tables["staff_roles"] = [
+            {"id": "role_1", "studio_id": "studio_1", "user_id": "user_1", "role": "instructor"},
+        ]
+        service = AccountService(supabase)
+
+        result = asyncio.run(service.process_due_deletions())
+
+        self.assertEqual(result.processed, 1)
+        self.assertEqual(result.completed, 1)
+        self.assertEqual(supabase.deleted_user_ids, ["user_1"])
+        self.assertEqual(supabase.tables["account_deletion_requests"][0]["status"], "completed")
+        self.assertIsNone(supabase.tables["account_deletion_requests"][0]["processing_token"])
+
+    def test_process_due_deletions_uses_worker_claim_rpc_when_available(self):
+        supabase = FakeSupabase()
+        supabase.tables["account_deletion_requests"] = [{
+            "id": "delete_1",
+            "user_id": "user_1",
+            "studio_id": "studio_1",
+            "requested_by": "user_1",
+            "requester_email": "user_1@example.com",
+            "status": "scheduled",
+            "requested_at": "2026-04-01T00:00:00+00:00",
+            "scheduled_for": "2026-04-30T00:00:00+00:00",
+            "reason": None,
+        }]
+        supabase.tables["studios"] = [{"id": "studio_1", "owner_id": "owner_1"}]
+        supabase.tables["staff_roles"] = [
+            {"id": "role_1", "studio_id": "studio_1", "user_id": "user_1", "role": "instructor"},
+        ]
+        service = AccountService(supabase)
+
+        result = asyncio.run(service.process_due_deletions(limit=10))
+
+        self.assertEqual(result.completed, 1)
+        self.assertEqual(
+            [name for name, _params in supabase.rpc_calls],
+            ["claim_due_account_deletion_requests", "finish_account_deletion_request"],
+        )
+        self.assertEqual(supabase.rpc_calls[0][1]["p_limit"], 10)
 
 
 if __name__ == "__main__":

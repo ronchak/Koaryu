@@ -1,8 +1,11 @@
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
+import { serializeJsonRequestBody } from "@/lib/api-body";
+import { applyBrowserStudioHeader } from "@/lib/api-studio-header";
 
 const SERVER_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
+const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY === "true";
 const BROWSER_API_BASE =
-  process.env.NEXT_PUBLIC_USE_API_PROXY === "true" ? "/api/proxy" : SERVER_API_BASE;
+  USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
 const API_BASE = typeof window === "undefined" ? SERVER_API_BASE : BROWSER_API_BASE;
 const API_TIMEOUT_MS = 12000;
 
@@ -136,7 +139,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
 
-  const headers: Record<string, string> = {
+  let headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...extraHeaders,
   };
@@ -145,11 +148,12 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  if (typeof window !== "undefined" && !omitStudioHeader) {
+  if (typeof window !== "undefined") {
     const activeStudioId = getActiveStudioIdCookie();
-    if (activeStudioId && !headers["X-Studio-Id"]) {
-      headers["X-Studio-Id"] = activeStudioId;
-    }
+    headers = applyBrowserStudioHeader(headers, activeStudioId, {
+      omitStudioHeader,
+      useApiProxy: USE_API_PROXY,
+    });
   }
 
   const controller = new AbortController();
@@ -176,7 +180,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: serializeJsonRequestBody(body),
       signal: controller.signal,
     });
   } catch (error) {
@@ -213,7 +217,7 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
-  const headers: Record<string, string> = {
+  let headers: Record<string, string> = {
     ...extraHeaders,
   };
 
@@ -221,11 +225,12 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  if (typeof window !== "undefined" && !omitStudioHeader) {
+  if (typeof window !== "undefined") {
     const activeStudioId = getActiveStudioIdCookie();
-    if (activeStudioId && !headers["X-Studio-Id"]) {
-      headers["X-Studio-Id"] = activeStudioId;
-    }
+    headers = applyBrowserStudioHeader(headers, activeStudioId, {
+      omitStudioHeader,
+      useApiProxy: USE_API_PROXY,
+    });
   }
 
   const controller = new AbortController();
@@ -287,7 +292,7 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
     timeoutMessage = "Download timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
-  const headers: Record<string, string> = {
+  let headers: Record<string, string> = {
     Accept: "text/csv",
     ...extraHeaders,
   };
@@ -296,11 +301,12 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  if (typeof window !== "undefined" && !omitStudioHeader) {
+  if (typeof window !== "undefined") {
     const activeStudioId = getActiveStudioIdCookie();
-    if (activeStudioId && !headers["X-Studio-Id"]) {
-      headers["X-Studio-Id"] = activeStudioId;
-    }
+    headers = applyBrowserStudioHeader(headers, activeStudioId, {
+      omitStudioHeader,
+      useApiProxy: USE_API_PROXY,
+    });
   }
 
   const controller = new AbortController();

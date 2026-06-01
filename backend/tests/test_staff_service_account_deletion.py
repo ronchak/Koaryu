@@ -3,11 +3,7 @@ import unittest
 from fastapi import HTTPException
 
 from app.services.staff_service import StaffService
-
-
-class Result:
-    def __init__(self, data):
-        self.data = data
+from tests.fakes.supabase import TableBackedSupabase
 
 
 class FakeUserResponse:
@@ -36,42 +32,14 @@ class FakeAuth:
         self.admin = FakeAuthAdmin(supabase)
 
 
-class FakeSupabase:
+class FakeSupabase(TableBackedSupabase):
     def __init__(self):
-        self.inactive_user_ids = set()
-        self.auth = FakeAuth(self)
-        self.tables = {
+        super().__init__({
             "staff_roles": [],
             "account_deletion_requests": [],
-        }
-
-    def table(self, name):
-        return FakeTable(self, name)
-
-
-class FakeTable:
-    def __init__(self, supabase, name):
-        self.supabase = supabase
-        self.name = name
-        self.filters = []
-
-    def select(self, *_args, **_kwargs):
-        return self
-
-    def eq(self, key, value):
-        self.filters.append((key, value))
-        return self
-
-    def limit(self, *_args, **_kwargs):
-        return self
-
-    def execute(self):
-        rows = self.supabase.tables[self.name]
-        matched = [
-            row for row in rows
-            if all(row.get(key) == value for key, value in self.filters)
-        ]
-        return Result([dict(row) for row in matched])
+        })
+        self.inactive_user_ids = set()
+        self.auth = FakeAuth(self)
 
 
 class StaffServiceAccountDeletionTest(unittest.TestCase):
