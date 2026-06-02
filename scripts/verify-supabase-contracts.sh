@@ -31,6 +31,7 @@ contract_files=(
   "remaining_operational_client_write_controls.sql"
   "stripe_event_worker_claim_controls.sql"
   "student_import_run_worker_claim_controls.sql"
+  "student_import_row_atomic_contract.sql"
   "worker_claim_rpc_contract.sql"
   "record_student_promotion_rpc_contract.sql"
   "schedule_recurring_soft_delete_contract.sql"

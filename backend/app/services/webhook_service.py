@@ -4,6 +4,8 @@ import uuid
 from datetime import timedelta
 from typing import Any, Optional
 
+from postgrest.exceptions import APIError as PostgrestAPIError
+from stripe import StripeError
 from supabase import Client
 
 from app.core.config import get_settings
@@ -15,6 +17,9 @@ from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
+WEBHOOK_FAILURE_STRIPE_ERROR = "stripe_error"
+WEBHOOK_FAILURE_DATABASE_ERROR = "database_projection_error"
+WEBHOOK_FAILURE_UNEXPECTED_ERROR = "unexpected_processing_error"
 
 
 class StripeWebhookService:
@@ -82,7 +87,7 @@ class StripeWebhookService:
                 raise RuntimeError("Webhook processing lease was lost before the event could be marked processed.")
             return WebhookProcessResponse(status="processed")
         except Exception as exc:
-            self._finish_event_processing(row_id, claim_token, "failed", error=str(exc))
+            self._finish_event_processing(row_id, claim_token, "failed", error=self._failure_code(exc))
             raise
 
     def _claim_event_for_processing(
@@ -123,6 +128,14 @@ class StripeWebhookService:
         })
         row = first_rpc_row(result) or {}
         return bool(row.get("updated"))
+
+    @staticmethod
+    def _failure_code(exc: Exception) -> str:
+        if isinstance(exc, StripeError):
+            return WEBHOOK_FAILURE_STRIPE_ERROR
+        if isinstance(exc, PostgrestAPIError):
+            return WEBHOOK_FAILURE_DATABASE_ERROR
+        return WEBHOOK_FAILURE_UNEXPECTED_ERROR
 
     @staticmethod
     def _event_get(event: Any, key: str) -> Any:

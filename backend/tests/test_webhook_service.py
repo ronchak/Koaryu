@@ -93,12 +93,15 @@ class _RpcWebhookSupabase(RpcBackedSupabase):
 class _FakeBillingService:
     calls = 0
     mutate_during_projection = None
+    raise_during_projection = None
 
     def __init__(self, supabase):
         self.supabase = supabase
 
     def project_connect_event(self, _event):
         self.__class__.calls += 1
+        if self.__class__.raise_during_projection:
+            raise self.__class__.raise_during_projection
         if self.__class__.mutate_during_projection:
             self.__class__.mutate_during_projection(self.supabase.tables["stripe_events"])
 
@@ -230,6 +233,21 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(_FakeBillingService.calls, 1)
         self.assertEqual(rows[0]["processing_status"], "processing")
         self.assertEqual(rows[0]["processing_token"], "other-worker")
+
+    def test_projection_failure_persists_stable_error_code_without_exception_text(self):
+        rows = []
+        _FakeBillingService.calls = 0
+        _FakeBillingService.raise_during_projection = RuntimeError("raw provider secret detail")
+        try:
+            with self.assertRaises(RuntimeError):
+                self.handle_connect_event(rows)
+        finally:
+            _FakeBillingService.raise_during_projection = None
+
+        self.assertEqual(_FakeBillingService.calls, 1)
+        self.assertEqual(rows[0]["processing_status"], "failed")
+        self.assertEqual(rows[0]["error"], "unexpected_processing_error")
+        self.assertNotIn("raw provider secret detail", rows[0]["error"])
 
     def test_connect_webhook_uses_worker_claim_rpc_when_available(self):
         supabase = _RpcWebhookSupabase()

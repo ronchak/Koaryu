@@ -6,12 +6,12 @@ from supabase import Client
 from app.schemas.student import CsvImportOptions, CsvImportResult
 from app.services.program_service import ProgramService
 from app.services.student_import_csv import make_import_issue
-from app.services.student_import_guardians import StudentImportGuardianWriter
 from app.services.student_import_planner import StudentImportPlanner
 from app.services.student_import_runs import StudentImportRunStore
 from app.services.student_import_setup_writer import StudentImportSetupWriter
 from app.services.student_program_memberships import StudentProgramMembershipStore
 from app.services.student_write_payload import prepare_student_write_payload
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 IMPORT_RUN_CLAIM_CHECK_ROW_INTERVAL = 100
 
@@ -21,7 +21,6 @@ class StudentImportExecutor:
         self.supabase = supabase
         self.planner = StudentImportPlanner(supabase)
         self.setup_writer = StudentImportSetupWriter(supabase)
-        self.guardians = StudentImportGuardianWriter(supabase)
         self.memberships = StudentProgramMembershipStore(supabase)
 
     async def execute_import(
@@ -166,12 +165,13 @@ class StudentImportExecutor:
 
             unresolved_belt_value = row.get("unresolved_belt_value")
             resolved_belt_rank_id = row.get("resolved_belt_rank_id")
+            row_imported_without_belt = False
             if resolved_belt_rank_id:
                 mapped["current_belt_rank_id"] = resolved_belt_rank_id
             else:
                 mapped.pop("current_belt_rank_id", None)
                 if unresolved_belt_value:
-                    imported_without_belt += 1
+                    row_imported_without_belt = True
                     mapped["notes"] = self.planner.append_import_note(
                         mapped.get("notes"),
                         f"Imported current belt (unresolved): {unresolved_belt_value}",
@@ -186,7 +186,15 @@ class StudentImportExecutor:
             mapped = prepare_student_write_payload(mapped, set_default_is_minor=True)
 
             try:
-                student_id = self._upsert_student_row(mapped, studio_id, program_ids)
+                self._import_student_row_atomic(
+                    mapped=mapped,
+                    studio_id=studio_id,
+                    import_run_id=import_run_id,
+                    processing_token=processing_token,
+                    row_number=row["row_number"],
+                    guardian_fields=guardian_fields,
+                    program_ids=program_ids,
+                )
             except Exception as exc:
                 row["issues"].append(make_import_issue(
                     "execute_failed",
@@ -196,44 +204,40 @@ class StudentImportExecutor:
                 row["is_valid"] = False
                 continue
 
-            guardian_issue = self.guardians.upsert_import_guardian(
-                studio_id=studio_id,
-                student_id=student_id,
-                import_run_id=import_run_id,
-                row_number=row["row_number"],
-                guardian_name=guardian_fields["guardian_name"],
-                guardian_email=guardian_fields["guardian_email"],
-                guardian_phone=guardian_fields["guardian_phone"],
-                guardian_relation=guardian_fields["guardian_relation"],
-            )
-            if guardian_issue:
-                row["issues"].append(guardian_issue)
-
             imported += 1
+            if row_imported_without_belt:
+                imported_without_belt += 1
 
         return imported, imported_without_belt
 
-    def _upsert_student_row(
+    def _import_student_row_atomic(
         self,
+        *,
         mapped: dict[str, Any],
         studio_id: str,
+        import_run_id: str,
+        processing_token: str,
+        row_number: int,
+        guardian_fields: dict[str, Any],
         program_ids: list[str],
     ) -> str:
-        result = (
-            self.supabase.table("students")
-            .upsert(mapped, on_conflict="id")
-            .execute()
-        )
-        if not result.data:
-            raise RuntimeError("Failed to create student")
-        self.memberships.replace_active_memberships(
-            mapped["id"],
-            studio_id,
-            program_ids,
-            current_belt_rank_id=mapped.get("current_belt_rank_id"),
-            started_at=mapped.get("membership_start_date"),
-        )
-        return result.data[0]["id"]
+        result = execute_required_rpc(self.supabase, "import_student_row_atomic", {
+            "p_student": mapped,
+            "p_studio_id": studio_id,
+            "p_import_run_id": import_run_id,
+            "p_processing_token": processing_token,
+            "p_row_number": row_number,
+            "p_guardian_name": guardian_fields["guardian_name"],
+            "p_guardian_email": guardian_fields["guardian_email"],
+            "p_guardian_phone": guardian_fields["guardian_phone"],
+            "p_guardian_relation": guardian_fields["guardian_relation"],
+            "p_program_ids": program_ids,
+        })
+        row = first_rpc_row(result) or {}
+        student_id = row.get("student_id")
+        if not student_id:
+            raise RuntimeError("Atomic student import did not return a student id")
+        return str(student_id)
 
     @staticmethod
     def _pop_guardian_fields(mapped: dict[str, Any]) -> dict[str, Any]:

@@ -21,6 +21,10 @@ from app.services.schedule_attendance_actions import ScheduleAttendanceActions
 SCHEDULE_SESSION_CONFLICT_CODES = {"23505"}
 SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS = 93
 SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS = 93
+CLASS_SESSION_LIST_SELECT = (
+    "id, studio_id, template_id, name, date, start_time, end_time, "
+    "instructor_id, program_id, capacity, status, notes, created_at"
+)
 
 
 class ScheduleService:
@@ -289,7 +293,7 @@ class ScheduleService:
             end_date = end.isoformat()
             result = (
                 self.supabase.table("class_sessions")
-                .select("*")
+                .select(CLASS_SESSION_LIST_SELECT)
                 .eq("studio_id", studio_id)
                 .is_("deleted_at", "null")
                 .gte("date", start_date)

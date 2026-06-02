@@ -5,7 +5,11 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.schedule import AttendanceCheckIn
-from app.services.schedule_service import ScheduleService, SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS
+from app.services.schedule_service import (
+    CLASS_SESSION_LIST_SELECT,
+    SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
+    ScheduleService,
+)
 from tests.fakes.supabase import TableBackedSupabase
 
 
@@ -162,6 +166,9 @@ class ScheduleServiceTest(unittest.TestCase):
                 },
             ],
         })
+        supabase.select_assertions["class_sessions"] = (
+            lambda columns: self.assertEqual(columns, CLASS_SESSION_LIST_SELECT)
+        )
         service = ScheduleService(supabase)
 
         sessions = asyncio.run(service.list_sessions("studio-1", "2026-05-24", "2026-05-24"))
