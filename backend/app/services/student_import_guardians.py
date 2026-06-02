@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import uuid
+import logging
 from typing import Optional
 
 from supabase import Client
 
 from app.schemas.student import CsvImportIssue
+from app.services.student_import_ids import deterministic_import_uuid
+
+
+logger = logging.getLogger(__name__)
 
 
 class StudentImportGuardianWriter:
     def __init__(self, supabase: Client):
         self.supabase = supabase
-
-    @staticmethod
-    def _deterministic_import_uuid(import_run_id: str, namespace: str, value: str) -> str:
-        return str(uuid.uuid5(uuid.UUID(import_run_id), f"{namespace}:{value}"))
 
     def upsert_import_guardian(
         self,
@@ -35,7 +35,7 @@ class StudentImportGuardianWriter:
             parts = guardian_name.split(" ", 1)
             g_first = parts[0]
             g_last = parts[1] if len(parts) > 1 else ""
-            guardian_id = self._deterministic_import_uuid(
+            guardian_id = deterministic_import_uuid(
                 import_run_id,
                 "guardian-row",
                 str(row_number),
@@ -55,7 +55,7 @@ class StudentImportGuardianWriter:
                 .execute()
             )
             if g_result.data:
-                link_id = self._deterministic_import_uuid(
+                link_id = deterministic_import_uuid(
                     import_run_id,
                     "student-guardian-link",
                     f"{student_id}:{guardian_id}",
@@ -69,12 +69,20 @@ class StudentImportGuardianWriter:
                     }, on_conflict="id")
                     .execute()
                 )
-        except Exception as exc:
+        except Exception:
+            logger.exception(
+                "Student import guardian link failed",
+                extra={
+                    "studio_id": studio_id,
+                    "import_run_id": import_run_id,
+                    "row_number": row_number,
+                },
+            )
             return CsvImportIssue(
                 code="guardian_import_failed",
                 message=(
                     "Student imported, but guardian details could not be linked "
-                    f"automatically: {str(exc) or 'guardian import failed'}."
+                    "automatically."
                 ),
                 severity="warning",
                 field="guardian_name",

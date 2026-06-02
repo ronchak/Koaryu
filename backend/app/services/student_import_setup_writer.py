@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import uuid
+import logging
 from collections import defaultdict
 from typing import Any, Optional
 
@@ -15,7 +15,11 @@ from app.services.student_import_csv import (
     make_import_issue,
     normalize_header,
 )
+from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_planner import StudentImportPlanner
+
+
+logger = logging.getLogger(__name__)
 
 
 class StudentImportSetupWriter:
@@ -46,9 +50,6 @@ class StudentImportSetupWriter:
             ambiguous_names=ambiguous_names,
         )
 
-    def _deterministic_import_uuid(self, import_run_id: str, namespace: str, value: str) -> str:
-        return str(uuid.uuid5(uuid.UUID(import_run_id), f"{namespace}:{value}"))
-
     def _create_missing_programs(
         self,
         studio_id: str,
@@ -77,7 +78,7 @@ class StudentImportSetupWriter:
             if existing_id:
                 continue
 
-            program_id = self._deterministic_import_uuid(import_run_id, "program", normalized_name)
+            program_id = deterministic_import_uuid(import_run_id, "program", normalized_name)
             result = None
             sort_order = (len(program_lookup[0]) + len(created_programs)) * 10
             full_program_row = {
@@ -139,10 +140,14 @@ class StudentImportSetupWriter:
                     "entity_id": None,
                     "metadata": {"names": created_programs},
                 }).execute()
-            except Exception as exc:
+            except Exception:
+                logger.exception(
+                    "Student import program audit log write failed",
+                    extra={"studio_id": studio_id, "import_run_id": import_run_id},
+                )
                 if non_critical_errors is not None:
                     non_critical_errors.append(
-                        f"Programs were created, but the import audit log could not be written: {exc}"
+                        "Programs were created, but the import audit log could not be written."
                     )
 
         refreshed_lookup = self._build_named_record_lookup("programs", studio_id)
@@ -259,7 +264,7 @@ class StudentImportSetupWriter:
                     detail=f"Program '{program_name}' has multiple ladders. Please clean them up in Belt Tracker before importing current belts.",
                 )
 
-            ladder_id = self._deterministic_import_uuid(import_run_id, "ladder", program_id)
+            ladder_id = deterministic_import_uuid(import_run_id, "ladder", program_id)
             result = None
             try:
                 result = (
@@ -319,10 +324,14 @@ class StudentImportSetupWriter:
                     "entity_id": None,
                     "metadata": {"names": created_ladders},
                 }).execute()
-            except Exception as exc:
+            except Exception:
+                logger.exception(
+                    "Student import belt ladder audit log write failed",
+                    extra={"studio_id": studio_id, "import_run_id": import_run_id},
+                )
                 if non_critical_errors is not None:
                     non_critical_errors.append(
-                        f"Belt ladders were created, but the import audit log could not be written: {exc}"
+                        "Belt ladders were created, but the import audit log could not be written."
                     )
 
         for row in pending_rows:
@@ -394,7 +403,7 @@ class StudentImportSetupWriter:
                 created_belt_ids[(ladder_id, normalized_name)] = existing_rank_id
                 continue
 
-            rank_id = self._deterministic_import_uuid(import_run_id, "belt", f"{ladder_id}:{normalized_name}")
+            rank_id = deterministic_import_uuid(import_run_id, "belt", f"{ladder_id}:{normalized_name}")
             result = None
             try:
                 result = (
@@ -456,10 +465,14 @@ class StudentImportSetupWriter:
                     "entity_id": None,
                     "metadata": {"names": created_belts},
                 }).execute()
-            except Exception as exc:
+            except Exception:
+                logger.exception(
+                    "Student import belt rank audit log write failed",
+                    extra={"studio_id": studio_id, "import_run_id": import_run_id},
+                )
                 if non_critical_errors is not None:
                     non_critical_errors.append(
-                        f"Belt ranks were created, but the import audit log could not be written: {exc}"
+                        "Belt ranks were created, but the import audit log could not be written."
                     )
 
         for row in planned_rows:

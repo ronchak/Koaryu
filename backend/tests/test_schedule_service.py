@@ -108,6 +108,13 @@ class ScheduleServiceTest(unittest.TestCase):
             sorted((row["template_id"], row["date"]) for row in sessions),
             [("template-1", "2026-05-24"), ("template-2", "2026-05-24")],
         )
+        class_session_inserts = [
+            query["insert"]
+            for query in supabase.query_log
+            if query["table"] == "class_sessions" and query["insert"] is not None
+        ]
+        self.assertEqual([len(payload) for payload in class_session_inserts], [2, 1])
+        self.assertTrue(all(isinstance(payload, list) for payload in class_session_inserts))
 
     def test_list_sessions_does_not_materialize_recurring_sessions_on_read(self):
         supabase = FakeSupabase({

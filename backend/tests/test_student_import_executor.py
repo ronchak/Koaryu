@@ -1,6 +1,10 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from fastapi import HTTPException
+
+from app.schemas.student import CsvImportOptions
 from app.services.student_import_executor import StudentImportExecutor
 from tests.fakes.supabase import RpcBackedSupabase
 
@@ -11,6 +15,29 @@ class FakeSupabase(RpcBackedSupabase):
             "student_id": params["p_student"]["id"],
             "guardian_imported": bool(params.get("p_guardian_name")),
         }]
+
+
+class FakeImportRunStore:
+    latest = None
+
+    def __init__(self, _supabase):
+        self.failed_messages = []
+        FakeImportRunStore.latest = self
+
+    def claim(self, **_kwargs):
+        return (
+            {"id": "44444444-4444-4444-8444-444444444444"},
+            None,
+            "idempotency-key",
+            "worker-token",
+        )
+
+    def ensure_claim_active(self, _import_run_id, _processing_token):
+        return None
+
+    def mark_failed(self, _import_run_id, _processing_token, message):
+        self.failed_messages.append(message)
+        return True
 
 
 class StudentImportExecutorTest(unittest.TestCase):
@@ -54,15 +81,9 @@ class StudentImportExecutorTest(unittest.TestCase):
         def normalize_program_ids(_studio_id, program_id, _program_ids):
             return [program_id]
 
-        def deterministic_student_uuid(_run_id, _namespace, _row_number):
-            return "11111111-1111-4111-8111-111111111111"
-
         executor = StudentImportExecutor(FakeSupabase())
         executor.memberships = SimpleNamespace(
             normalize_program_ids_for_write=normalize_program_ids
-        )
-        executor.setup_writer = SimpleNamespace(
-            _deterministic_import_uuid=deterministic_student_uuid
         )
         executor.planner = SimpleNamespace(
             append_import_note=lambda existing, note: f"{existing}\n{note}" if existing else note
@@ -98,6 +119,38 @@ class StudentImportExecutorTest(unittest.TestCase):
         self.assertEqual(imported_without_belt, 0)
         self.assertFalse(row["is_valid"])
         self.assertEqual(row["issues"][0].code, "execute_failed")
+        self.assertNotIn("row write failed", row["issues"][0].message)
+        self.assertIn("Retry or contact support", row["issues"][0].message)
+
+    def test_execute_import_sanitizes_unexpected_failure_response_and_failed_run_message(self):
+        executor = StudentImportExecutor(FakeSupabase())
+
+        def fail_prepare_import(*_args, **_kwargs):
+            raise RuntimeError("database constraint students_email_key leaked")
+
+        executor.planner = SimpleNamespace(prepare_import=fail_prepare_import)
+
+        with patch("app.services.student_import_executor.StudentImportRunStore", FakeImportRunStore):
+            with self.assertRaises(HTTPException) as context:
+                import asyncio
+
+                asyncio.run(
+                    executor.execute_import(
+                        rows=[{"First Name": "Ava"}],
+                        mapping={"First Name": "legal_first_name"},
+                        options=CsvImportOptions(),
+                        studio_id="22222222-2222-4222-8222-222222222222",
+                        actor_id="actor-1",
+                    )
+                )
+
+        self.assertEqual(context.exception.status_code, 500)
+        self.assertEqual(context.exception.detail["code"], "STUDENT_IMPORT_FAILED")
+        self.assertNotIn("students_email_key", context.exception.detail["message"])
+        self.assertEqual(
+            FakeImportRunStore.latest.failed_messages,
+            ["Student import failed unexpectedly. Retry or contact support."],
+        )
 
 
 if __name__ == "__main__":

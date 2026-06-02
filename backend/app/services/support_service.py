@@ -12,6 +12,12 @@ from app.schemas.support import (
 )
 from app.services.studio_scope import resolve_admin_staff_role_for_user
 
+SUPPORT_TICKET_COLUMNS = (
+    "id, studio_id, created_by, requester_email, requester_name, "
+    "topic, severity, subject, details, page_url, user_agent, "
+    "browser_context, status, created_at, updated_at, resolved_at"
+)
+
 
 def _to_text(value: Any) -> str:
     if isinstance(value, datetime):
@@ -87,7 +93,7 @@ class SupportService:
         is_admin = self._is_admin(user_id, requested_studio_id)
         query = (
             self.supabase.table("support_tickets")
-            .select("*")
+            .select(SUPPORT_TICKET_COLUMNS)
             .eq("studio_id", studio_id)
             .order("created_at", desc=True)
             .limit(50)
@@ -144,8 +150,10 @@ class SupportService:
         try:
             resolve_admin_staff_role_for_user(self.supabase, user_id, requested_studio_id)
             return True
-        except HTTPException:
-            return False
+        except HTTPException as exc:
+            if exc.status_code in {status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND}:
+                return False
+            raise
 
     def _get_auth_user(self, user_id: str) -> Any:
         try:

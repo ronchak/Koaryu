@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -6,6 +7,7 @@ from supabase import Client
 from app.schemas.student import CsvImportOptions, CsvImportResult
 from app.services.program_service import ProgramService
 from app.services.student_import_csv import make_import_issue
+from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_planner import StudentImportPlanner
 from app.services.student_import_runs import StudentImportRunStore
 from app.services.student_import_setup_writer import StudentImportSetupWriter
@@ -14,6 +16,22 @@ from app.services.student_write_payload import prepare_student_write_payload
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 IMPORT_RUN_CLAIM_CHECK_ROW_INTERVAL = 100
+STUDENT_IMPORT_FAILED_DETAIL = {
+    "code": "STUDENT_IMPORT_FAILED",
+    "message": "Student import failed unexpectedly. Retry or contact support.",
+}
+STUDENT_IMPORT_FAILED_MESSAGE = STUDENT_IMPORT_FAILED_DETAIL["message"]
+STUDENT_IMPORT_ROW_FAILED_MESSAGE = "This row could not be imported safely. Retry or contact support."
+STUDENT_IMPORT_RESULT_SAVE_WARNING = (
+    "Import data was committed, but the cached import result could not be saved. "
+    "Retry with the same idempotency key or contact support."
+)
+STUDENT_IMPORT_AUDIT_LOG_WARNING = (
+    "Students were imported, but the final import audit log could not be written. "
+    "Contact support if you need the audit event reconciled."
+)
+
+logger = logging.getLogger(__name__)
 
 
 class StudentImportExecutor:
@@ -129,12 +147,38 @@ class StudentImportExecutor:
                 idempotency_key=effective_idempotency_key,
             )
         except HTTPException as exc:
+            if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+                logger.exception(
+                    "Student import failed with an internal HTTP exception",
+                    extra={"studio_id": studio_id, "import_run_id": import_run["id"]},
+                )
+                self._mark_failed_safely(
+                    import_runs,
+                    import_run["id"],
+                    processing_token,
+                    STUDENT_IMPORT_FAILED_MESSAGE,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=STUDENT_IMPORT_FAILED_DETAIL,
+                ) from exc
             self._mark_failed_safely(import_runs, import_run["id"], processing_token, str(exc.detail))
             raise
         except Exception as exc:
-            detail = str(exc) or "Failed to complete import"
-            self._mark_failed_safely(import_runs, import_run["id"], processing_token, detail)
-            raise HTTPException(status_code=500, detail=detail) from exc
+            logger.exception(
+                "Student import failed unexpectedly",
+                extra={"studio_id": studio_id, "import_run_id": import_run["id"]},
+            )
+            self._mark_failed_safely(
+                import_runs,
+                import_run["id"],
+                processing_token,
+                STUDENT_IMPORT_FAILED_MESSAGE,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=STUDENT_IMPORT_FAILED_DETAIL,
+            ) from exc
 
     def _import_valid_rows(
         self,
@@ -177,7 +221,7 @@ class StudentImportExecutor:
                         f"Imported current belt (unresolved): {unresolved_belt_value}",
                     )
 
-            mapped["id"] = self.setup_writer._deterministic_import_uuid(
+            mapped["id"] = deterministic_import_uuid(
                 import_run_id,
                 "student-row",
                 str(row["row_number"]),
@@ -195,10 +239,18 @@ class StudentImportExecutor:
                     guardian_fields=guardian_fields,
                     program_ids=program_ids,
                 )
-            except Exception as exc:
+            except Exception:
+                logger.exception(
+                    "Student import row failed",
+                    extra={
+                        "studio_id": studio_id,
+                        "import_run_id": import_run_id,
+                        "row_number": row["row_number"],
+                    },
+                )
                 row["issues"].append(make_import_issue(
                     "execute_failed",
-                    str(exc) or "Failed to import this row",
+                    STUDENT_IMPORT_ROW_FAILED_MESSAGE,
                     field=None,
                 ))
                 row["is_valid"] = False
@@ -265,12 +317,16 @@ class StudentImportExecutor:
         except Exception as exc:
             if isinstance(exc, HTTPException):
                 raise
+            logger.exception(
+                "Student import result cache save failed",
+                extra={"import_run_id": import_run_id},
+            )
             result = import_runs.apply_result_execution_metadata(
                 result,
                 idempotency_key=idempotency_key,
                 non_critical_errors=[
                     *result.non_critical_errors,
-                    f"Import data was committed, but the cached import result could not be saved: {exc}",
+                    STUDENT_IMPORT_RESULT_SAVE_WARNING,
                 ],
             )
         return result
@@ -309,13 +365,17 @@ class StudentImportExecutor:
                     "idempotency_key": idempotency_key,
                 },
             }).execute()
-        except Exception as exc:
+        except Exception:
+            logger.exception(
+                "Student import final audit log write failed",
+                extra={"studio_id": studio_id, "import_run_id": import_run_id},
+            )
             result = import_runs.apply_result_execution_metadata(
                 result,
                 idempotency_key=idempotency_key,
                 non_critical_errors=[
                     *result.non_critical_errors,
-                    f"Students were imported, but the final import audit log could not be written: {exc}",
+                    STUDENT_IMPORT_AUDIT_LOG_WARNING,
                 ],
             )
             try:

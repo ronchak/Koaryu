@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
-from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
 from app.core.config import get_settings
@@ -73,19 +72,6 @@ def ensure_staff_user_in_studio(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
 
-def _normalize_email(value: Optional[str]) -> str:
-    return value.strip().lower() if value else ""
-
-
-def _auth_email_for_user(supabase: Client, user_id: str) -> str:
-    try:
-        user_response = supabase.auth.admin.get_user_by_id(user_id)
-    except Exception:
-        return ""
-    user = getattr(user_response, "user", None)
-    return _normalize_email(getattr(user, "email", None))
-
-
 def list_staff_roles_for_user(
     supabase: Client,
     user_id: str,
@@ -98,43 +84,6 @@ def list_staff_roles_for_user(
         .execute()
     )
     return result.data or []
-
-
-def claim_pending_staff_roles_for_user(
-    supabase: Client,
-    user_id: str,
-    requested_studio_id: Optional[str] = None,
-    *,
-    user_email: Optional[str] = None,
-) -> list[dict]:
-    normalized_email = _normalize_email(user_email) or _auth_email_for_user(supabase, user_id)
-    if not normalized_email:
-        return list_staff_roles_for_user(supabase, user_id)
-
-    pending_query = (
-        supabase.table("staff_roles")
-        .select("id")
-        .is_("user_id", None)
-        .eq("invited_email", normalized_email)
-    )
-    if requested_studio_id:
-        pending_query = pending_query.eq("studio_id", requested_studio_id)
-
-    pending_result = pending_query.execute()
-    for row in pending_result.data or []:
-        try:
-            (
-                supabase.table("staff_roles")
-                .update({"user_id": user_id})
-                .eq("id", row["id"])
-                .is_("user_id", None)
-                .execute()
-            )
-        except PostgrestAPIError as exc:
-            if exc.code != "23505":
-                raise
-
-    return list_staff_roles_for_user(supabase, user_id)
 
 
 def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
@@ -238,6 +187,10 @@ def resolve_optional_staff_role_for_user(
     identity. Returning None is reserved for users who have no studio yet, so
     onboarding-aware callers can preserve the no-studio profile flow.
     """
+    # Pending invite rows are not memberships. StaffService links invites to
+    # the Supabase Auth user returned by invite_user_by_email; this resolver
+    # must not grant access from email equality alone.
+    _ = user_email
     roles = list_staff_roles_for_user(supabase, user_id)
 
     if requested_studio_id:
@@ -247,28 +200,9 @@ def resolve_optional_staff_role_for_user(
                     ensure_platform_subscription_access(supabase, role["studio_id"])
                 return role
 
-        roles = claim_pending_staff_roles_for_user(
-            supabase,
-            user_id,
-            requested_studio_id,
-            user_email=user_email,
-        )
-        for role in roles:
-            if role["studio_id"] == requested_studio_id:
-                if require_platform_subscription:
-                    ensure_platform_subscription_access(supabase, role["studio_id"])
-                return role
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to the requested studio.",
-        )
-
-    if not roles:
-        roles = claim_pending_staff_roles_for_user(
-            supabase,
-            user_id,
-            user_email=user_email,
         )
 
     if not roles:

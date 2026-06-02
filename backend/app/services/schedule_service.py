@@ -21,6 +21,7 @@ from app.services.schedule_attendance_actions import ScheduleAttendanceActions
 SCHEDULE_SESSION_CONFLICT_CODES = {"23505"}
 SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS = 93
 SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS = 93
+SCHEDULE_SESSION_CONFLICT_RETRY_ATTEMPTS = 3
 CLASS_SESSION_LIST_SELECT = (
     "id, studio_id, template_id, name, date, start_time, end_time, "
     "instructor_id, program_id, capacity, status, notes, created_at"
@@ -98,19 +99,7 @@ class ScheduleService:
         if not templates:
             return
 
-        existing = (
-            self.supabase.table("class_sessions")
-            .select("template_id, date")
-            .eq("studio_id", studio_id)
-            .gte("date", start_date)
-            .lte("date", end_date)
-            .execute()
-        )
-        existing_keys = {
-            (row["template_id"], row["date"])
-            for row in (existing.data or [])
-            if row.get("template_id")
-        }
+        existing_keys = self._existing_materialized_session_keys(studio_id, start_date, end_date)
 
         rows_to_create = []
         for template in templates:
@@ -148,18 +137,64 @@ class ScheduleService:
             except PostgrestAPIError as exc:
                 if exc.code not in SCHEDULE_SESSION_CONFLICT_CODES:
                     raise
-                self._insert_materialized_sessions_with_conflict_skip(rows_to_create)
+                self._insert_materialized_sessions_after_conflict(
+                    rows_to_create,
+                    studio_id=studio_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
 
-    def _insert_materialized_sessions_with_conflict_skip(self, rows: list[dict]) -> None:
-        for row in rows:
+    def _insert_materialized_sessions_after_conflict(
+        self,
+        rows: list[dict],
+        *,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> None:
+        remaining = list(rows)
+        for _attempt in range(SCHEDULE_SESSION_CONFLICT_RETRY_ATTEMPTS):
+            existing_keys = self._existing_materialized_session_keys(studio_id, start_date, end_date)
+            remaining = [
+                row for row in remaining
+                if (row.get("template_id"), row.get("date")) not in existing_keys
+            ]
+            if not remaining:
+                return
             try:
-                result = self.supabase.table("class_sessions").insert(row).execute()
+                result = self.supabase.table("class_sessions").insert(remaining).execute()
             except PostgrestAPIError as exc:
                 if exc.code in SCHEDULE_SESSION_CONFLICT_CODES:
                     continue
                 raise
             if not result.data:
                 raise HTTPException(status_code=500, detail="Failed to generate recurring class sessions")
+            return
+
+        raise HTTPException(
+            status_code=409,
+            detail="Recurring session materialization collided with another update. Retry shortly.",
+        )
+
+    def _existing_materialized_session_keys(
+        self,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> set[tuple[str, str]]:
+        existing = (
+            self.supabase.table("class_sessions")
+            .select("template_id, date")
+            .eq("studio_id", studio_id)
+            .gte("date", start_date)
+            .lte("date", end_date)
+            .execute()
+        )
+        return {
+            (row["template_id"], row["date"])
+            for row in (existing.data or [])
+            if row.get("template_id")
+        }
 
     # ---- Class Templates ----
 

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.schemas.support import SupportTicketCreate, SupportTicketTriageUpdate, SupportTriageFilters
-from app.services.support_service import SupportService
+from app.services.support_service import SUPPORT_TICKET_COLUMNS, SupportService
 from tests.fakes.supabase import RpcBackedSupabase
 
 
@@ -156,6 +156,9 @@ class SupportServiceTest(unittest.TestCase):
                 "updated_at": "2026-05-20T00:00:00+00:00",
             },
         ]
+        supabase.select_assertions["support_tickets"] = (
+            lambda columns: self.assertEqual(columns, SUPPORT_TICKET_COLUMNS)
+        )
         service = SupportService(supabase)
 
         with patch("app.services.support_service.resolve_admin_staff_role_for_user", side_effect=HTTPException(403, "not admin")):
@@ -195,12 +198,29 @@ class SupportServiceTest(unittest.TestCase):
                 "updated_at": "2026-05-20T00:00:00+00:00",
             },
         ]
+        supabase.select_assertions["support_tickets"] = (
+            lambda columns: self.assertEqual(columns, SUPPORT_TICKET_COLUMNS)
+        )
         service = SupportService(supabase)
 
         with patch("app.services.support_service.resolve_admin_staff_role_for_user", return_value={"studio_id": "studio_1", "role": "admin"}):
             tickets = asyncio.run(service.list_tickets("studio_1", "admin_1", "studio_1"))
 
         self.assertEqual([ticket.id for ticket in tickets], ["ticket_1", "ticket_2"])
+
+    def test_list_tickets_propagates_admin_resolution_infrastructure_errors(self):
+        supabase = FakeSupabase()
+        service = SupportService(supabase)
+
+        with patch(
+            "app.services.support_service.resolve_admin_staff_role_for_user",
+            side_effect=HTTPException(503, "billing unavailable"),
+        ):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.list_tickets("studio_1", "user_1", "studio_1"))
+
+        self.assertEqual(context.exception.status_code, 503)
+        self.assertEqual(supabase.query_log, [])
 
     def test_triage_lists_open_operational_tickets_by_priority_before_limit(self):
         supabase = FakeSupabase()

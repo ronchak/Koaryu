@@ -75,7 +75,8 @@ class StudentImportGuardianWriterTest(unittest.TestCase):
         self.assertEqual(issue.severity, "warning")
         self.assertEqual(issue.field, "guardian_name")
         self.assertEqual(issue.value, "Avery Parent")
-        self.assertIn("guardian table unavailable", issue.message)
+        self.assertNotIn("guardian table unavailable", issue.message)
+        self.assertIn("could not be linked automatically", issue.message)
         self.assertNotIn("student_guardians", supabase.tables)
 
     def test_upsert_import_guardian_skips_empty_guardian_name(self):
