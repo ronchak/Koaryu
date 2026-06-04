@@ -174,35 +174,20 @@ class BillingPaymentEventProjector:
         payment = result.data[0] if result.data else row
         payment = self._link_disputes_to_payment(payment, account_id)
         payment_status = payment.get("status")
+        invoice_recomputed = False
         if local_invoice and payment_status in {"succeeded", "failed"}:
-            if payment.get("status") == "disputed":
+            if not self._record_payment_projection_invoice_metadata(
+                local_invoice,
+                row,
+                payment_status=payment_status,
+                event_created=event_created,
+                studio_id=studio_id,
+                stripe_payment_intent_id=_stripe_id(intent),
+            ):
+                return
+            if local_invoice.get("status") not in PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES:
                 self._refresh_invoice_and_payer_from_payment_events(payment)
-            else:
-                update = {"last_payment_error": row.get("failure_message") if payment_status == "failed" else None}
-                if (
-                    payment_status == "succeeded"
-                    and local_invoice.get("status") not in PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES
-                ):
-                    update.update({
-                        "status": "paid",
-                        "amount_paid_cents": max(int(local_invoice.get("amount_paid_cents") or 0), row["amount_cents"]),
-                        "amount_remaining_cents": 0,
-                        "stripe_payment_intent_id": _stripe_id(intent),
-                        "application_fee_amount_cents": row["application_fee_amount_cents"],
-                        "paid_at": datetime.now(timezone.utc).isoformat(),
-                    })
-                if event_created is not None:
-                    update["last_stripe_event_created"] = event_created
-                invoice_query = (
-                    self.supabase.table("billing_invoices")
-                    .update(update)
-                    .eq("id", local_invoice["id"])
-                    .eq("studio_id", studio_id)
-                )
-                invoice_query = add_stripe_event_created_guard(invoice_query, event_created)
-                invoice_result = invoice_query.execute()
-                if event_created is not None and not invoice_result.data:
-                    return
+                invoice_recomputed = True
         if payment_status == "succeeded" and row.get("payer_id"):
             self._store_invoice_payment_method(
                 studio_id,
@@ -211,8 +196,42 @@ class BillingPaymentEventProjector:
                 _stripe_id(intent.get("customer")),
                 intent.get("payment_method"),
             )
-        if payment.get("payer_id"):
+        if payment.get("payer_id") and not invoice_recomputed:
             self._recompute_payer_balance(studio_id, payment.get("payer_id"))
+
+    def _record_payment_projection_invoice_metadata(
+        self,
+        local_invoice: dict[str, Any],
+        row: dict[str, Any],
+        *,
+        payment_status: str,
+        event_created: Optional[int],
+        studio_id: str,
+        stripe_payment_intent_id: Optional[str],
+    ) -> bool:
+        update: dict[str, Any] = {
+            "last_payment_error": row.get("failure_message") if payment_status == "failed" else None,
+        }
+        if (
+            payment_status == "succeeded"
+            and local_invoice.get("status") not in PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES
+        ):
+            update.update({
+                "stripe_payment_intent_id": stripe_payment_intent_id,
+                "application_fee_amount_cents": row["application_fee_amount_cents"],
+                "paid_at": datetime.now(timezone.utc).isoformat(),
+            })
+        if event_created is not None:
+            update["last_stripe_event_created"] = event_created
+        invoice_query = (
+            self.supabase.table("billing_invoices")
+            .update(update)
+            .eq("id", local_invoice["id"])
+            .eq("studio_id", studio_id)
+        )
+        invoice_query = add_stripe_event_created_guard(invoice_query, event_created)
+        invoice_result = invoice_query.execute()
+        return event_created is None or bool(invoice_result.data)
 
     def _link_disputes_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
         charge_id = payment.get("stripe_charge_id")
@@ -480,20 +499,15 @@ class BillingPaymentEventProjector:
             .select("*")
             .eq("stripe_customer_id", customer_id)
             .eq("amount_due_cents", amount_cents)
+            .eq("amount_remaining_cents", amount_cents)
             .eq("currency", currency)
-            .in_("status", ["draft", "open", "paid"])
-            .order("created_at", desc=True)
-            .limit(5)
+            .eq("status", "open")
+            .is_("stripe_payment_intent_id", "null")
+            .limit(2)
         )
         query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
-        result = query.execute()
-        candidates = []
-        for row in result.data or []:
-            if row.get("stripe_payment_intent_id"):
-                continue
-            if int(row.get("amount_remaining_cents") or 0) in {0, amount_cents}:
-                candidates.append(row)
-        return candidates[0] if len(candidates) == 1 else None
+        rows = query.execute().data or []
+        return rows[0] if len(rows) == 1 else None
 
     def _find_unlinked_payment_by_customer_amount(
         self,

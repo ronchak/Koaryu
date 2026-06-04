@@ -58,6 +58,8 @@ def get_user_id_from_token(token: str) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
     except JWTError:
+        if getattr(settings, "ENVIRONMENT", "development") == "production":
+            raise _invalid_auth_token_exception()
         try:
             response = get_supabase_client().auth.get_user(token)
             if not response or not response.user:

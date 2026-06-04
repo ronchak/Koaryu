@@ -139,6 +139,29 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         self.assertEqual(response.number, "INV-001")
 
+    def test_invoice_response_redacts_legacy_external_stripe_sync_errors(self):
+        response = BillingInvoiceResponse.model_validate({
+            "id": "invoice_1",
+            "studio_id": "studio_1",
+            "invoice_type": "tuition",
+            "status": "open",
+            "amount_due_cents": 12900,
+            "amount_paid_cents": 0,
+            "currency": "usd",
+            "last_payment_error": (
+                "External payment recorded locally but Stripe sync failed: sk_live leaked value"
+            ),
+            "external": False,
+            "created_at": "2026-04-28T00:00:00Z",
+            "updated_at": "2026-04-28T00:00:00Z",
+        })
+
+        self.assertEqual(
+            response.last_payment_error,
+            "Stripe sync failed after local payment recording. Contact support if it persists.",
+        )
+        self.assertNotIn("sk_live", response.last_payment_error)
+
     def test_invoice_request_hash_is_stable_for_equivalent_payloads(self):
         service = self.service()
 

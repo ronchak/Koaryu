@@ -426,3 +426,54 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertIsNone(payment["stripe_invoice_id"])
         self.assertIsNone(service.supabase.tables["billing_invoices"][0].get("stripe_payment_intent_id"))
         self.assertIsNone(service.supabase.tables["billing_invoices"][1].get("stripe_payment_intent_id"))
+
+    def test_payment_intent_does_not_amount_match_historical_paid_invoice(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+            }],
+            "billing_payments": [],
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+                "stripe_payment_intent_id": None,
+                "status": "paid",
+                "amount_due_cents": 200,
+                "amount_paid_cents": 200,
+                "amount_remaining_cents": 0,
+                "currency": "usd",
+            }],
+            "billing_disputes": [],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+            }],
+        })
+        service._recompute_payer_balance = lambda *_args: None
+
+        service._project_payment_intent({
+            "id": "pi_1",
+            "status": "succeeded",
+            "amount": 200,
+            "amount_received": 200,
+            "application_fee_amount": 1,
+            "currency": "usd",
+            "customer": "cus_1",
+            "latest_charge": "ch_1",
+            "metadata": {},
+        }, "acct_1", "payment_intent.succeeded")
+
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        self.assertIsNone(payment["invoice_id"])
+        self.assertIsNone(payment["stripe_invoice_id"])
+        self.assertIsNone(invoice["stripe_payment_intent_id"])
+        self.assertEqual(invoice["status"], "paid")

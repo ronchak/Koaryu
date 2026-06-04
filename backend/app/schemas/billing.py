@@ -29,6 +29,10 @@ CARD_BRAND_VALUES = {
     "unionpay",
     "visa",
 }
+LEGACY_EXTERNAL_STRIPE_SYNC_ERROR_PREFIX = "External payment recorded locally but Stripe sync failed:"
+EXTERNAL_STRIPE_SYNC_ERROR_PUBLIC_MESSAGE = (
+    "Stripe sync failed after local payment recording. Contact support if it persists."
+)
 
 
 def _frontend_payment_method_type(value: dict[str, Any]) -> Optional[str]:
@@ -472,6 +476,13 @@ class BillingInvoiceResponse(BaseModel):
         if isinstance(value, dict):
             value = dict(value)
             value.setdefault("number", value.get("invoice_number"))
+        return value
+
+    @field_validator("last_payment_error", mode="before")
+    @classmethod
+    def redact_legacy_external_stripe_sync_error(cls, value: Any) -> Any:
+        if isinstance(value, str) and value.startswith(LEGACY_EXTERNAL_STRIPE_SYNC_ERROR_PREFIX):
+            return EXTERNAL_STRIPE_SYNC_ERROR_PUBLIC_MESSAGE
         return value
 
 

@@ -226,6 +226,8 @@ class BillingPaymentManagerTests(unittest.TestCase):
         self.assertEqual(invoice["amount_remaining_cents"], 1000)
         self.assertIsNone(invoice.get("paid_at"))
         self.assertIn("Stripe sync failed", invoice["last_payment_error"])
+        self.assertNotIn("Stripe unavailable", invoice["last_payment_error"])
+        self.assertRegex(invoice["last_payment_error"], r"Reference: [0-9a-f]{32}$")
         self.assertEqual(facade.supabase.rpc_calls, [])
         self.assertEqual(len(facade.supabase.tables["billing_payments"]), 1)
         self.assertEqual(len(facade.supabase.tables["audit_logs"]), 1)

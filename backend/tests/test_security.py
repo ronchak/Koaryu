@@ -105,6 +105,34 @@ class SecurityTokenTest(unittest.TestCase):
         ):
             self.assertEqual(get_user_id_from_token("remote-valid-token"), "user_1")
 
+    def test_production_jwt_validation_error_does_not_use_remote_fallback(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
+        fallback_client = SimpleNamespace(
+            auth=SimpleNamespace(get_user=fallback_get_user)
+        )
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.core.security.jwt.decode",
+            side_effect=JWTError("local secret mismatch"),
+        ), patch(
+            "app.core.security.get_supabase_client",
+            return_value=fallback_client,
+        ):
+            with self.assertRaises(HTTPException) as context:
+                get_user_id_from_token("bad-token")
+
+        self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.detail, "Invalid authentication token")
+        fallback_get_user.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

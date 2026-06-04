@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -18,6 +20,9 @@ from app.schemas.billing import (
 )
 from app.services.supabase_rpc import execute_required_rpc
 from app.services.stripe_service import StripeService
+
+
+logger = logging.getLogger(__name__)
 
 
 class BillingPaymentManager:
@@ -224,11 +229,21 @@ class BillingPaymentManager:
                 paid_out_of_band=True,
                 idempotency_key=self._idempotency_key("external-invoice-pay", payment["id"]),
             )
-        except Exception as exc:
+        except Exception:
+            error_id = uuid4().hex
+            logger.exception(
+                "Stripe out-of-band invoice sync failed",
+                extra={
+                    "error_id": error_id,
+                    "invoice_id": invoice.get("id"),
+                    "payment_id": payment.get("id"),
+                    "studio_id": studio_id,
+                },
+            )
             update = {
                 "status": "open",
                 "paid_at": None,
-                "last_payment_error": f"External payment recorded locally but Stripe sync failed: {exc}",
+                "last_payment_error": f"Stripe sync failed after local payment recording. Reference: {error_id}",
             }
             self.supabase.table("billing_invoices").update(update).eq("id", invoice["id"]).eq("studio_id", studio_id).execute()
             return False
