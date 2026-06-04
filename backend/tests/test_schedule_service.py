@@ -5,6 +5,10 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.schedule import AttendanceCheckIn
+from app.services.schedule_attendance_actions import (
+    ATTENDANCE_LIST_RANGE_MAX_DAYS,
+    ATTENDANCE_SESSION_IDS_MAX,
+)
 from app.services.schedule_service import (
     CLASS_SESSION_LIST_SELECT,
     SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
@@ -183,6 +187,70 @@ class ScheduleServiceTest(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertEqual(sessions[0].id, "session-1")
         self.assertEqual(sessions[0].attendance_count, 1)
+
+    def test_list_attendance_rejects_ranges_above_visible_cap(self):
+        supabase = FakeSupabase({"attendance": [], "class_sessions": []})
+        service = ScheduleService(supabase)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.list_attendance("studio-1", "2026-01-01", "2026-05-01"))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn(
+            f"cannot exceed {ATTENDANCE_LIST_RANGE_MAX_DAYS} days",
+            context.exception.detail,
+        )
+        self.assertFalse(
+            any(query["table"] == "attendance" for query in supabase.query_log)
+        )
+
+    def test_list_attendance_rejects_oversized_session_id_list(self):
+        supabase = FakeSupabase({"attendance": [], "class_sessions": []})
+        service = ScheduleService(supabase)
+        session_ids = [f"session-{index}" for index in range(ATTENDANCE_SESSION_IDS_MAX + 1)]
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.list_attendance("studio-1", session_ids=session_ids))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn(
+            f"session_ids cannot exceed {ATTENDANCE_SESSION_IDS_MAX} values",
+            context.exception.detail,
+        )
+        self.assertFalse(
+            any(query["table"] == "attendance" for query in supabase.query_log)
+        )
+
+    def test_generate_week_uses_actor_for_created_session_audit(self):
+        supabase = FakeSupabase({
+            "class_templates": [template_row("template-1", "Youth Basics")],
+            "class_sessions": [],
+            "audit_logs": [],
+        })
+        service = ScheduleService(supabase)
+
+        created = asyncio.run(service.generate_sessions_for_week("studio-1", "2026-05-25", "actor-1"))
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].date, "2026-05-31")
+        self.assertEqual(supabase.tables["audit_logs"][0]["actor_id"], "actor-1")
+        self.assertEqual(supabase.tables["audit_logs"][0]["action"], "class_session.created")
+
+    def test_generate_week_rejects_bad_week_start_before_querying(self):
+        for week_start, detail in (
+            ("not-a-date", "week_start must be in YYYY-MM-DD format"),
+            ("2026-05-26", "week_start must be a Monday"),
+        ):
+            with self.subTest(week_start=week_start):
+                supabase = FakeSupabase({"class_templates": [], "class_sessions": []})
+                service = ScheduleService(supabase)
+
+                with self.assertRaises(HTTPException) as context:
+                    asyncio.run(service.generate_sessions_for_week("studio-1", week_start, "actor-1"))
+
+                self.assertEqual(context.exception.status_code, 400)
+                self.assertEqual(context.exception.detail, detail)
+                self.assertFalse(supabase.query_log)
 
     def test_check_in_rejects_canceled_or_deleted_session(self):
         for session_row in (

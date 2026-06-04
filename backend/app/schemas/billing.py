@@ -148,6 +148,8 @@ class BillingSystemStatusResponse(BaseModel):
 
 
 class BillingReconcileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     object_type: BillingReconcileObjectType
     stripe_object_id: Optional[str] = None
     payer_id: Optional[str] = None
@@ -168,6 +170,8 @@ class BillingPlanProgramResponse(BaseModel):
 
 
 class BillingPlanCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=140)
     description: Optional[str] = None
     amount_cents: int = Field(ge=0)
@@ -188,6 +192,8 @@ class BillingPlanCreate(BaseModel):
 
 
 class BillingPlanUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = Field(default=None, min_length=1, max_length=140)
     description: Optional[str] = None
     amount_cents: Optional[int] = Field(default=None, ge=0)
@@ -233,6 +239,8 @@ class BillingPlanResponse(BaseModel):
 
 
 class BillingPayerCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     display_name: str = Field(min_length=1, max_length=160)
     guardian_id: Optional[str] = None
     email: Optional[str] = None
@@ -244,6 +252,8 @@ class BillingPayerCreate(BaseModel):
 
 
 class BillingPayerUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     display_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
     guardian_id: Optional[str] = None
     email: Optional[str] = None
@@ -302,6 +312,8 @@ class BillingPayerResponse(BaseModel):
 
 
 class BillingPayerAutopaySetupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
     return_url: Optional[str] = None
@@ -363,6 +375,8 @@ class StudentBillingEnrollmentForStudentCreate(StudentBillingEnrollmentBaseCreat
 
 
 class StudentBillingEnrollmentUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
     billing_plan_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("billing_plan_id", "plan_id"))
     payer_id: Optional[str] = None
     collection_mode: Optional[BillingCollectionMode] = None
@@ -370,8 +384,6 @@ class StudentBillingEnrollmentUpdate(BaseModel):
     end_date: Optional[str] = None
     next_bill_on: Optional[str] = Field(default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date"))
     status: Optional[BillingEnrollmentStatus] = None
-
-    model_config = ConfigDict(populate_by_name=True)
 
 
 class StudentBillingEnrollmentResponse(BaseModel):
@@ -409,6 +421,8 @@ class StudentBillingEnrollmentResponse(BaseModel):
 
 
 class BillingInvoiceItemCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     description: str = Field(min_length=1, max_length=240)
     amount_cents: int = Field(ge=0)
     quantity: int = Field(default=1, ge=1)
@@ -418,6 +432,8 @@ class BillingInvoiceItemCreate(BaseModel):
 
 
 class BillingInvoiceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     payer_id: str
     student_id: Optional[str] = None
     enrollment_id: Optional[str] = None
@@ -514,6 +530,8 @@ class BillingPaymentResponse(BaseModel):
 
 
 class ExternalPaymentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     amount_cents: int = Field(ge=1)
     currency: str = "usd"
     payer_id: Optional[str] = None
@@ -529,6 +547,8 @@ class ExternalPaymentCreate(BaseModel):
 
 
 class ExportJobCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     export_type: str = Field(min_length=1, max_length=80)
     filters: dict[str, Any] = Field(default_factory=dict)
 
@@ -553,6 +573,8 @@ class WebhookProcessResponse(BaseModel):
 
 
 class BillingRefundCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     amount_cents: Optional[int] = Field(default=None, ge=1)
     reason: Optional[str] = None
 

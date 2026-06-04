@@ -405,31 +405,25 @@ class ScheduleService:
         return ClassSessionResponse(**result.data[0], attendance_count=0)
 
     async def generate_sessions_for_week(
-        self, studio_id: str, week_start: str
+        self, studio_id: str, week_start: str, actor_id: str
     ) -> list[ClassSessionResponse]:
         """Generate sessions for a week from templates."""
-        start = datetime.strptime(week_start, "%Y-%m-%d").date()
+        start = self._parse_query_date(week_start, "week_start")
+        if start.weekday() != 0:
+            raise HTTPException(status_code=400, detail="week_start must be a Monday")
 
         templates = await self.list_templates(studio_id)
-        created = []
-        for t in templates:
-            # Calculate the date for this template's day_of_week
-            days_ahead = t.day_of_week - start.weekday()
-            if days_ahead < 0:
-                days_ahead += 7
-            # Adjust: Python weekday() is Mon=0, our schema is Sun=0
-            days_ahead = (t.day_of_week - (start.isoweekday() % 7))
-            if days_ahead < 0:
-                days_ahead += 7
+        created: list[ClassSessionResponse] = []
+        for template in templates:
+            days_ahead = (template.day_of_week - self._studio_weekday(start)) % 7
             session_date = start + timedelta(days=days_ahead)
 
-            # Check if session already exists
             existing = (
                 self.supabase.table("class_sessions")
                 .select("id")
-                .eq("template_id", t.id)
+                .eq("template_id", template.id)
                 .eq("studio_id", studio_id)
-                .eq("date", str(session_date))
+                .eq("date", session_date.isoformat())
                 .execute()
             )
             if existing.data:
@@ -437,17 +431,17 @@ class ScheduleService:
 
             session = await self.create_session(
                 ClassSessionCreate(
-                    template_id=t.id,
-                    name=t.name,
-                    date=str(session_date),
-                    start_time=t.start_time,
-                    end_time=t.end_time,
-                    instructor_id=t.instructor_id,
-                    program_id=t.program_id,
-                    capacity=t.capacity,
+                    template_id=template.id,
+                    name=template.name,
+                    date=session_date.isoformat(),
+                    start_time=template.start_time,
+                    end_time=template.end_time,
+                    instructor_id=template.instructor_id,
+                    program_id=template.program_id,
+                    capacity=template.capacity,
                 ),
                 studio_id,
-                actor_id="system",
+                actor_id,
             )
             created.append(session)
         return created

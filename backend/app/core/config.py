@@ -62,13 +62,16 @@ class Settings(BaseSettings):
             if not normalized or placeholder_values.get(name) == normalized:
                 missing.append(name)
 
+        if self.DEMO_RESET_ENABLED:
+            missing.append("DEMO_RESET_ENABLED must be false in production")
+
         frontend = urlparse(self.FRONTEND_URL)
         if frontend.scheme != "https" or not frontend.netloc or frontend.hostname in {"localhost", "127.0.0.1"}:
             missing.append("FRONTEND_URL must be a public HTTPS URL")
 
         if missing:
             detail = ", ".join(dict.fromkeys(missing))
-            raise RuntimeError(f"Production configuration is incomplete: {detail}")
+            raise RuntimeError(f"Production configuration is incomplete or unsafe: {detail}")
 
 
 @lru_cache()

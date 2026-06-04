@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Callable, Union
 
+from fastapi import HTTPException
+
 
 EXPORT_PAGE_SIZE = 1000
+EXPORT_MAX_ROWS = 50_000
 FILTER_VALUE_BATCH_SIZE = 200
 
 
@@ -214,6 +217,7 @@ class ReportExportDataFetcher:
         query_factory: Callable[[], Any],
         *,
         page_size: int = EXPORT_PAGE_SIZE,
+        max_rows: int = EXPORT_MAX_ROWS,
     ) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         offset = 0
@@ -221,6 +225,11 @@ class ReportExportDataFetcher:
             result = query_factory().range(offset, offset + page_size - 1).execute()
             page = result.data or []
             rows.extend(page)
+            if len(rows) > max_rows:
+                raise HTTPException(
+                    status_code=413,
+                    detail="Export is too large. Apply filters or request an async export.",
+                )
             if len(page) < page_size:
                 return rows
             offset += page_size

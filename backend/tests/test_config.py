@@ -25,6 +25,25 @@ class ProductionConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Production configuration is incomplete"):
             settings.validate_production_configuration()
 
+    def test_production_rejects_demo_reset_enabled(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project.supabase.co",
+            SUPABASE_SERVICE_ROLE_KEY="service-role-key",
+            SUPABASE_JWT_SECRET="jwt-secret",
+            FRONTEND_URL="https://koaryu.app",
+            DEMO_RESET_ENABLED=True,
+            STRIPE_SECRET_KEY="sk_live_123",
+            STRIPE_PLATFORM_WEBHOOK_SECRET="whsec_platform",
+            STRIPE_CONNECT_WEBHOOK_SECRET="whsec_connect",
+            STRIPE_KOARYU_CORE_PRICE_ID="price_core",
+            ACCOUNT_DELETION_WORKER_SECRET="delete-secret",
+            SUPPORT_TRIAGE_SECRET="support-secret",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "DEMO_RESET_ENABLED must be false in production"):
+            settings.validate_production_configuration()
+
     def test_production_accepts_required_live_settings(self):
         settings = Settings(
             ENVIRONMENT="production",

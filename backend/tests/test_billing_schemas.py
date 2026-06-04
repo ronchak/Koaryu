@@ -3,8 +3,18 @@ import unittest
 from pydantic import ValidationError
 
 from app.schemas.billing import (
+    BillingInvoiceCreate,
+    BillingInvoiceItemCreate,
     ConnectOnboardingLinkRequest,
+    BillingPlanCreate,
+    BillingPlanUpdate,
+    BillingPayerAutopaySetupRequest,
+    BillingPayerCreate,
     BillingPayerResponse,
+    BillingPayerUpdate,
+    BillingReconcileRequest,
+    BillingRefundCreate,
+    ExportJobCreate,
     ExternalPaymentCreate,
     PlatformCheckoutRequest,
     PlatformPortalRequest,
@@ -126,6 +136,28 @@ class BillingRequestSchemaTest(unittest.TestCase):
             ExternalPaymentCreate(amount_cents=500, external_method="cash")
 
         self.assertIn("External payments must target a payer or invoice.", str(context.exception))
+
+    def test_public_billing_mutation_schemas_reject_extra_fields(self):
+        cases = [
+            (BillingReconcileRequest, {"object_type": "invoice", "unexpected": True}),
+            (BillingPlanCreate, {"name": "Core", "amount_cents": 1000, "unexpected": True}),
+            (BillingPlanUpdate, {"name": "Core", "unexpected": True}),
+            (BillingPayerCreate, {"display_name": "Avery", "unexpected": True}),
+            (BillingPayerUpdate, {"phone": "555-0100", "unexpected": True}),
+            (BillingPayerAutopaySetupRequest, {"terms_accepted": True, "unexpected": True}),
+            (BillingInvoiceItemCreate, {"description": "Tuition", "amount_cents": 1000, "unexpected": True}),
+            (BillingInvoiceCreate, {"payer_id": "payer_1", "amount_cents": 1000, "unexpected": True}),
+            (ExternalPaymentCreate, {"payer_id": "payer_1", "amount_cents": 500, "external_method": "cash", "unexpected": True}),
+            (ExportJobCreate, {"export_type": "billing_payments", "unexpected": True}),
+            (BillingRefundCreate, {"amount_cents": 500, "unexpected": True}),
+        ]
+
+        for model, payload in cases:
+            with self.subTest(model=model.__name__):
+                with self.assertRaises(ValidationError) as context:
+                    model.model_validate(payload)
+
+                self.assertIn("Extra inputs are not permitted", str(context.exception))
 
 
 if __name__ == "__main__":

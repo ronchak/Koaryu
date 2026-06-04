@@ -11,6 +11,7 @@ from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 IMPORT_RUN_OPERATION = "students_csv_execute"
 IMPORT_RUN_STALE_AFTER_SECONDS = 45
+MAX_IDEMPOTENCY_KEY_LENGTH = 255
 
 
 class StudentImportRunStore:
@@ -24,7 +25,17 @@ class StudentImportRunStore:
         if value is None:
             return None
         normalized = value.strip()
-        return normalized or None
+        if not normalized:
+            return None
+        if (
+            len(normalized) > MAX_IDEMPOTENCY_KEY_LENGTH
+            or any(ord(char) < 32 for char in normalized)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Idempotency-Key must be printable and {MAX_IDEMPOTENCY_KEY_LENGTH} characters or fewer.",
+            )
+        return normalized
 
     @staticmethod
     def compute_request_hash(

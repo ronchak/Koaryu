@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import HTTPException
@@ -10,6 +10,10 @@ from app.schemas.schedule import (
     AttendanceResponse,
 )
 from app.services.studio_scope import ensure_studio_record
+
+
+ATTENDANCE_LIST_RANGE_MAX_DAYS = 93
+ATTENDANCE_SESSION_IDS_MAX = 200
 
 
 class ScheduleAttendanceActions:
@@ -37,6 +41,27 @@ class ScheduleAttendanceActions:
                     normalized.append(session_id)
                     seen.add(session_id)
         return normalized
+
+    def _validate_attendance_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+    ) -> tuple[date, date]:
+        start = self._parse_query_date(start_date, "start_date")
+        end = self._parse_query_date(end_date, "end_date")
+        if end < start:
+            raise HTTPException(
+                status_code=400,
+                detail="end_date cannot be before start_date",
+            )
+
+        requested_days = (end - start).days + 1
+        if requested_days > ATTENDANCE_LIST_RANGE_MAX_DAYS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Attendance date range cannot exceed {ATTENDANCE_LIST_RANGE_MAX_DAYS} days",
+            )
+        return start, end
 
     @staticmethod
     def attendance_response_from_row(row: dict) -> AttendanceResponse:
@@ -79,6 +104,12 @@ class ScheduleAttendanceActions:
         session_ids: Optional[list[str]] = None,
     ) -> list[AttendanceResponse]:
         normalized_session_ids = self._normalize_session_ids(session_ids)
+        if len(normalized_session_ids) > ATTENDANCE_SESSION_IDS_MAX:
+            raise HTTPException(
+                status_code=400,
+                detail=f"session_ids cannot exceed {ATTENDANCE_SESSION_IDS_MAX} values",
+            )
+
         if normalized_session_ids:
             result = (
                 self.supabase.table("attendance")
@@ -103,13 +134,7 @@ class ScheduleAttendanceActions:
                 detail="Provide session_ids or both start_date and end_date",
             )
 
-        start = self._parse_query_date(start_date, "start_date")
-        end = self._parse_query_date(end_date, "end_date")
-        if end < start:
-            raise HTTPException(
-                status_code=400,
-                detail="end_date cannot be before start_date",
-            )
+        start, end = self._validate_attendance_date_range(start_date, end_date)
 
         result = (
             self.supabase.table("attendance")
@@ -121,8 +146,8 @@ class ScheduleAttendanceActions:
             .eq("class_sessions.studio_id", studio_id)
             .is_("class_sessions.deleted_at", "null")
             .neq("class_sessions.status", "canceled")
-            .gte("class_sessions.date", start_date)
-            .lte("class_sessions.date", end_date)
+            .gte("class_sessions.date", start.isoformat())
+            .lte("class_sessions.date", end.isoformat())
             .order("session_id")
             .order("checked_in_at")
             .execute()

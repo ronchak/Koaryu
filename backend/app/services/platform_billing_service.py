@@ -26,6 +26,7 @@ from app.services.platform_billing_helpers import (
     status_response,
 )
 from app.services.platform_subscription_projection import PlatformSubscriptionProjector
+from app.services.supabase_rpc import execute_required_rpc
 from app.services.stripe_service import StripeService
 
 
@@ -462,15 +463,12 @@ class PlatformBillingService:
             period_end = period_start.replace(year=period_start.year + 1, month=1)
         else:
             period_end = period_start.replace(month=period_start.month + 1)
-        result = (
-            self.supabase.table("email_usage_events")
-            .select("quantity")
-            .eq("studio_id", studio_id)
-            .gte("sent_at", period_start.isoformat())
-            .lt("sent_at", period_end.isoformat())
-            .execute()
-        )
-        sent = sum(int(row.get("quantity") or 0) for row in (result.data or []))
+        result = execute_required_rpc(self.supabase, "sum_email_usage_for_period", {
+            "p_studio_id": studio_id,
+            "p_period_start": period_start.isoformat(),
+            "p_period_end": period_end.isoformat(),
+        })
+        sent = self._email_usage_rpc_value(getattr(result, "data", 0))
         overage_count = max(0, sent - EMAIL_INCLUDED_PER_MONTH)
         return EmailUsageResponse(
             included=EMAIL_INCLUDED_PER_MONTH,
@@ -480,6 +478,14 @@ class PlatformBillingService:
             period_start=period_start.isoformat(),
             period_end=period_end.isoformat(),
         )
+
+    @staticmethod
+    def _email_usage_rpc_value(value: Any) -> int:
+        if isinstance(value, list):
+            value = value[0] if value else 0
+        if isinstance(value, dict):
+            value = next(iter(value.values()), 0)
+        return int(value or 0)
 
     @staticmethod
     def _timestamp_epoch(value: Any) -> Optional[float]:

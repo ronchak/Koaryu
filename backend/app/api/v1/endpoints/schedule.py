@@ -96,10 +96,11 @@ async def delete_session(
 @router.post("/sessions/generate-week", response_model=list[ClassSessionResponse])
 async def generate_week(
     week_start: str = Query(..., description="Monday date YYYY-MM-DD"),
+    user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).generate_sessions_for_week(studio_id, week_start)
+    return await ScheduleService(supabase).generate_sessions_for_week(studio_id, week_start, user_id)
 
 
 # ---- Attendance ----

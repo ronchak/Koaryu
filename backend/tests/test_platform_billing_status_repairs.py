@@ -1,12 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from tests.platform_billing_helpers import PlatformBillingServiceTestCase
 
 
 class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
+    def test_email_usage_uses_aggregation_rpc(self):
+        service = self.service([{"studio_id": "studio_1", "status": "active", "comped": False}])
+        now = datetime.now(timezone.utc)
+        service.supabase.tables["email_usage_events"] = [
+            {"studio_id": "studio_1", "quantity": 2, "sent_at": now.replace(day=1).isoformat()},
+            {"studio_id": "studio_1", "quantity": 3, "sent_at": now.isoformat()},
+            {"studio_id": "studio_2", "quantity": 99, "sent_at": now.isoformat()},
+        ]
+
+        usage = service._email_usage("studio_1")
+
+        self.assertEqual(usage.sent, 5)
+        self.assertEqual(
+            [name for name, _params in service.supabase.rpc_calls],
+            ["sum_email_usage_for_period"],
+        )
+
     def test_get_status_repairs_missing_live_periods_once(self):
         rows = [{
             "studio_id": "studio_1",

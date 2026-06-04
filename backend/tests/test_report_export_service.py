@@ -1,6 +1,9 @@
 import asyncio
 import unittest
 
+from fastapi import HTTPException
+
+from app.services.report_export_data import ReportExportDataFetcher
 from app.services.report_export_service import ReportExportService
 from tests.fakes.supabase import TableBackedSupabase
 
@@ -50,6 +53,24 @@ class ReportExportServiceTest(unittest.TestCase):
             student_queries[0]["orders"],
             (("legal_last_name", False), ("legal_first_name", False), ("id", False)),
         )
+
+    def test_paged_rows_rejects_exports_above_cap(self):
+        supabase = TableBackedSupabase({
+            "students": [student_row(index) for index in range(4)],
+        })
+        fetcher = ReportExportDataFetcher(supabase)
+
+        with self.assertRaises(HTTPException) as context:
+            fetcher._paged_rows(
+                lambda: supabase.table("students").select("*").eq("studio_id", "studio-1"),
+                page_size=2,
+                max_rows=3,
+            )
+
+        self.assertEqual(context.exception.status_code, 413)
+        self.assertIn("Export is too large", context.exception.detail)
+        student_queries = [entry for entry in supabase.log if entry["table"] == "students"]
+        self.assertEqual([entry["range"] for entry in student_queries], [(0, 1), (2, 3)])
 
     def test_intelligence_dataset_fetch_pages_rows_and_relationships(self):
         students = [student_row(index) for index in range(1005)]

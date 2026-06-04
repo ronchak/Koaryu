@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.schemas.auth import AuthResponse, UserProfile
 from app.schemas.dashboard_summary import DashboardSummaryTestReadinessCounts
-from app.services.dashboard_summary_service import DashboardSummaryService
+from app.services.dashboard_summary_service import DashboardSummaryService, PRIVATE_VARY
 from app.services.dashboard_summary_store import DashboardSummaryStore
 from tests.fakes.supabase import TableBackedSupabase
 
@@ -53,6 +53,9 @@ def auth_response(role="admin", studio_id="studio-1"):
 
 
 class DashboardSummaryServiceTest(unittest.TestCase):
+    def test_private_vary_includes_cookie_for_cookie_studio_selection(self):
+        self.assertEqual(PRIVATE_VARY, "Authorization, X-Studio-Id, Cookie")
+
     def build_service(self, tables):
         service = DashboardSummaryService(FakeSupabase(tables))
         service._test_readiness_counts = lambda _studio_id: DashboardSummaryTestReadinessCounts(

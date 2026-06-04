@@ -14,6 +14,7 @@ from app.schemas.billing import EmailUsageResponse, PlatformBillingStatusRespons
 PENDING_CHECKOUT_METADATA_KEY = "core_checkout_session"
 SUBSCRIPTION_EVENT_METADATA_KEY = "core_subscription_event_created"
 INVOICE_PAYMENT_EVENT_METADATA_KEY = "core_invoice_payment_event_created"
+MAX_IDEMPOTENCY_KEY_LENGTH = 255
 
 
 def to_text(value: Any) -> Optional[str]:
@@ -25,7 +26,13 @@ def to_text(value: Any) -> Optional[str]:
 
 
 def build_idempotency_key(*parts: Any) -> str:
-    return "koaryu:" + ":".join(str(part).replace(":", "_") for part in parts if part is not None)
+    raw = "koaryu:" + ":".join(str(part).replace(":", "_") for part in parts if part is not None)
+    if len(raw) <= MAX_IDEMPOTENCY_KEY_LENGTH:
+        return raw
+
+    operation = str(parts[0]).replace(":", "_") if parts else "request"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"koaryu:{operation}:{digest}"[:MAX_IDEMPOTENCY_KEY_LENGTH]
 
 
 def normalize_idempotency_key(value: Optional[str]) -> Optional[str]:
@@ -34,8 +41,11 @@ def normalize_idempotency_key(value: Optional[str]) -> Optional[str]:
     normalized = value.strip()
     if not normalized:
         return None
-    if len(normalized) > 255:
-        raise HTTPException(status_code=400, detail="Idempotency-Key must be 255 characters or fewer.")
+    if len(normalized) > MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Idempotency-Key must be {MAX_IDEMPOTENCY_KEY_LENGTH} characters or fewer.",
+        )
     return normalized
 
 

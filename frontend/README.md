@@ -21,6 +21,7 @@ Required variables:
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://127.0.0.1:8001/api/v1`
 - `NEXT_PUBLIC_SITE_URL`: frontend origin used for auth callback links, typically `http://localhost:4000` locally and `https://koaryu.app` in production
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key for frontend billing flows
+- `BACKEND_API_URL`: server-only backend API base URL for Next.js API proxy and cron routes; defaults to the public API URL only when this is not set
 - `CRON_SECRET`: server-only Vercel Cron secret for scheduled internal maintenance routes
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only secret used by the Vercel Cron route when it calls the protected Render account-deletion worker
 - `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls should go through the Next.js proxy route instead of directly using `NEXT_PUBLIC_API_URL`
@@ -28,7 +29,7 @@ Required variables:
 - `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER` (optional): defaults to `true`; set to `false` as a rollback switch for the backend-paginated Students roster
 - `NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG` (optional): set to `true` temporarily to log Koaryu performance marks and Web Vitals in production
 
-The `NEXT_PUBLIC_` variables are read during `next build`, so they must also be configured on Vercel before production deploys. The server-only cron secrets are read by the deployed route at runtime and must not be exposed as `NEXT_PUBLIC_` values.
+The `NEXT_PUBLIC_` variables are read during `next build`, so they must also be configured on Vercel before production deploys. The server-only backend URL and cron secrets are read by deployed routes at runtime and must not be exposed as `NEXT_PUBLIC_` values.
 
 Production deploys should be verified after every dependency update with `npm run lint`, `npm run build`, and a Vercel deployment check. A local build proves the static/runtime bundle compiles, but it does not prove Vercel has the right environment values baked into the deployed build.
 
@@ -97,13 +98,14 @@ vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 vercel env add NEXT_PUBLIC_API_URL production
 vercel env add NEXT_PUBLIC_SITE_URL production
 vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
+vercel env add BACKEND_API_URL production
 vercel env add CRON_SECRET production
 vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 ```
 
 Use the Preview environment too if PR or branch deployments need to boot against Supabase and the backend.
 
-For production, `NEXT_PUBLIC_API_URL` should point to the deployed Render API base, for example `https://koaryu.onrender.com/api/v1`. The landing-page warmup route derives its target from that same value.
+For production, `NEXT_PUBLIC_API_URL` should point to the deployed Render API base, for example `https://koaryu.onrender.com/api/v1`. `BACKEND_API_URL` should point to the same backend base for server-side proxy and cron requests, without exposing that authority as the browser-facing source of truth.
 
 `CRON_SECRET` cannot contain leading or trailing whitespace. Vercel rejects cron requests with an invalid bearer header if the secret was pasted with an accidental newline. `ACCOUNT_DELETION_WORKER_SECRET` must exactly match the Render backend value.
 

@@ -4,7 +4,17 @@ import { buildUpstreamProxyRequestHeaders } from "@/lib/proxy-request-headers";
 import { buildProxyTargetUrl, UnsafeProxyPathError } from "@/lib/proxy-target";
 import { ACTIVE_STUDIO_COOKIE } from "@/lib/studio-state-cookie";
 
-const BACKEND_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
+const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+if (!rawBackendApiBase) {
+  throw new Error("BACKEND_API_URL is required for the API proxy");
+}
+
+const BACKEND_API_BASE = rawBackendApiBase;
+const parsedBackendApiBase = new URL(BACKEND_API_BASE);
+if (!["https:", "http:"].includes(parsedBackendApiBase.protocol)) {
+  throw new Error("BACKEND_API_URL must use http or https");
+}
+
 export const runtime = "nodejs";
 
 async function createForwardBody(request: NextRequest) {

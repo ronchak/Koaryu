@@ -24,7 +24,7 @@ from app.services.studio_scope import ensure_platform_subscription_access
 
 
 PRIVATE_CACHE_CONTROL = "no-store, private"
-PRIVATE_VARY = "Authorization, X-Studio-Id"
+PRIVATE_VARY = "Authorization, X-Studio-Id, Cookie"
 
 
 class DashboardSummaryService:

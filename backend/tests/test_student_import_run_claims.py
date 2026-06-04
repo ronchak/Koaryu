@@ -136,6 +136,21 @@ def import_run_row(*, status: str, processing_token: Optional[str], processing_s
 
 
 class StudentImportRunClaimTest(unittest.TestCase):
+    def test_normalize_idempotency_key_rejects_unsafe_values(self):
+        self.assertIsNone(StudentImportRunStore.normalize_idempotency_key("  "))
+        self.assertEqual(
+            StudentImportRunStore.normalize_idempotency_key(" import-key "),
+            "import-key",
+        )
+
+        for value in ("x" * 256, "import\nkey"):
+            with self.subTest(value=value[:12]):
+                with self.assertRaises(HTTPException) as context:
+                    StudentImportRunStore.normalize_idempotency_key(value)
+
+                self.assertEqual(context.exception.status_code, 400)
+                self.assertIn("printable", context.exception.detail)
+
     def test_stale_import_run_reclaim_sets_token_and_completion_clears_it(self):
         old_started_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         supabase = FakeSupabase({
