@@ -14,6 +14,18 @@ describe("buildProxyTargetUrl", () => {
     assert.equal(url.toString(), "https://api.example.test/api/v1/students/first%20last?limit=10");
   });
 
+  it("does not double-prefix api/v1 paths normalized by the browser API client", () => {
+    const browserPath = "/api/v1/students";
+    const proxyPath = browserPath.replace(/^\/api\/v1/, "");
+    const url = buildProxyTargetUrl(
+      "https://api.example.test/api/v1",
+      `https://app.example.test/api/proxy${proxyPath}`,
+      ["students"],
+    );
+
+    assert.equal(url.toString(), "https://api.example.test/api/v1/students");
+  });
+
   it("rejects route-boundary dot segments", () => {
     assert.throws(
       () => buildProxyTargetUrl("https://api.example.test/api/v1", "https://app.example.test/api/proxy/../health", ["..", "health"]),

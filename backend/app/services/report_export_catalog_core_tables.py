@@ -146,6 +146,8 @@ def build_core_table_report_catalog(report_service_cls: Any) -> dict[str, CsvRep
             ),
             table="programs",
             order_by=(("sort_order", False), ("name", False)),
+            min_role="front_desk",
+            contains_sensitive_data=False,
         ),
         "belt_ladders": _report(
             "belt_ladders",
@@ -162,6 +164,8 @@ def build_core_table_report_catalog(report_service_cls: Any) -> dict[str, CsvRep
             ),
             table="belt_ladders",
             order_by=(("created_at", False),),
+            min_role="front_desk",
+            contains_sensitive_data=False,
         ),
         "belt_ranks": _report(
             "belt_ranks",
@@ -183,6 +187,8 @@ def build_core_table_report_catalog(report_service_cls: Any) -> dict[str, CsvRep
             ),
             table="belt_ranks",
             order_by=(("ladder_id", False), ("display_order", False)),
+            min_role="front_desk",
+            contains_sensitive_data=False,
         ),
         "promotions": _report(
             "promotions",
@@ -271,6 +277,8 @@ def build_core_table_report_catalog(report_service_cls: Any) -> dict[str, CsvRep
             ),
             table="class_templates",
             order_by=(("day_of_week", False), ("start_time", False)),
+            min_role="front_desk",
+            contains_sensitive_data=False,
         ),
         "class_sessions": _report(
             "class_sessions",
@@ -294,6 +302,8 @@ def build_core_table_report_catalog(report_service_cls: Any) -> dict[str, CsvRep
             ),
             table="class_sessions",
             order_by=(("date", True), ("start_time", True)),
+            min_role="front_desk",
+            contains_sensitive_data=True,
         ),
         "attendance": _report(
             "attendance",
@@ -313,5 +323,7 @@ def build_core_table_report_catalog(report_service_cls: Any) -> dict[str, CsvRep
             ),
             table="attendance",
             order_by=(("checked_in_at", True),),
+            min_role="front_desk",
+            contains_sensitive_data=True,
         ),
     }

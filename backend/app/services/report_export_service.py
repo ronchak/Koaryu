@@ -24,6 +24,11 @@ from app.services.report_intelligence import (
 )
 from app.services.staff_service import StaffService
 
+REPORT_EXPORT_ROLE_RANK = {
+    "front_desk": 10,
+    "admin": 20,
+}
+
 
 def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
@@ -44,6 +49,14 @@ def _csv_value(value: Any) -> Any:
     return value
 
 
+def require_report_export_access(report: CsvReport, role: str) -> None:
+    if REPORT_EXPORT_ROLE_RANK.get(role, 0) < REPORT_EXPORT_ROLE_RANK.get(report.min_role, 999):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to export this report.",
+        )
+
+
 class ReportExportService:
     def __init__(self, supabase: Client, *, today: Optional[date] = None):
         self.supabase = supabase
@@ -52,17 +65,23 @@ class ReportExportService:
     def list_reports(self) -> list[CsvReport]:
         return list(REPORTS.values())
 
-    def _report_data(self) -> ReportExportDataFetcher:
-        return ReportExportDataFetcher(self.supabase)
-
-    async def build_csv(self, report_id: str, studio_id: str) -> tuple[str, str]:
+    def get_report(self, report_id: str) -> CsvReport:
         report = REPORTS.get(report_id)
         if not report:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Report export not found.",
             )
+        return report
 
+    def _report_data(self) -> ReportExportDataFetcher:
+        return ReportExportDataFetcher(self.supabase)
+
+    async def build_csv(self, report_id: str, studio_id: str) -> tuple[str, str]:
+        report = self.get_report(report_id)
+        return await self.build_csv_for_report(report, studio_id)
+
+    async def build_csv_for_report(self, report: CsvReport, studio_id: str) -> tuple[str, str]:
         rows = report.custom_builder(self, studio_id) if report.custom_builder else self._fetch_table_rows(report, studio_id)
         csv_text = self._write_csv(report.columns, rows)
         return csv_text, report.filename

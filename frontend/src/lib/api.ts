@@ -1,13 +1,22 @@
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { serializeJsonRequestBody } from "@/lib/api-body";
 import { applyBrowserStudioHeader } from "@/lib/api-studio-header";
+import { buildApiUrl } from "@/lib/api-url";
 
 const SERVER_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
 const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY === "true";
 const BROWSER_API_BASE =
   USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
-const API_BASE = typeof window === "undefined" ? SERVER_API_BASE : BROWSER_API_BASE;
 const API_TIMEOUT_MS = 12000;
+
+function apiUrl(path: string) {
+  return buildApiUrl(path, {
+    serverApiBase: SERVER_API_BASE,
+    useApiProxy: USE_API_PROXY,
+    isBrowser: typeof window !== "undefined",
+    browserApiBase: BROWSER_API_BASE,
+  });
+}
 
 export class ApiError extends Error {
   status: number;
@@ -177,7 +186,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(apiUrl(path), {
       method,
       headers,
       body: serializeJsonRequestBody(body),
@@ -254,7 +263,7 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(apiUrl(path), {
       method,
       headers,
       body,
@@ -330,7 +339,7 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(apiUrl(path), {
       method: "GET",
       headers,
       signal: controller.signal,

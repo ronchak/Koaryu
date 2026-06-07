@@ -336,6 +336,115 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         self.assertEqual(exc.exception.status_code, 409)
 
+    def test_create_invoice_rejects_cross_studio_item_refs_before_claiming_invoice(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Test Payer",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "not_configured",
+                "billing_status": "current",
+            }],
+            "students": [{
+                "id": "student_other",
+                "studio_id": "studio_2",
+            }],
+            "student_billing_enrollments": [{
+                "id": "enrollment_other",
+                "studio_id": "studio_2",
+                "student_id": "student_other",
+                "billing_plan_id": "plan_other",
+            }],
+            "billing_plans": [{
+                "id": "plan_other",
+                "studio_id": "studio_2",
+            }],
+            "billing_invoices": [],
+            "billing_invoice_items": [],
+        })
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.create_invoice(
+                BillingInvoiceCreate(
+                    payer_id="payer_1",
+                    items=[{
+                        "description": "Cross-studio tuition",
+                        "amount_cents": 1000,
+                        "enrollment_id": "enrollment_other",
+                        "billing_plan_id": "plan_other",
+                    }],
+                ),
+                "studio_1",
+                "user_1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertIn("Invoice item enrollment not found", context.exception.detail)
+        self.assertEqual(service.supabase.tables["billing_invoices"], [])
+
+    def test_create_invoice_rejects_item_enrollment_mismatches_before_claiming_invoice(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Test Payer",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "not_configured",
+                "billing_status": "current",
+            }],
+            "students": [
+                {"id": "student_1", "studio_id": "studio_1"},
+                {"id": "student_2", "studio_id": "studio_1"},
+            ],
+            "student_billing_enrollments": [{
+                "id": "enrollment_2",
+                "studio_id": "studio_1",
+                "student_id": "student_2",
+                "billing_plan_id": "plan_2",
+            }],
+            "billing_plans": [
+                {"id": "plan_1", "studio_id": "studio_1"},
+                {"id": "plan_2", "studio_id": "studio_1"},
+            ],
+            "billing_invoices": [],
+            "billing_invoice_items": [],
+        })
+
+        for item, detail in (
+            (
+                {
+                    "description": "Mismatched student",
+                    "amount_cents": 1000,
+                    "student_id": "student_1",
+                    "enrollment_id": "enrollment_2",
+                },
+                "different student",
+            ),
+            (
+                {
+                    "description": "Mismatched plan",
+                    "amount_cents": 1000,
+                    "enrollment_id": "enrollment_2",
+                    "billing_plan_id": "plan_1",
+                },
+                "different billing plan",
+            ),
+        ):
+            with self.subTest(detail=detail):
+                with self.assertRaises(HTTPException) as context:
+                    asyncio.run(service.create_invoice(
+                        BillingInvoiceCreate(payer_id="payer_1", items=[item]),
+                        "studio_1",
+                        "user_1",
+                    ))
+
+                self.assertEqual(context.exception.status_code, 409)
+                self.assertIn(detail, context.exception.detail)
+                self.assertEqual(service.supabase.tables["billing_invoices"], [])
+
     def test_late_payment_intent_links_existing_dispute_and_marks_payment_disputed(self):
         service = self.service()
         service.supabase = _FakeSupabase({

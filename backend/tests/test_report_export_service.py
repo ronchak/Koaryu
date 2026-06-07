@@ -1,10 +1,12 @@
 import asyncio
 import unittest
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
+from app.api.v1.endpoints.reports import export_report_csv
 from app.services.report_export_data import ReportExportDataFetcher
-from app.services.report_export_service import ReportExportService
+from app.services.report_export_service import ReportExportService, require_report_export_access
 from tests.fakes.supabase import TableBackedSupabase
 
 
@@ -94,6 +96,70 @@ class ReportExportServiceTest(unittest.TestCase):
         guardian_queries = [entry for entry in supabase.log if entry["table"] == "student_guardians"]
         self.assertGreaterEqual(len(guardian_queries), 2)
         self.assertEqual([entry["range"] for entry in guardian_queries[:2]], [(0, 999), (1000, 1999)])
+
+    def test_report_export_access_is_report_specific(self):
+        service = ReportExportService(TableBackedSupabase({}))
+        students_report = service.get_report("students")
+        class_sessions_report = service.get_report("class_sessions")
+
+        with self.assertRaises(HTTPException) as context:
+            require_report_export_access(students_report, "front_desk")
+
+        self.assertEqual(context.exception.status_code, 403)
+        require_report_export_access(students_report, "admin")
+        require_report_export_access(class_sessions_report, "front_desk")
+
+    def test_export_report_csv_audits_sensitive_admin_export(self):
+        supabase = TableBackedSupabase({
+            "students": [student_row(1)],
+            "audit_logs": [],
+        })
+
+        with patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ):
+            response = asyncio.run(export_report_csv(
+                "students",
+                user_id="user-1",
+                requested_studio_id="studio-1",
+                supabase=supabase,
+            ))
+
+        self.assertIn(b"s-0001", response.body)
+        self.assertEqual(response.headers["Cache-Control"], "no-store, private")
+        self.assertEqual(response.headers["Vary"], "Authorization, X-Studio-Id, Cookie")
+        audit = supabase.tables["audit_logs"][0]
+        self.assertEqual(audit["studio_id"], "studio-1")
+        self.assertEqual(audit["actor_id"], "user-1")
+        self.assertEqual(audit["action"], "report.exported")
+        self.assertEqual(audit["entity_type"], "report")
+        self.assertIsNone(audit["entity_id"])
+        self.assertEqual(audit["metadata"]["report_id"], "students")
+        self.assertEqual(audit["metadata"]["filename"], "students.csv")
+        self.assertTrue(audit["metadata"]["contains_sensitive_data"])
+
+    def test_export_report_csv_rejects_front_desk_sensitive_export_before_audit(self):
+        supabase = TableBackedSupabase({
+            "students": [student_row(1)],
+            "audit_logs": [],
+        })
+
+        with patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "front_desk"},
+        ):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(export_report_csv(
+                    "students",
+                    user_id="user-1",
+                    requested_studio_id="studio-1",
+                    supabase=supabase,
+                ))
+
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertEqual(supabase.tables["audit_logs"], [])
+        self.assertFalse(any(query["table"] == "students" for query in supabase.log))
 
 
 if __name__ == "__main__":

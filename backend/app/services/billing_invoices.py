@@ -86,12 +86,6 @@ class BillingInvoiceManager:
             self._ensure_record_in_studio("students", data.student_id, studio_id, "Student not found.")
         if data.enrollment_id:
             self._ensure_record_in_studio("student_billing_enrollments", data.enrollment_id, studio_id, "Billing enrollment not found.")
-        account = self._ensure_connect_ready(studio_id)
-        payer = self._sync_payer_customer(payer, account)
-        if data.collection_mode == "autopay" and not payer.get("default_payment_method_id"):
-            raise HTTPException(status_code=409, detail="Autopay requires a saved payer payment method.")
-        if data.collection_mode == "autopay" and not self._payer_autopay_authorized(payer):
-            raise HTTPException(status_code=409, detail="Autopay requires accepted autopay terms before charging this payer.")
 
         if not data.items and not data.amount_cents:
             raise HTTPException(status_code=400, detail="Invoice needs at least one line item or amount.")
@@ -104,6 +98,16 @@ class BillingInvoiceManager:
                 "enrollment_id": data.enrollment_id,
             }
         ]
+        for item in items:
+            self._validate_invoice_item_refs(item, studio_id)
+
+        account = self._ensure_connect_ready(studio_id)
+        payer = self._sync_payer_customer(payer, account)
+        if data.collection_mode == "autopay" and not payer.get("default_payment_method_id"):
+            raise HTTPException(status_code=409, detail="Autopay requires a saved payer payment method.")
+        if data.collection_mode == "autopay" and not self._payer_autopay_authorized(payer):
+            raise HTTPException(status_code=409, detail="Autopay requires accepted autopay terms before charging this payer.")
+
         amount_due = sum(int(item["amount_cents"]) * int(item.get("quantity") or 1) for item in items)
         application_fee = self._application_fee_amount(amount_due, account)
         normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
@@ -341,6 +345,48 @@ class BillingInvoiceManager:
         if not inserted.data:
             raise HTTPException(status_code=500, detail="Failed to create invoice.")
         return inserted.data[0]
+
+    def _validate_invoice_item_refs(self, item: dict[str, Any], studio_id: str) -> None:
+        student_id = item.get("student_id")
+        enrollment_id = item.get("enrollment_id")
+        billing_plan_id = item.get("billing_plan_id")
+
+        if student_id:
+            self._ensure_record_in_studio(
+                "students",
+                student_id,
+                studio_id,
+                "Invoice item student not found.",
+            )
+
+        enrollment = None
+        if enrollment_id:
+            enrollment = self._get_row_or_404(
+                "student_billing_enrollments",
+                enrollment_id,
+                studio_id,
+                "Invoice item enrollment not found.",
+            )
+
+        if billing_plan_id:
+            self._ensure_record_in_studio(
+                "billing_plans",
+                billing_plan_id,
+                studio_id,
+                "Invoice item billing plan not found.",
+            )
+
+        if enrollment and student_id and enrollment.get("student_id") != student_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Invoice item enrollment belongs to a different student.",
+            )
+
+        if enrollment and billing_plan_id and enrollment.get("billing_plan_id") != billing_plan_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Invoice item enrollment belongs to a different billing plan.",
+            )
 
     def _find_invoice_by_idempotency_key(self, studio_id: str, idempotency_key: str) -> Optional[dict[str, Any]]:
         result = (
