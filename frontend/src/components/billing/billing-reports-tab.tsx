@@ -60,15 +60,15 @@ export function BillingReportsTab({
       <section className="border border-border bg-surface rounded-[6px] p-5">
         <SectionHeader icon={Download} title="Async exports" description="Large billing exports are queued instead of held in an in-memory browser request." />
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" disabled={isActionLoading} isLoading={isLoadingAction("export:revenue")} onClick={() => onCreateExport("revenue")}>
+          <Button size="sm" variant="secondary" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction("export:revenue")} onClick={() => onCreateExport("revenue")}>
             <FileText className="h-3.5 w-3.5" />
             {isLoadingAction("export:revenue") ? "Queueing..." : "Revenue CSV"}
           </Button>
-          <Button size="sm" variant="secondary" disabled={isActionLoading} isLoading={isLoadingAction("export:invoices")} onClick={() => onCreateExport("invoices")}>
+          <Button size="sm" variant="secondary" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction("export:invoices")} onClick={() => onCreateExport("invoices")}>
             <FileText className="h-3.5 w-3.5" />
             {isLoadingAction("export:invoices") ? "Queueing..." : "Invoice CSV"}
           </Button>
-          <Button size="sm" variant="secondary" disabled={isActionLoading} isLoading={isLoadingAction("export:failed_payments")} onClick={() => onCreateExport("failed_payments")}>
+          <Button size="sm" variant="secondary" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction("export:failed_payments")} onClick={() => onCreateExport("failed_payments")}>
             <FileText className="h-3.5 w-3.5" />
             {isLoadingAction("export:failed_payments") ? "Queueing..." : "Failed payments CSV"}
           </Button>

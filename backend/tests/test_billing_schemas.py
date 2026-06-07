@@ -159,6 +159,17 @@ class BillingRequestSchemaTest(unittest.TestCase):
 
                 self.assertIn("Extra inputs are not permitted", str(context.exception))
 
+    def test_payer_update_rejects_server_owned_status_fields(self):
+        for field_name in ("autopay_status", "billing_status"):
+            with self.subTest(field_name=field_name):
+                with self.assertRaises(ValidationError) as context:
+                    BillingPayerUpdate.model_validate({
+                        "phone": "555-0100",
+                        field_name: "enabled" if field_name == "autopay_status" else "current",
+                    })
+
+                self.assertIn("Extra inputs are not permitted", str(context.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

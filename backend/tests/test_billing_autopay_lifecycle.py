@@ -180,6 +180,47 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertIsNotNone(service.supabase.tables["billing_payers"][0]["autopay_terms_accepted_at"])
         self.assertEqual(_FakeStripeService.setup_calls, [])
 
+    def test_checkout_projection_keeps_autopay_pending_when_payment_method_lookup_fails(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Rehearsal Payer",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "pending",
+                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
+                "billing_status": "no_payment_method",
+                "metadata": {},
+            }],
+        })
+
+        class FailingStripeService:
+            def retrieve_connected_setup_intent(self, **_payload):
+                raise RuntimeError("Stripe timeout")
+
+        with patch("app.services.billing_service.StripeService", FailingStripeService):
+            service._project_checkout_session({
+                "id": "cs_1",
+                "customer": "cus_1",
+                "setup_intent": "seti_1",
+                "metadata": {
+                    "product": "koaryu_payments_autopay",
+                    "studio_id": "studio_1",
+                    "payer_id": "payer_1",
+                },
+            }, "acct_1")
+
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertEqual(payer["billing_status"], "no_payment_method")
+        self.assertIsNone(payer.get("autopay_authorized_at"))
+        self.assertEqual(payer["metadata"]["autopay_projection_error"]["type"], "RuntimeError")
+
     def test_disable_autopay_rewires_active_subscription_to_invoice_collection(self):
         service = self.service()
         service.supabase = _FakeSupabase({

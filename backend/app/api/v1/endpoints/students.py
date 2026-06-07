@@ -22,7 +22,10 @@ from app.schemas.student import (
     StudentProgramMembershipUpdate,
 )
 from app.services.billing_service import BillingService
-from app.services.studio_scope import resolve_billing_manager_staff_role_for_user
+from app.services.studio_scope import (
+    resolve_billing_admin_staff_role_for_user,
+    resolve_billing_manager_staff_role_for_user,
+)
 from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES
 from app.services.student_service import StudentService
 import json
@@ -228,7 +231,7 @@ async def add_student_billing_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = resolve_billing_manager_staff_role_for_user(
+    studio_id = resolve_billing_admin_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,

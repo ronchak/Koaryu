@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 from typing import Any, Optional
 
+from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
 from stripe import StripeError
 from supabase import Client
@@ -70,7 +71,13 @@ class StripeWebhookService:
         if claim_status == "already_processed":
             return WebhookProcessResponse(status="already_processed")
         if claim_status == "already_processing":
-            return WebhookProcessResponse(status="already_processing")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Webhook event is already processing. Retry after the processing lease expires.",
+                headers={
+                    "Retry-After": str(int(WEBHOOK_PROCESSING_STALE_AFTER.total_seconds())),
+                },
+            )
         if claim_status != "claimed" or not claimed_event:
             return WebhookProcessResponse(status="ignored")
 

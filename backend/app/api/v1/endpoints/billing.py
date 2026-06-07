@@ -107,7 +107,7 @@ async def sync_connect_status(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
     return await BillingService(supabase).sync_connect_account(studio_id)
 
 
@@ -183,7 +183,7 @@ async def create_plan(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -200,7 +200,7 @@ async def update_plan(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -216,7 +216,7 @@ async def archive_plan(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -232,7 +232,7 @@ async def sync_plan(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -263,7 +263,7 @@ async def create_payer(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -296,7 +296,7 @@ async def update_payer(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -312,7 +312,7 @@ async def sync_payer(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -329,7 +329,7 @@ async def create_autopay_setup_link(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -345,7 +345,7 @@ async def disable_autopay(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -391,7 +391,7 @@ async def create_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -408,7 +408,7 @@ async def update_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -424,7 +424,7 @@ async def pause_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).set_enrollment_status(enrollment_id, "paused", studio_id, user_id)
 
 
@@ -435,7 +435,7 @@ async def resume_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).set_enrollment_status(enrollment_id, "active", studio_id, user_id)
 
 
@@ -446,7 +446,7 @@ async def cancel_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).set_enrollment_status(enrollment_id, "canceled", studio_id, user_id)
 
 
@@ -473,7 +473,7 @@ async def create_invoice(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).create_invoice(data, studio_id, user_id, request_idempotency_key)
 
 
@@ -484,7 +484,7 @@ async def finalize_invoice(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).finalize_invoice(invoice_id, studio_id, user_id)
 
 
@@ -495,7 +495,7 @@ async def retry_invoice_payment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).retry_invoice_payment(invoice_id, studio_id, user_id)
 
 
@@ -506,7 +506,7 @@ async def void_invoice(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).void_invoice(invoice_id, studio_id, user_id)
 
 
@@ -517,7 +517,7 @@ async def reconcile_invoice(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
     return await BillingService(supabase).reconcile_invoice(invoice_id, studio_id, user_id)
 
 
@@ -544,7 +544,7 @@ async def record_external_payment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -584,7 +584,7 @@ async def create_export_job(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,
@@ -600,7 +600,7 @@ async def get_export_job(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _manager_studio_id(
+    studio_id = _admin_studio_id(
         supabase,
         user_id,
         requested_studio_id,

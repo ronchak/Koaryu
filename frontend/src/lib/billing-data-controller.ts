@@ -16,7 +16,7 @@ import type {
 
 type UseBillingDataControllerOptions = {
   canManageKoaryuSubscription: boolean;
-  canManageStudioBilling: boolean;
+  canViewStudioBilling: boolean;
   isPreviewMode: boolean;
   onSubscriptionRequired: () => void;
   setError: (message: string) => void;
@@ -31,7 +31,7 @@ type BillingAccessSnapshot = {
 
 export function useBillingDataController({
   canManageKoaryuSubscription,
-  canManageStudioBilling,
+  canViewStudioBilling,
   isPreviewMode,
   onSubscriptionRequired,
   setError,
@@ -51,7 +51,7 @@ export function useBillingDataController({
   const [isLoading, setIsLoading] = useState(false);
   const [hasBillingLoadSettled, setHasBillingLoadSettled] = useState(isPreviewMode);
   const [loadedAccessKey, setLoadedAccessKey] = useState<string | null>(null);
-  const activeAccessKey = token && canManageStudioBilling && !shouldSettleEarly
+  const activeAccessKey = token && canViewStudioBilling && !shouldSettleEarly
     ? `${token}:${canManageKoaryuSubscription ? "subscription-admin" : "studio-billing"}`
     : null;
   const requestSequenceRef = useRef(0);

@@ -28,6 +28,8 @@ async def export_report_csv(
     service = ReportExportService(supabase)
     report = service.get_report(report_id)
     require_report_export_access(report, membership.get("role") or "")
+
+    csv_text, filename = await service.build_csv_for_report(report, studio_id)
     supabase.table("audit_logs").insert({
         "studio_id": studio_id,
         "actor_id": user_id,
@@ -39,10 +41,10 @@ async def export_report_csv(
             "filename": report.filename,
             "contains_sensitive_data": report.contains_sensitive_data,
             "min_role": report.min_role,
+            "row_count": max(0, csv_text.count("\n") - 1),
         },
     }).execute()
 
-    csv_text, filename = await service.build_csv_for_report(report, studio_id)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     download_name = filename.replace(".csv", f"-{timestamp}.csv")
 

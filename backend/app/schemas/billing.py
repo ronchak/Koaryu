@@ -262,8 +262,6 @@ class BillingPayerUpdate(BaseModel):
     address_city: Optional[str] = None
     address_state: Optional[str] = None
     address_zip: Optional[str] = None
-    autopay_status: Optional[AutopayStatus] = None
-    billing_status: Optional[PayerBillingStatus] = None
 
 
 class BillingPayerResponse(BaseModel):

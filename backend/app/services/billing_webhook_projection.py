@@ -185,14 +185,25 @@ class BillingWebhookProjector:
                     payment_fields = self._payment_method_fields_from_customer(customer)
                 else:
                     payment_fields = self._payment_method_fields_from_payment_method(_object_get(setup_intent, "payment_method"))
-            except Exception:
-                pass
+            except Exception as exc:
+                metadata = dict(payer.get("metadata") or {})
+                metadata["autopay_projection_error"] = {
+                    "type": exc.__class__.__name__,
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                }
+                self.supabase.table("billing_payers").update({
+                    "stripe_account_id": account_id,
+                    "stripe_customer_id": customer_id,
+                    "autopay_status": "pending",
+                    "metadata": metadata,
+                }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+                return
         update = {
             "stripe_account_id": account_id,
             "stripe_customer_id": customer_id,
             **{k: v for k, v in payment_fields.items() if v is not None},
         }
-        if payer.get("autopay_terms_accepted_at"):
+        if payer.get("autopay_terms_accepted_at") and payment_fields.get("default_payment_method_id"):
             update["autopay_status"] = "enabled"
             update["autopay_authorized_at"] = datetime.now(timezone.utc).isoformat()
             update["billing_status"] = "current"

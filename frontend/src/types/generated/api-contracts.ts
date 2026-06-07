@@ -262,8 +262,6 @@ export interface ApiBillingPayerUpdate {
   address_city?: string | null;
   address_state?: string | null;
   address_zip?: string | null;
-  autopay_status?: "not_configured" | "pending" | "enabled" | "disabled" | null;
-  billing_status?: "current" | "upcoming" | "past_due" | "failed" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan" | null;
 }
 
 export interface ApiBillingPaymentResponse {

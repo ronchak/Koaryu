@@ -329,7 +329,7 @@ def resolve_billing_manager_staff_role_for_user(
     if membership.get("role") not in {"admin", "front_desk"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only studio admins and front desk staff can manage billing.",
+            detail="Only studio admins and front desk staff can view billing.",
         )
 
     return membership

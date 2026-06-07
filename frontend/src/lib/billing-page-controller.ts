@@ -61,8 +61,9 @@ export function useBillingPageController({
   const [message, setMessage] = useState("");
 
   const canManageKoaryuSubscription = currentRole === "admin";
-  const canManageStudioBilling = currentRole === "admin" || currentRole === "front_desk";
-  const isLiveRestricted = !isPreviewMode && currentRole !== null && !canManageStudioBilling;
+  const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
+  const canManageStudioBilling = currentRole === "admin";
+  const isLiveRestricted = !isPreviewMode && currentRole !== null && !canViewStudioBilling;
   const shouldSettleEarly = shouldSettleBillingLoadEarly({
     isPreviewMode,
     hasKnownRestrictedRole: isLiveRestricted,
@@ -88,7 +89,7 @@ export function useBillingPageController({
     subscriptions,
   } = useBillingDataController({
     canManageKoaryuSubscription,
-    canManageStudioBilling,
+    canViewStudioBilling,
     isPreviewMode,
     onSubscriptionRequired: handleSubscriptionRequired,
     setError,
@@ -271,13 +272,13 @@ export function useBillingPageController({
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       if (params.get("connect") === "return") {
-        void refreshConnectStatus({ sync: true });
+        void refreshConnectStatus({ sync: canManageStudioBilling });
         return;
       }
       void refreshBilling();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refreshBilling, refreshConnectStatus]);
+  }, [canManageStudioBilling, refreshBilling, refreshConnectStatus]);
 
   const { connectEntityModal, openConnectEntityModal } = useBillingConnectEntityModal({
     isActionLoading: billingActions.isActionLoading,
@@ -312,7 +313,7 @@ export function useBillingPageController({
       error,
       isLiveRestricted,
       isLoading,
-      isRefreshDisabled: isPreviewMode || isLoading || !canManageStudioBilling,
+      isRefreshDisabled: isPreviewMode || isLoading || !canViewStudioBilling,
       message,
       onChangeTab: setActiveTab,
       onDismissError: () => setError(""),

@@ -182,7 +182,7 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["processing_status"], "processed")
         self.assertIsNone(rows[0]["processing_token"])
 
-    def test_fresh_processing_duplicate_is_not_reprocessed(self):
+    def test_fresh_processing_duplicate_raises_retryable_error(self):
         rows = [{
             "id": "row_1",
             "stripe_event_id": "evt_1",
@@ -192,9 +192,11 @@ class WebhookServiceTest(unittest.TestCase):
         }]
         _FakeBillingService.calls = 0
 
-        result = self.handle_connect_event(rows)
+        with self.assertRaises(HTTPException) as context:
+            self.handle_connect_event(rows)
 
-        self.assertEqual(result.status, "already_processing")
+        self.assertEqual(context.exception.status_code, 503)
+        self.assertEqual(context.exception.headers["Retry-After"], "600")
         self.assertEqual(_FakeBillingService.calls, 0)
         self.assertEqual(rows[0]["processing_status"], "processing")
 

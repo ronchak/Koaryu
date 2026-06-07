@@ -138,6 +138,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertEqual(audit["metadata"]["report_id"], "students")
         self.assertEqual(audit["metadata"]["filename"], "students.csv")
         self.assertTrue(audit["metadata"]["contains_sensitive_data"])
+        self.assertEqual(audit["metadata"]["row_count"], 1)
 
     def test_export_report_csv_rejects_front_desk_sensitive_export_before_audit(self):
         supabase = TableBackedSupabase({
@@ -160,6 +161,33 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 403)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "students" for query in supabase.log))
+
+    def test_export_report_csv_does_not_audit_completion_when_generation_fails(self):
+        supabase = TableBackedSupabase({
+            "students": [student_row(1)],
+            "audit_logs": [],
+        })
+
+        with (
+            patch(
+                "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+                return_value={"studio_id": "studio-1", "role": "admin"},
+            ),
+            patch.object(
+                ReportExportService,
+                "build_csv_for_report",
+                side_effect=RuntimeError("export failed"),
+            ),
+        ):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(export_report_csv(
+                    "students",
+                    user_id="user-1",
+                    requested_studio_id="studio-1",
+                    supabase=supabase,
+                ))
+
+        self.assertEqual(supabase.tables["audit_logs"], [])
 
 
 if __name__ == "__main__":
