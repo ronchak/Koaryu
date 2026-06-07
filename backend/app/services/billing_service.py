@@ -326,12 +326,14 @@ class BillingService(BillingPrivateFacadeMixin):
         data: BillingRefundCreate,
         studio_id: str,
         actor_id: str,
+        idempotency_key: str | None = None,
     ) -> BillingRefundResponse:
         return await BillingPaymentManager(self, stripe_service_cls=StripeService).refund_payment(
             payment_id,
             data,
             studio_id,
             actor_id,
+            idempotency_key,
         )
 
     async def create_export_job(self, data: ExportJobCreate, studio_id: str, actor_id: str) -> ExportJobResponse:

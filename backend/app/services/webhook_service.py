@@ -80,7 +80,7 @@ class StripeWebhookService:
 
         try:
             if processor == "platform":
-                PlatformBillingService(self.supabase).project_subscription_event(event_dict, hydrate_subscription=False)
+                PlatformBillingService(self.supabase).project_subscription_event(event_dict, hydrate_subscription=True)
             else:
                 BillingService(self.supabase).project_connect_event(event_dict)
             if not self._finish_event_processing(row_id, claim_token, "processed"):

@@ -14,6 +14,7 @@ from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_payers import BillingPayerManager
 from app.services.billing_plans import BillingPlanManager
 from app.services.billing_system_status import BillingSystemStatusReporter
+from app.services.platform_billing_helpers import build_idempotency_key
 from app.services.billing_webhook_event_state import (
     date_from_epoch,
     epoch_seconds,
@@ -441,7 +442,7 @@ class BillingPrivateFacadeMixin:
         return payer.get("autopay_status") == "enabled" and bool(payer.get("autopay_terms_accepted_at"))
 
     def _idempotency_key(self, *parts: str) -> str:
-        return "koaryu:" + ":".join(str(part).replace(":", "_") for part in parts if part is not None)
+        return build_idempotency_key(*parts)
 
     def _safe_redirect_url(self, value: Optional[str], default: str) -> str:
         url = (value or default).strip()

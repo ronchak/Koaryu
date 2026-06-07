@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -28,6 +29,9 @@ from app.services.platform_billing_helpers import (
 from app.services.platform_subscription_projection import PlatformSubscriptionProjector
 from app.services.supabase_rpc import execute_required_rpc
 from app.services.stripe_service import StripeService
+
+
+logger = logging.getLogger(__name__)
 
 
 EMAIL_INCLUDED_PER_MONTH = 500
@@ -207,18 +211,23 @@ class PlatformBillingService:
                 update["stripe_customer_id"] = self._stripe_id(data_object.get("customer"))
                 update["stripe_subscription_id"] = subscription_id
                 update["comped"] = False
-                update["status"] = "trialing"
+                if subscription_id and hydrate_subscription:
+                    try:
+                        subscription = StripeService().retrieve_subscription(subscription_id)
+                        update.update(self._project_subscription(subscription))
+                    except Exception:
+                        logger.exception(
+                            "Stripe checkout completion subscription hydration failed",
+                            extra={
+                                "studio_id": studio_id,
+                                "stripe_subscription_id": subscription_id,
+                            },
+                        )
+                        update["status"] = "incomplete"
+                else:
+                    update["status"] = "incomplete"
                 self._mark_subscription_event_created(update, row, event_created)
             self._update_subscription_row(studio_id, {k: v for k, v in update.items() if v is not None})
-            if subscription_id and not stale_for_subscription_state and hydrate_subscription:
-                try:
-                    subscription = StripeService().retrieve_subscription(subscription_id)
-                    projection = self._project_subscription(subscription)
-                    row = self._ensure_subscription_row(studio_id)
-                    self._mark_subscription_event_created(projection, row, event_created)
-                    self._update_subscription_row(studio_id, projection)
-                except Exception:
-                    pass
             return
 
         if event_type.startswith("customer.subscription."):

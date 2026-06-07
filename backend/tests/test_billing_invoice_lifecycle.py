@@ -174,6 +174,41 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         self.assertEqual(service._invoice_request_hash(first), service._invoice_request_hash(second))
 
+    def test_finalize_invoice_sanitizes_hosted_invoice_send_failures(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+                "invoice_type": "manual",
+                "status": "draft",
+                "amount_due_cents": 12900,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 12900,
+                "currency": "usd",
+                "application_fee_amount_cents": 64,
+                "external": False,
+                "created_at": "2026-05-01T00:00:00Z",
+                "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.send_invoice_error = RuntimeError(
+            "Stripe request req_123 with sk_live secret detail"
+        )
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            invoice = asyncio.run(service.finalize_invoice("invoice_1", "studio_1", "actor_1"))
+
+        self.assertIn("Koaryu could not send the email", invoice.last_payment_error)
+        self.assertRegex(invoice.last_payment_error, r"Reference: [0-9a-f]{32}$")
+        self.assertNotIn("req_123", invoice.last_payment_error)
+        self.assertNotIn("sk_live", invoice.last_payment_error)
+
     def test_create_invoice_reuses_matching_idempotency_key(self):
         service = self.service()
         data = BillingInvoiceCreate(

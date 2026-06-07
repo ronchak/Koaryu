@@ -475,11 +475,14 @@ class ScheduleService:
                     detail="Only recurring classes can be deleted for the full series",
                 )
 
+            series_end_date = (
+                self._parse_date(session["date"]) - timedelta(days=1)
+            ).isoformat()
             template_result = (
                 self.supabase.table("class_templates")
                 .update({
                     "is_active": False,
-                    "end_date": session["date"],
+                    "end_date": series_end_date,
                 })
                 .eq("id", session["template_id"])
                 .eq("studio_id", studio_id)

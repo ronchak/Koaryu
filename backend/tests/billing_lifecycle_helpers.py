@@ -133,8 +133,13 @@ class _FakeStripeService:
     subscription_item_delete_calls = []
     subscription_cancel_calls = []
     retrieve_calls = []
+    finalize_invoice_calls = []
+    send_invoice_calls = []
     retrieve_account_response = None
     invoice_response = None
+    finalize_invoice_response = None
+    send_invoice_response = None
+    send_invoice_error = None
     subscription_response = None
     payment_intent_response = None
 
@@ -148,8 +153,13 @@ class _FakeStripeService:
         cls.subscription_item_delete_calls = []
         cls.subscription_cancel_calls = []
         cls.retrieve_calls = []
+        cls.finalize_invoice_calls = []
+        cls.send_invoice_calls = []
         cls.retrieve_account_response = None
         cls.invoice_response = None
+        cls.finalize_invoice_response = None
+        cls.send_invoice_response = None
+        cls.send_invoice_error = None
         cls.subscription_response = None
         cls.payment_intent_response = None
 
@@ -187,6 +197,36 @@ class _FakeStripeService:
             "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
             "created": 200,
         }
+
+    def finalize_connected_invoice(self, *, account_id: str, invoice_id: str):
+        self.__class__.finalize_invoice_calls.append({
+            "account_id": account_id,
+            "invoice_id": invoice_id,
+        })
+        return self.__class__.finalize_invoice_response or {
+            "id": invoice_id,
+            "status": "open",
+            "collection_method": "send_invoice",
+            "amount_due": 123,
+            "amount_paid": 0,
+            "amount_remaining": 123,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
+            "created": 200,
+        }
+
+    def send_connected_invoice(self, *, account_id: str, invoice_id: str):
+        self.__class__.send_invoice_calls.append({
+            "account_id": account_id,
+            "invoice_id": invoice_id,
+        })
+        if self.__class__.send_invoice_error:
+            raise self.__class__.send_invoice_error
+        return self.__class__.send_invoice_response or self.finalize_connected_invoice(
+            account_id=account_id,
+            invoice_id=invoice_id,
+        )
 
     def retrieve_connected_subscription(self, *, account_id: str, subscription_id: str, expand=None):
         return self.__class__.subscription_response or {

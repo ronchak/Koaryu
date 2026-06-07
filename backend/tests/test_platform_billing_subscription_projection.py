@@ -302,7 +302,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 },
             })
 
-        self.assertEqual(rows[0]["status"], "trialing")
+        self.assertEqual(rows[0]["status"], "incomplete")
         self.assertEqual(rows[0]["last_payment_status"], "failed")
         self.assertEqual(rows[0]["metadata"]["core_invoice_payment_event_created"], 300)
 
@@ -424,7 +424,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             })
 
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_new")
-        self.assertEqual(rows[0]["status"], "trialing")
+        self.assertEqual(rows[0]["status"], "incomplete")
         self.assertEqual(rows[0]["last_payment_status"], "paid")
         self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
 
@@ -468,42 +468,44 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["metadata"]["core_subscription_event_created"], 200)
         self.assertEqual(rows[0]["metadata"]["core_invoice_payment_event_created"], 200)
 
-    def test_checkout_completed_fetches_subscription_projection_when_available(self):
-        rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]
-        service = self.service(rows)
+    def test_checkout_completed_uses_retrieved_subscription_status(self):
+        for subscription_status in ("active", "trialing", "past_due", "incomplete"):
+            with self.subTest(subscription_status=subscription_status):
+                rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]
+                service = self.service(rows)
 
-        class FakeStripeService:
-            def retrieve_subscription(self, subscription_id):
-                assert subscription_id == "sub_123"
-                return {
-                    "id": "sub_123",
-                    "customer": "cus_123",
-                    "status": "active",
-                    "trial_start": 50,
-                    "trial_end": 100,
-                    "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
-                    "cancel_at_period_end": False,
-                }
+                class FakeStripeService:
+                    def retrieve_subscription(self, subscription_id):
+                        assert subscription_id == "sub_123"
+                        return {
+                            "id": "sub_123",
+                            "customer": "cus_123",
+                            "status": subscription_status,
+                            "trial_start": 50 if subscription_status == "trialing" else None,
+                            "trial_end": 100 if subscription_status == "trialing" else None,
+                            "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+                            "cancel_at_period_end": False,
+                        }
 
-        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
-            service.project_subscription_event({
-                "type": "checkout.session.completed",
-                "data": {
-                    "object": {
-                        "customer": "cus_123",
-                        "subscription": "sub_123",
-                        "payment_status": "paid",
-                        "metadata": {"studio_id": "studio_1"},
-                    },
-                },
-            })
+                with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+                    service.project_subscription_event({
+                        "type": "checkout.session.completed",
+                        "data": {
+                            "object": {
+                                "customer": "cus_123",
+                                "subscription": "sub_123",
+                                "payment_status": "paid",
+                                "metadata": {"studio_id": "studio_1"},
+                            },
+                        },
+                    })
 
-        self.assertEqual(rows[0]["status"], "active")
-        self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
-        self.assertEqual(rows[0]["stripe_subscription_id"], "sub_123")
-        self.assertEqual(rows[0]["current_period_start"], "1970-01-01T00:01:40+00:00")
+                self.assertEqual(rows[0]["status"], subscription_status)
+                self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
+                self.assertEqual(rows[0]["stripe_subscription_id"], "sub_123")
+                self.assertEqual(rows[0]["current_period_start"], "1970-01-01T00:01:40+00:00")
 
-    def test_checkout_completed_can_skip_subscription_hydration_for_webhook_ack_path(self):
+    def test_checkout_completed_without_subscription_hydration_fails_closed(self):
         rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]
         service = self.service(rows)
 
@@ -527,7 +529,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 hydrate_subscription=False,
             )
 
-        self.assertEqual(rows[0]["status"], "trialing")
+        self.assertEqual(rows[0]["status"], "incomplete")
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_123")
         self.assertNotIn("current_period_start", rows[0])

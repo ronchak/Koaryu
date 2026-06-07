@@ -8,6 +8,7 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingRefundCreate, ExportJobCreate, ExternalPaymentCreate
 from app.services.billing_payments import BillingPaymentManager
+from app.services.platform_billing_helpers import MAX_IDEMPOTENCY_KEY_LENGTH, build_idempotency_key
 from tests.fakes.supabase import RpcBackedSupabase
 
 
@@ -86,7 +87,7 @@ class _BillingFacade:
         self.balance_recomputes.append((studio_id, payer_id))
 
     def _idempotency_key(self, *parts: str) -> str:
-        return "koaryu:" + ":".join(parts)
+        return build_idempotency_key(*parts)
 
     def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict) -> None:
         self.supabase.table("audit_logs").insert({
@@ -353,12 +354,132 @@ class BillingPaymentManagerTests(unittest.TestCase):
             BillingRefundCreate(reason="requested_by_customer"),
             "studio_1",
             "actor_1",
+            "refund-key-1",
         ))
 
         self.assertEqual(refund.amount_cents, 1000)
         self.assertEqual(refund.stripe_refund_id, "re_created")
-        self.assertEqual(_FakeStripeService.refunds[0]["idempotency_key"], "koaryu:refund:payment_1:1000")
+        self.assertEqual(_FakeStripeService.refunds[0]["idempotency_key"], "koaryu:refund:studio_1:payment_1:refund-key-1")
         self.assertEqual(facade.supabase.tables["audit_logs"][0]["action"], "billing.payment_refunded")
+
+    def test_refund_payment_requires_request_idempotency_key(self):
+        facade = _BillingFacade({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_charge_id": "ch_1",
+                "stripe_account_id": "acct_1",
+                "amount_cents": 1200,
+                "refunded_amount_cents": 0,
+            }]
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(manager.refund_payment(
+                "payment_1",
+                BillingRefundCreate(amount_cents=500),
+                "studio_1",
+                "actor_1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("Idempotency-Key is required", context.exception.detail)
+
+    def test_refund_payment_rejects_amount_above_refundable_balance_before_stripe(self):
+        _FakeStripeService.reset()
+        facade = _BillingFacade({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_charge_id": "ch_1",
+                "stripe_account_id": "acct_1",
+                "amount_cents": 1200,
+                "refunded_amount_cents": 1000,
+            }]
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(manager.refund_payment(
+                "payment_1",
+                BillingRefundCreate(amount_cents=500),
+                "studio_1",
+                "actor_1",
+                "refund-key-1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("exceeds", context.exception.detail)
+        self.assertEqual(_FakeStripeService.refunds, [])
+
+    def test_same_amount_refunds_use_caller_idempotency_to_distinguish_operations(self):
+        _FakeStripeService.reset()
+        facade = _BillingFacade({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_charge_id": "ch_1",
+                "stripe_account_id": "acct_1",
+                "amount_cents": 1200,
+                "refunded_amount_cents": 0,
+            }]
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        payload = BillingRefundCreate(amount_cents=500)
+
+        asyncio.run(manager.refund_payment("payment_1", payload, "studio_1", "actor_1", "refund-key-1"))
+        asyncio.run(manager.refund_payment("payment_1", payload, "studio_1", "actor_1", "refund-key-2"))
+        asyncio.run(manager.refund_payment("payment_1", payload, "studio_1", "actor_1", "refund-key-1"))
+
+        self.assertEqual(
+            [refund["idempotency_key"] for refund in _FakeStripeService.refunds],
+            [
+                "koaryu:refund:studio_1:payment_1:refund-key-1",
+                "koaryu:refund:studio_1:payment_1:refund-key-2",
+                "koaryu:refund:studio_1:payment_1:refund-key-1",
+            ],
+        )
+
+    def test_long_refund_idempotency_keys_are_capped_for_stripe(self):
+        _FakeStripeService.reset()
+        facade = _BillingFacade({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_charge_id": "ch_1",
+                "stripe_account_id": "acct_1",
+                "amount_cents": 1200,
+                "refunded_amount_cents": 0,
+            }]
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        payload = BillingRefundCreate(amount_cents=500)
+
+        asyncio.run(
+            manager.refund_payment(
+                "payment_1",
+                payload,
+                "studio_1",
+                "actor_1",
+                "a" * MAX_IDEMPOTENCY_KEY_LENGTH,
+            )
+        )
+        asyncio.run(
+            manager.refund_payment(
+                "payment_1",
+                payload,
+                "studio_1",
+                "actor_1",
+                "b" * MAX_IDEMPOTENCY_KEY_LENGTH,
+            )
+        )
+
+        keys = [refund["idempotency_key"] for refund in _FakeStripeService.refunds]
+        self.assertEqual(len(keys), 2)
+        self.assertNotEqual(keys[0], keys[1])
+        self.assertTrue(all(len(key) <= MAX_IDEMPOTENCY_KEY_LENGTH for key in keys))
+        self.assertTrue(all(key.startswith("koaryu:refund:") for key in keys))
 
     def test_create_and_get_export_job_records_async_request_metadata(self):
         facade = _BillingFacade({"export_jobs": []})

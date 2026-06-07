@@ -562,12 +562,19 @@ async def record_external_payment(
 async def refund_payment(
     payment_id: str,
     data: BillingRefundCreate,
+    request_idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
-    return await BillingService(supabase).refund_payment(payment_id, data, studio_id, user_id)
+    return await BillingService(supabase).refund_payment(
+        payment_id,
+        data,
+        studio_id,
+        user_id,
+        request_idempotency_key,
+    )
 
 
 @router.post("/exports", response_model=ExportJobResponse, status_code=202)

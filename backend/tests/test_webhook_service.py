@@ -106,6 +106,16 @@ class _FakeBillingService:
             self.__class__.mutate_during_projection(self.supabase.tables["stripe_events"])
 
 
+class _FakePlatformBillingService:
+    hydrate_calls = []
+
+    def __init__(self, supabase):
+        self.supabase = supabase
+
+    def project_subscription_event(self, event, *, hydrate_subscription: bool = True):
+        self.__class__.hydrate_calls.append((event["id"], hydrate_subscription))
+
+
 class _FakeWebhook:
     @staticmethod
     def construct_event(payload, signature, secret):
@@ -280,6 +290,34 @@ class WebhookServiceTest(unittest.TestCase):
             ["claim_stripe_event_for_processing", "finish_stripe_event_processing"],
         )
         self.assertEqual(supabase.rpc_calls[0][1]["p_stripe_account_id"], "acct_1")
+
+    def test_platform_webhook_hydrates_checkout_subscription_state(self):
+        supabase = _RpcWebhookSupabase()
+        _FakePlatformBillingService.hydrate_calls = []
+
+        class FakeStripeService:
+            def construct_webhook_event(self, *, payload, signature, secret):
+                return {
+                    "id": "evt_checkout",
+                    "type": "checkout.session.completed",
+                    "livemode": True,
+                    "payload": payload.decode(),
+                    "data": {"object": {"metadata": {"studio_id": "studio_1"}}},
+                }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.StripeService", FakeStripeService):
+                with patch("app.services.webhook_service.PlatformBillingService", _FakePlatformBillingService):
+                    result = asyncio.run(
+                        StripeWebhookService(supabase).handle_platform_webhook(
+                            b'{"id":"evt_checkout"}',
+                            "sig",
+                        )
+                    )
+
+        self.assertEqual(result.status, "processed")
+        self.assertEqual(_FakePlatformBillingService.hydrate_calls, [("evt_checkout", True)])
+        self.assertEqual(supabase.rpc_calls[0][1]["p_stripe_account_id"], None)
 
     def test_construct_webhook_event_accepts_rotated_secret_list(self):
         service = StripeService()

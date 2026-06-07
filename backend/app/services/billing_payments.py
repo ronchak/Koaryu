@@ -258,11 +258,28 @@ class BillingPaymentManager:
         data: BillingRefundCreate,
         studio_id: str,
         actor_id: str,
+        idempotency_key: str | None = None,
     ) -> BillingRefundResponse:
         payment = self._get_row_or_404("billing_payments", payment_id, studio_id, "Payment not found.")
         if not payment.get("stripe_charge_id") or not payment.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Only Stripe payments can be refunded through Koaryu.")
-        amount = data.amount_cents or max(0, int(payment.get("amount_cents") or 0) - int(payment.get("refunded_amount_cents") or 0))
+        refundable_remaining = max(
+            0,
+            int(payment.get("amount_cents") or 0)
+            - int(payment.get("refunded_amount_cents") or 0),
+        )
+        amount = data.amount_cents or refundable_remaining
+        if amount < 1:
+            raise HTTPException(status_code=409, detail="This payment has no refundable balance.")
+        if amount > refundable_remaining:
+            raise HTTPException(
+                status_code=409,
+                detail="Refund amount exceeds the remaining refundable payment balance.",
+            )
+        normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
+        if not normalized_idempotency_key:
+            raise HTTPException(status_code=400, detail="Idempotency-Key is required for refunds.")
+
         refund = self.stripe_service_cls().create_connected_refund(
             account_id=payment["stripe_account_id"],
             charge_id=payment["stripe_charge_id"],
@@ -270,7 +287,12 @@ class BillingPaymentManager:
             reason=data.reason,
             refund_application_fee=True,
             metadata={"studio_id": studio_id, "payment_id": payment_id, "product": "koaryu_payments"},
-            idempotency_key=self._idempotency_key("refund", payment_id, str(amount)),
+            idempotency_key=self._idempotency_key(
+                "refund",
+                studio_id,
+                payment_id,
+                normalized_idempotency_key,
+            ),
         )
         row = self._project_refund(refund, payment["stripe_account_id"])
         self._audit(studio_id, actor_id, "billing.payment_refunded", payment_id, {

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import date, datetime, time, timezone
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -11,6 +13,9 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceResponse
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.stripe_service import StripeService
+
+
+logger = logging.getLogger(__name__)
 
 
 class BillingInvoiceManager:
@@ -214,7 +219,19 @@ class BillingInvoiceManager:
                     invoice_id=invoice["stripe_invoice_id"],
                 )
             except Exception as exc:
-                send_error = f"Stripe finalized the hosted invoice but could not send email: {exc}"
+                error_id = uuid4().hex
+                logger.exception(
+                    "Stripe hosted invoice email send failed",
+                    extra={
+                        "error_id": error_id,
+                        "invoice_id": invoice_id,
+                        "studio_id": studio_id,
+                    },
+                )
+                send_error = (
+                    "Stripe finalized the hosted invoice, but Koaryu could not send the email. "
+                    f"Reference: {error_id}"
+                )
         invoice = self._update_invoice_from_stripe(invoice_id, studio_id, stripe_invoice, invoice["stripe_account_id"])
         if send_error:
             result = (

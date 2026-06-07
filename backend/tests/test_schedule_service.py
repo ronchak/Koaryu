@@ -252,6 +252,41 @@ class ScheduleServiceTest(unittest.TestCase):
                 self.assertEqual(context.exception.detail, detail)
                 self.assertFalse(supabase.query_log)
 
+    def test_delete_future_series_sets_template_end_before_deleted_session(self):
+        supabase = FakeSupabase({
+            "class_templates": [template_row("template-1", "Youth Basics")],
+            "class_sessions": [
+                session_row("past-session", "template-1", "2026-05-24"),
+                session_row("selected-session", "template-1", "2026-05-31"),
+                session_row("future-session", "template-1", "2026-06-07"),
+            ],
+            "audit_logs": [],
+        })
+        service = ScheduleService(supabase)
+
+        asyncio.run(service.delete_session(
+            "selected-session",
+            "studio-1",
+            "actor-1",
+            "future_series",
+        ))
+
+        template = supabase.tables["class_templates"][0]
+        self.assertFalse(template["is_active"])
+        self.assertEqual(template["end_date"], "2026-05-30")
+
+        sessions = {row["id"]: row for row in supabase.tables["class_sessions"]}
+        self.assertIsNone(sessions["past-session"]["deleted_at"])
+        self.assertEqual(sessions["past-session"]["status"], "scheduled")
+        self.assertIsNotNone(sessions["selected-session"]["deleted_at"])
+        self.assertEqual(sessions["selected-session"]["status"], "canceled")
+        self.assertIsNotNone(sessions["future-session"]["deleted_at"])
+        self.assertEqual(sessions["future-session"]["status"], "canceled")
+
+        audit = supabase.tables["audit_logs"][0]
+        self.assertEqual(audit["action"], "class_series.deleted")
+        self.assertEqual(audit["metadata"]["start_date"], "2026-05-31")
+
     def test_check_in_rejects_canceled_or_deleted_session(self):
         for session_row in (
             {
