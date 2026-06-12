@@ -221,6 +221,80 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertIsNone(payer.get("autopay_authorized_at"))
         self.assertEqual(payer["metadata"]["autopay_projection_error"]["type"], "RuntimeError")
 
+    def test_successful_checkout_projection_clears_stale_projection_error_metadata(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Rehearsal Payer",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "pending",
+                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
+                "billing_status": "no_payment_method",
+                "metadata": {
+                    "autopay_projection_error": {"type": "RuntimeError"},
+                    "support_note": "keep me",
+                },
+            }],
+        })
+
+        class SuccessfulStripeService:
+            def retrieve_connected_setup_intent(self, **_payload):
+                return {
+                    "id": "seti_1",
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {
+                            "brand": "visa",
+                            "last4": "2167",
+                            "exp_month": 12,
+                            "exp_year": 2030,
+                        },
+                    },
+                }
+
+            def set_connected_customer_default_payment_method(self, **_payload):
+                return {
+                    "id": "cus_1",
+                    "invoice_settings": {
+                        "default_payment_method": {
+                            "id": "pm_123",
+                            "type": "card",
+                            "card": {
+                                "brand": "visa",
+                                "last4": "2167",
+                                "exp_month": 12,
+                                "exp_year": 2030,
+                            },
+                        },
+                    },
+                }
+
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            service._project_checkout_session({
+                "id": "cs_1",
+                "customer": "cus_1",
+                "setup_intent": "seti_1",
+                "metadata": {
+                    "product": "koaryu_payments_autopay",
+                    "studio_id": "studio_1",
+                    "payer_id": "payer_1",
+                },
+            }, "acct_1")
+
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "enabled")
+        self.assertEqual(payer["billing_status"], "current")
+        self.assertEqual(payer["default_payment_method_id"], "pm_123")
+        self.assertNotIn("autopay_projection_error", payer["metadata"])
+        self.assertEqual(payer["metadata"]["support_note"], "keep me")
+
     def test_disable_autopay_rewires_active_subscription_to_invoice_collection(self):
         service = self.service()
         service.supabase = _FakeSupabase({

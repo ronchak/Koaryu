@@ -111,7 +111,7 @@ class BillingPayerManagerTests(unittest.TestCase):
         manager = BillingPayerManager(facade)
 
         created = asyncio.run(manager.create_payer(
-            BillingPayerCreate(display_name="Alice", guardian_id="guardian_1", email="alice@example.test"),
+            BillingPayerCreate(display_name="Alice", guardian_id="guardian_1", email="alice@example.com"),
             "studio_1",
             "actor_1",
         ))
@@ -126,7 +126,7 @@ class BillingPayerManagerTests(unittest.TestCase):
 
         self.assertEqual(created.display_name, "Alice")
         self.assertEqual(updated.phone, "555-0100")
-        self.assertEqual(fetched.email, "alice@example.test")
+        self.assertEqual(fetched.email, "alice@example.com")
         self.assertEqual([payer.display_name for payer in listed], ["Alice", "Zed"])
         self.assertEqual(facade.supabase.tables["audit_logs"][0]["action"], "billing.payer_created")
 

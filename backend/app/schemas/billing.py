@@ -1,6 +1,6 @@
 from typing import Any, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 BillingRole = Literal["admin", "front_desk"]
@@ -243,12 +243,12 @@ class BillingPayerCreate(BaseModel):
 
     display_name: str = Field(min_length=1, max_length=160)
     guardian_id: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_city: Optional[str] = None
-    address_state: Optional[str] = None
-    address_zip: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(default=None, max_length=40)
+    address_line1: Optional[str] = Field(default=None, max_length=200)
+    address_city: Optional[str] = Field(default=None, max_length=120)
+    address_state: Optional[str] = Field(default=None, max_length=80)
+    address_zip: Optional[str] = Field(default=None, max_length=20)
 
 
 class BillingPayerUpdate(BaseModel):
@@ -256,12 +256,12 @@ class BillingPayerUpdate(BaseModel):
 
     display_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
     guardian_id: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_city: Optional[str] = None
-    address_state: Optional[str] = None
-    address_zip: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(default=None, max_length=40)
+    address_line1: Optional[str] = Field(default=None, max_length=200)
+    address_city: Optional[str] = Field(default=None, max_length=120)
+    address_state: Optional[str] = Field(default=None, max_length=80)
+    address_zip: Optional[str] = Field(default=None, max_length=20)
 
 
 class BillingPayerResponse(BaseModel):

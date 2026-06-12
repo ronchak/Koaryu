@@ -198,11 +198,18 @@ class BillingWebhookProjector:
                     "metadata": metadata,
                 }).eq("id", payer_id).eq("studio_id", studio_id).execute()
                 return
+        metadata_update: dict[str, Any] | None = None
+        if payer.get("metadata"):
+            metadata_update = dict(payer.get("metadata") or {})
+            metadata_update.pop("autopay_projection_error", None)
+
         update = {
             "stripe_account_id": account_id,
             "stripe_customer_id": customer_id,
             **{k: v for k, v in payment_fields.items() if v is not None},
         }
+        if metadata_update is not None:
+            update["metadata"] = metadata_update
         if payer.get("autopay_terms_accepted_at") and payment_fields.get("default_payment_method_id"):
             update["autopay_status"] = "enabled"
             update["autopay_authorized_at"] = datetime.now(timezone.utc).isoformat()

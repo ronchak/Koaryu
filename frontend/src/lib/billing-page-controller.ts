@@ -114,6 +114,7 @@ export function useBillingPageController({
   const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;
   const billingActions = useBillingActionController({
     billingConnect,
+    canManageStudioBilling,
     isPreviewMode,
     refreshBilling,
     setError,

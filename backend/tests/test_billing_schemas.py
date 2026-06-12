@@ -170,6 +170,34 @@ class BillingRequestSchemaTest(unittest.TestCase):
 
                 self.assertIn("Extra inputs are not permitted", str(context.exception))
 
+    def test_payer_contact_fields_are_bounded_and_email_shaped(self):
+        payer = BillingPayerCreate(
+            display_name="Avery Parent",
+            email="avery@example.com",
+            phone="555-0100",
+            address_line1="123 Dojo Way",
+            address_city="Portland",
+            address_state="OR",
+            address_zip="97201",
+        )
+
+        self.assertEqual(str(payer.email), "avery@example.com")
+
+        invalid_cases = [
+            (BillingPayerCreate, {"display_name": "Avery", "email": "not-an-email"}),
+            (BillingPayerUpdate, {"email": "not-an-email"}),
+            (BillingPayerUpdate, {"phone": "1" * 41}),
+            (BillingPayerUpdate, {"address_line1": "1" * 201}),
+            (BillingPayerUpdate, {"address_city": "1" * 121}),
+            (BillingPayerUpdate, {"address_state": "1" * 81}),
+            (BillingPayerUpdate, {"address_zip": "1" * 21}),
+        ]
+
+        for model, payload in invalid_cases:
+            with self.subTest(model=model.__name__, payload=payload):
+                with self.assertRaises(ValidationError):
+                    model.model_validate(payload)
+
 
 if __name__ == "__main__":
     unittest.main()

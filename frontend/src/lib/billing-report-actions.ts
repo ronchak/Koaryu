@@ -11,11 +11,13 @@ import {
 import type { ExportJob } from "@/types";
 
 type BillingReportActionsOptions = {
+  canManageStudioBilling: boolean;
   runtime: BillingActionRuntime;
   setExportJobs: Dispatch<SetStateAction<ExportJob[]>>;
 };
 
 export function useBillingReportActions({
+  canManageStudioBilling,
   runtime,
   setExportJobs,
 }: BillingReportActionsOptions) {
@@ -30,6 +32,10 @@ export function useBillingReportActions({
   }
 
   async function handleCreateExport(exportType: string) {
+    if (!canManageStudioBilling) {
+      runtime.setError("Only studio admins can queue billing exports.");
+      return;
+    }
     if (runtime.isPreviewMode) {
       runtime.setMessage("Demo export queued. Live exports run asynchronously.");
       return;
@@ -53,6 +59,10 @@ export function useBillingReportActions({
     event.preventDefault();
     runtime.setError("");
     runtime.setMessage("");
+    if (!canManageStudioBilling) {
+      runtime.setError("Only studio admins can record billing payments.");
+      return;
+    }
     const payloadResult = buildExternalBillingPaymentPayload({
       externalPayerId,
       externalAmount,
