@@ -66,8 +66,8 @@ if [ "$CONFIRMED" != true ]; then
 fi
 
 if ! command -v supabase >/dev/null 2>&1; then
-  echo '{"ok":false,"error":"Supabase CLI is required for support triage digest."}'
-  exit 0
+  echo '{"ok":false,"error":"Supabase CLI is required for support triage digest."}' >&2
+  exit 127
 fi
 
 supabase db query --linked "SELECT public.support_triage_digest(${LIMIT}) AS digest;"

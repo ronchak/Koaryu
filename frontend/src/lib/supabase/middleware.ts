@@ -128,6 +128,10 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
+  function serviceUnavailable() {
+    return redirectTo("/503");
+  }
+
   if (!user) {
     clearStudioStateCookie(supabaseResponse, request);
     clearActiveStudioCookie(supabaseResponse, request);
@@ -181,12 +185,12 @@ export async function updateSession(request: NextRequest) {
       }
     } catch (error) {
       console.error("Failed to resolve current user's studio in middleware", error);
-      return supabaseResponse;
+      return serviceUnavailable();
     }
   }
 
   if (hasStudio === null) {
-    return supabaseResponse;
+    return serviceUnavailable();
   }
 
   if (isAuthRoute) {

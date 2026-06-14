@@ -43,6 +43,14 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _connect_webhook_secret() -> str:
+    raw_secret = _require_env("STRIPE_CONNECT_WEBHOOK_SECRET")
+    secrets = [chunk.strip() for chunk in raw_secret.replace("\n", ",").split(",") if chunk.strip()]
+    if not secrets:
+        raise SystemExit("STRIPE_CONNECT_WEBHOOK_SECRET must contain at least one webhook secret.")
+    return secrets[0]
+
+
 def _is_loopback_endpoint(endpoint: str) -> bool:
     parsed = urlparse(endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -181,7 +189,7 @@ def main() -> int:
 
     _require_safety_confirmation(args)
     _load_environment()
-    secret = _require_env("STRIPE_CONNECT_WEBHOOK_SECRET")
+    secret = _connect_webhook_secret()
     account = _first_connect_account(args.account)
     payload = _event_payload(account, args.event_id)
 

@@ -5,9 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
+import { ModalFrame } from "@/components/ui/modal-frame";
 import { useConfigStore, useStudioStore } from "@/lib/store";
 import type { StaffMember, StaffRoleName } from "@/types";
-import { MailPlus, RefreshCw, Trash2, Users } from "lucide-react";
+import { AlertTriangle, MailPlus, RefreshCw, Trash2, Users } from "lucide-react";
 
 const ROLE_LABELS: Record<StaffRoleName, string> = {
   admin: "Admin",
@@ -176,6 +177,7 @@ export function StaffRolesSection() {
   const [message, setMessage] = useState("");
   const [actionError, setActionError] = useState("");
   const [dismissedStaffLoadError, setDismissedStaffLoadError] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<StaffMember | null>(null);
 
   const canManageStaff = currentRole === "admin";
   const adminCount = useMemo(
@@ -246,10 +248,7 @@ export function StaffRolesSection() {
     }
   }
 
-  async function handleRemove(member: StaffMember) {
-    const confirmed = window.confirm(`${member.status === "pending" ? "Revoke invite for" : "Remove"} ${member.email}?`);
-    if (!confirmed) return;
-
+  async function runRemove(member: StaffMember) {
     setMessage("");
     setActionError("");
     setPendingRemoveId(member.id);
@@ -264,7 +263,12 @@ export function StaffRolesSection() {
       setActionError(error instanceof Error ? error.message : "Failed to remove staff member.");
     } finally {
       setPendingRemoveId(null);
+      setRemoveTarget(null);
     }
+  }
+
+  function handleRemove(member: StaffMember) {
+    setRemoveTarget(member);
   }
 
   if (!canManageStaff) {
@@ -291,6 +295,7 @@ export function StaffRolesSection() {
   }
 
   return (
+    <>
     <section className="bg-surface border border-border rounded-[6px] p-5">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
@@ -403,5 +408,46 @@ export function StaffRolesSection() {
         </div>
       )}
     </section>
+    {removeTarget ? (
+      <ModalFrame
+        role="alertdialog"
+        ariaLabelledBy="staff-remove-title"
+        ariaDescribedBy="staff-remove-description"
+        onBackdropClick={() => setRemoveTarget(null)}
+        panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+            <AlertTriangle className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h2 id="staff-remove-title" className="text-sm font-semibold text-text-primary">
+              {removeTarget.status === "pending" ? "Revoke staff invite?" : "Remove staff member?"}
+            </h2>
+            <p id="staff-remove-description" className="mt-2 text-sm leading-6 text-text-secondary">
+              {removeTarget.status === "pending"
+                ? `This revokes the pending invitation for ${removeTarget.email}.`
+                : `This removes ${removeTarget.email} from this studio's staff access.`}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={() => setRemoveTarget(null)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            isLoading={pendingRemoveId === removeTarget.id}
+            onClick={() => void runRemove(removeTarget)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {removeTarget.status === "pending" ? "Revoke invite" : "Remove staff"}
+          </Button>
+        </div>
+      </ModalFrame>
+    ) : null}
+    </>
   );
 }

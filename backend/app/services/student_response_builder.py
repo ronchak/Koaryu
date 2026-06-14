@@ -42,6 +42,7 @@ class StudentResponseBuilder:
     def fetch_guardians_for_students(
         self,
         student_ids: list[str],
+        student_studio_ids: Optional[dict[str, str]] = None,
     ) -> dict[str, list[GuardianResponse]]:
         ordered_student_ids = list(dict.fromkeys(student_ids))
         guardians_by_student_id: dict[str, list[GuardianResponse]] = {
@@ -61,14 +62,19 @@ class StudentResponseBuilder:
             student_id = row.get("student_id")
             if student_id not in guardians_by_student_id:
                 continue
+            expected_studio_id = (student_studio_ids or {}).get(student_id)
+            guardian_row = row.get("guardians") or {}
+            if expected_studio_id and guardian_row.get("studio_id") != expected_studio_id:
+                continue
             guardian = self.guardian_from_link_row(row)
             if guardian:
                 guardians_by_student_id[student_id].append(guardian)
 
         return guardians_by_student_id
 
-    def fetch_guardians_for_student(self, student_id: str) -> list[GuardianResponse]:
-        return self.fetch_guardians_for_students([student_id]).get(student_id, [])
+    def fetch_guardians_for_student(self, student_id: str, studio_id: Optional[str] = None) -> list[GuardianResponse]:
+        studio_map = {student_id: studio_id} if studio_id else None
+        return self.fetch_guardians_for_students([student_id], studio_map).get(student_id, [])
 
     def membership_row_to_response(self, row: dict) -> StudentProgramMembershipResponse:
         program = row.get("programs") or {}
@@ -97,6 +103,7 @@ class StudentResponseBuilder:
     def fetch_memberships_for_students(
         self,
         student_ids: list[str],
+        student_studio_ids: Optional[dict[str, str]] = None,
     ) -> dict[str, list[StudentProgramMembershipResponse]]:
         ordered_student_ids = list(dict.fromkeys(student_ids))
         memberships_by_student_id: dict[str, list[StudentProgramMembershipResponse]] = {
@@ -107,13 +114,16 @@ class StudentResponseBuilder:
             return memberships_by_student_id
 
         try:
-            result = (
+            query = (
                 self.supabase.table("student_program_memberships")
                 .select("*, programs(name, color_hex), belt_ranks(name, color_hex)")
                 .in_("student_id", ordered_student_ids)
                 .order("created_at")
-                .execute()
             )
+            expected_studios = set((student_studio_ids or {}).values())
+            if len(expected_studios) == 1:
+                query = query.eq("studio_id", next(iter(expected_studios)))
+            result = query.execute()
         except PostgrestAPIError as exc:
             if not is_optional_student_membership_schema_error(exc):
                 raise
@@ -123,12 +133,16 @@ class StudentResponseBuilder:
             student_id = row.get("student_id")
             if student_id not in memberships_by_student_id:
                 continue
+            expected_studio_id = (student_studio_ids or {}).get(student_id)
+            if expected_studio_id and row.get("studio_id") != expected_studio_id:
+                continue
             memberships_by_student_id[student_id].append(self.membership_row_to_response(row))
 
         return memberships_by_student_id
 
-    def fetch_memberships_for_student(self, student_id: str) -> list[StudentProgramMembershipResponse]:
-        return self.fetch_memberships_for_students([student_id]).get(student_id, [])
+    def fetch_memberships_for_student(self, student_id: str, studio_id: Optional[str] = None) -> list[StudentProgramMembershipResponse]:
+        studio_map = {student_id: studio_id} if studio_id else None
+        return self.fetch_memberships_for_students([student_id], studio_map).get(student_id, [])
 
     def embedded_guardians_from_row(self, row: dict) -> Optional[list[GuardianResponse]]:
         if "student_guardians" not in row:
@@ -157,12 +171,17 @@ class StudentResponseBuilder:
             for row in rows
             if row.get("id")
         ]
+        student_studio_ids = {
+            row["id"]: row["studio_id"]
+            for row in rows
+            if row.get("id") and row.get("studio_id")
+        }
         guardians_by_student_id = (
-            self.fetch_guardians_for_students([*student_ids])
+            self.fetch_guardians_for_students([*student_ids], student_studio_ids)
             if include_guardians
             else {student_id: [] for student_id in student_ids}
         )
-        memberships_by_student_id = self.fetch_memberships_for_students(student_ids)
+        memberships_by_student_id = self.fetch_memberships_for_students(student_ids, student_studio_ids)
         photo_urls_by_path = (
             self.photo_store.create_signed_urls([
                 row["photo_path"]
@@ -192,9 +211,9 @@ class StudentResponseBuilder:
         if guardians is None:
             guardians = self.embedded_guardians_from_row(row)
         if guardians is None:
-            guardians = self.fetch_guardians_for_student(row["id"])
+            guardians = self.fetch_guardians_for_student(row["id"], row.get("studio_id"))
         if memberships is None:
-            memberships = self.fetch_memberships_for_student(row["id"])
+            memberships = self.fetch_memberships_for_student(row["id"], row.get("studio_id"))
         if photo_url is PHOTO_URL_UNSET:
             photo_path = row.get("photo_path")
             if not photo_path and not self.photo_store.columns_available():

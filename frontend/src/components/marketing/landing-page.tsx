@@ -356,9 +356,9 @@ function HeroProductPreview() {
             River City Martial Arts
           </p>
         </div>
-        <button type="button" className={styles.heroPreviewStatus}>
+        <span className={styles.heroPreviewStatus}>
           Live studio view
-        </button>
+        </span>
       </div>
 
       <div className={styles.heroPreviewMetrics}>
@@ -396,13 +396,13 @@ function HeroProductPreview() {
                 Active and trialing students only.
               </p>
             </div>
-            <button type="button" className={styles.heroPreviewPseudoLink}>
+            <span className={styles.heroPreviewPseudoLink}>
               Open Reports
-            </button>
+            </span>
           </div>
-          <button type="button" className={styles.heroPreviewNotice}>
+          <div className={styles.heroPreviewNotice}>
             6 students crossed the 14-day threshold.
-          </button>
+          </div>
         </section>
 
         <section className={styles.heroPreviewPanel}>
@@ -414,10 +414,10 @@ function HeroProductPreview() {
               const Icon = action.icon;
 
               return (
-                <button key={action.label} type="button" className={styles.heroPreviewAction}>
+                <div key={action.label} className={styles.heroPreviewAction}>
                   <Icon className="h-3.5 w-3.5" />
                   <span>{action.label}</span>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -429,9 +429,9 @@ function HeroProductPreview() {
           <h3 className="text-sm font-semibold text-text-primary">
             Program Buckets
           </h3>
-          <button type="button" className={styles.heroPreviewPseudoLink}>
+          <span className={styles.heroPreviewPseudoLink}>
             View Reports
-          </button>
+          </span>
         </div>
         <div className="mt-3 grid gap-2">
           {previewProgramBuckets.map((program) => (

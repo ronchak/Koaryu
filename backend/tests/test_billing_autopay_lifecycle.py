@@ -70,6 +70,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "application_fee_amount": 1,
             "currency": "usd",
             "customer": "cus_1",
+            "invoice": "in_1",
             "latest_charge": "ch_1",
             "payment_method": {
                 "id": "pm_1",
@@ -674,6 +675,88 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "stripe_quantity_sync_lock",
             service.supabase.tables["billing_subscriptions"][0].get("metadata", {}),
         )
+
+    def test_activation_holds_quantity_lock_while_creating_first_subscription(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Family One",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+                "billing_status": "current",
+            }],
+            "billing_subscriptions": [],
+            "student_billing_enrollments": [{
+                "id": "enrollment_1",
+                "studio_id": "studio_1",
+                "student_id": "student_1",
+                "payer_id": "payer_1",
+                "billing_plan_id": "plan_1",
+                "billing_subscription_id": None,
+                "stripe_subscription_id": None,
+                "stripe_subscription_item_id": None,
+                "collection_mode": "invoice_link",
+                "status": "pending",
+                "billing_status": "no_payment_method",
+                "start_date": "2026-05-18",
+                "metadata": {},
+                "created_at": "2026-05-18T00:00:00Z",
+                "updated_at": "2026-05-18T00:00:00Z",
+            }],
+        })
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        test_case = self
+
+        class ObservingStripeService(_FakeStripeService):
+            def create_connected_subscription(self, **payload):
+                subscription = service.supabase.tables["billing_subscriptions"][0]
+                test_case.assertIn("stripe_quantity_sync_lock", subscription.get("metadata", {}))
+                test_case.assertEqual(payload["metadata"]["billing_subscription_id"], subscription["id"])
+                return super().create_connected_subscription(**payload)
+
+        with patch("app.services.billing_service.StripeService", ObservingStripeService):
+            response = service._activate_stripe_enrollment(
+                service.supabase.tables["student_billing_enrollments"][0],
+                {
+                    "id": "plan_1",
+                    "studio_id": "studio_1",
+                    "name": "Monthly Tuition",
+                    "amount_cents": 200,
+                    "currency": "usd",
+                    "billing_interval": "monthly",
+                    "trial_days": 0,
+                    "stripe_price_id": "price_1",
+                },
+                "studio_1",
+            )
+
+        subscription = service.supabase.tables["billing_subscriptions"][0]
+        enrollment = service.supabase.tables["student_billing_enrollments"][0]
+        self.assertEqual(response["status"], "active")
+        self.assertEqual(response["billing_subscription_id"], subscription["id"])
+        self.assertEqual(response["stripe_subscription_id"], "sub_created")
+        self.assertEqual(response["stripe_subscription_item_id"], "si_created")
+        self.assertNotIn("stripe_quantity_sync_lock", subscription.get("metadata", {}))
+        self.assertNotIn("stripe_attach_pending", enrollment["metadata"])
 
     def test_subscription_item_quantity_update_rejects_concurrent_sync_lock(self):
         service = self.service()

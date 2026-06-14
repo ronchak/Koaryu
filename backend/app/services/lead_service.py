@@ -9,12 +9,11 @@ from app.schemas.lead import (
     LeadActivityCreate, LeadActivityResponse,
     LeadConvert,
 )
-from app.services.studio_scope import ensure_optional_studio_record, ensure_staff_user_in_studio
+from app.services.studio_scope import ensure_staff_user_in_studio
 from app.services.program_service import ProgramService
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
-VALID_STAGES = {"inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled", "closed_lost"}
-VALID_SOURCES = {"walk_in", "referral", "social", "search", "website", "other"}
 CONVERSION_NAMESPACE = uuid.UUID("27c8322f-a4e4-46d7-bfae-018f6b638858")
 OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
 
@@ -182,164 +181,28 @@ class LeadService:
         if lead.converted_student_id:
             return lead
 
-        # Create student from lead data
         student_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:student"))
-        student_data = {
-            "id": student_id,
-            "studio_id": studio_id,
-            "legal_first_name": lead.first_name,
-            "legal_last_name": lead.last_name,
-            "email": lead.email,
-            "phone": lead.phone,
-            "status": data.status,
-            "membership_start_date": data.membership_start_date or str(date.today()),
-            "program_id": program_id,
-            "notes": lead.notes,
-            "tags": ["converted-lead"],
-        }
-        existing_student = (
-            self.supabase.table("students")
-            .select("id")
-            .eq("id", student_id)
-            .eq("studio_id", studio_id)
-            .maybe_single()
-            .execute()
-        )
-        if not existing_student.data:
-            student_result = self.supabase.table("students").insert(student_data).execute()
-            if not student_result.data:
-                raise HTTPException(status_code=500, detail="Failed to create student from lead")
-
-        self._ensure_converted_student_membership(
-            studio_id,
-            student_id,
-            program_id,
-            started_at=student_data["membership_start_date"],
-        )
-
-        # If minor, create guardian from lead data
+        guardian_id = None
+        link_id = None
         if lead.is_minor and lead.guardian_name:
-            parts = lead.guardian_name.split(" ", 1)
-            g_first = parts[0]
-            g_last = parts[1] if len(parts) > 1 else ""
             guardian_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:guardian"))
-            existing_guardian = (
-                self.supabase.table("guardians")
-                .select("id")
-                .eq("id", guardian_id)
-                .eq("studio_id", studio_id)
-                .maybe_single()
-                .execute()
-            )
-            if not existing_guardian.data:
-                self.supabase.table("guardians").insert({
-                    "id": guardian_id,
-                    "studio_id": studio_id,
-                    "first_name": g_first,
-                    "last_name": g_last,
-                    "email": lead.guardian_email,
-                    "phone": lead.guardian_phone,
-                    "is_primary_contact": True,
-                }).execute()
-
             link_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{student_id}:{guardian_id}:link"))
-            existing_link = (
-                self.supabase.table("student_guardians")
-                .select("id")
-                .eq("id", link_id)
-                .maybe_single()
-                .execute()
-            )
-            if not existing_link.data:
-                self.supabase.table("student_guardians").insert({
-                    "id": link_id,
-                    "student_id": student_id,
-                    "guardian_id": guardian_id,
-                }).execute()
 
-        # Update lead
-        lead_update_result = self.supabase.table("leads").update({
-            "stage": "enrolled",
-            "converted_student_id": student_id,
-            "follow_up_date": None,
-        }).eq("id", lead_id).eq("studio_id", studio_id).execute()
-        if not lead_update_result.data:
+        result = execute_required_rpc(self.supabase, "convert_lead_to_student_atomic", {
+            "p_studio_id": studio_id,
+            "p_actor_id": actor_id,
+            "p_lead_id": lead_id,
+            "p_student_id": student_id,
+            "p_program_id": program_id,
+            "p_status": data.status,
+            "p_membership_start_date": data.membership_start_date or str(date.today()),
+            "p_guardian_id": guardian_id,
+            "p_student_guardian_id": link_id,
+        })
+        converted = first_rpc_row(result)
+        if not converted:
             raise HTTPException(
                 status_code=500,
-                detail="Student was created but the lead could not be marked enrolled",
+                detail="Failed to convert lead to student",
             )
-
-        # Activity log
-        self.supabase.table("lead_activities").insert({
-            "studio_id": studio_id,
-            "lead_id": lead_id,
-            "activity_type": "stage_change",
-            "description": f"Converted to student (ID: {student_id})",
-            "created_by": actor_id,
-        }).execute()
-
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "lead.converted",
-            "entity_type": "lead",
-            "entity_id": lead_id,
-            "metadata": {"student_id": student_id},
-        }).execute()
-
-        return await self.get_lead(lead_id, studio_id)
-
-    def _ensure_converted_student_membership(
-        self,
-        studio_id: str,
-        student_id: str,
-        program_id: Optional[str],
-        *,
-        started_at: str,
-    ) -> None:
-        if not program_id:
-            return
-
-        try:
-            existing_membership = (
-                self.supabase.table("student_program_memberships")
-                .select("id")
-                .eq("studio_id", studio_id)
-                .eq("student_id", student_id)
-                .eq("program_id", program_id)
-                .is_("ended_at", "null")
-                .maybe_single()
-                .execute()
-            )
-            if existing_membership.data:
-                (
-                    self.supabase.table("student_program_memberships")
-                    .update({"status": "active", "started_at": started_at, "ended_at": None})
-                    .eq("id", existing_membership.data["id"])
-                    .eq("studio_id", studio_id)
-                    .execute()
-                )
-                return
-
-            self.supabase.table("student_program_memberships").insert({
-                "studio_id": studio_id,
-                "student_id": student_id,
-                "program_id": program_id,
-                "status": "active",
-                "started_at": started_at,
-            }).execute()
-        except PostgrestAPIError as exc:
-            if exc.code in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES:
-                return
-            if exc.code == "23505":
-                (
-                    self.supabase.table("student_program_memberships")
-                    .update({"status": "active", "started_at": started_at, "ended_at": None})
-                    .eq("studio_id", studio_id)
-                    .eq("student_id", student_id)
-                    .eq("program_id", program_id)
-                    .is_("ended_at", "null")
-                    .execute()
-                )
-                return
-            raise
+        return LeadResponse(**converted)

@@ -62,6 +62,8 @@ describe("preview import resolution", () => {
           "Coach Notes": "Strong guard",
           "Office Notes": "Paid cash",
           Tags: "trial, vip",
+          Guardian: "Mina Lane",
+          "Guardian Email": "mina@example.test",
         },
         {
           Name: "Bo Kim",
@@ -78,6 +80,8 @@ describe("preview import resolution", () => {
         "Coach Notes": "notes",
         "Office Notes": "notes",
         Tags: "tags",
+        Guardian: "guardian_name",
+        "Guardian Email": "guardian_email",
       },
       options: {
         create_missing_programs: false,
@@ -122,6 +126,16 @@ describe("preview import resolution", () => {
     assert.equal(student.status, "active");
     assert.equal(student.notes, "Coach Notes: Strong guard\nOffice Notes: Paid cash");
     assert.deepEqual(student.tags, ["trial", "vip"]);
+    assert.deepEqual(
+      student.guardians.map((guardian) => [
+        guardian.id,
+        guardian.first_name,
+        guardian.last_name,
+        guardian.email,
+        guardian.is_primary_contact,
+      ]),
+      [["student-import-1-guardian-primary", "Mina", "Lane", "mina@example.test", true]]
+    );
 
     assert.deepEqual(
       execution.result.rows[1].issues.map((issue) => issue.code),

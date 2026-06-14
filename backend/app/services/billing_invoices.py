@@ -81,6 +81,39 @@ class BillingInvoiceManager:
         actor_id: str,
         idempotency_key: Optional[str] = None,
     ) -> BillingInvoiceResponse:
+        local_invoice = self._create_invoice_without_hosted_send(data, studio_id, idempotency_key)
+        if data.send_hosted_invoice:
+            local_invoice = (await self.finalize_invoice(local_invoice["id"], studio_id, actor_id)).model_dump()
+        self._audit(studio_id, actor_id, "billing.invoice_created", local_invoice["id"], {
+            "amount_due_cents": local_invoice.get("amount_due_cents"),
+            "stripe_invoice_id": local_invoice.get("stripe_invoice_id"),
+        })
+        self._recompute_payer_balance(studio_id, data.payer_id)
+        return BillingInvoiceResponse(**local_invoice)
+
+    def create_invoice_sync(
+        self,
+        data: BillingInvoiceCreate,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> BillingInvoiceResponse:
+        if data.send_hosted_invoice:
+            raise HTTPException(status_code=400, detail="Hosted invoice sending requires the async invoice path.")
+        local_invoice = self._create_invoice_without_hosted_send(data, studio_id, idempotency_key)
+        self._audit(studio_id, actor_id, "billing.invoice_created", local_invoice["id"], {
+            "amount_due_cents": local_invoice.get("amount_due_cents"),
+            "stripe_invoice_id": local_invoice.get("stripe_invoice_id"),
+        })
+        self._recompute_payer_balance(studio_id, data.payer_id)
+        return BillingInvoiceResponse(**local_invoice)
+
+    def _create_invoice_without_hosted_send(
+        self,
+        data: BillingInvoiceCreate,
+        studio_id: str,
+        idempotency_key: Optional[str],
+    ) -> dict[str, Any]:
         payer = self._get_row_or_404("billing_payers", data.payer_id, studio_id, "Payer not found.")
         if data.student_id:
             self._ensure_record_in_studio("students", data.student_id, studio_id, "Student not found.")
@@ -139,7 +172,7 @@ class BillingInvoiceManager:
             invoice_row,
         )
         if local_invoice.get("stripe_invoice_id"):
-            return BillingInvoiceResponse(**local_invoice)
+            return local_invoice
 
         stripe_service = self.stripe_service_cls()
         stripe_invoice = stripe_service.create_connected_invoice(
@@ -197,14 +230,7 @@ class BillingInvoiceManager:
             invoice_id=stripe_invoice_id,
         )
         local_invoice = self._update_invoice_from_stripe(local_invoice["id"], studio_id, stripe_invoice, account["stripe_connected_account_id"])
-        if data.send_hosted_invoice:
-            local_invoice = (await self.finalize_invoice(local_invoice["id"], studio_id, actor_id)).model_dump()
-        self._audit(studio_id, actor_id, "billing.invoice_created", local_invoice["id"], {
-            "amount_due_cents": amount_due,
-            "stripe_invoice_id": local_invoice.get("stripe_invoice_id"),
-        })
-        self._recompute_payer_balance(studio_id, data.payer_id)
-        return BillingInvoiceResponse(**local_invoice)
+        return local_invoice
 
     async def finalize_invoice(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
         invoice = self._get_row_or_404("billing_invoices", invoice_id, studio_id, "Invoice not found.")

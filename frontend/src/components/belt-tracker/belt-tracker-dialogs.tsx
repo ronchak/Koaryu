@@ -200,8 +200,9 @@ function PromotionConfirmModal({
         </div>
       </div>
       <div className="flex flex-col gap-1.5 mb-4">
-        <label className="text-sm text-text-secondary font-medium">Notes (optional)</label>
+        <label htmlFor="promotion-notes" className="text-sm text-text-secondary font-medium">Notes (optional)</label>
         <textarea
+          id="promotion-notes"
           rows={2}
           value={promotionNotes}
           onChange={(event) => onNotesChange(event.target.value)}

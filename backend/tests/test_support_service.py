@@ -47,6 +47,40 @@ class FakeSupabase(RpcBackedSupabase):
             },
         }
 
+    def _rpc_create_support_ticket(self, params):
+        ticket = {
+            "id": "ticket_1",
+            "studio_id": params["p_studio_id"],
+            "created_by": params["p_created_by"],
+            "requester_email": params["p_requester_email"],
+            "requester_name": params["p_requester_name"],
+            "topic": params["p_topic"],
+            "severity": params["p_severity"],
+            "subject": params["p_subject"],
+            "details": params["p_details"],
+            "page_url": params["p_page_url"],
+            "user_agent": params["p_user_agent"],
+            "browser_context": params["p_browser_context"] or {},
+            "status": "open",
+            "created_at": "2026-05-20T00:00:00+00:00",
+            "updated_at": "2026-05-20T00:00:00+00:00",
+        }
+        self.tables["support_tickets"].append(ticket)
+        self.tables["support_ticket_events"].append({
+            "id": "event_1",
+            "ticket_id": ticket["id"],
+            "studio_id": ticket["studio_id"],
+            "actor_id": ticket["created_by"],
+            "event_type": "ticket.created",
+            "message": "Support ticket created.",
+            "metadata": {
+                "topic": ticket["topic"],
+                "severity": ticket["severity"],
+            },
+            "created_at": "2026-05-20T00:00:00+00:00",
+        })
+        return [dict(ticket)]
+
     def _rpc_support_triage_list_tickets(self, params):
         statuses = set(params.get("p_statuses") or ["open", "triaging", "waiting_on_customer"])
         severities = set(params.get("p_severities") or ["urgent", "high", "normal", "low"])
@@ -123,6 +157,7 @@ class SupportServiceTest(unittest.TestCase):
         self.assertEqual(ticket.status, "open")
         self.assertEqual(len(supabase.tables["support_ticket_events"]), 1)
         self.assertEqual(supabase.tables["support_ticket_events"][0]["event_type"], "ticket.created")
+        self.assertEqual([name for name, _params in supabase.rpc_calls], ["create_support_ticket"])
 
     def test_non_admin_lists_only_own_tickets(self):
         supabase = FakeSupabase()

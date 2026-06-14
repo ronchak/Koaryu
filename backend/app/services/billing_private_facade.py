@@ -52,11 +52,18 @@ class BillingPrivateFacadeMixin:
     def _sync_payer_customer(self, payer: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
         return BillingPayerManager(self, stripe_service_cls=self._billing_stripe_service_cls())._sync_payer_customer(payer, account)
 
-    def _activate_stripe_enrollment(self, enrollment: dict[str, Any], plan: dict[str, Any], studio_id: str) -> dict[str, Any]:
+    def _activate_stripe_enrollment(
+        self,
+        enrollment: dict[str, Any],
+        plan: dict[str, Any],
+        studio_id: str,
+        actor_id: Optional[str] = None,
+    ) -> dict[str, Any]:
         return BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._activate_stripe_enrollment(
             enrollment,
             plan,
             studio_id,
+            actor_id=actor_id,
         )
 
     def _find_or_create_billing_subscription(
@@ -105,12 +112,21 @@ class BillingPrivateFacadeMixin:
     def _detach_enrollment_from_subscription(self, enrollment: dict[str, Any]) -> None:
         BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._detach_enrollment_from_subscription(enrollment)
 
-    def _create_paid_in_full_invoice(self, enrollment: dict[str, Any], plan: dict[str, Any], payer: dict[str, Any], account: dict[str, Any]) -> None:
+    def _create_paid_in_full_invoice(
+        self,
+        enrollment: dict[str, Any],
+        plan: dict[str, Any],
+        payer: dict[str, Any],
+        account: dict[str, Any],
+        *,
+        actor_id: str,
+    ) -> None:
         BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._create_paid_in_full_invoice(
             enrollment,
             plan,
             payer,
             account,
+            actor_id=actor_id,
         )
 
     def _project_checkout_session(self, session: dict[str, Any], account_id: Optional[str]) -> None:

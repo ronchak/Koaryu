@@ -32,7 +32,7 @@ class StudentMembershipActions:
         studio_id: str,
     ) -> list[StudentProgramMembershipResponse]:
         self._ensure_student_exists(student_id, studio_id)
-        return self.response_builder.fetch_memberships_for_student(student_id)
+        return self.response_builder.fetch_memberships_for_student(student_id, studio_id)
 
     async def add(
         self,
@@ -128,7 +128,7 @@ class StudentMembershipActions:
             membership_id,
             {"student_id": student_id},
         )
-        active_program_ids = self._active_program_ids(student_id)
+        active_program_ids = self._active_program_ids(student_id, studio_id)
         if not active_program_ids:
             active_program_ids = [ProgramService(self.supabase).get_unassigned_program_id(studio_id)]
             self.membership_store.replace_active_memberships(student_id, studio_id, active_program_ids)
@@ -149,14 +149,14 @@ class StudentMembershipActions:
             raise HTTPException(status_code=404, detail="Student not found")
 
     def _sync_active_programs(self, student_id: str, studio_id: str) -> None:
-        active_program_ids = self._active_program_ids(student_id)
+        active_program_ids = self._active_program_ids(student_id, studio_id)
         if active_program_ids:
             self.membership_store.sync_legacy_program_fields(student_id, studio_id, active_program_ids)
 
-    def _active_program_ids(self, student_id: str) -> list[str]:
+    def _active_program_ids(self, student_id: str, studio_id: str) -> list[str]:
         return [
             membership.program_id
-            for membership in self.response_builder.fetch_memberships_for_student(student_id)
+            for membership in self.response_builder.fetch_memberships_for_student(student_id, studio_id)
             if membership.status in {"active", "paused"} and not membership.ended_at
         ]
 

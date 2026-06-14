@@ -11,6 +11,7 @@ from app.schemas.support import (
     SupportTriageFilters,
 )
 from app.services.studio_scope import resolve_admin_staff_role_for_user
+from app.services.supabase_rpc import execute_required_rpc
 
 SUPPORT_TICKET_COLUMNS = (
     "id, studio_id, created_by, requester_email, requester_name, "
@@ -52,36 +53,26 @@ class SupportService:
                 detail="Could not verify your support contact email. Please try again.",
             )
 
-        result = (
-            self.supabase.table("support_tickets")
-            .insert({
-                "studio_id": studio_id,
-                "created_by": user_id,
-                "requester_email": requester_email,
-                "requester_name": requester_name,
-                "topic": data.topic,
-                "severity": data.severity,
-                "subject": data.subject,
-                "details": data.details,
-                "page_url": data.page_url,
-                "user_agent": data.user_agent,
-                "browser_context": data.browser_context,
-                "status": "open",
-            })
-            .execute()
-        )
-
-        if not result.data:
+        result = execute_required_rpc(self.supabase, "create_support_ticket", {
+            "p_studio_id": studio_id,
+            "p_created_by": user_id,
+            "p_requester_email": requester_email,
+            "p_requester_name": requester_name,
+            "p_topic": data.topic,
+            "p_severity": data.severity,
+            "p_subject": data.subject,
+            "p_details": data.details,
+            "p_page_url": data.page_url,
+            "p_user_agent": data.user_agent,
+            "p_browser_context": data.browser_context,
+        })
+        ticket = self._first_rpc_row(result.data)
+        if not ticket:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create support ticket.",
             )
 
-        ticket = result.data[0]
-        self._insert_event(ticket["id"], studio_id, user_id, "ticket.created", "Support ticket created.", {
-            "topic": data.topic,
-            "severity": data.severity,
-        })
         return self._to_response(ticket)
 
     async def list_tickets(
@@ -161,24 +152,6 @@ class SupportService:
             return response.user
         except Exception:
             return None
-
-    def _insert_event(
-        self,
-        ticket_id: str,
-        studio_id: str,
-        actor_id: str,
-        event_type: str,
-        message: str,
-        metadata: dict[str, Any],
-    ) -> None:
-        self.supabase.table("support_ticket_events").insert({
-            "ticket_id": ticket_id,
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "event_type": event_type,
-            "message": message,
-            "metadata": metadata,
-        }).execute()
 
     def _first_rpc_row(self, data: Any) -> Optional[dict[str, Any]]:
         if isinstance(data, list):

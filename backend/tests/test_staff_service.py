@@ -51,6 +51,9 @@ class FakeAuthAdmin:
         user = self.supabase.auth_users.get(user_id)
         return SimpleNamespace(user=user)
 
+    def delete_user(self, user_id):
+        self.supabase.operations.append(("auth_delete", user_id))
+
 
 class FakeAuth:
     def __init__(self, supabase: "FakeSupabase"):
@@ -67,6 +70,7 @@ class FakeSupabase(TableBackedSupabase):
         self.fail_link_conflict = False
         self.link_exceptions = []
         self.empty_link_attempts = 0
+        self.fail_delete_pending = False
         self.auth_users = {}
         self.auth = FakeAuth(self)
         self.insert_defaults["staff_roles"] = self._timestamp_defaults
@@ -102,6 +106,8 @@ class FakeSupabase(TableBackedSupabase):
 
     def _on_delete_query(self, query, _rows: list[dict]):
         self.operations.append(("delete", query.name, list(query.filters)))
+        if query.name == "staff_roles" and self.fail_delete_pending:
+            raise postgrest_error()
         return None
 
 
@@ -202,7 +208,7 @@ class StaffServiceInviteTest(unittest.TestCase):
         self.assertEqual(supabase.tables["staff_roles"], [])
         self.assertEqual(
             [operation[0] for operation in supabase.operations],
-            ["insert", "auth_invite", "update", "delete"],
+            ["insert", "auth_invite", "update", "delete", "auth_delete"],
         )
 
     def test_non_conflict_link_failure_removes_pending_staff_role(self):
@@ -222,7 +228,27 @@ class StaffServiceInviteTest(unittest.TestCase):
         self.assertEqual(supabase.tables["staff_roles"], [])
         self.assertEqual(
             [operation[0] for operation in supabase.operations],
-            ["insert", "auth_invite", "update", "delete"],
+            ["insert", "auth_invite", "update", "delete", "auth_delete"],
+        )
+
+    def test_link_failure_still_deletes_auth_user_when_pending_role_cleanup_fails(self):
+        supabase = FakeSupabase()
+        supabase.link_exceptions = [postgrest_error()]
+        supabase.fail_delete_pending = True
+        service = StaffService(supabase)
+
+        with self.assertRaises(PostgrestAPIError):
+            asyncio.run(
+                service.invite_staff(
+                    StaffInviteCreate(email="instructor@example.com", role="instructor"),
+                    "studio_1",
+                    "admin_1",
+                )
+            )
+
+        self.assertEqual(
+            [operation[0] for operation in supabase.operations],
+            ["insert", "auth_invite", "update", "delete", "auth_delete"],
         )
 
     def test_empty_link_update_recreates_pending_role_and_retries(self):
@@ -264,7 +290,7 @@ class StaffServiceInviteTest(unittest.TestCase):
         self.assertEqual(supabase.tables["staff_roles"], [])
         self.assertEqual(
             [operation[0] for operation in supabase.operations],
-            ["insert", "auth_invite", "update", "insert", "update", "delete"],
+            ["insert", "auth_invite", "update", "insert", "update", "delete", "auth_delete"],
         )
 
     def test_hydrates_pending_staff_role_without_user_id(self):

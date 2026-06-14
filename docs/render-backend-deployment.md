@@ -59,7 +59,7 @@ SUPPORT_TRIAGE_SECRET=
 
 ### Production Startup Guard
 
-When `ENVIRONMENT=production`, FastAPI validates critical live-service configuration during import. The service refuses to boot if any of the following are blank, placeholder, or invalid for production:
+When `ENVIRONMENT=production`, FastAPI validates critical live-service configuration during import. The service refuses to boot if any of the following are blank, placeholder-shaped, too short for a production secret, or invalid for production:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -69,10 +69,11 @@ When `ENVIRONMENT=production`, FastAPI validates critical live-service configura
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`
 - `STRIPE_CONNECT_WEBHOOK_SECRET`
 - `STRIPE_KOARYU_CORE_PRICE_ID`
+- `STRIPE_CONNECT_CLIENT_ID`
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
-`FRONTEND_URL` must be a public HTTPS origin in production. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for `Production configuration is incomplete` and fix the named config vars before redeploying.
+`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. `STRIPE_RESTRICTED_KEY` is optional, but if set it must be a non-placeholder Stripe restricted key. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for `Production configuration is incomplete` and fix the named config vars before redeploying.
 
 ### Internal Operations
 
@@ -129,11 +130,12 @@ After Render is live, update the Vercel frontend production env var:
 
 ```env
 NEXT_PUBLIC_API_URL=https://koaryu.onrender.com/api/v1
+BACKEND_API_URL=https://koaryu.onrender.com/api/v1
 ```
 
-Then redeploy the Vercel frontend so Next.js bakes the new URL into the production build.
+Then redeploy the Vercel frontend so Next.js bakes the public URL into the production build and its server routes pick up the backend URL.
 
-The public landing page warms the backend by calling `/api/proxy/health` after the page hydrates. That proxy route forwards to `NEXT_PUBLIC_API_URL`, so verify the Vercel production value includes the `/api/v1` suffix and reaches the same Render service used by authenticated app routes.
+The public landing page warms the backend by calling `/api/proxy/health` after the page hydrates. That proxy route forwards to `BACKEND_API_URL` with `NEXT_PUBLIC_API_URL` as a fallback, so verify both Vercel production values include the `/api/v1` suffix and reach the same Render service used by authenticated app routes.
 
 Do not route `/` through frontend auth middleware just to warm Render. The landing page should paint immediately; login, onboarding, subscription-required, and dashboard routes remain responsible for blocking on Supabase and backend auth checks.
 
@@ -151,6 +153,7 @@ ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
   STRIPE_PLATFORM_WEBHOOK_SECRET="$STRIPE_PLATFORM_WEBHOOK_SECRET" \
   STRIPE_CONNECT_WEBHOOK_SECRET="$STRIPE_CONNECT_WEBHOOK_SECRET" \
   STRIPE_KOARYU_CORE_PRICE_ID="$STRIPE_KOARYU_CORE_PRICE_ID" \
+  STRIPE_CONNECT_CLIENT_ID="$STRIPE_CONNECT_CLIENT_ID" \
   ACCOUNT_DELETION_WORKER_SECRET="$ACCOUNT_DELETION_WORKER_SECRET" \
   SUPPORT_TRIAGE_SECRET="$SUPPORT_TRIAGE_SECRET" \
   venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
@@ -186,7 +189,7 @@ supabase db lint --linked --fail-on error
 scripts/verify-supabase-contracts.sh
 ```
 
-`scripts/verify-supabase-contracts.sh` is the broad database contract check for launch-readiness and defaults to the linked project. Set `SUPABASE_DB_TARGET=local` after `supabase db reset --local` when validating local migrations before they are applied remotely. It fails if the support/account controls, direct-client write lockdown, worker-claim RPCs, promotion RPC, recurring-session soft-delete contract, student program filter contract, atomic onboarding contract, or belt-ladder sync behavior drift from the current migrations. Apply the worker-claim RPC migrations before deploying backend code that processes Stripe webhooks, account deletions, or CSV imports.
+`scripts/verify-supabase-contracts.sh` is the broad database contract check for launch-readiness and defaults to the linked project. Set `SUPABASE_DB_TARGET=local` after `supabase db reset --local` when validating local migrations before they are applied remotely. It fails if the support/account controls, direct-client write lockdown, worker-claim RPCs, promotion RPC, recurring-session soft-delete contract, student program filter contract, atomic import/conversion/profile/clear RPCs, atomic onboarding contract, or belt-ladder sync behavior drift from the current migrations. Apply the worker-claim RPC migrations before deploying backend code that processes Stripe webhooks, account deletions, or CSV imports.
 
 ## Stripe Webhooks
 

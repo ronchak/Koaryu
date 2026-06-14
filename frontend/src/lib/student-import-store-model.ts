@@ -3,10 +3,12 @@ import type {
   BeltRank,
   CsvImportOptions,
   CsvImportResult,
+  Guardian,
   Program,
   Student,
   StudentStatus,
 } from "@/types";
+import { resolvePreviewImportStudentIds } from "./csv-import.ts";
 
 export const CSV_IMPORT_STATUS_ALIASES: Record<string, StudentStatus> = {
   current: "active",
@@ -100,135 +102,6 @@ function splitCsvImportFullName(rawValue: unknown): { firstName: string; lastNam
   };
 }
 
-function normalizePreviewLookupValue(value?: string | null) {
-  return (value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function findBjjProgram(programs: Program[]) {
-  return programs.find((program) =>
-    normalizePreviewLookupValue(program.name).includes("brazilian jiu jitsu")
-  );
-}
-
-function sortRanksByDisplayOrder(ranks: BeltRank[]) {
-  return [...ranks].sort((left, right) => left.display_order - right.display_order);
-}
-
-function resolvePreviewImportProgramId(value: string | undefined, programs: Program[]) {
-  const rawValue = value?.trim();
-  if (!rawValue) return undefined;
-
-  const idMatch = programs.find((program) => program.id === rawValue);
-  if (idMatch) return idMatch.id;
-
-  const normalizedValue = normalizePreviewLookupValue(rawValue);
-  const nameMatch = programs.find((program) =>
-    normalizePreviewLookupValue(program.name) === normalizedValue
-  );
-  if (nameMatch) return nameMatch.id;
-
-  if (normalizedValue.includes("brazilian jiu jitsu")) {
-    return findBjjProgram(programs)?.id;
-  }
-
-  return undefined;
-}
-
-function resolvePreviewImportBeltRankId({
-  value,
-  programId,
-  beltLadders,
-  fallbackRanks,
-}: {
-  value: string | undefined;
-  programId?: string;
-  beltLadders: BeltLadder[];
-  fallbackRanks: BeltRank[];
-}) {
-  const rawValue = value?.trim();
-  if (!rawValue) return undefined;
-
-  const candidateLadders = programId
-    ? beltLadders.filter((ladder) => ladder.program_id === programId)
-    : beltLadders;
-  const candidateRanks = candidateLadders.length > 0
-    ? candidateLadders.flatMap((ladder) => ladder.ranks || [])
-    : fallbackRanks;
-  const allRanks = beltLadders.flatMap((ladder) => ladder.ranks || []);
-
-  const idMatch = [...candidateRanks, ...allRanks].find((rank) => rank.id === rawValue);
-  if (idMatch) return idMatch.id;
-
-  const normalizedValue = normalizePreviewLookupValue(rawValue);
-  const nameMatch = candidateRanks.find((rank) =>
-    normalizePreviewLookupValue(rank.name) === normalizedValue
-  );
-  if (nameMatch) return nameMatch.id;
-
-  const stripeNumber = normalizedValue.match(/\b(?:stripe|tip)\s+(\d+)\b/);
-  if (stripeNumber) {
-    const tipIndex = Number(stripeNumber[1]) - 1;
-    const tipRanks = sortRanksByDisplayOrder(candidateRanks).filter((rank) => rank.is_tip);
-    return tipRanks[tipIndex]?.id;
-  }
-
-  return undefined;
-}
-
-function resolvePreviewImportStudentIds({
-  programValue,
-  beltRankValue,
-  programs,
-  beltLadders,
-  fallbackRanks,
-}: {
-  programValue?: string;
-  beltRankValue?: string;
-  programs: Program[];
-  beltLadders: BeltLadder[];
-  fallbackRanks: BeltRank[];
-}) {
-  const programId = resolvePreviewImportProgramId(programValue, programs);
-  const hasProgramValue = Boolean(programValue?.trim());
-  const shouldResolveBeltRank = !hasProgramValue || Boolean(programId);
-  const beltRankId = shouldResolveBeltRank
-    ? resolvePreviewImportBeltRankId({
-      value: beltRankValue,
-      programId,
-      beltLadders,
-      fallbackRanks,
-    })
-    : undefined;
-  const issues: PreviewImportRowIssue[] = [];
-
-  if (hasProgramValue && !programId) {
-    issues.push({
-      code: "unresolved_program",
-      severity: "warning",
-      field: "program_id",
-      value: programValue,
-      message: `Koaryu preview could not match "${programValue}" to an existing program, so the imported student will not be assigned to a program.`,
-    });
-  }
-  if (beltRankValue?.trim() && !beltRankId) {
-    issues.push({
-      code: "unresolved_belt",
-      severity: "warning",
-      field: "current_belt_rank_id",
-      value: beltRankValue,
-      message: `Koaryu preview could not match "${beltRankValue}" to an existing belt rank, so the imported student will not be assigned to a belt rank.`,
-    });
-  }
-
-  return { programId, beltRankId, issues };
-}
-
 function buildMappedImportRow(
   row: Record<string, string>,
   mapping: Record<string, string>,
@@ -312,6 +185,7 @@ function buildImportedPreviewStudent({
   const updatedAt = now().toISOString();
   const studentId = idFactory();
   const membershipStart = mapped.membership_start_date || now().toISOString().split("T")[0];
+  const guardians = buildImportedPreviewGuardians(mapped, studentId);
 
   return {
     id: studentId,
@@ -336,7 +210,7 @@ function buildImportedPreviewStudent({
     current_belt_rank_id: beltRankId,
     notes: mapped.notes || undefined,
     tags,
-    guardians: [],
+    guardians,
     program_memberships: programId
       ? [
           {
@@ -356,6 +230,24 @@ function buildImportedPreviewStudent({
     created_at: createdAt,
     updated_at: updatedAt,
   };
+}
+
+function buildImportedPreviewGuardians(mapped: Record<string, string>, studentId: string): Guardian[] {
+  const guardianName = mapped.guardian_name?.trim();
+  if (!guardianName) {
+    return [];
+  }
+
+  const { firstName, lastName } = splitCsvImportFullName(guardianName);
+  return [{
+    id: `${studentId}-guardian-primary`,
+    first_name: firstName || guardianName,
+    last_name: lastName || "",
+    email: mapped.guardian_email || undefined,
+    phone: mapped.guardian_phone || undefined,
+    relation: mapped.guardian_relation || undefined,
+    is_primary_contact: true,
+  }];
 }
 
 export function buildPreviewStudentImportResult({

@@ -137,7 +137,7 @@ class BillingEnrollmentManager:
             raise HTTPException(status_code=500, detail="Failed to add student billing enrollment.")
         enrollment = result.data[0]
         if data.collection_mode != "external":
-            enrollment = self._activate_stripe_enrollment(enrollment, plan, studio_id)
+            enrollment = self._activate_stripe_enrollment(enrollment, plan, studio_id, actor_id=actor_id)
         else:
             self._recompute_payer_balance(studio_id, data.payer_id)
         self._audit(studio_id, actor_id, "billing.student_enrollment_created", result.data[0]["id"], {
@@ -181,7 +181,7 @@ class BillingEnrollmentManager:
             current = result.data[0]
         if stripe_rewire and current.get("collection_mode") != "external" and current.get("status") in {"pending", "active"}:
             plan = self._get_row_or_404("billing_plans", current["billing_plan_id"], studio_id, "Billing plan not found.")
-            current = self._activate_stripe_enrollment(current, plan, studio_id)
+            current = self._activate_stripe_enrollment(current, plan, studio_id, actor_id=actor_id)
         self._audit(studio_id, actor_id, "billing.student_enrollment_updated", enrollment_id, {"changes": update})
         return StudentBillingEnrollmentResponse(**current)
 
@@ -202,7 +202,7 @@ class BillingEnrollmentManager:
             update["billing_status"] = "externally_paid" if current.get("collection_mode") == "external" else "upcoming"
         if status_value == "active" and current.get("collection_mode") != "external" and not current.get("stripe_subscription_item_id"):
             plan = self._get_row_or_404("billing_plans", current["billing_plan_id"], studio_id, "Billing plan not found.")
-            current = self._activate_stripe_enrollment({**current, "status": "active"}, plan, studio_id)
+            current = self._activate_stripe_enrollment({**current, "status": "active"}, plan, studio_id, actor_id=actor_id)
         result = (
             self.supabase.table("student_billing_enrollments")
             .update(update)
@@ -217,8 +217,14 @@ class BillingEnrollmentManager:
     def _stripe_lifecycle(self) -> BillingEnrollmentStripeLifecycle:
         return BillingEnrollmentStripeLifecycle(self)
 
-    def _activate_stripe_enrollment(self, enrollment: dict[str, Any], plan: dict[str, Any], studio_id: str) -> dict[str, Any]:
-        return self._stripe_lifecycle()._activate_stripe_enrollment(enrollment, plan, studio_id)
+    def _activate_stripe_enrollment(
+        self,
+        enrollment: dict[str, Any],
+        plan: dict[str, Any],
+        studio_id: str,
+        actor_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return self._stripe_lifecycle()._activate_stripe_enrollment(enrollment, plan, studio_id, actor_id=actor_id)
 
     def _find_or_create_billing_subscription(
         self,
@@ -255,8 +261,16 @@ class BillingEnrollmentManager:
     def _detach_enrollment_from_subscription(self, enrollment: dict[str, Any]) -> None:
         self._stripe_lifecycle()._detach_enrollment_from_subscription(enrollment)
 
-    def _create_paid_in_full_invoice(self, enrollment: dict[str, Any], plan: dict[str, Any], payer: dict[str, Any], account: dict[str, Any]) -> None:
-        self._stripe_lifecycle()._create_paid_in_full_invoice(enrollment, plan, payer, account)
+    def _create_paid_in_full_invoice(
+        self,
+        enrollment: dict[str, Any],
+        plan: dict[str, Any],
+        payer: dict[str, Any],
+        account: dict[str, Any],
+        *,
+        actor_id: str,
+    ) -> None:
+        self._stripe_lifecycle()._create_paid_in_full_invoice(enrollment, plan, payer, account, actor_id=actor_id)
 
     def _subscription_item_id_for_group_plan(self, studio_id: str, group_id: str, plan_id: str) -> Optional[str]:
         return self._stripe_lifecycle()._subscription_item_id_for_group_plan(studio_id, group_id, plan_id)

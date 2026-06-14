@@ -83,8 +83,12 @@ class StudentService:
     def _prepare_student_write(self, payload: dict, *, set_default_is_minor: bool) -> dict:
         return prepare_student_write_payload(payload, set_default_is_minor=set_default_is_minor)
 
-    def _fetch_memberships_for_student(self, student_id: str) -> list[StudentProgramMembershipResponse]:
-        return self._student_responses().fetch_memberships_for_student(student_id)
+    def _fetch_memberships_for_student(
+        self,
+        student_id: str,
+        studio_id: Optional[str] = None,
+    ) -> list[StudentProgramMembershipResponse]:
+        return self._student_responses().fetch_memberships_for_student(student_id, studio_id)
 
     def rows_to_responses(
         self,

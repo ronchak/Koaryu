@@ -2,6 +2,25 @@ import asyncio
 import unittest
 
 from app.services.demo_service import DemoService
+from tests.fakes.supabase import RpcBackedSupabase
+
+
+class FakeDemoClearSupabase(RpcBackedSupabase):
+    def _rpc_clear_studio_operational_data_atomic(self, params):
+        studio_id = params["p_studio_id"]
+        clear_tables = [
+            "students",
+            "leads",
+            "belt_ranks",
+            "class_sessions",
+            "attendance",
+            "programs",
+        ]
+        for table in clear_tables:
+            self.tables[table] = [
+                row for row in self.tables.get(table, []) if row.get("studio_id") != studio_id
+            ]
+        return []
 
 
 class FailingSeedDemoService(DemoService):
@@ -88,6 +107,29 @@ class AuditFailingDemoService(FailingSeedDemoService):
 
 
 class DemoResetOrchestrationTest(unittest.TestCase):
+    def test_clear_studio_data_uses_atomic_clear_rpc_after_counting(self):
+        supabase = FakeDemoClearSupabase({
+            "studios": [{"id": "studio_1", "name": "Original Studio"}],
+            "students": [{"id": "student_1", "studio_id": "studio_1"}],
+            "leads": [{"id": "lead_1", "studio_id": "studio_1"}],
+            "belt_ranks": [{"id": "rank_1", "studio_id": "studio_1"}],
+            "class_sessions": [{"id": "session_1", "studio_id": "studio_1"}],
+            "attendance": [{"id": "attendance_1", "studio_id": "studio_1"}],
+            "programs": [{"id": "program_1", "studio_id": "studio_1"}],
+        })
+        service = DemoService(supabase)
+
+        response = asyncio.run(service.clear_studio_data("studio_1"))
+
+        self.assertEqual(response.studio_name, "Original Studio")
+        self.assertEqual(response.counts.students, 1)
+        self.assertEqual(response.counts.leads, 1)
+        self.assertEqual([name for name, _params in supabase.rpc_calls], ["clear_studio_operational_data_atomic"])
+        self.assertFalse(supabase.rpc_calls[0][1]["p_include_platform_rows"])
+        direct_deletes = [entry for entry in supabase.query_log if entry["delete"]]
+        self.assertEqual(direct_deletes, [])
+        self.assertEqual(supabase.tables["students"], [])
+
     def test_seed_failure_clears_partial_demo_surface_and_records_phase(self):
         service = FailingSeedDemoService()
 

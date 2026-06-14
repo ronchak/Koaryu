@@ -93,6 +93,9 @@ class BillingSubscriptionWebhookProjector:
             })
             result = self.supabase.table("billing_subscriptions").insert(update).execute()
             row = result.data[0] if result.data else update
+        if status_value == "canceled":
+            self._detach_enrollments_for_canceled_subscription(row, subscription, account_id, event_created)
+            return row
         self.project_subscription_items(subscription, row)
         return row
 
@@ -130,3 +133,30 @@ class BillingSubscriptionWebhookProjector:
             if enrollment_id:
                 self.supabase.table("student_billing_enrollments").update(update).eq("id", enrollment_id).eq("studio_id", group["studio_id"]).in_("status", ["pending", "active"]).execute()
             self.supabase.table("student_billing_enrollments").update(update).eq("studio_id", group["studio_id"]).eq("billing_subscription_id", group.get("id")).eq("stripe_subscription_item_id", _stripe_id(item)).in_("status", ["pending", "active"]).execute()
+
+    def _detach_enrollments_for_canceled_subscription(
+        self,
+        group: dict[str, Any],
+        subscription: dict[str, Any],
+        account_id: Optional[str],
+        event_created: Optional[int],
+    ) -> None:
+        update = {
+            "stripe_subscription_id": None,
+            "stripe_subscription_item_id": None,
+            "billing_status": "unpaid",
+            "status": "canceled",
+        }
+        if event_created is not None:
+            update["last_stripe_event_created"] = event_created
+        query = (
+            self.supabase.table("student_billing_enrollments")
+            .update(update)
+            .eq("studio_id", group["studio_id"])
+            .eq("billing_subscription_id", group.get("id"))
+            .in_("status", ["pending", "active"])
+        )
+        stripe_subscription_id = _stripe_id(subscription)
+        if stripe_subscription_id:
+            query = query.eq("stripe_subscription_id", stripe_subscription_id)
+        query.execute()

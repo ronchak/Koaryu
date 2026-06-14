@@ -36,14 +36,17 @@ function ColorPicker({ label, value, onChange }: {
   value: string;
   onChange: (hex: string) => void;
 }) {
+  const inputId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-hex`;
+
   return (
     <div>
-      <label className="block text-xs text-text-secondary font-medium mb-2">{label}</label>
+      <label className="block text-xs text-text-secondary font-medium mb-2" htmlFor={inputId}>{label}</label>
       <div className="grid grid-cols-6 gap-1.5 mb-2">
         {BELT_COLOR_PRESETS.map((c) => (
           <button
             key={c.hex}
             type="button"
+            aria-label={`Use ${c.label} for ${label.toLowerCase()}`}
             title={c.label}
             onClick={() => onChange(c.hex)}
             className="w-7 h-7 rounded-[4px] transition-transform hover:scale-110 flex-shrink-0"
@@ -59,6 +62,7 @@ function ColorPicker({ label, value, onChange }: {
       <div className="flex items-center gap-2">
         <div className="w-6 h-6 rounded-[3px] border border-border flex-shrink-0" style={{ backgroundColor: value }} />
         <input
+          id={inputId}
           type="text"
           value={value}
           onChange={(e) => {
@@ -110,15 +114,16 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
     >
       <div className="flex items-center justify-between mb-5">
         <h2 id="rank-form-title" className="text-base font-semibold text-text-primary">{title}</h2>
-        <button onClick={onClose} className="text-muted hover:text-text-secondary cursor-pointer">
+        <button type="button" aria-label="Close rank form" onClick={onClose} className="text-muted hover:text-text-secondary cursor-pointer">
           <X className="w-4 h-4" />
         </button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs text-text-secondary font-medium mb-1.5">Rank name</label>
+          <label htmlFor="rank-form-name" className="block text-xs text-text-secondary font-medium mb-1.5">Rank name</label>
           <input
+            id="rank-form-name"
             type="text"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -130,8 +135,8 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
 
         {forceTip === undefined && !lockType && (
           <div>
-            <label className="block text-xs text-text-secondary font-medium mb-1.5">Rank type</label>
-            <div className="flex gap-2">
+            <p id="rank-form-type-label" className="block text-xs text-text-secondary font-medium mb-1.5">Rank type</p>
+            <div className="flex gap-2" role="group" aria-labelledby="rank-form-type-label">
               {([false, true] as const).map((val) => (
                 <button
                   key={String(val)}
@@ -197,8 +202,9 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-text-secondary font-medium mb-1.5">Min classes</label>
+            <label htmlFor="rank-form-min-classes" className="block text-xs text-text-secondary font-medium mb-1.5">Min classes</label>
             <input
+              id="rank-form-min-classes"
               type="number"
               min={0}
               value={form.min_classes}
@@ -207,8 +213,9 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
             />
           </div>
           <div>
-            <label className="block text-xs text-text-secondary font-medium mb-1.5">Min months</label>
+            <label htmlFor="rank-form-min-months" className="block text-xs text-text-secondary font-medium mb-1.5">Min months</label>
             <input
+              id="rank-form-min-months"
               type="number"
               min={0}
               value={form.min_months}

@@ -14,7 +14,7 @@ from app.services.schedule_service import (
     SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
     ScheduleService,
 )
-from tests.fakes.supabase import TableBackedSupabase
+from tests.fakes.supabase import RpcBackedSupabase
 
 
 def conflict_error() -> PostgrestAPIError:
@@ -26,7 +26,7 @@ def conflict_error() -> PostgrestAPIError:
     })
 
 
-class FakeSupabase(TableBackedSupabase):
+class FakeSupabase(RpcBackedSupabase):
     def __init__(self, tables: dict[str, list[dict]]):
         super().__init__(tables)
         self.insert_defaults["class_sessions"] = {
@@ -35,6 +35,61 @@ class FakeSupabase(TableBackedSupabase):
         }
         self.unique_constraints["class_sessions"] = [("template_id", "date")]
         self.unique_conflict_error_factory = lambda _table, _columns: conflict_error()
+
+    def _rpc_delete_recurring_class_series_atomic(self, params: dict):
+        session = next(
+            (
+                row
+                for row in self.tables.setdefault("class_sessions", [])
+                if row.get("id") == params["p_session_id"]
+                and row.get("studio_id") == params["p_studio_id"]
+                and row.get("deleted_at") is None
+            ),
+            None,
+        )
+        if not session:
+            raise AssertionError("Class session not found.")
+        if not session.get("template_id"):
+            raise AssertionError("Only recurring classes can be deleted for the full series.")
+        template = next(
+            (
+                row
+                for row in self.tables.setdefault("class_templates", [])
+                if row.get("id") == session.get("template_id")
+                and row.get("studio_id") == params["p_studio_id"]
+            ),
+            None,
+        )
+        if not template:
+            raise AssertionError("Class template not found.")
+
+        template["is_active"] = False
+        template["end_date"] = "2026-05-30"
+        deleted_count = 0
+        for row in self.tables.setdefault("class_sessions", []):
+            if (
+                row.get("studio_id") == params["p_studio_id"]
+                and row.get("template_id") == session.get("template_id")
+                and row.get("date") >= session.get("date")
+                and row.get("deleted_at") is None
+            ):
+                row["deleted_at"] = "2026-05-31T00:00:00Z"
+                row["status"] = "canceled"
+                deleted_count += 1
+        if deleted_count == 0:
+            raise AssertionError("Failed to delete recurring class series.")
+        self.tables.setdefault("audit_logs", []).append({
+            "studio_id": params["p_studio_id"],
+            "actor_id": params["p_actor_id"],
+            "action": "class_series.deleted",
+            "entity_type": "class_template",
+            "entity_id": template["id"],
+            "metadata": {
+                "start_date": session["date"],
+                "session_name": session["name"],
+            },
+        })
+        return None
 
 
 def template_row(template_id: str, name: str) -> dict:
@@ -286,6 +341,17 @@ class ScheduleServiceTest(unittest.TestCase):
         audit = supabase.tables["audit_logs"][0]
         self.assertEqual(audit["action"], "class_series.deleted")
         self.assertEqual(audit["metadata"]["start_date"], "2026-05-31")
+        self.assertEqual(
+            [name for name, _params in supabase.rpc_calls],
+            ["delete_recurring_class_series_atomic"],
+        )
+        direct_writes = [
+            query
+            for query in supabase.query_log
+            if query["table"] in {"class_templates", "class_sessions", "audit_logs"}
+            and (query["update"] is not None or query["insert"] is not None)
+        ]
+        self.assertEqual(direct_writes, [])
 
     def test_check_in_rejects_canceled_or_deleted_session(self):
         for session_row in (

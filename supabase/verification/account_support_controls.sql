@@ -252,6 +252,10 @@ BEGIN
         RAISE EXCEPTION 'sync_belt_ladder_ranks still references tmp_sync_belt_ranks; linked db lint will fail.';
     END IF;
 
+    IF to_regprocedure('public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)') IS NULL THEN
+        RAISE EXCEPTION 'Missing public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb).';
+    END IF;
+
     IF to_regprocedure('public.support_triage_list_tickets(text[], text[], text[], integer)') IS NULL THEN
         RAISE EXCEPTION 'Missing public.support_triage_list_tickets(text[], text[], text[], integer).';
     END IF;
@@ -264,13 +268,16 @@ BEGIN
         RAISE EXCEPTION 'Missing public.support_triage_digest(integer).';
     END IF;
 
-    IF NOT has_function_privilege('service_role', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
+    IF NOT has_function_privilege('service_role', 'public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)', 'EXECUTE')
+       OR NOT has_function_privilege('service_role', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
        OR NOT has_function_privilege('service_role', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE')
        OR NOT has_function_privilege('service_role', 'public.support_triage_digest(integer)', 'EXECUTE') THEN
         RAISE EXCEPTION 'service_role must be able to execute support triage RPCs.';
     END IF;
 
-    IF has_function_privilege('anon', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
+    IF has_function_privilege('anon', 'public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)', 'EXECUTE')
+       OR has_function_privilege('anon', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
        OR has_function_privilege('authenticated', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
        OR has_function_privilege('anon', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE')
        OR has_function_privilege('authenticated', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE')

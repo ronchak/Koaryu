@@ -113,7 +113,7 @@ class StaffService:
         try:
             result = self._link_pending_staff_role(pending_role["id"], studio_id, user.id)
         except PostgrestAPIError as exc:
-            self._delete_pending_staff_role(pending_role["id"], studio_id)
+            self._cleanup_failed_invite_link(pending_role["id"], studio_id, user.id)
             if exc.code == "23505":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -121,13 +121,18 @@ class StaffService:
                 ) from exc
             raise
         except Exception:
-            self._delete_pending_staff_role(pending_role["id"], studio_id)
+            self._cleanup_failed_invite_link(pending_role["id"], studio_id, user.id)
             raise
 
         if not result.data:
-            result = self._recover_missing_pending_staff_role(data, studio_id, actor_id, user.id)
+            try:
+                result = self._recover_missing_pending_staff_role(data, studio_id, actor_id, user.id)
+            except Exception:
+                self._delete_invited_auth_user(user.id)
+                raise
 
         if not result.data:
+            self._delete_invited_auth_user(user.id)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to link staff invite.",
@@ -290,6 +295,26 @@ class StaffService:
             .is_("user_id", None)
             .execute()
         )
+
+    def _delete_invited_auth_user(self, user_id: Optional[str]) -> None:
+        if not user_id:
+            return
+        try:
+            self.supabase.auth.admin.delete_user(user_id)
+        except Exception:
+            return
+
+    def _cleanup_failed_invite_link(
+        self,
+        staff_role_id: str,
+        studio_id: str,
+        user_id: Optional[str],
+    ) -> None:
+        try:
+            self._delete_pending_staff_role(staff_role_id, studio_id)
+        except Exception:
+            pass
+        self._delete_invited_auth_user(user_id)
 
     async def remove_staff(
         self,

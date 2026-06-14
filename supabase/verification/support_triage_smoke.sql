@@ -8,6 +8,7 @@ DECLARE
     v_ticket_urgent UUID := gen_random_uuid();
     v_ticket_student UUID := gen_random_uuid();
     v_listed_ids UUID[];
+    v_created public.support_tickets%ROWTYPE;
     v_updated public.support_tickets%ROWTYPE;
     v_event_count INTEGER;
     v_digest JSONB;
@@ -117,6 +118,43 @@ BEGIN
 
     IF v_listed_ids[1] <> v_ticket_urgent THEN
         RAISE EXCEPTION 'Urgent ticket was not ordered before normal ticket.';
+    END IF;
+
+    SELECT *
+    INTO v_created
+    FROM public.create_support_ticket(
+        v_studio,
+        v_owner,
+        'created@example.invalid',
+        'Created Smoke',
+        'product_question',
+        'low',
+        'Created support ticket',
+        'Created by the atomic support ticket RPC.',
+        'https://app.example.invalid/support',
+        'support-smoke-agent',
+        '{"viewport":"1280x720"}'::jsonb
+    );
+
+    IF v_created.id IS NULL
+       OR v_created.studio_id <> v_studio
+       OR v_created.created_by <> v_owner
+       OR v_created.status <> 'open' THEN
+        RAISE EXCEPTION 'Atomic support ticket creation did not return an open ticket for the studio.';
+    END IF;
+
+    SELECT COUNT(*)
+    INTO v_event_count
+    FROM public.support_ticket_events
+    WHERE ticket_id = v_created.id
+      AND studio_id = v_studio
+      AND actor_id = v_owner
+      AND event_type = 'ticket.created'
+      AND metadata->>'topic' = 'product_question'
+      AND metadata->>'severity' = 'low';
+
+    IF v_event_count <> 1 THEN
+        RAISE EXCEPTION 'Atomic support ticket creation did not insert exactly one ticket.created event.';
     END IF;
 
     SELECT public.support_triage_digest(100)

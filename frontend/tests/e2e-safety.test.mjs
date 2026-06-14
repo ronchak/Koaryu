@@ -23,7 +23,7 @@ describe("stateful Playwright e2e safety", () => {
   it("documents disposable-account usage for the stateful e2e check", async () => {
     const readme = await readFile(frontendReadmePath, "utf8");
 
-    assert.match(readme, /Stateful E2E Checks/);
+    assert.match(readme, /E2E Checks/);
     assert.match(readme, /disposable account and studio name/);
     assert.match(readme, /avoids logging account identifiers/);
   });

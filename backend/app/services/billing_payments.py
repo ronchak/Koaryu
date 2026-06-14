@@ -94,6 +94,13 @@ class BillingPaymentManager:
             self._ensure_record_in_studio("billing_payers", effective_payer_id, studio_id, "Payer not found.")
         normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
         request_hash = self._external_payment_request_hash(data, effective_payer_id=effective_payer_id)
+        existing_idempotent_payment = None
+        if normalized_idempotency_key:
+            existing_idempotent_payment = self._find_payment_by_idempotency_key(studio_id, normalized_idempotency_key)
+            if existing_idempotent_payment:
+                self._ensure_external_payment_hash_matches(existing_idempotent_payment, request_hash)
+        if data.invoice_id and not existing_idempotent_payment:
+            self._ensure_external_payment_does_not_overpay_invoice(invoice or {}, data.amount_cents)
         row = data.model_dump()
         row.update({
             "studio_id": studio_id,
@@ -121,6 +128,20 @@ class BillingPaymentManager:
                 "external_method": data.external_method,
             })
         return BillingPaymentResponse(**payment)
+
+    def _ensure_external_payment_does_not_overpay_invoice(
+        self,
+        invoice: dict[str, Any],
+        amount_cents: int,
+    ) -> None:
+        if invoice.get("amount_remaining_cents") is not None:
+            remaining = int(invoice.get("amount_remaining_cents") or 0)
+        else:
+            remaining = max(0, int(invoice.get("amount_due_cents") or 0) - int(invoice.get("amount_paid_cents") or 0))
+        if remaining <= 0:
+            raise HTTPException(status_code=409, detail="Invoice has no remaining balance.")
+        if int(amount_cents or 0) > remaining:
+            raise HTTPException(status_code=409, detail="External payment exceeds the invoice remaining balance.")
 
     def _external_payment_request_hash(self, data: ExternalPaymentCreate, *, effective_payer_id: str | None) -> str:
         payload = data.model_dump(mode="json", exclude_none=True)

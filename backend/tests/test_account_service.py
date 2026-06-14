@@ -16,11 +16,20 @@ class FakeUserResponse:
         self.user = user
 
 
+class FakeAuthUserNotFound(Exception):
+    status_code = 404
+    code = "user_not_found"
+
+
 class FakeAuthAdmin:
     def __init__(self, supabase):
         self.supabase = supabase
 
     def get_user_by_id(self, user_id):
+        if user_id in self.supabase.lookup_error_user_ids:
+            raise RuntimeError("temporary auth lookup outage")
+        if user_id in self.supabase.deleted_auth_user_ids:
+            raise FakeAuthUserNotFound("User not found")
         is_active = user_id not in self.supabase.inactive_user_ids
         return FakeUserResponse(type("User", (), {
             "id": user_id,
@@ -31,7 +40,10 @@ class FakeAuthAdmin:
         })())
 
     def delete_user(self, user_id):
+        if user_id in self.supabase.deleted_auth_user_ids:
+            raise FakeAuthUserNotFound("User not found")
         self.supabase.deleted_user_ids.append(user_id)
+        self.supabase.deleted_auth_user_ids.add(user_id)
         self.supabase.tables["staff_roles"] = [
             row
             for row in self.supabase.tables["staff_roles"]
@@ -54,6 +66,8 @@ class FakeSupabase(RpcBackedSupabase):
             "studios": [],
         })
         self.inactive_user_ids = set()
+        self.lookup_error_user_ids = set()
+        self.deleted_auth_user_ids = set()
         self.deleted_user_ids = []
         self.auth = FakeAuth(self)
 
@@ -342,6 +356,64 @@ class AccountServiceTest(unittest.TestCase):
             ["claim_due_account_deletion_requests", "finish_account_deletion_request"],
         )
         self.assertEqual(supabase.rpc_calls[0][1]["p_limit"], 10)
+
+    def test_process_due_deletions_retries_when_survivor_auth_lookup_fails(self):
+        supabase = FakeSupabase()
+        supabase.lookup_error_user_ids.add("user_2")
+        supabase.tables["account_deletion_requests"] = [{
+            "id": "delete_1",
+            "user_id": "user_1",
+            "studio_id": "studio_1",
+            "requested_by": "user_1",
+            "requester_email": "user_1@example.com",
+            "status": "scheduled",
+            "requested_at": "2026-04-01T00:00:00+00:00",
+            "scheduled_for": "2026-04-30T00:00:00+00:00",
+            "reason": None,
+        }]
+        supabase.tables["studios"] = [{"id": "studio_1", "owner_id": "owner_1"}]
+        supabase.tables["staff_roles"] = [
+            {"id": "role_1", "studio_id": "studio_1", "user_id": "user_1", "role": "admin"},
+            {"id": "role_2", "studio_id": "studio_1", "user_id": "user_2", "role": "admin"},
+        ]
+        service = AccountService(supabase)
+
+        result = asyncio.run(service.process_due_deletions())
+
+        self.assertEqual(result.blocked, 0)
+        self.assertEqual(result.failed, 1)
+        self.assertEqual(result.completed, 0)
+        self.assertEqual(supabase.deleted_user_ids, [])
+        self.assertEqual(supabase.tables["account_deletion_requests"][0]["status"], "scheduled")
+        self.assertIsNotNone(supabase.tables["account_deletion_requests"][0]["processing_token"])
+
+    def test_process_due_deletions_completes_when_auth_user_already_deleted(self):
+        supabase = FakeSupabase()
+        supabase.deleted_auth_user_ids.add("user_1")
+        supabase.tables["account_deletion_requests"] = [{
+            "id": "delete_1",
+            "user_id": "user_1",
+            "studio_id": "studio_1",
+            "requested_by": "user_1",
+            "requester_email": "user_1@example.com",
+            "status": "scheduled",
+            "requested_at": "2026-04-01T00:00:00+00:00",
+            "scheduled_for": "2026-04-30T00:00:00+00:00",
+            "reason": None,
+        }]
+        supabase.tables["studios"] = [{"id": "studio_1", "owner_id": "owner_1"}]
+        supabase.tables["staff_roles"] = [
+            {"id": "role_1", "studio_id": "studio_1", "user_id": "user_1", "role": "instructor"},
+        ]
+        service = AccountService(supabase)
+
+        result = asyncio.run(service.process_due_deletions())
+
+        self.assertEqual(result.failed, 0)
+        self.assertEqual(result.completed, 1)
+        self.assertEqual(supabase.deleted_user_ids, [])
+        self.assertEqual(supabase.tables["account_deletion_requests"][0]["status"], "completed")
+        self.assertIsNone(supabase.tables["account_deletion_requests"][0]["processing_token"])
 
 
 if __name__ == "__main__":

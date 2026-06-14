@@ -12,17 +12,7 @@ Current public positioning uses a flat `$27/month` Koaryu Core studio subscripti
 
 ## Changelog
 
-### 0.1.1 - In progress
-
-- Added crawlable public informational pages for features, use cases, use-case details, Explore, About, robots, and sitemap support.
-- Added the first studio-type page for family-focused martial arts schools, with related feature and workflow links.
-- Made the public Koaryu logo link back to the landing page across informational pages.
-- Improved public mobile navigation with contextual links and hidden/inert closed-drawer behavior.
-- Improved dashboard startup so critical studio data renders first while heavier summary data loads separately.
-- Added safer dashboard language for partial roster states, including full-roster refresh routing before retention and churn details are treated as exact.
-- Added backend-paged Students roster support and a Postgres RPC path for scalable program filtering.
-- Expanded demo-studio data and dashboard overview patterns for richer product demos.
-- Refined public-page hero visuals, account/menu motion, metric-card motion, and private API proxy cache/download headers.
+Release notes are tracked in [CHANGELOG.md](CHANGELOG.md). Keep that file as the source of truth for released changes and avoid duplicating unreleased notes here.
 
 ## Architecture
 
@@ -43,6 +33,7 @@ Frontend environment variables:
 - `NEXT_PUBLIC_SUPABASE_URL`: your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: the public anon key used by the browser and SSR middleware
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://localhost:8001/api/v1`
+- `BACKEND_API_URL`: server-only backend API base URL for Next.js API proxy and cron routes; defaults to the public API URL only when this is not set
 - `NEXT_PUBLIC_SITE_URL`: public frontend origin used for auth callback links, typically `https://koaryu.app` in production
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key used by frontend billing flows
 - `CRON_SECRET`: server-only Vercel Cron secret used to authenticate scheduled internal maintenance routes
@@ -71,7 +62,7 @@ Backend environment variables:
 - `ACCOUNT_DELETION_WORKER_SECRET`: long random secret required by the internal due-account-deletion processor
 - `SUPPORT_TRIAGE_SECRET`: long random secret required by the internal support ticket triage endpoint
 
-When `ENVIRONMENT=production`, the backend fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder, or pointed at a local frontend origin. This is intentional: a broken deploy should fail loudly rather than booting into a half-live billing state.
+When `ENVIRONMENT=production`, the backend fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, or pointed at a local origin. This is intentional: a broken deploy should fail loudly rather than booting into a half-live billing state.
 
 Local defaults in this repo assume:
 
@@ -109,7 +100,8 @@ If you prefer to run each service manually, use the commands below.
 cd frontend
 cp .env.example .env.local
 # Fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
-# NEXT_PUBLIC_API_URL, NEXT_PUBLIC_SITE_URL, and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+# NEXT_PUBLIC_API_URL, BACKEND_API_URL, NEXT_PUBLIC_SITE_URL,
+# and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 npm install
 npm run dev
 ```
@@ -133,6 +125,11 @@ Apply the SQL files in `supabase/migrations/` in timestamp order. For a deployme
 
 - `20260421000007_harden_tenant_policies.sql`
 - `20260421000008_fix_recursive_staff_roles_policies.sql`
+- `20260613090000_harden_student_import_tenant_conflicts.sql`
+- `20260613093000_atomic_support_ticket_create.sql`
+- `20260613094000_atomic_lead_conversion.sql`
+- `20260613095000_atomic_student_profile_write.sql`
+- `20260613100000_atomic_studio_operational_clear.sql`
 
 If you are using the Supabase SQL Editor instead of the CLI, run every migration file in order rather than only the initial schema.
 
@@ -150,7 +147,8 @@ to the linked project. The backend now requires the worker-claim RPC migrations
 before webhook, account-deletion, or CSV-import workers can run. The contract
 checks cover account/support controls, belt-ladder sync, support triage,
 direct-client write lockdown, worker-claim RPCs, promotion RPCs,
-recurring-session soft delete, student program filtering, and atomic studio
+recurring-session soft delete, student program filtering, atomic student import,
+lead conversion, student profile writes, studio operational clears, and studio
 onboarding. Most behavior checks run inside transactions that roll back.
 
 ## Auth, Onboarding, And Tenant Model
@@ -170,7 +168,7 @@ Studio membership is the tenant boundary. Backend services and RLS policies are 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
 - Render starts the FastAPI backend with a single Uvicorn process in production. Keep the root `render.yaml`, `backend/Procfile`, and `docs/render-backend-deployment.md` start commands aligned.
 - Production backend startup validates required Supabase, Stripe, and frontend origin configuration before serving traffic. If Render deploys but the service exits immediately, check the runtime logs for `Production configuration is incomplete`.
-- The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for Production. Add them in Vercel Project Settings or with:
+- The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, plus the server-only `BACKEND_API_URL` for proxy and cron routes, for Production. Add them in Vercel Project Settings or with:
 
 ```bash
 cd frontend
@@ -178,6 +176,7 @@ vercel link --yes --project koaryu
 vercel env add NEXT_PUBLIC_SUPABASE_URL production
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 vercel env add NEXT_PUBLIC_API_URL production
+vercel env add BACKEND_API_URL production
 vercel env add NEXT_PUBLIC_SITE_URL production
 vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 vercel env add CRON_SECRET production
@@ -188,7 +187,7 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - `CRON_SECRET` must be pasted without leading or trailing whitespace. The Vercel cron route uses it in an HTTP bearer header, so an accidental newline will break the scheduled worker even if the value looks present in the dashboard.
 - For preview deployments, add the same variables to the Preview environment. With recent Vercel CLI versions, branch-scoped preview variables may require an explicit branch argument.
 - Backend deployments must include `SUPABASE_SERVICE_ROLE_KEY`; the frontend must not receive that key.
-- Keep `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` aligned with the deployed origins so auth redirects, CORS, and middleware checks hit the correct backend.
+- Keep `FRONTEND_URL`, `NEXT_PUBLIC_API_URL`, and `BACKEND_API_URL` aligned with the deployed origins so auth redirects, CORS, proxy routes, and middleware checks hit the correct backend.
 - The informational landing page is intentionally not part of the Supabase auth middleware gate. It paints as static marketing UI, then warms the backend in the background through `/api/proxy/health` so a follow-up visit to login or dashboard has a better chance of finding Render awake.
 - Login, signup, onboarding, subscription-required, and dashboard routes still block on the normal auth/session behavior. Do not add `/` back to the frontend proxy matcher unless the landing page should become auth-aware again.
 - Preview mode is for demos only. Live mode now starts empty for new studios and should be used for deployment verification.

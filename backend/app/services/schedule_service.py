@@ -16,6 +16,7 @@ from app.services.studio_scope import (
 )
 from app.services.program_service import ProgramService
 from app.services.schedule_attendance_actions import ScheduleAttendanceActions
+from app.services.supabase_rpc import execute_required_rpc
 
 
 SCHEDULE_SESSION_CONFLICT_CODES = {"23505"}
@@ -475,48 +476,7 @@ class ScheduleService:
                     detail="Only recurring classes can be deleted for the full series",
                 )
 
-            series_end_date = (
-                self._parse_date(session["date"]) - timedelta(days=1)
-            ).isoformat()
-            template_result = (
-                self.supabase.table("class_templates")
-                .update({
-                    "is_active": False,
-                    "end_date": series_end_date,
-                })
-                .eq("id", session["template_id"])
-                .eq("studio_id", studio_id)
-                .execute()
-            )
-            if not template_result.data:
-                raise HTTPException(status_code=404, detail="Class template not found")
-
-            deleted = (
-                self.supabase.table("class_sessions")
-                .update({
-                    "deleted_at": deleted_at,
-                    "status": "canceled",
-                })
-                .eq("studio_id", studio_id)
-                .eq("template_id", session["template_id"])
-                .gte("date", session["date"])
-                .is_("deleted_at", "null")
-                .execute()
-            )
-            if not deleted.data:
-                raise HTTPException(status_code=409, detail="Failed to delete recurring class series")
-
-            self.supabase.table("audit_logs").insert({
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": "class_series.deleted",
-                "entity_type": "class_template",
-                "entity_id": session["template_id"],
-                "metadata": {
-                    "start_date": session["date"],
-                    "session_name": session["name"],
-                },
-            }).execute()
+            self._delete_recurring_class_series_atomic(session_id, studio_id, actor_id)
             return
 
         deleted = (
@@ -545,6 +505,32 @@ class ScheduleService:
                 "name": session["name"],
             },
         }).execute()
+
+    def _delete_recurring_class_series_atomic(self, session_id: str, studio_id: str, actor_id: str) -> None:
+        try:
+            execute_required_rpc(
+                self.supabase,
+                "delete_recurring_class_series_atomic",
+                {
+                    "p_session_id": session_id,
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                },
+            )
+        except PostgrestAPIError as exc:
+            message = str(getattr(exc, "message", "") or exc)
+            if "Class session not found" in message:
+                raise HTTPException(status_code=404, detail="Class session not found") from exc
+            if "Only recurring classes" in message:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only recurring classes can be deleted for the full series",
+                ) from exc
+            if "Class template not found" in message:
+                raise HTTPException(status_code=404, detail="Class template not found") from exc
+            if "Failed to delete recurring class series" in message:
+                raise HTTPException(status_code=409, detail="Failed to delete recurring class series") from exc
+            raise
 
     # ---- Attendance ----
 

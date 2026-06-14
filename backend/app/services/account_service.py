@@ -20,6 +20,14 @@ DELETION_DELAY_DAYS = 30
 ACCOUNT_DELETION_PROCESSING_STALE_AFTER = timedelta(minutes=30)
 
 
+class AccountAuthLookupError(RuntimeError):
+    pass
+
+
+class AccountAuthUserDeleted(RuntimeError):
+    pass
+
+
 def _to_text(value: Any) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
@@ -162,6 +170,14 @@ class AccountService:
 
             try:
                 self._ensure_deletion_will_not_orphan_studios(user_id)
+            except AccountAuthLookupError as exc:
+                response.failed += 1
+                response.failures.append(AccountDeletionProcessFailure(
+                    request_id=request_id,
+                    user_id=user_id,
+                    detail=str(exc) or "Could not verify survivor admin Auth status. Retry after the processing claim expires.",
+                ))
+                continue
             except HTTPException as exc:
                 if self._mark_deletion_canceled(
                     request_id,
@@ -179,7 +195,7 @@ class AccountService:
                 continue
 
             try:
-                self.supabase.auth.admin.delete_user(user_id)
+                self._delete_auth_user_if_present(user_id)
                 if self._mark_deletion_completed(request_id, processing_token=claim_token):
                     response.completed += 1
                 else:
@@ -303,14 +319,47 @@ class AccountService:
         except Exception:
             return None
 
+    def _get_auth_user_or_raise(self, user_id: str) -> Any:
+        try:
+            response = self.supabase.auth.admin.get_user_by_id(user_id)
+            return response.user
+        except Exception as exc:
+            if self._is_auth_user_deleted_error(exc):
+                raise AccountAuthUserDeleted(f"Auth user {user_id} no longer exists.") from exc
+            raise AccountAuthLookupError(
+                f"Could not verify Auth user {user_id}. Retry after the processing claim expires."
+            ) from exc
+
+    def _delete_auth_user_if_present(self, user_id: str) -> None:
+        try:
+            self.supabase.auth.admin.delete_user(user_id)
+        except Exception as exc:
+            if self._is_auth_user_deleted_error(exc):
+                return
+            raise
+
     def _auth_user_is_active(self, user_id: Optional[str]) -> bool:
         if not user_id:
             return False
-        user = self._get_auth_user(user_id)
+        try:
+            user = self._get_auth_user_or_raise(user_id)
+        except AccountAuthUserDeleted:
+            return False
         return bool(
             getattr(user, "last_sign_in_at", None)
             or getattr(user, "confirmed_at", None)
             or getattr(user, "email_confirmed_at", None)
+        )
+
+    def _is_auth_user_deleted_error(self, exc: Exception) -> bool:
+        status_code = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+        code = str(getattr(exc, "code", "") or "").lower()
+        message = str(exc or "").lower()
+        return (
+            status_code == 404
+            or "user_not_found" in code
+            or "user not found" in message
+            or "not found" in message
         )
 
     def _audit(

@@ -86,14 +86,6 @@ class BillingPaymentEventProjector:
             _stripe_id(intent),
             invoice_id,
         )
-        if not local_invoice and not invoice_id:
-            local_invoice = self._find_invoice_by_customer_amount(
-                account_id,
-                customer_id,
-                int(intent.get("amount_received") or intent.get("amount") or 0),
-                intent.get("currency") or "usd",
-            )
-            invoice_id = (local_invoice or {}).get("stripe_invoice_id")
         studio_id = self._resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata.get("studio_id"),

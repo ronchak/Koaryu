@@ -14,6 +14,7 @@ from app.schemas.billing import (
     BillingPayerAutopaySetupRequest,
     BillingReconcileRequest,
     BillingInvoiceResponse,
+    ExternalPaymentCreate,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentResponse,
     StudentBillingEnrollmentUpdate,
@@ -129,9 +130,13 @@ class _FakeStripeService:
     onboarding_calls = []
     setup_calls = []
     subscription_update_calls = []
+    subscription_create_calls = []
+    subscription_item_create_calls = []
     subscription_item_update_calls = []
     subscription_item_delete_calls = []
     subscription_cancel_calls = []
+    connected_invoice_calls = []
+    connected_invoice_item_calls = []
     retrieve_calls = []
     finalize_invoice_calls = []
     send_invoice_calls = []
@@ -149,9 +154,13 @@ class _FakeStripeService:
         cls.onboarding_calls = []
         cls.setup_calls = []
         cls.subscription_update_calls = []
+        cls.subscription_create_calls = []
+        cls.subscription_item_create_calls = []
         cls.subscription_item_update_calls = []
         cls.subscription_item_delete_calls = []
         cls.subscription_cancel_calls = []
+        cls.connected_invoice_calls = []
+        cls.connected_invoice_item_calls = []
         cls.retrieve_calls = []
         cls.finalize_invoice_calls = []
         cls.send_invoice_calls = []
@@ -198,6 +207,24 @@ class _FakeStripeService:
             "created": 200,
         }
 
+    def create_connected_invoice(self, **payload):
+        self.__class__.connected_invoice_calls.append(payload)
+        return {
+            "id": "in_created",
+            "status": "draft",
+            "amount_due": 0,
+            "amount_paid": 0,
+            "amount_remaining": 0,
+            "currency": payload.get("currency") or "usd",
+            "customer": payload.get("customer_id"),
+            "metadata": payload.get("metadata") or {},
+            "created": 200,
+        }
+
+    def create_connected_invoice_item(self, **payload):
+        self.__class__.connected_invoice_item_calls.append(payload)
+        return {"id": "ii_created"}
+
     def finalize_connected_invoice(self, *, account_id: str, invoice_id: str):
         self.__class__.finalize_invoice_calls.append({
             "account_id": account_id,
@@ -237,6 +264,30 @@ class _FakeStripeService:
             "metadata": {"studio_id": "studio_1", "payer_id": "payer_1", "billing_subscription_id": "subscription_1"},
             "created": 200,
         }
+
+    def create_connected_subscription(self, **payload):
+        self.__class__.subscription_create_calls.append(payload)
+        item_metadata = payload.get("item_metadata") or {}
+        return self.__class__.subscription_response or {
+            "id": "sub_created",
+            "status": "active",
+            "customer": payload.get("customer_id"),
+            "collection_method": payload.get("collection_method"),
+            "items": {
+                "data": [{
+                    "id": "si_created",
+                    "metadata": item_metadata,
+                    "current_period_start": 200,
+                    "current_period_end": 300,
+                }],
+            },
+            "metadata": payload.get("metadata") or {},
+            "created": 200,
+        }
+
+    def create_connected_subscription_item(self, **payload):
+        self.__class__.subscription_item_create_calls.append(payload)
+        return {"id": "si_created"}
 
     def retrieve_connected_payment_intent(self, *, account_id: str, payment_intent_id: str, expand=None):
         return self.__class__.payment_intent_response or {

@@ -11,6 +11,7 @@ from app.services.demo_seed_common import (
     OPTIONAL_SCHEMA_ERROR_CODES,
     demo_seed_id,
 )
+from app.services.supabase_rpc import execute_required_rpc
 
 
 class DemoDataAccess:
@@ -37,20 +38,6 @@ class DemoDataAccess:
     def weekday_for(self, days_from_today: int = 0) -> int:
         # Python: Monday=0 ... Sunday=6. Koaryu schema: Sunday=0 ... Saturday=6.
         return ((self.today() + timedelta(days=days_from_today)).weekday() + 1) % 7
-
-    def delete_by_studio(self, table: str, studio_id: str) -> None:
-        self.supabase.table(table).delete().eq("studio_id", studio_id).execute()
-
-    def delete_optional_by_studio(self, table: str, studio_id: str) -> None:
-        try:
-            self.delete_by_studio(table, studio_id)
-        except PostgrestAPIError as exc:
-            if exc.code not in OPTIONAL_SCHEMA_ERROR_CODES:
-                raise
-
-    def fetch_ids(self, table: str, studio_id: str) -> list[str]:
-        result = self.supabase.table(table).select("id").eq("studio_id", studio_id).execute()
-        return [row["id"] for row in (result.data or []) if row.get("id")]
 
     def count_by_studio(self, table: str, studio_id: str) -> int:
         result = self.supabase.table(table).select("id").eq("studio_id", studio_id).execute()
@@ -86,49 +73,10 @@ class DemoDataAccess:
         self.clear_studio_surface(studio_id, include_platform_rows=False)
 
     def clear_studio_surface(self, studio_id: str, *, include_platform_rows: bool) -> None:
-        student_ids = self.fetch_ids("students", studio_id)
-        guardian_ids = self.fetch_ids("guardians", studio_id)
-
-        for table in [
-            "billing_disputes",
-            "billing_refunds",
-            "billing_payments",
-            "billing_invoice_items",
-            "billing_invoices",
-            "student_billing_enrollments",
-            "billing_subscriptions",
-            "billing_plan_programs",
-            "billing_plan_prices",
-            "billing_plans",
-            "billing_payers",
-            "email_usage_events",
-            "export_jobs",
-        ]:
-            self.delete_optional_by_studio(table, studio_id)
-
-        if include_platform_rows:
-            for table in ["studio_payment_accounts", "studio_subscriptions"]:
-                self.delete_optional_by_studio(table, studio_id)
-
-        self.delete_by_studio("attendance", studio_id)
-        self.delete_by_studio("promotions", studio_id)
-        self.delete_optional_by_studio("student_program_memberships", studio_id)
-        self.delete_by_studio("lead_activities", studio_id)
-        self.delete_by_studio("student_import_runs", studio_id)
-        self.delete_by_studio("leads", studio_id)
-
-        if student_ids:
-            self.supabase.table("student_guardians").delete().in_("student_id", student_ids).execute()
-        if guardian_ids:
-            self.supabase.table("student_guardians").delete().in_("guardian_id", guardian_ids).execute()
-
-        self.delete_by_studio("class_sessions", studio_id)
-        self.delete_by_studio("class_templates", studio_id)
-        self.delete_by_studio("students", studio_id)
-        self.delete_by_studio("guardians", studio_id)
-        self.delete_by_studio("belt_ranks", studio_id)
-        self.delete_by_studio("belt_ladders", studio_id)
-        self.delete_by_studio("programs", studio_id)
+        execute_required_rpc(self.supabase, "clear_studio_operational_data_atomic", {
+            "p_studio_id": studio_id,
+            "p_include_platform_rows": include_platform_rows,
+        })
 
     def update_studio_for_demo(self, studio_id: str) -> None:
         self.supabase.table("studios").update(

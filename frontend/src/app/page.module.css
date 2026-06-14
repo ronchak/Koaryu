@@ -67,8 +67,7 @@
 }
 
 .heroPreviewStatus {
-  appearance: none;
-  cursor: pointer;
+  display: inline-flex;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
@@ -186,11 +185,9 @@
 }
 
 .heroPreviewNotice {
-  appearance: none;
   display: block;
   width: 100%;
   margin-top: 12px;
-  cursor: pointer;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.5;
@@ -213,13 +210,11 @@
 }
 
 .heroPreviewAction {
-  appearance: none;
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 7px;
   padding: 9px;
-  cursor: pointer;
   font-family: inherit;
   font-size: 11px;
   text-align: left;
@@ -235,10 +230,8 @@
 }
 
 .heroPreviewPseudoLink {
-  appearance: none;
   display: inline-flex;
   margin-left: auto;
-  cursor: pointer;
   border: 0;
   background: transparent;
   color: var(--accent);

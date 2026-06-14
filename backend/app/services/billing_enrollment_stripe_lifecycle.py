@@ -9,6 +9,7 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingInvoiceCreate
 from app.services.billing_invoice_projection import _object_get, _stripe_id
+from app.services.billing_invoices import BillingInvoiceManager
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
@@ -27,7 +28,13 @@ class BillingEnrollmentStripeLifecycle:
     def __getattr__(self, name: str) -> Any:
         return getattr(self.enrollment_manager, name)
 
-    def _activate_stripe_enrollment(self, enrollment: dict[str, Any], plan: dict[str, Any], studio_id: str) -> dict[str, Any]:
+    def _activate_stripe_enrollment(
+        self,
+        enrollment: dict[str, Any],
+        plan: dict[str, Any],
+        studio_id: str,
+        actor_id: Optional[str] = None,
+    ) -> dict[str, Any]:
         if not enrollment.get("payer_id"):
             raise HTTPException(status_code=409, detail="Assign a payer before activating Stripe billing.")
         account = self._ensure_connect_ready(studio_id)
@@ -43,7 +50,9 @@ class BillingEnrollmentStripeLifecycle:
 
         enrollment = self._mark_enrollment_stripe_attach_pending(enrollment, "activate")
         if plan.get("billing_interval") == "paid_in_full":
-            self._create_paid_in_full_invoice(enrollment, plan, payer, account)
+            if not actor_id:
+                raise HTTPException(status_code=500, detail="Actor is required to create a paid-in-full invoice.")
+            self._create_paid_in_full_invoice(enrollment, plan, payer, account, actor_id=actor_id)
             return self._update_enrollment(
                 enrollment["id"],
                 studio_id,
@@ -53,13 +62,13 @@ class BillingEnrollmentStripeLifecycle:
         group = self._find_or_create_billing_subscription(enrollment, plan, payer, account)
         stripe_service = self.stripe_service_cls()
         quantity_lock_token: Optional[str] = None
-        quantity_lock_group_id: Optional[str] = None
+        quantity_lock_group_id: Optional[str] = group.get("id")
+        if quantity_lock_group_id:
+            quantity_lock_token = self._claim_subscription_quantity_sync_lock(studio_id, quantity_lock_group_id)
         try:
             if group.get("stripe_subscription_id"):
                 existing_item_id = self._subscription_item_id_for_group_plan(studio_id, group["id"], plan["id"])
                 if existing_item_id:
-                    quantity_lock_group_id = group["id"]
-                    quantity_lock_token = self._claim_subscription_quantity_sync_lock(studio_id, quantity_lock_group_id)
                     quantity = self._active_enrollment_count_for_subscription_item(
                         studio_id,
                         group["id"],
@@ -323,7 +332,15 @@ class BillingEnrollmentStripeLifecycle:
             if group_id and lock_token:
                 self._release_subscription_quantity_sync_lock(enrollment["studio_id"], group_id, lock_token)
 
-    def _create_paid_in_full_invoice(self, enrollment: dict[str, Any], plan: dict[str, Any], payer: dict[str, Any], account: dict[str, Any]) -> None:
+    def _create_paid_in_full_invoice(
+        self,
+        enrollment: dict[str, Any],
+        plan: dict[str, Any],
+        payer: dict[str, Any],
+        account: dict[str, Any],
+        *,
+        actor_id: str,
+    ) -> None:
         invoice = BillingInvoiceCreate(
             payer_id=payer["id"],
             student_id=enrollment["student_id"],
@@ -334,77 +351,12 @@ class BillingEnrollmentStripeLifecycle:
             description=plan.get("name") or "Paid in full",
             amount_cents=int(plan.get("amount_cents") or 0) + int(plan.get("signup_fee_cents") or 0),
         )
-        inserted = self.supabase.table("billing_invoices").insert({
-            "studio_id": enrollment["studio_id"],
-            "payer_id": payer["id"],
-            "student_id": enrollment["student_id"],
-            "enrollment_id": enrollment["id"],
-            "invoice_type": invoice.invoice_type,
-            "status": "draft",
-            "amount_due_cents": invoice.amount_cents or 0,
-            "amount_paid_cents": 0,
-            "amount_remaining_cents": invoice.amount_cents or 0,
-            "currency": invoice.currency,
-            "stripe_account_id": account["stripe_connected_account_id"],
-            "stripe_customer_id": payer.get("stripe_customer_id"),
-            "collection_method": "charge_automatically" if invoice.collection_mode == "autopay" else "send_invoice",
-            "application_fee_amount_cents": self._application_fee_amount(invoice.amount_cents or 0, account),
-        }).execute()
-        if inserted.data:
-            local_invoice = inserted.data[0]
-            stripe_service = self.stripe_service_cls()
-            stripe_invoice = stripe_service.create_connected_invoice(
-                account_id=account["stripe_connected_account_id"],
-                customer_id=payer["stripe_customer_id"],
-                collection_method="charge_automatically" if invoice.collection_mode == "autopay" else "send_invoice",
-                application_fee_amount=self._application_fee_amount(invoice.amount_cents or 0, account),
-                default_payment_method=payer.get("default_payment_method_id") if invoice.collection_mode == "autopay" else None,
-                days_until_due=7,
-                metadata={
-                    "studio_id": enrollment["studio_id"],
-                    "payer_id": payer["id"],
-                    "invoice_id": local_invoice["id"],
-                    "enrollment_id": enrollment["id"],
-                    "student_id": enrollment["student_id"],
-                    "product": "koaryu_payments",
-                },
-                idempotency_key=self._idempotency_key("paid-in-full-invoice", enrollment["id"]),
-            )
-            stripe_invoice_id = _stripe_id(stripe_invoice)
-            stripe_item = stripe_service.create_connected_invoice_item(
-                account_id=account["stripe_connected_account_id"],
-                customer_id=payer["stripe_customer_id"],
-                amount=invoice.amount_cents or 0,
-                currency=invoice.currency,
-                description=invoice.description or plan["name"],
-                metadata={
-                    "studio_id": enrollment["studio_id"],
-                    "invoice_id": local_invoice["id"],
-                    "enrollment_id": enrollment["id"],
-                    "student_id": enrollment["student_id"],
-                    "billing_plan_id": plan["id"],
-                    "product": "koaryu_payments",
-                },
-                idempotency_key=self._idempotency_key("paid-in-full-item", enrollment["id"]),
-                invoice_id=stripe_invoice_id,
-            )
-            self.supabase.table("billing_invoice_items").insert({
-                "studio_id": enrollment["studio_id"],
-                "invoice_id": local_invoice["id"],
-                "student_id": enrollment["student_id"],
-                "enrollment_id": enrollment["id"],
-                "billing_plan_id": plan["id"],
-                "description": invoice.description or plan["name"],
-                "quantity": 1,
-                "unit_amount_cents": invoice.amount_cents or 0,
-                "amount_cents": invoice.amount_cents or 0,
-                "stripe_invoice_item_id": _stripe_id(stripe_item),
-            }).execute()
-            stripe_invoice = stripe_service.retrieve_connected_invoice(
-                account_id=account["stripe_connected_account_id"],
-                invoice_id=stripe_invoice_id,
-            )
-            self._update_invoice_from_stripe(local_invoice["id"], enrollment["studio_id"], stripe_invoice, account["stripe_connected_account_id"])
+        BillingInvoiceManager(self.billing_service, stripe_service_cls=self.stripe_service_cls).create_invoice_sync(
+            invoice,
+            enrollment["studio_id"],
+            actor_id,
+            idempotency_key=self._idempotency_key("paid-in-full", enrollment["id"]),
+        )
 
     def _subscription_item_id_for_group_plan(self, studio_id: str, group_id: str, plan_id: str) -> Optional[str]:
         result = (

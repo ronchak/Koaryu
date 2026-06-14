@@ -3,6 +3,7 @@ import {
   forwardRef,
   isValidElement,
   type ButtonHTMLAttributes,
+  type MouseEvent,
   type ReactElement,
 } from "react";
 
@@ -44,7 +45,12 @@ const baseStyles = `
   cursor-pointer
 `;
 
-type ChildElement = ReactElement<{ className?: string }>;
+type ChildElement = ReactElement<{
+  className?: string;
+  onClick?: (event: MouseEvent<HTMLElement>) => void;
+  tabIndex?: number;
+  "aria-disabled"?: boolean;
+}>;
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
@@ -72,6 +78,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
       return cloneElement(child, {
         className: `${composedClassName} ${child.props.className ?? ""}`,
+        "aria-disabled": disabled || isLoading || child.props["aria-disabled"],
+        tabIndex: disabled || isLoading ? -1 : child.props.tabIndex,
+        onClick: (event: MouseEvent<HTMLElement>) => {
+          if (disabled || isLoading) {
+            event.preventDefault();
+            return;
+          }
+          child.props.onClick?.(event);
+          props.onClick?.(event as unknown as MouseEvent<HTMLButtonElement>);
+        },
       });
     }
 

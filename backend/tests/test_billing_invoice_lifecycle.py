@@ -6,6 +6,7 @@ from tests.billing_lifecycle_helpers import (
     BillingPayerAutopaySetupRequest,
     BillingPaymentsLifecycleTestBase,
     BillingReconcileRequest,
+    ExternalPaymentCreate,
     BillingService,
     HTTPException,
     StripeService,
@@ -272,6 +273,109 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         self.assertEqual(invoice.id, "invoice_1")
         self.assertEqual(len(service.supabase.tables["billing_invoices"]), 1)
+
+    def test_paid_in_full_enrollment_uses_invoice_idempotency_path(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "status": "charges_enabled",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {},
+            }],
+            "students": [{"id": "student_1", "studio_id": "studio_1"}],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Test Payer",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "not_configured",
+                "billing_status": "current",
+            }],
+            "billing_plans": [{
+                "id": "plan_1",
+                "studio_id": "studio_1",
+                "name": "Summer Camp",
+                "amount_cents": 25000,
+                "signup_fee_cents": 5000,
+                "currency": "usd",
+                "billing_interval": "paid_in_full",
+                "stripe_price_id": "price_1",
+            }],
+            "student_billing_enrollments": [],
+            "billing_invoices": [],
+            "billing_invoice_items": [],
+            "audit_logs": [],
+        })
+        service.supabase.insert_defaults["student_billing_enrollments"] = {
+            "billing_subscription_id": None,
+            "stripe_subscription_id": None,
+            "stripe_subscription_item_id": None,
+            "billing_status": "no_payment_method",
+            "status": "pending",
+            "start_date": "2026-05-01",
+            "end_date": None,
+            "next_bill_on": None,
+            "metadata": {},
+            "created_at": "2026-05-01T00:00:00Z",
+            "updated_at": "2026-05-01T00:00:00Z",
+        }
+        service.supabase.insert_defaults["billing_invoices"] = {
+            "created_at": "2026-05-01T00:00:00Z",
+            "updated_at": "2026-05-01T00:00:00Z",
+            "external": False,
+        }
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        _FakeStripeService.invoice_response = {
+            "id": "in_created",
+            "status": "open",
+            "amount_due": 30000,
+            "amount_paid": 0,
+            "amount_remaining": 30000,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "invoice_id": "billing_invoices_1"},
+            "created": 200,
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            enrollment = asyncio.run(service.add_student_billing_enrollment(
+                StudentBillingEnrollmentCreate(
+                    student_id="student_1",
+                    billing_plan_id="plan_1",
+                    payer_id="payer_1",
+                    collection_mode="invoice_link",
+                ),
+                "studio_1",
+                "actor_1",
+            ))
+
+        self.assertEqual(enrollment.billing_status, "upcoming")
+        self.assertEqual(len(service.supabase.tables["billing_invoices"]), 1)
+        invoice = service.supabase.tables["billing_invoices"][0]
+        self.assertEqual(invoice["invoice_type"], "paid_in_full")
+        self.assertEqual(invoice["idempotency_key"], "koaryu:paid-in-full:student_billing_enrollments_1")
+        self.assertIsNotNone(invoice["request_hash"])
+        self.assertEqual(len(service.supabase.tables["billing_invoice_items"]), 1)
+        self.assertEqual(
+            _FakeStripeService.connected_invoice_calls[0]["idempotency_key"],
+            "koaryu:invoice:billing_invoices_1",
+        )
+        self.assertEqual(
+            _FakeStripeService.connected_invoice_item_calls[0]["idempotency_key"],
+            "koaryu:invoice-item:billing_invoices_1:0",
+        )
 
     def test_create_invoice_rejects_reused_key_for_different_payload(self):
         service = self.service()
@@ -722,3 +826,45 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertIsNone(invoice["paid_at"])
         self.assertEqual(payer["balance_cents"], 200)
         self.assertEqual(payer["billing_status"], "past_due")
+
+    def test_external_payment_rejects_invoice_overpayment(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "status": "open",
+                "amount_due_cents": 200,
+                "amount_paid_cents": 50,
+                "amount_remaining_cents": 150,
+                "currency": "usd",
+                "external": False,
+                "created_at": "2026-05-18T00:00:00Z",
+                "updated_at": "2026-05-18T00:00:00Z",
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "billing_status": "past_due",
+                "balance_cents": 150,
+            }],
+            "billing_payments": [],
+            "audit_logs": [],
+        })
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.record_external_payment(
+                ExternalPaymentCreate(
+                    invoice_id="invoice_1",
+                    amount_cents=151,
+                    external_method="cash",
+                ),
+                "studio_1",
+                "actor_1",
+                idempotency_key="external-overpay",
+            ))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("remaining balance", context.exception.detail)
+        self.assertEqual(service.supabase.tables["billing_payments"], [])

@@ -248,7 +248,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(invoice["amount_remaining_cents"], 0)
         self.assertEqual(invoice["last_stripe_event_created"], 300)
 
-    def test_payment_intent_without_invoice_id_matches_open_invoice_by_customer_amount(self):
+    def test_payment_intent_without_invoice_id_does_not_match_open_invoice_by_customer_amount(self):
         service = self.service()
         service.supabase = _FakeSupabase({
             "billing_payments": [],
@@ -284,18 +284,12 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
             "metadata": {},
         }, "acct_1", "payment_intent.succeeded")
 
-        payment = service.supabase.tables["billing_payments"][0]
         invoice = service.supabase.tables["billing_invoices"][0]
-        self.assertEqual(payment["invoice_id"], "invoice_1")
-        self.assertEqual(payment["stripe_invoice_id"], "in_1")
-        self.assertEqual(payment["stripe_payment_intent_id"], "pi_1")
-        self.assertEqual(payment["stripe_charge_id"], "ch_1")
-        self.assertEqual(payment["status"], "succeeded")
-        self.assertEqual(payment["application_fee_amount_cents"], 1)
-        self.assertEqual(invoice["status"], "paid")
-        self.assertEqual(invoice["stripe_payment_intent_id"], "pi_1")
-        self.assertEqual(invoice["application_fee_amount_cents"], 1)
-        self.assertEqual(invoice["amount_paid_cents"], 50)
+        self.assertEqual(service.supabase.tables["billing_payments"], [])
+        self.assertEqual(invoice["status"], "open")
+        self.assertIsNone(invoice.get("stripe_payment_intent_id"))
+        self.assertEqual(invoice["application_fee_amount_cents"], 0)
+        self.assertEqual(invoice["amount_paid_cents"], 0)
 
     def test_metadata_empty_payment_intent_derives_payer_from_connected_customer(self):
         service = self.service()

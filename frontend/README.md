@@ -50,16 +50,31 @@ npm run build
 
 If the build fails with `@supabase/ssr: Your project's URL and API key are required`, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the current environment.
 
-## Stateful E2E Checks
+## E2E Checks
 
-The Playwright belt-ladder check is an opt-in live-stateful smoke test. Run it only against a disposable account and studio name:
+Playwright checks are opt-in because they need a running frontend and some of
+them touch state. The full e2e command is:
+
+```bash
+npm run test:e2e
+```
+
+The preview CSV-import check runs against preview mode and uses the checked-in
+demo CSV:
+
+```bash
+KOARYU_PREVIEW_E2E=true npm run test:e2e:preview-import
+```
+
+The belt-ladder check is a live-stateful smoke test. Run it only against a
+disposable account and studio name:
 
 ```bash
 KOARYU_LIVE_STATEFUL_E2E=true \
 KOARYU_E2E_LOGIN_EMAIL=... \
 KOARYU_E2E_LOGIN_PASSWORD=... \
 KOARYU_E2E_STUDIO_NAME="Disposable Belt Ladder Smoke" \
-npx playwright test e2e/atomic-belt-ladder.spec.ts
+npm run test:e2e:live-belt
 ```
 
 Do not point this check at production accounts or reusable customer data. The test intentionally avoids logging account identifiers.
@@ -116,7 +131,7 @@ After Vercel deploys, smoke-test at least login, dashboard load, Settings, Billi
 Settings includes admin-only demo/data utilities intended for controlled demos and cleanup:
 
 - Demo reset can replace working demo data when the backend allows it.
-- Clear studio data uses the exact confirmation prompt `Are you sure this is going to delete everything?` before deleting working studio records.
+- Clear studio data uses the shared confirmation dialog before deleting working studio records.
 
 Both tools are destructive. They are designed to preserve Koaryu Core subscription/platform access rows, but they should still be used only against a disposable demo studio unless data loss is intended.
 
