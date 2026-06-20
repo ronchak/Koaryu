@@ -1,6 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 const FRONTEND_URL = "http://127.0.0.1:4000";
+const liveStatefulE2eEnabled = process.env.KOARYU_LIVE_STATEFUL_E2E === "true";
+const liveStatefulTest = liveStatefulE2eEnabled ? test : test.skip;
+
 type SyncRankPayload = {
   id?: string;
   name: string;
@@ -30,16 +33,18 @@ type SyncResponse = {
   }>;
 };
 
-test("belt ladder sync stays single-request and preserves existing ranks", async ({ page }) => {
+liveStatefulTest("belt ladder sync stays single-request and preserves existing ranks", async ({ page }) => {
   test.setTimeout(90_000);
 
-  const email = process.env.TEST_LOGIN_EMAIL;
-  const password = process.env.TEST_LOGIN_PASSWORD;
-  const studioName = `Atomic Demo ${Date.now().toString().slice(-6)}`;
-  expect(email, "expected TEST_LOGIN_EMAIL").toBeTruthy();
-  expect(password, "expected TEST_LOGIN_PASSWORD").toBeTruthy();
-  const loginEmail = email!;
+  const loginEmail = process.env.KOARYU_E2E_LOGIN_EMAIL;
+  const password = process.env.KOARYU_E2E_LOGIN_PASSWORD;
+  const studioName = process.env.KOARYU_E2E_STUDIO_NAME;
+  expect(loginEmail, "expected KOARYU_E2E_LOGIN_EMAIL").toBeTruthy();
+  expect(password, "expected KOARYU_E2E_LOGIN_PASSWORD").toBeTruthy();
+  expect(studioName, "expected KOARYU_E2E_STUDIO_NAME for a disposable live test studio").toBeTruthy();
+  const loginEmailValue = loginEmail!;
   const loginPassword = password!;
+  const studioNameValue = studioName!;
 
   const syncRequests: Array<{ method: string; url: string; postData: string | null }> = [];
   const nonSyncBeltMutations: Array<{ method: string; url: string }> = [];
@@ -65,14 +70,14 @@ test("belt ladder sync stays single-request and preserves existing ranks", async
   });
 
   await page.goto(`${FRONTEND_URL}/login`);
-  await page.getByLabel("Email").fill(loginEmail);
+  await page.getByLabel("Email").fill(loginEmailValue);
   await page.getByLabel("Password").fill(loginPassword);
   await Promise.all([
     page.waitForURL("**/onboarding"),
     page.getByRole("button", { name: "Sign in", exact: true }).click(),
   ]);
 
-  await page.getByLabel("Studio name").fill(studioName);
+  await page.getByLabel("Studio name").fill(studioNameValue);
   await page.getByLabel("Timezone").selectOption("America/New_York");
   await Promise.all([
     page.waitForURL(`${FRONTEND_URL}/`),
@@ -125,13 +130,4 @@ test("belt ladder sync stays single-request and preserves existing ranks", async
   expect(nonSyncBeltMutations.length, "expected at most one ladder-creation mutation").toBeLessThanOrEqual(1);
   expect(firstRequestBody.ranks.map((rank) => rank.name)).toEqual(["White Belt"]);
   expect(firstRequestBody.ranks[0]?.id).toBeUndefined();
-  console.log(
-    JSON.stringify({
-      email,
-      loginEmail,
-      preservedWhiteId,
-      browserSyncRequest: firstRequestBody,
-      browserSyncResponseRanks: firstResponse.ranks.map((rank) => ({ id: rank.id, name: rank.name })),
-    }),
-  );
 });

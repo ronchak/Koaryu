@@ -4,7 +4,13 @@ All notable Koaryu release changes are tracked here.
 
 ## 0.1.1 - Unreleased
 
-Upcoming changes after the first live release will be recorded here.
+### Fixed
+
+- Hardened tenant-safety and partial-state workflows around student import, account deletion, paid-in-full enrollment invoices, support tickets, lead conversion, student profile writes, and demo data clearing.
+
+### Improved
+
+- Aligned frontend import/API helpers, destructive settings confirmations, production config validation, deployment docs, and Supabase contract verification coverage.
 
 ## 0.1.0 - 2026-05-19
 

@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -12,9 +13,19 @@ from app.schemas.account import (
     AccountDeletionRequestResponse,
 )
 from app.services.studio_scope import resolve_staff_role_for_user
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row, rpc_rows
 
 
 DELETION_DELAY_DAYS = 30
+ACCOUNT_DELETION_PROCESSING_STALE_AFTER = timedelta(minutes=30)
+
+
+class AccountAuthLookupError(RuntimeError):
+    pass
+
+
+class AccountAuthUserDeleted(RuntimeError):
+    pass
 
 
 def _to_text(value: Any) -> str:
@@ -83,9 +94,13 @@ class AccountService:
                 if existing:
                     return self._to_response(existing)
             if exc.code in {"23514", "P0001"}:
+                detail = (
+                    getattr(exc, "message", None)
+                    or "Account deletion would leave a studio without an active admin."
+                )
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=getattr(exc, "message", None) or "Account deletion would leave a studio without an active admin.",
+                    detail=detail,
                 ) from exc
             raise
 
@@ -100,7 +115,11 @@ class AccountService:
         })
         return self._to_response(result.data[0])
 
-    async def cancel_deletion(self, user_id: str, requested_studio_id: Optional[str]) -> Optional[AccountDeletionRequestResponse]:
+    async def cancel_deletion(
+        self,
+        user_id: str,
+        requested_studio_id: Optional[str],
+    ) -> Optional[AccountDeletionRequestResponse]:
         existing = self._get_scheduled_deletion_row(user_id)
         if not existing:
             return None
@@ -116,6 +135,7 @@ class AccountService:
             .eq("id", existing["id"])
             .eq("user_id", user_id)
             .eq("status", "scheduled")
+            .is_("processing_token", "null")
             .execute()
         )
 
@@ -130,40 +150,61 @@ class AccountService:
         return self._to_response(result.data[0])
 
     async def process_due_deletions(self, *, limit: int = 50) -> AccountDeletionProcessResponse:
-        now = datetime.now(timezone.utc).isoformat()
-        result = (
-            self.supabase.table("account_deletion_requests")
-            .select("*")
-            .eq("status", "scheduled")
-            .lte("scheduled_for", now)
-            .limit(limit)
-            .execute()
-        )
-        rows = result.data or []
-        response = AccountDeletionProcessResponse(processed=len(rows))
+        response = AccountDeletionProcessResponse()
 
-        for row in rows:
-            request_id = str(row["id"])
-            user_id = _optional_text(row.get("user_id"))
+        for claimed_row, claim_token in self._claim_due_deletion_requests(limit=limit):
+            response.processed += 1
+            request_id = str(claimed_row["id"])
+            user_id = _optional_text(claimed_row.get("user_id"))
             if not user_id:
-                self._mark_deletion_completed(request_id)
-                response.completed += 1
+                if self._mark_deletion_completed(request_id, processing_token=claim_token):
+                    response.completed += 1
+                else:
+                    response.failed += 1
+                    response.failures.append(AccountDeletionProcessFailure(
+                        request_id=request_id,
+                        user_id=None,
+                        detail="Account deletion claim was lost before completion.",
+                    ))
                 continue
 
             try:
                 self._ensure_deletion_will_not_orphan_studios(user_id)
+            except AccountAuthLookupError as exc:
+                response.failed += 1
+                response.failures.append(AccountDeletionProcessFailure(
+                    request_id=request_id,
+                    user_id=user_id,
+                    detail=str(exc) or "Could not verify survivor admin Auth status. Retry after the processing claim expires.",
+                ))
+                continue
             except HTTPException as exc:
-                self._mark_deletion_canceled(
+                if self._mark_deletion_canceled(
                     request_id,
                     f"Processing blocked: {exc.detail}",
-                )
-                response.blocked += 1
+                    processing_token=claim_token,
+                ):
+                    response.blocked += 1
+                else:
+                    response.failed += 1
+                    response.failures.append(AccountDeletionProcessFailure(
+                        request_id=request_id,
+                        user_id=user_id,
+                        detail="Account deletion claim was lost before cancellation.",
+                    ))
                 continue
 
             try:
-                self.supabase.auth.admin.delete_user(user_id)
-                self._mark_deletion_completed(request_id)
-                response.completed += 1
+                self._delete_auth_user_if_present(user_id)
+                if self._mark_deletion_completed(request_id, processing_token=claim_token):
+                    response.completed += 1
+                else:
+                    response.failed += 1
+                    response.failures.append(AccountDeletionProcessFailure(
+                        request_id=request_id,
+                        user_id=user_id,
+                        detail="Account deletion claim was lost after Auth deletion.",
+                    ))
             except Exception as exc:
                 response.failed += 1
                 response.failures.append(AccountDeletionProcessFailure(
@@ -173,6 +214,15 @@ class AccountService:
                 ))
 
         return response
+
+    def _claim_due_deletion_requests(self, *, limit: int) -> list[tuple[dict[str, Any], str]]:
+        claim_token = uuid.uuid4().hex
+        result = execute_required_rpc(self.supabase, "claim_due_account_deletion_requests", {
+            "p_limit": limit,
+            "p_processing_token": claim_token,
+            "p_stale_after_seconds": int(ACCOUNT_DELETION_PROCESSING_STALE_AFTER.total_seconds()),
+        })
+        return [(row, claim_token) for row in rpc_rows(result)]
 
     def _get_scheduled_deletion_row(self, user_id: str) -> Optional[dict[str, Any]]:
         result = (
@@ -185,30 +235,31 @@ class AccountService:
         )
         return (result.data or [None])[0]
 
-    def _mark_deletion_completed(self, request_id: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        (
-            self.supabase.table("account_deletion_requests")
-            .update({
-                "status": "completed",
-                "completed_at": now,
-            })
-            .eq("id", request_id)
-            .execute()
-        )
+    def _mark_deletion_completed(self, request_id: str, *, processing_token: str) -> bool:
+        result = execute_required_rpc(self.supabase, "finish_account_deletion_request", {
+            "p_request_id": request_id,
+            "p_processing_token": processing_token,
+            "p_status": "completed",
+            "p_reason": None,
+        })
+        row = first_rpc_row(result) or {}
+        return bool(row.get("updated"))
 
-    def _mark_deletion_canceled(self, request_id: str, reason: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        (
-            self.supabase.table("account_deletion_requests")
-            .update({
-                "status": "canceled",
-                "canceled_at": now,
-                "reason": reason[:500],
-            })
-            .eq("id", request_id)
-            .execute()
-        )
+    def _mark_deletion_canceled(
+        self,
+        request_id: str,
+        reason: str,
+        *,
+        processing_token: str,
+    ) -> bool:
+        result = execute_required_rpc(self.supabase, "finish_account_deletion_request", {
+            "p_request_id": request_id,
+            "p_processing_token": processing_token,
+            "p_status": "canceled",
+            "p_reason": reason[:500],
+        })
+        row = first_rpc_row(result) or {}
+        return bool(row.get("updated"))
 
     def _resolve_requested_studio_id(self, user_id: str, requested_studio_id: Optional[str]) -> Optional[str]:
         try:
@@ -268,14 +319,47 @@ class AccountService:
         except Exception:
             return None
 
+    def _get_auth_user_or_raise(self, user_id: str) -> Any:
+        try:
+            response = self.supabase.auth.admin.get_user_by_id(user_id)
+            return response.user
+        except Exception as exc:
+            if self._is_auth_user_deleted_error(exc):
+                raise AccountAuthUserDeleted(f"Auth user {user_id} no longer exists.") from exc
+            raise AccountAuthLookupError(
+                f"Could not verify Auth user {user_id}. Retry after the processing claim expires."
+            ) from exc
+
+    def _delete_auth_user_if_present(self, user_id: str) -> None:
+        try:
+            self.supabase.auth.admin.delete_user(user_id)
+        except Exception as exc:
+            if self._is_auth_user_deleted_error(exc):
+                return
+            raise
+
     def _auth_user_is_active(self, user_id: Optional[str]) -> bool:
         if not user_id:
             return False
-        user = self._get_auth_user(user_id)
+        try:
+            user = self._get_auth_user_or_raise(user_id)
+        except AccountAuthUserDeleted:
+            return False
         return bool(
             getattr(user, "last_sign_in_at", None)
             or getattr(user, "confirmed_at", None)
             or getattr(user, "email_confirmed_at", None)
+        )
+
+    def _is_auth_user_deleted_error(self, exc: Exception) -> bool:
+        status_code = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+        code = str(getattr(exc, "code", "") or "").lower()
+        message = str(exc or "").lower()
+        return (
+            status_code == 404
+            or "user_not_found" in code
+            or "user not found" in message
+            or "not found" in message
         )
 
     def _audit(

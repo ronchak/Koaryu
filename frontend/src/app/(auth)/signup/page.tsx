@@ -13,6 +13,8 @@ export default function SignupPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,6 +25,13 @@ export default function SignupPage() {
     e.preventDefault();
     setError("");
     setNotice("");
+    setConfirmPasswordError("");
+
+    if (password !== confirmPassword) {
+      setConfirmPasswordError("Passwords do not match. Please enter the same password in both fields.");
+      return;
+    }
+
     setIsLoading(true);
 
     if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
@@ -101,10 +110,26 @@ export default function SignupPage() {
           type="password"
           placeholder="At least 8 characters"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            setConfirmPasswordError("");
+          }}
           required
           minLength={8}
           autoComplete="new-password"
+        />
+        <Input
+          label="Confirm password"
+          type="password"
+          placeholder="Re-enter your password"
+          value={confirmPassword}
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            setConfirmPasswordError("");
+          }}
+          required
+          autoComplete="new-password"
+          error={confirmPasswordError}
         />
 
         {error && (

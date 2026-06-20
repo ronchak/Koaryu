@@ -1,99 +1,41 @@
-import re
-import uuid
-from datetime import datetime, timezone
-from supabase import Client
-from app.schemas.studio import StudioCreate, StudioUpdate, StudioResponse
+from typing import Any, Optional
+
 from fastapi import HTTPException, status
+from supabase import Client
 
-
-def slugify(name: str) -> str:
-    """Convert a studio name to a URL-safe slug."""
-    slug = name.lower().strip()
-    slug = re.sub(r"[^\w\s-]", "", slug)
-    slug = re.sub(r"[\s_]+", "-", slug)
-    slug = re.sub(r"-+", "-", slug)
-    slug = slug.strip("-")
-    # Add a short random suffix to ensure uniqueness
-    suffix = uuid.uuid4().hex[:6]
-    return f"{slug}-{suffix}"
+from app.schemas.studio import StudioCreate, StudioUpdate, StudioResponse
 
 
 class StudioService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
 
-    async def create_studio(self, data: StudioCreate, user_id: str) -> StudioResponse:
+    async def create_studio(
+        self,
+        data: StudioCreate,
+        user_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> StudioResponse:
         """Create a new studio and assign the user as admin."""
-
-        # Check if user already has a studio
-        existing = (
-            self.supabase.table("staff_roles")
-            .select("studio_id")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-
-        if existing.data:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="You already have a studio. Only one studio per account in v1.",
-            )
-
-        slug = slugify(data.name)
-
-        # Create studio
-        studio_result = (
-            self.supabase.table("studios")
-            .insert(
+        try:
+            result = self.supabase.rpc(
+                "create_studio_onboarding",
                 {
-                    "name": data.name,
-                    "slug": slug,
-                    "owner_id": user_id,
-                    "timezone": data.timezone,
-                }
-            )
-            .execute()
-        )
+                    "p_user_id": user_id,
+                    "p_name": data.name,
+                    "p_timezone": data.timezone,
+                    "p_idempotency_key": idempotency_key,
+                },
+            ).execute()
+        except Exception as exc:
+            self._raise_create_studio_error(exc)
 
-        if not studio_result.data:
+        studio = self._first_rpc_row(result.data)
+        if not studio:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create studio",
             )
-
-        studio = studio_result.data[0]
-
-        # Create admin staff role
-        self.supabase.table("staff_roles").insert(
-            {
-                "studio_id": studio["id"],
-                "user_id": user_id,
-                "role": "admin",
-            }
-        ).execute()
-
-        # Log the action
-        self.supabase.table("audit_logs").insert(
-            {
-                "studio_id": studio["id"],
-                "actor_id": user_id,
-                "action": "studio.created",
-                "entity_type": "studio",
-                "entity_id": studio["id"],
-                "metadata": {"name": data.name},
-            }
-        ).execute()
-
-        now = datetime.now(timezone.utc).isoformat()
-        self.supabase.table("studio_subscriptions").insert(
-            {
-                "studio_id": studio["id"],
-                "status": "incomplete",
-                "comped": False,
-                "current_period_start": now,
-            }
-        ).execute()
 
         return StudioResponse(**studio)
 
@@ -205,3 +147,51 @@ class StudioService:
             return self.supabase.auth.admin.get_user_by_id(user_id).user
         except Exception:
             return None
+
+    def _first_rpc_row(self, data: Any) -> Optional[dict[str, Any]]:
+        if isinstance(data, list):
+            return data[0] if data else None
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def _raise_create_studio_error(self, exc: Exception) -> None:
+        detail = getattr(exc, "message", None) or str(exc) or exc.__class__.__name__
+        normalized_detail = detail.lower()
+
+        if "idempotency key was already used" in normalized_detail:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This studio creation request was already used with different details.",
+            ) from exc
+
+        if (
+            "you already have a studio" in normalized_detail
+            or "duplicate key value" in normalized_detail
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You already have a studio. Only one studio per account in v1.",
+            ) from exc
+
+        if (
+            "studio name is required" in normalized_detail
+            or "timezone is required" in normalized_detail
+            or "choose a valid timezone" in normalized_detail
+            or "idempotency key is too long" in normalized_detail
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=detail,
+            ) from exc
+
+        if "violates foreign key constraint" in normalized_detail:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authenticated user was not found.",
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create studio",
+        ) from exc

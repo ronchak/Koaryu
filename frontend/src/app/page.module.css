@@ -1,0 +1,291 @@
+.heroPreview {
+  position: relative;
+  width: min(100%, 520px);
+  margin-left: auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--surface-raised) 92%, black),
+      color-mix(in srgb, var(--surface) 88%, black)
+    );
+  box-shadow:
+    0 24px 80px color-mix(in srgb, black 42%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+  padding: 16px;
+}
+
+.heroPreview::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent),
+    transparent
+  );
+  opacity: 0.75;
+}
+
+.heroPreviewShine {
+  pointer-events: none;
+  position: absolute;
+  inset: -1px;
+  background:
+    radial-gradient(
+      circle at 20% 0%,
+      color-mix(in srgb, var(--accent) 16%, transparent),
+      transparent 36%
+    ),
+    radial-gradient(
+      circle at 92% 18%,
+      color-mix(in srgb, #3b82f6 10%, transparent),
+      transparent 28%
+    );
+  opacity: 0.82;
+}
+
+.heroPreviewTopbar,
+.heroPreviewMetrics,
+.heroPreviewSplit,
+.heroPreviewPanel {
+  position: relative;
+}
+
+.heroPreviewTopbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.heroPreviewStatus {
+  display: inline-flex;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 8px;
+  white-space: nowrap;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.heroPreviewStatus:hover {
+  border-color: color-mix(in srgb, var(--accent-hover) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent-hover) 13%, transparent);
+  color: var(--accent-hover);
+}
+
+.heroPreviewMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+
+.heroPreviewMetric {
+  --preview-accent: var(--accent);
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-raised) 82%, black);
+  padding: 11px;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.heroPreviewMetric::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--preview-accent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.heroPreviewMetric:hover {
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--surface-raised) 94%, var(--preview-accent) 6%);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--preview-accent) 12%, transparent);
+}
+
+.heroPreviewMetric:hover::before {
+  opacity: 1;
+}
+
+.heroPreviewMetricHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.heroPreviewIcon {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--preview-accent) 14%, transparent);
+  color: var(--preview-accent);
+}
+
+.previewBlue {
+  --preview-accent: #3b82f6;
+}
+
+.previewPurple {
+  --preview-accent: #8b5cf6;
+}
+
+.previewGold {
+  --preview-accent: #f59e0b;
+}
+
+.previewGreen {
+  --preview-accent: #22c55e;
+}
+
+.heroPreviewSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.heroPreviewPanel {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-raised) 72%, black);
+  padding: 12px;
+}
+
+.heroPreviewNotice {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 10px;
+  text-align: left;
+}
+
+.heroPreviewNotice,
+.heroPreviewAction,
+.heroPreviewProgramPanel,
+.heroPreviewProgramRow {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 76%, black);
+  color: var(--text-secondary);
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.heroPreviewAction {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+}
+
+.heroPreviewNotice:hover,
+.heroPreviewAction:hover,
+.heroPreviewProgramRow:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 86%, var(--accent) 5%);
+  color: var(--text-primary);
+}
+
+.heroPreviewPseudoLink {
+  display: inline-flex;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0;
+  text-align: right;
+  text-decoration-line: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition:
+    color 0.18s ease,
+    text-decoration-color 0.18s ease;
+}
+
+.heroPreviewPseudoLink:hover {
+  color: var(--accent-hover);
+  text-decoration-color: currentColor;
+}
+
+.heroPreviewProgramPanel {
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.heroPreviewProgramHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.heroPreviewProgramRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(42px, 0.48fr));
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.heroPreviewProgramName {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heroPreviewProgramRow strong {
+  display: block;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}

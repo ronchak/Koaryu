@@ -8,10 +8,12 @@ DECLARE
     v_ticket_urgent UUID := gen_random_uuid();
     v_ticket_student UUID := gen_random_uuid();
     v_listed_ids UUID[];
+    v_created public.support_tickets%ROWTYPE;
     v_updated public.support_tickets%ROWTYPE;
     v_event_count INTEGER;
     v_digest JSONB;
     v_student_digest_found BOOLEAN;
+    v_non_student_digest_found BOOLEAN;
 BEGIN
     INSERT INTO auth.users (
         id,
@@ -61,8 +63,8 @@ BEGIN
             'Normal billing ticket',
             'This is enough detail.',
             'open',
-            now() - interval '1 hour',
-            now() - interval '1 hour'
+            now() - interval '98 years',
+            now() - interval '98 years'
         ),
         (
             v_ticket_urgent,
@@ -74,8 +76,8 @@ BEGIN
             'Urgent bug ticket',
             'This is enough urgent detail.',
             'open',
-            now(),
-            now()
+            now() - interval '100 years',
+            now() - interval '100 years'
         ),
         (
             v_ticket_student,
@@ -87,8 +89,8 @@ BEGIN
             'Sensitive student subject',
             'Sensitive student detail that must not appear in automation digests.',
             'open',
-            now() - interval '30 minutes',
-            now() - interval '30 minutes'
+            now() - interval '99 years',
+            now() - interval '99 years'
         );
 
     SELECT array_agg(id ORDER BY ordinality)
@@ -118,7 +120,44 @@ BEGIN
         RAISE EXCEPTION 'Urgent ticket was not ordered before normal ticket.';
     END IF;
 
-    SELECT public.support_triage_digest(10)
+    SELECT *
+    INTO v_created
+    FROM public.create_support_ticket(
+        v_studio,
+        v_owner,
+        'created@example.invalid',
+        'Created Smoke',
+        'product_question',
+        'low',
+        'Created support ticket',
+        'Created by the atomic support ticket RPC.',
+        'https://app.example.invalid/support',
+        'support-smoke-agent',
+        '{"viewport":"1280x720"}'::jsonb
+    );
+
+    IF v_created.id IS NULL
+       OR v_created.studio_id <> v_studio
+       OR v_created.created_by <> v_owner
+       OR v_created.status <> 'open' THEN
+        RAISE EXCEPTION 'Atomic support ticket creation did not return an open ticket for the studio.';
+    END IF;
+
+    SELECT COUNT(*)
+    INTO v_event_count
+    FROM public.support_ticket_events
+    WHERE ticket_id = v_created.id
+      AND studio_id = v_studio
+      AND actor_id = v_owner
+      AND event_type = 'ticket.created'
+      AND metadata->>'topic' = 'product_question'
+      AND metadata->>'severity' = 'low';
+
+    IF v_event_count <> 1 THEN
+        RAISE EXCEPTION 'Atomic support ticket creation did not insert exactly one ticket.created event.';
+    END IF;
+
+    SELECT public.support_triage_digest(100)
     INTO v_digest;
 
     IF v_digest->>'ok' <> 'true' THEN
@@ -139,9 +178,29 @@ BEGIN
         RAISE EXCEPTION 'Support triage digest did not withhold student-record details.';
     END IF;
 
+    SELECT EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_digest->'tickets') AS ticket
+        WHERE ticket->>'id' = v_ticket_urgent::TEXT
+          AND ticket->>'subject' = 'bug report support request'
+          AND ticket->>'summary_seed' = 'metadata only: urgent bug report support request is open'
+          AND ticket->>'requester' = 'u***@example.invalid'
+    )
+    INTO v_non_student_digest_found;
+
+    IF NOT v_non_student_digest_found THEN
+        RAISE EXCEPTION 'Support triage digest did not return the expected metadata-only non-student summary.';
+    END IF;
+
     IF v_digest::TEXT ILIKE '%Sensitive student%'
-       OR v_digest::TEXT ILIKE '%student@example.invalid%' THEN
-        RAISE EXCEPTION 'Support triage digest leaked raw student-record details or full requester email.';
+       OR v_digest::TEXT ILIKE '%student@example.invalid%'
+       OR v_digest::TEXT ILIKE '%Normal billing ticket%'
+       OR v_digest::TEXT ILIKE '%This is enough detail%'
+       OR v_digest::TEXT ILIKE '%Urgent bug ticket%'
+       OR v_digest::TEXT ILIKE '%This is enough urgent detail%'
+       OR v_digest::TEXT ILIKE '%normal@example.invalid%'
+       OR v_digest::TEXT ILIKE '%urgent@example.invalid%' THEN
+        RAISE EXCEPTION 'Support triage digest leaked raw ticket details or full requester email.';
     END IF;
 
     SELECT *

@@ -9,7 +9,10 @@ BEGIN
         ('20260520041120'),
         ('20260520065000'),
         ('20260520070500'),
-        ('20260520072000')
+        ('20260520072000'),
+        ('20260524094000'),
+        ('20260531173910'),
+        ('20260524100000')
     ) AS expected(version)
     WHERE NOT EXISTS (
         SELECT 1
@@ -105,6 +108,24 @@ BEGIN
         RAISE EXCEPTION 'Missing or disabled trigger(s): %', missing;
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger trig
+        JOIN pg_class relation ON relation.oid = trig.tgrelid
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relname = 'staff_roles'
+          AND trig.tgname = 'prevent_staff_admin_orphan_update_trigger'
+          AND NOT trig.tgisinternal
+          AND trig.tgenabled IN ('O', 'A')
+          AND (
+              pg_get_triggerdef(trig.oid) ILIKE '%BEFORE UPDATE OF role, user_id ON public.staff_roles%'
+              OR pg_get_triggerdef(trig.oid) ILIKE '%BEFORE UPDATE OF user_id, role ON public.staff_roles%'
+          )
+    ) THEN
+        RAISE EXCEPTION 'prevent_staff_admin_orphan_update_trigger must fire when staff_roles.role or staff_roles.user_id changes.';
+    END IF;
+
     SELECT string_agg(format('%s.%s expected ON DELETE %s', expected.table_name, expected.column_name, expected.delete_rule), ', ' ORDER BY expected.table_name, expected.column_name)
     INTO missing
     FROM (VALUES
@@ -138,6 +159,17 @@ BEGIN
         RAISE EXCEPTION 'Foreign key delete rule mismatch: %', missing;
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'staff_roles'
+          AND column_name = 'user_id'
+          AND is_nullable = 'YES'
+    ) THEN
+        RAISE EXCEPTION 'staff_roles.user_id must be nullable for pending staff invites.';
+    END IF;
+
     SELECT string_agg(format('%s for %s', expected.privilege, expected.grantee), ', ' ORDER BY expected.table_name, expected.grantee, expected.privilege)
     INTO missing
     FROM (
@@ -159,6 +191,30 @@ BEGIN
 
     IF missing IS NOT NULL THEN
         RAISE EXCEPTION 'Missing table privilege(s): %', missing;
+    END IF;
+
+    SELECT string_agg(format('%s on %s for %s', checked.privilege, checked.table_name, checked.grantee), ', ' ORDER BY checked.table_name, checked.grantee, checked.privilege)
+    INTO missing
+    FROM (
+        SELECT table_name, grantee, privilege
+        FROM (VALUES
+            ('account_deletion_requests'),
+            ('support_ticket_events'),
+            ('support_tickets')
+        ) AS tables(table_name)
+        CROSS JOIN (VALUES
+            ('anon', 'INSERT'),
+            ('anon', 'UPDATE'),
+            ('anon', 'DELETE'),
+            ('authenticated', 'INSERT'),
+            ('authenticated', 'UPDATE'),
+            ('authenticated', 'DELETE')
+        ) AS grants(grantee, privilege)
+    ) AS checked(table_name, grantee, privilege)
+    WHERE has_table_privilege(checked.grantee, format('public.%I', checked.table_name), checked.privilege);
+
+    IF missing IS NOT NULL THEN
+        RAISE EXCEPTION 'Browser-facing role(s) still have direct account/support write privileges: %', missing;
     END IF;
 
     IF NOT EXISTS (
@@ -196,6 +252,10 @@ BEGIN
         RAISE EXCEPTION 'sync_belt_ladder_ranks still references tmp_sync_belt_ranks; linked db lint will fail.';
     END IF;
 
+    IF to_regprocedure('public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)') IS NULL THEN
+        RAISE EXCEPTION 'Missing public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb).';
+    END IF;
+
     IF to_regprocedure('public.support_triage_list_tickets(text[], text[], text[], integer)') IS NULL THEN
         RAISE EXCEPTION 'Missing public.support_triage_list_tickets(text[], text[], text[], integer).';
     END IF;
@@ -208,13 +268,16 @@ BEGIN
         RAISE EXCEPTION 'Missing public.support_triage_digest(integer).';
     END IF;
 
-    IF NOT has_function_privilege('service_role', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
+    IF NOT has_function_privilege('service_role', 'public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)', 'EXECUTE')
+       OR NOT has_function_privilege('service_role', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
        OR NOT has_function_privilege('service_role', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE')
        OR NOT has_function_privilege('service_role', 'public.support_triage_digest(integer)', 'EXECUTE') THEN
         RAISE EXCEPTION 'service_role must be able to execute support triage RPCs.';
     END IF;
 
-    IF has_function_privilege('anon', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
+    IF has_function_privilege('anon', 'public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.create_support_ticket(uuid, uuid, text, text, text, text, text, text, text, text, jsonb)', 'EXECUTE')
+       OR has_function_privilege('anon', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
        OR has_function_privilege('authenticated', 'public.support_triage_list_tickets(text[], text[], text[], integer)', 'EXECUTE')
        OR has_function_privilege('anon', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE')
        OR has_function_privilege('authenticated', 'public.support_triage_update_ticket(uuid, text, text, jsonb)', 'EXECUTE')

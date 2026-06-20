@@ -1,17 +1,21 @@
 import { NextRequest } from "next/server";
+import { buildPrivateProxyHeaders, buildPrivateProxyJsonHeaders } from "@/lib/proxy-headers";
+import { buildUpstreamProxyRequestHeaders } from "@/lib/proxy-request-headers";
+import { buildProxyTargetUrl, UnsafeProxyPathError } from "@/lib/proxy-target";
+import { ACTIVE_STUDIO_COOKIE } from "@/lib/studio-state-cookie";
 
-const BACKEND_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
-const ACTIVE_STUDIO_COOKIE = "koaryu-active-studio";
-export const runtime = "nodejs";
-
-function buildTargetUrl(request: NextRequest, path: string[]) {
-  const requestUrl = new URL(request.url);
-  const joinedPath = path.join("/");
-  const normalizedBase = BACKEND_API_BASE.replace(/\/$/, "");
-  const targetUrl = new URL(`${normalizedBase}/${joinedPath}`);
-  targetUrl.search = requestUrl.search;
-  return targetUrl;
+const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+if (!rawBackendApiBase) {
+  throw new Error("BACKEND_API_URL is required for the API proxy");
 }
+
+const BACKEND_API_BASE = rawBackendApiBase;
+const parsedBackendApiBase = new URL(BACKEND_API_BASE);
+if (!["https:", "http:"].includes(parsedBackendApiBase.protocol)) {
+  throw new Error("BACKEND_API_URL must use http or https");
+}
+
+export const runtime = "nodejs";
 
 async function createForwardBody(request: NextRequest) {
   const contentType = request.headers.get("content-type") || "";
@@ -33,30 +37,11 @@ async function forwardRequest(
 ) {
   try {
     const { path } = await context.params;
-    const targetUrl = buildTargetUrl(request, path);
-
-    const headers = new Headers();
-    const authorization = request.headers.get("authorization");
-    const accept = request.headers.get("accept");
-    const contentType = request.headers.get("content-type");
-    const activeStudioId =
-      request.headers.get("x-studio-id") || request.cookies.get(ACTIVE_STUDIO_COOKIE)?.value;
-
-    if (authorization) {
-      headers.set("authorization", authorization);
-    }
-
-    if (accept) {
-      headers.set("accept", accept);
-    }
-
-    if (contentType && !contentType.includes("multipart/form-data")) {
-      headers.set("content-type", contentType);
-    }
-
-    if (activeStudioId) {
-      headers.set("x-studio-id", activeStudioId);
-    }
+    const targetUrl = buildProxyTargetUrl(BACKEND_API_BASE, request.url, path);
+    const headers = buildUpstreamProxyRequestHeaders(
+      request.headers,
+      request.cookies.get(ACTIVE_STUDIO_COOKIE)?.value
+    );
 
     const init: RequestInit = {
       method: request.method,
@@ -69,24 +54,27 @@ async function forwardRequest(
     }
 
     const upstream = await fetch(targetUrl, init);
-    const responseHeaders = new Headers();
-    const upstreamContentType = upstream.headers.get("content-type");
-
-    if (upstreamContentType) {
-      responseHeaders.set("content-type", upstreamContentType);
-    }
+    const responseHeaders = buildPrivateProxyHeaders(upstream.headers);
 
     return new Response(upstream.body, {
       status: upstream.status,
       headers: responseHeaders,
     });
   } catch (error) {
+    if (error instanceof UnsafeProxyPathError) {
+      return Response.json(
+        { detail: "Invalid API proxy path." },
+        { status: 400, headers: buildPrivateProxyJsonHeaders() }
+      );
+    }
+
     console.error("API proxy failed", error);
+
     return Response.json(
       {
         detail: "Could not reach the backend API. Confirm the backend server is running.",
       },
-      { status: 502 }
+      { status: 502, headers: buildPrivateProxyJsonHeaders() }
     );
   }
 }

@@ -1,5 +1,9 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Logo } from "@/components/logo";
+import { AUTH_NOINDEX_METADATA } from "@/lib/auth-indexing";
+
+export const metadata: Metadata = AUTH_NOINDEX_METADATA;
 
 export default function AuthLayout({
   children,

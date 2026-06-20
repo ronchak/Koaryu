@@ -1,16 +1,22 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 
 
 # ---- Lead ----
+
+LeadSource = Literal["walk_in", "referral", "social", "search", "website", "other"]
+LeadStage = Literal["inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled", "closed_lost"]
+LostReason = Literal["no_show", "price_objection", "timing", "no_response", "other"]
+LeadConvertStudentStatus = Literal["active", "trialing", "inactive", "paused", "canceled"]
+
 
 class LeadCreate(BaseModel):
     first_name: str
     last_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
-    source: str = "walk_in"
-    stage: str = "inquiry"
+    source: LeadSource = "walk_in"
+    stage: LeadStage = "inquiry"
     program_interest: Optional[str] = None
     program_id: Optional[str] = None
     is_minor: bool = False
@@ -27,8 +33,8 @@ class LeadUpdate(BaseModel):
     last_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    source: Optional[str] = None
-    stage: Optional[str] = None
+    source: Optional[LeadSource] = None
+    stage: Optional[LeadStage] = None
     program_interest: Optional[str] = None
     program_id: Optional[str] = None
     is_minor: Optional[bool] = None
@@ -38,7 +44,7 @@ class LeadUpdate(BaseModel):
     assigned_staff_id: Optional[str] = None
     follow_up_date: Optional[str] = None
     notes: Optional[str] = None
-    lost_reason: Optional[str] = None
+    lost_reason: Optional[LostReason] = None
 
 
 class LeadResponse(BaseModel):
@@ -48,8 +54,8 @@ class LeadResponse(BaseModel):
     last_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
-    source: str
-    stage: str
+    source: LeadSource
+    stage: LeadStage
     program_interest: Optional[str] = None
     program_id: Optional[str] = None
     is_minor: bool
@@ -58,7 +64,7 @@ class LeadResponse(BaseModel):
     guardian_phone: Optional[str] = None
     assigned_staff_id: Optional[str] = None
     follow_up_date: Optional[str] = None
-    lost_reason: Optional[str] = None
+    lost_reason: Optional[LostReason] = None
     notes: Optional[str] = None
     converted_student_id: Optional[str] = None
     created_at: str
@@ -85,6 +91,6 @@ class LeadActivityResponse(BaseModel):
 # ---- Conversion ----
 
 class LeadConvert(BaseModel):
-    status: str = "active"
+    status: LeadConvertStudentStatus = "active"
     membership_start_date: Optional[str] = None
     program_id: Optional[str] = None

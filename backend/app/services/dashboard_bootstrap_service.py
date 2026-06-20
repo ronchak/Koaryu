@@ -1,4 +1,5 @@
 import asyncio
+import time
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -17,8 +18,9 @@ from app.services.auth_service import AuthService
 from app.services.student_service import StudentService
 from app.services.studio_scope import ensure_platform_subscription_access
 
-
 class DashboardBootstrapService:
+    STUDENTS_BOOTSTRAP_PAGE_SIZE = 200
+
     def __init__(self, supabase: Client):
         self.supabase = supabase
 
@@ -53,12 +55,12 @@ class DashboardBootstrapService:
     def _fetch_students(self, studio_id: str):
         return (
             self.supabase.table("students")
-            .select("*")
+            .select("*", count="exact")
             .eq("studio_id", studio_id)
             .is_("deleted_at", "null")
             .order("legal_last_name")
             .order("legal_first_name")
-            .limit(200)
+            .limit(self.STUDENTS_BOOTSTRAP_PAGE_SIZE)
             .execute()
         )
 
@@ -81,6 +83,20 @@ class DashboardBootstrapService:
     def _fetch_with_isolated_client(method_name: str, studio_id: str):
         service = DashboardBootstrapService(create_supabase_client())
         return getattr(service, method_name)(studio_id)
+
+    @staticmethod
+    def _timed_fetch_with_isolated_client(label: str, method_name: str, studio_id: str):
+        started = time.perf_counter()
+        result = DashboardBootstrapService._fetch_with_isolated_client(method_name, studio_id)
+        duration_ms = (time.perf_counter() - started) * 1000
+        return result, (label, duration_ms)
+
+    @staticmethod
+    def server_timing_value(timings: dict[str, float]) -> str:
+        return ", ".join(
+            f"koaryu_{label};dur={duration_ms:.1f}"
+            for label, duration_ms in timings.items()
+        )
 
     def _fetch_belt_ladders(self, studio_id: str):
         visible_programs = (
@@ -109,24 +125,27 @@ class DashboardBootstrapService:
         self,
         user_id: str,
         requested_studio_id: Optional[str] = None,
-    ) -> DashboardBootstrapResponse:
+    ) -> tuple[DashboardBootstrapResponse, dict[str, float]]:
+        total_started = time.perf_counter()
         auth = await AuthService(self.supabase).get_user_profile(user_id, requested_studio_id)
 
         if not auth.studio_id:
-            return DashboardBootstrapResponse(auth=auth)
+            timings = {"total": (time.perf_counter() - total_started) * 1000}
+            return DashboardBootstrapResponse(auth=auth), timings
 
         studio_id = auth.studio_id
         ensure_platform_subscription_access(self.supabase, studio_id)
 
         # supabase-py's sync client is not safe to share across parallel thread
         # calls, so each bootstrap read gets its own short-lived client.
-        studio_result, students_result, leads_result, ladders_result, programs = await asyncio.gather(
-            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_studio_summary", studio_id),
-            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_students", studio_id),
-            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_leads", studio_id),
-            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_belt_ladders", studio_id),
-            asyncio.to_thread(self._fetch_with_isolated_client, "_fetch_programs", studio_id),
+        results = await asyncio.gather(
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "studio", "_fetch_studio_summary", studio_id),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "students", "_fetch_students", studio_id),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "leads", "_fetch_leads", studio_id),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "belts", "_fetch_belt_ladders", studio_id),
+            asyncio.to_thread(self._timed_fetch_with_isolated_client, "programs", "_fetch_programs", studio_id),
         )
+        (studio_result, studio_timing), (students_result, students_timing), (leads_result, leads_timing), (ladders_result, ladders_timing), (programs, programs_timing) = results
 
         if not studio_result.data:
             raise HTTPException(
@@ -135,11 +154,14 @@ class DashboardBootstrapService:
             )
 
         student_service = StudentService(self.supabase)
-        students = student_service._rows_to_responses(
+        students = student_service.rows_to_responses(
             students_result.data or [],
             include_guardians=False,
             include_photo_urls=False,
         )
+        students_total = getattr(students_result, "count", None)
+        if students_total is None:
+            students_total = len(students)
 
         leads = [LeadResponse(**row) for row in (leads_result.data or [])]
 
@@ -151,13 +173,22 @@ class DashboardBootstrapService:
 
         studio = DashboardBootstrapStudioSummary(**studio_result.data)
 
-        return DashboardBootstrapResponse(
-            auth=auth,
-            studio=studio,
-            studio_name=studio.name,
-            students=students,
-            programs=programs,
-            leads=leads,
-            belt_ladders=belt_ladders,
-            primary_belt_ladder=primary_belt_ladder,
+        timings = dict([studio_timing, students_timing, leads_timing, ladders_timing, programs_timing])
+        timings["total"] = (time.perf_counter() - total_started) * 1000
+
+        return (
+            DashboardBootstrapResponse(
+                auth=auth,
+                studio=studio,
+                studio_name=studio.name,
+                students=students,
+                students_total=students_total,
+                students_page_size=self.STUDENTS_BOOTSTRAP_PAGE_SIZE,
+                students_may_be_partial=students_total > len(students),
+                programs=programs,
+                leads=leads,
+                belt_ladders=belt_ladders,
+                primary_belt_ladder=primary_belt_ladder,
+            ),
+            timings,
         )

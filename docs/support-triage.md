@@ -64,19 +64,21 @@ The automation uses the Supabase connector, not browser or local CLI state. It s
 SELECT public.support_triage_digest(50) AS digest;
 ```
 
-`support_triage_digest` returns only sanitized fields. It does not expose full ticket details, raw requester emails, page URLs, user agents, or browser context. For `student_records` tickets, the digest returns `details withheld` for both subject and summary.
+`support_triage_digest` returns only sanitized fields. It does not expose user-entered ticket subjects, ticket details, raw requester emails, page URLs, user agents, or browser context. For `student_records` tickets, the digest returns `details withheld` for both subject and summary; for other topics, subject and summary fields are generated from controlled metadata only.
 
 The local helper below is only a manual fallback for developer checks; it calls the same sanitized RPC:
 
 ```bash
-scripts/support-triage-digest.sh
+scripts/support-triage-digest.sh --confirm-sanitized-linked-query
 ```
+
+The confirmation flag is required because the helper reads from the currently linked Supabase project and prints the sanitized digest locally. Use `--limit N` to request 1-100 entries.
 
 Privacy rules for the automation:
 
-- Include ticket IDs, severity, topic, status, rough age, and a short sanitized summary.
+- Include ticket IDs, severity, topic, status, rough age, and the metadata-only summary returned by `support_triage_digest`.
 - Redact requester emails to a partial form such as `r***@domain.com`.
-- For `student_records` tickets, output metadata only and use `details withheld`; do not summarize the subject or details.
+- Do not summarize user-entered subject or details. For `student_records` tickets, output metadata only and use `details withheld`.
 - Do not include full ticket details, page URLs with query strings, user agents, browser context, or student-record content.
 - If the Supabase connector cannot call `support_triage_digest`, report that the queue could not be checked rather than calling raw support-ticket endpoints from automation.
 
@@ -86,6 +88,6 @@ Run these after changing support/account database behavior:
 
 ```bash
 supabase db lint --linked --fail-on error
-scripts/verify-supabase-account-support.sh
+SUPABASE_DB_TARGET=linked scripts/verify-supabase-account-support.sh
 PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_support_service.py backend/tests/test_internal_endpoints.py
 ```

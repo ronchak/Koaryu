@@ -1,0 +1,198 @@
+.screen {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  color: var(--text-secondary);
+}
+
+.stage {
+  display: grid;
+  width: 88px;
+  height: 88px;
+  place-items: center;
+}
+
+.graphic {
+  display: block;
+  width: 76px;
+  height: 76px;
+  overflow: visible;
+}
+
+.dance {
+  animation: dance 1.05s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.shadow {
+  fill: color-mix(in srgb, var(--border) 72%, transparent);
+  animation: shadowPulse 1.05s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.fur {
+  fill: #f6f7f8;
+  stroke: #2b333d;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.dark {
+  fill: #59616b;
+  stroke: #2b333d;
+  stroke-width: 1.6;
+}
+
+.accent {
+  fill: #f2a9b6;
+  stroke: #2b333d;
+  stroke-linejoin: round;
+  stroke-width: 1.2;
+}
+
+.patch,
+.arm,
+.leg {
+  fill: #59616b;
+  stroke: #2b333d;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.eye,
+.nose {
+  fill: #12161b;
+}
+
+.eyeShine {
+  fill: #f6f7f8;
+}
+
+.mouth,
+.softLine {
+  fill: none;
+  stroke: #2b333d;
+  stroke-linecap: round;
+}
+
+.mouth {
+  stroke-width: 1.8;
+}
+
+.softLine {
+  opacity: 0.18;
+  stroke-width: 1.6;
+}
+
+.arm,
+.leg {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.armLeft {
+  animation: leftArm 1.05s ease-in-out infinite;
+}
+
+.armRight {
+  animation: rightArm 1.05s ease-in-out infinite;
+}
+
+.legLeft {
+  animation: leftFoot 1.05s ease-in-out infinite;
+}
+
+.legRight {
+  animation: rightFoot 1.05s ease-in-out infinite;
+}
+
+.text {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+@keyframes dance {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-2deg);
+  }
+  25% {
+    transform: translate3d(2px, -4px, 0) rotate(4deg);
+  }
+  50% {
+    transform: translate3d(0, 0, 0) rotate(1deg);
+  }
+  75% {
+    transform: translate3d(-2px, -4px, 0) rotate(-5deg);
+  }
+}
+
+@keyframes shadowPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scaleX(1);
+  }
+  25%,
+  75% {
+    opacity: 0.32;
+    transform: scaleX(0.74);
+  }
+}
+
+@keyframes leftArm {
+  0%,
+  100% {
+    transform: rotate(10deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-18deg) translateY(-2px);
+  }
+}
+
+@keyframes rightArm {
+  0%,
+  100% {
+    transform: rotate(-10deg) translateY(-2px);
+  }
+  50% {
+    transform: rotate(18deg) translateY(0);
+  }
+}
+
+@keyframes leftFoot {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+@keyframes rightFoot {
+  0%,
+  100% {
+    transform: translateY(2px);
+  }
+  50% {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dance,
+  .shadow,
+  .arm,
+  .leg {
+    animation: none;
+  }
+}

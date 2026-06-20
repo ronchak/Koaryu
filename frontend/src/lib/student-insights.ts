@@ -1,4 +1,5 @@
 import type { AttendanceRecord, ClassSession, Student } from "@/types";
+import { differenceInLocalDateKeys, toLocalDateKey } from "./date";
 
 export interface StudentInactivityRow {
   student: Student;
@@ -8,16 +9,11 @@ export interface StudentInactivityRow {
 }
 
 export function todayDateString() {
-  return new Date().toISOString().split("T")[0];
-}
-
-function parseDate(value: string) {
-  return new Date(`${value}T00:00:00`);
+  return toLocalDateKey();
 }
 
 function diffInDays(from: string, to: string) {
-  const ms = parseDate(to).getTime() - parseDate(from).getTime();
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+  return differenceInLocalDateKeys(from, to);
 }
 
 export function isStudentOnHoldNow(student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">, today = todayDateString()) {

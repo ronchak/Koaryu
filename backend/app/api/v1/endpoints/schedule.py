@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, Query
-from typing import Literal
 from typing import Optional
 from supabase import Client
 from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
 from app.schemas.schedule import (
     ClassTemplateCreate, ClassTemplateUpdate, ClassTemplateResponse,
     ClassSessionCreate, ClassSessionResponse,
+    ClassSessionDeleteScopeValue,
     AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
 )
-from app.services.schedule_service import ScheduleService
+from app.services.schedule_service import ScheduleService, SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -58,8 +58,14 @@ async def delete_template(
 
 @router.get("/sessions", response_model=list[ClassSessionResponse])
 async def list_sessions(
-    start_date: str = Query(...),
-    end_date: str = Query(...),
+    start_date: str = Query(
+        ...,
+        description=f"YYYY-MM-DD inclusive start date. Maximum range is {SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS} days.",
+    ),
+    end_date: str = Query(
+        ...,
+        description=f"YYYY-MM-DD inclusive end date. Maximum range is {SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS} days.",
+    ),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
@@ -79,7 +85,7 @@ async def create_session(
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(
     session_id: str,
-    scope: Literal["session", "future_series"] = Query("session"),
+    scope: ClassSessionDeleteScopeValue = Query("session"),
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
@@ -90,10 +96,11 @@ async def delete_session(
 @router.post("/sessions/generate-week", response_model=list[ClassSessionResponse])
 async def generate_week(
     week_start: str = Query(..., description="Monday date YYYY-MM-DD"),
+    user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).generate_sessions_for_week(studio_id, week_start)
+    return await ScheduleService(supabase).generate_sessions_for_week(studio_id, week_start, user_id)
 
 
 # ---- Attendance ----

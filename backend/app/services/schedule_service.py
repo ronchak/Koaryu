@@ -1,19 +1,32 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Literal, Optional
+from typing import Optional
 from supabase import Client
 from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
 from pydantic import ValidationError
 from app.schemas.schedule import (
     ClassTemplateCreate, ClassTemplateUpdate, ClassTemplateResponse,
     ClassSessionCreate, ClassSessionResponse,
+    ClassSessionDeleteScopeValue,
     AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
 )
 from app.services.studio_scope import (
     ensure_optional_studio_record,
     ensure_staff_user_in_studio,
-    ensure_studio_record,
 )
 from app.services.program_service import ProgramService
+from app.services.schedule_attendance_actions import ScheduleAttendanceActions
+from app.services.supabase_rpc import execute_required_rpc
+
+
+SCHEDULE_SESSION_CONFLICT_CODES = {"23505"}
+SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS = 93
+SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS = 93
+SCHEDULE_SESSION_CONFLICT_RETRY_ATTEMPTS = 3
+CLASS_SESSION_LIST_SELECT = (
+    "id, studio_id, template_id, name, date, start_time, end_time, "
+    "instructor_id, program_id, capacity, status, notes, created_at"
+)
 
 
 class ScheduleService:
@@ -40,60 +53,54 @@ class ScheduleService:
                 detail=f"{field_name} must be in YYYY-MM-DD format",
             ) from exc
 
-    @staticmethod
-    def _normalize_session_ids(session_ids: Optional[list[str]]) -> list[str]:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for value in session_ids or []:
-            for raw_session_id in value.split(","):
-                session_id = raw_session_id.strip()
-                if session_id and session_id not in seen:
-                    normalized.append(session_id)
-                    seen.add(session_id)
-        return normalized
+    def _validate_session_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        max_days: int,
+        operation_name: str,
+    ) -> tuple[date, date]:
+        start = self._parse_query_date(start_date, "start_date")
+        end = self._parse_query_date(end_date, "end_date")
+        if end < start:
+            raise HTTPException(
+                status_code=400,
+                detail="end_date cannot be before start_date",
+            )
 
-    @staticmethod
-    def _attendance_response_from_row(row: dict) -> AttendanceResponse:
-        data = {
-            k: v
-            for k, v in row.items()
-            if k not in {"students", "class_sessions"}
-        }
-        student = row.get("students", {}) or {}
-        first_name = student.get("preferred_name") or student.get("legal_first_name", "")
-        name = f"{first_name} {student.get('legal_last_name', '')}"
-        return AttendanceResponse(
-            **data,
-            student_name=name.strip(),
-        )
+        requested_days = (end - start).days + 1
+        if requested_days > max_days:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{operation_name} date range cannot exceed {max_days} days",
+            )
+        return start, end
 
     @staticmethod
     def _studio_weekday(value: date) -> int:
         # Python: Monday=0 ... Sunday=6. Koaryu schema: Sunday=0 ... Saturday=6.
         return (value.weekday() + 1) % 7
 
+    def _attendance_actions(self) -> ScheduleAttendanceActions:
+        return ScheduleAttendanceActions(self.supabase)
+
     async def _materialize_sessions_for_range(
         self, studio_id: str, start_date: str, end_date: str
     ) -> None:
-        start = self._parse_date(start_date)
-        end = self._parse_date(end_date)
+        start, end = self._validate_session_date_range(
+            start_date,
+            end_date,
+            max_days=SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS,
+            operation_name="Recurring session materialization",
+        )
+        start_date = start.isoformat()
+        end_date = end.isoformat()
         templates = await self.list_templates(studio_id)
         if not templates:
             return
 
-        existing = (
-            self.supabase.table("class_sessions")
-            .select("template_id, date")
-            .eq("studio_id", studio_id)
-            .gte("date", start_date)
-            .lte("date", end_date)
-            .execute()
-        )
-        existing_keys = {
-            (row["template_id"], row["date"])
-            for row in (existing.data or [])
-            if row.get("template_id")
-        }
+        existing_keys = self._existing_materialized_session_keys(studio_id, start_date, end_date)
 
         rows_to_create = []
         for template in templates:
@@ -124,9 +131,71 @@ class ScheduleService:
                 current += timedelta(days=1)
 
         if rows_to_create:
-            result = self.supabase.table("class_sessions").insert(rows_to_create).execute()
+            try:
+                result = self.supabase.table("class_sessions").insert(rows_to_create).execute()
+                if not result.data:
+                    raise HTTPException(status_code=500, detail="Failed to generate recurring class sessions")
+            except PostgrestAPIError as exc:
+                if exc.code not in SCHEDULE_SESSION_CONFLICT_CODES:
+                    raise
+                self._insert_materialized_sessions_after_conflict(
+                    rows_to_create,
+                    studio_id=studio_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+
+    def _insert_materialized_sessions_after_conflict(
+        self,
+        rows: list[dict],
+        *,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> None:
+        remaining = list(rows)
+        for _attempt in range(SCHEDULE_SESSION_CONFLICT_RETRY_ATTEMPTS):
+            existing_keys = self._existing_materialized_session_keys(studio_id, start_date, end_date)
+            remaining = [
+                row for row in remaining
+                if (row.get("template_id"), row.get("date")) not in existing_keys
+            ]
+            if not remaining:
+                return
+            try:
+                result = self.supabase.table("class_sessions").insert(remaining).execute()
+            except PostgrestAPIError as exc:
+                if exc.code in SCHEDULE_SESSION_CONFLICT_CODES:
+                    continue
+                raise
             if not result.data:
                 raise HTTPException(status_code=500, detail="Failed to generate recurring class sessions")
+            return
+
+        raise HTTPException(
+            status_code=409,
+            detail="Recurring session materialization collided with another update. Retry shortly.",
+        )
+
+    def _existing_materialized_session_keys(
+        self,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> set[tuple[str, str]]:
+        existing = (
+            self.supabase.table("class_sessions")
+            .select("template_id, date")
+            .eq("studio_id", studio_id)
+            .gte("date", start_date)
+            .lte("date", end_date)
+            .execute()
+        )
+        return {
+            (row["template_id"], row["date"])
+            for row in (existing.data or [])
+            if row.get("template_id")
+        }
 
     # ---- Class Templates ----
 
@@ -250,10 +319,17 @@ class ScheduleService:
         self, studio_id: str, start_date: str, end_date: str
     ) -> list[ClassSessionResponse]:
         try:
-            await self._materialize_sessions_for_range(studio_id, start_date, end_date)
+            start, end = self._validate_session_date_range(
+                start_date,
+                end_date,
+                max_days=SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
+                operation_name="Schedule session list",
+            )
+            start_date = start.isoformat()
+            end_date = end.isoformat()
             result = (
                 self.supabase.table("class_sessions")
-                .select("*")
+                .select(CLASS_SESSION_LIST_SELECT)
                 .eq("studio_id", studio_id)
                 .is_("deleted_at", "null")
                 .gte("date", start_date)
@@ -330,31 +406,25 @@ class ScheduleService:
         return ClassSessionResponse(**result.data[0], attendance_count=0)
 
     async def generate_sessions_for_week(
-        self, studio_id: str, week_start: str
+        self, studio_id: str, week_start: str, actor_id: str
     ) -> list[ClassSessionResponse]:
         """Generate sessions for a week from templates."""
-        start = datetime.strptime(week_start, "%Y-%m-%d").date()
+        start = self._parse_query_date(week_start, "week_start")
+        if start.weekday() != 0:
+            raise HTTPException(status_code=400, detail="week_start must be a Monday")
 
         templates = await self.list_templates(studio_id)
-        created = []
-        for t in templates:
-            # Calculate the date for this template's day_of_week
-            days_ahead = t.day_of_week - start.weekday()
-            if days_ahead < 0:
-                days_ahead += 7
-            # Adjust: Python weekday() is Mon=0, our schema is Sun=0
-            days_ahead = (t.day_of_week - (start.isoweekday() % 7))
-            if days_ahead < 0:
-                days_ahead += 7
+        created: list[ClassSessionResponse] = []
+        for template in templates:
+            days_ahead = (template.day_of_week - self._studio_weekday(start)) % 7
             session_date = start + timedelta(days=days_ahead)
 
-            # Check if session already exists
             existing = (
                 self.supabase.table("class_sessions")
                 .select("id")
-                .eq("template_id", t.id)
+                .eq("template_id", template.id)
                 .eq("studio_id", studio_id)
-                .eq("date", str(session_date))
+                .eq("date", session_date.isoformat())
                 .execute()
             )
             if existing.data:
@@ -362,17 +432,17 @@ class ScheduleService:
 
             session = await self.create_session(
                 ClassSessionCreate(
-                    template_id=t.id,
-                    name=t.name,
-                    date=str(session_date),
-                    start_time=t.start_time,
-                    end_time=t.end_time,
-                    instructor_id=t.instructor_id,
-                    program_id=t.program_id,
-                    capacity=t.capacity,
+                    template_id=template.id,
+                    name=template.name,
+                    date=session_date.isoformat(),
+                    start_time=template.start_time,
+                    end_time=template.end_time,
+                    instructor_id=template.instructor_id,
+                    program_id=template.program_id,
+                    capacity=template.capacity,
                 ),
                 studio_id,
-                actor_id="system",
+                actor_id,
             )
             created.append(session)
         return created
@@ -382,7 +452,7 @@ class ScheduleService:
         session_id: str,
         studio_id: str,
         actor_id: str,
-        scope: Literal["session", "future_series"] = "session",
+        scope: ClassSessionDeleteScopeValue = "session",
     ) -> None:
         existing = (
             self.supabase.table("class_sessions")
@@ -406,45 +476,7 @@ class ScheduleService:
                     detail="Only recurring classes can be deleted for the full series",
                 )
 
-            template_result = (
-                self.supabase.table("class_templates")
-                .update({
-                    "is_active": False,
-                    "end_date": session["date"],
-                })
-                .eq("id", session["template_id"])
-                .eq("studio_id", studio_id)
-                .execute()
-            )
-            if not template_result.data:
-                raise HTTPException(status_code=404, detail="Class template not found")
-
-            deleted = (
-                self.supabase.table("class_sessions")
-                .update({
-                    "deleted_at": deleted_at,
-                    "status": "canceled",
-                })
-                .eq("studio_id", studio_id)
-                .eq("template_id", session["template_id"])
-                .gte("date", session["date"])
-                .is_("deleted_at", "null")
-                .execute()
-            )
-            if not deleted.data:
-                raise HTTPException(status_code=409, detail="Failed to delete recurring class series")
-
-            self.supabase.table("audit_logs").insert({
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": "class_series.deleted",
-                "entity_type": "class_template",
-                "entity_id": session["template_id"],
-                "metadata": {
-                    "start_date": session["date"],
-                    "session_name": session["name"],
-                },
-            }).execute()
+            self._delete_recurring_class_series_atomic(session_id, studio_id, actor_id)
             return
 
         deleted = (
@@ -474,19 +506,38 @@ class ScheduleService:
             },
         }).execute()
 
+    def _delete_recurring_class_series_atomic(self, session_id: str, studio_id: str, actor_id: str) -> None:
+        try:
+            execute_required_rpc(
+                self.supabase,
+                "delete_recurring_class_series_atomic",
+                {
+                    "p_session_id": session_id,
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                },
+            )
+        except PostgrestAPIError as exc:
+            message = str(getattr(exc, "message", "") or exc)
+            if "Class session not found" in message:
+                raise HTTPException(status_code=404, detail="Class session not found") from exc
+            if "Only recurring classes" in message:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only recurring classes can be deleted for the full series",
+                ) from exc
+            if "Class template not found" in message:
+                raise HTTPException(status_code=404, detail="Class template not found") from exc
+            if "Failed to delete recurring class series" in message:
+                raise HTTPException(status_code=409, detail="Failed to delete recurring class series") from exc
+            raise
+
     # ---- Attendance ----
 
     async def get_session_attendance(
         self, session_id: str, studio_id: str
     ) -> list[AttendanceResponse]:
-        result = (
-            self.supabase.table("attendance")
-            .select("*, students(legal_first_name, legal_last_name, preferred_name)")
-            .eq("session_id", session_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
-        return [self._attendance_response_from_row(row) for row in result.data or []]
+        return await self._attendance_actions().get_session_attendance(session_id, studio_id)
 
     async def list_attendance(
         self,
@@ -495,106 +546,17 @@ class ScheduleService:
         end_date: Optional[str] = None,
         session_ids: Optional[list[str]] = None,
     ) -> list[AttendanceResponse]:
-        normalized_session_ids = self._normalize_session_ids(session_ids)
-        if normalized_session_ids:
-            result = (
-                self.supabase.table("attendance")
-                .select("*, students(legal_first_name, legal_last_name, preferred_name)")
-                .eq("studio_id", studio_id)
-                .in_("session_id", normalized_session_ids)
-                .order("session_id")
-                .order("checked_in_at")
-                .execute()
-            )
-            return [self._attendance_response_from_row(row) for row in result.data or []]
-
-        if not start_date or not end_date:
-            raise HTTPException(
-                status_code=400,
-                detail="Provide session_ids or both start_date and end_date",
-            )
-
-        start = self._parse_query_date(start_date, "start_date")
-        end = self._parse_query_date(end_date, "end_date")
-        if end < start:
-            raise HTTPException(
-                status_code=400,
-                detail="end_date cannot be before start_date",
-            )
-
-        result = (
-            self.supabase.table("attendance")
-            .select(
-                "*, students(legal_first_name, legal_last_name, preferred_name), "
-                "class_sessions!inner(studio_id, date, deleted_at)"
-            )
-            .eq("studio_id", studio_id)
-            .eq("class_sessions.studio_id", studio_id)
-            .is_("class_sessions.deleted_at", "null")
-            .gte("class_sessions.date", start_date)
-            .lte("class_sessions.date", end_date)
-            .order("session_id")
-            .order("checked_in_at")
-            .execute()
+        return await self._attendance_actions().list_attendance(
+            studio_id,
+            start_date=start_date,
+            end_date=end_date,
+            session_ids=session_ids,
         )
-        return [self._attendance_response_from_row(row) for row in result.data or []]
 
     async def check_in(
         self, data: AttendanceCheckIn, studio_id: str, actor_id: str
     ) -> AttendanceResponse:
-        session_result = (
-            self.supabase.table("class_sessions")
-            .select("id, program_id")
-            .eq("id", data.session_id)
-            .eq("studio_id", studio_id)
-            .maybe_single()
-            .execute()
-        )
-        if not session_result.data:
-            raise HTTPException(status_code=404, detail="Class session not found")
-        ensure_studio_record(
-            self.supabase,
-            "students",
-            data.student_id,
-            studio_id,
-            "Student not found",
-        )
-
-        row = data.model_dump()
-        row["studio_id"] = studio_id
-        row["checked_in_by"] = actor_id
-
-        session_program_id = session_result.data.get("program_id")
-        if session_program_id:
-            membership_result = (
-                self.supabase.table("student_program_memberships")
-                .select("id")
-                .eq("studio_id", studio_id)
-                .eq("student_id", data.student_id)
-                .eq("program_id", session_program_id)
-                .in_("status", ["active", "paused"])
-                .is_("ended_at", "null")
-                .limit(1)
-                .execute()
-            )
-            is_cross_program = not bool(membership_result.data)
-            row["is_cross_program"] = is_cross_program
-            if is_cross_program and data.counts_toward_eligibility is None:
-                row["counts_toward_eligibility"] = False
-            elif data.counts_toward_eligibility is None:
-                row["counts_toward_eligibility"] = True
-        elif data.counts_toward_eligibility is None:
-            row["counts_toward_eligibility"] = True
-
-        # Upsert — if already checked in, update status
-        result = (
-            self.supabase.table("attendance")
-            .upsert(row, on_conflict="session_id,student_id")
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to record attendance")
-        return AttendanceResponse(**result.data[0])
+        return await self._attendance_actions().check_in(data, studio_id, actor_id)
 
     async def clear_attendance(
         self,
@@ -602,24 +564,9 @@ class ScheduleService:
         student_id: str,
         studio_id: str,
     ) -> None:
-        self.supabase.table("attendance").delete() \
-            .eq("studio_id", studio_id) \
-            .eq("session_id", session_id) \
-            .eq("student_id", student_id) \
-            .execute()
+        await self._attendance_actions().clear_attendance(session_id, student_id, studio_id)
 
     async def bulk_check_in(
         self, data: AttendanceBulkCheckIn, studio_id: str, actor_id: str
     ) -> list[AttendanceResponse]:
-        results = []
-        for ci in data.check_ins:
-            ci_data = AttendanceCheckIn(
-                session_id=data.session_id,
-                student_id=ci.student_id,
-                status=ci.status,
-                counts_toward_eligibility=ci.counts_toward_eligibility,
-                override_reason=ci.override_reason,
-            )
-            r = await self.check_in(ci_data, studio_id, actor_id)
-            results.append(r)
-        return results
+        return await self._attendance_actions().bulk_check_in(data, studio_id, actor_id)

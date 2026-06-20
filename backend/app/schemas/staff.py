@@ -13,7 +13,7 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 class StaffMemberResponse(BaseModel):
     id: str
     studio_id: str
-    user_id: str
+    user_id: Optional[str] = None
     email: str
     full_name: Optional[str] = None
     role: StaffRoleName

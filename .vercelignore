@@ -16,3 +16,6 @@ venv
 **/venv
 __pycache__
 **/__pycache__
+
+tmp_import_tests
+tmp_import_tests/**

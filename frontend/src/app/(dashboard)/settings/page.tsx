@@ -1,15 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { ModalFrame } from "@/components/ui/modal-frame";
 import { ProgramsSection } from "@/components/settings/programs-section";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
+import { api } from "@/lib/api";
 import { useConfigStore, useStudioStore } from "@/lib/store";
 import { AlertTriangle, Save, Check, RotateCcw, Trash2 } from "lucide-react";
 
+type StudioDataConfirmAction = "demo-reset" | "clear-data" | null;
+
 export default function SettingsPage() {
-  const { isPreviewMode } = useConfigStore();
+  const { isPreviewMode, token } = useConfigStore();
   const { currentRole, studioName, setStudioName, resetDemoData, clearStudioData } = useStudioStore();
   const [nameDraft, setNameDraft] = useState("");
   const [hasEditedName, setHasEditedName] = useState(false);
@@ -20,13 +24,63 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [demoResetMessage, setDemoResetMessage] = useState("");
   const [demoResetError, setDemoResetError] = useState("");
+  const [demoToolsEnabled, setDemoToolsEnabled] = useState(false);
   const [clearDataMessage, setClearDataMessage] = useState("");
   const [clearDataError, setClearDataError] = useState("");
+  const [confirmAction, setConfirmAction] = useState<StudioDataConfirmAction>(null);
   const savedTimeoutRef = useRef<number | null>(null);
   const demoResetTimeoutRef = useRef<number | null>(null);
   const clearDataTimeoutRef = useRef<number | null>(null);
   const name = hasEditedName ? nameDraft : studioName;
-  const canManageStudioData = currentRole === "admin";
+  const canManageStudioData = currentRole === "admin" && (isPreviewMode || demoToolsEnabled);
+  const confirmDialog = confirmAction === "demo-reset"
+    ? {
+        title: "Load demo studio?",
+        description: isPreviewMode
+          ? "This replaces the browser preview dataset with the polished demo state."
+          : "This replaces the current studio data with demo students, leads, belts, classes, and billing examples.",
+        actionText: "Load demo studio",
+        variant: "secondary" as const,
+        icon: <RotateCcw className="h-3.5 w-3.5" />,
+      }
+    : confirmAction === "clear-data"
+      ? {
+          title: "Clear studio data?",
+          description:
+            "This permanently deletes students, leads, programs, belts, schedule, attendance, and billing records for this studio. This cannot be undone.",
+          actionText: "Clear studio data",
+          variant: "danger" as const,
+          icon: <Trash2 className="h-3.5 w-3.5" />,
+        }
+      : null;
+
+  useEffect(() => {
+    if (isPreviewMode) {
+      return;
+    }
+
+    if (!token) {
+      return;
+    }
+
+    let canceled = false;
+    void api
+      .get<{ enabled: boolean }>("/demo/capabilities", token)
+      .then((result) => {
+        if (!canceled) {
+          setDemoToolsEnabled(Boolean(result.enabled));
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setDemoToolsEnabled(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [isPreviewMode, token]);
 
   async function handleSave() {
     const nextName = name.trim();
@@ -61,12 +115,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleDemoReset() {
-    const confirmed = window.confirm(
-      "This will replace the current studio data with demo students, leads, belts, classes, and billing examples. Continue?"
-    );
-    if (!confirmed) return;
-
+  async function runDemoReset() {
     setIsResettingDemo(true);
     setDemoResetError("");
     setDemoResetMessage("");
@@ -96,10 +145,15 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleClearData() {
-    const confirmed = window.confirm("Are you sure this is going to delete everything?");
-    if (!confirmed) return;
+  function handleDemoReset() {
+    if (!canManageStudioData || isClearingData || isResettingDemo) {
+      return;
+    }
 
+    setConfirmAction("demo-reset");
+  }
+
+  async function runClearData() {
     setIsClearingData(true);
     setClearDataError("");
     setClearDataMessage("");
@@ -129,6 +183,25 @@ export default function SettingsPage() {
     }
   }
 
+  function handleClearData() {
+    if (!canManageStudioData || isResettingDemo || isClearingData) {
+      return;
+    }
+
+    setConfirmAction("clear-data");
+  }
+
+  async function handleConfirmStudioDataAction() {
+    const action = confirmAction;
+    setConfirmAction(null);
+
+    if (action === "demo-reset") {
+      await runDemoReset();
+    } else if (action === "clear-data") {
+      await runClearData();
+    }
+  }
+
   return (
     <>
       <Header title="Settings" description="Studio configuration and preferences." />
@@ -139,8 +212,10 @@ export default function SettingsPage() {
             <h3 className="text-sm font-medium text-text-primary mb-4">Studio Information</h3>
             <div className="space-y-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-text-secondary font-medium">Studio Name</label>
+                <label htmlFor="settings-studio-name" className="text-xs text-text-secondary font-medium">Studio Name</label>
                 <input
+                  id="settings-studio-name"
+                  name="studio_name"
                   type="text"
                   value={name}
                   onChange={(e) => {
@@ -167,6 +242,7 @@ export default function SettingsPage() {
           <StaffRolesSection />
 
           {/* Data section */}
+          {canManageStudioData ? (
           <section className="rounded-[6px] border border-danger/25 bg-danger/5 p-5">
             <h3 className="text-sm font-medium text-text-primary mb-1">Studio Data</h3>
             <p className="text-xs text-text-secondary mb-4">
@@ -232,14 +308,44 @@ export default function SettingsPage() {
                   {clearDataError && <p role="alert" className="text-xs text-danger">{clearDataError}</p>}
                 </div>
 
-                {!canManageStudioData && (
-                  <p className="text-xs text-text-secondary mt-3">Only studio admins can change studio data.</p>
-                )}
               </div>
             </div>
           </section>
+          ) : null}
         </div>
       </div>
+      {confirmDialog ? (
+        <ModalFrame
+          role="alertdialog"
+          ariaLabelledBy="studio-data-confirm-title"
+          ariaDescribedBy="studio-data-confirm-description"
+          onBackdropClick={() => setConfirmAction(null)}
+          panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+              <AlertTriangle className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="studio-data-confirm-title" className="text-sm font-semibold text-text-primary">
+                {confirmDialog.title}
+              </h2>
+              <p id="studio-data-confirm-description" className="mt-2 text-sm leading-6 text-text-secondary">
+                {confirmDialog.description}
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmAction(null)}>
+              Cancel
+            </Button>
+            <Button type="button" variant={confirmDialog.variant} size="sm" onClick={handleConfirmStudioDataAction}>
+              {confirmDialog.icon}
+              {confirmDialog.actionText}
+            </Button>
+          </div>
+        </ModalFrame>
+      ) : null}
     </>
   );
 }

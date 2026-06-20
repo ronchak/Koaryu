@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CreditCard, ExternalLink, Lock, LogOut, Mail, ShieldCheck, Trash2, Users } from "lucide-react";
+import { AlertTriangle, CreditCard, ExternalLink, Lock, LogOut, Mail, ShieldCheck, Trash2, Users } from "lucide-react";
 import {
   AccountInfoRow,
   AccountLinkTile,
@@ -12,12 +12,15 @@ import {
   AccountSection,
 } from "@/components/account-page-shell";
 import { Button } from "@/components/ui/button";
+import { ModalFrame } from "@/components/ui/modal-frame";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { useConfigStore } from "@/lib/store";
 import { clearActiveStudioIdCookie, clearStudioStateCookie } from "@/lib/studio-state-cookie";
 import { useStudioStore } from "@/lib/store";
 import type { AccountDeletionRequest, Studio } from "@/types";
+
+type AccountConfirmAction = "schedule-deletion" | "transfer-ownership" | null;
 
 function roleLabel(role?: string | null) {
   if (role === "admin") return "Admin";
@@ -44,6 +47,7 @@ export default function AccountSettingsPage() {
   const [ownershipError, setOwnershipError] = useState("");
   const [deletionMessage, setDeletionMessage] = useState("");
   const [deletionError, setDeletionError] = useState("");
+  const [confirmAction, setConfirmAction] = useState<AccountConfirmAction>(null);
   const isAdmin = currentRole === "admin";
 
   useEffect(() => {
@@ -111,9 +115,8 @@ export default function AccountSettingsPage() {
     }
   }
 
-  async function handleScheduleDeletion() {
-    const confirmed = window.confirm("Are you sure this is a permanent decision?");
-    if (!confirmed || !token) return;
+  async function runScheduleDeletion() {
+    if (!token) return;
 
     setIsSchedulingDeletion(true);
     setDeletionMessage("");
@@ -128,6 +131,10 @@ export default function AccountSettingsPage() {
     } finally {
       setIsSchedulingDeletion(false);
     }
+  }
+
+  function handleScheduleDeletion() {
+    setConfirmAction("schedule-deletion");
   }
 
   async function handleCancelDeletion() {
@@ -148,7 +155,7 @@ export default function AccountSettingsPage() {
     }
   }
 
-  async function handleTransferOwnership() {
+  async function runTransferOwnership() {
     if (!token || !nextOwnerId) return;
 
     setIsTransferringOwnership(true);
@@ -167,9 +174,15 @@ export default function AccountSettingsPage() {
     }
   }
 
+  function handleTransferOwnership() {
+    if (!nextOwnerId || isTransferringOwnership) return;
+    setConfirmAction("transfer-ownership");
+  }
+
   const ownerCandidates = staffMembers.filter(
-    (member) => member.user_id !== currentUserId && member.role === "admin" && member.status === "active"
+    (member) => member.user_id && member.user_id !== currentUserId && member.role === "admin" && member.status === "active"
   );
+  const selectedOwner = ownerCandidates.find((member) => member.user_id === nextOwnerId);
 
   return (
     <AccountPageShell
@@ -269,7 +282,7 @@ export default function AccountSettingsPage() {
               >
                 <option value="">Select an active admin</option>
                 {ownerCandidates.map((member) => (
-                  <option key={member.id} value={member.user_id}>
+                  <option key={member.id} value={member.user_id ?? ""}>
                     {member.full_name || member.email}
                   </option>
                 ))}
@@ -333,6 +346,64 @@ export default function AccountSettingsPage() {
         {deletionMessage && <p role="status" aria-live="polite" className="mt-3 text-xs text-success">{deletionMessage}</p>}
         {deletionError && <p role="alert" className="mt-3 text-xs text-danger">{deletionError}</p>}
       </AccountSection>
+      {confirmAction ? (
+        <ModalFrame
+          role="alertdialog"
+          ariaLabelledBy="account-confirm-title"
+          ariaDescribedBy="account-confirm-description"
+          onBackdropClick={() => setConfirmAction(null)}
+          panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+              <AlertTriangle className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="account-confirm-title" className="text-sm font-semibold text-text-primary">
+                {confirmAction === "schedule-deletion" ? "Schedule account deletion?" : "Transfer studio ownership?"}
+              </h2>
+              <p id="account-confirm-description" className="mt-2 text-sm leading-6 text-text-secondary">
+                {confirmAction === "schedule-deletion"
+                  ? "This starts the 30-day account deletion window. Owner accounts must transfer studio ownership before deletion can complete."
+                  : `This makes ${selectedOwner?.full_name || selectedOwner?.email || "the selected admin"} the owner of ${studioName || "this studio"}.`}
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmAction(null)}>
+              Cancel
+            </Button>
+            {confirmAction === "schedule-deletion" ? (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                isLoading={isSchedulingDeletion}
+                onClick={() => {
+                  setConfirmAction(null);
+                  void runScheduleDeletion();
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Schedule deletion
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                isLoading={isTransferringOwnership}
+                onClick={() => {
+                  setConfirmAction(null);
+                  void runTransferOwnership();
+                }}
+              >
+                Transfer ownership
+              </Button>
+            )}
+          </div>
+        </ModalFrame>
+      ) : null}
     </AccountPageShell>
   );
 }

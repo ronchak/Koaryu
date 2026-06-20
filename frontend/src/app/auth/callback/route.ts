@@ -1,13 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { resolveAuthCallbackNextPath } from "@/lib/auth-callback";
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const requestedNextPath = requestUrl.searchParams.get("next") || "/dashboard";
-  const nextPath = requestedNextPath.startsWith("/") && !requestedNextPath.startsWith("//")
-    ? requestedNextPath
-    : "/dashboard";
+  const nextPath = resolveAuthCallbackNextPath(requestUrl.searchParams.get("next"));
 
   let response = NextResponse.redirect(new URL(nextPath, requestUrl.origin));
 

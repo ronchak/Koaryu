@@ -1,0 +1,19 @@
+import type * as ApiContracts from "./generated/api-contracts";
+
+export type DashboardSummaryStudio = ApiContracts.ApiDashboardSummaryStudio;
+export type DashboardSummaryStudentCounts = ApiContracts.ApiDashboardSummaryStudentCounts;
+export type DashboardSummaryLeadCounts = ApiContracts.ApiDashboardSummaryLeadCounts;
+export type DashboardSummaryScheduleCounts = ApiContracts.ApiDashboardSummaryScheduleCounts;
+export type DashboardSummaryBeltCounts = ApiContracts.ApiDashboardSummaryBeltCounts;
+export type DashboardSummaryInactivityCounts = ApiContracts.ApiDashboardSummaryInactivityCounts;
+export type DashboardSummaryNewStudentCounts = ApiContracts.ApiDashboardSummaryNewStudentCounts;
+export type DashboardSummaryOperationalCounts = ApiContracts.ApiDashboardSummaryOperationalCounts;
+export type DashboardSummaryChurnCounts = ApiContracts.ApiDashboardSummaryChurnCounts;
+export type DashboardSummaryTestReadinessCounts = ApiContracts.ApiDashboardSummaryTestReadinessCounts;
+export type DashboardSummaryBillingCounts = ApiContracts.ApiDashboardSummaryBillingCounts;
+export type DashboardSummarySetupFlags = ApiContracts.ApiDashboardSummarySetupFlags;
+export type DashboardSummaryRecentStudent = ApiContracts.ApiDashboardSummaryRecentStudent;
+export type DashboardSummaryAction = ApiContracts.ApiDashboardSummaryAction;
+export type DashboardSummary = ApiContracts.ApiDashboardSummaryResponse;
+export type DashboardBootstrapResponse = ApiContracts.ApiDashboardBootstrapResponse;
+export type DashboardBootstrapStudioSummary = ApiContracts.ApiDashboardBootstrapStudioSummary;

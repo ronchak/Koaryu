@@ -1,10 +1,22 @@
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
+import { serializeJsonRequestBody } from "@/lib/api-body";
+import { applyBrowserStudioHeader } from "@/lib/api-studio-header";
+import { buildApiUrl } from "@/lib/api-url";
 
 const SERVER_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
+const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY === "true";
 const BROWSER_API_BASE =
-  process.env.NEXT_PUBLIC_USE_API_PROXY === "true" ? "/api/proxy" : SERVER_API_BASE;
-const API_BASE = typeof window === "undefined" ? SERVER_API_BASE : BROWSER_API_BASE;
+  USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
 const API_TIMEOUT_MS = 12000;
+
+function apiUrl(path: string) {
+  return buildApiUrl(path, {
+    serverApiBase: SERVER_API_BASE,
+    useApiProxy: USE_API_PROXY,
+    isBrowser: typeof window !== "undefined",
+    browserApiBase: BROWSER_API_BASE,
+  });
+}
 
 export class ApiError extends Error {
   status: number;
@@ -42,6 +54,92 @@ interface FormApiOptions {
   timeoutMs?: number | null;
   timeoutMessage?: string;
   networkErrorMessage?: string;
+}
+
+type AbortReason = "caller" | "timeout" | null;
+
+interface RequestRuntimeOptions {
+  token?: string;
+  headers?: Record<string, string>;
+  omitStudioHeader?: boolean;
+  signal?: AbortSignal;
+  timeoutMs?: number | null;
+  timeoutMessage: string;
+  networkErrorMessage: string;
+}
+
+function buildRequestHeaders({
+  token,
+  headers: extraHeaders,
+  omitStudioHeader = false,
+}: Pick<RequestRuntimeOptions, "token" | "headers" | "omitStudioHeader">) {
+  let headers: Record<string, string> = {
+    ...extraHeaders,
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  if (typeof window !== "undefined") {
+    const activeStudioId = getActiveStudioIdCookie();
+    headers = applyBrowserStudioHeader(headers, activeStudioId, {
+      omitStudioHeader,
+      useApiProxy: USE_API_PROXY,
+    });
+  }
+
+  return headers;
+}
+
+async function executeApiRequest(
+  path: string,
+  init: Omit<RequestInit, "signal">,
+  {
+    signal,
+    timeoutMs = API_TIMEOUT_MS,
+    timeoutMessage,
+    networkErrorMessage,
+  }: RequestRuntimeOptions
+) {
+  const controller = new AbortController();
+  let abortReason: AbortReason = null;
+  const timeout = timeoutMs == null
+    ? null
+    : setTimeout(() => {
+        abortReason ??= "timeout";
+        controller.abort();
+      }, timeoutMs);
+  const abortFromCaller = () => {
+    abortReason ??= "caller";
+    controller.abort();
+  };
+
+  if (signal?.aborted) {
+    abortFromCaller();
+  } else {
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+
+  try {
+    return await fetch(apiUrl(path), {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      if (abortReason === "timeout") {
+        throw new Error(timeoutMessage);
+      }
+      throw createAbortError();
+    }
+    throw new Error(networkErrorMessage);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
 }
 
 function formatApiErrorDetail(detail: unknown, fallback: string): string {
@@ -136,63 +234,29 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...extraHeaders,
-  };
+  const headers = buildRequestHeaders({
+    token,
+    omitStudioHeader,
+    headers: {
+      "Content-Type": "application/json",
+      ...extraHeaders,
+    },
+  });
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  if (typeof window !== "undefined" && !omitStudioHeader) {
-    const activeStudioId = getActiveStudioIdCookie();
-    if (activeStudioId && !headers["X-Studio-Id"]) {
-      headers["X-Studio-Id"] = activeStudioId;
-    }
-  }
-
-  const controller = new AbortController();
-  let abortReason: "caller" | "timeout" | null = null;
-  const timeout = timeoutMs == null
-    ? null
-    : setTimeout(() => {
-        abortReason ??= "timeout";
-        controller.abort();
-      }, timeoutMs);
-  const abortFromCaller = () => {
-    abortReason ??= "caller";
-    controller.abort();
-  };
-
-  if (signal?.aborted) {
-    abortFromCaller();
-  } else {
-    signal?.addEventListener("abort", abortFromCaller, { once: true });
-  }
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
+  const res = await executeApiRequest(
+    path,
+    {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      if (abortReason === "timeout") {
-        throw new Error(timeoutMessage);
-      }
-      throw createAbortError();
+      body: serializeJsonRequestBody(body),
+    },
+    {
+      signal,
+      timeoutMs,
+      timeoutMessage,
+      networkErrorMessage,
     }
-    throw new Error(networkErrorMessage);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    signal?.removeEventListener("abort", abortFromCaller);
-  }
+  );
 
   if (!res.ok) {
     throw new ApiError(await parseErrorResponse(res), res.status);
@@ -213,62 +277,22 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
-  const headers: Record<string, string> = {
-    ...extraHeaders,
-  };
+  const headers = buildRequestHeaders({ token, headers: extraHeaders, omitStudioHeader });
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  if (typeof window !== "undefined" && !omitStudioHeader) {
-    const activeStudioId = getActiveStudioIdCookie();
-    if (activeStudioId && !headers["X-Studio-Id"]) {
-      headers["X-Studio-Id"] = activeStudioId;
-    }
-  }
-
-  const controller = new AbortController();
-  let abortReason: "caller" | "timeout" | null = null;
-  const timeout = timeoutMs == null
-    ? null
-    : setTimeout(() => {
-        abortReason ??= "timeout";
-        controller.abort();
-      }, timeoutMs);
-  const abortFromCaller = () => {
-    abortReason ??= "caller";
-    controller.abort();
-  };
-
-  if (signal?.aborted) {
-    abortFromCaller();
-  } else {
-    signal?.addEventListener("abort", abortFromCaller, { once: true });
-  }
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
+  const res = await executeApiRequest(
+    path,
+    {
       method,
       headers,
       body,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      if (abortReason === "timeout") {
-        throw new Error(timeoutMessage);
-      }
-      throw createAbortError();
+    },
+    {
+      signal,
+      timeoutMs,
+      timeoutMessage,
+      networkErrorMessage,
     }
-    throw new Error(networkErrorMessage);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    signal?.removeEventListener("abort", abortFromCaller);
-  }
+  );
 
   if (!res.ok) {
     throw new ApiError(await parseErrorResponse(res), res.status);
@@ -287,62 +311,28 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
     timeoutMessage = "Download timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
-  const headers: Record<string, string> = {
-    Accept: "text/csv",
-    ...extraHeaders,
-  };
+  const headers = buildRequestHeaders({
+    token,
+    omitStudioHeader,
+    headers: {
+      Accept: "text/csv",
+      ...extraHeaders,
+    },
+  });
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  if (typeof window !== "undefined" && !omitStudioHeader) {
-    const activeStudioId = getActiveStudioIdCookie();
-    if (activeStudioId && !headers["X-Studio-Id"]) {
-      headers["X-Studio-Id"] = activeStudioId;
-    }
-  }
-
-  const controller = new AbortController();
-  let abortReason: "caller" | "timeout" | null = null;
-  const timeout = timeoutMs == null
-    ? null
-    : setTimeout(() => {
-        abortReason ??= "timeout";
-        controller.abort();
-      }, timeoutMs);
-  const abortFromCaller = () => {
-    abortReason ??= "caller";
-    controller.abort();
-  };
-
-  if (signal?.aborted) {
-    abortFromCaller();
-  } else {
-    signal?.addEventListener("abort", abortFromCaller, { once: true });
-  }
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
+  const res = await executeApiRequest(
+    path,
+    {
       method: "GET",
       headers,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      if (abortReason === "timeout") {
-        throw new Error(timeoutMessage);
-      }
-      throw createAbortError();
+    },
+    {
+      signal,
+      timeoutMs,
+      timeoutMessage,
+      networkErrorMessage,
     }
-    throw new Error(networkErrorMessage);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    signal?.removeEventListener("abort", abortFromCaller);
-  }
+  );
 
   if (!res.ok) {
     throw new ApiError(await parseErrorResponse(res), res.status);

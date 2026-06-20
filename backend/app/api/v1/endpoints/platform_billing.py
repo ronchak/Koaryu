@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, Header
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
-from app.schemas.billing import BillingActionRequest, BillingLinkResponse, EmailUsageResponse, PlatformBillingStatusResponse
+from app.schemas.billing import (
+    BillingLinkResponse,
+    EmailUsageResponse,
+    PlatformBillingStatusResponse,
+    PlatformCheckoutRequest,
+    PlatformPortalRequest,
+)
 from app.services.platform_billing_service import PlatformBillingService
 from app.services.studio_scope import resolve_billing_admin_staff_role_for_user, resolve_staff_role_for_user
 
@@ -41,7 +47,7 @@ async def get_email_usage(
 
 @router.post("/checkout", response_model=BillingLinkResponse)
 async def create_checkout(
-    data: BillingActionRequest,
+    data: PlatformCheckoutRequest,
     request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
@@ -59,7 +65,7 @@ async def create_checkout(
 
 @router.post("/portal", response_model=BillingLinkResponse)
 async def create_portal(
-    data: BillingActionRequest,
+    data: PlatformPortalRequest,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),

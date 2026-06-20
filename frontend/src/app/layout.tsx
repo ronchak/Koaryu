@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { WebVitals } from "@/components/web-vitals";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 import "./globals.css";
 
@@ -21,6 +22,7 @@ const appDescription =
   `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more — built for how dojos actually operate.`;
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://koaryu.app"),
   applicationName: APP_NAME,
   title: appTitle,
   description: appDescription,
@@ -85,6 +87,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <WebVitals />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

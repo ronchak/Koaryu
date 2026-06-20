@@ -56,49 +56,11 @@ class StaffService:
         studio_id: str,
         actor_id: str,
     ) -> StaffMemberResponse:
-        settings = get_settings()
         try:
-            invite_response = self.supabase.auth.admin.invite_user_by_email(
-                data.email,
-                {"redirect_to": f"{settings.FRONTEND_URL}/auth/callback"},
-            )
-        except AuthApiError as exc:
-            if exc.code in {"email_exists", "user_already_exists", "conflict"}:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="That email already has an account. Existing-account linking is not supported yet.",
-                ) from exc
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=exc.message or "Failed to send staff invite.",
-            ) from exc
-
-        user = invite_response.user
-        if not user or not getattr(user, "id", None):
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Supabase did not return an invited user.",
-            )
-
-        existing_member = (
-            self.supabase.table("staff_roles")
-            .select("id")
-            .eq("studio_id", studio_id)
-            .eq("user_id", user.id)
-            .limit(1)
-            .execute()
-        )
-        if existing_member.data:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="That user is already a staff member in this studio.",
-            )
-
-        try:
-            result = self._insert_staff_role_with_metadata(
+            pending_result = self._insert_staff_role_with_metadata(
                 {
                     "studio_id": studio_id,
-                    "user_id": user.id,
+                    "user_id": None,
                     "role": data.role,
                     "invited_by": actor_id,
                     "invited_email": data.email,
@@ -112,10 +74,68 @@ class StaffService:
                 ) from exc
             raise
 
-        if not result.data:
+        if not pending_result.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create staff role.",
+                detail="Failed to create staff invite.",
+            )
+
+        pending_role = pending_result.data[0]
+        settings = get_settings()
+        try:
+            invite_response = self.supabase.auth.admin.invite_user_by_email(
+                data.email,
+                {"redirect_to": f"{settings.FRONTEND_URL}/auth/callback"},
+            )
+        except AuthApiError as exc:
+            self._delete_pending_staff_role(pending_role["id"], studio_id)
+            if exc.code in {"email_exists", "user_already_exists", "conflict"}:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That email already has an account. Existing-account linking is not supported yet.",
+                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=exc.message or "Failed to send staff invite.",
+            ) from exc
+        except Exception:
+            self._delete_pending_staff_role(pending_role["id"], studio_id)
+            raise
+
+        user = invite_response.user
+        if not user or not getattr(user, "id", None):
+            self._delete_pending_staff_role(pending_role["id"], studio_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Supabase did not return an invited user.",
+            )
+
+        try:
+            result = self._link_pending_staff_role(pending_role["id"], studio_id, user.id)
+        except PostgrestAPIError as exc:
+            self._cleanup_failed_invite_link(pending_role["id"], studio_id, user.id)
+            if exc.code == "23505":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That user is already a staff member in this studio.",
+                ) from exc
+            raise
+        except Exception:
+            self._cleanup_failed_invite_link(pending_role["id"], studio_id, user.id)
+            raise
+
+        if not result.data:
+            try:
+                result = self._recover_missing_pending_staff_role(data, studio_id, actor_id, user.id)
+            except Exception:
+                self._delete_invited_auth_user(user.id)
+                raise
+
+        if not result.data:
+            self._delete_invited_auth_user(user.id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to link staff invite.",
             )
 
         self._audit(
@@ -210,6 +230,92 @@ class StaffService:
             }
             return self.supabase.table("staff_roles").insert(base_row).execute()
 
+    def _link_pending_staff_role(self, staff_role_id: str, studio_id: str, user_id: str):
+        return (
+            self.supabase.table("staff_roles")
+            .update({"user_id": user_id})
+            .eq("id", staff_role_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+
+    def _recover_missing_pending_staff_role(
+        self,
+        data: StaffInviteCreate,
+        studio_id: str,
+        actor_id: str,
+        user_id: str,
+    ):
+        try:
+            recovered = self._insert_staff_role_with_metadata(
+                {
+                    "studio_id": studio_id,
+                    "user_id": None,
+                    "role": data.role,
+                    "invited_by": actor_id,
+                    "invited_email": data.email,
+                }
+            )
+        except PostgrestAPIError as exc:
+            if exc.code == "23505":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That user is already a staff member in this studio.",
+                ) from exc
+            raise
+
+        if not recovered.data:
+            return recovered
+
+        recovered_role_id = recovered.data[0]["id"]
+        try:
+            result = self._link_pending_staff_role(recovered_role_id, studio_id, user_id)
+        except PostgrestAPIError as exc:
+            self._delete_pending_staff_role(recovered_role_id, studio_id)
+            if exc.code == "23505":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That user is already a staff member in this studio.",
+                ) from exc
+            raise
+        except Exception:
+            self._delete_pending_staff_role(recovered_role_id, studio_id)
+            raise
+
+        if not result.data:
+            self._delete_pending_staff_role(recovered_role_id, studio_id)
+        return result
+
+    def _delete_pending_staff_role(self, staff_role_id: str, studio_id: str) -> None:
+        (
+            self.supabase.table("staff_roles")
+            .delete()
+            .eq("id", staff_role_id)
+            .eq("studio_id", studio_id)
+            .is_("user_id", None)
+            .execute()
+        )
+
+    def _delete_invited_auth_user(self, user_id: Optional[str]) -> None:
+        if not user_id:
+            return
+        try:
+            self.supabase.auth.admin.delete_user(user_id)
+        except Exception:
+            return
+
+    def _cleanup_failed_invite_link(
+        self,
+        staff_role_id: str,
+        studio_id: str,
+        user_id: Optional[str],
+    ) -> None:
+        try:
+            self._delete_pending_staff_role(staff_role_id, studio_id)
+        except Exception:
+            pass
+        self._delete_invited_auth_user(user_id)
+
     async def remove_staff(
         self,
         staff_role_id: str,
@@ -249,13 +355,14 @@ class StaffService:
         )
 
     def _hydrate_staff_member(self, row: dict, user: Any = None) -> StaffMemberResponse:
+        user_id = row.get("user_id")
         if user is None:
-            user = self._get_auth_user(row["user_id"])
+            user = self._get_auth_user(user_id)
 
         return StaffMemberResponse(
             id=row["id"],
             studio_id=row["studio_id"],
-            user_id=row["user_id"],
+            user_id=user_id,
             email=(getattr(user, "email", None) or row.get("invited_email") or ""),
             full_name=_user_full_name(user),
             role=row["role"],
@@ -266,7 +373,9 @@ class StaffService:
             last_sign_in_at=_to_text(getattr(user, "last_sign_in_at", None)),
         )
 
-    def _get_auth_user(self, user_id: str) -> Any:
+    def _get_auth_user(self, user_id: Optional[str]) -> Any:
+        if not user_id:
+            return None
         try:
             user_response = self.supabase.auth.admin.get_user_by_id(user_id)
             return user_response.user
@@ -301,7 +410,7 @@ class StaffService:
     def _ensure_owner_not_demoted_or_removed(
         self,
         studio_id: str,
-        target_user_id: str,
+        target_user_id: Optional[str],
         next_role: Optional[str],
     ) -> None:
         result = (

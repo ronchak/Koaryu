@@ -91,6 +91,7 @@ export function Sidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={item.prefetch}
                 className={`
                   flex min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-2 py-2 text-xs
                   transition-[background-color,color,border-color] duration-150
@@ -196,6 +197,7 @@ export function Sidebar({
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    prefetch={item.prefetch}
                     aria-label={item.label}
                     title={isCollapsed ? item.label : undefined}
                     className={`

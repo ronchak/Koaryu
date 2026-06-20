@@ -1,8 +1,18 @@
 import { NextRequest } from "next/server";
 
-const BACKEND_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
+const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
 const WORKER_SECRET = process.env.ACCOUNT_DELETION_WORKER_SECRET || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
+
+if (!rawBackendApiBase) {
+  throw new Error("BACKEND_API_URL is required for backend cron routes");
+}
+
+const BACKEND_API_BASE = rawBackendApiBase;
+const parsedBackendApiBase = new URL(BACKEND_API_BASE);
+if (!["https:", "http:"].includes(parsedBackendApiBase.protocol)) {
+  throw new Error("BACKEND_API_URL must use http or https");
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

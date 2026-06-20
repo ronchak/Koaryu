@@ -2,15 +2,31 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPExcep
 from typing import Optional
 from supabase import Client
 from app.core.deps import get_current_user_id, get_current_studio_id, get_requested_studio_id, get_supabase
-from app.schemas.billing import StudentBillingEnrollmentCreate, StudentBillingEnrollmentResponse
+from app.schemas.billing import (
+    StudentBillingEnrollmentCreate,
+    StudentBillingEnrollmentForStudentCreate,
+    StudentBillingEnrollmentResponse,
+)
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
-    CsvImportRequest, CsvImportResult, BulkTagUpdate, BulkStatusUpdate,
+    BulkStudentUpdateResponse,
+    CsvImportRequest,
+    CsvImportResult,
+    CsvParseResponse,
+    BulkTagUpdate,
+    BulkStatusUpdate,
+    StudentListSortDir,
+    StudentListSortKey,
+    StudentStatus,
     StudentProgramMembershipCreate, StudentProgramMembershipResponse,
     StudentProgramMembershipUpdate,
 )
 from app.services.billing_service import BillingService
-from app.services.studio_scope import resolve_billing_manager_staff_role_for_user
+from app.services.studio_scope import (
+    resolve_billing_admin_staff_role_for_user,
+    resolve_billing_manager_staff_role_for_user,
+)
+from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES
 from app.services.student_service import StudentService
 import json
 
@@ -37,18 +53,44 @@ def parse_import_request(
     raise HTTPException(status_code=400, detail="Missing import payload")
 
 
+async def read_csv_import_upload(file: UploadFile) -> bytes:
+    content = await file.read(CSV_IMPORT_MAX_BYTES + 1)
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload a CSV file with a header row and at least one student row.",
+        )
+    if len(content) > CSV_IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"This CSV is too large. Upload a file under {CSV_IMPORT_MAX_BYTES // (1024 * 1024)} MB.",
+        )
+    return content
+
+
 @router.get("", response_model=StudentListResponse)
 async def list_students(
     search: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    status: Optional[StudentStatus] = Query(None),
     program_id: Optional[str] = Query(None),
+    sort_by: StudentListSortKey = Query("name"),
+    sort_dir: StudentListSortDir = Query("asc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     studio_id: str = Depends(get_current_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
-    return await service.list_students(studio_id, search, status, program_id, page, page_size)
+    return await service.list_students(
+        studio_id,
+        search,
+        status,
+        program_id,
+        page,
+        page_size,
+        sort_by,
+        sort_dir,
+    )
 
 
 @router.post("", response_model=StudentResponse, status_code=201)
@@ -184,22 +226,22 @@ async def list_student_billing(
 @router.post("/{student_id}/billing/enrollments", response_model=StudentBillingEnrollmentResponse, status_code=201)
 async def add_student_billing_enrollment(
     student_id: str,
-    data: StudentBillingEnrollmentCreate,
+    data: StudentBillingEnrollmentForStudentCreate,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = resolve_billing_manager_staff_role_for_user(
+    studio_id = resolve_billing_admin_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
         require_platform_subscription=True,
     )["studio_id"]
-    payload = data.model_copy(update={"student_id": student_id})
+    payload = StudentBillingEnrollmentCreate(student_id=student_id, **data.model_dump())
     return await BillingService(supabase).add_student_billing_enrollment(payload, studio_id, user_id)
 
 
-@router.post("/bulk/tags", status_code=200)
+@router.post("/bulk/tags", response_model=BulkStudentUpdateResponse, status_code=200)
 async def bulk_update_tags(
     data: BulkTagUpdate,
     user_id: str = Depends(get_current_user_id),
@@ -211,7 +253,7 @@ async def bulk_update_tags(
     return {"updated": count}
 
 
-@router.post("/bulk/status", status_code=200)
+@router.post("/bulk/status", response_model=BulkStudentUpdateResponse, status_code=200)
 async def bulk_update_status(
     data: BulkStatusUpdate,
     user_id: str = Depends(get_current_user_id),
@@ -223,7 +265,7 @@ async def bulk_update_status(
     return {"updated": count}
 
 
-@router.post("/import/parse", response_model=dict)
+@router.post("/import/parse", response_model=CsvParseResponse)
 async def parse_csv_headers(
     file: UploadFile = File(...),
     supabase: Client = Depends(get_supabase),
@@ -233,7 +275,7 @@ async def parse_csv_headers(
     Upload a CSV file. Returns headers and auto-suggested column mapping.
     The client uses this to display the mapping UI.
     """
-    content = await file.read()
+    content = await read_csv_import_upload(file)
     service = StudentService(supabase)
     headers, rows = service.parse_csv(content)
     auto_mapping = service.auto_map_headers(headers)
@@ -255,7 +297,7 @@ async def validate_csv_import(
     studio_id: str = Depends(get_current_studio_id),
 ):
     """Validate a CSV file against a confirmed column mapping. Returns errors per row."""
-    content = await file.read()
+    content = await read_csv_import_upload(file)
     service = StudentService(supabase)
     _, rows = service.parse_csv(content)
     try:
@@ -277,7 +319,7 @@ async def execute_csv_import(
     supabase: Client = Depends(get_supabase),
 ):
     """Execute the import for all valid rows. Skips invalid rows and returns summary."""
-    content = await file.read()
+    content = await read_csv_import_upload(file)
     service = StudentService(supabase)
     _, rows = service.parse_csv(content)
     try:

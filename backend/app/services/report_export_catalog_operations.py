@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+from typing import Any
+
+from app.services.report_export_catalog_types import CsvReport, _report
+
+
+def build_operations_report_catalog(report_service_cls: Any) -> dict[str, CsvReport]:
+    return {
+        "email_usage_events": _report(
+            "email_usage_events",
+            "Email usage events",
+            "email-usage-events.csv",
+            (
+                "id",
+                "studio_id",
+                "category",
+                "recipient",
+                "provider_message_id",
+                "quantity",
+                "sent_at",
+                "metadata",
+                "created_at",
+            ),
+            table="email_usage_events",
+            order_by=(("sent_at", True),),
+        ),
+        "student_import_runs": _report(
+            "student_import_runs",
+            "Student import runs",
+            "student-import-runs.csv",
+            (
+                "id",
+                "studio_id",
+                "actor_id",
+                "operation",
+                "idempotency_key",
+                "request_hash",
+                "status",
+                "result_json",
+                "error_message",
+                "started_at",
+                "completed_at",
+                "created_at",
+                "updated_at",
+            ),
+            table="student_import_runs",
+            order_by=(("created_at", True),),
+        ),
+        "export_jobs": _report(
+            "export_jobs",
+            "Export jobs",
+            "export-jobs.csv",
+            (
+                "id",
+                "studio_id",
+                "export_type",
+                "status",
+                "requested_by",
+                "download_url",
+                "error",
+                "metadata",
+                "created_at",
+                "updated_at",
+                "completed_at",
+            ),
+            table="export_jobs",
+            order_by=(("created_at", True),),
+        ),
+        "staff_roles": _report(
+            "staff_roles",
+            "Staff roles",
+            "staff-roles.csv",
+            (
+                "id",
+                "studio_id",
+                "user_id",
+                "email",
+                "full_name",
+                "role",
+                "status",
+                "invited_by",
+                "created_at",
+                "updated_at",
+                "last_sign_in_at",
+            ),
+            custom_builder=report_service_cls._build_staff_rows,
+        ),
+        "audit_logs": _report(
+            "audit_logs",
+            "Audit logs",
+            "audit-logs.csv",
+            (
+                "id",
+                "studio_id",
+                "actor_id",
+                "action",
+                "entity_type",
+                "entity_id",
+                "metadata",
+                "created_at",
+            ),
+            table="audit_logs",
+            order_by=(("created_at", True),),
+        ),
+    }

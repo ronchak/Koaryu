@@ -1,4 +1,5 @@
-import { Button } from "./button";
+import { Inbox } from "lucide-react";
+import { ActionEmptyState } from "@/components/ui/overview";
 
 interface EmptyStateProps {
   message: string;
@@ -14,21 +15,15 @@ export function EmptyState({
   actionHref,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 px-4">
-      <p className="text-sm text-text-secondary mb-4">{message}</p>
-      {actionLabel && (
-        actionHref ? (
-          <a href={actionHref}>
-            <Button variant="secondary" size="sm">
-              {actionLabel}
-            </Button>
-          </a>
-        ) : (
-          <Button variant="secondary" size="sm" onClick={onAction}>
-            {actionLabel}
-          </Button>
-        )
-      )}
-    </div>
+    <ActionEmptyState
+      icon={Inbox}
+      title="Nothing here yet"
+      description={message}
+      actionLabel={actionLabel}
+      actionHref={actionHref}
+      onAction={onAction}
+      actionVariant="secondary"
+      className="mx-auto my-12 max-w-xl"
+    />
   );
 }

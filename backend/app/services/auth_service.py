@@ -1,10 +1,9 @@
 import asyncio
 from typing import Optional
 
-from fastapi import HTTPException, status
 from supabase import Client
 from app.schemas.auth import UserProfile, AuthResponse
-from app.services.studio_scope import list_staff_roles_for_user
+from app.services.studio_scope import resolve_optional_staff_role_for_user
 
 
 class AuthService:
@@ -42,26 +41,17 @@ class AuthService:
             full_name=user.user_metadata.get("full_name") if user.user_metadata else None,
         )
 
-        # Get staff role (studio association)
+        # The active studio cookie/header is only a selector. studio_scope
+        # returns the server-verified membership that is safe to expose/use.
+        membership = resolve_optional_staff_role_for_user(
+            self.supabase,
+            user_id,
+            requested_studio_id,
+            user_email=user.email,
+        )
+
         studio_id = None
         role = None
-        memberships = list_staff_roles_for_user(self.supabase, user_id)
-        membership = None
-
-        if requested_studio_id:
-            membership = next(
-                (item for item in memberships if item["studio_id"] == requested_studio_id),
-                None,
-            )
-            if membership is None:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You do not have access to the requested studio.",
-                )
-
-        if membership is None and memberships:
-            membership = memberships[0]
-
         if membership:
             studio_id = membership["studio_id"]
             role = membership["role"]

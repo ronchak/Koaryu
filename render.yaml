@@ -2,7 +2,7 @@ services:
   - type: web
     name: koaryu
     runtime: python
-    plan: free
+    plan: starter
     region: ohio
     rootDir: backend
     buildCommand: pip install -r requirements.txt

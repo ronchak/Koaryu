@@ -1,8 +1,15 @@
+import Link from "next/link";
 import { APP_NAME } from "@/lib/constants";
 
 interface LogoProps {
   size?: "sm" | "md" | "lg";
   showText?: boolean;
+}
+
+interface LogoLinkProps extends LogoProps {
+  href?: string;
+  label?: string;
+  className?: string;
 }
 
 const sizes = {
@@ -46,5 +53,22 @@ export function Logo({ size = "md", showText = true }: LogoProps) {
         </span>
       )}
     </div>
+  );
+}
+
+export function LogoLink({
+  href = "/",
+  label = "Return to Koaryu home",
+  className = "",
+  ...logoProps
+}: LogoLinkProps) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className={`inline-flex items-center rounded-[6px] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${className}`}
+    >
+      <Logo {...logoProps} />
+    </Link>
   );
 }
