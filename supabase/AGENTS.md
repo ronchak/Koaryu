@@ -34,8 +34,8 @@ Use this file for work under `supabase/`. Fall back to the repo root `AGENTS.md`
 ## Verification
 
 - Lint database changes: `supabase db lint --linked --fail-on error`
-- Run the focused account/support contract check when relevant: `scripts/verify-supabase-account-support.sh`
-- Run the broad contract suite for release-shaped database changes: `scripts/verify-supabase-contracts.sh` for linked projects, or `SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` after a local reset when the linked project intentionally has not received the new migrations yet.
+- Run the focused account/support contract check when relevant: `scripts/verify-supabase-account-support.sh` against local, or `SUPABASE_DB_TARGET=linked scripts/verify-supabase-account-support.sh` when intentionally checking a linked project.
+- Run the broad contract suite for release-shaped database changes: `scripts/verify-supabase-contracts.sh` after a local reset, or `SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh` after the linked project has received the new migrations.
 - Review and run the relevant SQL in `supabase/verification/` when changing RLS, RPCs, billing, support, or belt-ladder behavior.
 
 ## Done Checklist

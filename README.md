@@ -137,13 +137,12 @@ For linked-project release checks, run:
 
 ```bash
 supabase db lint --linked --fail-on error
-scripts/verify-supabase-contracts.sh
+SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
 ```
 
-The verification script defaults to the linked project. Use
-`SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` after
-`supabase db reset --local` when validating migrations before they are applied
-to the linked project. The backend now requires the worker-claim RPC migrations
+The verification script defaults to the local database. Use
+`SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh` only after
+the migrations are applied to the linked project. The backend now requires the worker-claim RPC migrations
 before webhook, account-deletion, or CSV-import workers can run. The contract
 checks cover account/support controls, belt-ladder sync, support triage,
 direct-client write lockdown, worker-claim RPCs, promotion RPCs,

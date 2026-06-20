@@ -186,10 +186,10 @@ npm run build
 
 cd ..
 supabase db lint --linked --fail-on error
-scripts/verify-supabase-contracts.sh
+SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
 ```
 
-`scripts/verify-supabase-contracts.sh` is the broad database contract check for launch-readiness and defaults to the linked project. Set `SUPABASE_DB_TARGET=local` after `supabase db reset --local` when validating local migrations before they are applied remotely. It fails if the support/account controls, direct-client write lockdown, worker-claim RPCs, promotion RPC, recurring-session soft-delete contract, student program filter contract, atomic import/conversion/profile/clear RPCs, atomic onboarding contract, or belt-ladder sync behavior drift from the current migrations. Apply the worker-claim RPC migrations before deploying backend code that processes Stripe webhooks, account deletions, or CSV imports.
+`scripts/verify-supabase-contracts.sh` is the broad database contract check for launch-readiness and defaults to the local database. Use `SUPABASE_DB_TARGET=linked` only after the linked project has received the new migrations. It fails if the support/account controls, direct-client write lockdown, worker-claim RPCs, promotion RPC, recurring-session soft-delete contract, student program filter contract, atomic import/conversion/profile/clear RPCs, atomic onboarding contract, or belt-ladder sync behavior drift from the current migrations. Apply the worker-claim RPC migrations before deploying backend code that processes Stripe webhooks, account deletions, or CSV imports.
 
 ## Stripe Webhooks
 

@@ -75,20 +75,25 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     if (asChild && isValidElement(children)) {
       const child = children as ChildElement;
-
-      return cloneElement(child, {
+      const shouldHandleClick = disabled || isLoading || child.props.onClick || props.onClick;
+      const childProps: Partial<ChildElement["props"]> = {
         className: `${composedClassName} ${child.props.className ?? ""}`,
         "aria-disabled": disabled || isLoading || child.props["aria-disabled"],
         tabIndex: disabled || isLoading ? -1 : child.props.tabIndex,
-        onClick: (event: MouseEvent<HTMLElement>) => {
+      };
+
+      if (shouldHandleClick) {
+        childProps.onClick = (event: MouseEvent<HTMLElement>) => {
           if (disabled || isLoading) {
             event.preventDefault();
             return;
           }
           child.props.onClick?.(event);
           props.onClick?.(event as unknown as MouseEvent<HTMLButtonElement>);
-        },
-      });
+        };
+      }
+
+      return cloneElement(child, childProps);
     }
 
     return (

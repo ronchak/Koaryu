@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFICATION_DIR="$ROOT_DIR/supabase/verification"
-SUPABASE_DB_TARGET="${SUPABASE_DB_TARGET:-linked}"
+SUPABASE_DB_TARGET="${SUPABASE_DB_TARGET:-local}"
 
 if ! command -v supabase >/dev/null 2>&1; then
   echo "Supabase CLI is required to run this check." >&2
