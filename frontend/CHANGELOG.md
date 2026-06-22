@@ -2,14 +2,19 @@
 
 All notable Koaryu release changes are tracked here.
 
-## 0.1.1 - Unreleased
+## 0.1.1 - 2026-06-21
+
+### Added
+
+- Added backend-paginated Students roster controls, compact dashboard summary loading, performance diagnostics, and a conservative v0.1.1 rollout runbook.
 
 ### Fixed
 
-- Hardened tenant-safety and partial-state workflows around student import, account deletion, paid-in-full enrollment invoices, support tickets, lead conversion, student profile writes, and demo data clearing.
+- Hardened tenant-safety and partial-state workflows around student import, account deletion, paid-in-full enrollment invoices, support tickets, lead conversion, student profile writes, recurring class deletion, student relationships, and demo data clearing.
 
 ### Improved
 
+- Split large frontend page/state modules and backend services into focused helpers for billing, dashboard, Students, leads, reports, schedules, belt tracker, and demo data workflows.
 - Aligned frontend import/API helpers, destructive settings confirmations, production config validation, deployment docs, and Supabase contract verification coverage.
 
 ## 0.1.0 - 2026-05-19
