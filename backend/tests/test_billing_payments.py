@@ -7,7 +7,11 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import BillingRefundCreate, ExportJobCreate, ExternalPaymentCreate
-from app.services.billing_payments import BillingPaymentManager
+from app.services.billing_payments import (
+    EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL,
+    EXTERNAL_PAYMENT_OVERPAY_DETAIL,
+    BillingPaymentManager,
+)
 from app.services.platform_billing_helpers import MAX_IDEMPOTENCY_KEY_LENGTH, build_idempotency_key
 from tests.fakes.supabase import RpcBackedSupabase
 
@@ -16,6 +20,15 @@ def conflict_error() -> PostgrestAPIError:
     return PostgrestAPIError({
         "code": "23505",
         "message": "duplicate key value violates unique constraint",
+        "details": "",
+        "hint": "",
+    })
+
+
+def external_payment_overpay_error() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "23514",
+        "message": EXTERNAL_PAYMENT_OVERPAY_DETAIL,
         "details": "",
         "hint": "",
     })
@@ -178,6 +191,7 @@ class BillingPaymentManagerTests(unittest.TestCase):
             ),
             "studio_1",
             "actor_1",
+            "payment-key-1",
         ))
 
         invoice = facade.supabase.tables["billing_invoices"][0]
@@ -192,6 +206,30 @@ class BillingPaymentManagerTests(unittest.TestCase):
             facade.supabase.rpc_calls[0][0],
             "recompute_billing_invoice_external_payment_totals",
         )
+
+    def test_external_payment_requires_request_idempotency_key(self):
+        facade = _BillingFacade({
+            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
+            "billing_payments": [],
+            "audit_logs": [],
+        })
+        manager = BillingPaymentManager(facade)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(manager.record_external_payment(
+                ExternalPaymentCreate(
+                    payer_id="payer_1",
+                    amount_cents=500,
+                    external_method="cash",
+                ),
+                "studio_1",
+                "actor_1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertEqual(context.exception.detail, EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL)
+        self.assertEqual(facade.supabase.tables["billing_payments"], [])
+        self.assertEqual(facade.supabase.tables["audit_logs"], [])
 
     def test_external_payment_defers_paid_invoice_status_when_stripe_sync_fails_then_retries(self):
         _FakeStripeService.reset()
@@ -330,10 +368,52 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 ),
                 "studio_1",
                 "actor_1",
+                "payment-key-1",
             ))
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertEqual(facade.supabase.tables["billing_payments"], [])
+
+    def test_external_payment_maps_database_overpay_guard_to_conflict(self):
+        facade = _BillingFacade({
+            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "status": "open",
+                "amount_due_cents": 1000,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 1000,
+            }],
+            "billing_payments": [],
+            "audit_logs": [],
+        })
+
+        def reject_insert(table: str, _payloads: list[dict], _rows: list[dict]) -> None:
+            if table == "billing_payments":
+                raise external_payment_overpay_error()
+
+        facade.supabase.before_insert = reject_insert
+        manager = BillingPaymentManager(facade)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(manager.record_external_payment(
+                ExternalPaymentCreate(
+                    payer_id="payer_1",
+                    invoice_id="invoice_1",
+                    amount_cents=1000,
+                    external_method="cash",
+                ),
+                "studio_1",
+                "actor_1",
+                "payment-key-1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(context.exception.detail, EXTERNAL_PAYMENT_OVERPAY_DETAIL)
+        self.assertEqual(facade.supabase.tables["billing_payments"], [])
+        self.assertEqual(facade.supabase.tables["audit_logs"], [])
 
     def test_refund_payment_uses_injected_stripe_and_projection_delegate(self):
         _FakeStripeService.reset()

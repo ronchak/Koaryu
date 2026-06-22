@@ -539,7 +539,7 @@ async def list_payments(
 @router.post("/payments/external", response_model=BillingPaymentResponse, status_code=201)
 async def record_external_payment(
     data: ExternalPaymentCreate,
-    request_idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    request_idempotency_key: str = Header(..., alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
