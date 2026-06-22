@@ -4,18 +4,25 @@ import { buildUpstreamProxyRequestHeaders } from "@/lib/proxy-request-headers";
 import { buildProxyTargetUrl, UnsafeProxyPathError } from "@/lib/proxy-target";
 import { ACTIVE_STUDIO_COOKIE } from "@/lib/studio-state-cookie";
 
-const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
-if (!rawBackendApiBase) {
-  throw new Error("BACKEND_API_URL is required for the API proxy");
-}
-
-const BACKEND_API_BASE = rawBackendApiBase;
-const parsedBackendApiBase = new URL(BACKEND_API_BASE);
-if (!["https:", "http:"].includes(parsedBackendApiBase.protocol)) {
-  throw new Error("BACKEND_API_URL must use http or https");
-}
-
 export const runtime = "nodejs";
+
+function getBackendApiBase() {
+  const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!rawBackendApiBase) {
+    return null;
+  }
+
+  try {
+    const parsedBackendApiBase = new URL(rawBackendApiBase);
+    if (!["https:", "http:"].includes(parsedBackendApiBase.protocol)) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  return rawBackendApiBase;
+}
 
 async function createForwardBody(request: NextRequest) {
   const contentType = request.headers.get("content-type") || "";
@@ -37,7 +44,15 @@ async function forwardRequest(
 ) {
   try {
     const { path } = await context.params;
-    const targetUrl = buildProxyTargetUrl(BACKEND_API_BASE, request.url, path);
+    const backendApiBase = getBackendApiBase();
+    if (!backendApiBase) {
+      return Response.json(
+        { detail: "Backend API URL is not configured." },
+        { status: 503, headers: buildPrivateProxyJsonHeaders() }
+      );
+    }
+
+    const targetUrl = buildProxyTargetUrl(backendApiBase, request.url, path);
     const headers = buildUpstreamProxyRequestHeaders(
       request.headers,
       request.cookies.get(ACTIVE_STUDIO_COOKIE)?.value
