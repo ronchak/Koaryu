@@ -24,6 +24,9 @@ from app.services.stripe_service import StripeService
 
 logger = logging.getLogger(__name__)
 
+EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL = "Idempotency-Key is required for external payments."
+EXTERNAL_PAYMENT_OVERPAY_DETAIL = "External payment exceeds the invoice remaining balance."
+
 
 class BillingPaymentManager:
     def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
@@ -93,6 +96,8 @@ class BillingPaymentManager:
         if effective_payer_id:
             self._ensure_record_in_studio("billing_payers", effective_payer_id, studio_id, "Payer not found.")
         normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
+        if not normalized_idempotency_key:
+            raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL)
         request_hash = self._external_payment_request_hash(data, effective_payer_id=effective_payer_id)
         existing_idempotent_payment = None
         if normalized_idempotency_key:
@@ -141,7 +146,7 @@ class BillingPaymentManager:
         if remaining <= 0:
             raise HTTPException(status_code=409, detail="Invoice has no remaining balance.")
         if int(amount_cents or 0) > remaining:
-            raise HTTPException(status_code=409, detail="External payment exceeds the invoice remaining balance.")
+            raise HTTPException(status_code=409, detail=EXTERNAL_PAYMENT_OVERPAY_DETAIL)
 
     def _external_payment_request_hash(self, data: ExternalPaymentCreate, *, effective_payer_id: str | None) -> str:
         payload = data.model_dump(mode="json", exclude_none=True)
@@ -165,6 +170,10 @@ class BillingPaymentManager:
         try:
             result = self.supabase.table("billing_payments").insert(payment_row).execute()
         except PostgrestAPIError as exc:
+            if self._is_external_payment_idempotency_guard_error(exc):
+                raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL) from exc
+            if self._is_external_payment_overpay_guard_error(exc):
+                raise HTTPException(status_code=409, detail=EXTERNAL_PAYMENT_OVERPAY_DETAIL) from exc
             if getattr(exc, "code", None) != "23505" or not idempotency_key:
                 raise
             existing = self._find_payment_by_idempotency_key(studio_id, idempotency_key)
@@ -175,6 +184,14 @@ class BillingPaymentManager:
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to record external payment.")
         return result.data[0], True
+
+    def _is_external_payment_overpay_guard_error(self, exc: PostgrestAPIError) -> bool:
+        message = getattr(exc, "message", None) or str(exc)
+        return getattr(exc, "code", None) == "23514" and EXTERNAL_PAYMENT_OVERPAY_DETAIL in message
+
+    def _is_external_payment_idempotency_guard_error(self, exc: PostgrestAPIError) -> bool:
+        message = getattr(exc, "message", None) or str(exc)
+        return getattr(exc, "code", None) == "23514" and EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL in message
 
     def _ensure_external_payment_hash_matches(self, payment: dict[str, Any], request_hash: str) -> None:
         if payment.get("request_hash") != request_hash:

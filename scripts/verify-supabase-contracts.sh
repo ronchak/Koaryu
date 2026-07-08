@@ -27,6 +27,7 @@ contract_files=(
   "20260425000021_program_memberships_checks.sql"
   "account_support_controls.sql"
   "belt_ladder_sync_smoke.sql"
+  "billing_external_payment_overpay_guard.sql"
   "billing_invoice_item_refs_contract.sql"
   "support_triage_smoke.sql"
   "core_operational_client_write_controls.sql"
