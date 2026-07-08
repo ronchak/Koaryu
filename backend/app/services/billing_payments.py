@@ -170,6 +170,8 @@ class BillingPaymentManager:
         try:
             result = self.supabase.table("billing_payments").insert(payment_row).execute()
         except PostgrestAPIError as exc:
+            if self._is_external_payment_idempotency_guard_error(exc):
+                raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL) from exc
             if self._is_external_payment_overpay_guard_error(exc):
                 raise HTTPException(status_code=409, detail=EXTERNAL_PAYMENT_OVERPAY_DETAIL) from exc
             if getattr(exc, "code", None) != "23505" or not idempotency_key:
@@ -186,6 +188,10 @@ class BillingPaymentManager:
     def _is_external_payment_overpay_guard_error(self, exc: PostgrestAPIError) -> bool:
         message = getattr(exc, "message", None) or str(exc)
         return getattr(exc, "code", None) == "23514" and EXTERNAL_PAYMENT_OVERPAY_DETAIL in message
+
+    def _is_external_payment_idempotency_guard_error(self, exc: PostgrestAPIError) -> bool:
+        message = getattr(exc, "message", None) or str(exc)
+        return getattr(exc, "code", None) == "23514" and EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL in message
 
     def _ensure_external_payment_hash_matches(self, payment: dict[str, Any], request_hash: str) -> None:
         if payment.get("request_hash") != request_hash:

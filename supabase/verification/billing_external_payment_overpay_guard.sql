@@ -62,6 +62,34 @@ BEGIN
         'usd'
     );
 
+    BEGIN
+        INSERT INTO public.billing_payments (
+            studio_id,
+            payer_id,
+            invoice_id,
+            status,
+            amount_cents,
+            currency,
+            external_method
+        )
+        VALUES (
+            v_studio,
+            v_payer,
+            v_invoice,
+            'externally_recorded',
+            1,
+            'usd',
+            'cash'
+        );
+        RAISE EXCEPTION 'Expected invoice external payment without idempotency to be rejected.';
+    EXCEPTION
+        WHEN check_violation THEN
+            v_error_message := SQLERRM;
+            IF v_error_message NOT LIKE '%Idempotency-Key is required for external payments%' THEN
+                RAISE;
+            END IF;
+    END;
+
     INSERT INTO public.billing_payments (
         studio_id,
         payer_id,
@@ -107,6 +135,37 @@ BEGIN
         'check',
         'billing-overpay-guard-300'
     );
+
+    BEGIN
+        INSERT INTO public.billing_payments (
+            studio_id,
+            payer_id,
+            invoice_id,
+            status,
+            amount_cents,
+            currency,
+            payment_method_type,
+            external_method,
+            idempotency_key
+        )
+        VALUES (
+            v_studio,
+            v_payer,
+            v_invoice,
+            'externally_recorded',
+            300,
+            'usd',
+            'external',
+            'check',
+            'billing-overpay-guard-300'
+        );
+        RAISE EXCEPTION 'Expected duplicate external payment idempotency key to be rejected.';
+    EXCEPTION
+        WHEN unique_violation THEN
+            NULL;
+        WHEN check_violation THEN
+            RAISE EXCEPTION 'Expected duplicate idempotency key to reach the unique constraint before overpay guard.';
+    END;
 
     BEGIN
         INSERT INTO public.billing_payments (

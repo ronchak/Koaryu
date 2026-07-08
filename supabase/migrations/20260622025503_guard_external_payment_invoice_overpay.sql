@@ -1,6 +1,12 @@
--- Guard invoice-targeted external payments at the database boundary. The
--- backend performs the friendly pre-check, but this trigger is the authoritative
--- invariant for concurrent requests and non-frontend clients.
+-- Guard external payments at the database boundary. The backend performs the
+-- friendly pre-check, but this trigger is the authoritative invariant for
+-- concurrent requests and non-frontend clients.
+
+UPDATE public.billing_payments
+   SET idempotency_key = 'legacy-external-payment:' || id::TEXT,
+       request_hash = COALESCE(NULLIF(btrim(request_hash), ''), 'legacy-external-payment:' || id::TEXT)
+ WHERE status = 'externally_recorded'
+   AND NULLIF(btrim(COALESCE(idempotency_key, '')), '') IS NULL;
 
 CREATE OR REPLACE FUNCTION public.validate_billing_payment_refs()
 RETURNS TRIGGER
@@ -13,6 +19,7 @@ DECLARE
     invoice_row public.billing_invoices%ROWTYPE;
     existing_payment_total INTEGER;
     excluded_payment_id UUID;
+    has_duplicate_idempotency_key BOOLEAN := FALSE;
 BEGIN
     IF NEW.payer_id IS NOT NULL THEN
         SELECT studio_id INTO payer_studio FROM public.billing_payers WHERE id = NEW.payer_id;
@@ -33,11 +40,34 @@ BEGIN
         END IF;
     END IF;
 
+    IF NEW.status = 'externally_recorded'
+       AND NULLIF(btrim(COALESCE(NEW.idempotency_key, '')), '') IS NULL THEN
+        RAISE EXCEPTION 'Idempotency-Key is required for external payments.'
+            USING ERRCODE = '23514';
+    END IF;
+
     IF NEW.invoice_id IS NOT NULL
        AND NEW.status = 'externally_recorded'
        AND COALESCE(NEW.amount_cents, 0) > 0 THEN
         IF TG_OP = 'UPDATE' THEN
             excluded_payment_id := OLD.id;
+        END IF;
+
+        IF TG_OP = 'INSERT'
+           AND NULLIF(btrim(COALESCE(NEW.idempotency_key, '')), '') IS NOT NULL THEN
+            -- Let the unique idempotency index raise 23505 for duplicate
+            -- retries so the backend can replay the existing payment.
+            SELECT EXISTS (
+                SELECT 1
+                  FROM public.billing_payments AS payment
+                 WHERE payment.studio_id = NEW.studio_id
+                   AND payment.idempotency_key = NEW.idempotency_key
+            )
+              INTO has_duplicate_idempotency_key;
+
+            IF has_duplicate_idempotency_key THEN
+                RETURN NEW;
+            END IF;
         END IF;
 
         SELECT COALESCE(SUM(payment.amount_cents), 0)::INTEGER

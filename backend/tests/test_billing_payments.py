@@ -34,6 +34,15 @@ def external_payment_overpay_error() -> PostgrestAPIError:
     })
 
 
+def external_payment_idempotency_error() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "23514",
+        "message": EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL,
+        "details": "",
+        "hint": "",
+    })
+
+
 def _dated_defaults(_table: str) -> dict:
     return {
         "created_at": "2026-01-01T00:00:00Z",
@@ -319,6 +328,62 @@ class BillingPaymentManagerTests(unittest.TestCase):
         self.assertEqual(len(facade.supabase.tables["audit_logs"]), 1)
         self.assertEqual(facade.supabase.tables["billing_payments"][0]["payer_id"], "payer_1")
 
+    def test_external_payment_replays_existing_row_after_concurrent_idempotency_conflict(self):
+        _FakeStripeService.reset()
+        facade = _BillingFacade({
+            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "status": "open",
+                "amount_due_cents": 1000,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 1000,
+            }],
+            "billing_payments": [],
+            "audit_logs": [],
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        payload = ExternalPaymentCreate(
+            invoice_id="invoice_1",
+            amount_cents=1000,
+            external_method="check",
+        )
+        request_hash = manager._external_payment_request_hash(payload, effective_payer_id="payer_1")
+
+        def insert_concurrent_row(table: str, _payloads: list[dict], rows: list[dict]) -> None:
+            if table != "billing_payments" or rows:
+                return
+            rows.append({
+                "id": "payment_concurrent",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "invoice_id": "invoice_1",
+                "status": "externally_recorded",
+                "amount_cents": 1000,
+                "currency": "usd",
+                "payment_method_type": "external",
+                "external_method": "check",
+                "idempotency_key": "payment-key-1",
+                "request_hash": request_hash,
+                "processed_at": "2026-01-01T00:00:00Z",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            })
+
+        facade.supabase.before_insert = insert_concurrent_row
+
+        payment = asyncio.run(manager.record_external_payment(payload, "studio_1", "actor_1", "payment-key-1"))
+
+        invoice = facade.supabase.tables["billing_invoices"][0]
+        self.assertEqual(payment.id, "payment_concurrent")
+        self.assertEqual(invoice["status"], "paid")
+        self.assertEqual(invoice["amount_paid_cents"], 1000)
+        self.assertEqual(invoice["amount_remaining_cents"], 0)
+        self.assertEqual(len(facade.supabase.tables["billing_payments"]), 1)
+        self.assertEqual(facade.supabase.tables["audit_logs"], [])
+
     def test_external_payment_rejects_reused_idempotency_key_for_different_request(self):
         facade = _BillingFacade({
             "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
@@ -412,6 +477,37 @@ class BillingPaymentManagerTests(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertEqual(context.exception.detail, EXTERNAL_PAYMENT_OVERPAY_DETAIL)
+        self.assertEqual(facade.supabase.tables["billing_payments"], [])
+        self.assertEqual(facade.supabase.tables["audit_logs"], [])
+
+    def test_external_payment_maps_database_idempotency_guard_to_bad_request(self):
+        facade = _BillingFacade({
+            "billing_payers": [{"id": "payer_1", "studio_id": "studio_1"}],
+            "billing_payments": [],
+            "audit_logs": [],
+        })
+
+        def reject_insert(table: str, _payloads: list[dict], _rows: list[dict]) -> None:
+            if table == "billing_payments":
+                raise external_payment_idempotency_error()
+
+        facade.supabase.before_insert = reject_insert
+        manager = BillingPaymentManager(facade)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(manager.record_external_payment(
+                ExternalPaymentCreate(
+                    payer_id="payer_1",
+                    amount_cents=500,
+                    external_method="cash",
+                ),
+                "studio_1",
+                "actor_1",
+                "payment-key-1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertEqual(context.exception.detail, EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL)
         self.assertEqual(facade.supabase.tables["billing_payments"], [])
         self.assertEqual(facade.supabase.tables["audit_logs"], [])
 
