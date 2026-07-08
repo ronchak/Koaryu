@@ -17,6 +17,7 @@ AS $$
 DECLARE
     payer_studio UUID;
     invoice_row public.billing_invoices%ROWTYPE;
+    invoice_exists BOOLEAN := FALSE;
     existing_payment_total INTEGER;
     excluded_payment_id UUID;
     has_duplicate_idempotency_key BOOLEAN := FALSE;
@@ -25,18 +26,6 @@ BEGIN
         SELECT studio_id INTO payer_studio FROM public.billing_payers WHERE id = NEW.payer_id;
         IF payer_studio IS NULL OR payer_studio <> NEW.studio_id THEN
             RAISE EXCEPTION 'Billing payment payer must belong to the same studio';
-        END IF;
-    END IF;
-
-    IF NEW.invoice_id IS NOT NULL THEN
-        SELECT *
-          INTO invoice_row
-          FROM public.billing_invoices
-         WHERE id = NEW.invoice_id
-         FOR UPDATE;
-
-        IF NOT FOUND OR invoice_row.studio_id <> NEW.studio_id THEN
-            RAISE EXCEPTION 'Billing payment invoice must belong to the same studio';
         END IF;
     END IF;
 
@@ -49,8 +38,15 @@ BEGIN
     IF NEW.invoice_id IS NOT NULL
        AND NEW.status = 'externally_recorded'
        AND COALESCE(NEW.amount_cents, 0) > 0 THEN
-        IF TG_OP = 'UPDATE' THEN
-            excluded_payment_id := OLD.id;
+        SELECT *
+          INTO invoice_row
+          FROM public.billing_invoices
+         WHERE id = NEW.invoice_id
+           AND studio_id = NEW.studio_id
+         FOR UPDATE;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Billing payment invoice must belong to the same studio';
         END IF;
 
         IF TG_OP = 'INSERT'
@@ -70,6 +66,10 @@ BEGIN
             END IF;
         END IF;
 
+        IF TG_OP = 'UPDATE' THEN
+            excluded_payment_id := OLD.id;
+        END IF;
+
         SELECT COALESCE(SUM(payment.amount_cents), 0)::INTEGER
           INTO existing_payment_total
           FROM public.billing_payments AS payment
@@ -81,6 +81,18 @@ BEGIN
         IF COALESCE(existing_payment_total, 0) + COALESCE(NEW.amount_cents, 0) > COALESCE(invoice_row.amount_due_cents, 0) THEN
             RAISE EXCEPTION 'External payment exceeds the invoice remaining balance.'
                 USING ERRCODE = '23514';
+        END IF;
+    ELSIF NEW.invoice_id IS NOT NULL THEN
+        SELECT EXISTS (
+            SELECT 1
+              FROM public.billing_invoices
+             WHERE id = NEW.invoice_id
+               AND studio_id = NEW.studio_id
+        )
+          INTO invoice_exists;
+
+        IF NOT invoice_exists THEN
+            RAISE EXCEPTION 'Billing payment invoice must belong to the same studio';
         END IF;
     END IF;
 
