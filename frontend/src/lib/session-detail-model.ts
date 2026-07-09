@@ -85,7 +85,7 @@ export function buildSessionAttendanceSummary(
   let checkedInCount = 0;
   let absentCount = 0;
 
-  for (const record of attendance) {
+  for (const record of buildAttendanceByStudentId(attendance, open).values()) {
     if (record.status === "absent") {
       absentCount += 1;
     } else {

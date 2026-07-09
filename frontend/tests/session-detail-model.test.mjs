@@ -69,6 +69,21 @@ describe("session detail model", () => {
     });
   });
 
+  it("summarizes the same latest per-student attendance state used by roster rows", () => {
+    const attendance = [
+      { id: "stale-jordan", student_id: "jordan", status: "absent" },
+      { id: "current-jordan", student_id: "jordan", status: "present" },
+      { id: "current-avery", student_id: "avery", status: "absent" },
+    ];
+    const attendanceByStudentId = buildAttendanceByStudentId(attendance, true);
+
+    assert.equal(attendanceByStudentId.get("jordan").status, "present");
+    assert.deepEqual(buildSessionAttendanceSummary(attendance, true), {
+      checkedInCount: 1,
+      absentCount: 1,
+    });
+  });
+
   it("resolves active program membership and display names deterministically", () => {
     const activeStudent = student("one", "Jordan", "Lee", "kids", [
       { program_id: "adult", status: "active", ended_at: null },
