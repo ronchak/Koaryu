@@ -38,6 +38,45 @@ def test_support_triage_digest_fails_when_supabase_cli_is_missing(tmp_path):
     assert "Supabase CLI is required" in result.stderr
 
 
+def test_support_privacy_audit_passes_current_runbook_and_helper():
+    script_path = ROOT_DIR / "scripts" / "audit-support-privacy.py"
+    result = subprocess.run(
+        ["python3", str(script_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "support privacy audit passed" in result.stdout
+
+
+def test_support_triage_digest_helper_uses_sanitized_rpc_only(tmp_path):
+    script_path = ROOT_DIR / "scripts" / "support-triage-digest.sh"
+    call_log = tmp_path / "calls.txt"
+    fake_supabase = tmp_path / "supabase"
+    fake_supabase.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        encoding="utf-8",
+    )
+    fake_supabase.chmod(0o755)
+
+    result = subprocess.run(
+        ["/bin/bash", str(script_path), "--confirm-sanitized-linked-query", "--limit", "7"],
+        capture_output=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "CALL_LOG": str(call_log),
+        },
+        text=True,
+    )
+
+    assert result.returncode == 0
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    assert calls == ["db query --linked SELECT public.support_triage_digest(7) AS digest;"]
+
+
 def test_account_support_verifier_honors_local_target(tmp_path):
     script_path = ROOT_DIR / "scripts" / "verify-supabase-account-support.sh"
     call_log = tmp_path / "calls.txt"
