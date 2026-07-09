@@ -175,7 +175,7 @@ class ScheduleServiceTest(unittest.TestCase):
         self.assertEqual([len(payload) for payload in class_session_inserts], [2, 1])
         self.assertTrue(all(isinstance(payload, list) for payload in class_session_inserts))
 
-    def test_list_sessions_does_not_materialize_recurring_sessions_on_read(self):
+    def test_list_sessions_materializes_recurring_sessions_on_read(self):
         supabase = FakeSupabase({
             "class_templates": [template_row("template-1", "Youth Basics")],
             "class_sessions": [],
@@ -184,14 +184,58 @@ class ScheduleServiceTest(unittest.TestCase):
 
         sessions = asyncio.run(service.list_sessions("studio-1", "2026-05-24", "2026-05-24"))
 
-        self.assertEqual(sessions, [])
-        self.assertEqual(supabase.tables["class_sessions"], [])
-        self.assertFalse(
-            any(
-                query["table"] == "class_sessions" and query["insert"] is not None
-                for query in supabase.query_log
-            )
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0].template_id, "template-1")
+        self.assertEqual(sessions[0].date, "2026-05-24")
+        self.assertEqual(sessions[0].attendance_count, 0)
+        self.assertEqual(
+            [(row["template_id"], row["date"]) for row in supabase.tables["class_sessions"]],
+            [("template-1", "2026-05-24")],
         )
+
+    def test_list_sessions_surfaces_generated_recurring_session_with_one_off_session(self):
+        supabase = FakeSupabase({
+            "class_templates": [template_row("template-1", "Youth Basics")],
+            "class_sessions": [
+                {
+                    "id": "one-off-session",
+                    "studio_id": "studio-1",
+                    "template_id": None,
+                    "name": "Makeup Class",
+                    "date": "2026-05-24",
+                    "start_time": "11:00",
+                    "end_time": "12:00",
+                    "instructor_id": None,
+                    "program_id": None,
+                    "capacity": 8,
+                    "status": "scheduled",
+                    "notes": None,
+                    "created_at": "2026-05-24T12:00:00Z",
+                    "deleted_at": None,
+                },
+            ],
+            "attendance": [
+                {
+                    "id": "attendance-1",
+                    "studio_id": "studio-1",
+                    "session_id": "one-off-session",
+                    "student_id": "student-1",
+                    "status": "present",
+                },
+            ],
+        })
+        service = ScheduleService(supabase)
+
+        sessions = asyncio.run(service.list_sessions("studio-1", "2026-05-24", "2026-05-24"))
+
+        self.assertEqual(
+            [(session.name, session.template_id, session.date, session.attendance_count) for session in sessions],
+            [
+                ("Youth Basics", "template-1", "2026-05-24", 0),
+                ("Makeup Class", None, "2026-05-24", 1),
+            ],
+        )
+        self.assertEqual(len(supabase.tables["class_sessions"]), 2)
 
     def test_list_sessions_rejects_ranges_above_visible_cap(self):
         supabase = FakeSupabase({
@@ -232,9 +276,8 @@ class ScheduleServiceTest(unittest.TestCase):
                 },
             ],
         })
-        supabase.select_assertions["class_sessions"] = (
-            lambda columns: self.assertEqual(columns, CLASS_SESSION_LIST_SELECT)
-        )
+        selected_columns: list[str] = []
+        supabase.select_assertions["class_sessions"] = selected_columns.append
         service = ScheduleService(supabase)
 
         sessions = asyncio.run(service.list_sessions("studio-1", "2026-05-24", "2026-05-24"))
@@ -242,6 +285,7 @@ class ScheduleServiceTest(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertEqual(sessions[0].id, "session-1")
         self.assertEqual(sessions[0].attendance_count, 1)
+        self.assertIn(CLASS_SESSION_LIST_SELECT, selected_columns)
 
     def test_list_attendance_rejects_ranges_above_visible_cap(self):
         supabase = FakeSupabase({"attendance": [], "class_sessions": []})

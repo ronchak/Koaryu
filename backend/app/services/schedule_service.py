@@ -327,6 +327,7 @@ class ScheduleService:
             )
             start_date = start.isoformat()
             end_date = end.isoformat()
+            await self._materialize_sessions_for_range(studio_id, start_date, end_date)
             result = (
                 self.supabase.table("class_sessions")
                 .select(CLASS_SESSION_LIST_SELECT)
