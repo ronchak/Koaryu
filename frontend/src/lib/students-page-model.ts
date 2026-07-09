@@ -48,6 +48,8 @@ interface StudentRosterModeInput {
 }
 
 interface StudentRosterLoadStateInput {
+  isProgramDataLoaded: boolean;
+  isStudioBootstrapSettled: boolean;
   isDerivedRosterRefreshing: boolean;
   isPagedLoading: boolean;
   page: number;
@@ -143,6 +145,8 @@ export function shouldUseDerivedRosterFilters({
 }
 
 export function buildStudentRosterLoadState({
+  isProgramDataLoaded,
+  isStudioBootstrapSettled,
   isDerivedRosterRefreshing,
   isPagedLoading,
   page,
@@ -157,8 +161,14 @@ export function buildStudentRosterLoadState({
   usesDerivedRosterFilters,
 }: StudentRosterLoadStateInput) {
   const isInitialRosterLoading = usesDerivedRosterFilters
-    ? !studentsLoadError && (!studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing)
-    : !pagedLoaded;
+    ? !studentsLoadError && (
+      !isStudioBootstrapSettled ||
+      !isProgramDataLoaded ||
+      !studentsLoaded ||
+      studentsMayBePartial ||
+      isDerivedRosterRefreshing
+    )
+    : !isStudioBootstrapSettled || !isProgramDataLoaded || !pagedLoaded;
   const activeLoadError = usesDerivedRosterFilters ? studentsLoadError : pagedLoadError;
   const isRosterRefreshing = !usesDerivedRosterFilters && isPagedLoading && pagedLoaded;
   const visibleTotal = usesDerivedRosterFilters ? studentsCount : pagedTotal;

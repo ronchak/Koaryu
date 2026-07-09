@@ -92,6 +92,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     removeStaff,
     resetDemoData,
     restoreProgram,
+    scheduleLoaded,
     sessions,
     setBeltRanks,
     setCurrentLadder,
@@ -109,6 +110,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     studioName,
     subRankTerm,
     subscriptionRequired,
+    studioBootstrapSettled,
     templates,
     toggleCheckIn,
     token,
@@ -126,10 +128,11 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     isPreviewMode,
     token,
     subscriptionRequired,
+    studioBootstrapSettled,
     markSubscriptionRequired,
     clearSubscriptionRequired,
     currentRole,
-  }), [clearSubscriptionRequired, currentRole, isPreviewMode, markSubscriptionRequired, subscriptionRequired, token]);
+  }), [clearSubscriptionRequired, currentRole, isPreviewMode, markSubscriptionRequired, studioBootstrapSettled, subscriptionRequired, token]);
 
   const dashboardValue = useMemo<DashboardStoreContextValue>(() => ({
     dashboardSummary,
@@ -249,6 +252,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const scheduleValue = useMemo<ScheduleStoreContextValue>(() => ({
     sessions,
+    scheduleLoaded,
     addSession,
     addTemplate,
     deleteSession,
@@ -264,6 +268,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     deleteSession,
     refreshScheduleRange,
     refreshSessionAttendance,
+    scheduleLoaded,
     sessions,
     templates,
     toggleCheckIn,

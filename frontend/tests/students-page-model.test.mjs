@@ -256,6 +256,8 @@ describe("students page model", () => {
   it("builds roster loading, pagination, and refreshing state", () => {
     assert.deepEqual(
       buildStudentRosterLoadState({
+        isProgramDataLoaded: true,
+        isStudioBootstrapSettled: true,
         isDerivedRosterRefreshing: true,
         isPagedLoading: false,
         page: 1,
@@ -282,6 +284,8 @@ describe("students page model", () => {
 
     assert.deepEqual(
       buildStudentRosterLoadState({
+        isProgramDataLoaded: true,
+        isStudioBootstrapSettled: true,
         isDerivedRosterRefreshing: false,
         isPagedLoading: true,
         page: 3,
@@ -304,6 +308,48 @@ describe("students page model", () => {
         totalPages: 3,
         visibleTotal: 121,
       }
+    );
+  });
+
+  it("keeps the roster in loading while bootstrap dependencies are still settling", () => {
+    assert.equal(
+      buildStudentRosterLoadState({
+        isProgramDataLoaded: true,
+        isStudioBootstrapSettled: false,
+        isDerivedRosterRefreshing: false,
+        isPagedLoading: false,
+        page: 1,
+        pageSize: 50,
+        pagedLoadError: null,
+        pagedLoaded: true,
+        pagedTotal: 2,
+        studentsCount: 2,
+        studentsLoadError: null,
+        studentsLoaded: true,
+        studentsMayBePartial: false,
+        usesDerivedRosterFilters: false,
+      }).isInitialRosterLoading,
+      true
+    );
+
+    assert.equal(
+      buildStudentRosterLoadState({
+        isProgramDataLoaded: false,
+        isStudioBootstrapSettled: true,
+        isDerivedRosterRefreshing: false,
+        isPagedLoading: false,
+        page: 1,
+        pageSize: 50,
+        pagedLoadError: null,
+        pagedLoaded: true,
+        pagedTotal: 2,
+        studentsCount: 2,
+        studentsLoadError: null,
+        studentsLoaded: true,
+        studentsMayBePartial: false,
+        usesDerivedRosterFilters: true,
+      }).isInitialRosterLoading,
+      true
     );
   });
 

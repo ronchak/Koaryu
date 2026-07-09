@@ -1,5 +1,6 @@
 export type BillingLoadingState = {
   isPreviewMode: boolean;
+  isStudioBootstrapSettled: boolean;
   hasPaymentAccount: boolean;
   isLoading: boolean;
   hasBillingLoadSettled: boolean;
@@ -18,6 +19,7 @@ export function shouldSettleBillingLoadEarly({
 
 export function shouldShowBillingLoading({
   isPreviewMode,
+  isStudioBootstrapSettled,
   hasPaymentAccount,
   isLoading,
   hasBillingLoadSettled,
@@ -25,6 +27,10 @@ export function shouldShowBillingLoading({
 }: BillingLoadingState) {
   if (isPreviewMode || hasPaymentAccount || error.trim().length > 0) {
     return false;
+  }
+
+  if (!isStudioBootstrapSettled) {
+    return true;
   }
 
   return isLoading || !hasBillingLoadSettled;

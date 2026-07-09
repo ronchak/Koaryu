@@ -36,7 +36,7 @@ import type {
 } from "@/lib/store-contexts";
 
 type BillingPageControllerOptions = {
-  config: Pick<ConfigStoreContextValue, "isPreviewMode" | "markSubscriptionRequired" | "token">;
+  config: Pick<ConfigStoreContextValue, "isPreviewMode" | "markSubscriptionRequired" | "studioBootstrapSettled" | "token">;
   programsStore: Pick<ProgramsStoreContextValue, "programs" | "programsLoaded" | "refreshPrograms">;
   studentsStore: Pick<
     StudentsStoreContextValue,
@@ -52,7 +52,7 @@ export function useBillingPageController({
   studioStore,
 }: BillingPageControllerOptions) {
   const router = useRouter();
-  const { isPreviewMode, token, markSubscriptionRequired } = config;
+  const { isPreviewMode, token, markSubscriptionRequired, studioBootstrapSettled } = config;
   const { currentRole } = studioStore;
   const { programs, programsLoaded, refreshPrograms } = programsStore;
   const { refreshStudents, students, studentsLoaded, studentsMayBePartial } = studentsStore;
@@ -99,6 +99,7 @@ export function useBillingPageController({
   });
   const showBillingLoading = shouldShowBillingLoading({
     isPreviewMode,
+    isStudioBootstrapSettled: studioBootstrapSettled,
     hasPaymentAccount: paymentAccount !== null,
     isLoading,
     hasBillingLoadSettled,
@@ -245,13 +246,17 @@ export function useBillingPageController({
   const billingSetupCompleteCount = billingSetupSteps.filter((step) => step.complete).length;
 
   useEffect(() => {
+    if (!studioBootstrapSettled) {
+      return;
+    }
+
     if (!programsLoaded) {
       void refreshPrograms({ includeArchived: false }).catch(() => undefined);
     }
-  }, [programsLoaded, refreshPrograms]);
+  }, [programsLoaded, refreshPrograms, studioBootstrapSettled]);
 
   useEffect(() => {
-    if (!studentsMayBePartial || isPreviewMode) {
+    if (!studioBootstrapSettled || !studentsMayBePartial || isPreviewMode) {
       return;
     }
 
@@ -267,9 +272,13 @@ export function useBillingPageController({
     return () => {
       cancelled = true;
     };
-  }, [isPreviewMode, refreshStudents, studentsMayBePartial]);
+  }, [isPreviewMode, refreshStudents, studioBootstrapSettled, studentsMayBePartial]);
 
   useEffect(() => {
+    if (!studioBootstrapSettled) {
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       if (params.get("connect") === "return") {
@@ -279,7 +288,7 @@ export function useBillingPageController({
       void refreshBilling();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [canManageStudioBilling, refreshBilling, refreshConnectStatus]);
+  }, [canManageStudioBilling, refreshBilling, refreshConnectStatus, studioBootstrapSettled]);
 
   const { connectEntityModal, openConnectEntityModal } = useBillingConnectEntityModal({
     isActionLoading: billingActions.isActionLoading,

@@ -8,6 +8,7 @@ describe("shouldShowBillingLoading", () => {
     assert.equal(
       shouldShowBillingLoading({
         isPreviewMode: false,
+        isStudioBootstrapSettled: true,
         hasPaymentAccount: false,
         isLoading: true,
         hasBillingLoadSettled: false,
@@ -21,6 +22,7 @@ describe("shouldShowBillingLoading", () => {
     assert.equal(
       shouldShowBillingLoading({
         isPreviewMode: false,
+        isStudioBootstrapSettled: true,
         hasPaymentAccount: false,
         isLoading: false,
         hasBillingLoadSettled: true,
@@ -34,6 +36,7 @@ describe("shouldShowBillingLoading", () => {
     assert.equal(
       shouldShowBillingLoading({
         isPreviewMode: true,
+        isStudioBootstrapSettled: true,
         hasPaymentAccount: false,
         isLoading: true,
         hasBillingLoadSettled: false,
@@ -44,6 +47,7 @@ describe("shouldShowBillingLoading", () => {
     assert.equal(
       shouldShowBillingLoading({
         isPreviewMode: false,
+        isStudioBootstrapSettled: true,
         hasPaymentAccount: true,
         isLoading: true,
         hasBillingLoadSettled: false,
@@ -57,9 +61,24 @@ describe("shouldShowBillingLoading", () => {
     assert.equal(
       shouldShowBillingLoading({
         isPreviewMode: false,
+        isStudioBootstrapSettled: true,
         hasPaymentAccount: false,
         isLoading: false,
         hasBillingLoadSettled: false,
+        error: "",
+      }),
+      true,
+    );
+  });
+
+  it("shows loading while studio bootstrap is still settling", () => {
+    assert.equal(
+      shouldShowBillingLoading({
+        isPreviewMode: false,
+        isStudioBootstrapSettled: false,
+        hasPaymentAccount: false,
+        isLoading: false,
+        hasBillingLoadSettled: true,
         error: "",
       }),
       true,

@@ -18,6 +18,7 @@ import {
   type SortKey,
 } from "@/lib/students-page-model";
 import type {
+  ConfigStoreContextValue,
   ProgramsStoreContextValue,
   ScheduleStoreContextValue,
   StudentsStoreContextValue,
@@ -30,7 +31,8 @@ const STUDENTS_SEARCH_DEBOUNCE_MS = 250;
 const PAGED_STUDENTS_ROSTER_ENABLED = process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false";
 
 type StudentsPageControllerOptions = {
-  programsStore: Pick<ProgramsStoreContextValue, "programs">;
+  config: Pick<ConfigStoreContextValue, "studioBootstrapSettled">;
+  programsStore: Pick<ProgramsStoreContextValue, "programs" | "programsLoaded">;
   scheduleStore: Pick<ScheduleStoreContextValue, "attendance" | "sessions">;
   studentsStore: Pick<
     StudentsStoreContextValue,
@@ -60,13 +62,15 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 }
 
 export function useStudentsPageController({
+  config,
   programsStore,
   scheduleStore,
   studentsStore,
 }: StudentsPageControllerOptions) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { programs } = programsStore;
+  const { studioBootstrapSettled } = config;
+  const { programs, programsLoaded } = programsStore;
   const { attendance, sessions } = scheduleStore;
   const {
     addStudent,
@@ -214,7 +218,7 @@ export function useStudentsPageController({
       return;
     }
 
-    if (!studentsLoaded) {
+    if (!studioBootstrapSettled || !programsLoaded || !studentsLoaded) {
       return;
     }
 
@@ -247,6 +251,8 @@ export function useStudentsPageController({
     };
   }, [
     refreshStudents,
+    programsLoaded,
+    studioBootstrapSettled,
     studentsLastLoadedAt,
     studentsLoadError,
     studentsLoaded,
@@ -255,7 +261,7 @@ export function useStudentsPageController({
   ]);
 
   useEffect(() => {
-    if (usesDerivedRosterFilters) {
+    if (usesDerivedRosterFilters || !studioBootstrapSettled || !programsLoaded) {
       return;
     }
 
@@ -268,7 +274,7 @@ export function useStudentsPageController({
       pagedRequestSeqRef.current += 1;
       controller.abort();
     };
-  }, [loadPagedStudents, usesDerivedRosterFilters]);
+  }, [loadPagedStudents, programsLoaded, studioBootstrapSettled, usesDerivedRosterFilters]);
 
   const filtered = useMemo(() => {
     return filterStudentRows(studentRows, {
@@ -306,6 +312,8 @@ export function useStudentsPageController({
     totalPages,
     visibleTotal,
   } = buildStudentRosterLoadState({
+    isProgramDataLoaded: programsLoaded,
+    isStudioBootstrapSettled: studioBootstrapSettled,
     isDerivedRosterRefreshing,
     isPagedLoading,
     page,

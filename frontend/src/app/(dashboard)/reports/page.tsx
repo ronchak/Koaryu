@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { Header } from "@/components/header";
+import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { ReportsDataExportsPanel } from "@/components/reports/reports-data-exports-panel";
 import {
@@ -20,10 +21,10 @@ import { useConfigStore, useLeadStore, useProgramStore, useScheduleStore, useStu
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
 
 export default function ReportsPage() {
-  const { isPreviewMode, token } = useConfigStore();
+  const { isPreviewMode, studioBootstrapSettled, token } = useConfigStore();
   const { leads } = useLeadStore();
   const { programs } = useProgramStore();
-  const { attendance, sessions } = useScheduleStore();
+  const { attendance, scheduleLoaded, sessions } = useScheduleStore();
   const { currentRole } = useStudioStore();
   const canExportStudioData = currentRole === "admin" || currentRole === "front_desk";
   const {
@@ -39,6 +40,16 @@ export default function ReportsPage() {
     () => buildReportsPageModel({ attendance, leads, programs, sessions }),
     [attendance, leads, programs, sessions]
   );
+
+  if (!studioBootstrapSettled || !scheduleLoaded) {
+    return (
+      <DashboardLoadingSkeleton
+        title="Reports"
+        description="Loading studio reporting panels and export controls."
+        variant="table"
+      />
+    );
+  }
 
   return (
     <>

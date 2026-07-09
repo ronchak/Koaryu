@@ -43,6 +43,7 @@ export interface StoreContextValue {
   subscriptionRequired: boolean;
   markSubscriptionRequired: () => void;
   clearSubscriptionRequired: () => void;
+  studioBootstrapSettled: boolean;
 
   dashboardSummary: DashboardSummary | null;
   dashboardSummaryLoaded: boolean;
@@ -117,6 +118,7 @@ export interface StoreContextValue {
   promoteStudent: (studentId: string, toRankId: string, notes?: string) => Promise<Promotion>;
 
   sessions: ClassSession[];
+  scheduleLoaded: boolean;
   addSession: (data: ClassSessionCreate) => Promise<void>;
   addTemplate: (data: ClassTemplateCreate) => Promise<ClassTemplate>;
   deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
@@ -152,6 +154,7 @@ export type ConfigStoreContextValue = Pick<
   | "markSubscriptionRequired"
   | "clearSubscriptionRequired"
   | "currentRole"
+  | "studioBootstrapSettled"
 >;
 export type DashboardStoreContextValue = Pick<
   StoreContextValue,
@@ -218,6 +221,7 @@ export type BeltsStoreContextValue = Pick<
 export type ScheduleStoreContextValue = Pick<
   StoreContextValue,
   | "sessions"
+  | "scheduleLoaded"
   | "addSession"
   | "addTemplate"
   | "deleteSession"

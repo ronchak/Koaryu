@@ -37,11 +37,11 @@ import type {
 
 type DashboardPageControllerOptions = {
   beltStore: Pick<BeltsStoreContextValue, "beltLadders" | "beltRanks" | "eligibility">;
-  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode">;
+  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "studioBootstrapSettled">;
   dashboardStore: Pick<DashboardStoreContextValue, "dashboardSummary">;
   leadStore: Pick<LeadsStoreContextValue, "leads">;
-  programsStore: Pick<ProgramsStoreContextValue, "programs">;
-  scheduleStore: Pick<ScheduleStoreContextValue, "attendance" | "sessions" | "templates">;
+  programsStore: Pick<ProgramsStoreContextValue, "programs" | "programsLoaded">;
+  scheduleStore: Pick<ScheduleStoreContextValue, "attendance" | "scheduleLoaded" | "sessions" | "templates">;
   studentsStore: Pick<
     StudentsStoreContextValue,
     "students" | "studentsLoaded" | "studentsMayBePartial"
@@ -60,11 +60,11 @@ export function useDashboardPageController({
   studioStore,
 }: DashboardPageControllerOptions) {
   const { beltLadders, beltRanks, eligibility } = beltStore;
-  const { currentRole, isPreviewMode } = config;
+  const { currentRole, isPreviewMode, studioBootstrapSettled } = config;
   const { dashboardSummary } = dashboardStore;
   const { leads } = leadStore;
-  const { programs } = programsStore;
-  const { attendance, sessions, templates } = scheduleStore;
+  const { programs, programsLoaded } = programsStore;
+  const { attendance, scheduleLoaded, sessions, templates } = scheduleStore;
   const {
     students,
     studentsLoaded,
@@ -74,7 +74,7 @@ export function useDashboardPageController({
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
-  const isInitialDashboardLoading = !studentsLoaded;
+  const isInitialDashboardLoading = !studioBootstrapSettled || !studentsLoaded || !programsLoaded || !scheduleLoaded;
   const hasPartialStudentSample = !isPreviewMode && studentsMayBePartial;
   const rosterSummaryPending = hasPartialStudentSample && !summary;
   const shouldShowLocalStudentDetails = !hasPartialStudentSample;

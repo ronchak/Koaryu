@@ -24,6 +24,7 @@ function renderWithStoreContexts(child) {
     isPreviewMode: true,
     token: "token_1",
     subscriptionRequired: false,
+    studioBootstrapSettled: true,
     markSubscriptionRequired: () => {},
     clearSubscriptionRequired: () => {},
     currentRole: "admin",
@@ -87,6 +88,7 @@ function renderWithStoreContexts(child) {
   };
   const schedule = {
     sessions: [],
+    scheduleLoaded: true,
     addSession: noop,
     addTemplate: async () => ({}),
     deleteSession: noop,

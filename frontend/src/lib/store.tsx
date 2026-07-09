@@ -107,6 +107,7 @@ export {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
   const [hydrated, setHydrated] = useState(false);
+  const [studioBootstrapSettled, setStudioBootstrapSettled] = useState(isPreviewMode);
   const [subscriptionRequired, setSubscriptionRequired] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -153,6 +154,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<ClassSession[]>(() =>
     isPreviewMode ? MOCK_SESSIONS : []
   );
+  const [scheduleLoaded, setScheduleLoaded] = useState(isPreviewMode);
   const sessionsRef = useRef<ClassSession[]>(sessions);
   const [templates, setTemplates] = useState<ClassTemplate[]>(() =>
     isPreviewMode ? MOCK_CLASS_TEMPLATES : []
@@ -381,6 +383,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dashboardSummaryRequestSeqRef.current += 1;
     setCurrentUser(null);
     setCurrentRole(null);
+    setStudioBootstrapSettled(true);
+    setScheduleLoaded(true);
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
@@ -395,6 +399,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCurrentUser(userProfile);
     setCurrentRole(authProfile.role ?? null);
     syncStoredStudioSessionCookies(sessionUser.id, authProfile.studio_id);
+    setStudioBootstrapSettled(true);
+    setScheduleLoaded(true);
 
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
   }, [applyLiveStudioDataResetState]);
@@ -402,6 +408,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const markSubscriptionRequired = useCallback(() => {
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
+    setStudioBootstrapSettled(true);
+    setScheduleLoaded(true);
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
@@ -467,6 +475,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTemplates([]);
     setSessions([]);
     setAttendance([]);
+    setScheduleLoaded(true);
     clearEligibilityState();
     clearPromotionHistoryCache();
   }, [
@@ -644,6 +653,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         authGenerationRef.current += 1;
         dashboardSummaryRequestSeqRef.current += 1;
       }
+      setStudioBootstrapSettled(false);
+      setScheduleLoaded(false);
       const sessionGeneration = authGenerationRef.current;
       const isCurrentSession = () =>
         mounted &&
@@ -704,6 +715,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             resetLiveStudioState();
             setCurrentUser(buildAuthUserProfile(authProfile));
             setCurrentRole(authProfile.role ?? null);
+            setStudioBootstrapSettled(true);
+            setScheduleLoaded(true);
             setHydrated(true);
             router.replace("/onboarding");
             return;
@@ -752,6 +765,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             resetLiveStudioState();
             setCurrentUser(userProfile);
             setCurrentRole(authProfile.role ?? null);
+            setStudioBootstrapSettled(true);
+            setScheduleLoaded(true);
             setHydrated(true);
             router.replace("/onboarding");
             return;
@@ -844,6 +859,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .catch((error) => {
               console.warn("Failed to refresh program usage after bootstrap", error);
             });
+          setStudioBootstrapSettled(true);
         }
 
         void (async () => {
@@ -875,6 +891,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setTemplates(templatesRes);
           setSessions(sessionsRes);
           setAttendance(normalizeAttendanceRecords(attendanceRes));
+          setScheduleLoaded(true);
           markPerformance("schedule.deferred_finished");
           measurePerformance(
             "schedule.deferred_duration",
@@ -883,6 +900,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           );
         })().catch((error) => {
           console.error("Failed to load deferred dashboard data", error);
+          if (isCurrentSession()) {
+            setScheduleLoaded(true);
+          }
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
@@ -912,6 +932,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStudentsLoadError(
             error instanceof Error ? error.message : "Failed to load the student roster."
           );
+          setStudioBootstrapSettled(true);
+          setScheduleLoaded(true);
           setHydrated(true);
         }
         console.error("Failed to load initial data", error);
@@ -1228,6 +1250,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     removeStaff,
     resetDemoData,
     restoreProgram,
+    scheduleLoaded,
     sessions,
     setBeltRanks,
     setCurrentLadder,
@@ -1243,6 +1266,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsLoaded,
     studentsMayBePartial,
     studioName,
+    studioBootstrapSettled,
     subRankTerm,
     subscriptionRequired,
     templates,
