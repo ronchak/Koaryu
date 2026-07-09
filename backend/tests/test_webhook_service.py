@@ -182,6 +182,23 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["processing_status"], "processed")
         self.assertIsNone(rows[0]["processing_token"])
 
+    def test_processed_duplicate_returns_already_processed_without_projection(self):
+        rows = [{
+            "id": "row_1",
+            "stripe_event_id": "evt_1",
+            "stripe_account_id": "acct_1",
+            "processing_status": "processed",
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+        }]
+        _FakeBillingService.calls = 0
+
+        result = self.handle_connect_event(rows)
+
+        self.assertEqual(result.status, "already_processed")
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["processing_status"], "processed")
+        self.assertNotIn("processing_token", rows[0])
+
     def test_fresh_processing_duplicate_raises_retryable_error(self):
         rows = [{
             "id": "row_1",
@@ -331,6 +348,20 @@ class WebhookServiceTest(unittest.TestCase):
             )
 
         self.assertEqual(event["id"], "evt_1")
+
+    def test_construct_webhook_event_rejects_missing_signature_before_stripe_sdk(self):
+        service = StripeService()
+        with patch.object(service, "_stripe") as stripe_module:
+            with self.assertRaises(HTTPException) as raised:
+                service.construct_webhook_event(
+                    payload=b"{}",
+                    signature=None,
+                    secret="whsec_first",
+                )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(raised.exception.detail, "Missing Stripe signature.")
+        stripe_module.assert_not_called()
 
     def test_construct_webhook_event_rejects_when_no_secret_matches(self):
         service = StripeService()

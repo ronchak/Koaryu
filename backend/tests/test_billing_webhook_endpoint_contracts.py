@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -69,6 +70,24 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         self.assertEqual(response.json(), {"received": True, "status": "processed"})
         webhook_service_class.assert_called_once_with(self.supabase)
         service.handle_connect_webhook.assert_awaited_once_with(b'{"id":"evt_1"}', "t=1,v1=signature")
+
+    @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
+    def test_connect_webhook_endpoint_fails_closed_when_signature_validation_fails(self, webhook_service_class):
+        service = webhook_service_class.return_value
+        service.handle_connect_webhook = AsyncMock(
+            side_effect=HTTPException(status_code=400, detail="Invalid Stripe webhook signature.")
+        )
+
+        response = self.client.post(
+            "/api/v1/webhooks/stripe/connect",
+            content=b'{"id":"evt_bad"}',
+            headers={"Stripe-Signature": "t=1,v1=bad"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"detail": "Invalid Stripe webhook signature."})
+        webhook_service_class.assert_called_once_with(self.supabase)
+        service.handle_connect_webhook.assert_awaited_once_with(b'{"id":"evt_bad"}', "t=1,v1=bad")
 
 
 if __name__ == "__main__":
