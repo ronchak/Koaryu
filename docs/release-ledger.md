@@ -24,7 +24,7 @@ Operator: `Ronak Chakraborty / Codex session`
 
 - Environment: `koaryu-staging`, Supabase `nxgsektqsgrtyfhawxbc`.
 - Migration/application baseline commit: `c9cc18a4d021662c46f0b76fadb7266503db21cb`.
-- Sanitized-seed repair revision: current `codex/production-remediation-wave0` working tree; this repair is not present in `c9cc18a` and must be replaced here with its committed SHA before the draft PR is published.
+- Sanitized-seed repair revision: `bca10d223ae0594d1bb6d659d2ede8606caa9c66` on `codex/production-remediation-wave0`; this repair is not present in the migration/application baseline `c9cc18a`.
 - Migration state: all 80 repository migrations replayed into a fresh project.
 - Billing: test Stripe only; production Supabase, live Stripe keys, and production webhook destinations are prohibited.
 - Data status: production-derived rows do not remain in this project. The only tenant is the synthetic `River City Martial Arts` fixture: 32 students, 20 guardians, 296 attendance rows, 36 class sessions, 9 leads, 1 staff role, and 7 billing payments.
