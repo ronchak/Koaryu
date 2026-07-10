@@ -66,7 +66,10 @@ import {
   mergeSessionsForRange,
   markScheduleCoordinatorSnapshotState,
   normalizeAttendanceRecords,
+  refreshScheduleCoordinatorAuthState,
+  resolveScheduleReconciliationRange,
   resetScheduleCoordinatorState,
+  shouldPreserveScheduleMutationsOnAuthChange,
   shouldReconcileSchedule,
 } from "@/lib/schedule-store-model";
 import { useStoreBeltActions } from "@/lib/store-belt-actions";
@@ -183,6 +186,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ? { id: "preview-user", email: "demo@koaryu.local", full_name: "Demo User" }
       : null
   );
+  const authUserIdRef = useRef<string | null>(isPreviewMode ? "preview-user" : null);
   const activeUserId = currentUser?.id || null;
   const [currentRole, setCurrentRole] = useState<StaffRoleName | null>(() =>
     isPreviewMode ? "admin" : null
@@ -245,8 +249,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const reconcileScheduleAttempt = useCallback(async () => {
     const request = beginLiveAuthRequest();
-    const { startDate, endDate } = buildDeferredScheduleDateRange();
     const coordinator = scheduleCoordinatorRef.current;
+    const { startDate, endDate } = resolveScheduleReconciliationRange(
+      coordinator,
+      buildDeferredScheduleDateRange()
+    );
     const generation = coordinator.generation;
     const dataRevision = coordinator.dataRevision;
     const rangeRequestSequence = coordinator.rangeRequestSequence + 1;
@@ -491,6 +498,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const resetLiveStudioState = useCallback(() => {
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
+    authUserIdRef.current = null;
     setCurrentUser(null);
     setCurrentRole(null);
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
@@ -504,6 +512,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dashboardSummaryRequestSeqRef.current += 1;
     const userProfile = buildAuthUserProfile(authProfile);
 
+    authUserIdRef.current = sessionUser.id;
     setCurrentUser(userProfile);
     setCurrentRole(authProfile.role ?? null);
     syncStoredStudioSessionCookies(sessionUser.id, authProfile.studio_id);
@@ -778,6 +787,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
 
       tokenRef.current = sessionToken;
+      authUserIdRef.current = session.user.id;
       setToken(sessionToken);
       setCurrentUser(buildSessionUserProfile(session.user));
       setHydrated(true);
@@ -1020,17 +1030,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     initializeLive();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         const tokenChanged = tokenRef.current !== session.access_token;
         if (tokenChanged) {
           authGenerationRef.current += 1;
           dashboardSummaryRequestSeqRef.current += 1;
-          scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
-            scheduleCoordinatorRef.current
-          );
+          scheduleCoordinatorRef.current = shouldPreserveScheduleMutationsOnAuthChange(
+            event,
+            authUserIdRef.current,
+            session.user.id
+          )
+            ? refreshScheduleCoordinatorAuthState(scheduleCoordinatorRef.current)
+            : resetScheduleCoordinatorState(scheduleCoordinatorRef.current);
         }
         tokenRef.current = session.access_token;
+        authUserIdRef.current = session.user.id;
         setToken(session.access_token);
         if (tokenChanged) {
           void reconcileSchedule().catch((error) => {
@@ -1039,6 +1054,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       } else {
         tokenRef.current = null;
+        authUserIdRef.current = null;
         setToken(null);
         clearStoredStudioSessionCookies();
         resetLiveStudioState();

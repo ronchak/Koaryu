@@ -1,0 +1,47 @@
+name: API contracts
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/api-contracts.yml"
+      - "backend/**"
+      - "frontend/src/types/generated/api-contracts.ts"
+      - "scripts/generate-api-types.py"
+      - "package.json"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/api-contracts.yml"
+      - "backend/**"
+      - "frontend/src/types/generated/api-contracts.ts"
+      - "scripts/generate-api-types.py"
+      - "package.json"
+
+jobs:
+  check-api-types:
+    name: Check generated frontend API types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+
+      - name: Verify generated API contract types
+        run: python scripts/generate-api-types.py --check

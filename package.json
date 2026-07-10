@@ -10,6 +10,8 @@
     "dev:up": "sh ./scripts/dev-up.sh",
     "dev:down": "sh ./scripts/dev-down.sh",
     "dev:health": "sh -c 'curl -fsS http://localhost:4000 >/dev/null && curl -fsS http://127.0.0.1:8001/docs >/dev/null && echo \"Koaryu is up on 4000/8001\"'",
+    "check:env-examples": "node --test scripts/check-env-examples.test.mjs && node scripts/check-env-examples.mjs",
+    "audit:support-privacy": "python3 scripts/audit-support-privacy.py",
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
     "check:api-types": "backend/venv/bin/python scripts/generate-api-types.py --check",
     "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py"

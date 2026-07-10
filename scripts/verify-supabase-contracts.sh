@@ -48,6 +48,7 @@ contract_files=(
   "student_program_filter_rpc_contract.sql"
   "studio_operational_clear_atomic_contract.sql"
   "studio_onboarding_atomic_smoke.sql"
+  "tenant_rls_isolation_smoke.sql"
 )
 
 for contract_file in "${contract_files[@]}"; do

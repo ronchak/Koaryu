@@ -18,6 +18,8 @@ services:
         value: /api/v1
       - key: DEMO_RESET_ENABLED
         value: "false"
+      - key: DEMO_RESET_STUDIO_IDS
+        value: ""
       - key: BILLING_PLATFORM_FEE_BPS
         value: "50"
       - key: SUPABASE_URL

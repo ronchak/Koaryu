@@ -92,6 +92,18 @@ class ProductionConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "long random secret"):
             settings.validate_production_configuration()
 
+    def test_production_rejects_documented_deletion_worker_placeholder(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "ACCOUNT_DELETION_WORKER_SECRET": "long-random-secret-for-the-deletion-worker",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "ACCOUNT_DELETION_WORKER_SECRET"):
+            settings.validate_production_configuration()
+
     def test_production_accepts_required_live_settings(self):
         settings = Settings(
             ENVIRONMENT="production",
