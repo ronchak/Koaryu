@@ -89,8 +89,10 @@ Run these after changing support/account database behavior:
 ```bash
 supabase migration up --local
 supabase db lint --local --fail-on error
-scripts/verify-supabase-account-support.sh
+SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh
 PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_account_service.py backend/tests/test_staff_service_account_deletion.py backend/tests/test_support_service.py backend/tests/test_internal_endpoints.py
 ```
+
+If a changed support/account migration may already be recorded in local history, first confirm the local database is disposable and run `supabase db reset --local` before the lint and smoke checks.
 
 Use `SUPABASE_DB_TARGET=linked scripts/verify-supabase-account-support.sh` and linked lint only when the task explicitly calls for release inspection and the linked project already has the migrations under review.

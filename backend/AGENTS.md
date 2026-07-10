@@ -54,8 +54,9 @@ The local backend runs on `http://127.0.0.1:8001`.
 - After changing support or account-deletion behavior, also run:
   - `supabase migration up --local`
   - `supabase db lint --local --fail-on error`
-  - `scripts/verify-supabase-account-support.sh`
+  - `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`
   - `PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_account_service.py backend/tests/test_staff_service_account_deletion.py backend/tests/test_support_service.py backend/tests/test_internal_endpoints.py`
+- If a changed support/account migration may already be recorded in local history, first confirm the local database is disposable and run `supabase db reset --local` so the checks exercise the current migration contents.
 - Run linked Supabase checks only when the task explicitly intends a release inspection and the linked project already has the migrations under review.
 
 ## Done Checklist
