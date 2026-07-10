@@ -1,8 +1,8 @@
 import asyncio
 import unittest
+from datetime import date, timedelta
 
 from fastapi import HTTPException
-from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.schedule import AttendanceCheckIn
 from app.services.schedule_attendance_actions import (
@@ -16,16 +16,6 @@ from app.services.schedule_service import (
 )
 from tests.fakes.supabase import RpcBackedSupabase
 
-
-def conflict_error() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "23505",
-        "message": "duplicate key value violates unique constraint",
-        "details": "",
-        "hint": "",
-    })
-
-
 class FakeSupabase(RpcBackedSupabase):
     def __init__(self, tables: dict[str, list[dict]]):
         super().__init__(tables)
@@ -33,8 +23,59 @@ class FakeSupabase(RpcBackedSupabase):
             "status": "scheduled",
             "created_at": "2026-05-24T12:00:00Z",
         }
-        self.unique_constraints["class_sessions"] = [("template_id", "date")]
-        self.unique_conflict_error_factory = lambda _table, _columns: conflict_error()
+        self.before_materialize = None
+
+    def _rpc_materialize_recurring_class_sessions(self, params: dict):
+        if self.before_materialize:
+            self.before_materialize(self.tables)
+
+        start = date.fromisoformat(params["p_start_date"])
+        end = date.fromisoformat(params["p_end_date"])
+        existing_keys = {
+            (row.get("template_id"), row.get("date"))
+            for row in self.tables.setdefault("class_sessions", [])
+            if row.get("template_id")
+        }
+        inserted = 0
+        templates = sorted(
+            (
+                row
+                for row in self.tables.setdefault("class_templates", [])
+                if row.get("studio_id") == params["p_studio_id"]
+                and row.get("is_active") is True
+                and row.get("start_date") <= params["p_end_date"]
+                and (row.get("end_date") is None or row.get("end_date") >= params["p_start_date"])
+            ),
+            key=lambda row: row["id"],
+        )
+        for template in templates:
+            current = max(start, date.fromisoformat(template["start_date"]))
+            template_end = date.fromisoformat(template["end_date"]) if template.get("end_date") else end
+            range_end = min(end, template_end)
+            while current <= range_end:
+                if ScheduleService._studio_weekday(current) == template["day_of_week"]:
+                    key = (template["id"], current.isoformat())
+                    if key not in existing_keys:
+                        self.tables["class_sessions"].append({
+                            "id": f"materialized-{template['id']}-{current.isoformat()}",
+                            "studio_id": params["p_studio_id"],
+                            "template_id": template["id"],
+                            "name": template["name"],
+                            "date": current.isoformat(),
+                            "start_time": template["start_time"],
+                            "end_time": template["end_time"],
+                            "instructor_id": template.get("instructor_id"),
+                            "program_id": template.get("program_id"),
+                            "capacity": template.get("capacity"),
+                            "status": "scheduled",
+                            "notes": None,
+                            "created_at": "2026-05-24T12:00:00Z",
+                            "deleted_at": None,
+                        })
+                        existing_keys.add(key)
+                        inserted += 1
+                current += timedelta(days=1)
+        return inserted
 
     def _rpc_delete_recurring_class_series_atomic(self, params: dict):
         session = next(
@@ -131,7 +172,7 @@ def session_row(session_id: str, template_id: str, session_date: str) -> dict:
 
 
 class ScheduleServiceTest(unittest.TestCase):
-    def test_materialize_sessions_skips_concurrent_duplicate_and_inserts_remaining_rows(self):
+    def test_materialize_sessions_uses_atomic_rpc_instead_of_direct_writes(self):
         supabase = FakeSupabase({
             "class_templates": [
                 template_row("template-1", "Youth Basics"),
@@ -140,25 +181,6 @@ class ScheduleServiceTest(unittest.TestCase):
             "class_sessions": [],
         })
         service = ScheduleService(supabase)
-        raced = {"done": False}
-
-        def before_insert(table_name: str, payloads: list[dict], rows: list[dict]) -> None:
-            if table_name != "class_sessions" or raced["done"]:
-                return
-            raced["done"] = True
-            rows.append({
-                "id": "race-session",
-                "studio_id": "studio-1",
-                "template_id": "template-1",
-                "name": "Youth Basics",
-                "date": "2026-05-24",
-                "start_time": "09:00",
-                "end_time": "10:00",
-                "status": "scheduled",
-                "created_at": "2026-05-24T12:00:00Z",
-            })
-
-        supabase.before_insert = before_insert
 
         asyncio.run(service._materialize_sessions_for_range("studio-1", "2026-05-24", "2026-05-24"))
 
@@ -167,13 +189,48 @@ class ScheduleServiceTest(unittest.TestCase):
             sorted((row["template_id"], row["date"]) for row in sessions),
             [("template-1", "2026-05-24"), ("template-2", "2026-05-24")],
         )
-        class_session_inserts = [
-            query["insert"]
-            for query in supabase.query_log
-            if query["table"] == "class_sessions" and query["insert"] is not None
-        ]
-        self.assertEqual([len(payload) for payload in class_session_inserts], [2, 1])
-        self.assertTrue(all(isinstance(payload, list) for payload in class_session_inserts))
+        self.assertEqual(
+            supabase.rpc_calls,
+            [(
+                "materialize_recurring_class_sessions",
+                {
+                    "p_studio_id": "studio-1",
+                    "p_start_date": "2026-05-24",
+                    "p_end_date": "2026-05-24",
+                },
+            )],
+        )
+        self.assertEqual(supabase.query_log, [])
+
+    def test_materialize_sessions_does_not_resurrect_series_when_delete_wins_lock(self):
+        template = template_row("template-1", "Youth Basics")
+        selected = session_row("selected-session", "template-1", "2026-05-31")
+        supabase = FakeSupabase({
+            "class_templates": [template],
+            "class_sessions": [selected],
+        })
+
+        def delete_series_before_template_lock(tables: dict[str, list[dict]]) -> None:
+            tables["class_templates"][0]["is_active"] = False
+            tables["class_templates"][0]["end_date"] = "2026-05-30"
+            tables["class_sessions"][0]["deleted_at"] = "2026-05-31T12:00:00Z"
+            tables["class_sessions"][0]["status"] = "canceled"
+
+        supabase.before_materialize = delete_series_before_template_lock
+        service = ScheduleService(supabase)
+
+        sessions = asyncio.run(
+            service.materialize_session_range("studio-1", "2026-05-31", "2026-06-14")
+        )
+
+        self.assertEqual(sessions, [])
+        self.assertFalse(template["is_active"])
+        self.assertFalse(
+            any(
+                row.get("deleted_at") is None and row["date"] >= "2026-05-31"
+                for row in supabase.tables["class_sessions"]
+            )
+        )
 
     def test_list_sessions_does_not_materialize_recurring_sessions_on_read(self):
         supabase = FakeSupabase({
@@ -191,6 +248,94 @@ class ScheduleServiceTest(unittest.TestCase):
                 query["table"] == "class_sessions" and query["insert"] is not None
                 for query in supabase.query_log
             )
+        )
+
+    def test_materialize_session_range_surfaces_recurring_and_one_off_sessions(self):
+        supabase = FakeSupabase({
+            "class_templates": [template_row("template-1", "Youth Basics")],
+            "class_sessions": [
+                {
+                    "id": "one-off-session",
+                    "studio_id": "studio-1",
+                    "template_id": None,
+                    "name": "Makeup Class",
+                    "date": "2026-05-24",
+                    "start_time": "11:00",
+                    "end_time": "12:00",
+                    "instructor_id": None,
+                    "program_id": None,
+                    "capacity": 8,
+                    "status": "scheduled",
+                    "notes": None,
+                    "created_at": "2026-05-24T12:00:00Z",
+                    "deleted_at": None,
+                },
+            ],
+            "attendance": [
+                {
+                    "id": "attendance-1",
+                    "studio_id": "studio-1",
+                    "session_id": "one-off-session",
+                    "student_id": "student-1",
+                    "status": "present",
+                },
+            ],
+        })
+        service = ScheduleService(supabase)
+
+        sessions = asyncio.run(
+            service.materialize_session_range("studio-1", "2026-05-24", "2026-05-24")
+        )
+
+        self.assertEqual(
+            [(session.name, session.template_id, session.date, session.attendance_count) for session in sessions],
+            [
+                ("Youth Basics", "template-1", "2026-05-24", 0),
+                ("Makeup Class", None, "2026-05-24", 1),
+            ],
+        )
+        self.assertEqual(len(supabase.tables["class_sessions"]), 2)
+
+    def test_materialize_session_range_preserves_deleted_occurrence_tombstone(self):
+        deleted_session = session_row("deleted-session", "template-1", "2026-05-24")
+        deleted_session["deleted_at"] = "2026-05-23T12:00:00Z"
+        deleted_session["status"] = "canceled"
+        supabase = FakeSupabase({
+            "class_templates": [template_row("template-1", "Youth Basics")],
+            "class_sessions": [deleted_session],
+        })
+        service = ScheduleService(supabase)
+
+        sessions = asyncio.run(
+            service.materialize_session_range("studio-1", "2026-05-24", "2026-05-24")
+        )
+
+        self.assertEqual(sessions, [])
+        self.assertEqual(len(supabase.tables["class_sessions"]), 1)
+        self.assertFalse(
+            any(
+                query["table"] == "class_sessions" and query["insert"] is not None
+                for query in supabase.query_log
+            )
+        )
+
+    def test_materialize_session_range_respects_template_date_window(self):
+        template = template_row("template-1", "Youth Basics")
+        template["start_date"] = "2026-05-31"
+        template["end_date"] = "2026-06-07"
+        supabase = FakeSupabase({
+            "class_templates": [template],
+            "class_sessions": [],
+        })
+        service = ScheduleService(supabase)
+
+        sessions = asyncio.run(
+            service.materialize_session_range("studio-1", "2026-05-24", "2026-06-14")
+        )
+
+        self.assertEqual(
+            [(session.template_id, session.date) for session in sessions],
+            [("template-1", "2026-05-31"), ("template-1", "2026-06-07")],
         )
 
     def test_list_sessions_rejects_ranges_above_visible_cap(self):
@@ -232,9 +377,8 @@ class ScheduleServiceTest(unittest.TestCase):
                 },
             ],
         })
-        supabase.select_assertions["class_sessions"] = (
-            lambda columns: self.assertEqual(columns, CLASS_SESSION_LIST_SELECT)
-        )
+        selected_columns: list[str] = []
+        supabase.select_assertions["class_sessions"] = selected_columns.append
         service = ScheduleService(supabase)
 
         sessions = asyncio.run(service.list_sessions("studio-1", "2026-05-24", "2026-05-24"))
@@ -242,6 +386,7 @@ class ScheduleServiceTest(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertEqual(sessions[0].id, "session-1")
         self.assertEqual(sessions[0].attendance_count, 1)
+        self.assertIn(CLASS_SESSION_LIST_SELECT, selected_columns)
 
     def test_list_attendance_rejects_ranges_above_visible_cap(self):
         supabase = FakeSupabase({"attendance": [], "class_sessions": []})
