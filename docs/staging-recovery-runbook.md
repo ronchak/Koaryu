@@ -54,6 +54,7 @@ normalize_url() {
 EXPECTED_STAGING_FRONTEND_ORIGIN="$(normalize_url "$EXPECTED_STAGING_FRONTEND_ORIGIN")"
 EXPECTED_STAGING_BACKEND_API="$(normalize_url "$EXPECTED_STAGING_BACKEND_API")"
 CONFIGURED_STAGING_FRONTEND_ORIGIN="$(normalize_url "$NEXT_PUBLIC_SITE_URL")"
+CONFIGURED_BACKEND_FRONTEND_ORIGIN="$(normalize_url "$FRONTEND_URL")"
 CONFIGURED_STAGING_PUBLIC_API="$(normalize_url "$NEXT_PUBLIC_API_URL")"
 CONFIGURED_STAGING_BACKEND_API="$(normalize_url "$BACKEND_API_URL")"
 
@@ -68,6 +69,7 @@ esac
 test "$NEXT_PUBLIC_SUPABASE_URL" = "https://${EXPECTED_STAGING_REF}.supabase.co"
 test "$NEXT_PUBLIC_SUPABASE_URL" != "https://${PRODUCTION_REF}.supabase.co"
 test "$CONFIGURED_STAGING_FRONTEND_ORIGIN" = "$EXPECTED_STAGING_FRONTEND_ORIGIN"
+test "$CONFIGURED_BACKEND_FRONTEND_ORIGIN" = "$EXPECTED_STAGING_FRONTEND_ORIGIN"
 test "$CONFIGURED_STAGING_PUBLIC_API" = "$EXPECTED_STAGING_BACKEND_API"
 test "$CONFIGURED_STAGING_BACKEND_API" = "$EXPECTED_STAGING_BACKEND_API"
 
@@ -85,7 +87,7 @@ case "${STRIPE_RESTRICTED_KEY:-}" in
 esac
 ```
 
-Webhook signing secrets do not encode test/live mode in their prefix. Confirm both configured endpoint URLs in the Stripe dashboard are the dedicated staging backend before installing those secrets. The current gate remains blocked because no staging frontend or backend URL has been assigned or deployed.
+Webhook signing secrets do not encode test/live mode in their prefix. Confirm both configured endpoint URLs in the Stripe dashboard are the dedicated staging backend before installing those secrets. The current branch-scoped Vercel preview is isolated to staging Supabase and test Stripe, but the application gate remains blocked because the dedicated staging backend has not been created.
 
 ## Rebuild Clean Staging
 
@@ -119,7 +121,7 @@ The validated Wave 0 backup is stored at:
 
 `$HOME/Koaryu Backups/production-20260710T070020Z`
 
-It contains encrypted role, schema, and data dumps. For a new backup, first confirm that the Supabase CLI is linked to production and that the operation is dump-only. This target check is intentionally the inverse of the staging guard:
+It contains encrypted role, schema, data, classification, and Storage artifacts. For a new backup, first confirm that the Supabase CLI is linked to production and that the operation is dump-only. This target check is intentionally the inverse of the staging guard:
 
 ```bash
 set -euo pipefail
@@ -151,9 +153,68 @@ mkdir -m 700 "$BACKUP_DIR"
 supabase db dump --linked --role-only --file "$DUMP_DIR/roles.sql"
 supabase db dump --linked --file "$DUMP_DIR/schema.sql"
 supabase db dump --linked --data-only --use-copy \
+  --schema auth,private,public,storage \
   --exclude storage.buckets_vectors \
   --exclude storage.vector_indexes \
+  --exclude storage.objects \
+  --exclude storage.s3_multipart_uploads \
+  --exclude storage.s3_multipart_uploads_parts \
   --file "$DUMP_DIR/data.sql"
+
+# Database dumps preserve Storage metadata, not object bytes. Discover every
+# bucket, inventory it, and copy its bytes. Empty buckets are valid evidence.
+mkdir -p "$DUMP_DIR/storage/inventory" "$DUMP_DIR/storage/objects"
+supabase --experimental storage ls ss:/// --linked \
+  > "$DUMP_DIR/storage/bucket-list.txt"
+jq -n --arg source_ref "$EXPECTED_PRODUCTION_REF" \
+  --arg captured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{source_project_ref:$source_ref,captured_at:$captured_at,
+    buckets:[]}' \
+  > "$DUMP_DIR/storage/manifest.json"
+
+BUCKET_COUNT=0
+while IFS= read -r bucket_entry; do
+  [ -n "$bucket_entry" ] || continue
+  case "$bucket_entry" in
+    */) bucket="${bucket_entry%/}" ;;
+    *) echo "Refusing malformed Storage bucket entry" >&2; exit 1 ;;
+  esac
+  case "$bucket" in
+    ""|.|..|*/*) echo "Refusing unsafe Storage bucket id" >&2; exit 1 ;;
+  esac
+
+  BUCKET_COUNT=$((BUCKET_COUNT + 1))
+  mkdir -p "$DUMP_DIR/storage/objects/$bucket"
+  supabase --experimental storage ls -r "ss:///$bucket" --linked \
+    > "$DUMP_DIR/storage/inventory/$bucket.txt"
+  OBJECT_COUNT="$(awk -v prefix="/$bucket/" \
+    'index($0, prefix) == 1 && substr($0, length($0), 1) != "/" {count++}
+     END {print count + 0}' "$DUMP_DIR/storage/inventory/$bucket.txt")"
+  if [ "$OBJECT_COUNT" -gt 0 ]; then
+    supabase --experimental storage cp -r "ss:///$bucket" \
+      "$DUMP_DIR/storage/objects/" --linked
+  fi
+  DOWNLOADED_COUNT="$(find "$DUMP_DIR/storage/objects/$bucket" \
+    -type f | wc -l | tr -d ' ')"
+  test "$DOWNLOADED_COUNT" = "$OBJECT_COUNT"
+
+  jq --arg bucket "$bucket" --argjson object_count "$OBJECT_COUNT" \
+    '.buckets += [{id:$bucket,object_count:$object_count}]' \
+    "$DUMP_DIR/storage/manifest.json" \
+    > "$DUMP_DIR/storage/manifest.next.json"
+  mv "$DUMP_DIR/storage/manifest.next.json" \
+    "$DUMP_DIR/storage/manifest.json"
+done < "$DUMP_DIR/storage/bucket-list.txt"
+
+test "$(jq '.buckets | length' "$DUMP_DIR/storage/manifest.json")" \
+  = "$BUCKET_COUNT"
+(
+  cd "$DUMP_DIR/storage/objects"
+  while IFS= read -r -d '' object_path; do
+    shasum -a 256 "$object_path"
+  done < <(find . -type f -print0)
+) > "$DUMP_DIR/storage/object-sha256.txt"
+tar -C "$DUMP_DIR" -cf "$DUMP_DIR/storage-objects.tar" storage
 
 BACKUP_PASSWORD="$(security find-generic-password \
   -s com.koaryu.backup.encryption -w)"
@@ -164,6 +225,10 @@ for name in roles schema data; do
     --output "$BACKUP_DIR/${name}.sql.gpg" "$DUMP_DIR/${name}.sql" \
     3<<<"$BACKUP_PASSWORD"
 done
+gpg --batch --yes --symmetric --force-aead --aead-algo OCB \
+  --cipher-algo AES256 --pinentry-mode loopback --passphrase-fd 3 \
+  --output "$BACKUP_DIR/storage-objects.tar.gpg" \
+  "$DUMP_DIR/storage-objects.tar" 3<<<"$BACKUP_PASSWORD"
 
 (cd "$BACKUP_DIR" && shasum -a 256 *.gpg)
 BACKUP_COMPLETE=true
@@ -186,8 +251,19 @@ shasum -a 256 -c <<'EOF'
 0748bc19b318551cb1db16617d2c7b16a2ab2423e0bdfb5950c243e82fbc4cdc  roles.sql.gpg
 22fe1b7612f84dbc40c8c196dedbbf9280adbc55fb1b4e8174ea072d9e9a0f8e  schema.sql.gpg
 83854854d34387a73777e8f80c7cddb9940b7ae62c8012d87dc89b1560e0b167  record-classification-manifest.json.gpg
+f3d10e37ba2735eec46f7d21399323e6ad7ef3276ba8b580203b568531c9ab7e  storage-objects.tar.gpg
 EOF
 ```
+
+The validated `data.sql.gpg` explicitly contains 61 `auth.users` rows plus
+Storage metadata. Production had exactly one bucket, `student-photos`, and it
+contained zero objects at capture time, so `storage-objects.tar.gpg` contains
+the encrypted complete bucket inventory and empty object directory. Future
+backups enumerate every linked bucket from the Storage API and must copy and
+encrypt any object bytes present; a SQL dump alone is not a Storage backup.
+Future data dumps exclude `storage.objects` and transient multipart rows because
+the Storage API recreates them when the archived bytes are uploaded. The restore
+fails closed if object rows are already present before that upload.
 
 ## Restore Drill
 
@@ -207,7 +283,14 @@ A restore target is disposable and isolated. Never use current staging, producti
    test "$PGHOST" = "db.${RESTORE_REF}.supabase.co"
    ```
 
-   Set `PGUSER`, `PGDATABASE`, and `PGPASSWORD` from the temporary project's transient connection details in a private shell. Do not record them.
+   Set `PGUSER`, `PGDATABASE`, and `PGPASSWORD` from the temporary project's transient connection details in a private shell. Do not record them. Initialize a separate disposable Supabase CLI workdir, link only that workdir to `RESTORE_REF`, set it as `RESTORE_WORKDIR`, and verify its saved ref before the restore. This is required even when the current Storage inventory is empty, so the same guarded procedure is exercised every time. Never repoint the repository's ordinary linked workdir for this step.
+
+   ```bash
+   RESTORE_WORKDIR="$(mktemp -d)"
+   supabase --workdir "$RESTORE_WORKDIR" init --yes
+   supabase --workdir "$RESTORE_WORKDIR" link --project-ref "$RESTORE_REF"
+   test "$(tr -d '\n' < "$RESTORE_WORKDIR/supabase/.temp/project-ref")" = "$RESTORE_REF"
+   ```
 
 2. Verify the encrypted checksums, decrypt into a locked temporary directory, restore, and validate in one failure-safe shell:
 
@@ -223,6 +306,9 @@ A restore target is disposable and isolated. Never use current staging, producti
      if [ -n "${RESTORE_DIR:-}" ] && [ -d "$RESTORE_DIR" ]; then
        rm -rf -- "$RESTORE_DIR"
      fi
+     if [ -n "${RESTORE_WORKDIR:-}" ] && [ -d "$RESTORE_WORKDIR" ]; then
+       rm -rf -- "$RESTORE_WORKDIR"
+     fi
    }
    trap cleanup_restore EXIT HUP INT TERM
 
@@ -231,6 +317,7 @@ A restore target is disposable and isolated. Never use current staging, producti
    0748bc19b318551cb1db16617d2c7b16a2ab2423e0bdfb5950c243e82fbc4cdc  roles.sql.gpg
    22fe1b7612f84dbc40c8c196dedbbf9280adbc55fb1b4e8174ea072d9e9a0f8e  schema.sql.gpg
    83854854d34387a73777e8f80c7cddb9940b7ae62c8012d87dc89b1560e0b167  record-classification-manifest.json.gpg
+   f3d10e37ba2735eec46f7d21399323e6ad7ef3276ba8b580203b568531c9ab7e  storage-objects.tar.gpg
    EOF
    )
 
@@ -242,6 +329,10 @@ A restore target is disposable and isolated. Never use current staging, producti
        --output "$RESTORE_DIR/${name}.sql" "$BACKUP_DIR/${name}.sql.gpg" \
        3<<<"$BACKUP_PASSWORD"
    done
+   gpg --batch --quiet --decrypt --pinentry-mode loopback --passphrase-fd 3 \
+     --output "$RESTORE_DIR/storage-objects.tar" \
+     "$BACKUP_DIR/storage-objects.tar.gpg" 3<<<"$BACKUP_PASSWORD"
+   tar -C "$RESTORE_DIR" -xf "$RESTORE_DIR/storage-objects.tar"
    unset BACKUP_PASSWORD
 
    psql --no-psqlrc --single-transaction --set ON_ERROR_STOP=1 \
@@ -258,6 +349,62 @@ A restore target is disposable and isolated. Never use current staging, producti
    select 'studios=' || count(*) from public.studios;
    select 'onboarding_rpc=' || (to_regprocedure('public.create_studio_onboarding(uuid,text,text,text)') is not null);
    SQL
+
+   # Restore every manifest bucket only after linking an isolated CLI workdir
+   # to RESTORE_REF and proving it cannot be production or ordinary staging.
+   STORAGE_OBJECT_COUNT="$(jq '[.buckets[].object_count] | add // 0' \
+     "$RESTORE_DIR/storage/manifest.json")"
+   STORAGE_METADATA_OBJECT_ROWS="$(psql --no-psqlrc --set ON_ERROR_STOP=1 \
+     --tuples-only --no-align --command 'select count(*) from storage.objects')"
+   test "$STORAGE_METADATA_OBJECT_ROWS" = 0
+   if [ "$STORAGE_OBJECT_COUNT" -gt 0 ]; then
+     (cd "$RESTORE_DIR/storage/objects" && \
+       shasum -a 256 -c ../object-sha256.txt)
+   fi
+   test "$(tr -d '\n' < "$RESTORE_WORKDIR/supabase/.temp/project-ref")" = "$RESTORE_REF"
+   test "$RESTORE_REF" != mimguepumzsgmcaycdsh
+   test "$RESTORE_REF" != nxgsektqsgrtyfhawxbc
+
+   jq -r '.buckets[].id + "/"' "$RESTORE_DIR/storage/manifest.json" \
+     | sort > "$RESTORE_DIR/storage/expected-buckets.txt"
+   supabase --experimental --workdir "$RESTORE_WORKDIR" storage ls \
+     ss:/// --linked | sort > "$RESTORE_DIR/storage/restored-buckets.txt"
+   diff -u "$RESTORE_DIR/storage/expected-buckets.txt" \
+     "$RESTORE_DIR/storage/restored-buckets.txt"
+
+   RESTORED_TOTAL=0
+   mkdir -p "$RESTORE_DIR/storage/verified-objects"
+   while IFS= read -r bucket; do
+     case "$bucket" in
+       ""|.|..|*/*) echo "Refusing unsafe Storage bucket id" >&2; exit 1 ;;
+     esac
+     EXPECTED_OBJECT_COUNT="$(jq --arg bucket "$bucket" \
+       '.buckets[] | select(.id == $bucket) | .object_count' \
+       "$RESTORE_DIR/storage/manifest.json")"
+     LOCAL_OBJECT_COUNT="$(find "$RESTORE_DIR/storage/objects/$bucket" \
+       -type f | wc -l | tr -d ' ')"
+     test "$LOCAL_OBJECT_COUNT" = "$EXPECTED_OBJECT_COUNT"
+     if [ "$EXPECTED_OBJECT_COUNT" -gt 0 ]; then
+       supabase --experimental --workdir "$RESTORE_WORKDIR" storage cp -r \
+         "$RESTORE_DIR/storage/objects/$bucket" ss:/// --linked
+       supabase --experimental --workdir "$RESTORE_WORKDIR" storage cp -r \
+         "ss:///$bucket" "$RESTORE_DIR/storage/verified-objects/" --linked
+     fi
+     RESTORED_OBJECT_COUNT="$(
+       supabase --experimental --workdir "$RESTORE_WORKDIR" storage ls -r \
+         "ss:///$bucket" --linked \
+         | awk -v prefix="/$bucket/" \
+           'index($0, prefix) == 1 && substr($0, length($0), 1) != "/" {count++}
+            END {print count + 0}'
+     )"
+     test "$RESTORED_OBJECT_COUNT" = "$EXPECTED_OBJECT_COUNT"
+     RESTORED_TOTAL=$((RESTORED_TOTAL + RESTORED_OBJECT_COUNT))
+   done < <(jq -r '.buckets[].id' "$RESTORE_DIR/storage/manifest.json")
+   test "$RESTORED_TOTAL" = "$STORAGE_OBJECT_COUNT"
+   if [ "$STORAGE_OBJECT_COUNT" -gt 0 ]; then
+     (cd "$RESTORE_DIR/storage/verified-objects" && \
+       shasum -a 256 -c ../object-sha256.txt)
+   fi
 
    cleanup_restore
    trap - EXIT HUP INT TERM

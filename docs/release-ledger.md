@@ -28,7 +28,7 @@ Operator: `Ronak Chakraborty / Codex session`
 - Migration state: all 80 repository migrations replayed into a fresh project.
 - Billing: test Stripe only; production Supabase, live Stripe keys, and production webhook destinations are prohibited.
 - Data status: production-derived rows do not remain in this project. The only tenant is the synthetic `River City Martial Arts` fixture: 32 students, 20 guardians, 296 attendance rows, 36 class sessions, 9 leads, 1 staff role, and 7 billing payments.
-- Created at: `2026-07-10T02:33:20Z`. No staging frontend or backend deployment exists yet; the application-isolation deploy gate is blocked until dedicated staging URLs are assigned and verified.
+- Created at: `2026-07-10T02:33:20Z`. A branch-scoped Vercel preview is isolated to this staging Supabase project and test Stripe configuration. No staging backend exists yet, so the application-isolation deploy gate remains blocked until the dedicated backend is created and verified.
 - Verification: migration replay completed against the staging ref; database lint returned no errors and the two previously audited warnings; the sanitized seed completed, including an idempotency-protected external-payment fixture.
 - Rollback: delete only the confirmed staging project, recreate it, and replay repository migrations. Do not restore the production logical backup into ordinary staging.
 
@@ -41,9 +41,12 @@ Operator: `Ronak Chakraborty / Codex session`
   - `roles.sql.gpg`: `0748bc19b318551cb1db16617d2c7b16a2ab2423e0bdfb5950c243e82fbc4cdc`
   - `schema.sql.gpg`: `22fe1b7612f84dbc40c8c196dedbbf9280adbc55fb1b4e8174ea072d9e9a0f8e`
   - `record-classification-manifest.json.gpg`: `83854854d34387a73777e8f80c7cddb9940b7ae62c8012d87dc89b1560e0b167`
+  - `storage-objects.tar.gpg`: `f3d10e37ba2735eec46f7d21399323e6ad7ef3276ba8b580203b568531c9ab7e`
 - Record classification: 384 identifiers inventoried with conservative explicit-marker rules. Unknown remains preserved: 60 auth users, 39 studios, 39 subscriptions, 1 payment account, and 49 live-mode Stripe events remain `unknown`; no record is approved for deletion or anonymization.
 - Encryption: GnuPG 2.5 AES-256/OCB authenticated encryption; the AEAD migration was verified plaintext-equivalent before the older CBC artifacts were removed.
 - Restore method: PostgreSQL 17 `psql`, single transaction, `ON_ERROR_STOP=1`, roles then schema then data with replication triggers disabled for the data load.
+- Authentication coverage: the encrypted data dump contains 22 `auth` table copy blocks and 61 `auth.users` rows; the restore count matched.
+- Storage coverage: the encrypted data dump contains five Storage metadata table copy blocks, with zero `storage.objects` rows in this capture. Future dumps exclude object and transient multipart rows so the Storage API can recreate metadata without duplicate conflicts. The private `student-photos` bucket was independently listed through both the Storage REST API and linked CLI and contained zero objects/zero object bytes; the authenticated storage archive records that complete one-bucket inventory for future restore comparison. A temporary second staging bucket with a nested synthetic image proved all-bucket enumeration, per-bucket counts, backup and restore CLI copy directions, exact bucket-set comparison, and byte-for-byte recovery; the object and temporary bucket were deleted afterward.
 - Verification: 37 `public` tables, 61 authentication users, and 52 studios. An authenticated tenant-safe application read was not completed against the temporary restore target and remains required in the next drill.
 - Cleanup: temporary restore project deleted; fresh current staging recreated separately from repository migrations.
 - Off-site copy: pending; the encrypted backup currently has only the local path above, so off-site recovery is not yet proven.
