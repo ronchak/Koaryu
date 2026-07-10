@@ -11,6 +11,7 @@ import {
   mergeAttendanceForSessions,
   mergeSessionsForRange,
   normalizeAttendanceRecords,
+  setScheduleRequestedRangeState,
   toAttendanceCountDelta,
   updateSessionAttendanceCount,
   type ScheduleCoordinatorState,
@@ -76,10 +77,11 @@ export function useStoreScheduleActions({
         }
         finished = true;
         const beforeFinish = scheduleCoordinatorRef.current;
-        scheduleCoordinatorRef.current = finishScheduleMutationState(beforeFinish, generation);
+        const afterFinish = finishScheduleMutationState(beforeFinish, generation);
+        scheduleCoordinatorRef.current = afterFinish;
         if (
-          beforeFinish.generation === generation
-          && shouldReconcileSchedule(scheduleCoordinatorRef.current)
+          afterFinish !== beforeFinish
+          && shouldReconcileSchedule(afterFinish)
         ) {
           try {
             await reconcileSchedule();
@@ -105,7 +107,7 @@ export function useStoreScheduleActions({
       const requestSequence = coordinator.rangeRequestSequence + 1;
       const attendanceRequestSequence = coordinator.attendanceRequestSequence + 1;
       scheduleCoordinatorRef.current = {
-        ...coordinator,
+        ...setScheduleRequestedRangeState(coordinator, { startDate, endDate }),
         attendanceRequestSequence,
         rangeRequestSequence: requestSequence,
       };
