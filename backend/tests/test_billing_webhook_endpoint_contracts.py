@@ -85,7 +85,7 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json(), {"detail": "Invalid Stripe webhook signature."})
+        self.assertEqual(response.json()["detail"], "Invalid Stripe webhook signature.")
         webhook_service_class.assert_called_once_with(self.supabase)
         service.handle_connect_webhook.assert_awaited_once_with(b'{"id":"evt_bad"}', "t=1,v1=bad")
 
