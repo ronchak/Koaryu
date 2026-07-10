@@ -30,6 +30,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Stop both apps: `npm run dev:down`
 - Basic local health check: `npm run dev:health`
 - Check example environment files: `npm run check:env-examples`
+- Audit support triage privacy docs/scripts: `npm run audit:support-privacy`
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`

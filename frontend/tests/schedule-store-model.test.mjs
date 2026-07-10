@@ -13,8 +13,12 @@ import {
   mergeSessionsForRange,
   markScheduleCoordinatorSnapshotState,
   normalizeAttendanceRecords,
+  refreshScheduleCoordinatorAuthState,
+  resolveScheduleReconciliationRange,
   resetScheduleCoordinatorState,
+  setScheduleRequestedRangeState,
   shouldReconcileSchedule,
+  shouldPreserveScheduleMutationsOnAuthChange,
   toAttendanceCountDelta,
   updateSessionAttendanceCount,
 } from "../src/lib/schedule-store-model.ts";
@@ -83,7 +87,20 @@ describe("schedule store model", () => {
     assert.equal(isScheduleReadCurrent({ ...current, mutationsInFlight: 1 }), false);
   });
 
-  it("keeps old-generation mutation finishers out of a reset coordinator", () => {
+  it("invalidates the authoritative snapshot while a mutation is in flight", () => {
+    const initial = markScheduleCoordinatorSnapshotState(createScheduleCoordinatorState());
+    const mutation = beginScheduleMutationState(initial);
+
+    assert.equal(mutation.hasAuthoritativeSnapshot, false);
+    assert.equal(mutation.mutationsInFlight, 1);
+    assert.equal(shouldReconcileSchedule(mutation), false);
+
+    const settled = finishScheduleMutationState(mutation, mutation.generation);
+    assert.equal(settled.mutationsInFlight, 0);
+    assert.equal(shouldReconcileSchedule(settled), true);
+  });
+
+  it("keeps old-generation mutation finishers out of a destructive reset coordinator", () => {
     const initial = createScheduleCoordinatorState();
     const oldMutation = beginScheduleMutationState(initial);
     const reset = resetScheduleCoordinatorState(oldMutation);
@@ -99,6 +116,67 @@ describe("schedule store model", () => {
     );
     assert.equal(afterNewFinisher.mutationsInFlight, 0);
     assert.equal(afterNewFinisher.dataRevision, newMutation.dataRevision + 1);
+  });
+
+  it("reconciles a mutation that commits across an auth token refresh", () => {
+    const initial = markScheduleCoordinatorSnapshotState(createScheduleCoordinatorState());
+    const oldTokenMutation = beginScheduleMutationState(initial);
+    const refreshedAuth = refreshScheduleCoordinatorAuthState(oldTokenMutation);
+
+    assert.equal(refreshedAuth.generation, oldTokenMutation.generation + 1);
+    assert.equal(refreshedAuth.mutationsInFlight, 1);
+    assert.equal(refreshedAuth.hasAuthoritativeSnapshot, false);
+    assert.equal(shouldReconcileSchedule(refreshedAuth), false);
+
+    const settled = finishScheduleMutationState(
+      refreshedAuth,
+      oldTokenMutation.generation
+    );
+    assert.equal(settled.mutationsInFlight, 0);
+    assert.equal(shouldReconcileSchedule(settled), true);
+  });
+
+  it("reconciles the latest requested range even when it is beyond the default window", () => {
+    const farFutureRange = { startDate: "2027-01-01", endDate: "2027-01-31" };
+    const coordinator = setScheduleRequestedRangeState(
+      createScheduleCoordinatorState(),
+      farFutureRange
+    );
+
+    assert.deepEqual(
+      resolveScheduleReconciliationRange(coordinator, {
+        startDate: "2026-06-09",
+        endDate: "2026-09-07",
+      }),
+      farFutureRange
+    );
+    assert.equal(
+      resetScheduleCoordinatorState(coordinator).requestedRange,
+      null
+    );
+    assert.deepEqual(
+      refreshScheduleCoordinatorAuthState(coordinator).requestedRange,
+      farFutureRange
+    );
+  });
+
+  it("preserves mutations only for a same-user token refresh", () => {
+    assert.equal(
+      shouldPreserveScheduleMutationsOnAuthChange("TOKEN_REFRESHED", "user-1", "user-1"),
+      true
+    );
+    assert.equal(
+      shouldPreserveScheduleMutationsOnAuthChange("SIGNED_IN", "user-1", "user-1"),
+      false
+    );
+    assert.equal(
+      shouldPreserveScheduleMutationsOnAuthChange("TOKEN_REFRESHED", "user-1", "user-2"),
+      false
+    );
+    assert.equal(
+      shouldPreserveScheduleMutationsOnAuthChange("TOKEN_REFRESHED", null, "user-1"),
+      false
+    );
   });
 
   it("requests reconciliation after an initial mutation until a full snapshot lands", () => {

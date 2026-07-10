@@ -832,6 +832,16 @@ export interface ApiEmailUsageResponse {
   period_end: string;
 }
 
+export interface ApiErrorMeta {
+  code: string;
+  status_code: number;
+}
+
+export interface ApiErrorResponse {
+  detail: unknown;
+  error: ApiErrorMeta;
+}
+
 export interface ApiExportJobCreate {
   export_type: string;
   filters?: Record<string, unknown>;
@@ -881,6 +891,7 @@ export interface ApiGuardianResponse {
 
 export interface ApiHTTPValidationError {
   detail: ApiValidationError[];
+  error: ApiErrorMeta;
 }
 
 export interface ApiLeadActivityCreate {
