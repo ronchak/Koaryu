@@ -64,7 +64,9 @@ The automation uses the Supabase connector, not browser or local CLI state. It s
 SELECT public.support_triage_digest(50) AS digest;
 ```
 
-`support_triage_digest` returns only sanitized fields. It does not expose user-entered ticket titles, ticket descriptions, raw requester addresses, page locations, browser signatures, or client context. For `student_records` tickets, the digest substitutes withheld text for both the title and summary; for other topics, those fields are generated from controlled metadata only.
+`support_triage_digest` returns only sanitized fields. Its payload keeps the stable `subject` key and the stable `summary_seed` key; neither contains user-entered ticket content, raw requester addresses, page locations, browser signatures, or client context.
+
+For `student_records` rows, both sanitized values contain the literal `details withheld`. For other topics, both values are generated from controlled metadata only.
 
 The local helper below is only a manual fallback for developer checks; it calls the same sanitized RPC:
 

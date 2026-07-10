@@ -50,6 +50,10 @@ def test_support_privacy_audit_passes_current_runbook_and_helper():
 
     assert result.returncode == 0
     assert "support privacy audit passed" in result.stdout
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    assert "`subject`" in runbook
+    assert "`summary_seed`" in runbook
+    assert "`details withheld`" in runbook
 
 
 def _support_privacy_audit_functions():
@@ -165,6 +169,11 @@ def test_support_privacy_audit_rejects_raw_references_in_inline_and_html_code():
         "\n<pre><code>SELECT details FROM public.support&#95;tickets;</code></pre>\n",
         "\n<https://koaryu.onrender.com/api/v1/internal/support/tickets>\n",
         "\n<a href=\"/api/v1/internal/support/tickets\">raw queue</a>\n",
+        '\n```bash\ncurl https://koaryu.onrender.com/api/v1/internal/support/"tickets"\n```\n',
+        "\n```bash\ncurl https://koaryu.onrender.com/api/v1/internal/support/$'tickets'\n```\n",
+        "\n```bash\ncurl https://koaryu.onrender.com/api/v1/internal/support/%74ickets\n```\n",
+        "\n```bash\ncurl https://koaryu.onrender.com/api/v1/internal/support/%25252574ickets\n```\n",
+        "\n`https:\\/\\/koaryu.onrender.com\\/api\\/v1\\/internal\\/support\\/tickets`\n",
         "\nQuery public.support_**tickets** and include requester_*email*.\n",
         "\nQuery public.[support_](https://example.invalid)tickets directly.\n",
         "\nQuery public.[support_](https://example.invalid/a_(b))tickets directly.\n",
@@ -226,6 +235,13 @@ def test_support_privacy_audit_rejects_field_only_inline_and_html_commands():
     unsafe_blocks = (
         "Run `SELECT requester_email, details FROM private_queue_view` nightly.\n\n",
         "<pre><code>read page_url and user_agent from private_queue_view</code></pre>\n\n",
+        "Return requester_email in the digest.\n\n",
+        "Output page_url nightly.\n\n",
+        "Expose details to the operator.\n\n",
+        "Log user_agent for debugging.\n\n",
+        "Display browser_context in the report.\n\n",
+        "Include the `subject` key in the daily output.\n\n",
+        "Fetch the private queue view, then return `subject` key verbatim.\n\n",
     )
 
     for unsafe_block in unsafe_blocks:
@@ -246,6 +262,23 @@ def test_support_privacy_audit_rejects_continuation_split_helper_reference():
     assert any("/api/v1/internal/support/tickets" in failure for failure in failures)
 
 
+def test_support_privacy_audit_rejects_blockquoted_continuation_reference():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_block = """
+> ```bash
+> curl https://koaryu.onrender.com/api/v1/internal/support/\\
+> tickets
+> ```
+"""
+    unsafe_runbook = runbook.replace("## Verification", f"{unsafe_block}\n## Verification")
+
+    failures = audit["audit_texts"](unsafe_runbook, helper)
+
+    assert any("/api/v1/internal/support/tickets" in failure for failure in failures)
+
+
 def test_support_privacy_audit_allows_privacy_warnings_in_explanatory_prose():
     audit = _support_privacy_audit_functions()
     runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
@@ -254,6 +287,7 @@ def test_support_privacy_audit_allows_privacy_warnings_in_explanatory_prose():
         "Never query the raw support tables or request full requester addresses, "
         "ticket descriptions, page locations, browser signatures, or client context.\n\n"
         "> Never bypass the sanitized digest to read private ticket content.\n\n"
+        "This schedule is subject to change.\n\n"
     )
     runbook = runbook.replace("## Verification", f"{warning}## Verification")
 
