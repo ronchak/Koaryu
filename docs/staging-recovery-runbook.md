@@ -43,14 +43,33 @@ set +x
 : "${EXPECTED_STAGING_FRONTEND_ORIGIN:?set the dedicated staging frontend origin}"
 : "${EXPECTED_STAGING_BACKEND_API:?set the dedicated staging backend /api/v1 URL}"
 
-test "$EXPECTED_STAGING_FRONTEND_ORIGIN" != "https://koaryu.app"
-test "$EXPECTED_STAGING_FRONTEND_ORIGIN" != "https://www.koaryu.app"
-test "$EXPECTED_STAGING_BACKEND_API" != "https://koaryu.onrender.com/api/v1"
+normalize_url() {
+  local value="$1"
+  while [ "${value%/}" != "$value" ]; do
+    value="${value%/}"
+  done
+  printf '%s' "$value"
+}
+
+EXPECTED_STAGING_FRONTEND_ORIGIN="$(normalize_url "$EXPECTED_STAGING_FRONTEND_ORIGIN")"
+EXPECTED_STAGING_BACKEND_API="$(normalize_url "$EXPECTED_STAGING_BACKEND_API")"
+CONFIGURED_STAGING_FRONTEND_ORIGIN="$(normalize_url "$NEXT_PUBLIC_SITE_URL")"
+CONFIGURED_STAGING_PUBLIC_API="$(normalize_url "$NEXT_PUBLIC_API_URL")"
+CONFIGURED_STAGING_BACKEND_API="$(normalize_url "$BACKEND_API_URL")"
+
+case "$EXPECTED_STAGING_FRONTEND_ORIGIN" in
+  https://koaryu.app|https://www.koaryu.app)
+    echo "Refusing: staging frontend origin resolves to production" >&2; exit 1 ;;
+esac
+case "$EXPECTED_STAGING_BACKEND_API" in
+  https://koaryu.onrender.com|https://koaryu.onrender.com/*)
+    echo "Refusing: staging backend API resolves to production" >&2; exit 1 ;;
+esac
 test "$NEXT_PUBLIC_SUPABASE_URL" = "https://${EXPECTED_STAGING_REF}.supabase.co"
 test "$NEXT_PUBLIC_SUPABASE_URL" != "https://${PRODUCTION_REF}.supabase.co"
-test "$NEXT_PUBLIC_SITE_URL" = "$EXPECTED_STAGING_FRONTEND_ORIGIN"
-test "$NEXT_PUBLIC_API_URL" = "$EXPECTED_STAGING_BACKEND_API"
-test "$BACKEND_API_URL" = "$EXPECTED_STAGING_BACKEND_API"
+test "$CONFIGURED_STAGING_FRONTEND_ORIGIN" = "$EXPECTED_STAGING_FRONTEND_ORIGIN"
+test "$CONFIGURED_STAGING_PUBLIC_API" = "$EXPECTED_STAGING_BACKEND_API"
+test "$CONFIGURED_STAGING_BACKEND_API" = "$EXPECTED_STAGING_BACKEND_API"
 
 case "${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}" in
   pk_test_*) ;;
