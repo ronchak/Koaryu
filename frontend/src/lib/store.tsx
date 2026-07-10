@@ -57,7 +57,18 @@ import {
   MOCK_PROGRAMS,
   MOCK_STAFF_MEMBERS,
 } from "@/lib/preview-studio-data";
-import { compareSessions, normalizeAttendanceRecords } from "@/lib/schedule-store-model";
+import {
+  createScheduleReconciliationQueue,
+  createScheduleCoordinatorState,
+  compareSessions,
+  isScheduleReadCurrent,
+  mergeAttendanceForSessions,
+  mergeSessionsForRange,
+  markScheduleCoordinatorSnapshotState,
+  normalizeAttendanceRecords,
+  resetScheduleCoordinatorState,
+  shouldReconcileSchedule,
+} from "@/lib/schedule-store-model";
 import { useStoreBeltActions } from "@/lib/store-belt-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
 import { useStoreProgramActions } from "@/lib/store-program-actions";
@@ -162,6 +173,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_ATTENDANCE : []
   );
   const attendanceRef = useRef<AttendanceRecord[]>(attendance);
+  const scheduleCoordinatorRef = useRef(createScheduleCoordinatorState());
+  const scheduleReconciliationQueueRef = useRef(createScheduleReconciliationQueue());
   const [studioName, setStudioNameState] = useState(() =>
     isPreviewMode ? "My Studio" : ""
   );
@@ -229,6 +242,102 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     };
   }, []);
+
+  const reconcileScheduleAttempt = useCallback(async () => {
+    const request = beginLiveAuthRequest();
+    const { startDate, endDate } = buildDeferredScheduleDateRange();
+    const coordinator = scheduleCoordinatorRef.current;
+    const generation = coordinator.generation;
+    const dataRevision = coordinator.dataRevision;
+    const rangeRequestSequence = coordinator.rangeRequestSequence + 1;
+    const attendanceRequestSequence = coordinator.attendanceRequestSequence + 1;
+    scheduleCoordinatorRef.current = {
+      ...coordinator,
+      attendanceRequestSequence,
+      rangeRequestSequence,
+    };
+
+    const [templatesResult, sessionsResult, attendanceResult] = await Promise.allSettled([
+      api.get<ClassTemplate[]>("/schedule/templates", request.token),
+      api.post<ClassSession[]>(
+        `/schedule/sessions/materialize?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
+        {},
+        request.token
+      ),
+      api.get<AttendanceRecord[]>(
+        `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
+        request.token
+      ),
+    ]);
+
+    const current = scheduleCoordinatorRef.current;
+    const sessionsAreCurrent = isScheduleReadCurrent({
+      authCurrent: request.isCurrent(),
+      currentGeneration: current.generation,
+      currentDataRevision: current.dataRevision,
+      currentRequestSequence: current.rangeRequestSequence,
+      dataRevisionAtStart: dataRevision,
+      generationAtStart: generation,
+      mutationsInFlight: current.mutationsInFlight,
+      requestSequenceAtStart: rangeRequestSequence,
+    });
+    const attendanceIsCurrent = isScheduleReadCurrent({
+      authCurrent: request.isCurrent(),
+      currentGeneration: current.generation,
+      currentDataRevision: current.dataRevision,
+      currentRequestSequence: current.attendanceRequestSequence,
+      dataRevisionAtStart: dataRevision,
+      generationAtStart: generation,
+      mutationsInFlight: current.mutationsInFlight,
+      requestSequenceAtStart: attendanceRequestSequence,
+    });
+    if (!sessionsAreCurrent || !attendanceIsCurrent) {
+      return;
+    }
+
+    const rejected = [templatesResult, sessionsResult, attendanceResult].find(
+      (result) => result.status === "rejected"
+    );
+    if (rejected?.status === "rejected") {
+      throw rejected.reason;
+    }
+
+    if (
+      templatesResult.status !== "fulfilled"
+      || sessionsResult.status !== "fulfilled"
+      || attendanceResult.status !== "fulfilled"
+    ) {
+      return;
+    }
+
+    const rangeSessions = sessionsResult.value;
+    const replacedSessionIds = Array.from(new Set([
+      ...sessionsRef.current
+        .filter((session) => session.date >= startDate && session.date <= endDate)
+        .map((session) => session.id),
+      ...rangeSessions.map((session) => session.id),
+    ]));
+    setTemplates(templatesResult.value);
+    setSessions((existing) =>
+      mergeSessionsForRange(existing, rangeSessions, startDate, endDate)
+    );
+    setAttendance((existing) =>
+      mergeAttendanceForSessions(
+        existing,
+        normalizeAttendanceRecords(attendanceResult.value),
+        replacedSessionIds
+      )
+    );
+    scheduleCoordinatorRef.current = markScheduleCoordinatorSnapshotState(
+      scheduleCoordinatorRef.current
+    );
+  }, [beginLiveAuthRequest]);
+
+  const reconcileSchedule = useCallback(() =>
+    scheduleReconciliationQueueRef.current(
+      reconcileScheduleAttempt,
+      () => shouldReconcileSchedule(scheduleCoordinatorRef.current)
+    ), [reconcileScheduleAttempt]);
 
   const commitPromotionHistoryCache = useCallback((studentId: string, items: Promotion[]) => {
     setPromotionHistoryCache((current) => {
@@ -364,6 +473,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLadderNameState(state.ladderName);
     setSubRankTermState(state.subRankTerm);
     setBeltRanksState(state.beltRanks);
+    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
+      scheduleCoordinatorRef.current
+    );
     setSessions(state.sessions);
     setTemplates(state.templates);
     setAttendance(state.attendance);
@@ -422,6 +534,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
     dashboardSummaryRequestSeqRef.current += 1;
+    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
+      scheduleCoordinatorRef.current,
+      true
+    );
     setStudioNameState(data.studio_name);
     commitStudents(data.students);
     setPrograms(data.programs || programsRef.current);
@@ -445,6 +561,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
     dashboardSummaryRequestSeqRef.current += 1;
+    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
+      scheduleCoordinatorRef.current,
+      true
+    );
     if (studioNameValue) {
       setStudioNameState(studioNameValue);
       save(KEYS.studioName, studioNameValue);
@@ -643,6 +763,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (tokenRef.current !== sessionToken) {
         authGenerationRef.current += 1;
         dashboardSummaryRequestSeqRef.current += 1;
+        scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
+          scheduleCoordinatorRef.current
+        );
       }
       const sessionGeneration = authGenerationRef.current;
       const isCurrentSession = () =>
@@ -846,42 +969,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             });
         }
 
-        void (async () => {
-          markPerformance("schedule.deferred_started");
-          const { startDate, endDate } = buildDeferredScheduleDateRange();
-
-          const [templatesRes, sessionsRes, attendanceRes] = await Promise.all([
-            api
-              .get<ClassTemplate[]>("/schedule/templates", sessionToken)
-              .catch(() => []),
-            api
-              .get<ClassSession[]>(
-                `/schedule/sessions?start_date=${startDate}&end_date=${endDate}`,
-                sessionToken
-              )
-              .catch(() => []),
-            api
-              .get<AttendanceRecord[]>(
-                `/schedule/attendance?start_date=${startDate}&end_date=${endDate}`,
-                sessionToken
-              )
-              .catch(() => []),
-          ]);
-
-          if (!isCurrentSession()) {
-            return;
-          }
-
-          setTemplates(templatesRes);
-          setSessions(sessionsRes);
-          setAttendance(normalizeAttendanceRecords(attendanceRes));
+        markPerformance("schedule.deferred_started");
+        void reconcileSchedule().then(() => {
           markPerformance("schedule.deferred_finished");
           measurePerformance(
             "schedule.deferred_duration",
             "schedule.deferred_started",
             "schedule.deferred_finished"
           );
-        })().catch((error) => {
+        }).catch((error) => {
           console.error("Failed to load deferred dashboard data", error);
         });
       } catch (error) {
@@ -926,12 +1022,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        if (tokenRef.current !== session.access_token) {
+        const tokenChanged = tokenRef.current !== session.access_token;
+        if (tokenChanged) {
           authGenerationRef.current += 1;
           dashboardSummaryRequestSeqRef.current += 1;
+          scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
+            scheduleCoordinatorRef.current
+          );
         }
         tokenRef.current = session.access_token;
         setToken(session.access_token);
+        if (tokenChanged) {
+          void reconcileSchedule().catch((error) => {
+            console.error("Failed to reconcile schedule after an auth token change", error);
+          });
+        }
       } else {
         tokenRef.current = null;
         setToken(null);
@@ -945,7 +1050,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, resetLiveStudioState, router, supabase]);
+  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1130,6 +1235,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistAttendance,
     persistSessions,
     persistTemplates,
+    reconcileSchedule,
+    scheduleCoordinatorRef,
     sessionsRef,
     setAttendance,
     setSessions,
