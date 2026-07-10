@@ -11,12 +11,19 @@ type ScheduleReadFreshness = {
   requestSequenceAtStart: number;
 };
 
+export type ScheduleDateRange = {
+  endDate: string;
+  startDate: string;
+};
+
 export type ScheduleCoordinatorState = {
   attendanceRequestSequence: number;
   dataRevision: number;
   generation: number;
   hasAuthoritativeSnapshot: boolean;
+  mutationCountsByGeneration: Record<number, number>;
   mutationsInFlight: number;
+  requestedRange: ScheduleDateRange | null;
   rangeRequestSequence: number;
 };
 
@@ -26,7 +33,9 @@ export function createScheduleCoordinatorState(): ScheduleCoordinatorState {
     dataRevision: 0,
     generation: 0,
     hasAuthoritativeSnapshot: false,
+    mutationCountsByGeneration: {},
     mutationsInFlight: 0,
+    requestedRange: null,
     rangeRequestSequence: 0,
   };
 }
@@ -40,17 +49,65 @@ export function resetScheduleCoordinatorState(
     dataRevision: current.dataRevision + 1,
     generation: current.generation + 1,
     hasAuthoritativeSnapshot,
+    mutationCountsByGeneration: {},
     mutationsInFlight: 0,
+    requestedRange: null,
     rangeRequestSequence: current.rangeRequestSequence + 1,
   };
+}
+
+export function refreshScheduleCoordinatorAuthState(
+  current: ScheduleCoordinatorState
+): ScheduleCoordinatorState {
+  return {
+    ...current,
+    attendanceRequestSequence: current.attendanceRequestSequence + 1,
+    dataRevision: current.dataRevision + 1,
+    generation: current.generation + 1,
+    hasAuthoritativeSnapshot: false,
+    rangeRequestSequence: current.rangeRequestSequence + 1,
+  };
+}
+
+export function setScheduleRequestedRangeState(
+  current: ScheduleCoordinatorState,
+  requestedRange: ScheduleDateRange
+): ScheduleCoordinatorState {
+  return {
+    ...current,
+    requestedRange,
+  };
+}
+
+export function resolveScheduleReconciliationRange(
+  current: ScheduleCoordinatorState,
+  fallback: ScheduleDateRange
+): ScheduleDateRange {
+  return current.requestedRange ?? fallback;
+}
+
+export function shouldPreserveScheduleMutationsOnAuthChange(
+  event: string,
+  currentUserId: string | null,
+  nextUserId: string | null
+) {
+  return event === "TOKEN_REFRESHED"
+    && currentUserId !== null
+    && currentUserId === nextUserId;
 }
 
 export function beginScheduleMutationState(
   current: ScheduleCoordinatorState
 ): ScheduleCoordinatorState {
+  const generationMutationCount = current.mutationCountsByGeneration[current.generation] ?? 0;
   return {
     ...current,
     dataRevision: current.dataRevision + 1,
+    hasAuthoritativeSnapshot: false,
+    mutationCountsByGeneration: {
+      ...current.mutationCountsByGeneration,
+      [current.generation]: generationMutationCount + 1,
+    },
     mutationsInFlight: current.mutationsInFlight + 1,
   };
 }
@@ -59,12 +116,20 @@ export function finishScheduleMutationState(
   current: ScheduleCoordinatorState,
   generationAtStart: number
 ): ScheduleCoordinatorState {
-  if (current.generation !== generationAtStart) {
+  const generationMutationCount = current.mutationCountsByGeneration[generationAtStart] ?? 0;
+  if (generationMutationCount === 0) {
     return current;
+  }
+  const mutationCountsByGeneration = { ...current.mutationCountsByGeneration };
+  if (generationMutationCount === 1) {
+    delete mutationCountsByGeneration[generationAtStart];
+  } else {
+    mutationCountsByGeneration[generationAtStart] = generationMutationCount - 1;
   }
   return {
     ...current,
     dataRevision: current.dataRevision + 1,
+    mutationCountsByGeneration,
     mutationsInFlight: Math.max(0, current.mutationsInFlight - 1),
   };
 }
