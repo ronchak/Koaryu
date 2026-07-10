@@ -25,7 +25,7 @@ Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted
 | `backend/app/schemas/**` | Focused schema tests | `npm run check:api-types`; regenerate with `npm run generate:api-types` when needed |
 | Stripe billing or webhooks | Relevant `backend/tests/test_billing_*.py` and `backend/tests/test_webhook_service.py` | `npm run dev:stripe-connect-smoke` only against a confirmed disposable/local target |
 | Support/account-deletion behavior | `PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_support_service.py backend/tests/test_internal_endpoints.py` | `scripts/verify-supabase-account-support.sh` against local Supabase |
-| Supabase migrations/RLS/RPCs | `supabase db lint --linked --fail-on error` when intentionally checking linked lint | Relevant SQL in `supabase/verification/`; broad `scripts/verify-supabase-contracts.sh` after local reset |
+| Supabase migrations/RLS/RPCs | `supabase db lint --local --fail-on error` plus the relevant SQL in `supabase/verification/` against a local database | Broad `scripts/verify-supabase-contracts.sh` after local reset; linked lint/contracts only when explicitly intended and after the linked project has the migrations |
 | Docs-only | `git diff --check` | Run linked commands only if docs claim exact live output |
 | Generated API contracts | `npm run check:api-types` | `npm run generate:api-types` and commit generated changes when drift is intentional |
 
