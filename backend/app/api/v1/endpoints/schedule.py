@@ -8,7 +8,11 @@ from app.schemas.schedule import (
     ClassSessionDeleteScopeValue,
     AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
 )
-from app.services.schedule_service import ScheduleService, SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS
+from app.services.schedule_service import (
+    SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
+    SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS,
+    ScheduleService,
+)
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -70,6 +74,32 @@ async def list_sessions(
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).list_sessions(studio_id, start_date, end_date)
+
+
+@router.post("/sessions/materialize", response_model=list[ClassSessionResponse])
+async def materialize_session_range(
+    start_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive start date. Maximum range is "
+            f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    end_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive end date. Maximum range is "
+            f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await ScheduleService(supabase).materialize_session_range(
+        studio_id,
+        start_date,
+        end_date,
+    )
 
 
 @router.post("/sessions", response_model=ClassSessionResponse, status_code=201)
