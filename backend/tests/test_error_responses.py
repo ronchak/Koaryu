@@ -1,6 +1,7 @@
 import unittest
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -54,6 +55,26 @@ class ErrorResponseTest(unittest.TestCase):
         self.assertEqual(response.json()["detail"], {"failed": 1})
         self.assertEqual(response.json()["error"], {"code": "conflict", "status_code": 409})
 
+    def test_http_exception_keeps_bodyless_statuses_empty(self):
+        for status_code in (204, 304):
+            with self.subTest(status_code=status_code):
+                test_app = FastAPI()
+                register_error_handlers(test_app)
+
+                @test_app.get("/bodyless")
+                async def bodyless():
+                    raise HTTPException(
+                        status_code=status_code,
+                        detail="must not be serialized",
+                        headers={"X-Koaryu-Test": "preserved"},
+                    )
+
+                response = TestClient(test_app).get("/bodyless")
+
+                self.assertEqual(response.status_code, status_code)
+                self.assertEqual(response.content, b"")
+                self.assertEqual(response.headers["X-Koaryu-Test"], "preserved")
+
     def test_validation_errors_keep_fastapi_detail_shape_with_metadata(self):
         class Payload(BaseModel):
             name: str
@@ -87,6 +108,52 @@ class ErrorResponseTest(unittest.TestCase):
             "error": {"code": "internal_server_error", "status_code": 500},
         })
         self.assertNotIn("sk_live_secret", response.text)
+
+    def test_unhandled_errors_preserve_cors_for_allowed_browser_origin(self):
+        allowed_origin = "https://app.koaryu.test"
+        test_app = FastAPI()
+        register_error_handlers(test_app, cors_allowed_origins={allowed_origin})
+        test_app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[allowed_origin],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+        @test_app.get("/boom")
+        async def boom():
+            raise RuntimeError("provider failure")
+
+        response = TestClient(test_app, raise_server_exceptions=False).get(
+            "/boom",
+            headers={"Origin": allowed_origin},
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.headers["Access-Control-Allow-Origin"], allowed_origin)
+        self.assertEqual(response.headers["Access-Control-Allow-Credentials"], "true")
+        self.assertIn("Origin", response.headers["Vary"])
+
+    def test_openapi_documents_normalized_error_metadata(self):
+        schema = app.openapi()
+        error_response = schema["components"]["schemas"]["ErrorResponse"]
+        validation_error = schema["components"]["schemas"]["HTTPValidationError"]
+
+        self.assertEqual(
+            error_response["properties"]["error"]["$ref"],
+            "#/components/schemas/ErrorMeta",
+        )
+        self.assertIn("error", validation_error["required"])
+        self.assertEqual(
+            validation_error["properties"]["error"]["$ref"],
+            "#/components/schemas/ErrorMeta",
+        )
+        self.assertEqual(
+            schema["paths"]["/api/v1/auth/me"]["get"]["responses"]["default"]["content"]
+            ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ErrorResponse",
+        )
 
     def test_main_app_registers_normalized_error_handlers(self):
         self.assertIs(app.exception_handlers[StarletteHTTPException], http_exception_handler)

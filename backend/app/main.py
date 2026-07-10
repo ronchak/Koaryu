@@ -25,7 +25,7 @@ app = FastAPI(
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
 )
 
-register_error_handlers(app)
+register_error_handlers(app, cors_allowed_origins=allowed_origins)
 
 # CORS
 app.add_middleware(
