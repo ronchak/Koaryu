@@ -2,11 +2,19 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  beginScheduleMutationState,
   compareSessions,
+  createScheduleCoordinatorState,
+  createScheduleReconciliationQueue,
+  finishScheduleMutationState,
   getPreviewTemplateSessionDates,
+  isScheduleReadCurrent,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
+  markScheduleCoordinatorSnapshotState,
   normalizeAttendanceRecords,
+  resetScheduleCoordinatorState,
+  shouldReconcileSchedule,
   toAttendanceCountDelta,
   updateSessionAttendanceCount,
 } from "../src/lib/schedule-store-model.ts";
@@ -55,6 +63,170 @@ function template(overrides = {}) {
 }
 
 describe("schedule store model", () => {
+  it("rejects stale reads after a newer request or schedule mutation", () => {
+    const current = {
+      authCurrent: true,
+      currentGeneration: 2,
+      currentDataRevision: 4,
+      currentRequestSequence: 7,
+      dataRevisionAtStart: 4,
+      generationAtStart: 2,
+      mutationsInFlight: 0,
+      requestSequenceAtStart: 7,
+    };
+
+    assert.equal(isScheduleReadCurrent(current), true);
+    assert.equal(isScheduleReadCurrent({ ...current, authCurrent: false }), false);
+    assert.equal(isScheduleReadCurrent({ ...current, currentGeneration: 3 }), false);
+    assert.equal(isScheduleReadCurrent({ ...current, currentDataRevision: 5 }), false);
+    assert.equal(isScheduleReadCurrent({ ...current, currentRequestSequence: 8 }), false);
+    assert.equal(isScheduleReadCurrent({ ...current, mutationsInFlight: 1 }), false);
+  });
+
+  it("keeps old-generation mutation finishers out of a reset coordinator", () => {
+    const initial = createScheduleCoordinatorState();
+    const oldMutation = beginScheduleMutationState(initial);
+    const reset = resetScheduleCoordinatorState(oldMutation);
+    const newMutation = beginScheduleMutationState(reset);
+
+    const afterOldFinisher = finishScheduleMutationState(newMutation, oldMutation.generation);
+    assert.equal(afterOldFinisher, newMutation);
+    assert.equal(afterOldFinisher.mutationsInFlight, 1);
+
+    const afterNewFinisher = finishScheduleMutationState(
+      afterOldFinisher,
+      newMutation.generation
+    );
+    assert.equal(afterNewFinisher.mutationsInFlight, 0);
+    assert.equal(afterNewFinisher.dataRevision, newMutation.dataRevision + 1);
+  });
+
+  it("requests reconciliation after an initial mutation until a full snapshot lands", () => {
+    const mutation = beginScheduleMutationState(createScheduleCoordinatorState());
+    const settled = finishScheduleMutationState(mutation, mutation.generation);
+
+    assert.equal(shouldReconcileSchedule(settled), true);
+    const reconciled = markScheduleCoordinatorSnapshotState(settled);
+    assert.equal(shouldReconcileSchedule(reconciled), false);
+    assert.equal(reconciled.hasAuthoritativeSnapshot, true);
+  });
+
+  it("replays an in-flight authoritative reconciliation when a scoped read supersedes it", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    let authoritative = false;
+    let releaseFirstAttempt;
+    let attempts = 0;
+    const firstAttemptBlocked = new Promise((resolve) => {
+      releaseFirstAttempt = resolve;
+    });
+    const attempt = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        await firstAttemptBlocked;
+        return;
+      }
+      authoritative = true;
+    };
+    const shouldRun = () => !authoritative;
+
+    const initial = requestReconciliation(attempt, shouldRun);
+    const replacement = requestReconciliation(attempt, shouldRun);
+    releaseFirstAttempt();
+    await Promise.all([initial, replacement]);
+
+    assert.equal(attempts, 2);
+    assert.equal(authoritative, true);
+  });
+
+  it("uses the latest reconciliation attempt after an auth generation changes", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    let generation = 1;
+    let reconciledGeneration = 0;
+    let releaseOldGeneration;
+    const oldGenerationBlocked = new Promise((resolve) => {
+      releaseOldGeneration = resolve;
+    });
+    const oldAttempt = async () => {
+      await oldGenerationBlocked;
+    };
+
+    const initial = requestReconciliation(oldAttempt, () => reconciledGeneration !== generation);
+    generation = 2;
+    const refreshed = requestReconciliation(
+      async () => {
+        reconciledGeneration = generation;
+      },
+      () => reconciledGeneration !== generation
+    );
+    releaseOldGeneration();
+    await Promise.all([initial, refreshed]);
+
+    assert.equal(reconciledGeneration, 2);
+  });
+
+  it("runs a queued replacement after the active reconciliation rejects", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    let releaseFailingAttempt;
+    let markFailingAttemptStarted;
+    let attempts = 0;
+    let authoritative = false;
+    const failingAttemptStarted = new Promise((resolve) => {
+      markFailingAttemptStarted = resolve;
+    });
+    const failingAttemptBlocked = new Promise((resolve) => {
+      releaseFailingAttempt = resolve;
+    });
+
+    const initial = requestReconciliation(async () => {
+      attempts += 1;
+      markFailingAttemptStarted();
+      await failingAttemptBlocked;
+      throw new Error("old token rejected");
+    }, () => !authoritative);
+    await failingAttemptStarted;
+    const replacement = requestReconciliation(async () => {
+      attempts += 1;
+      authoritative = true;
+    }, () => !authoritative);
+    releaseFailingAttempt();
+    await Promise.all([initial, replacement]);
+
+    assert.equal(attempts, 2);
+    assert.equal(authoritative, true);
+  });
+
+  it("surfaces an un-replaced reconciliation failure and accepts a later retry", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    let attempts = 0;
+
+    await assert.rejects(
+      requestReconciliation(async () => {
+        attempts += 1;
+        throw new Error("network unavailable");
+      }, () => true),
+      /network unavailable/
+    );
+    await requestReconciliation(async () => {
+      attempts += 1;
+    }, () => true);
+
+    assert.equal(attempts, 2);
+  });
+
+  it("does not retain a completed no-op reconciliation as in flight", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    let attempts = 0;
+
+    await requestReconciliation(async () => {
+      attempts += 1;
+    }, () => false);
+    await requestReconciliation(async () => {
+      attempts += 1;
+    }, () => true);
+
+    assert.equal(attempts, 1);
+  });
+
   it("merges refreshed sessions by replacing only the requested date range", () => {
     const current = [
       session("before", "2026-05-01", "18:00"),

@@ -19,10 +19,8 @@ from app.services.schedule_attendance_actions import ScheduleAttendanceActions
 from app.services.supabase_rpc import execute_required_rpc
 
 
-SCHEDULE_SESSION_CONFLICT_CODES = {"23505"}
 SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS = 93
 SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS = 93
-SCHEDULE_SESSION_CONFLICT_RETRY_ATTEMPTS = 3
 CLASS_SESSION_LIST_SELECT = (
     "id, studio_id, template_id, name, date, start_time, end_time, "
     "instructor_id, program_id, capacity, status, notes, created_at"
@@ -94,108 +92,15 @@ class ScheduleService:
             max_days=SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS,
             operation_name="Recurring session materialization",
         )
-        start_date = start.isoformat()
-        end_date = end.isoformat()
-        templates = await self.list_templates(studio_id)
-        if not templates:
-            return
-
-        existing_keys = self._existing_materialized_session_keys(studio_id, start_date, end_date)
-
-        rows_to_create = []
-        for template in templates:
-            template_start = self._parse_date(template.start_date)
-            template_end = self._parse_date(template.end_date) if template.end_date else end
-            range_start = max(start, template_start)
-            range_end = min(end, template_end)
-            if range_start > range_end:
-                continue
-
-            current = range_start
-            while current <= range_end:
-                if self._studio_weekday(current) == template.day_of_week:
-                    session_key = (template.id, current.isoformat())
-                    if session_key not in existing_keys:
-                        rows_to_create.append({
-                            "studio_id": studio_id,
-                            "template_id": template.id,
-                            "name": template.name,
-                            "date": current.isoformat(),
-                            "start_time": template.start_time,
-                            "end_time": template.end_time,
-                            "instructor_id": template.instructor_id,
-                            "program_id": template.program_id,
-                            "capacity": template.capacity,
-                        })
-                        existing_keys.add(session_key)
-                current += timedelta(days=1)
-
-        if rows_to_create:
-            try:
-                result = self.supabase.table("class_sessions").insert(rows_to_create).execute()
-                if not result.data:
-                    raise HTTPException(status_code=500, detail="Failed to generate recurring class sessions")
-            except PostgrestAPIError as exc:
-                if exc.code not in SCHEDULE_SESSION_CONFLICT_CODES:
-                    raise
-                self._insert_materialized_sessions_after_conflict(
-                    rows_to_create,
-                    studio_id=studio_id,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-
-    def _insert_materialized_sessions_after_conflict(
-        self,
-        rows: list[dict],
-        *,
-        studio_id: str,
-        start_date: str,
-        end_date: str,
-    ) -> None:
-        remaining = list(rows)
-        for _attempt in range(SCHEDULE_SESSION_CONFLICT_RETRY_ATTEMPTS):
-            existing_keys = self._existing_materialized_session_keys(studio_id, start_date, end_date)
-            remaining = [
-                row for row in remaining
-                if (row.get("template_id"), row.get("date")) not in existing_keys
-            ]
-            if not remaining:
-                return
-            try:
-                result = self.supabase.table("class_sessions").insert(remaining).execute()
-            except PostgrestAPIError as exc:
-                if exc.code in SCHEDULE_SESSION_CONFLICT_CODES:
-                    continue
-                raise
-            if not result.data:
-                raise HTTPException(status_code=500, detail="Failed to generate recurring class sessions")
-            return
-
-        raise HTTPException(
-            status_code=409,
-            detail="Recurring session materialization collided with another update. Retry shortly.",
+        execute_required_rpc(
+            self.supabase,
+            "materialize_recurring_class_sessions",
+            {
+                "p_studio_id": studio_id,
+                "p_start_date": start.isoformat(),
+                "p_end_date": end.isoformat(),
+            },
         )
-
-    def _existing_materialized_session_keys(
-        self,
-        studio_id: str,
-        start_date: str,
-        end_date: str,
-    ) -> set[tuple[str, str]]:
-        existing = (
-            self.supabase.table("class_sessions")
-            .select("template_id, date")
-            .eq("studio_id", studio_id)
-            .gte("date", start_date)
-            .lte("date", end_date)
-            .execute()
-        )
-        return {
-            (row["template_id"], row["date"])
-            for row in (existing.data or [])
-            if row.get("template_id")
-        }
 
     # ---- Class Templates ----
 
@@ -368,6 +273,30 @@ class ScheduleService:
                 status_code=500,
                 detail="Schedule load failed. Verify schedule schema migrations and backend connectivity.",
             ) from exc
+
+    async def materialize_session_range(
+        self, studio_id: str, start_date: str, end_date: str
+    ) -> list[ClassSessionResponse]:
+        """Ensure recurring occurrences exist, then return the requested range.
+
+        Materialization is intentionally an explicit write operation. Keeping it
+        separate from ``list_sessions`` preserves GET semantics while allowing
+        schedule clients to make recurring templates operational on demand.
+        """
+        start, end = self._validate_session_date_range(
+            start_date,
+            end_date,
+            max_days=SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS,
+            operation_name="Recurring session materialization",
+        )
+        normalized_start = start.isoformat()
+        normalized_end = end.isoformat()
+        await self._materialize_sessions_for_range(
+            studio_id,
+            normalized_start,
+            normalized_end,
+        )
+        return await self.list_sessions(studio_id, normalized_start, normalized_end)
 
     async def create_session(
         self, data: ClassSessionCreate, studio_id: str, actor_id: str

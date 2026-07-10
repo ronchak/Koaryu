@@ -37,6 +37,7 @@ contract_files=(
   "remaining_operational_client_write_controls.sql"
   "program_ladder_unification.sql"
   "recurring_class_series_delete_atomic_contract.sql"
+  "recurring_session_materialization_atomic_contract.sql"
   "stripe_event_worker_claim_controls.sql"
   "student_import_run_worker_claim_controls.sql"
   "student_import_row_atomic_contract.sql"
