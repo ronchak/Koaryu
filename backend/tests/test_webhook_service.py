@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import stripe
 from fastapi import HTTPException
 
 from app.services.stripe_service import StripeService
@@ -361,19 +362,21 @@ class WebhookServiceTest(unittest.TestCase):
         header = f"t={timestamp},v1={signature}"
         service = StripeService()
 
-        event = service.construct_webhook_event(
-            payload=payload,
-            signature=header,
-            secret=secret,
-        )
-
-        self.assertEqual(event["id"], "evt_real_sdk")
-        with self.assertRaises(HTTPException) as raised:
-            service.construct_webhook_event(
-                payload=b'{"id":"evt_mutated","object":"event"}',
+        with patch.object(service, "_stripe", return_value=stripe):
+            event = service.construct_webhook_event(
+                payload=payload,
                 signature=header,
                 secret=secret,
             )
+
+        self.assertEqual(event["id"], "evt_real_sdk")
+        with patch.object(service, "_stripe", return_value=stripe):
+            with self.assertRaises(HTTPException) as raised:
+                service.construct_webhook_event(
+                    payload=b'{"id":"evt_mutated","object":"event"}',
+                    signature=header,
+                    secret=secret,
+                )
         self.assertEqual(raised.exception.status_code, 400)
 
     def test_construct_webhook_event_rejects_missing_signature_before_stripe_sdk(self):
