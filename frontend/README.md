@@ -66,6 +66,14 @@ demo CSV:
 KOARYU_PREVIEW_E2E=true npm run test:e2e:preview-import
 ```
 
+For a fast, read-only check of preview login, responsive dashboard navigation,
+and the public marketing pages, start the frontend with
+`NEXT_PUBLIC_PREVIEW_MODE=true`, then run:
+
+```bash
+npm run test:e2e:preview-smoke
+```
+
 The belt-ladder check is a live-stateful smoke test. Run it only against a
 disposable account and studio name:
 
