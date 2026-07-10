@@ -86,6 +86,21 @@ curl https://koaryu.onrender.com/api/v1/internal/support/tickets
     assert any("/api/v1/internal/support/tickets" in failure for failure in failures)
 
 
+def test_support_privacy_audit_rejects_uppercase_sql_in_tilde_postgresql_fence():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_block = """\n~~~postgresql
+SELECT REQUESTER_EMAIL, DETAILS FROM PUBLIC.SUPPORT_TICKETS;
+~~~\n"""
+    runbook = runbook.replace("## Verification", f"{unsafe_block}\n## Verification")
+
+    failures = audit["audit_texts"](runbook, helper)
+
+    assert any("public.support_tickets" in failure for failure in failures)
+    assert any("requester_email" in failure for failure in failures)
+
+
 def test_support_privacy_audit_allows_privacy_warnings_in_explanatory_prose():
     audit = _support_privacy_audit_functions()
     runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")

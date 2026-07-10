@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -32,10 +31,6 @@ RAW_FIELD_MARKERS = (
     "browser_context",
 )
 
-EXECUTABLE_FENCE_LANGUAGES = {"", "bash", "console", "sh", "shell", "sql", "zsh"}
-FENCED_CODE_BLOCK = re.compile(r"```(?P<language>[^\n`]*)\n(?P<body>.*?)```", re.DOTALL)
-
-
 def section_between(text: str, start_heading: str, end_heading: str) -> str:
     start = text.find(start_heading)
     if start == -1:
@@ -52,18 +47,49 @@ def assert_contains(text: str, needle: str, label: str) -> None:
 
 
 def assert_excludes(text: str, needles: tuple[str, ...], label: str) -> None:
-    matches = [needle for needle in needles if needle in text]
+    normalized_text = text.casefold()
+    matches = [needle for needle in needles if needle.casefold() in normalized_text]
     if matches:
         raise AssertionError(f"{label} must not include raw support-ticket marker(s): {', '.join(matches)}.")
 
 
 def executable_code(text: str) -> str:
     blocks: list[str] = []
-    for match in FENCED_CODE_BLOCK.finditer(text):
-        language_label = match.group("language").strip().lower()
-        language = language_label.split(maxsplit=1)[0] if language_label else ""
-        if language in EXECUTABLE_FENCE_LANGUAGES:
-            blocks.append(match.group("body"))
+    active_fence_char: str | None = None
+    active_fence_length = 0
+    active_lines: list[str] = []
+
+    for line in text.splitlines():
+        stripped = line.lstrip(" ")
+        indent = len(line) - len(stripped)
+        if active_fence_char is None:
+            if indent > 3 or not stripped or stripped[0] not in {"`", "~"}:
+                continue
+            fence_char = stripped[0]
+            fence_length = len(stripped) - len(stripped.lstrip(fence_char))
+            if fence_length >= 3:
+                active_fence_char = fence_char
+                active_fence_length = fence_length
+                active_lines = []
+            continue
+
+        closing = line.lstrip(" ")
+        closing_indent = len(line) - len(closing)
+        closing_length = len(closing) - len(closing.lstrip(active_fence_char))
+        if (
+            closing_indent <= 3
+            and closing_length >= active_fence_length
+            and not closing[closing_length:].strip()
+        ):
+            blocks.append("\n".join(active_lines))
+            active_fence_char = None
+            active_fence_length = 0
+            active_lines = []
+            continue
+        active_lines.append(line)
+
+    if active_fence_char is not None:
+        blocks.append("\n".join(active_lines))
     return "\n".join(blocks)
 
 
