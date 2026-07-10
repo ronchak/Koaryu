@@ -16,9 +16,9 @@ DECLARE
     v_lead_b UUID := gen_random_uuid();
     v_support_ticket_a UUID := gen_random_uuid();
     v_support_ticket_b UUID := gen_random_uuid();
-    v_visible_count INTEGER;
+    v_own_tenant_count INTEGER;
     v_cross_tenant_count INTEGER;
-    v_mutation_blocked BOOLEAN;
+    v_cross_tenant_updates INTEGER := 0;
 BEGIN
     INSERT INTO auth.users (
         id,
@@ -121,12 +121,25 @@ BEGIN
     PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
     EXECUTE 'SET LOCAL ROLE authenticated';
 
-    SELECT COUNT(*) INTO v_visible_count
-    FROM public.studios
-    WHERE id = v_studio_a;
+    SELECT COUNT(*) INTO v_own_tenant_count
+    FROM (
+        SELECT id FROM public.studios WHERE id = v_studio_a
+        UNION ALL
+        SELECT id FROM public.staff_roles WHERE studio_id = v_studio_a
+        UNION ALL
+        SELECT id FROM public.programs WHERE id = v_program_a
+        UNION ALL
+        SELECT id FROM public.students WHERE id = v_student_a
+        UNION ALL
+        SELECT id FROM public.guardians WHERE id = v_guardian_a
+        UNION ALL
+        SELECT id FROM public.leads WHERE id = v_lead_a
+        UNION ALL
+        SELECT id FROM public.support_tickets WHERE id = v_support_ticket_a
+    ) AS visible_rows;
 
-    IF v_visible_count <> 1 THEN
-        RAISE EXCEPTION 'Authenticated owner A cannot read their own studio through RLS.';
+    IF v_own_tenant_count <> 7 THEN
+        RAISE EXCEPTION 'Authenticated owner A can read only % of 7 own-tenant private rows.', v_own_tenant_count;
     END IF;
 
     SELECT COUNT(*) INTO v_cross_tenant_count
@@ -150,23 +163,22 @@ BEGIN
         RAISE EXCEPTION 'Authenticated owner A can read % cross-tenant private row(s).', v_cross_tenant_count;
     END IF;
 
-    v_mutation_blocked := false;
     BEGIN
         UPDATE public.students
         SET legal_first_name = 'Cross Tenant Mutation'
         WHERE id = v_student_b;
-        v_mutation_blocked := true;
+        GET DIAGNOSTICS v_cross_tenant_updates = ROW_COUNT;
     EXCEPTION
         WHEN insufficient_privilege THEN
-            v_mutation_blocked := true;
+            v_cross_tenant_updates := 0;
     END;
 
     EXECUTE 'RESET ROLE';
     PERFORM set_config('request.jwt.claim.sub', '', true);
     PERFORM set_config('request.jwt.claim.role', '', true);
 
-    IF NOT v_mutation_blocked THEN
-        RAISE EXCEPTION 'Cross-tenant student update did not complete or fail closed.';
+    IF v_cross_tenant_updates <> 0 THEN
+        RAISE EXCEPTION 'Authenticated owner A updated % cross-tenant student row(s).', v_cross_tenant_updates;
     END IF;
 
     IF EXISTS (
