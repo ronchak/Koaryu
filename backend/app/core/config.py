@@ -24,6 +24,7 @@ PLACEHOLDER_VALUES = {
     "long-random-secret",
     "long-random-secret-for-support-ticket-triage",
     "long-random-secret-for-the-deletion-cron",
+    "long-random-secret-for-the-deletion-worker",
     "placeholder-key",
     "placeholder-secret",
     "price_core",
