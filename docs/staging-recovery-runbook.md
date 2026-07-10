@@ -44,6 +44,11 @@ set +x
 : "${PRODUCTION_REF:?set the production Supabase project ref}"
 : "${EXPECTED_STAGING_FRONTEND_ORIGIN:?set the dedicated staging frontend origin}"
 : "${EXPECTED_STAGING_BACKEND_API:?set the dedicated staging backend /api/v1 URL}"
+: "${NEXT_PUBLIC_SITE_URL:?set the configured frontend site URL}"
+: "${FRONTEND_URL:?set the backend CORS frontend URL}"
+: "${NEXT_PUBLIC_API_URL:?set the configured public backend /api/v1 URL}"
+: "${BACKEND_API_URL:?set the server-side backend /api/v1 URL}"
+: "${NEXT_PUBLIC_SUPABASE_URL:?set the configured public Supabase URL}"
 
 normalize_url() {
   local value="$1"
