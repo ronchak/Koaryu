@@ -122,6 +122,16 @@ BEGIN
         v_owner
     );
 
+    IF NOT EXISTS (
+        SELECT 1
+          FROM public.class_templates
+         WHERE id = v_template
+           AND is_active = false
+           AND end_date = start_date
+    ) THEN
+        RAISE EXCEPTION 'First-occurrence series deletion did not close the template safely.';
+    END IF;
+
     SELECT public.materialize_recurring_class_sessions(
         v_studio,
         DATE '2026-07-06',
