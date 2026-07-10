@@ -2,13 +2,18 @@ import { useCallback, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "@/lib/api";
 import {
+  beginScheduleMutationState,
   compareSessions,
+  finishScheduleMutationState,
   getPreviewTemplateSessionDates,
+  isScheduleReadCurrent,
+  shouldReconcileSchedule,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
   normalizeAttendanceRecords,
   toAttendanceCountDelta,
   updateSessionAttendanceCount,
+  type ScheduleCoordinatorState,
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import { localId } from "@/lib/store-storage";
@@ -31,6 +36,8 @@ interface UseStoreScheduleActionsOptions {
   persistAttendance: (next: AttendanceRecord[]) => void;
   persistSessions: (next: ClassSession[]) => void;
   persistTemplates: (next: ClassTemplate[]) => void;
+  reconcileSchedule: () => Promise<void>;
+  scheduleCoordinatorRef: StoreRef<ScheduleCoordinatorState>;
   sessionsRef: StoreRef<ClassSession[]>;
   setAttendance: Dispatch<SetStateAction<AttendanceRecord[]>>;
   setSessions: Dispatch<SetStateAction<ClassSession[]>>;
@@ -45,12 +52,45 @@ export function useStoreScheduleActions({
   persistAttendance,
   persistSessions,
   persistTemplates,
+  reconcileSchedule,
+  scheduleCoordinatorRef,
   sessionsRef,
   setAttendance,
   setSessions,
   setTemplates,
   templatesRef,
 }: UseStoreScheduleActionsOptions) {
+  const beginScheduleMutation = useCallback(() => {
+    const request = beginLiveAuthRequest();
+    const generation = scheduleCoordinatorRef.current.generation;
+    scheduleCoordinatorRef.current = beginScheduleMutationState(scheduleCoordinatorRef.current);
+    let finished = false;
+
+    return {
+      request,
+      isCurrent: () => request.isCurrent()
+        && scheduleCoordinatorRef.current.generation === generation,
+      finish: async () => {
+        if (finished) {
+          return;
+        }
+        finished = true;
+        const beforeFinish = scheduleCoordinatorRef.current;
+        scheduleCoordinatorRef.current = finishScheduleMutationState(beforeFinish, generation);
+        if (
+          beforeFinish.generation === generation
+          && shouldReconcileSchedule(scheduleCoordinatorRef.current)
+        ) {
+          try {
+            await reconcileSchedule();
+          } catch (error) {
+            console.error("Failed to reconcile schedule after a mutation", error);
+          }
+        }
+      },
+    };
+  }, [beginLiveAuthRequest, reconcileSchedule, scheduleCoordinatorRef]);
+
   const refreshScheduleRange = useCallback(async (
     startDate: string,
     endDate: string
@@ -59,56 +99,97 @@ export function useStoreScheduleActions({
       return sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate);
     }
 
-    const request = beginLiveAuthRequest();
-    const rangeSessions = await api.get<ClassSession[]>(
-      `/schedule/sessions?start_date=${startDate}&end_date=${endDate}`,
-      request.token
-    );
-    if (!request.isCurrent()) {
-      return rangeSessions;
-    }
-
-    const replacedSessionIds = Array.from(
-      new Set([
-        ...sessionsRef.current
-          .filter((session) => session.date >= startDate && session.date <= endDate)
-          .map((session) => session.id),
-        ...rangeSessions.map((session) => session.id),
-      ])
-    );
-
-    setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
-    const attendanceQuery = rangeSessions.length >= SCHEDULE_ATTENDANCE_BULK_THRESHOLD
-      ? `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`
-      : `/schedule/attendance?${rangeSessions
-          .map((sessionItem) => `session_ids=${encodeURIComponent(sessionItem.id)}`)
-          .join("&")}`;
-
-    if (rangeSessions.length > 0) {
-      void api
-        .get<AttendanceRecord[]>(attendanceQuery, request.token)
-        .then((records) => {
-          if (!request.isCurrent()) {
-            return;
-          }
-          setAttendance((current) =>
-            mergeAttendanceForSessions(
-              current,
-              normalizeAttendanceRecords(records),
-              replacedSessionIds
-            )
-          );
-        })
-        .catch((error) => {
-          console.error("Failed to refresh schedule attendance", error);
-        });
-    } else {
-      setAttendance((current) =>
-        mergeAttendanceForSessions(current, [], replacedSessionIds)
+    try {
+      const request = beginLiveAuthRequest();
+      const coordinator = scheduleCoordinatorRef.current;
+      const requestSequence = coordinator.rangeRequestSequence + 1;
+      const attendanceRequestSequence = coordinator.attendanceRequestSequence + 1;
+      scheduleCoordinatorRef.current = {
+        ...coordinator,
+        attendanceRequestSequence,
+        rangeRequestSequence: requestSequence,
+      };
+      const dataRevision = coordinator.dataRevision;
+      const generation = coordinator.generation;
+      const isCurrentRequest = () => isScheduleReadCurrent({
+        authCurrent: request.isCurrent(),
+        currentGeneration: scheduleCoordinatorRef.current.generation,
+        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
+        currentRequestSequence: scheduleCoordinatorRef.current.rangeRequestSequence,
+        dataRevisionAtStart: dataRevision,
+        generationAtStart: generation,
+        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
+        requestSequenceAtStart: requestSequence,
+      });
+      const attendanceIsCurrent = () => isScheduleReadCurrent({
+        authCurrent: request.isCurrent(),
+        currentGeneration: scheduleCoordinatorRef.current.generation,
+        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
+        currentRequestSequence: scheduleCoordinatorRef.current.attendanceRequestSequence,
+        dataRevisionAtStart: dataRevision,
+        generationAtStart: generation,
+        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
+        requestSequenceAtStart: attendanceRequestSequence,
+      });
+      const rangeSessions = await api.post<ClassSession[]>(
+        `/schedule/sessions/materialize?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
+        {},
+        request.token
       );
+      const attendanceQuery = rangeSessions.length >= SCHEDULE_ATTENDANCE_BULK_THRESHOLD
+        ? `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`
+        : `/schedule/attendance?${rangeSessions
+            .map((sessionItem) => `session_ids=${encodeURIComponent(sessionItem.id)}`)
+            .join("&")}`;
+
+      let attendanceRecords: AttendanceRecord[] | null = [];
+      if (rangeSessions.length > 0) {
+        try {
+          attendanceRecords = normalizeAttendanceRecords(
+            await api.get<AttendanceRecord[]>(attendanceQuery, request.token)
+          );
+        } catch (error) {
+          attendanceRecords = null;
+          console.error("Failed to refresh schedule attendance", error);
+        }
+      }
+
+      if (!isCurrentRequest()) {
+        return rangeSessions;
+      }
+
+      const replacedSessionIds = Array.from(
+        new Set([
+          ...sessionsRef.current
+            .filter((session) => session.date >= startDate && session.date <= endDate)
+            .map((session) => session.id),
+          ...rangeSessions.map((session) => session.id),
+        ])
+      );
+
+      setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
+      if (attendanceRecords !== null && attendanceIsCurrent()) {
+        setAttendance((current) =>
+          mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
+        );
+      }
+      return rangeSessions;
+    } finally {
+      if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
+        void reconcileSchedule().catch((error) => {
+          console.error("Failed to reconcile schedule after a range refresh", error);
+        });
+      }
     }
-    return rangeSessions;
-  }, [beginLiveAuthRequest, isPreviewMode, sessionsRef, setAttendance, setSessions]);
+  }, [
+    beginLiveAuthRequest,
+    isPreviewMode,
+    reconcileSchedule,
+    scheduleCoordinatorRef,
+    sessionsRef,
+    setAttendance,
+    setSessions,
+  ]);
 
   const refreshSessionAttendance = useCallback(async (
     sessionId: string
@@ -117,18 +198,50 @@ export function useStoreScheduleActions({
       return attendanceRef.current.filter((record) => record.session_id === sessionId);
     }
 
-    const request = beginLiveAuthRequest();
-    const records = await api.get<AttendanceRecord[]>(
-      `/schedule/attendance?session_ids=${encodeURIComponent(sessionId)}`,
-      request.token
-    );
-    const normalizedRecords = normalizeAttendanceRecords(records);
-    if (!request.isCurrent()) {
+    try {
+      const request = beginLiveAuthRequest();
+      const coordinator = scheduleCoordinatorRef.current;
+      const requestSequence = coordinator.attendanceRequestSequence + 1;
+      scheduleCoordinatorRef.current = {
+        ...coordinator,
+        attendanceRequestSequence: requestSequence,
+      };
+      const dataRevision = coordinator.dataRevision;
+      const generation = coordinator.generation;
+      const records = await api.get<AttendanceRecord[]>(
+        `/schedule/attendance?session_ids=${encodeURIComponent(sessionId)}`,
+        request.token
+      );
+      const normalizedRecords = normalizeAttendanceRecords(records);
+      if (!isScheduleReadCurrent({
+        authCurrent: request.isCurrent(),
+        currentGeneration: scheduleCoordinatorRef.current.generation,
+        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
+        currentRequestSequence: scheduleCoordinatorRef.current.attendanceRequestSequence,
+        dataRevisionAtStart: dataRevision,
+        generationAtStart: generation,
+        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
+        requestSequenceAtStart: requestSequence,
+      })) {
+        return normalizedRecords;
+      }
+      setAttendance((current) => mergeAttendanceForSessions(current, normalizedRecords, [sessionId]));
       return normalizedRecords;
+    } finally {
+      if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
+        void reconcileSchedule().catch((error) => {
+          console.error("Failed to reconcile schedule after an attendance refresh", error);
+        });
+      }
     }
-    setAttendance((current) => mergeAttendanceForSessions(current, normalizedRecords, [sessionId]));
-    return normalizedRecords;
-  }, [attendanceRef, beginLiveAuthRequest, isPreviewMode, setAttendance]);
+  }, [
+    attendanceRef,
+    beginLiveAuthRequest,
+    isPreviewMode,
+    reconcileSchedule,
+    scheduleCoordinatorRef,
+    setAttendance,
+  ]);
 
   const addTemplate = useCallback(async (data: ClassTemplateCreate): Promise<ClassTemplate> => {
     if (isPreviewMode) {
@@ -179,22 +292,25 @@ export function useStoreScheduleActions({
       return newTemplate;
     }
 
-    const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<ClassTemplate>("/schedule/templates", data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
+    const mutation = beginScheduleMutation();
+    try {
+      const result = await api.post<ClassTemplate>("/schedule/templates", data, mutation.request.token);
+      if (mutation.isCurrent()) {
+        setTemplates((current) =>
+          [...current, result].sort((left, right) => {
+            const dayCompare = left.day_of_week - right.day_of_week;
+            if (dayCompare !== 0) {
+              return dayCompare;
+            }
+            return left.start_time.localeCompare(right.start_time);
+          })
+        );
+      }
       return result;
+    } finally {
+      await mutation.finish();
     }
-    setTemplates((current) =>
-      [...current, result].sort((left, right) => {
-        const dayCompare = left.day_of_week - right.day_of_week;
-        if (dayCompare !== 0) {
-          return dayCompare;
-        }
-        return left.start_time.localeCompare(right.start_time);
-      })
-    );
-    return result;
-  }, [beginLiveAuthRequest, isPreviewMode, persistSessions, persistTemplates, sessionsRef, setTemplates, templatesRef]);
+  }, [beginScheduleMutation, isPreviewMode, persistSessions, persistTemplates, sessionsRef, setTemplates, templatesRef]);
 
   const addSession = useCallback(async (data: ClassSessionCreate) => {
     if (isPreviewMode) {
@@ -214,13 +330,16 @@ export function useStoreScheduleActions({
       return;
     }
 
-    const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<ClassSession>("/schedule/sessions", data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return;
+    const mutation = beginScheduleMutation();
+    try {
+      const result = await api.post<ClassSession>("/schedule/sessions", data, mutation.request.token);
+      if (mutation.isCurrent()) {
+        setSessions((current) => [...current, result].sort(compareSessions));
+      }
+    } finally {
+      await mutation.finish();
     }
-    setSessions((current) => [...current, result].sort(compareSessions));
-  }, [beginLiveAuthRequest, isPreviewMode, persistSessions, sessionsRef, setSessions]);
+  }, [beginScheduleMutation, isPreviewMode, persistSessions, sessionsRef, setSessions]);
 
   const deleteSession = useCallback(async (
     sessionId: string,
@@ -260,51 +379,55 @@ export function useStoreScheduleActions({
       return;
     }
 
-    const liveRequest = beginLiveAuthRequest();
+    const mutation = beginScheduleMutation();
     const query = scope === "future_series" ? "?scope=future_series" : "";
-    await api.delete(`/schedule/sessions/${sessionId}${query}`, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
+    try {
+      await api.delete(`/schedule/sessions/${sessionId}${query}`, mutation.request.token);
+      if (!mutation.isCurrent()) {
+        return;
+      }
 
-    if (scope === "future_series" && sessionToDelete.template_id) {
-      const templateId = sessionToDelete.template_id;
-      const removedSessionIds = new Set(
-        sessionsRef.current
-          .filter(
-            (session) =>
-              session.template_id === templateId && session.date >= sessionToDelete.date
+      if (scope === "future_series" && sessionToDelete.template_id) {
+        const templateId = sessionToDelete.template_id;
+        const removedSessionIds = new Set(
+          sessionsRef.current
+            .filter(
+              (session) =>
+                session.template_id === templateId && session.date >= sessionToDelete.date
+            )
+            .map((session) => session.id)
+        );
+        setTemplates((current) =>
+          current.map((template) =>
+            template.id === templateId
+              ? {
+                  ...template,
+                  is_active: false,
+                  end_date: sessionToDelete.date,
+                }
+              : template
           )
-          .map((session) => session.id)
-      );
-      setTemplates((current) =>
-        current.map((template) =>
-          template.id === templateId
-            ? {
-                ...template,
-                is_active: false,
-                end_date: sessionToDelete.date,
-              }
-            : template
-        )
-      );
-      setSessions((current) =>
-        current.filter(
-          (session) =>
-            session.template_id !== templateId || session.date < sessionToDelete.date
-        )
-      );
-      setAttendance((current) =>
-        current.filter((record) => !removedSessionIds.has(record.session_id))
-      );
-      return;
-    }
+        );
+        setSessions((current) =>
+          current.filter(
+            (session) =>
+              session.template_id !== templateId || session.date < sessionToDelete.date
+          )
+        );
+        setAttendance((current) =>
+          current.filter((record) => !removedSessionIds.has(record.session_id))
+        );
+        return;
+      }
 
-    setSessions((current) => current.filter((session) => session.id !== sessionId));
-    setAttendance((current) => current.filter((record) => record.session_id !== sessionId));
+      setSessions((current) => current.filter((session) => session.id !== sessionId));
+      setAttendance((current) => current.filter((record) => record.session_id !== sessionId));
+    } finally {
+      await mutation.finish();
+    }
   }, [
     attendanceRef,
-    beginLiveAuthRequest,
+    beginScheduleMutation,
     isPreviewMode,
     persistAttendance,
     persistSessions,
@@ -374,7 +497,8 @@ export function useStoreScheduleActions({
       return;
     }
 
-    const liveRequest = beginLiveAuthRequest();
+    const mutation = beginScheduleMutation();
+    const liveRequest = mutation.request;
     const cycle: AttendanceStatus[] = ["present", "late", "absent"];
     const existing = attendanceRef.current.find(
       (record) => record.session_id === sessionId && record.student_id === studentId
@@ -436,7 +560,7 @@ export function useStoreScheduleActions({
         liveRequest.token
       );
 
-      if (!liveRequest.isCurrent()) {
+      if (!mutation.isCurrent()) {
         return;
       }
       setAttendance((current) => {
@@ -450,7 +574,7 @@ export function useStoreScheduleActions({
         return next;
       });
     } catch (error) {
-      if (liveRequest.isCurrent()) {
+      if (mutation.isCurrent()) {
         setAttendance((current) => {
           const next = current.filter(
             (record) => !(record.session_id === sessionId && record.student_id === studentId)
@@ -469,10 +593,12 @@ export function useStoreScheduleActions({
         );
       }
       throw error;
+    } finally {
+      await mutation.finish();
     }
   }, [
     attendanceRef,
-    beginLiveAuthRequest,
+    beginScheduleMutation,
     isPreviewMode,
     persistAttendance,
     setAttendance,
