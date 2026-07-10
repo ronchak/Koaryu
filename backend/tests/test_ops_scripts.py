@@ -101,13 +101,159 @@ SELECT REQUESTER_EMAIL, DETAILS FROM PUBLIC.SUPPORT_TICKETS;
     assert any("requester_email" in failure for failure in failures)
 
 
+def test_support_privacy_audit_rejects_raw_ticket_sql_in_indented_code():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+
+    for prefix in ("    ", "\t", " \t", "  \t", "   \t"):
+        unsafe_block = f"\n{prefix}SELECT requester_email, details FROM public.support_tickets;\n"
+        unsafe_runbook = runbook.replace("## Verification", f"{unsafe_block}\n## Verification")
+        failures = audit["audit_texts"](unsafe_runbook, helper)
+
+        assert any("public.support_tickets" in failure for failure in failures), repr(prefix)
+        assert any("requester_email" in failure for failure in failures), repr(prefix)
+
+
+def test_support_privacy_audit_ignores_fenced_heading_when_finding_section_end():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_block = """
+```text
+## Verification
+```
+```sql
+SELECT requester_email, details FROM public.support_tickets;
+```
+"""
+    runbook = runbook.replace("## Verification", f"{unsafe_block}\n## Verification")
+
+    failures = audit["audit_texts"](runbook, helper)
+
+    assert any("Ambiguous heading" in failure for failure in failures)
+
+
+def test_support_privacy_audit_rejects_raw_ticket_sql_in_blockquoted_code():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_blocks = (
+        """
+> > ```sql
+> > SELECT requester_email, details FROM public.support_tickets;
+> > ```
+""",
+        "\n> >     SELECT requester_email, details FROM public.support_tickets;\n",
+    )
+
+    for unsafe_block in unsafe_blocks:
+        unsafe_runbook = runbook.replace("## Verification", f"{unsafe_block}\n## Verification")
+        failures = audit["audit_texts"](unsafe_runbook, helper)
+
+        assert failures, unsafe_block
+
+
+def test_support_privacy_audit_rejects_raw_references_in_inline_and_html_code():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_blocks = (
+        "\nRun `SELECT requester_email, details FROM public.support_tickets;` nightly.\n",
+        "\n<pre><code>SELECT requester_email, details FROM public.support_tickets;</code></pre>\n",
+        "\n<pre><code>SELECT details FROM public.support_<em>tickets</em>;</code></pre>\n",
+        "\n<pre><code>SELECT details FROM public.support&#95;tickets;</code></pre>\n",
+        "\n<https://koaryu.onrender.com/api/v1/internal/support/tickets>\n",
+        "\n<a href=\"/api/v1/internal/support/tickets\">raw queue</a>\n",
+        "\nQuery public.support_**tickets** and include requester_*email*.\n",
+        "\nQuery public.[support_](https://example.invalid)tickets directly.\n",
+        "\nQuery public.[support_](https://example.invalid/a_(b))tickets directly.\n",
+        "\nQuery public.support\\_tickets directly.\n",
+        "\nQuery public.support_<span title=\">\">tickets</span> directly.\n",
+        """
+```text
+> ```
+SELECT requester_email, details FROM public.support_tickets;
+```
+""",
+    )
+
+    for unsafe_block in unsafe_blocks:
+        unsafe_runbook = runbook.replace("## Verification", f"{unsafe_block}\n## Verification")
+        failures = audit["audit_texts"](unsafe_runbook, helper)
+
+        assert failures, unsafe_block
+
+
+def test_support_privacy_audit_rejects_ambiguous_heading_in_html_code():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_block = """
+<pre>
+## Verification
+</pre>
+<pre><code>SELECT requester_email, details FROM public.support_tickets;</code></pre>
+"""
+    runbook = runbook.replace("## Verification", f"{unsafe_block}\n## Verification")
+
+    failures = audit["audit_texts"](runbook, helper)
+
+    assert any("Ambiguous heading" in failure for failure in failures)
+
+
+def test_support_privacy_audit_does_not_exempt_warning_prefixed_references():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_lines = (
+        "Never mind: use /api/v1/internal/support/tickets directly.\n\n",
+        "Do not wait: call support_triage_list_tickets now.\n\n",
+        "Never query public.support_tickets unless the digest is unavailable.\n\n",
+    )
+
+    for unsafe_line in unsafe_lines:
+        unsafe_runbook = runbook.replace("## Verification", f"{unsafe_line}## Verification")
+        failures = audit["audit_texts"](unsafe_runbook, helper)
+
+        assert failures
+
+
+def test_support_privacy_audit_rejects_field_only_inline_and_html_commands():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_blocks = (
+        "Run `SELECT requester_email, details FROM private_queue_view` nightly.\n\n",
+        "<pre><code>read page_url and user_agent from private_queue_view</code></pre>\n\n",
+    )
+
+    for unsafe_block in unsafe_blocks:
+        unsafe_runbook = runbook.replace("## Verification", f"{unsafe_block}## Verification")
+        failures = audit["audit_texts"](unsafe_runbook, helper)
+
+        assert failures
+
+
+def test_support_privacy_audit_rejects_continuation_split_helper_reference():
+    audit = _support_privacy_audit_functions()
+    runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
+    helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
+    unsafe_helper = helper + '\nprintf "%s" "/api/v1/internal/support/\\\ntickets"\n'
+
+    failures = audit["audit_texts"](runbook, unsafe_helper)
+
+    assert any("/api/v1/internal/support/tickets" in failure for failure in failures)
+
+
 def test_support_privacy_audit_allows_privacy_warnings_in_explanatory_prose():
     audit = _support_privacy_audit_functions()
     runbook = (ROOT_DIR / "docs" / "support-triage.md").read_text(encoding="utf-8")
     helper = (ROOT_DIR / "scripts" / "support-triage-digest.sh").read_text(encoding="utf-8")
     warning = (
-        "Never query public.support_tickets or public.support_ticket_events for "
-        "requester_email, details, page_url, user_agent, or browser_context in this automation.\n\n"
+        "Never query the raw support tables or request full requester addresses, "
+        "ticket descriptions, page locations, browser signatures, or client context.\n\n"
+        "> Never bypass the sanitized digest to read private ticket content.\n\n"
     )
     runbook = runbook.replace("## Verification", f"{warning}## Verification")
 
