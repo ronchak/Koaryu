@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.schemas.billing import ExternalPaymentCreate
+from app.services.billing_payments import build_external_payment_request_hash
 from app.services.demo_billing_seed import DemoBillingSeeder
 from app.services.demo_seed_common import DEMO_CONNECT_ACCOUNT_ID, demo_seed_id
 from tests.fakes.supabase import TableBackedSupabase
@@ -65,3 +67,20 @@ def test_demo_billing_seed_writes_coherent_fixture_rows():
     external_payment = next(row for row in supabase.tables["billing_payments"] if row["external_method"] == "Zelle")
     assert external_payment["stripe_account_id"] is None
     assert external_payment["status"] == "externally_recorded"
+    assert external_payment["idempotency_key"].startswith("demo-external-payment:")
+    expected_request_hash = build_external_payment_request_hash(
+        ExternalPaymentCreate(
+            amount_cents=external_payment["amount_cents"],
+            payer_id=external_payment["payer_id"],
+            invoice_id=external_payment["invoice_id"],
+            external_method=external_payment["external_method"],
+            note=external_payment["note"],
+        ),
+        effective_payer_id=external_payment["payer_id"],
+    )
+    assert external_payment["request_hash"] == expected_request_hash
+    assert len(external_payment["request_hash"]) == 64
+
+    stripe_payment = next(row for row in supabase.tables["billing_payments"] if row["external_method"] is None)
+    assert stripe_payment["idempotency_key"] is None
+    assert stripe_payment["request_hash"] is None

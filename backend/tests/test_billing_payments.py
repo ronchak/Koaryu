@@ -11,6 +11,7 @@ from app.services.billing_payments import (
     EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL,
     EXTERNAL_PAYMENT_OVERPAY_DETAIL,
     BillingPaymentManager,
+    build_external_payment_request_hash,
 )
 from app.services.platform_billing_helpers import MAX_IDEMPOTENCY_KEY_LENGTH, build_idempotency_key
 from tests.fakes.supabase import RpcBackedSupabase
@@ -164,6 +165,18 @@ class _FakeStripeService:
 
 
 class BillingPaymentManagerTests(unittest.TestCase):
+    def test_external_payment_request_hash_honors_empty_effective_payer_id(self):
+        payload = ExternalPaymentCreate(
+            payer_id="request-payer",
+            amount_cents=500,
+            external_method="cash",
+        )
+
+        request_payer_hash = build_external_payment_request_hash(payload, effective_payer_id=None)
+        empty_effective_payer_hash = build_external_payment_request_hash(payload, effective_payer_id="")
+
+        self.assertNotEqual(empty_effective_payer_hash, request_payer_hash)
+
     def test_external_payment_updates_invoice_and_recomputes_payer_balance(self):
         _FakeStripeService.reset()
         facade = _BillingFacade({

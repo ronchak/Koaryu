@@ -28,6 +28,18 @@ EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL = "Idempotency-Key is required for 
 EXTERNAL_PAYMENT_OVERPAY_DETAIL = "External payment exceeds the invoice remaining balance."
 
 
+def build_external_payment_request_hash(
+    data: ExternalPaymentCreate,
+    *,
+    effective_payer_id: str | None,
+) -> str:
+    payload = data.model_dump(mode="json", exclude_none=True)
+    if effective_payer_id is not None:
+        payload["payer_id"] = effective_payer_id
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 class BillingPaymentManager:
     def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
         self.billing_service = billing_service
@@ -149,11 +161,7 @@ class BillingPaymentManager:
             raise HTTPException(status_code=409, detail=EXTERNAL_PAYMENT_OVERPAY_DETAIL)
 
     def _external_payment_request_hash(self, data: ExternalPaymentCreate, *, effective_payer_id: str | None) -> str:
-        payload = data.model_dump(mode="json", exclude_none=True)
-        if effective_payer_id:
-            payload["payer_id"] = effective_payer_id
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return build_external_payment_request_hash(data, effective_payer_id=effective_payer_id)
 
     def _claim_external_payment_request(
         self,

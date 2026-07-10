@@ -6,6 +6,8 @@ from typing import Any
 from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
+from app.schemas.billing import ExternalPaymentCreate
+from app.services.billing_payments import build_external_payment_request_hash
 from app.services.demo_seed_common import (
     DEMO_CONNECT_ACCOUNT_ID,
     OPTIONAL_SCHEMA_ERROR_CODES,
@@ -357,9 +359,23 @@ class DemoBillingSeeder:
         ]
         payment_rows = []
         for key, payer_key, invoice_key, payment_status, amount, method, external_method, note, offset in payment_specs:
+            payment_id = self._id(studio_id, f"billing-payment:{key}")
+            external_request_key = f"demo-external-payment:{payment_id}" if external_method else None
+            external_request_hash = None
+            if external_method:
+                external_request_hash = build_external_payment_request_hash(
+                    ExternalPaymentCreate(
+                        amount_cents=amount,
+                        payer_id=payer_ids[payer_key],
+                        invoice_id=invoice_ids[invoice_key],
+                        external_method=external_method,
+                        note=note,
+                    ),
+                    effective_payer_id=payer_ids[payer_key],
+                )
             payment_rows.append(
                 {
-                    "id": self._id(studio_id, f"billing-payment:{key}"),
+                    "id": payment_id,
                     "studio_id": studio_id,
                     "payer_id": payer_ids[payer_key],
                     "invoice_id": invoice_ids[invoice_key],
@@ -377,6 +393,8 @@ class DemoBillingSeeder:
                     "payment_method_type": method,
                     "external_method": external_method,
                     "note": note,
+                    "idempotency_key": external_request_key,
+                    "request_hash": external_request_hash,
                     "processed_at": self._timestamp(offset, 14),
                     "metadata": {"demo": True},
                     "created_at": self._timestamp(offset, 14),
