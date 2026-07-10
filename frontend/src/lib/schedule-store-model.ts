@@ -1,5 +1,164 @@
 import type { AttendanceRecord, AttendanceStatus, ClassSession, ClassTemplate } from "@/types";
 
+type ScheduleReadFreshness = {
+  authCurrent: boolean;
+  currentGeneration: number;
+  currentDataRevision: number;
+  currentRequestSequence: number;
+  dataRevisionAtStart: number;
+  generationAtStart: number;
+  mutationsInFlight: number;
+  requestSequenceAtStart: number;
+};
+
+export type ScheduleCoordinatorState = {
+  attendanceRequestSequence: number;
+  dataRevision: number;
+  generation: number;
+  hasAuthoritativeSnapshot: boolean;
+  mutationsInFlight: number;
+  rangeRequestSequence: number;
+};
+
+export function createScheduleCoordinatorState(): ScheduleCoordinatorState {
+  return {
+    attendanceRequestSequence: 0,
+    dataRevision: 0,
+    generation: 0,
+    hasAuthoritativeSnapshot: false,
+    mutationsInFlight: 0,
+    rangeRequestSequence: 0,
+  };
+}
+
+export function resetScheduleCoordinatorState(
+  current: ScheduleCoordinatorState,
+  hasAuthoritativeSnapshot = false
+): ScheduleCoordinatorState {
+  return {
+    attendanceRequestSequence: current.attendanceRequestSequence + 1,
+    dataRevision: current.dataRevision + 1,
+    generation: current.generation + 1,
+    hasAuthoritativeSnapshot,
+    mutationsInFlight: 0,
+    rangeRequestSequence: current.rangeRequestSequence + 1,
+  };
+}
+
+export function beginScheduleMutationState(
+  current: ScheduleCoordinatorState
+): ScheduleCoordinatorState {
+  return {
+    ...current,
+    dataRevision: current.dataRevision + 1,
+    mutationsInFlight: current.mutationsInFlight + 1,
+  };
+}
+
+export function finishScheduleMutationState(
+  current: ScheduleCoordinatorState,
+  generationAtStart: number
+): ScheduleCoordinatorState {
+  if (current.generation !== generationAtStart) {
+    return current;
+  }
+  return {
+    ...current,
+    dataRevision: current.dataRevision + 1,
+    mutationsInFlight: Math.max(0, current.mutationsInFlight - 1),
+  };
+}
+
+export function markScheduleCoordinatorSnapshotState(
+  current: ScheduleCoordinatorState
+): ScheduleCoordinatorState {
+  return {
+    ...current,
+    dataRevision: current.dataRevision + 1,
+    hasAuthoritativeSnapshot: true,
+  };
+}
+
+export function shouldReconcileSchedule(current: ScheduleCoordinatorState) {
+  return current.mutationsInFlight === 0 && !current.hasAuthoritativeSnapshot;
+}
+
+export function createScheduleReconciliationQueue() {
+  let inFlight: Promise<void> | null = null;
+  let replayRequested = false;
+  let latestAttempt: (() => Promise<void>) | null = null;
+  let latestShouldRun: (() => boolean) | null = null;
+
+  return function requestScheduleReconciliation(
+    attempt: () => Promise<void>,
+    shouldRun: () => boolean
+  ): Promise<void> {
+    latestAttempt = attempt;
+    latestShouldRun = shouldRun;
+
+    if (inFlight) {
+      replayRequested = true;
+      return inFlight;
+    }
+
+    const run = async () => {
+      while (true) {
+        const replayAlreadyRequested = replayRequested;
+        replayRequested = false;
+        const currentAttempt = latestAttempt;
+        const currentShouldRun = latestShouldRun;
+        if (!currentAttempt || !currentShouldRun?.()) {
+          return;
+        }
+        let attemptError: unknown;
+        let attemptFailed = false;
+        try {
+          await currentAttempt();
+        } catch (error) {
+          attemptError = error;
+          attemptFailed = true;
+        }
+
+        const shouldReplay = replayRequested || replayAlreadyRequested;
+        if (shouldReplay && latestShouldRun?.()) {
+          continue;
+        }
+        if (attemptFailed) {
+          throw attemptError;
+        }
+        return;
+      }
+    };
+
+    const runPromise = Promise.resolve().then(run);
+    inFlight = runPromise;
+    const clearInFlight = () => {
+      if (inFlight === runPromise) {
+        inFlight = null;
+      }
+    };
+    void runPromise.then(clearInFlight, clearInFlight);
+    return runPromise;
+  };
+}
+
+export function isScheduleReadCurrent({
+  authCurrent,
+  currentGeneration,
+  currentDataRevision,
+  currentRequestSequence,
+  dataRevisionAtStart,
+  generationAtStart,
+  mutationsInFlight,
+  requestSequenceAtStart,
+}: ScheduleReadFreshness) {
+  return authCurrent
+    && currentGeneration === generationAtStart
+    && mutationsInFlight === 0
+    && currentDataRevision === dataRevisionAtStart
+    && currentRequestSequence === requestSequenceAtStart;
+}
+
 function parseCalendarDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day, 12, 0, 0, 0);
