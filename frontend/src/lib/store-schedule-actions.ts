@@ -7,6 +7,8 @@ import {
   mergeAttendanceForSessions,
   mergeSessionsForRange,
   normalizeAttendanceRecords,
+  getAttendanceToggleTransition,
+  runOptimisticAttendanceToggle,
   toAttendanceCountDelta,
   updateSessionAttendanceCount,
 } from "@/lib/schedule-store-model";
@@ -322,29 +324,25 @@ export function useStoreScheduleActions({
     name: string
   ) => {
     if (isPreviewMode) {
-      const existing = attendanceRef.current.find(
-        (record) => record.session_id === sessionId && record.student_id === studentId
+      const { existing, nextStatus, previousStatus } = getAttendanceToggleTransition(
+        attendanceRef.current,
+        sessionId,
+        studentId
       );
       let next: AttendanceRecord[];
       if (existing) {
-        const cycle: AttendanceStatus[] = ["present", "late", "absent"];
-        const idx = cycle.indexOf(existing.status);
-        const previousStatus = existing.status;
-        let nextStatusForCount: AttendanceStatus | null = previousStatus;
-        if (idx === cycle.length - 1) {
+        if (!nextStatus) {
           next = attendanceRef.current.filter((record) => record !== existing);
-          nextStatusForCount = null;
         } else {
           next = attendanceRef.current.map((record) =>
-            record === existing ? { ...record, status: cycle[idx + 1] } : record
+            record === existing ? { ...record, status: nextStatus } : record
           );
-          nextStatusForCount = cycle[idx + 1];
         }
         setSessions((current) =>
           updateSessionAttendanceCount(
             current,
             sessionId,
-            toAttendanceCountDelta(previousStatus, nextStatusForCount)
+            toAttendanceCountDelta(previousStatus, nextStatus)
           )
         );
       } else {
@@ -355,7 +353,7 @@ export function useStoreScheduleActions({
             studio_id: "mock-studio",
             session_id: sessionId,
             student_id: studentId,
-            status: "present" as AttendanceStatus,
+            status: nextStatus as AttendanceStatus,
             checked_in_at: new Date().toISOString(),
             is_cross_program: false,
             counts_toward_eligibility: true,
@@ -375,101 +373,34 @@ export function useStoreScheduleActions({
     }
 
     const liveRequest = beginLiveAuthRequest();
-    const cycle: AttendanceStatus[] = ["present", "late", "absent"];
-    const existing = attendanceRef.current.find(
-      (record) => record.session_id === sessionId && record.student_id === studentId
-    );
-    const previousStatus = existing?.status ?? null;
-    const currentIndex = existing ? cycle.indexOf(existing.status) : -1;
-    const nextStatus: AttendanceStatus | null =
-      existing && currentIndex === cycle.length - 1
-        ? null
-        : cycle[(currentIndex + 1 + cycle.length) % cycle.length];
+    await runOptimisticAttendanceToggle({
+      attendance: attendanceRef.current,
+      checkedInAt: new Date().toISOString(),
+      commitAttendance: (update) => setAttendance(update),
+      commitSessionCountDelta: (delta) => {
+        setSessions((current) => updateSessionAttendanceCount(current, sessionId, delta));
+      },
+      isCurrent: liveRequest.isCurrent,
+      name,
+      optimisticId: `optimistic-${sessionId}-${studentId}`,
+      request: async (nextStatus) => {
+        if (!nextStatus) {
+          await api.delete(
+            `/schedule/attendance?session_id=${encodeURIComponent(sessionId)}&student_id=${encodeURIComponent(studentId)}`,
+            liveRequest.token
+          );
+          return null;
+        }
 
-    setAttendance((current) => {
-      const next = current.filter(
-        (record) => !(record.session_id === sessionId && record.student_id === studentId)
-      );
-      if (nextStatus) {
-        next.push(
-          existing
-            ? { ...existing, status: nextStatus }
-            : {
-                id: `optimistic-${sessionId}-${studentId}`,
-                studio_id: "",
-                session_id: sessionId,
-                student_id: studentId,
-                status: nextStatus,
-                checked_in_at: new Date().toISOString(),
-                is_cross_program: false,
-                counts_toward_eligibility: true,
-                student_name: name,
-              }
-        );
-      }
-      return next;
-    });
-    setSessions((current) =>
-      updateSessionAttendanceCount(
-        current,
-        sessionId,
-        toAttendanceCountDelta(previousStatus, nextStatus)
-      )
-    );
-
-    try {
-      if (!nextStatus) {
-        await api.delete(
-          `/schedule/attendance?session_id=${encodeURIComponent(sessionId)}&student_id=${encodeURIComponent(studentId)}`,
+        return api.post<AttendanceRecord>(
+          "/schedule/attendance",
+          { session_id: sessionId, student_id: studentId, status: nextStatus },
           liveRequest.token
         );
-        return;
-      }
-
-      const result = await api.post<AttendanceRecord>(
-        "/schedule/attendance",
-        {
-          session_id: sessionId,
-          student_id: studentId,
-          status: nextStatus,
-        },
-        liveRequest.token
-      );
-
-      if (!liveRequest.isCurrent()) {
-        return;
-      }
-      setAttendance((current) => {
-        const next = current.filter(
-          (record) => !(record.session_id === sessionId && record.student_id === studentId)
-        );
-        next.push({
-          ...result,
-          student_name: existing?.student_name || name,
-        });
-        return next;
-      });
-    } catch (error) {
-      if (liveRequest.isCurrent()) {
-        setAttendance((current) => {
-          const next = current.filter(
-            (record) => !(record.session_id === sessionId && record.student_id === studentId)
-          );
-          if (existing) {
-            next.push(existing);
-          }
-          return next;
-        });
-        setSessions((current) =>
-          updateSessionAttendanceCount(
-            current,
-            sessionId,
-            toAttendanceCountDelta(nextStatus, previousStatus)
-          )
-        );
-      }
-      throw error;
-    }
+      },
+      sessionId,
+      studentId,
+    });
   }, [
     attendanceRef,
     beginLiveAuthRequest,

@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
   getActiveScheduleStudents,
+  createAttendanceToggleQueue,
   getScheduleSessionAttendance,
   getVisibleScheduleRange,
   navigateScheduleDate,
   recurringClassOverlapsRange,
+  runSessionAttendanceRefresh,
+  type SessionAttendanceRefreshState,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
 import type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
@@ -64,7 +67,14 @@ export function useSchedulePageController({
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [studentRosterLoadError, setStudentRosterLoadError] = useState<string | null>(null);
   const [isRefreshingStudentRoster, setIsRefreshingStudentRoster] = useState(false);
-  const [pendingAttendanceId, setPendingAttendanceId] = useState<string | null>(null);
+  const [pendingAttendanceIds, setPendingAttendanceIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const [attendanceToggleQueue] = useState(() =>
+    createAttendanceToggleQueue(setPendingAttendanceIds)
+  );
+  const [sessionAttendanceRefresh, setSessionAttendanceRefresh] =
+    useState<SessionAttendanceRefreshState>({ sessionId: null, status: "idle" });
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteInFlight, setDeleteInFlight] = useState<ScheduleSessionDeleteScope | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -101,9 +111,22 @@ export function useSchedulePageController({
       return;
     }
 
-    void refreshSessionAttendance(selectedSession.id).catch((error) => {
-      console.error("Failed to load session attendance", error);
+    let current = true;
+    void runSessionAttendanceRefresh({
+      isCurrent: () => current,
+      onStateChange: setSessionAttendanceRefresh,
+      refresh: () => refreshSessionAttendance(selectedSession.id),
+      sessionId: selectedSession.id,
+    }).catch((error) => {
+      if (current) {
+        console.error("Failed to load session attendance", error);
+        setAttendanceError("Could not load attendance for this class. Please try again.");
+      }
     });
+
+    return () => {
+      current = false;
+    };
   }, [refreshSessionAttendance, selectedSession]);
 
   const activeStudents = useMemo(
@@ -170,16 +193,15 @@ export function useSchedulePageController({
   }
 
   async function handleToggleAttendance(sessionId: string, studentId: string, name: string) {
-    setAttendanceError(null);
-    setPendingAttendanceId(studentId);
-    try {
-      await toggleCheckIn(sessionId, studentId, name);
-    } catch (error) {
-      console.error("Failed to update attendance", error);
-      setAttendanceError("Could not update attendance. Please try again.");
-    } finally {
-      setPendingAttendanceId(null);
-    }
+    await attendanceToggleQueue.run(studentId, async () => {
+      setAttendanceError(null);
+      try {
+        await toggleCheckIn(sessionId, studentId, name);
+      } catch (error) {
+        console.error("Failed to update attendance", error);
+        setAttendanceError("Could not update attendance. Please try again.");
+      }
+    });
   }
 
   async function handleDeleteSelectedSession(scope: ScheduleSessionDeleteScope) {
@@ -251,13 +273,18 @@ export function useSchedulePageController({
       deleteInFlight,
       isCreatingClass,
       isRefreshingStudentRoster,
-      pendingAttendanceId,
+      isSelectedSessionAttendanceReady:
+        Boolean(selectedSession) &&
+        sessionAttendanceRefresh.sessionId === selectedSession?.id &&
+        sessionAttendanceRefresh.status === "ready",
+      pendingAttendanceIds,
       programFilter,
       programs,
       scheduleLoadError,
       selectedSession,
       selectedSessionAttendance,
       studentRosterLoadError,
+      studentsMayBePartial,
       sessions,
       showAddClass,
       templates,

@@ -2,6 +2,70 @@ import type { AttendanceRecord, ClassSession, Student } from "@/types";
 
 export type SchedulePageView = "month" | "week" | "day";
 
+export type SessionAttendanceRefreshState = {
+  sessionId: string | null;
+  status: "idle" | "pending" | "ready" | "error";
+};
+
+export async function runSessionAttendanceRefresh({
+  isCurrent,
+  onStateChange,
+  refresh,
+  sessionId,
+}: {
+  isCurrent: () => boolean;
+  onStateChange: (state: SessionAttendanceRefreshState) => void;
+  refresh: () => Promise<unknown>;
+  sessionId: string;
+}) {
+  onStateChange({ sessionId, status: "pending" });
+  try {
+    await refresh();
+    if (isCurrent()) {
+      onStateChange({ sessionId, status: "ready" });
+    }
+  } catch (error) {
+    if (isCurrent()) {
+      onStateChange({ sessionId, status: "error" });
+    }
+    throw error;
+  }
+}
+
+export function createAttendanceToggleQueue(
+  onPendingChange: (pendingIds: ReadonlySet<string>) => void
+) {
+  const tails = new Map<string, Promise<void>>();
+
+  async function run(studentId: string, task: () => Promise<void>) {
+    const previous = tails.get(studentId);
+    const current = (async () => {
+      if (previous) {
+        try {
+          await previous;
+        } catch {
+          // The next queued toggle must run after rollback completes, even when
+          // the preceding request failed.
+        }
+      }
+      await task();
+    })();
+
+    tails.set(studentId, current);
+    onPendingChange(new Set(tails.keys()));
+    try {
+      await current;
+    } finally {
+      if (tails.get(studentId) === current) {
+        tails.delete(studentId);
+        onPendingChange(new Set(tails.keys()));
+      }
+    }
+  }
+
+  return { run };
+}
+
 export function formatScheduleDateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

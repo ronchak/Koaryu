@@ -17,6 +17,7 @@ import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import {
   buildAttendanceByStudentId,
+  areSessionAttendanceCountersReady,
   buildSessionAttendanceSummary,
   buildSessionLabels,
   buildSessionRosterSections,
@@ -39,7 +40,9 @@ export interface ScheduleSessionDetailModalProps {
   studentRosterError?: string | null;
   onDismissStudentRosterError?: () => void;
   isLoadingStudentRoster?: boolean;
-  pendingAttendanceStudentId?: string | null;
+  isAttendanceReady?: boolean;
+  isStudentRosterComplete?: boolean;
+  pendingAttendanceStudentIds?: ReadonlySet<string>;
   deleteError?: string | null;
   deleteInFlight?: ScheduleSessionDeleteScope | null;
   onClose: () => void;
@@ -77,7 +80,9 @@ export function ScheduleSessionDetailModal({
   studentRosterError = null,
   onDismissStudentRosterError,
   isLoadingStudentRoster = false,
-  pendingAttendanceStudentId = null,
+  isAttendanceReady = false,
+  isStudentRosterComplete = false,
+  pendingAttendanceStudentIds = new Set<string>(),
   deleteError = null,
   deleteInFlight = null,
   onClose,
@@ -102,8 +107,8 @@ export function ScheduleSessionDetailModal({
   }, [deleteInFlight, onClose, open]);
 
   const attendanceSummary = useMemo(
-    () => buildSessionAttendanceSummary(attendance, open),
-    [attendance, open]
+    () => buildSessionAttendanceSummary(attendance, students, open),
+    [attendance, open, students]
   );
 
   const attendanceByStudentId = useMemo(
@@ -128,7 +133,12 @@ export function ScheduleSessionDetailModal({
   const activeSession = session;
 
   const showDeleteConfirm = deleteConfirmSessionId === activeSession.id;
-  const { checkedInCount, absentCount } = attendanceSummary;
+  const { presentCount, absentCount, unmarkedCount } = attendanceSummary;
+  const attendanceCountersReady = areSessionAttendanceCountersReady({
+    attendanceReady: isAttendanceReady,
+    rosterComplete: isStudentRosterComplete,
+    rosterLoading: isLoadingStudentRoster,
+  });
   const isRecurring = Boolean(activeSession.template_id);
   const canDeleteSeries = Boolean(isRecurring && onDeleteSeries);
   const isDeleting = deleteInFlight !== null;
@@ -149,7 +159,7 @@ export function ScheduleSessionDetailModal({
       return (
         <button
           key={student.id}
-          disabled={pendingAttendanceStudentId === student.id}
+          disabled={!attendanceCountersReady || pendingAttendanceStudentIds.has(student.id)}
           onClick={async () => {
             await onToggleAttendance(activeSession.id, student.id, studentName);
           }}
@@ -322,23 +332,38 @@ export function ScheduleSessionDetailModal({
         </div>
 
         {/* ── Stat bar ── */}
-        <div className="grid grid-cols-3 border-b border-border bg-surface divide-x divide-border shrink-0">
+        <div
+          className="grid grid-cols-3 border-b border-border bg-surface divide-x divide-border shrink-0"
+          aria-busy={!attendanceCountersReady}
+        >
           <div className="px-4 py-3.5 text-center">
             <p className="text-2xl font-bold font-mono text-text-primary leading-none">
-              {checkedInCount}
-              {activeSession.capacity ? (
+              <span data-testid="attendance-present-count">
+                {attendanceCountersReady ? presentCount : "—"}
+              </span>
+              {attendanceCountersReady && activeSession.capacity ? (
                 <span className="text-sm font-normal text-muted">/{activeSession.capacity}</span>
               ) : null}
             </p>
-            <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">checked in</p>
+            <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">present</p>
           </div>
           <div className="px-4 py-3.5 text-center">
-            <p className="text-2xl font-bold font-mono text-text-primary leading-none">{absentCount}</p>
+            <p
+              className="text-2xl font-bold font-mono text-text-primary leading-none"
+              data-testid="attendance-absent-count"
+            >
+              {attendanceCountersReady ? absentCount : "—"}
+            </p>
             <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">absent</p>
           </div>
           <div className="px-4 py-3.5 text-center">
-            <p className="text-2xl font-bold font-mono text-text-primary leading-none">{students.length}</p>
-            <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">roster</p>
+            <p
+              className="text-2xl font-bold font-mono text-text-primary leading-none"
+              data-testid="attendance-unmarked-count"
+            >
+              {attendanceCountersReady ? unmarkedCount : "—"}
+            </p>
+            <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">unmarked</p>
           </div>
         </div>
 
@@ -381,11 +406,15 @@ export function ScheduleSessionDetailModal({
               <div>
                 <p className="text-sm font-semibold text-text-primary">Attendance</p>
                 <p className="mt-0.5 text-xs text-muted">
-                  {isLoadingStudentRoster ? "Loading complete roster..." : "Tap any student to toggle check-in"}
+                  {!attendanceCountersReady
+                    ? "Attendance is unavailable until the complete roster and class records load."
+                    : "Tap any student to toggle check-in"}
                 </p>
               </div>
               <span className="text-xs text-muted font-mono">
-                {checkedInCount}{activeSession.capacity ? `/${activeSession.capacity}` : ""} in
+                {attendanceCountersReady
+                  ? `${presentCount}${activeSession.capacity ? `/${activeSession.capacity}` : ""} in`
+                  : "Attendance counts unavailable"}
               </span>
             </div>
 
