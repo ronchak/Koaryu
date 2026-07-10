@@ -14,6 +14,7 @@
     "lint": "eslint",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "test:e2e": "playwright test e2e",
+    "test:e2e:preview-smoke": "KOARYU_PREVIEW_SMOKE_E2E=true playwright test e2e/preview-smoke.spec.ts",
     "test:e2e:preview-import": "KOARYU_PREVIEW_E2E=true playwright test e2e/student-import-idempotency-key.spec.ts",
     "test:e2e:live-belt": "KOARYU_LIVE_STATEFUL_E2E=true playwright test e2e/atomic-belt-ladder.spec.ts"
   },
