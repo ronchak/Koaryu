@@ -117,7 +117,7 @@ Webhook signing secrets do not encode test/live mode in their prefix. Confirm bo
 
 The validated Wave 0 backup is stored at:
 
-`/Users/ronakchak/Koaryu Backups/production-20260710T070020Z`
+`$HOME/Koaryu Backups/production-20260710T070020Z`
 
 It contains encrypted role, schema, and data dumps. For a new backup, first confirm that the Supabase CLI is linked to production and that the operation is dump-only. This target check is intentionally the inverse of the staging guard:
 
@@ -128,7 +128,8 @@ export EXPECTED_PRODUCTION_REF=mimguepumzsgmcaycdsh
 test "$(tr -d '\n' < supabase/.temp/project-ref)" = "$EXPECTED_PRODUCTION_REF"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_DIR="/Users/ronakchak/Koaryu Backups/production-${STAMP}"
+BACKUP_ROOT="${BACKUP_ROOT:-$HOME/Koaryu Backups}"
+BACKUP_DIR="$BACKUP_ROOT/production-${STAMP}"
 DUMP_DIR=""
 BACKUP_PASSWORD=""
 BACKUP_COMPLETE=false
@@ -156,37 +157,35 @@ supabase db dump --linked --data-only --use-copy \
 
 BACKUP_PASSWORD="$(security find-generic-password \
   -s com.koaryu.backup.encryption -w)"
-export BACKUP_PASSWORD
 
-openssl enc -aes-256-cbc -salt -pbkdf2 \
-  -pass env:BACKUP_PASSWORD \
-  -in "$DUMP_DIR/roles.sql" -out "$BACKUP_DIR/roles.sql.enc"
-openssl enc -aes-256-cbc -salt -pbkdf2 \
-  -pass env:BACKUP_PASSWORD \
-  -in "$DUMP_DIR/schema.sql" -out "$BACKUP_DIR/schema.sql.enc"
-openssl enc -aes-256-cbc -salt -pbkdf2 \
-  -pass env:BACKUP_PASSWORD \
-  -in "$DUMP_DIR/data.sql" -out "$BACKUP_DIR/data.sql.enc"
+for name in roles schema data; do
+  gpg --batch --yes --symmetric --force-aead --aead-algo OCB \
+    --cipher-algo AES256 --pinentry-mode loopback --passphrase-fd 3 \
+    --output "$BACKUP_DIR/${name}.sql.gpg" "$DUMP_DIR/${name}.sql" \
+    3<<<"$BACKUP_PASSWORD"
+done
 
-(cd "$BACKUP_DIR" && shasum -a 256 *.enc)
+(cd "$BACKUP_DIR" && shasum -a 256 *.gpg)
 BACKUP_COMPLETE=true
 cleanup_backup
 trap - EXIT HUP INT TERM
 ```
 
-Do not place the password in a command argument, repository file, shell trace, or release record. The key is held in macOS Keychain under service `com.koaryu.backup.encryption`. Record the hashes and backup path in the release ledger, then move the encrypted artifacts to the approved off-site location. No plaintext dump may remain after verification.
+Do not place the password in a command argument, repository file, shell trace, or release record. The key is held in macOS Keychain under service `com.koaryu.backup.encryption`. GnuPG 2.5+ uses AES-256 with OCB authenticated encryption here, so tampering is rejected during decryption. Record the hashes and backup path in the release ledger, then move the encrypted artifacts to the approved off-site location. No plaintext dump may remain after verification.
+
+The record-classification manifest is a separate inventory artifact, not an output of `supabase db dump`. Generate it with the reviewed conservative classifier, containing identifiers and hashed emails but no raw names or addresses, then encrypt it with the same GPG AEAD command as `record-classification-manifest.json.gpg`. Record its count, policy, and hash in the ledger. Do not treat a record as approved for deletion merely because the classifier labels it test or demo.
 
 The July 10 backup used PostgreSQL 17 on the host because the local container runtime could not resolve Supabase's direct IPv6-only database hostname. If the normal CLI command fails for the same reason, use `supabase db dump --dry-run` only inside a private, non-traced shell, capture its generated script without printing it, replace the generated `pg_dump` or `pg_dumpall` executable with the trusted PostgreSQL 17 host binary, and pipe its output directly into the encryption command. The generated script contains a short-lived database password and must never be logged, saved, or pasted into a release record.
 
 Verify the validated artifacts before a restore:
 
 ```bash
-cd "/Users/ronakchak/Koaryu Backups/production-20260710T070020Z"
+cd "$HOME/Koaryu Backups/production-20260710T070020Z"
 shasum -a 256 -c <<'EOF'
-8be3e1087a2ebe1ab6306ca93e1489cb70666be4ca6e850d495c75d1a5a2e948  data.sql.enc
-040e6904f8cf7934fca3b0463503d4e887637b84fd419927d58e929c57e133a4  roles.sql.enc
-e894ecea0723d1a9d5e07c8e9635993d42625d7acd52ae7a324bd702d231ff3e  schema.sql.enc
-c919a4ab5475b02ffc0ff2228673b81ed5ebadb67b9f4143bbaa4fea1ff4847b  record-classification-manifest.json.enc
+5ab64aaf4b9e3e95c83fe025e15ab8e6638bd6c3e47e86e9dc26cf8bb9e56163  data.sql.gpg
+0748bc19b318551cb1db16617d2c7b16a2ab2423e0bdfb5950c243e82fbc4cdc  roles.sql.gpg
+22fe1b7612f84dbc40c8c196dedbbf9280adbc55fb1b4e8174ea072d9e9a0f8e  schema.sql.gpg
+83854854d34387a73777e8f80c7cddb9940b7ae62c8012d87dc89b1560e0b167  record-classification-manifest.json.gpg
 EOF
 ```
 
@@ -216,7 +215,7 @@ A restore target is disposable and isolated. Never use current staging, producti
    set -euo pipefail
    set +x
    umask 077
-   BACKUP_DIR="/Users/ronakchak/Koaryu Backups/production-20260710T070020Z"
+   BACKUP_DIR="$HOME/Koaryu Backups/production-20260710T070020Z"
    RESTORE_DIR=""
    BACKUP_PASSWORD=""
    cleanup_restore() {
@@ -228,22 +227,20 @@ A restore target is disposable and isolated. Never use current staging, producti
    trap cleanup_restore EXIT HUP INT TERM
 
    (cd "$BACKUP_DIR" && shasum -a 256 -c <<'EOF'
-   8be3e1087a2ebe1ab6306ca93e1489cb70666be4ca6e850d495c75d1a5a2e948  data.sql.enc
-   040e6904f8cf7934fca3b0463503d4e887637b84fd419927d58e929c57e133a4  roles.sql.enc
-   e894ecea0723d1a9d5e07c8e9635993d42625d7acd52ae7a324bd702d231ff3e  schema.sql.enc
-   c919a4ab5475b02ffc0ff2228673b81ed5ebadb67b9f4143bbaa4fea1ff4847b  record-classification-manifest.json.enc
+   5ab64aaf4b9e3e95c83fe025e15ab8e6638bd6c3e47e86e9dc26cf8bb9e56163  data.sql.gpg
+   0748bc19b318551cb1db16617d2c7b16a2ab2423e0bdfb5950c243e82fbc4cdc  roles.sql.gpg
+   22fe1b7612f84dbc40c8c196dedbbf9280adbc55fb1b4e8174ea072d9e9a0f8e  schema.sql.gpg
+   83854854d34387a73777e8f80c7cddb9940b7ae62c8012d87dc89b1560e0b167  record-classification-manifest.json.gpg
    EOF
    )
 
    RESTORE_DIR="$(mktemp -d)"
    BACKUP_PASSWORD="$(security find-generic-password \
      -s com.koaryu.backup.encryption -w)"
-   export BACKUP_PASSWORD
-
    for name in roles schema data; do
-     openssl enc -d -aes-256-cbc -pbkdf2 \
-       -pass env:BACKUP_PASSWORD \
-       -in "$BACKUP_DIR/${name}.sql.enc" -out "$RESTORE_DIR/${name}.sql"
+     gpg --batch --quiet --decrypt --pinentry-mode loopback --passphrase-fd 3 \
+       --output "$RESTORE_DIR/${name}.sql" "$BACKUP_DIR/${name}.sql.gpg" \
+       3<<<"$BACKUP_PASSWORD"
    done
    unset BACKUP_PASSWORD
 

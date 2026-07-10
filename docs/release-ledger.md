@@ -35,13 +35,14 @@ Operator: `Ronak Chakraborty / Codex session`
 ### Restore Drill Evidence
 
 - Temporary target: hosted Supabase project `zmmacdleiaohvxdubrav` (deleted after validation).
-- Backup: `/Users/ronakchak/Koaryu Backups/production-20260710T070020Z`.
+- Backup: `$HOME/Koaryu Backups/production-20260710T070020Z`.
 - Encrypted artifact hashes:
-  - `data.sql.enc`: `8be3e1087a2ebe1ab6306ca93e1489cb70666be4ca6e850d495c75d1a5a2e948`
-  - `roles.sql.enc`: `040e6904f8cf7934fca3b0463503d4e887637b84fd419927d58e929c57e133a4`
-  - `schema.sql.enc`: `e894ecea0723d1a9d5e07c8e9635993d42625d7acd52ae7a324bd702d231ff3e`
-  - `record-classification-manifest.json.enc`: `c919a4ab5475b02ffc0ff2228673b81ed5ebadb67b9f4143bbaa4fea1ff4847b`
+  - `data.sql.gpg`: `5ab64aaf4b9e3e95c83fe025e15ab8e6638bd6c3e47e86e9dc26cf8bb9e56163`
+  - `roles.sql.gpg`: `0748bc19b318551cb1db16617d2c7b16a2ab2423e0bdfb5950c243e82fbc4cdc`
+  - `schema.sql.gpg`: `22fe1b7612f84dbc40c8c196dedbbf9280adbc55fb1b4e8174ea072d9e9a0f8e`
+  - `record-classification-manifest.json.gpg`: `83854854d34387a73777e8f80c7cddb9940b7ae62c8012d87dc89b1560e0b167`
 - Record classification: 384 identifiers inventoried with conservative explicit-marker rules. Unknown remains preserved: 60 auth users, 39 studios, 39 subscriptions, 1 payment account, and 49 live-mode Stripe events remain `unknown`; no record is approved for deletion or anonymization.
+- Encryption: GnuPG 2.5 AES-256/OCB authenticated encryption; the AEAD migration was verified plaintext-equivalent before the older CBC artifacts were removed.
 - Restore method: PostgreSQL 17 `psql`, single transaction, `ON_ERROR_STOP=1`, roles then schema then data with replication triggers disabled for the data load.
 - Verification: 37 `public` tables, 61 authentication users, and 52 studios. An authenticated tenant-safe application read was not completed against the temporary restore target and remains required in the next drill.
 - Cleanup: temporary restore project deleted; fresh current staging recreated separately from repository migrations.

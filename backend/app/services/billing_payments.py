@@ -34,7 +34,7 @@ def build_external_payment_request_hash(
     effective_payer_id: str | None,
 ) -> str:
     payload = data.model_dump(mode="json", exclude_none=True)
-    if effective_payer_id:
+    if effective_payer_id is not None:
         payload["payer_id"] = effective_payer_id
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
