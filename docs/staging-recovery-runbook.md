@@ -40,6 +40,8 @@ Before a frontend or backend staging deploy, also run the application guard belo
 ```bash
 set -euo pipefail
 set +x
+: "${EXPECTED_STAGING_REF:?set the expected staging Supabase project ref}"
+: "${PRODUCTION_REF:?set the production Supabase project ref}"
 : "${EXPECTED_STAGING_FRONTEND_ORIGIN:?set the dedicated staging frontend origin}"
 : "${EXPECTED_STAGING_BACKEND_API:?set the dedicated staging backend /api/v1 URL}"
 
