@@ -58,7 +58,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 
 - For frontend-only changes, prefer `cd frontend && npm run lint -- <paths>` and other narrow checks before full builds.
 - For backend-only changes, prefer `cd backend && venv/bin/python -m pytest <tests>`.
-- For database changes, run `supabase db lint --linked --fail-on error` and the relevant verification SQL or helper script.
+- For database changes, apply files not yet in local history with `supabase migration up --local`. If a changed migration may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then run `supabase db lint --local --fail-on error` and force local helpers with `SUPABASE_DB_TARGET=local`. Use linked checks only for an explicitly intended release inspection after the linked project has the migrations.
 - For release-shaped or cross-cutting changes, combine the relevant frontend, backend, and Supabase checks.
 - For backend schema or response-contract changes, run `npm run check:api-types` and regenerate with `npm run generate:api-types` if needed.
 
@@ -83,3 +83,4 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Database guidance: `supabase/AGENTS.md`
 - Render deployment runbook: `docs/render-backend-deployment.md`
 - Support triage/privacy runbook: `docs/support-triage.md`
+- PR verification matrix: `docs/pr-verification-matrix.md`

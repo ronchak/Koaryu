@@ -33,11 +33,12 @@ Use this file for work under `supabase/`. Fall back to the repo root `AGENTS.md`
 
 ## Verification
 
-- Lint database changes: `supabase db lint --linked --fail-on error`
-- Run the focused RLS/security contract checks when changing table policies or tenant isolation: `scripts/verify-supabase-rls.sh`
-- Run the focused account/support contract check when relevant: `scripts/verify-supabase-account-support.sh` against local, or `SUPABASE_DB_TARGET=linked scripts/verify-supabase-account-support.sh` when intentionally checking a linked project.
-- Run the broad contract suite for release-shaped database changes: `scripts/verify-supabase-contracts.sh` after a local reset, or `SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh` after the linked project has received the new migrations.
+- Before verifying a migration, apply files not yet in local history with `supabase migration up --local`. If a changed file may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then lint with `supabase db lint --local --fail-on error`.
+- Run the focused RLS/security contract checks when changing table policies or tenant isolation: `SUPABASE_DB_TARGET=local scripts/verify-supabase-rls.sh`, or use `SUPABASE_DB_TARGET=linked` only for an explicitly intended release inspection after linked migrations are present.
+- Run the focused account/support contract check when relevant: `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`, or `SUPABASE_DB_TARGET=linked scripts/verify-supabase-account-support.sh` when intentionally checking a linked project.
+- Run the broad contract suite for release-shaped database changes: `SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` after local migrations, or `SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh` after the linked project has received the new migrations.
 - Review and run the relevant SQL in `supabase/verification/` when changing RLS, RPCs, billing, support, or belt-ladder behavior.
+- Treat a local reset as destructive too: use `supabase db reset --local` only against a confirmed disposable local database. Run linked lint/contracts only for an explicitly intended release inspection after the linked migrations are present.
 
 ## Done Checklist
 
