@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -348,6 +351,30 @@ class WebhookServiceTest(unittest.TestCase):
             )
 
         self.assertEqual(event["id"], "evt_1")
+
+    def test_construct_webhook_event_accepts_real_stripe_sdk_signature(self):
+        payload = b'{"id":"evt_real_sdk","object":"event"}'
+        secret = "whsec_real_sdk_test"
+        timestamp = int(time.time())
+        signed_payload = f"{timestamp}.{payload.decode('utf-8')}".encode()
+        signature = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+        header = f"t={timestamp},v1={signature}"
+        service = StripeService()
+
+        event = service.construct_webhook_event(
+            payload=payload,
+            signature=header,
+            secret=secret,
+        )
+
+        self.assertEqual(event["id"], "evt_real_sdk")
+        with self.assertRaises(HTTPException) as raised:
+            service.construct_webhook_event(
+                payload=b'{"id":"evt_mutated","object":"event"}',
+                signature=header,
+                secret=secret,
+            )
+        self.assertEqual(raised.exception.status_code, 400)
 
     def test_construct_webhook_event_rejects_missing_signature_before_stripe_sdk(self):
         service = StripeService()

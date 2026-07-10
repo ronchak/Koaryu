@@ -72,6 +72,27 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         service.handle_connect_webhook.assert_awaited_once_with(b'{"id":"evt_1"}', "t=1,v1=signature")
 
     @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
+    def test_platform_webhook_endpoint_passes_raw_payload_signature_and_supabase(self, webhook_service_class):
+        service = webhook_service_class.return_value
+        service.handle_platform_webhook = AsyncMock(
+            return_value=WebhookProcessResponse(status="processed")
+        )
+
+        response = self.client.post(
+            "/api/v1/webhooks/stripe/platform",
+            content=b'{"id":"evt_platform"}',
+            headers={"Stripe-Signature": "t=1,v1=platform-signature"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"received": True, "status": "processed"})
+        webhook_service_class.assert_called_once_with(self.supabase)
+        service.handle_platform_webhook.assert_awaited_once_with(
+            b'{"id":"evt_platform"}',
+            "t=1,v1=platform-signature",
+        )
+
+    @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
     def test_connect_webhook_endpoint_fails_closed_when_signature_validation_fails(self, webhook_service_class):
         service = webhook_service_class.return_value
         service.handle_connect_webhook = AsyncMock(
