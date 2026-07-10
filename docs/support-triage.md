@@ -86,6 +86,8 @@ Privacy rules for the automation:
 
 Run these after changing support/account database behavior:
 
+`audit:support-privacy` checks the static automation runbook and local helper routing. The Supabase verification commands remain responsible for proving the database digest itself stays metadata-only.
+
 ```bash
 npm run audit:support-privacy
 supabase db lint --linked --fail-on error

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -15,6 +16,13 @@ RAW_ENDPOINT_MARKERS = (
     "SUPPORT_TICKET_COLUMNS",
 )
 
+RAW_TABLE_MARKERS = (
+    "public.support_tickets",
+    "public.support_ticket_events",
+    "support_tickets",
+    "support_ticket_events",
+)
+
 RAW_FIELD_MARKERS = (
     "requester_email",
     "subject",
@@ -23,6 +31,9 @@ RAW_FIELD_MARKERS = (
     "user_agent",
     "browser_context",
 )
+
+EXECUTABLE_FENCE_LANGUAGES = {"", "bash", "console", "sh", "shell", "sql", "zsh"}
+FENCED_CODE_BLOCK = re.compile(r"```(?P<language>[^\n`]*)\n(?P<body>.*?)```", re.DOTALL)
 
 
 def section_between(text: str, start_heading: str, end_heading: str) -> str:
@@ -46,25 +57,52 @@ def assert_excludes(text: str, needles: tuple[str, ...], label: str) -> None:
         raise AssertionError(f"{label} must not include raw support-ticket marker(s): {', '.join(matches)}.")
 
 
-def main() -> int:
+def executable_code(text: str) -> str:
+    blocks: list[str] = []
+    for match in FENCED_CODE_BLOCK.finditer(text):
+        language_label = match.group("language").strip().lower()
+        language = language_label.split(maxsplit=1)[0] if language_label else ""
+        if language in EXECUTABLE_FENCE_LANGUAGES:
+            blocks.append(match.group("body"))
+    return "\n".join(blocks)
+
+
+def audit_texts(runbook: str, helper: str) -> list[str]:
     failures: list[str] = []
 
     try:
-        runbook = RUNBOOK.read_text(encoding="utf-8")
         daily_automation = section_between(runbook, "## Daily Automation", "## Verification")
+        daily_commands = executable_code(daily_automation)
         assert_contains(daily_automation, "support_triage_digest", "Daily automation runbook")
         assert_contains(daily_automation, "sanitized", "Daily automation runbook")
-        assert_excludes(daily_automation, RAW_ENDPOINT_MARKERS, "Daily automation runbook")
+        assert_contains(daily_commands, "support_triage_digest", "Daily automation commands")
+        assert_excludes(
+            daily_commands,
+            RAW_ENDPOINT_MARKERS + RAW_TABLE_MARKERS + RAW_FIELD_MARKERS,
+            "Daily automation commands",
+        )
     except Exception as exc:
         failures.append(str(exc))
 
     try:
-        helper = DIGEST_HELPER.read_text(encoding="utf-8")
         assert_contains(helper, "support_triage_digest", "Support triage digest helper")
         assert_contains(helper, "--confirm-sanitized-linked-query", "Support triage digest helper")
-        assert_excludes(helper, RAW_ENDPOINT_MARKERS + RAW_FIELD_MARKERS, "Support triage digest helper")
+        assert_excludes(
+            helper,
+            RAW_ENDPOINT_MARKERS + RAW_TABLE_MARKERS + RAW_FIELD_MARKERS,
+            "Support triage digest helper",
+        )
     except Exception as exc:
         failures.append(str(exc))
+
+    return failures
+
+
+def main() -> int:
+    failures = audit_texts(
+        RUNBOOK.read_text(encoding="utf-8"),
+        DIGEST_HELPER.read_text(encoding="utf-8"),
+    )
 
     if failures:
         for failure in failures:
