@@ -10,10 +10,6 @@ const workflowPath = new URL(
 );
 const workflow = fs.readFileSync(workflowPath, "utf8");
 
-test("intentional release-gate failure probe", () => {
-  assert.fail("intentional release-gate failure probe");
-});
-
 test("release-candidate workflow covers every pull request path", () => {
   assert.deepEqual(validateReleaseCandidateWorkflow(workflow), []);
 });
