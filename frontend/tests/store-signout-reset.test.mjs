@@ -26,6 +26,10 @@ describe("store auth reset model", () => {
     assert.equal(reset.studentsLoadError, null);
     assert.equal(reset.studentsLastLoadedAt, null);
     assert.equal(reset.studentsMayBePartial, false);
+    assert.equal(reset.leadsLoaded, false);
+    assert.equal(reset.leadsLoadError, null);
+    assert.equal(reset.scheduleStatus, "idle");
+    assert.equal(reset.scheduleLoadError, null);
     assert.equal(reset.currentLadderId, null);
     assert.equal(reset.ladderName, "");
     assert.equal(reset.subRankTerm, "Stripe");

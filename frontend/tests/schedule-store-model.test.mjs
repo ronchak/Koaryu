@@ -8,6 +8,7 @@ import {
   createScheduleReconciliationQueue,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
+  isAuthoritativeScheduleReady,
   isScheduleReadCurrent,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
@@ -92,11 +93,14 @@ describe("schedule store model", () => {
     const initial = markScheduleCoordinatorSnapshotState(createScheduleCoordinatorState());
     const mutation = beginScheduleMutationState(initial);
 
+    assert.equal(isAuthoritativeScheduleReady(initial), true);
+    assert.equal(isAuthoritativeScheduleReady(mutation), false);
     assert.equal(mutation.hasAuthoritativeSnapshot, false);
     assert.equal(mutation.mutationsInFlight, 1);
     assert.equal(shouldReconcileSchedule(mutation), false);
 
     const settled = finishScheduleMutationState(mutation, mutation.generation);
+    assert.equal(isAuthoritativeScheduleReady(settled), false);
     assert.equal(settled.mutationsInFlight, 0);
     assert.equal(shouldReconcileSchedule(settled), true);
   });

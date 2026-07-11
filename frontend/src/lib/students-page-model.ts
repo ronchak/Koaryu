@@ -48,6 +48,11 @@ interface StudentRosterModeInput {
 }
 
 interface StudentRosterLoadStateInput {
+  programsLoadError: string | null;
+  programsLoaded: boolean;
+  scheduleLoadError: string | null;
+  scheduleRequired: boolean;
+  scheduleStatus: "idle" | "loading" | "ready" | "error";
   isDerivedRosterRefreshing: boolean;
   isPagedLoading: boolean;
   page: number;
@@ -143,6 +148,11 @@ export function shouldUseDerivedRosterFilters({
 }
 
 export function buildStudentRosterLoadState({
+  programsLoadError,
+  programsLoaded,
+  scheduleLoadError,
+  scheduleRequired,
+  scheduleStatus,
   isDerivedRosterRefreshing,
   isPagedLoading,
   page,
@@ -156,10 +166,19 @@ export function buildStudentRosterLoadState({
   studentsMayBePartial,
   usesDerivedRosterFilters,
 }: StudentRosterLoadStateInput) {
+  const dependencyLoadError = programsLoadError
+    || (scheduleRequired && scheduleStatus === "error"
+      ? scheduleLoadError || "Schedule could not be loaded."
+      : null);
+  const dependenciesLoading = !programsLoaded
+    || (scheduleRequired && scheduleStatus !== "ready");
+  const rosterLoadError = usesDerivedRosterFilters ? studentsLoadError : pagedLoadError;
+  const activeLoadError = dependencyLoadError || rosterLoadError;
   const isInitialRosterLoading = usesDerivedRosterFilters
-    ? !studentsLoadError && (!studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing)
-    : !pagedLoaded;
-  const activeLoadError = usesDerivedRosterFilters ? studentsLoadError : pagedLoadError;
+    ? !activeLoadError && (
+      dependenciesLoading || !studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing
+    )
+    : !activeLoadError && (dependenciesLoading || !pagedLoaded);
   const isRosterRefreshing = !usesDerivedRosterFilters && isPagedLoading && pagedLoaded;
   const visibleTotal = usesDerivedRosterFilters ? studentsCount : pagedTotal;
   const totalPages = Math.max(1, Math.ceil(pagedTotal / pageSize));

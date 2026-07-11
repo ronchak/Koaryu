@@ -30,8 +30,14 @@ const STUDENTS_SEARCH_DEBOUNCE_MS = 250;
 const PAGED_STUDENTS_ROSTER_ENABLED = process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false";
 
 type StudentsPageControllerOptions = {
-  programsStore: Pick<ProgramsStoreContextValue, "programs">;
-  scheduleStore: Pick<ScheduleStoreContextValue, "attendance" | "sessions">;
+  programsStore: Pick<
+    ProgramsStoreContextValue,
+    "programs" | "programsLoadError" | "programsLoaded" | "refreshPrograms"
+  >;
+  scheduleStore: Pick<
+    ScheduleStoreContextValue,
+    "attendance" | "refreshSchedule" | "scheduleLoadError" | "scheduleStatus" | "sessions"
+  >;
   studentsStore: Pick<
     StudentsStoreContextValue,
     | "addStudent"
@@ -66,8 +72,14 @@ export function useStudentsPageController({
 }: StudentsPageControllerOptions) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { programs } = programsStore;
-  const { attendance, sessions } = scheduleStore;
+  const { programs, programsLoadError, programsLoaded, refreshPrograms } = programsStore;
+  const {
+    attendance,
+    refreshSchedule,
+    scheduleLoadError,
+    scheduleStatus,
+    sessions,
+  } = scheduleStore;
   const {
     addStudent,
     bulkAddTagsToStudents,
@@ -306,6 +318,11 @@ export function useStudentsPageController({
     totalPages,
     visibleTotal,
   } = buildStudentRosterLoadState({
+    programsLoadError,
+    programsLoaded,
+    scheduleLoadError,
+    scheduleRequired: Boolean(inactivityThreshold),
+    scheduleStatus,
     isDerivedRosterRefreshing,
     isPagedLoading,
     page,
@@ -346,6 +363,25 @@ export function useStudentsPageController({
 
     await loadPagedStudents();
   }, [loadPagedStudents, refreshStudents, usesDerivedRosterFilters]);
+
+  const retryRequiredStudentDatasets = useCallback(async () => {
+    const requests: Promise<unknown>[] = [reloadVisibleRoster()];
+    if (!programsLoaded || programsLoadError) {
+      requests.push(refreshPrograms({ includeArchived: false }));
+    }
+    if (inactivityThreshold && scheduleStatus !== "ready") {
+      requests.push(refreshSchedule());
+    }
+    await Promise.all(requests);
+  }, [
+    inactivityThreshold,
+    programsLoadError,
+    programsLoaded,
+    refreshPrograms,
+    refreshSchedule,
+    reloadVisibleRoster,
+    scheduleStatus,
+  ]);
 
   async function reloadVisibleRosterAfterMutation(context: string) {
     try {
@@ -592,7 +628,7 @@ export function useStudentsPageController({
         resetRosterPaging();
       },
       onRetryRosterLoad: () => {
-        void reloadVisibleRoster().catch((error) => {
+        void retryRequiredStudentDatasets().catch((error) => {
           console.error("Failed to retry student roster load", error);
         });
       },

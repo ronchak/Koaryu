@@ -61,6 +61,7 @@ import {
   createScheduleReconciliationQueue,
   createScheduleCoordinatorState,
   compareSessions,
+  isAuthoritativeScheduleReady,
   isScheduleReadCurrent,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
@@ -104,6 +105,7 @@ import {
 import {
   sortPrograms,
 } from "@/lib/program-store-model";
+import { loadIndependentDataset } from "@/lib/page-dataset-readiness";
 
 export {
   useBeltStore,
@@ -154,6 +156,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [leads, setLeads] = useState<Lead[]>(() =>
     isPreviewMode ? MOCK_LEADS : []
   );
+  const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
+  const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
   const leadsRef = useRef<Lead[]>(leads);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDERS : []
@@ -178,6 +182,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const attendanceRef = useRef<AttendanceRecord[]>(attendance);
   const scheduleCoordinatorRef = useRef(createScheduleCoordinatorState());
   const scheduleReconciliationQueueRef = useRef(createScheduleReconciliationQueue());
+  const [scheduleStatus, setScheduleStatus] = useState<"idle" | "loading" | "ready" | "error">(
+    isPreviewMode ? "ready" : "idle"
+  );
+  const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
   const [studioName, setStudioNameState] = useState(() =>
     isPreviewMode ? "My Studio" : ""
   );
@@ -338,13 +346,75 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     scheduleCoordinatorRef.current = markScheduleCoordinatorSnapshotState(
       scheduleCoordinatorRef.current
     );
+    setScheduleLoadError(null);
+    setScheduleStatus("ready");
   }, [beginLiveAuthRequest]);
 
-  const reconcileSchedule = useCallback(() =>
-    scheduleReconciliationQueueRef.current(
-      reconcileScheduleAttempt,
-      () => shouldReconcileSchedule(scheduleCoordinatorRef.current)
-    ), [reconcileScheduleAttempt]);
+  const reconcileSchedule = useCallback(async () => {
+    const requestToken = tokenRef.current;
+    const requestGeneration = authGenerationRef.current;
+    try {
+      await scheduleReconciliationQueueRef.current(
+        reconcileScheduleAttempt,
+        () => shouldReconcileSchedule(scheduleCoordinatorRef.current)
+      );
+    } catch (error) {
+      if (
+        requestToken === tokenRef.current
+        && requestGeneration === authGenerationRef.current
+      ) {
+        setScheduleLoadError(
+          error instanceof Error ? error.message : "Schedule could not be loaded."
+        );
+        setScheduleStatus("error");
+      }
+      throw error;
+    }
+  }, [reconcileScheduleAttempt]);
+
+  const refreshSchedule = useCallback(async () => {
+    if (isPreviewMode) {
+      setScheduleLoadError(null);
+      setScheduleStatus("ready");
+      return;
+    }
+
+    const requestToken = tokenRef.current;
+    const requestGeneration = authGenerationRef.current;
+    if (!requestToken) {
+      setScheduleLoadError(null);
+      setScheduleStatus("idle");
+      return;
+    }
+
+    const isCurrent = () => isLiveAuthRequestCurrent({
+      requestToken,
+      requestGeneration,
+      currentToken: tokenRef.current,
+      currentGeneration: authGenerationRef.current,
+    });
+    setScheduleLoadError(null);
+    setScheduleStatus("loading");
+
+    try {
+      await reconcileSchedule();
+      if (isCurrent()) {
+        if (isAuthoritativeScheduleReady(scheduleCoordinatorRef.current)) {
+          setScheduleStatus("ready");
+        } else {
+          setScheduleStatus("loading");
+        }
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        setScheduleLoadError(
+          error instanceof Error ? error.message : "Schedule could not be loaded."
+        );
+        setScheduleStatus("error");
+      }
+      throw error;
+    }
+  }, [isPreviewMode, reconcileSchedule]);
 
   const commitPromotionHistoryCache = useCallback((studentId: string, items: Promotion[]) => {
     setPromotionHistoryCache((current) => {
@@ -475,6 +545,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStudentsLastLoadedAt(state.studentsLastLoadedAt);
     setStudentsMayBePartial(state.studentsMayBePartial);
     setLeads(state.leads);
+    setLeadsLoaded(state.leadsLoaded);
+    setLeadsLoadError(state.leadsLoadError);
     setBeltLaddersState(state.beltLadders);
     updateCurrentLadderId(state.currentLadderId);
     setLadderNameState(state.ladderName);
@@ -483,6 +555,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
       scheduleCoordinatorRef.current
     );
+    setScheduleLoadError(state.scheduleLoadError);
+    setScheduleStatus(state.scheduleStatus);
     setSessions(state.sessions);
     setTemplates(state.templates);
     setAttendance(state.attendance);
@@ -554,7 +628,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoadError(null);
     setDashboardSummary(null);
     setDashboardSummaryLoaded(true);
+    setScheduleLoadError(null);
+    setScheduleStatus("ready");
     setLeads(data.leads);
+    setLeadsLoaded(true);
+    setLeadsLoadError(null);
     const selectedLadder = applyLadderSelection(
       resolveBootstrapLadders(data),
       data.primary_belt_ladder?.id ?? null
@@ -584,10 +662,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoadError(null);
     setDashboardSummary(null);
     setDashboardSummaryLoaded(true);
+    setScheduleLoadError(null);
+    setScheduleStatus("ready");
     if (isPreviewMode) {
       save(KEYS.programs, []);
     }
     setLeads([]);
+    setLeadsLoaded(true);
+    setLeadsLoadError(null);
     setBeltLaddersState([]);
     updateCurrentLadderId(null);
     setLadderNameState("");
@@ -636,6 +718,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setProgramsLoaded(true);
       setProgramsLoadError(null);
       setLeads(load(KEYS.leads, MOCK_LEADS));
+      setLeadsLoaded(true);
+      setLeadsLoadError(null);
       applyLadderSelection(hydratedLadderState.hydratedLadders, hydratedLadderState.eligibilityLadderId);
       commitEligibilityRows(
         hydratedLadderState.eligibilityLadderId,
@@ -795,6 +879,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       try {
         let criticalData: BootstrapResponse;
+        let bootstrapStudentsError: string | null = null;
+        let bootstrapProgramsError: string | null = null;
+        let bootstrapLeadsError: string | null = null;
+        let bootstrapBeltsError: string | null = null;
+        let usedLegacyFallback = false;
 
         try {
           markPerformance("dashboard.bootstrap_started");
@@ -806,6 +895,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             "dashboard.bootstrap_finished"
           );
         } catch (bootstrapError) {
+          usedLegacyFallback = true;
           if (isSubscriptionRequiredError(bootstrapError)) {
             const authProfile = await api.get<AuthProfileResponse>(
               "/auth/me",
@@ -842,6 +932,146 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return;
           }
 
+          const studioPromise = api.get<Studio>("/studios/current", sessionToken)
+            .then((studioRes) => {
+              if (isCurrentSession()) {
+                setSubscriptionRequired(false);
+                setCurrentUser(buildAuthUserProfile(authProfile));
+                setCurrentRole(authProfile.role ?? null);
+                syncStoredStudioSessionCookies(session.user.id, authProfile.studio_id);
+                setStudioNameState(studioRes.name);
+              }
+              return studioRes;
+            });
+
+          void studioPromise.then(async () => {
+            if (!isCurrentSession()) {
+              return;
+            }
+            markPerformance("schedule.deferred_started");
+            await refreshSchedule();
+            markPerformance("schedule.deferred_finished");
+            measurePerformance(
+              "schedule.deferred_duration",
+              "schedule.deferred_started",
+              "schedule.deferred_finished"
+            );
+          }).catch((error) => {
+            console.error("Failed to load deferred dashboard data", error);
+          });
+
+          const studentsPromise = loadIndependentDataset({
+            context: studioPromise,
+            fallback: { items: [], total: 0, page: 1, page_size: 200 },
+            load: fetchStudentPage(
+              sessionToken,
+              { page: 1, pageSize: 200, sortKey: "name", sortDir: "asc" },
+              { timeoutMs: 30000 }
+            ),
+            onError: (error) => {
+              bootstrapStudentsError = error instanceof Error
+                ? error.message
+                : "Student roster could not be loaded.";
+              if (isCurrentSession()) {
+                studentsRef.current = [];
+                setStudents([]);
+                setStudentsLoaded(false);
+                setStudentsLoadError(bootstrapStudentsError);
+                setStudentsLastLoadedAt(null);
+                setStudentsMayBePartial(false);
+              }
+            },
+            onLoaded: (studentsPageRes) => {
+              if (
+                isCurrentSession()
+                && studentsRevisionRef.current === studentsRevisionAtStart
+              ) {
+                commitStudents(studentsPageRes.items, {
+                  mayBePartial: studentsPageRes.total > studentsPageRes.items.length,
+                });
+              }
+            },
+          });
+
+          const programsPromise = loadIndependentDataset<Program[]>({
+            context: studioPromise,
+            fallback: [],
+            load: api.get<Program[]>("/programs?include_archived=true", sessionToken),
+            onError: (error) => {
+              bootstrapProgramsError = error instanceof Error
+                ? error.message
+                : "Programs could not be loaded.";
+              if (isCurrentSession()) {
+                setPrograms([]);
+                setProgramsLoaded(false);
+                setProgramsLoadError(bootstrapProgramsError);
+              }
+            },
+            onLoaded: (programsRes) => {
+              if (isCurrentSession()) {
+                setPrograms(programsRes);
+                setProgramsLoaded(true);
+                setProgramsLoadError(null);
+              }
+            },
+          });
+
+          const leadsPromise = loadIndependentDataset<Lead[]>({
+            context: studioPromise,
+            fallback: [],
+            load: api.get<Lead[]>("/leads", sessionToken),
+            onError: (error) => {
+              bootstrapLeadsError = error instanceof Error
+                ? error.message
+                : "Leads could not be loaded.";
+              if (isCurrentSession()) {
+                setLeads([]);
+                setLeadsLoaded(false);
+                setLeadsLoadError(bootstrapLeadsError);
+              }
+            },
+            onLoaded: (leadsRes) => {
+              if (isCurrentSession()) {
+                setLeads(leadsRes);
+                setLeadsLoaded(true);
+                setLeadsLoadError(null);
+              }
+            },
+          });
+
+          const beltLaddersPromise = loadIndependentDataset<BeltLadder[]>({
+            context: studioPromise,
+            fallback: [],
+            load: api.get<BeltLadder[]>("/belts/ladders", sessionToken),
+            onError: (error) => {
+              bootstrapBeltsError = error instanceof Error
+                ? error.message
+                : "Belt ladders could not be loaded.";
+              if (isCurrentSession()) {
+                applyLadderSelection([], null);
+                commitEligibilityRows(null, []);
+                setEligibilityPendingLadderId(null);
+                setEligibilityLoadError(bootstrapBeltsError);
+              }
+            },
+            onLoaded: (beltLaddersRes) => {
+              if (isCurrentSession()) {
+                const selectedLadder = applyLadderSelection(
+                  beltLaddersRes,
+                  beltLaddersRes[0]?.id
+                );
+                if (selectedLadder) {
+                  void loadEligibilityForLadder(selectedLadder.id, { force: true })
+                    .catch(() => undefined);
+                } else {
+                  commitEligibilityRows(null, []);
+                  setEligibilityPendingLadderId(null);
+                  setEligibilityLoadError(null);
+                }
+              }
+            },
+          });
+
           const [
             studioRes,
             studentsPageRes,
@@ -849,15 +1079,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             leadsRes,
             beltLaddersRes,
           ] = await Promise.all([
-            api.get<Studio>("/studios/current", sessionToken),
-            fetchStudentPage(
-              sessionToken,
-              { page: 1, pageSize: 200, sortKey: "name", sortDir: "asc" },
-              { timeoutMs: 30000 }
-            ),
-            api.get<Program[]>("/programs?include_archived=true", sessionToken).catch(() => []),
-            api.get<Lead[]>("/leads", sessionToken),
-            api.get<BeltLadder[]>("/belts/ladders", sessionToken),
+            studioPromise,
+            studentsPromise,
+            programsPromise,
+            leadsPromise,
+            beltLaddersPromise,
           ]);
 
           criticalData = buildLegacyBootstrapResponse({
@@ -892,27 +1118,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
           clearPromotionHistoryCache();
           setStudioNameState(resolveBootstrapStudioName(criticalData));
-          setPrograms(criticalData.programs || []);
-          setProgramsLoaded(true);
-          setProgramsLoadError(null);
           const bootstrapSummary = criticalData.summary ?? null;
           setDashboardSummary(bootstrapSummary);
           setDashboardSummaryLoaded(Boolean(bootstrapSummary));
-          if (studentsRevisionRef.current === studentsRevisionAtStart) {
-            commitStudents(criticalData.students, {
-              mayBePartial: criticalData.students_may_be_partial
-                ?? criticalData.students.length >= (criticalData.students_page_size ?? 200),
-            });
-          }
-          setLeads(criticalData.leads);
-          const selectedInitialLadder = applyLadderSelection(
-            resolveBootstrapLadders(criticalData),
-            criticalData.primary_belt_ladder?.id ?? null
-          );
-          if (selectedInitialLadder) {
-            void loadEligibilityForLadder(selectedInitialLadder.id, { force: true }).catch(() => undefined);
-          } else {
-            commitEligibilityRows(null, []);
+          if (!usedLegacyFallback) {
+            setPrograms(criticalData.programs || []);
+            setProgramsLoaded(true);
+            setProgramsLoadError(null);
+            if (studentsRevisionRef.current === studentsRevisionAtStart) {
+              commitStudents(criticalData.students, {
+                mayBePartial: criticalData.students_may_be_partial
+                  ?? criticalData.students.length >= (criticalData.students_page_size ?? 200),
+              });
+            }
+            setLeads(criticalData.leads);
+            setLeadsLoaded(true);
+            setLeadsLoadError(null);
+            const selectedInitialLadder = applyLadderSelection(
+              resolveBootstrapLadders(criticalData),
+              criticalData.primary_belt_ladder?.id ?? null
+            );
+            if (selectedInitialLadder) {
+              void loadEligibilityForLadder(selectedInitialLadder.id, { force: true }).catch(() => undefined);
+            } else {
+              commitEligibilityRows(null, []);
+            }
           }
 
           if (!bootstrapSummary) {
@@ -976,20 +1206,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             })
             .catch((error) => {
               console.warn("Failed to refresh program usage after bootstrap", error);
+              if (isCurrentSession()) {
+                setProgramsLoaded(false);
+                setProgramsLoadError(
+                  error instanceof Error ? error.message : "Programs could not be loaded."
+                );
+              }
             });
         }
 
-        markPerformance("schedule.deferred_started");
-        void reconcileSchedule().then(() => {
-          markPerformance("schedule.deferred_finished");
-          measurePerformance(
-            "schedule.deferred_duration",
-            "schedule.deferred_started",
-            "schedule.deferred_finished"
-          );
-        }).catch((error) => {
-          console.error("Failed to load deferred dashboard data", error);
-        });
+        if (!usedLegacyFallback) {
+          markPerformance("schedule.deferred_started");
+          void refreshSchedule().then(() => {
+            markPerformance("schedule.deferred_finished");
+            measurePerformance(
+              "schedule.deferred_duration",
+              "schedule.deferred_started",
+              "schedule.deferred_finished"
+            );
+          }).catch((error) => {
+            console.error("Failed to load deferred dashboard data", error);
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (isCurrentSession() && isSubscriptionRequiredError(error)) {
@@ -1015,9 +1253,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (isCurrentSession()) {
-          setStudentsLoadError(
-            error instanceof Error ? error.message : "Failed to load the student roster."
-          );
+          const loadError = error instanceof Error
+            ? error.message
+            : "Initial studio data could not be loaded.";
+          setStudentsLoadError(loadError);
+          setProgramsLoaded(false);
+          setProgramsLoadError(loadError);
+          setLeadsLoaded(false);
+          setLeadsLoadError(loadError);
+          setDashboardSummary(null);
+          setDashboardSummaryLoaded(true);
+          setScheduleLoadError(loadError);
+          setScheduleStatus("error");
           setHydrated(true);
         }
         console.error("Failed to load initial data", error);
@@ -1034,6 +1281,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (session) {
         const tokenChanged = tokenRef.current !== session.access_token;
         if (tokenChanged) {
+          setScheduleLoadError(null);
+          setScheduleStatus("loading");
           authGenerationRef.current += 1;
           dashboardSummaryRequestSeqRef.current += 1;
           scheduleCoordinatorRef.current = shouldPreserveScheduleMutationsOnAuthChange(
@@ -1066,7 +1315,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, resetLiveStudioState, router, supabase]);
+  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1199,6 +1448,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     programsRef,
     refreshStudents,
     setLeads,
+    setLeadsLoaded,
+    setLeadsLoadError,
     studentsRef,
   });
 
@@ -1255,6 +1506,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     scheduleCoordinatorRef,
     sessionsRef,
     setAttendance,
+    setScheduleLoadError,
+    setScheduleStatus,
     setSessions,
     setTemplates,
     templatesRef,
@@ -1334,6 +1587,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode,
     ladderName,
     leads,
+    leadsLoaded,
+    leadsLoadError,
     listStudentsPage,
     loadPromotionHistory,
     markSubscriptionRequired,
@@ -1344,6 +1599,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promotionHistoryCache,
     refreshLeads,
     refreshPrograms,
+    refreshSchedule,
     refreshScheduleRange,
     refreshSessionAttendance,
     refreshStaff,
@@ -1351,6 +1607,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     removeStaff,
     resetDemoData,
     restoreProgram,
+    scheduleLoadError,
+    scheduleStatus,
     sessions,
     setBeltRanks,
     setCurrentLadder,

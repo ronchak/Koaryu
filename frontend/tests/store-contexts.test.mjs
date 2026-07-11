@@ -61,6 +61,8 @@ function renderWithStoreContexts(child) {
   };
   const leads = {
     leads: [{ id: "lead_1" }],
+    leadsLoaded: true,
+    leadsLoadError: null,
     addLead: noop,
     updateLead: noop,
     deleteLead: noop,
@@ -87,11 +89,14 @@ function renderWithStoreContexts(child) {
   };
   const schedule = {
     sessions: [],
+    scheduleLoadError: null,
+    scheduleStatus: "ready",
     addSession: noop,
     addTemplate: async () => ({}),
     deleteSession: noop,
     refreshScheduleRange: async () => [],
-    refreshSessionAttendance: async () => [],
+    refreshSessionAttendance: async () => ({ committed: true, records: [] }),
+    refreshSchedule: noop,
     templates: [],
     attendance: [],
     toggleCheckIn: noop,

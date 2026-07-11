@@ -384,6 +384,10 @@ export function isScheduleReadCurrent({
     && currentRequestSequence === requestSequenceAtStart;
 }
 
+export function isAuthoritativeScheduleReady(current: ScheduleCoordinatorState) {
+  return current.mutationsInFlight === 0 && current.hasAuthoritativeSnapshot;
+}
+
 function parseCalendarDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day, 12, 0, 0, 0);

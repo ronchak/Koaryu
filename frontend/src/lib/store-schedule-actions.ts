@@ -19,6 +19,7 @@ import {
   type SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
+import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
@@ -42,6 +43,8 @@ interface UseStoreScheduleActionsOptions {
   scheduleCoordinatorRef: StoreRef<ScheduleCoordinatorState>;
   sessionsRef: StoreRef<ClassSession[]>;
   setAttendance: Dispatch<SetStateAction<AttendanceRecord[]>>;
+  setScheduleLoadError: Dispatch<SetStateAction<string | null>>;
+  setScheduleStatus: Dispatch<SetStateAction<DatasetLoadStatus>>;
   setSessions: Dispatch<SetStateAction<ClassSession[]>>;
   setTemplates: Dispatch<SetStateAction<ClassTemplate[]>>;
   templatesRef: StoreRef<ClassTemplate[]>;
@@ -58,6 +61,8 @@ export function useStoreScheduleActions({
   scheduleCoordinatorRef,
   sessionsRef,
   setAttendance,
+  setScheduleLoadError,
+  setScheduleStatus,
   setSessions,
   setTemplates,
   templatesRef,
@@ -92,6 +97,8 @@ export function useStoreScheduleActions({
   const beginScheduleMutation = useCallback(() => {
     const request = beginLiveAuthRequest();
     const generation = scheduleCoordinatorRef.current.generation;
+    setScheduleLoadError(null);
+    setScheduleStatus("loading");
     scheduleCoordinatorRef.current = beginScheduleMutationState(scheduleCoordinatorRef.current);
     let finished = false;
 
@@ -121,7 +128,14 @@ export function useStoreScheduleActions({
         }
       },
     };
-  }, [beginLiveAuthRequest, reconcileSchedule, releaseScheduleMutationWaiters, scheduleCoordinatorRef]);
+  }, [
+    beginLiveAuthRequest,
+    reconcileSchedule,
+    releaseScheduleMutationWaiters,
+    scheduleCoordinatorRef,
+    setScheduleLoadError,
+    setScheduleStatus,
+  ]);
 
   const refreshScheduleRange = useCallback(async (
     startDate: string,

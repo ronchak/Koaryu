@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
+import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
+import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
 import { Header } from "@/components/header";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { ReportsDataExportsPanel } from "@/components/reports/reports-data-exports-panel";
@@ -16,14 +18,21 @@ import {
   formatReportDate,
   formatReportPercent,
 } from "@/lib/report-metrics";
+import { loadedDataset, resolvePageDatasetReadiness } from "@/lib/page-dataset-readiness";
 import { useConfigStore, useLeadStore, useProgramStore, useScheduleStore, useStudioStore } from "@/lib/store";
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
 
 export default function ReportsPage() {
   const { isPreviewMode, token } = useConfigStore();
-  const { leads } = useLeadStore();
-  const { programs } = useProgramStore();
-  const { attendance, sessions } = useScheduleStore();
+  const { leads, leadsLoadError, leadsLoaded, refreshLeads } = useLeadStore();
+  const { programs, programsLoadError, programsLoaded, refreshPrograms } = useProgramStore();
+  const {
+    attendance,
+    refreshSchedule,
+    scheduleLoadError,
+    scheduleStatus,
+    sessions,
+  } = useScheduleStore();
   const { currentRole } = useStudioStore();
   const canExportStudioData = currentRole === "admin" || currentRole === "front_desk";
   const {
@@ -39,6 +48,48 @@ export default function ReportsPage() {
     () => buildReportsPageModel({ attendance, leads, programs, sessions }),
     [attendance, leads, programs, sessions]
   );
+  const datasetReadiness = resolvePageDatasetReadiness([
+    loadedDataset({ error: leadsLoadError, label: "Leads", loaded: leadsLoaded }),
+    loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
+    { error: scheduleLoadError, label: "Schedule", status: scheduleStatus },
+  ]);
+  const retryReportsDatasets = useCallback(() => {
+    void Promise.allSettled([
+      refreshPrograms({ includeArchived: true }),
+      refreshLeads(),
+      refreshSchedule(),
+    ]);
+  }, [refreshLeads, refreshPrograms, refreshSchedule]);
+
+  if (datasetReadiness.status === "loading") {
+    return (
+      <DashboardLoadingSkeleton
+        title="Reports"
+        description="Loading studio reporting panels and export controls."
+        variant="table"
+      />
+    );
+  }
+
+  if (datasetReadiness.status === "error") {
+    return (
+      <>
+        <Header
+          title="Reports"
+          description="Live lead funnel, source, and attendance trends for the current studio."
+        />
+        <div className="flex-1 p-6 sm:p-8">
+          <div className="max-w-6xl">
+            <DatasetReadinessErrorPanel
+              error={datasetReadiness.error || "Report data could not be loaded."}
+              onRetry={retryReportsDatasets}
+              title="Reports are unavailable"
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

@@ -256,6 +256,11 @@ describe("students page model", () => {
   it("builds roster loading, pagination, and refreshing state", () => {
     assert.deepEqual(
       buildStudentRosterLoadState({
+        programsLoadError: null,
+        programsLoaded: true,
+        scheduleLoadError: null,
+        scheduleRequired: false,
+        scheduleStatus: "idle",
         isDerivedRosterRefreshing: true,
         isPagedLoading: false,
         page: 1,
@@ -282,6 +287,11 @@ describe("students page model", () => {
 
     assert.deepEqual(
       buildStudentRosterLoadState({
+        programsLoadError: null,
+        programsLoaded: true,
+        scheduleLoadError: null,
+        scheduleRequired: false,
+        scheduleStatus: "idle",
         isDerivedRosterRefreshing: false,
         isPagedLoading: true,
         page: 3,
@@ -305,6 +315,60 @@ describe("students page model", () => {
         visibleTotal: 121,
       }
     );
+  });
+
+  it("depends on programs but not schedule for the default roster", () => {
+    const base = {
+      programsLoadError: null,
+      programsLoaded: true,
+      scheduleLoadError: "Schedule is unavailable",
+      scheduleRequired: false,
+      scheduleStatus: "error",
+      isDerivedRosterRefreshing: false,
+      isPagedLoading: false,
+      page: 1,
+      pageSize: 50,
+      pagedLoadError: null,
+      pagedLoaded: true,
+      pagedTotal: 2,
+      studentsCount: 2,
+      studentsLoadError: null,
+      studentsLoaded: true,
+      studentsMayBePartial: false,
+      usesDerivedRosterFilters: false,
+    };
+
+    assert.equal(buildStudentRosterLoadState(base).isInitialRosterLoading, false);
+    assert.equal(buildStudentRosterLoadState(base).activeLoadError, null);
+    assert.equal(
+      buildStudentRosterLoadState({ ...base, programsLoaded: false }).isInitialRosterLoading,
+      true
+    );
+  });
+
+  it("requires a successful schedule only when an inactivity filter consumes it", () => {
+    const state = buildStudentRosterLoadState({
+      programsLoadError: null,
+      programsLoaded: true,
+      scheduleLoadError: "Schedule timed out",
+      scheduleRequired: true,
+      scheduleStatus: "error",
+      isDerivedRosterRefreshing: false,
+      isPagedLoading: false,
+      page: 1,
+      pageSize: 50,
+      pagedLoadError: null,
+      pagedLoaded: true,
+      pagedTotal: 2,
+      studentsCount: 2,
+      studentsLoadError: null,
+      studentsLoaded: true,
+      studentsMayBePartial: false,
+      usesDerivedRosterFilters: true,
+    });
+
+    assert.equal(state.isInitialRosterLoading, false);
+    assert.equal(state.activeLoadError, "Schedule timed out");
   });
 
   it("parses comma-separated bulk tags with trimming and de-duping", () => {
