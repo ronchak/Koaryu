@@ -52,6 +52,18 @@ Operator: `Ronak Chakraborty / Codex session`
 - Off-site copy: pending; the encrypted backup currently has only the local path above, so off-site recovery is not yet proven.
 - Production impact: none. No production record was deleted or anonymized.
 
+## Staging Isolation Control Audit — 2026-07-11
+
+Operator: `Codex release orchestrator`
+
+- Repository baseline: protected `main` is `54e42d570a7dfdafd11268213c7232a788410002`; its repository migration head is `20260711215000_harden_function_execution_boundaries.sql`. The isolation-control candidate is tracked by PR [#49](https://github.com/ronchak/Koaryu/pull/49), whose exact immutable head and CI run are the durable record for this self-modifying ledger change.
+- Staging resources: Supabase `nxgsektqsgrtyfhawxbc` is `ACTIVE_HEALTHY`; the dedicated backend API is `https://koaryu-staging.onrender.com/api/v1`; the protected Vercel alias is `https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app`.
+- Proven checks: backend `/api/v1/health` returned `200`; unauthenticated auth/profile and students requests returned `401`; exact staging-origin CORS preflight returned `200`; production-origin preflight returned `400` without an allow-origin header. Branch-scoped Vercel metadata points to staging Supabase and matching non-production backend/site destinations without exposing values marked sensitive.
+- Application alignment gap: Vercel deployment `dpl_AXrjgCKzsFr6q3V2AKTU3hJjgYTa` is `READY` but was built from `b78cb9863e226d17dc242259cf7099e62c6ccfd5`, not current `main`. Render's exact deployed SHA is not captured. The current application and migration candidate is therefore not proven aligned or deployed to staging.
+- Isolation control: `scripts/verify-staging-isolation.mjs` fails closed on production Supabase/origin/backend destinations, live Stripe key prefixes, mismatched application URLs, incorrect platform/Connect webhook destinations, preview mode, and demo-reset configuration. The guard prints no secret values; webhook signing-secret prefixes cannot prove Stripe mode, so dashboard destination and delivery evidence remain required.
+- Gate status: #21 remains **open** pending authenticated Render environment/SHA evidence, Stripe test-mode endpoint and delivery evidence for both webhooks, an exact-current-SHA deploy on both providers, protected frontend/API-proxy smoke, authenticated representative application smoke, and cost/ownership/cleanup records.
+- Recovery status: the five local AEAD artifacts retain their recorded hashes and mode `0600`, decrypt with the Keychain-held key, and reject a deliberately wrong key. No approved off-site destination or provider-downloaded copy exists, so #22 remains **open** and #23 remains blocked. No upload, restore, plaintext write, production mutation, or production-derived staging load occurred.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
