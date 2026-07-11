@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.concurrency import run_in_threadpool
 from app.core.security import get_user_id_from_token
 from app.db.supabase import create_supabase_client
 from app.services.studio_scope import resolve_staff_role_for_user
@@ -34,7 +35,9 @@ async def get_current_user_id(
     """
     if credentials is None or not credentials.credentials:
         raise _authentication_exception()
-    return get_user_id_from_token(credentials.credentials)
+    # JWKS verification can perform a bounded synchronous provider request on a
+    # cold cache or key rotation. Keep that I/O off the ASGI event loop.
+    return await run_in_threadpool(get_user_id_from_token, credentials.credentials)
 
 
 async def get_supabase() -> Client:

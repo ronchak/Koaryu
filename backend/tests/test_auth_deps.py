@@ -36,6 +36,26 @@ class AuthDependencyTest(unittest.TestCase):
         self.assertEqual(context.exception.detail, "Invalid authentication token")
         self.assertEqual(context.exception.headers, {"WWW-Authenticate": "Bearer"})
 
+    def test_token_verification_runs_off_the_event_loop(self):
+        async def fake_run_in_threadpool(function, token):
+            self.assertEqual(token, "valid-token")
+            return function(token)
+
+        with patch(
+            "app.core.deps.get_user_id_from_token",
+            return_value="user_1",
+        ) as verify, patch(
+            "app.core.deps.run_in_threadpool",
+            side_effect=fake_run_in_threadpool,
+        ) as run_in_threadpool:
+            user_id = asyncio.run(
+                get_current_user_id(SimpleNamespace(credentials="valid-token"))
+            )
+
+        self.assertEqual(user_id, "user_1")
+        run_in_threadpool.assert_called_once()
+        verify.assert_called_once_with("valid-token")
+
     def test_requested_studio_header_is_trimmed_selector(self):
         request = SimpleNamespace(cookies={ACTIVE_STUDIO_COOKIE: "cookie-studio"})
 

@@ -28,6 +28,8 @@ services:
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
+      - key: SUPABASE_ALLOW_LEGACY_HS256
+        value: "false"
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_RESTRICTED_KEY

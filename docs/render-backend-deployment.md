@@ -45,6 +45,7 @@ Secret values to paste from Supabase or Stripe:
 ```env
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_JWT_SECRET=
+SUPABASE_ALLOW_LEGACY_HS256=false
 STRIPE_SECRET_KEY=
 STRIPE_RESTRICTED_KEY=
 STRIPE_PLATFORM_WEBHOOK_SECRET=
@@ -63,7 +64,6 @@ When `ENVIRONMENT=production`, FastAPI validates critical live-service configura
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_JWT_SECRET`
 - `FRONTEND_URL`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`
@@ -74,6 +74,14 @@ When `ENVIRONMENT=production`, FastAPI validates critical live-service configura
 - `SUPPORT_TRIAGE_SECRET`
 
 `SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. `STRIPE_RESTRICTED_KEY` is optional, but if set it must be a non-placeholder Stripe restricted key. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for `Production configuration is incomplete` and fix the named config vars before redeploying.
+
+Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
+
+### Auth signing-key and session operations
+
+- The backend caches JWKS for 10 minutes and permits at most one early refresh every 30 seconds after a key miss. A cold-cache or rotation fetch runs off the ASGI event loop as a single-flight refresh. Concurrent requests that need the unavailable/new key fail temporarily with a sanitized `503` and `Retry-After`; requests using a known cached key continue without waiting.
+- To purge the in-process JWKS cache during an urgent signing-key revocation, restart/redeploy the Render service. Provider/CDN JWKS caching can still apply, so keep old and new asymmetric keys overlapped for the provider-documented rotation window unless the old key is compromised.
+- Production validates signed access tokens locally. Supabase sign-out or session revocation therefore stops refresh-token use but does not invalidate an already issued access token before its `exp`. Before release, record the provider access-token lifetime and explicitly accept or reduce that maximum revocation window; do not describe sign-out as immediate access-token revocation.
 
 ### Internal Operations
 
@@ -148,7 +156,7 @@ cd backend
 ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
   SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co \
   SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
-  SUPABASE_JWT_SECRET="$SUPABASE_JWT_SECRET" \
+  SUPABASE_ALLOW_LEGACY_HS256=false \
   STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
   STRIPE_PLATFORM_WEBHOOK_SECRET="$STRIPE_PLATFORM_WEBHOOK_SECRET" \
   STRIPE_CONNECT_WEBHOOK_SECRET="$STRIPE_CONNECT_WEBHOOK_SECRET" \

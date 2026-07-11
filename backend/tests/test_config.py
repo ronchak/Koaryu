@@ -116,6 +116,27 @@ class ProductionConfigValidationTest(unittest.TestCase):
 
         settings.validate_production_configuration()
 
+    def test_production_requires_jwt_secret_only_when_legacy_hs256_is_enabled(self):
+        asymmetric_settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "SUPABASE_JWT_SECRET": "placeholder-secret",
+            },
+        )
+        asymmetric_settings.validate_production_configuration()
+
+        legacy_settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "SUPABASE_JWT_SECRET": "placeholder-secret",
+                "SUPABASE_ALLOW_LEGACY_HS256": True,
+            },
+        )
+        with self.assertRaisesRegex(RuntimeError, "SUPABASE_JWT_SECRET"):
+            legacy_settings.validate_production_configuration()
+
 
 if __name__ == "__main__":
     unittest.main()

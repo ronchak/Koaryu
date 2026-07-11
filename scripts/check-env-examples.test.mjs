@@ -115,6 +115,7 @@ services:
       ["ENVIRONMENT", "development"],
       ["DEMO_RESET_ENABLED", "true"],
       ["DEMO_RESET_STUDIO_IDS", "live-studio-id"],
+      ["SUPABASE_ALLOW_LEGACY_HS256", "true"],
       ["API_V1_PREFIX", "/api"],
       ["FRONTEND_URL", "https://koaryu.dev"],
     ]);
@@ -126,6 +127,8 @@ envVars:
     value: "true"
   - key: DEMO_RESET_STUDIO_IDS
     value: live-studio-id
+  - key: SUPABASE_ALLOW_LEGACY_HS256
+    value: "true"
   - key: API_V1_PREFIX
     value: /api
   - key: FRONTEND_URL
@@ -138,7 +141,7 @@ envVars:
       unsafeValues,
     );
 
-    for (const key of ["ENVIRONMENT", "DEMO_RESET_ENABLED", "DEMO_RESET_STUDIO_IDS", "API_V1_PREFIX"]) {
+    for (const key of ["ENVIRONMENT", "DEMO_RESET_ENABLED", "DEMO_RESET_STUDIO_IDS", "SUPABASE_ALLOW_LEGACY_HS256", "API_V1_PREFIX"]) {
       assert.ok(failures.some((failure) => failure.includes(key) && failure.includes("must equal")));
     }
     assert.ok(failures.some((failure) => failure.includes("FRONTEND_URL") && failure.includes("must match")));

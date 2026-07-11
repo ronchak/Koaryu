@@ -47,7 +47,8 @@ Backend environment variables:
 
 - `SUPABASE_URL`: same Supabase project URL used by the frontend
 - `SUPABASE_SERVICE_ROLE_KEY`: required for backend access to studio-scoped CRUD, onboarding, and verification scripts
-- `SUPABASE_JWT_SECRET`: used to validate Supabase access tokens
+- `SUPABASE_JWT_SECRET`: legacy HS256 validation secret; ignored unless `SUPABASE_ALLOW_LEGACY_HS256=true`
+- `SUPABASE_ALLOW_LEGACY_HS256`: defaults to `false`; enable only for a time-bounded legacy-token migration (the local Supabase stack still uses `true`)
 - `FRONTEND_URL`: primary allowed frontend origin, typically `http://localhost:4000`
 - `ENVIRONMENT`: environment label such as `development` or `production`
 - `DEMO_RESET_ENABLED`: set to `true` only for controlled demo/staging environments where demo data tools should be available
