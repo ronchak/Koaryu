@@ -6,6 +6,13 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, status
 
+from app.core.upload_limits import (
+    CSV_IMPORT_MAX_BYTES,
+    CSV_IMPORT_MAX_CELL_CHARS,
+    CSV_IMPORT_MAX_COLUMNS,
+    CSV_IMPORT_MAX_ROWS,
+)
+
 from app.schemas.student import CsvImportIssue, STUDENT_STATUSES
 from app.services.student_import_headers import (
     auto_map_csv_header,
@@ -65,11 +72,33 @@ COMMON_IMPORT_DATE_FORMATS = (
     "%B %d %Y",
     "%b %d %Y",
 )
-CSV_IMPORT_MAX_BYTES = 10 * 1024 * 1024
-CSV_IMPORT_MAX_ROWS = 10_000
-CSV_IMPORT_MAX_COLUMNS = 100
-CSV_IMPORT_MAX_CELL_CHARS = 32_000
 CSV_IMPORT_ENCODINGS = ("utf-8-sig", "cp1252")
+CSV_IMPORT_TARGET_FIELDS = {
+    "full_name",
+    "legal_first_name",
+    "legal_last_name",
+    "preferred_name",
+    "date_of_birth",
+    "email",
+    "phone",
+    "status",
+    "membership_start_date",
+    "program_id",
+    "current_belt_rank_id",
+    "notes",
+    "tags",
+    "address_line1",
+    "address_city",
+    "address_state",
+    "address_zip",
+    "emergency_contact_name",
+    "emergency_contact_phone",
+    "emergency_contact_relation",
+    "guardian_name",
+    "guardian_email",
+    "guardian_phone",
+    "guardian_relation",
+}
 
 csv.field_size_limit(max(csv.field_size_limit(), CSV_IMPORT_MAX_CELL_CHARS + 1))
 
@@ -116,11 +145,36 @@ def validate_csv_import_cell(value: Any, *, line_number: int, column_name: str) 
     return normalized
 
 
-def validate_csv_import_mapping(mapping: dict[str, str]) -> None:
+def validate_csv_import_mapping(
+    mapping: dict[str, str],
+    *,
+    headers: Optional[list[str]] = None,
+) -> None:
+    if len(mapping) > CSV_IMPORT_MAX_COLUMNS:
+        raise csv_import_error(
+            status.HTTP_400_BAD_REQUEST,
+            f"This import mapping has too many columns. Keep imports to {CSV_IMPORT_MAX_COLUMNS} columns or fewer.",
+        )
+
+    if headers is not None:
+        header_set = set(headers)
+        unknown_columns = [column for column in mapping if column not in header_set]
+        if unknown_columns:
+            raise csv_import_error(
+                status.HTTP_400_BAD_REQUEST,
+                "This import mapping includes a column that is not present in the uploaded CSV.",
+            )
+
     mapped_targets: dict[str, str] = {}
     for csv_column, target_field in mapping.items():
         if not target_field:
             continue
+
+        if target_field not in CSV_IMPORT_TARGET_FIELDS:
+            raise csv_import_error(
+                status.HTTP_400_BAD_REQUEST,
+                "This import mapping includes an unsupported Koaryu field.",
+            )
 
         if target_field == "status" and is_payment_status_header(csv_column):
             raise csv_import_error(

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.core.request_body_limits import STRIPE_WEBHOOK_REQUEST_MAX_BYTES
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.main import app
 from app.schemas.billing import BillingLinkResponse, WebhookProcessResponse
@@ -109,6 +110,48 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Invalid Stripe webhook signature.")
         webhook_service_class.assert_called_once_with(self.supabase)
         service.handle_connect_webhook.assert_awaited_once_with(b'{"id":"evt_bad"}', "t=1,v1=bad")
+
+    @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
+    def test_platform_webhook_rejects_oversized_content_length_before_reading_body(
+        self,
+        webhook_service_class,
+    ):
+        response = self.client.post(
+            "/api/v1/webhooks/stripe/platform",
+            content=b"{}",
+            headers={
+                "Content-Length": str(STRIPE_WEBHOOK_REQUEST_MAX_BYTES + 1),
+                "Stripe-Signature": "t=1,v1=platform-signature",
+            },
+        )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["detail"], "Request body is too large.")
+        self.assertEqual(response.json()["error"]["code"], "http_413")
+        webhook_service_class.assert_not_called()
+
+    @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
+    def test_connect_webhook_rejects_oversized_chunked_body(
+        self,
+        webhook_service_class,
+    ):
+        def body_chunks():
+            yield b"x" * STRIPE_WEBHOOK_REQUEST_MAX_BYTES
+            yield b"x"
+
+        response = self.client.post(
+            "/api/v1/webhooks/stripe/connect",
+            content=body_chunks(),
+            headers={
+                "Transfer-Encoding": "chunked",
+                "Stripe-Signature": "t=1,v1=signature",
+            },
+        )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["detail"], "Request body is too large.")
+        self.assertEqual(response.json()["error"]["code"], "http_413")
+        webhook_service_class.assert_not_called()
 
 
 if __name__ == "__main__":

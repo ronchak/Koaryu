@@ -20,7 +20,7 @@ export function buildUpstreamProxyRequestHeaders(
   }
 
   const contentType = requestHeaders.get("content-type");
-  if (contentType && !contentType.includes("multipart/form-data")) {
+  if (contentType) {
     headers.set("content-type", contentType);
   }
 

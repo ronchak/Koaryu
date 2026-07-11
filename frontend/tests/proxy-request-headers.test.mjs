@@ -34,7 +34,7 @@ describe("buildUpstreamProxyRequestHeaders", () => {
     assert.equal(headers.get("x-studio-id"), null);
   });
 
-  it("does not force multipart content-type boundaries through the proxy", () => {
+  it("preserves the original multipart content-type boundary for raw forwarding", () => {
     const headers = buildUpstreamProxyRequestHeaders(
       new Headers({
         "content-type": "multipart/form-data; boundary=browser-generated",
@@ -42,7 +42,7 @@ describe("buildUpstreamProxyRequestHeaders", () => {
       "cookie-studio"
     );
 
-    assert.equal(headers.get("content-type"), null);
+    assert.equal(headers.get("content-type"), "multipart/form-data; boundary=browser-generated");
     assert.equal(headers.get("x-studio-id"), "cookie-studio");
   });
 });

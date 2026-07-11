@@ -1,8 +1,9 @@
 import type { StudentRankWithContext } from "@/components/students/student-rank-badge";
 import type { StudentFormInitialData } from "@/components/students/student-form-state";
 import type { BeltLadder, BeltRank, Promotion, Student } from "@/types";
+import { STUDENT_PHOTO_MAX_BYTES } from "./request-body-limits.ts";
 
-export const STUDENT_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export { STUDENT_PHOTO_MAX_BYTES };
 export const STUDENT_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export function validateStudentPhotoFile(

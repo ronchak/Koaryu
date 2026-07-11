@@ -1,4 +1,6 @@
-export const CSV_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+import { CSV_IMPORT_MAX_BYTES } from "./request-body-limits.ts";
+
+export { CSV_IMPORT_MAX_BYTES };
 
 import type { BeltLadder, BeltRank, CsvImportResult, Program } from "../types";
 
