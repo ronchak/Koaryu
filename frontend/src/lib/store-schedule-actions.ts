@@ -6,12 +6,14 @@ import {
   compareSessions,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
+  isScheduleRangeCommitCurrent,
   isScheduleReadCurrent,
   shouldReconcileSchedule,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
   normalizeAttendanceRecords,
   runOptimisticAttendanceToggle,
+  runScheduleRangeRefreshWithRetry,
   shouldRetryScheduleReadAfterCoordinatorChange,
   setScheduleRequestedRangeState,
   updateSessionAttendanceCount,
@@ -19,6 +21,7 @@ import {
   type SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
+import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
@@ -42,6 +45,8 @@ interface UseStoreScheduleActionsOptions {
   scheduleCoordinatorRef: StoreRef<ScheduleCoordinatorState>;
   sessionsRef: StoreRef<ClassSession[]>;
   setAttendance: Dispatch<SetStateAction<AttendanceRecord[]>>;
+  setScheduleLoadError: Dispatch<SetStateAction<string | null>>;
+  setScheduleStatus: Dispatch<SetStateAction<DatasetLoadStatus>>;
   setSessions: Dispatch<SetStateAction<ClassSession[]>>;
   setTemplates: Dispatch<SetStateAction<ClassTemplate[]>>;
   templatesRef: StoreRef<ClassTemplate[]>;
@@ -58,6 +63,8 @@ export function useStoreScheduleActions({
   scheduleCoordinatorRef,
   sessionsRef,
   setAttendance,
+  setScheduleLoadError,
+  setScheduleStatus,
   setSessions,
   setTemplates,
   templatesRef,
@@ -92,6 +99,8 @@ export function useStoreScheduleActions({
   const beginScheduleMutation = useCallback(() => {
     const request = beginLiveAuthRequest();
     const generation = scheduleCoordinatorRef.current.generation;
+    setScheduleLoadError(null);
+    setScheduleStatus("loading");
     scheduleCoordinatorRef.current = beginScheduleMutationState(scheduleCoordinatorRef.current);
     let finished = false;
 
@@ -121,7 +130,14 @@ export function useStoreScheduleActions({
         }
       },
     };
-  }, [beginLiveAuthRequest, reconcileSchedule, releaseScheduleMutationWaiters, scheduleCoordinatorRef]);
+  }, [
+    beginLiveAuthRequest,
+    reconcileSchedule,
+    releaseScheduleMutationWaiters,
+    scheduleCoordinatorRef,
+    setScheduleLoadError,
+    setScheduleStatus,
+  ]);
 
   const refreshScheduleRange = useCallback(async (
     startDate: string,
@@ -132,6 +148,7 @@ export function useStoreScheduleActions({
     }
 
     try {
+      return await runScheduleRangeRefreshWithRetry(async () => {
       const request = beginLiveAuthRequest();
       const coordinator = scheduleCoordinatorRef.current;
       const requestSequence = coordinator.rangeRequestSequence + 1;
@@ -186,8 +203,12 @@ export function useStoreScheduleActions({
         }
       }
 
-      if (!isCurrentRequest()) {
-        return rangeSessions;
+      if (!isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent())) {
+        return { committed: false, value: rangeSessions };
+      }
+
+      if (attendanceRecords === null) {
+        throw new Error("Schedule attendance could not be loaded.");
       }
 
       const replacedSessionIds = Array.from(
@@ -200,12 +221,11 @@ export function useStoreScheduleActions({
       );
 
       setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
-      if (attendanceRecords !== null && attendanceIsCurrent()) {
-        setAttendance((current) =>
-          mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
-        );
-      }
-      return rangeSessions;
+      setAttendance((current) =>
+        mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
+      );
+      return { committed: true, value: rangeSessions };
+      });
     } finally {
       if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
         void reconcileSchedule().catch((error) => {

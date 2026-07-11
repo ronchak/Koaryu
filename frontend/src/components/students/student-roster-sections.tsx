@@ -185,7 +185,7 @@ export function StudentRosterTable({
   allSelected: boolean;
   filtered: StudentRosterRow[];
   handleSort: (key: SortKey) => void;
-  inactivityByStudentId: ReadonlyMap<string, number>;
+  inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
   onOpenStudent: (studentId: string) => void;
   programs: Program[];
@@ -357,7 +357,7 @@ export function StudentRosterTable({
               </td>
               {inactivityThreshold && (
                 <td className="px-4 py-3 text-text-secondary font-mono text-xs">
-                  {inactivityByStudentId.get(student.id) || 0}
+                  {inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`}
                 </td>
               )}
             </tr>

@@ -8,6 +8,8 @@ import {
   createScheduleReconciliationQueue,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
+  isAuthoritativeScheduleReady,
+  isScheduleRangeCommitCurrent,
   isScheduleReadCurrent,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
@@ -16,6 +18,7 @@ import {
   refreshScheduleCoordinatorAuthState,
   resolveScheduleReconciliationRange,
   resetScheduleCoordinatorState,
+  runScheduleRangeRefreshWithRetry,
   setScheduleRequestedRangeState,
   shouldReconcileSchedule,
   shouldPreserveScheduleMutationsOnAuthChange,
@@ -92,11 +95,14 @@ describe("schedule store model", () => {
     const initial = markScheduleCoordinatorSnapshotState(createScheduleCoordinatorState());
     const mutation = beginScheduleMutationState(initial);
 
+    assert.equal(isAuthoritativeScheduleReady(initial), true);
+    assert.equal(isAuthoritativeScheduleReady(mutation), false);
     assert.equal(mutation.hasAuthoritativeSnapshot, false);
     assert.equal(mutation.mutationsInFlight, 1);
     assert.equal(shouldReconcileSchedule(mutation), false);
 
     const settled = finishScheduleMutationState(mutation, mutation.generation);
+    assert.equal(isAuthoritativeScheduleReady(settled), false);
     assert.equal(settled.mutationsInFlight, 0);
     assert.equal(shouldReconcileSchedule(settled), true);
   });
@@ -158,6 +164,34 @@ describe("schedule store model", () => {
     assert.deepEqual(
       refreshScheduleCoordinatorAuthState(coordinator).requestedRange,
       farFutureRange
+    );
+  });
+
+  it("retries range and attendance supersession before claiming a committed range", async () => {
+    assert.equal(isScheduleRangeCommitCurrent(false, true), false);
+    assert.equal(isScheduleRangeCommitCurrent(true, false), false);
+    assert.equal(isScheduleRangeCommitCurrent(true, true), true);
+
+    const outcomes = [
+      { committed: false, value: "range-superseded" },
+      { committed: false, value: "attendance-superseded" },
+      { committed: true, value: "complete-range" },
+    ];
+    let attempts = 0;
+    const value = await runScheduleRangeRefreshWithRetry(async () => {
+      const result = outcomes[attempts];
+      attempts += 1;
+      return result;
+    });
+
+    assert.equal(value, "complete-range");
+    assert.equal(attempts, 3);
+  });
+
+  it("fails closed when a range remains superseded", async () => {
+    await assert.rejects(
+      runScheduleRangeRefreshWithRetry(async () => ({ committed: false, value: [] }), 2),
+      /superseded/
     );
   });
 

@@ -42,7 +42,7 @@ type StudentRosterPageContentProps = {
   fullRosterRequested: boolean;
   hasActiveFilters: boolean;
   hasNewStudentFilter: boolean;
-  inactivityByStudentId: ReadonlyMap<string, number>;
+  inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
   isAdding: boolean;
   isAddingTags: boolean;

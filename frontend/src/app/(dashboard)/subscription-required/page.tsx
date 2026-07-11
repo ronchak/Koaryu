@@ -85,7 +85,10 @@ export default function SubscriptionRequiredPage() {
         setBillingStatus(status);
         if (hasAccess(status)) {
           clearSubscriptionRequired();
-          router.replace("/dashboard");
+          // The store was intentionally emptied while access was blocked. A
+          // document navigation guarantees a fresh authenticated bootstrap for
+          // every newly gated dataset before the dashboard renders.
+          window.location.replace("/dashboard");
         }
       } catch (loadError) {
         if (!mounted) return;

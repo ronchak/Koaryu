@@ -19,6 +19,8 @@ interface UseStoreLeadActionsOptions {
   programsRef: StoreRef<Program[]>;
   refreshStudents: () => Promise<Student[]>;
   setLeads: Dispatch<SetStateAction<Lead[]>>;
+  setLeadsLoaded: Dispatch<SetStateAction<boolean>>;
+  setLeadsLoadError: Dispatch<SetStateAction<string | null>>;
   studentsRef: StoreRef<Student[]>;
 }
 
@@ -31,6 +33,8 @@ export function useStoreLeadActions({
   programsRef,
   refreshStudents,
   setLeads,
+  setLeadsLoaded,
+  setLeadsLoadError,
   studentsRef,
 }: UseStoreLeadActionsOptions) {
   const addLead = useCallback(async (data: Partial<Lead>) => {
@@ -82,13 +86,31 @@ export function useStoreLeadActions({
     }
 
     const request = beginLiveAuthRequest();
-    const result = await api.get<Lead[]>("/leads", request.token);
-    if (!request.isCurrent()) {
+    setLeadsLoadError(null);
+    setLeadsLoaded(false);
+    try {
+      const result = await api.get<Lead[]>("/leads", request.token);
+      if (!request.isCurrent()) {
+        return result;
+      }
+      setLeads(result);
+      setLeadsLoaded(true);
       return result;
+    } catch (error) {
+      if (request.isCurrent()) {
+        setLeadsLoadError(error instanceof Error ? error.message : "Leads could not be loaded.");
+        setLeadsLoaded(false);
+      }
+      throw error;
     }
-    setLeads(result);
-    return result;
-  }, [beginLiveAuthRequest, isPreviewMode, leadsRef, setLeads]);
+  }, [
+    beginLiveAuthRequest,
+    isPreviewMode,
+    leadsRef,
+    setLeads,
+    setLeadsLoaded,
+    setLeadsLoadError,
+  ]);
 
   const convertLeadToStudent = useCallback(async (leadId: string) => {
     const lead = leadsRef.current.find((item) => item.id === leadId);

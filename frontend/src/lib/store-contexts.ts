@@ -37,6 +37,7 @@ import type {
   DemoResetResponse,
   StudioDataClearResponse,
 } from "@/lib/studio-store-model";
+import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 
 export interface StoreContextValue {
   isPreviewMode: boolean;
@@ -91,6 +92,8 @@ export interface StoreContextValue {
   restoreProgram: (id: string) => Promise<Program>;
 
   leads: Lead[];
+  leadsLoaded: boolean;
+  leadsLoadError: string | null;
   addLead: (data: Partial<Lead>) => Promise<void>;
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
@@ -123,6 +126,9 @@ export interface StoreContextValue {
   deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
   refreshScheduleRange: (startDate: string, endDate: string) => Promise<ClassSession[]>;
   refreshSessionAttendance: (sessionId: string) => Promise<SessionAttendanceRefreshResult>;
+  refreshSchedule: () => Promise<void>;
+  scheduleLoadError: string | null;
+  scheduleStatus: DatasetLoadStatus;
   templates: ClassTemplate[];
   attendance: AttendanceRecord[];
   toggleCheckIn: (sessionId: string, studentId: string, name: string) => Promise<void>;
@@ -191,6 +197,8 @@ export type ProgramsStoreContextValue = Pick<
 export type LeadsStoreContextValue = Pick<
   StoreContextValue,
   | "leads"
+  | "leadsLoaded"
+  | "leadsLoadError"
   | "addLead"
   | "updateLead"
   | "deleteLead"
@@ -224,6 +232,9 @@ export type ScheduleStoreContextValue = Pick<
   | "deleteSession"
   | "refreshScheduleRange"
   | "refreshSessionAttendance"
+  | "refreshSchedule"
+  | "scheduleLoadError"
+  | "scheduleStatus"
   | "templates"
   | "attendance"
   | "toggleCheckIn"

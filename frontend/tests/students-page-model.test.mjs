@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildInactivityScheduleDateRange,
   buildStudentQueryFilterState,
   buildStudentRosterLoadState,
   buildStudentRows,
@@ -187,6 +188,17 @@ describe("students page model", () => {
     assert.equal(formatDate(), "\u2014");
   });
 
+  it("requests the complete inactivity window instead of the bootstrap range", () => {
+    assert.deepEqual(
+      buildInactivityScheduleDateRange("2026-07-11", 90),
+      { startDate: "2026-04-12", endDate: "2026-07-11" }
+    );
+    assert.deepEqual(
+      buildInactivityScheduleDateRange("2026-07-11", 14),
+      { startDate: "2026-06-27", endDate: "2026-07-11" }
+    );
+  });
+
   it("centralizes query-driven roster filter state", () => {
     assert.deepEqual(
       buildStudentQueryFilterState({
@@ -256,6 +268,11 @@ describe("students page model", () => {
   it("builds roster loading, pagination, and refreshing state", () => {
     assert.deepEqual(
       buildStudentRosterLoadState({
+        programsLoadError: null,
+        programsLoaded: true,
+        scheduleLoadError: null,
+        scheduleRequired: false,
+        scheduleStatus: "idle",
         isDerivedRosterRefreshing: true,
         isPagedLoading: false,
         page: 1,
@@ -282,6 +299,11 @@ describe("students page model", () => {
 
     assert.deepEqual(
       buildStudentRosterLoadState({
+        programsLoadError: null,
+        programsLoaded: true,
+        scheduleLoadError: null,
+        scheduleRequired: false,
+        scheduleStatus: "idle",
         isDerivedRosterRefreshing: false,
         isPagedLoading: true,
         page: 3,
@@ -305,6 +327,60 @@ describe("students page model", () => {
         visibleTotal: 121,
       }
     );
+  });
+
+  it("depends on programs but not schedule for the default roster", () => {
+    const base = {
+      programsLoadError: null,
+      programsLoaded: true,
+      scheduleLoadError: "Schedule is unavailable",
+      scheduleRequired: false,
+      scheduleStatus: "error",
+      isDerivedRosterRefreshing: false,
+      isPagedLoading: false,
+      page: 1,
+      pageSize: 50,
+      pagedLoadError: null,
+      pagedLoaded: true,
+      pagedTotal: 2,
+      studentsCount: 2,
+      studentsLoadError: null,
+      studentsLoaded: true,
+      studentsMayBePartial: false,
+      usesDerivedRosterFilters: false,
+    };
+
+    assert.equal(buildStudentRosterLoadState(base).isInitialRosterLoading, false);
+    assert.equal(buildStudentRosterLoadState(base).activeLoadError, null);
+    assert.equal(
+      buildStudentRosterLoadState({ ...base, programsLoaded: false }).isInitialRosterLoading,
+      true
+    );
+  });
+
+  it("requires a successful schedule only when an inactivity filter consumes it", () => {
+    const state = buildStudentRosterLoadState({
+      programsLoadError: null,
+      programsLoaded: true,
+      scheduleLoadError: "Schedule timed out",
+      scheduleRequired: true,
+      scheduleStatus: "error",
+      isDerivedRosterRefreshing: false,
+      isPagedLoading: false,
+      page: 1,
+      pageSize: 50,
+      pagedLoadError: null,
+      pagedLoaded: true,
+      pagedTotal: 2,
+      studentsCount: 2,
+      studentsLoadError: null,
+      studentsLoaded: true,
+      studentsMayBePartial: false,
+      usesDerivedRosterFilters: true,
+    });
+
+    assert.equal(state.isInitialRosterLoading, false);
+    assert.equal(state.activeLoadError, "Schedule timed out");
   });
 
   it("parses comma-separated bulk tags with trimming and de-duping", () => {

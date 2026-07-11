@@ -15,6 +15,7 @@ import { DashboardOperationalKpisPanel } from "@/components/dashboard/dashboard-
 import type { KpiInsight } from "@/components/dashboard/dashboard-page-sections";
 import { KpiInsightModalLoading } from "@/components/dashboard/dashboard-page-sections";
 import { Header } from "@/components/header";
+import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
 import type { DashboardPageController } from "@/lib/dashboard-page-controller";
 
 const KpiInsightModal = dynamic(
@@ -30,6 +31,7 @@ type DashboardPageContentProps = DashboardPageController["contentProps"];
 export function DashboardPageContent({
   canSeeBilling,
   dashboardComposition,
+  datasetLoadError,
   hasDashboardSummary,
   hasPartialStudentSample,
   isInitialDashboardLoading,
@@ -38,6 +40,7 @@ export function DashboardPageContent({
   programBuckets,
   programById,
   recentStudentRows,
+  retryDashboardDatasets,
   rosterSummaryPending,
   shouldShowLocalStudentDetails,
   studioDescription,
@@ -69,7 +72,13 @@ export function DashboardPageContent({
       />
       <div className="flex-1 p-6 sm:p-8">
         <div className="max-w-6xl">
-          {isInitialDashboardLoading ? (
+          {datasetLoadError ? (
+            <DatasetReadinessErrorPanel
+              error={datasetLoadError}
+              onRetry={retryDashboardDatasets}
+              title="Dashboard data is unavailable"
+            />
+          ) : isInitialDashboardLoading ? (
             <DashboardLoadingPanel />
           ) : (
             <>
