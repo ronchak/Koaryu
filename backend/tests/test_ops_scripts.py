@@ -327,10 +327,23 @@ def test_account_support_verifier_honors_local_target(tmp_path):
     fake_supabase = tmp_path / "supabase"
     fake_supabase.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        "printf 'supabase %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
+        "printf '%s\\n' '{\"DB_URL\":\"postgresql://postgres:postgres@127.0.0.1:54322/postgres\"}'\n",
         encoding="utf-8",
     )
     fake_supabase.chmod(0o755)
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/bin/sh\n"
+        "printf 'docker %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
+        "if [ \"$1\" = ps ]; then\n"
+        "  printf 'fake_db\\t0.0.0.0:54322->5432/tcp\\n'\n"
+        "else\n"
+        "  cat >/dev/null\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
 
     result = subprocess.run(
         ["/bin/bash", str(script_path)],
@@ -346,5 +359,8 @@ def test_account_support_verifier_honors_local_target(tmp_path):
 
     assert result.returncode == 0
     calls = call_log.read_text(encoding="utf-8").splitlines()
-    assert len(calls) == 3
-    assert all(call.startswith("db query --local --file ") for call in calls)
+    assert calls.count("supabase status -o json") == 3
+    assert len([call for call in calls if call.startswith("docker ps ")]) == 3
+    docker_exec_calls = [call for call in calls if call.startswith("docker exec ")]
+    assert len(docker_exec_calls) == 3
+    assert all("-i fake_db psql -U postgres -d postgres" in call for call in docker_exec_calls)
