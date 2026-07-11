@@ -5,10 +5,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
-from jose import JWTError
-from jose import jwt
+import jwt
+from jwt import InvalidTokenError as JWTError
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from app.core.security import _clear_jwks_cache_for_tests, get_user_id_from_token
 
@@ -77,6 +77,38 @@ def _make_es256_token(*, kid: str = "test-key", payload_overrides=None):
     return token, public_jwk
 
 
+def _make_rs256_token(*, kid: str = "test-rsa-key", payload_overrides=None):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_numbers = private_key.public_key().public_numbers()
+    private_pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    public_jwk = {
+        "kty": "RSA",
+        "n": _base64url_uint(
+            public_numbers.n,
+            (public_numbers.n.bit_length() + 7) // 8,
+        ),
+        "e": _base64url_uint(
+            public_numbers.e,
+            (public_numbers.e.bit_length() + 7) // 8,
+        ),
+        "kid": kid,
+        "alg": "RS256",
+        "use": "sig",
+        "key_ops": ["verify"],
+    }
+    token = jwt.encode(
+        _make_supabase_payload(**(payload_overrides or {})),
+        private_pem,
+        algorithm="RS256",
+        headers={"kid": kid},
+    )
+    return token, public_jwk
+
+
 def _encode_segment(value) -> str:
     raw = str(value).encode("utf-8")
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
@@ -113,13 +145,34 @@ class SecurityTokenTest(unittest.TestCase):
             decode.call_args.kwargs["issuer"],
             "https://project-ref.supabase.co/auth/v1",
         )
-        self.assertTrue(decode.call_args.kwargs["options"]["require_aud"])
-        self.assertTrue(decode.call_args.kwargs["options"]["require_exp"])
-        self.assertTrue(decode.call_args.kwargs["options"]["require_iat"])
-        self.assertTrue(decode.call_args.kwargs["options"]["require_iss"])
-        self.assertTrue(decode.call_args.kwargs["options"]["require_sub"])
+        self.assertEqual(
+            decode.call_args.kwargs["options"]["require"],
+            ["aud", "exp", "iat", "iss", "sub"],
+        )
         self.assertTrue(decode.call_args.kwargs["options"]["verify_aud"])
         self.assertTrue(decode.call_args.kwargs["options"]["verify_exp"])
+        self.assertTrue(decode.call_args.kwargs["options"]["verify_iat"])
+        self.assertTrue(decode.call_args.kwargs["options"]["verify_iss"])
+        self.assertTrue(decode.call_args.kwargs["options"]["verify_signature"])
+
+    def test_hs256_validation_accepts_a_complete_supabase_token(self):
+        jwt_secret = "test-jwt-secret-with-at-least-thirty-two-bytes"
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co/",
+            SUPABASE_JWT_SECRET=jwt_secret,
+        )
+        token = jwt.encode(
+            _make_supabase_payload(),
+            jwt_secret,
+            algorithm="HS256",
+        )
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ):
+            self.assertEqual(get_user_id_from_token(token), "user_1")
 
     def test_es256_validation_uses_supabase_jwks(self):
         settings = SimpleNamespace(
@@ -128,6 +181,28 @@ class SecurityTokenTest(unittest.TestCase):
             SUPABASE_JWT_SECRET="jwt-secret",
         )
         token, public_jwk = _make_es256_token()
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.core.security.httpx.get",
+            return_value=FakeResponse({"keys": [public_jwk]}),
+        ) as fetch_jwks:
+            self.assertEqual(get_user_id_from_token(token), "user_1")
+
+        fetch_jwks.assert_called_once_with(
+            "https://project-ref.supabase.co/auth/v1/.well-known/jwks.json",
+            timeout=2.0,
+        )
+
+    def test_rs256_validation_uses_supabase_jwks(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co/",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        token, public_jwk = _make_rs256_token()
 
         with patch(
             "app.core.security.get_settings",
@@ -330,6 +405,66 @@ class SecurityTokenTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 401)
         self.assertEqual(context.exception.detail, "Invalid authentication token")
+
+    def test_asymmetric_validation_rejects_malformed_matching_jwk_as_invalid_token(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        cases = [
+            (
+                "RS256",
+                {
+                    "kid": "malformed-key",
+                    "alg": "RS256",
+                    "kty": "RSA",
+                    "n": "AQ",
+                    "e": "AQAB",
+                    "use": "sig",
+                },
+            ),
+            (
+                "ES256",
+                {
+                    "kid": "malformed-key",
+                    "alg": "ES256",
+                    "kty": "EC",
+                    "crv": "P-256",
+                    "x": "AQ",
+                    "y": "AQ",
+                    "use": "sig",
+                },
+            ),
+        ]
+
+        for algorithm, malformed_jwk in cases:
+            with self.subTest(algorithm=algorithm):
+                _clear_jwks_cache_for_tests()
+                token = ".".join(
+                    [
+                        _encode_segment(
+                            f'{{"typ":"JWT","alg":"{algorithm}","kid":"malformed-key"}}'
+                        ),
+                        _encode_segment('{"sub":"user_1"}'),
+                        _encode_segment("signature"),
+                    ]
+                )
+                with patch(
+                    "app.core.security.get_settings",
+                    return_value=settings,
+                ), patch(
+                    "app.core.security.httpx.get",
+                    return_value=FakeResponse({"keys": [malformed_jwk]}),
+                ):
+                    with self.assertRaises(HTTPException) as context:
+                        get_user_id_from_token(token)
+
+                self.assertEqual(context.exception.status_code, 401)
+                self.assertEqual(
+                    context.exception.detail,
+                    "Invalid authentication token",
+                )
 
     def test_es256_validation_rejects_wrong_audience_and_issuer(self):
         settings = SimpleNamespace(

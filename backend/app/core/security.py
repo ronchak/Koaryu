@@ -3,7 +3,8 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
-from jose import JWTError, ExpiredSignatureError, jwt
+import jwt
+from jwt import ExpiredSignatureError, InvalidTokenError as JWTError, PyJWK
 
 from app.core.config import get_settings
 from app.db.supabase import get_supabase_client
@@ -11,13 +12,12 @@ from app.db.supabase import get_supabase_client
 
 SUPABASE_AUTH_AUDIENCE = "authenticated"
 SUPABASE_AUTH_JWT_OPTIONS = {
-    "require_aud": True,
-    "require_exp": True,
-    "require_iat": True,
-    "require_iss": True,
-    "require_sub": True,
+    "require": ["aud", "exp", "iat", "iss", "sub"],
     "verify_aud": True,
     "verify_exp": True,
+    "verify_iat": True,
+    "verify_iss": True,
+    "verify_signature": True,
 }
 SUPABASE_ASYMMETRIC_JWT_ALGORITHMS = {
     "ES256": {"kty": "EC", "crv": "P-256"},
@@ -136,9 +136,13 @@ def _decode_supabase_token_payload(token: str, *, issuer: str, jwt_secret: str) 
         if not isinstance(kid, str) or not kid:
             raise JWTError("JWT key id is missing")
         key = _select_supabase_jwk(_supabase_jwks_url(issuer), kid=kid, alg=alg)
+        try:
+            verification_key = PyJWK.from_dict(key, algorithm=alg)
+        except Exception as exc:
+            raise JWTError("JWT verification key is invalid") from exc
         return jwt.decode(
             token,
-            key,
+            verification_key,
             algorithms=[alg],
             audience=SUPABASE_AUTH_AUDIENCE,
             issuer=issuer,

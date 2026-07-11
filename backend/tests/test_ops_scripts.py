@@ -324,13 +324,28 @@ def test_support_triage_digest_helper_uses_sanitized_rpc_only(tmp_path):
 def test_account_support_verifier_honors_local_target(tmp_path):
     script_path = ROOT_DIR / "scripts" / "verify-supabase-account-support.sh"
     call_log = tmp_path / "calls.txt"
+    stdin_log = tmp_path / "stdin.sql"
     fake_supabase = tmp_path / "supabase"
     fake_supabase.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        "printf 'supabase %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
+        "printf '%s\\n' '{\"DB_URL\":\"postgresql://postgres:postgres@127.0.0.1:54322/postgres\"}'\n",
         encoding="utf-8",
     )
     fake_supabase.chmod(0o755)
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/bin/sh\n"
+        "printf 'docker %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
+        "if [ \"$1\" = ps ]; then\n"
+        "  printf 'fake_db\\t0.0.0.0:54322->5432/tcp\\n'\n"
+        "else\n"
+        "  printf '%s\\n' '-- koaryu contract boundary --' >> \"$STDIN_LOG\"\n"
+        "  cat >> \"$STDIN_LOG\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
 
     result = subprocess.run(
         ["/bin/bash", str(script_path)],
@@ -339,6 +354,7 @@ def test_account_support_verifier_honors_local_target(tmp_path):
             **os.environ,
             "PATH": f"{tmp_path}:/usr/bin:/bin",
             "CALL_LOG": str(call_log),
+            "STDIN_LOG": str(stdin_log),
             "SUPABASE_DB_TARGET": "local",
         },
         text=True,
@@ -346,5 +362,99 @@ def test_account_support_verifier_honors_local_target(tmp_path):
 
     assert result.returncode == 0
     calls = call_log.read_text(encoding="utf-8").splitlines()
-    assert len(calls) == 3
-    assert all(call.startswith("db query --local --file ") for call in calls)
+    assert calls.count("supabase status -o json") == 3
+    assert len([call for call in calls if call.startswith("docker ps ")]) == 3
+    docker_exec_calls = [call for call in calls if call.startswith("docker exec ")]
+    assert len(docker_exec_calls) == 3
+    assert all(
+        "-i fake_db psql -U postgres -d postgres --no-psqlrc --set=ON_ERROR_STOP=1"
+        in call
+        for call in docker_exec_calls
+    )
+    forwarded_sql = stdin_log.read_text(encoding="utf-8")
+    for contract_name in (
+        "account_support_controls.sql",
+        "belt_ladder_sync_smoke.sql",
+        "support_triage_smoke.sql",
+    ):
+        contract = ROOT_DIR / "supabase" / "verification" / contract_name
+        assert contract.read_text(encoding="utf-8") in forwarded_sql
+
+
+def test_supabase_sql_runner_rejects_invalid_and_unconfigured_linked_targets(tmp_path):
+    script_path = ROOT_DIR / "scripts" / "run-supabase-sql.sh"
+    sql_file = ROOT_DIR / "supabase" / "verification" / "support_triage_smoke.sql"
+
+    invalid_target = subprocess.run(
+        ["/bin/bash", str(script_path), str(sql_file)],
+        capture_output=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "SUPABASE_DB_TARGET": "production",
+        },
+        text=True,
+    )
+    assert invalid_target.returncode == 2
+    assert "must be 'linked' or 'local'" in invalid_target.stderr
+
+    missing_linked_url = subprocess.run(
+        ["/bin/bash", str(script_path), str(sql_file)],
+        capture_output=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "SUPABASE_DB_TARGET": "linked",
+            "SUPABASE_DB_URL": "",
+        },
+        text=True,
+    )
+    assert missing_linked_url.returncode == 2
+    assert "SUPABASE_DB_URL is required" in missing_linked_url.stderr
+
+
+def _run_local_sql_runner_with_container_output(tmp_path, container_output):
+    script_path = ROOT_DIR / "scripts" / "run-supabase-sql.sh"
+    sql_file = ROOT_DIR / "supabase" / "verification" / "support_triage_smoke.sql"
+    fake_supabase = tmp_path / "supabase"
+    fake_supabase.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"DB_URL\":\"postgresql://postgres:postgres@127.0.0.1:54322/postgres\"}'\n",
+        encoding="utf-8",
+    )
+    fake_supabase.chmod(0o755)
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = ps ]; then\n"
+        "  printf '%s' \"$CONTAINER_OUTPUT\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+
+    return subprocess.run(
+        ["/bin/bash", str(script_path), str(sql_file)],
+        capture_output=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "SUPABASE_DB_TARGET": "local",
+            "CONTAINER_OUTPUT": container_output,
+        },
+        text=True,
+    )
+
+
+def test_supabase_sql_runner_fails_closed_on_missing_or_ambiguous_local_container(tmp_path):
+    missing = _run_local_sql_runner_with_container_output(tmp_path, "")
+    assert missing.returncode == 1
+    assert "exactly one local Supabase database container" in missing.stderr
+
+    ambiguous = _run_local_sql_runner_with_container_output(
+        tmp_path,
+        "db_one\\t0.0.0.0:54322->5432/tcp\\n"
+        "db_two\\t0.0.0.0:54322->5432/tcp\\n",
+    )
+    assert ambiguous.returncode == 1
+    assert "exactly one local Supabase database container" in ambiguous.stderr
