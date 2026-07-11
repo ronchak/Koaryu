@@ -93,6 +93,13 @@ function subtractDays(dateString: string, days: number) {
   return toDateKey(date);
 }
 
+export function buildInactivityScheduleDateRange(today: string, inactivityThreshold: number) {
+  return {
+    startDate: subtractDays(today, inactivityThreshold),
+    endDate: today,
+  };
+}
+
 export function getNewStudentStartDate({
   today,
   isNewStudentYtd,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildInactivityScheduleDateRange,
   buildStudentQueryFilterState,
   buildStudentRosterLoadState,
   buildStudentRows,
@@ -185,6 +186,17 @@ describe("students page model", () => {
       null
     );
     assert.equal(formatDate(), "\u2014");
+  });
+
+  it("requests the complete inactivity window instead of the bootstrap range", () => {
+    assert.deepEqual(
+      buildInactivityScheduleDateRange("2026-07-11", 90),
+      { startDate: "2026-04-12", endDate: "2026-07-11" }
+    );
+    assert.deepEqual(
+      buildInactivityScheduleDateRange("2026-07-11", 14),
+      { startDate: "2026-06-27", endDate: "2026-07-11" }
+    );
   });
 
   it("centralizes query-driven roster filter state", () => {

@@ -6,12 +6,14 @@ import {
   compareSessions,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
+  isScheduleRangeCommitCurrent,
   isScheduleReadCurrent,
   shouldReconcileSchedule,
   mergeAttendanceForSessions,
   mergeSessionsForRange,
   normalizeAttendanceRecords,
   runOptimisticAttendanceToggle,
+  runScheduleRangeRefreshWithRetry,
   shouldRetryScheduleReadAfterCoordinatorChange,
   setScheduleRequestedRangeState,
   updateSessionAttendanceCount,
@@ -146,6 +148,7 @@ export function useStoreScheduleActions({
     }
 
     try {
+      return await runScheduleRangeRefreshWithRetry(async () => {
       const request = beginLiveAuthRequest();
       const coordinator = scheduleCoordinatorRef.current;
       const requestSequence = coordinator.rangeRequestSequence + 1;
@@ -200,8 +203,12 @@ export function useStoreScheduleActions({
         }
       }
 
-      if (!isCurrentRequest()) {
-        return rangeSessions;
+      if (!isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent())) {
+        return { committed: false, value: rangeSessions };
+      }
+
+      if (attendanceRecords === null) {
+        throw new Error("Schedule attendance could not be loaded.");
       }
 
       const replacedSessionIds = Array.from(
@@ -214,12 +221,11 @@ export function useStoreScheduleActions({
       );
 
       setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
-      if (attendanceRecords !== null && attendanceIsCurrent()) {
-        setAttendance((current) =>
-          mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
-        );
-      }
-      return rangeSessions;
+      setAttendance((current) =>
+        mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
+      );
+      return { committed: true, value: rangeSessions };
+      });
     } finally {
       if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
         void reconcileSchedule().catch((error) => {

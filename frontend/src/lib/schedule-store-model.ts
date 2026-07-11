@@ -176,6 +176,26 @@ export type ScheduleDateRange = {
   startDate: string;
 };
 
+export function isScheduleRangeCommitCurrent(
+  rangeCurrent: boolean,
+  attendanceCurrent: boolean
+) {
+  return rangeCurrent && attendanceCurrent;
+}
+
+export async function runScheduleRangeRefreshWithRetry<T>(
+  attempt: () => Promise<{ committed: boolean; value: T }>,
+  maximumAttempts = 3
+): Promise<T> {
+  for (let attemptNumber = 0; attemptNumber < maximumAttempts; attemptNumber += 1) {
+    const result = await attempt();
+    if (result.committed) {
+      return result.value;
+    }
+  }
+  throw new Error("Schedule range refresh was superseded. Please retry.");
+}
+
 export type ScheduleCoordinatorState = {
   attendanceRequestSequence: number;
   dataRevision: number;

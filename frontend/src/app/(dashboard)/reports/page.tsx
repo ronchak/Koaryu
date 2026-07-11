@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
 import { Header } from "@/components/header";
@@ -17,7 +17,9 @@ import {
   buildReportsPageModel,
   formatReportDate,
   formatReportPercent,
+  subtractReportDays,
 } from "@/lib/report-metrics";
+import { toLocalDateKey } from "@/lib/date";
 import { loadedDataset, resolvePageDatasetReadiness } from "@/lib/page-dataset-readiness";
 import { useConfigStore, useLeadStore, useProgramStore, useScheduleStore, useStudioStore } from "@/lib/store";
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
@@ -28,11 +30,53 @@ export default function ReportsPage() {
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = useProgramStore();
   const {
     attendance,
-    refreshSchedule,
-    scheduleLoadError,
-    scheduleStatus,
+    refreshScheduleRange,
     sessions,
   } = useScheduleStore();
+  const [reportScheduleStatus, setReportScheduleStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [reportScheduleError, setReportScheduleError] = useState<string | null>(null);
+  const reportScheduleRequestSeqRef = useRef(0);
+  const reportScheduleRange = useMemo(() => {
+    const today = toLocalDateKey();
+    return { startDate: subtractReportDays(today, 29), endDate: today };
+  }, []);
+  const refreshReportSchedule = useCallback(async () => {
+    const requestSequence = reportScheduleRequestSeqRef.current + 1;
+    reportScheduleRequestSeqRef.current = requestSequence;
+    setReportScheduleError(null);
+    setReportScheduleStatus("loading");
+    try {
+      await refreshScheduleRange(
+        reportScheduleRange.startDate,
+        reportScheduleRange.endDate
+      );
+      if (reportScheduleRequestSeqRef.current === requestSequence) {
+        setReportScheduleStatus("ready");
+      }
+    } catch (error) {
+      if (reportScheduleRequestSeqRef.current === requestSequence) {
+        setReportScheduleError(
+          error instanceof Error ? error.message : "Schedule could not be loaded."
+        );
+        setReportScheduleStatus("error");
+      }
+      throw error;
+    }
+  }, [refreshScheduleRange, reportScheduleRange.endDate, reportScheduleRange.startDate]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshReportSchedule().catch((error) => {
+        console.error("Failed to load reports schedule range", error);
+      });
+    }, 0);
+    return () => {
+      reportScheduleRequestSeqRef.current += 1;
+      window.clearTimeout(timer);
+    };
+  }, [refreshReportSchedule]);
   const { currentRole } = useStudioStore();
   const canExportStudioData = currentRole === "admin" || currentRole === "front_desk";
   const {
@@ -51,15 +95,15 @@ export default function ReportsPage() {
   const datasetReadiness = resolvePageDatasetReadiness([
     loadedDataset({ error: leadsLoadError, label: "Leads", loaded: leadsLoaded }),
     loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
-    { error: scheduleLoadError, label: "Schedule", status: scheduleStatus },
+    { error: reportScheduleError, label: "Schedule", status: reportScheduleStatus },
   ]);
   const retryReportsDatasets = useCallback(() => {
     void Promise.allSettled([
       refreshPrograms({ includeArchived: true }),
       refreshLeads(),
-      refreshSchedule(),
+      refreshReportSchedule(),
     ]);
-  }, [refreshLeads, refreshPrograms, refreshSchedule]);
+  }, [refreshLeads, refreshPrograms, refreshReportSchedule]);
 
   if (datasetReadiness.status === "loading") {
     return (

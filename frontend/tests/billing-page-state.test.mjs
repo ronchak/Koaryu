@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   getBillingInitialLoadAction,
+  getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
   shouldShowBillingLoading,
@@ -20,10 +21,20 @@ describe("getBillingInitialLoadAction", () => {
   });
 });
 
+describe("getBillingUrlAfterConnectReturn", () => {
+  it("removes only the one-time Connect return marker", () => {
+    assert.equal(getBillingUrlAfterConnectReturn("?connect=return"), "/billing");
+    assert.equal(
+      getBillingUrlAfterConnectReturn("?tab=plans&connect=return&notice=1"),
+      "/billing?tab=plans&notice=1"
+    );
+  });
+});
+
 describe("resolveBillingAuxiliaryReadiness", () => {
   const ready = {
     activeTab: "overview",
-    initialLoadAction: "billing",
+    bypassForConnectReturn: false,
     programsLoadError: null,
     programsLoaded: true,
     studentsLoadError: null,
@@ -60,12 +71,20 @@ describe("resolveBillingAuxiliaryReadiness", () => {
   it("keeps Connect return synchronization independent from auxiliary datasets", () => {
     assert.deepEqual(resolveBillingAuxiliaryReadiness({
       ...ready,
-      initialLoadAction: "connect-return",
+      bypassForConnectReturn: true,
       programsLoadError: "Programs failed",
       programsLoaded: false,
       studentsLoadError: "Roster failed",
       studentsLoaded: false,
     }), { error: null, status: "ready" });
+
+    assert.equal(resolveBillingAuxiliaryReadiness({
+      ...ready,
+      activeTab: "plans",
+      bypassForConnectReturn: false,
+      programsLoadError: "Programs failed",
+      programsLoaded: false,
+    }).status, "error", "tab readiness resumes after Connect synchronization");
   });
 });
 

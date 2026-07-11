@@ -12,9 +12,16 @@ export function getBillingInitialLoadAction(search: string): "connect-return" | 
     : "billing";
 }
 
+export function getBillingUrlAfterConnectReturn(search: string) {
+  const params = new URLSearchParams(search);
+  params.delete("connect");
+  const query = params.toString();
+  return query ? `/billing?${query}` : "/billing";
+}
+
 export function resolveBillingAuxiliaryReadiness({
   activeTab,
-  initialLoadAction,
+  bypassForConnectReturn,
   programsLoadError,
   programsLoaded,
   studentsLoadError,
@@ -22,14 +29,14 @@ export function resolveBillingAuxiliaryReadiness({
   studentsMayBePartial,
 }: {
   activeTab: "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
-  initialLoadAction: "connect-return" | "billing";
+  bypassForConnectReturn: boolean;
   programsLoadError: string | null;
   programsLoaded: boolean;
   studentsLoadError: string | null;
   studentsLoaded: boolean;
   studentsMayBePartial: boolean;
 }) {
-  if (initialLoadAction === "connect-return") {
+  if (bypassForConnectReturn) {
     return { error: null, status: "ready" as const };
   }
   const requiredDatasets: ReturnType<typeof loadedDataset>[] = [];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type BillingSetupStep,
@@ -16,6 +16,7 @@ import {
 import { buildBillingPageModel } from "@/lib/billing-page-model";
 import {
   getBillingInitialLoadAction,
+  getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
   shouldShowBillingLoading,
@@ -76,6 +77,10 @@ export function useBillingPageController({
     studentsMayBePartial,
   } = studentsStore;
   const billingInitialLoadAction = getBillingInitialLoadAction(searchParams.toString());
+  const [connectReturnPending, setConnectReturnPending] = useState(
+    billingInitialLoadAction === "connect-return"
+  );
+  const skipNextNormalBillingRefreshRef = useRef(false);
   const [activeTab, setActiveTab] = useState<BillingTab>("overview");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -126,7 +131,7 @@ export function useBillingPageController({
   });
   const auxiliaryReadiness = resolveBillingAuxiliaryReadiness({
     activeTab,
-    initialLoadAction: billingInitialLoadAction,
+    bypassForConnectReturn: connectReturnPending,
     programsLoadError,
     programsLoaded,
     studentsLoadError,
@@ -288,7 +293,7 @@ export function useBillingPageController({
   }, [programsLoaded, refreshPrograms]);
 
   useEffect(() => {
-    if (!studentsMayBePartial || isPreviewMode) {
+    if ((studentsLoaded && !studentsMayBePartial) || isPreviewMode) {
       return;
     }
 
@@ -304,31 +309,66 @@ export function useBillingPageController({
     return () => {
       cancelled = true;
     };
-  }, [isPreviewMode, refreshStudents, studentsMayBePartial]);
+  }, [isPreviewMode, refreshStudents, studentsLoaded, studentsMayBePartial]);
 
   useEffect(() => {
+    if (!connectReturnPending || !token || currentRole === null) {
+      return;
+    }
     const timer = window.setTimeout(() => {
-      if (billingInitialLoadAction === "connect-return") {
-        void refreshConnectStatus({ sync: canManageStudioBilling });
-        return;
-      }
+      void refreshConnectStatus({ sync: canManageStudioBilling })
+        .finally(() => {
+          skipNextNormalBillingRefreshRef.current = true;
+          setConnectReturnPending(false);
+          router.replace(getBillingUrlAfterConnectReturn(searchParams.toString()));
+        });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    canManageStudioBilling,
+    connectReturnPending,
+    currentRole,
+    refreshConnectStatus,
+    router,
+    searchParams,
+    token,
+  ]);
+
+  useEffect(() => {
+    if (
+      connectReturnPending
+      || billingInitialLoadAction === "connect-return"
+      || !token
+      || currentRole === null
+    ) {
+      return;
+    }
+    if (skipNextNormalBillingRefreshRef.current) {
+      skipNextNormalBillingRefreshRef.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
       void refreshBilling();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [billingInitialLoadAction, canManageStudioBilling, refreshBilling, refreshConnectStatus]);
+  }, [
+    billingInitialLoadAction,
+    connectReturnPending,
+    currentRole,
+    refreshBilling,
+    token,
+  ]);
 
   const refreshRequiredBillingDatasets = useCallback(async () => {
     const requests: Promise<unknown>[] = [refreshBilling()];
-    if (billingInitialLoadAction === "billing") {
-      if (activeTab === "plans") {
-        requests.push(refreshPrograms({ includeArchived: false }));
-      }
-      if (["overview", "enrollments", "invoices"].includes(activeTab)) {
-        requests.push(refreshStudents());
-      }
+    if (activeTab === "plans") {
+      requests.push(refreshPrograms({ includeArchived: false }));
+    }
+    if (["overview", "enrollments", "invoices"].includes(activeTab)) {
+      requests.push(refreshStudents());
     }
     await Promise.allSettled(requests);
-  }, [activeTab, billingInitialLoadAction, refreshBilling, refreshPrograms, refreshStudents]);
+  }, [activeTab, refreshBilling, refreshPrograms, refreshStudents]);
 
   const { connectEntityModal, openConnectEntityModal } = useBillingConnectEntityModal({
     isActionLoading: billingActions.isActionLoading,

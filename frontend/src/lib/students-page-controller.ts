@@ -4,10 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { StudentRosterBulkPanel } from "@/components/students/student-roster-controls";
 import { toLocalDateKey } from "@/lib/date";
-import { buildStudentInactivityRows } from "@/lib/student-insights";
+import {
+  buildStudentInactivityRows,
+  formatInactivityDaysForRange,
+} from "@/lib/student-insights";
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
 import {
   buildStudentQueryFilterState,
+  buildInactivityScheduleDateRange,
   buildStudentRosterLoadState,
   buildStudentRows,
   filterStudentRows,
@@ -36,7 +40,7 @@ type StudentsPageControllerOptions = {
   >;
   scheduleStore: Pick<
     ScheduleStoreContextValue,
-    "attendance" | "refreshSchedule" | "scheduleLoadError" | "scheduleStatus" | "sessions"
+    "attendance" | "refreshScheduleRange" | "sessions"
   >;
   studentsStore: Pick<
     StudentsStoreContextValue,
@@ -75,9 +79,7 @@ export function useStudentsPageController({
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = programsStore;
   const {
     attendance,
-    refreshSchedule,
-    scheduleLoadError,
-    scheduleStatus,
+    refreshScheduleRange,
     sessions,
   } = scheduleStore;
   const {
@@ -140,7 +142,12 @@ export function useStudentsPageController({
   const [isPagedLoading, setIsPagedLoading] = useState(false);
   const [isDerivedRosterRefreshing, setIsDerivedRosterRefreshing] = useState(false);
   const [page, setPage] = useState(1);
+  const [inactivityScheduleStatus, setInactivityScheduleStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [inactivityScheduleError, setInactivityScheduleError] = useState<string | null>(null);
   const pagedRequestSeqRef = useRef(0);
+  const inactivityScheduleRequestSeqRef = useRef(0);
   const debouncedSearch = useDebouncedValue(search, STUDENTS_SEARCH_DEBOUNCE_MS);
 
   const usesDerivedRosterFilters = shouldUseDerivedRosterFilters({
@@ -149,6 +156,54 @@ export function useStudentsPageController({
     inactivityThreshold,
     pagedRosterEnabled: PAGED_STUDENTS_ROSTER_ENABLED,
   });
+  const inactivityScheduleRange = useMemo(
+    () => inactivityThreshold
+      ? buildInactivityScheduleDateRange(today, inactivityThreshold)
+      : null,
+    [inactivityThreshold, today]
+  );
+  const refreshInactivitySchedule = useCallback(async () => {
+    const range = inactivityScheduleRange;
+    if (!range) {
+      return;
+    }
+    const requestSequence = inactivityScheduleRequestSeqRef.current + 1;
+    inactivityScheduleRequestSeqRef.current = requestSequence;
+    setInactivityScheduleError(null);
+    setInactivityScheduleStatus("loading");
+    try {
+      await refreshScheduleRange(range.startDate, range.endDate);
+      if (inactivityScheduleRequestSeqRef.current === requestSequence) {
+        setInactivityScheduleStatus("ready");
+      }
+    } catch (error) {
+      if (inactivityScheduleRequestSeqRef.current === requestSequence) {
+        setInactivityScheduleError(
+          error instanceof Error ? error.message : "Schedule could not be loaded."
+        );
+        setInactivityScheduleStatus("error");
+      }
+      throw error;
+    }
+  }, [inactivityScheduleRange, refreshScheduleRange]);
+
+  useEffect(() => {
+    inactivityScheduleRequestSeqRef.current += 1;
+    const timer = window.setTimeout(() => {
+      if (!inactivityScheduleRange) {
+        setInactivityScheduleError(null);
+        setInactivityScheduleStatus("idle");
+        return;
+      }
+      void refreshInactivitySchedule().catch((error) => {
+        console.error("Failed to load inactivity schedule range", error);
+      });
+    }, 0);
+    return () => {
+      inactivityScheduleRequestSeqRef.current += 1;
+      window.clearTimeout(timer);
+    };
+  }, [inactivityScheduleRange, refreshInactivitySchedule]);
   const visibleStudents = usesDerivedRosterFilters ? students : pagedStudents;
   const studentRows = useMemo(
     () => buildStudentRows(visibleStudents, programs),
@@ -161,9 +216,18 @@ export function useStudentsPageController({
         : [],
     [attendance, inactivityThreshold, sessions, students]
   );
-  const inactivityByStudentId = useMemo(
+  const inactivityDaysByStudentId = useMemo(
     () => new Map(inactivityRows.map((row) => [row.student.id, row.daysInactive])),
     [inactivityRows]
+  );
+  const inactivityByStudentId = useMemo(
+    () => new Map(inactivityRows.map((row) => [
+      row.student.id,
+      inactivityThreshold
+        ? formatInactivityDaysForRange(row, inactivityThreshold)
+        : String(row.daysInactive),
+    ])),
+    [inactivityRows, inactivityThreshold]
   );
   const hasActiveFilters = Boolean(search || statusFilter || programFilter || inactivityThreshold || hasNewStudentFilter);
 
@@ -288,7 +352,7 @@ export function useStudentsPageController({
       statusFilter,
       programFilter,
       inactivityThreshold,
-      inactivityByStudentId,
+      inactivityByStudentId: inactivityDaysByStudentId,
       newStudentStartDate,
       today,
       sortKey,
@@ -301,7 +365,7 @@ export function useStudentsPageController({
     statusFilter,
     programFilter,
     inactivityThreshold,
-    inactivityByStudentId,
+    inactivityDaysByStudentId,
     newStudentStartDate,
     today,
     sortKey,
@@ -320,9 +384,9 @@ export function useStudentsPageController({
   } = buildStudentRosterLoadState({
     programsLoadError,
     programsLoaded,
-    scheduleLoadError,
+    scheduleLoadError: inactivityScheduleError,
     scheduleRequired: Boolean(inactivityThreshold),
-    scheduleStatus,
+    scheduleStatus: inactivityScheduleStatus,
     isDerivedRosterRefreshing,
     isPagedLoading,
     page,
@@ -369,8 +433,8 @@ export function useStudentsPageController({
     if (!programsLoaded || programsLoadError) {
       requests.push(refreshPrograms({ includeArchived: false }));
     }
-    if (inactivityThreshold && scheduleStatus !== "ready") {
-      requests.push(refreshSchedule());
+    if (inactivityThreshold && inactivityScheduleStatus !== "ready") {
+      requests.push(refreshInactivitySchedule());
     }
     await Promise.all(requests);
   }, [
@@ -378,9 +442,9 @@ export function useStudentsPageController({
     programsLoadError,
     programsLoaded,
     refreshPrograms,
-    refreshSchedule,
+    refreshInactivitySchedule,
     reloadVisibleRoster,
-    scheduleStatus,
+    inactivityScheduleStatus,
   ]);
 
   async function reloadVisibleRosterAfterMutation(context: string) {
