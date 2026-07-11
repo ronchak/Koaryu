@@ -52,6 +52,19 @@ Operator: `Ronak Chakraborty / Codex session`
 - Off-site copy: pending; the encrypted backup currently has only the local path above, so off-site recovery is not yet proven.
 - Production impact: none. No production record was deleted or anonymized.
 
+## Production-Readiness Orchestration Reconciliation — 2026-07-11
+
+Operator: `Ronak Chakraborty / Codex session`
+
+- Repository baseline: `main` is `49feb90f98c0b83ef6b3f38f43cb85e8e76ceb68`. The Wave 0 staging and recovery foundation merged as `cebf7bef15e142e395e7e42c127a9c7daecdfab6`; `49feb90` subsequently removed generated Supabase CLI state from version control without adding a database migration.
+- Deployment evidence: GitHub records a successful Vercel Production deployment for `49feb90` created at `2026-07-10T23:31:24Z`. This proves the deployment record succeeded, not that the production alias still targets it. Render's exact currently deployed SHA has not yet been captured for `49feb90`, so frontend/backend application alignment remains unverified and this entry does not supersede the last exact two-provider verification recorded above at `c9cc18a`.
+- Migration evidence: a guarded read-only `supabase migration list --linked` against production reconfirmed the same two divergent identity pairs recorded above. No production migration or migration-history mutation was performed:
+  - repository `20260710001153`; production `20260710010051`
+  - repository `20260710010500`; production `20260710010735`
+- Application work: PR #13 and PR #14 are both draft, conflict with current `main`, and are not release candidates. PR #13 has four unresolved actionable review threads; PR #14 requires the recorded per-dataset readiness redesign.
+- Managed release program: GitHub epic [#19](https://github.com/ronchak/Koaryu/issues/19) tracks focused gates [#20](https://github.com/ronchak/Koaryu/issues/20) through [#35](https://github.com/ronchak/Koaryu/issues/35), including candidate-wide CI/merge controls, evidence required to close each gate, explicit execution ownership, dependencies, and reserved production-action boundaries.
+- Release status: **blocked**. Further production migrations remain prohibited; live billing remains closed; unknown production records remain untouched. No production configuration, data, Stripe, or infrastructure mutation occurred during this reconciliation.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
