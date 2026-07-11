@@ -9,6 +9,7 @@ from app.schemas.student import CsvImportOptions
 from app.services.student_import_csv import (
     CSV_IMPORT_MAX_BYTES,
     CSV_IMPORT_MAX_ROWS,
+    validate_csv_import_mapping,
 )
 from app.services.student_import_planner import StudentImportPlanner
 from app.services.student_service import (
@@ -146,6 +147,29 @@ class StudentImportCsvParsingTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 400)
         self.assertIn("maps both", raised.exception.detail)
+
+    def test_mapping_contract_rejects_columns_absent_from_the_uploaded_csv(self):
+        with self.assertRaises(HTTPException) as raised:
+            validate_csv_import_mapping(
+                {
+                    "First Name": "legal_first_name",
+                    "Injected Column": "notes",
+                },
+                headers=["First Name", "Last Name"],
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("not present", raised.exception.detail)
+
+    def test_mapping_contract_rejects_unsupported_target_fields(self):
+        with self.assertRaises(HTTPException) as raised:
+            validate_csv_import_mapping(
+                {"First Name": "arbitrary_unbounded_target"},
+                headers=["First Name"],
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("unsupported", raised.exception.detail)
 
     def test_auto_map_keeps_payment_status_out_of_student_status(self):
         mapping = self.service.auto_map_headers([

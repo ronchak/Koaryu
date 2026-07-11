@@ -4,9 +4,9 @@ from fastapi import HTTPException, UploadFile
 from postgrest.exceptions import APIError as PostgrestAPIError
 from storage3.utils import StorageException
 
+from app.core.upload_limits import STUDENT_PHOTO_MAX_BYTES
 
 STUDENT_PHOTO_BUCKET = "student-photos"
-STUDENT_PHOTO_MAX_BYTES = 5 * 1024 * 1024
 STUDENT_PHOTO_SIGNED_URL_SECONDS = 15 * 60
 STUDENT_PHOTO_ALLOWED_CONTENT_TYPES = {
     "image/jpeg": "jpg",

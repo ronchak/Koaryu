@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
+from app.core.request_body_limits import RequestBodyLimitMiddleware
 from app.api.v1.router import router as v1_router
 
 settings = get_settings()
@@ -26,6 +27,12 @@ app = FastAPI(
 )
 
 register_error_handlers(app, cors_allowed_origins=allowed_origins)
+
+# Bound upload and webhook bodies before Starlette parses multipart forms.
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    api_v1_prefix=settings.API_V1_PREFIX,
+)
 
 # CORS
 app.add_middleware(

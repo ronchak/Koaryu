@@ -1,8 +1,13 @@
-import { NextRequest } from "next/server";
-import { buildPrivateProxyHeaders, buildPrivateProxyJsonHeaders } from "@/lib/proxy-headers";
-import { buildUpstreamProxyRequestHeaders } from "@/lib/proxy-request-headers";
-import { buildProxyTargetUrl, UnsafeProxyPathError } from "@/lib/proxy-target";
-import { ACTIVE_STUDIO_COOKIE } from "@/lib/studio-state-cookie";
+import type { NextRequest } from "next/server";
+import { buildPrivateProxyHeaders, buildPrivateProxyJsonHeaders } from "../../../../lib/proxy-headers.ts";
+import {
+  getProxyRequestBodyError,
+  getProxyRequestBodyLimit,
+  readBoundedProxyRequestBody,
+} from "../../../../lib/proxy-request-body.ts";
+import { buildUpstreamProxyRequestHeaders } from "../../../../lib/proxy-request-headers.ts";
+import { buildProxyTargetUrl, UnsafeProxyPathError } from "../../../../lib/proxy-target.ts";
+import { ACTIVE_STUDIO_COOKIE } from "../../../../lib/studio-state-cookie.ts";
 
 export const runtime = "nodejs";
 
@@ -22,20 +27,6 @@ function getBackendApiBase() {
   }
 
   return rawBackendApiBase;
-}
-
-async function createForwardBody(request: NextRequest) {
-  const contentType = request.headers.get("content-type") || "";
-
-  if (contentType.includes("multipart/form-data")) {
-    return await request.formData();
-  }
-
-  if (contentType.includes("application/json") || contentType.startsWith("text/")) {
-    return await request.text();
-  }
-
-  return await request.arrayBuffer();
 }
 
 async function forwardRequest(
@@ -65,7 +56,10 @@ async function forwardRequest(
     };
 
     if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = await createForwardBody(request);
+      init.body = await readBoundedProxyRequestBody(
+        request,
+        getProxyRequestBodyLimit(path)
+      );
     }
 
     const upstream = await fetch(targetUrl, init);
@@ -76,6 +70,14 @@ async function forwardRequest(
       headers: responseHeaders,
     });
   } catch (error) {
+    const requestBodyError = getProxyRequestBodyError(error);
+    if (requestBodyError) {
+      return Response.json(
+        { detail: requestBodyError.detail },
+        { status: requestBodyError.status, headers: buildPrivateProxyJsonHeaders() }
+      );
+    }
+
     if (error instanceof UnsafeProxyPathError) {
       return Response.json(
         { detail: "Invalid API proxy path." },

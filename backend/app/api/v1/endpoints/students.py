@@ -26,7 +26,7 @@ from app.services.studio_scope import (
     resolve_billing_admin_staff_role_for_user,
     resolve_billing_manager_staff_role_for_user,
 )
-from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES
+from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES, validate_csv_import_mapping
 from app.services.student_service import StudentService
 import json
 
@@ -299,11 +299,12 @@ async def validate_csv_import(
     """Validate a CSV file against a confirmed column mapping. Returns errors per row."""
     content = await read_csv_import_upload(file)
     service = StudentService(supabase)
-    _, rows = service.parse_csv(content)
+    headers, rows = service.parse_csv(content)
     try:
         request = parse_import_request(payload=payload, mapping=mapping, options=options)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid import payload")
+    validate_csv_import_mapping(request.mapping, headers=headers)
     return service.validate_import_rows(rows, request.mapping, request.options, studio_id)
 
 
@@ -321,11 +322,12 @@ async def execute_csv_import(
     """Execute the import for all valid rows. Skips invalid rows and returns summary."""
     content = await read_csv_import_upload(file)
     service = StudentService(supabase)
-    _, rows = service.parse_csv(content)
+    headers, rows = service.parse_csv(content)
     try:
         request = parse_import_request(payload=payload, mapping=mapping, options=options)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid import payload")
+    validate_csv_import_mapping(request.mapping, headers=headers)
     return await service.execute_import(
         rows,
         request.mapping,
