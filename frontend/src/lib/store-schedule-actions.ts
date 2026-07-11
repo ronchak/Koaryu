@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "@/lib/api";
 import {
@@ -11,16 +11,16 @@ import {
   mergeAttendanceForSessions,
   mergeSessionsForRange,
   normalizeAttendanceRecords,
+  runOptimisticAttendanceToggle,
   setScheduleRequestedRangeState,
-  toAttendanceCountDelta,
   updateSessionAttendanceCount,
   type ScheduleCoordinatorState,
+  type SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
-  AttendanceStatus,
   ClassSession,
   ClassSessionCreate,
   ClassSessionDeleteScope,
@@ -61,6 +61,33 @@ export function useStoreScheduleActions({
   setTemplates,
   templatesRef,
 }: UseStoreScheduleActionsOptions) {
+  const scheduleMutationWaitersRef = useRef(new Set<() => void>());
+
+  const releaseScheduleMutationWaiters = useCallback(() => {
+    if (scheduleCoordinatorRef.current.mutationsInFlight !== 0) {
+      return;
+    }
+    const waiters = [...scheduleMutationWaitersRef.current];
+    scheduleMutationWaitersRef.current.clear();
+    for (const resolve of waiters) {
+      resolve();
+    }
+  }, [scheduleCoordinatorRef]);
+
+  const waitForScheduleMutationSettlement = useCallback(() => {
+    if (scheduleCoordinatorRef.current.mutationsInFlight === 0) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      const settle = () => resolve();
+      scheduleMutationWaitersRef.current.add(settle);
+      if (scheduleCoordinatorRef.current.mutationsInFlight === 0) {
+        scheduleMutationWaitersRef.current.delete(settle);
+        resolve();
+      }
+    });
+  }, [scheduleCoordinatorRef]);
+
   const beginScheduleMutation = useCallback(() => {
     const request = beginLiveAuthRequest();
     const generation = scheduleCoordinatorRef.current.generation;
@@ -79,19 +106,21 @@ export function useStoreScheduleActions({
         const beforeFinish = scheduleCoordinatorRef.current;
         const afterFinish = finishScheduleMutationState(beforeFinish, generation);
         scheduleCoordinatorRef.current = afterFinish;
-        if (
-          afterFinish !== beforeFinish
-          && shouldReconcileSchedule(afterFinish)
-        ) {
-          try {
+        try {
+          if (
+            afterFinish !== beforeFinish
+            && shouldReconcileSchedule(afterFinish)
+          ) {
             await reconcileSchedule();
-          } catch (error) {
-            console.error("Failed to reconcile schedule after a mutation", error);
           }
+        } catch (error) {
+          console.error("Failed to reconcile schedule after a mutation", error);
+        } finally {
+          releaseScheduleMutationWaiters();
         }
       },
     };
-  }, [beginLiveAuthRequest, reconcileSchedule, scheduleCoordinatorRef]);
+  }, [beginLiveAuthRequest, reconcileSchedule, releaseScheduleMutationWaiters, scheduleCoordinatorRef]);
 
   const refreshScheduleRange = useCallback(async (
     startDate: string,
@@ -195,40 +224,57 @@ export function useStoreScheduleActions({
 
   const refreshSessionAttendance = useCallback(async (
     sessionId: string
-  ): Promise<AttendanceRecord[]> => {
+  ): Promise<SessionAttendanceRefreshResult> => {
     if (isPreviewMode) {
-      return attendanceRef.current.filter((record) => record.session_id === sessionId);
+      return {
+        committed: true,
+        records: attendanceRef.current.filter((record) => record.session_id === sessionId),
+      };
     }
 
     try {
-      const request = beginLiveAuthRequest();
-      const coordinator = scheduleCoordinatorRef.current;
-      const requestSequence = coordinator.attendanceRequestSequence + 1;
-      scheduleCoordinatorRef.current = {
-        ...coordinator,
-        attendanceRequestSequence: requestSequence,
-      };
-      const dataRevision = coordinator.dataRevision;
-      const generation = coordinator.generation;
-      const records = await api.get<AttendanceRecord[]>(
-        `/schedule/attendance?session_ids=${encodeURIComponent(sessionId)}`,
-        request.token
-      );
-      const normalizedRecords = normalizeAttendanceRecords(records);
-      if (!isScheduleReadCurrent({
-        authCurrent: request.isCurrent(),
-        currentGeneration: scheduleCoordinatorRef.current.generation,
-        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
-        currentRequestSequence: scheduleCoordinatorRef.current.attendanceRequestSequence,
-        dataRevisionAtStart: dataRevision,
-        generationAtStart: generation,
-        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
-        requestSequenceAtStart: requestSequence,
-      })) {
-        return normalizedRecords;
+      while (true) {
+        const request = beginLiveAuthRequest();
+        const coordinator = scheduleCoordinatorRef.current;
+        const requestSequence = coordinator.attendanceRequestSequence + 1;
+        scheduleCoordinatorRef.current = {
+          ...coordinator,
+          attendanceRequestSequence: requestSequence,
+        };
+        const dataRevision = coordinator.dataRevision;
+        const generation = coordinator.generation;
+        const records = await api.get<AttendanceRecord[]>(
+          `/schedule/attendance?session_ids=${encodeURIComponent(sessionId)}`,
+          request.token
+        );
+        const normalizedRecords = normalizeAttendanceRecords(records);
+        const current = scheduleCoordinatorRef.current;
+        const authCurrent = request.isCurrent();
+        const generationCurrent = current.generation === generation;
+        if (!isScheduleReadCurrent({
+          authCurrent,
+          currentGeneration: current.generation,
+          currentDataRevision: current.dataRevision,
+          currentRequestSequence: current.attendanceRequestSequence,
+          dataRevisionAtStart: dataRevision,
+          generationAtStart: generation,
+          mutationsInFlight: current.mutationsInFlight,
+          requestSequenceAtStart: requestSequence,
+        })) {
+          if (!authCurrent || !generationCurrent) {
+            throw new Error("Attendance refresh became invalid after authentication changed.");
+          }
+          if (current.mutationsInFlight > 0) {
+            await waitForScheduleMutationSettlement();
+            continue;
+          }
+          return { committed: false, records: normalizedRecords };
+        }
+        setAttendance((existing) =>
+          mergeAttendanceForSessions(existing, normalizedRecords, [sessionId])
+        );
+        return { committed: true, records: normalizedRecords };
       }
-      setAttendance((current) => mergeAttendanceForSessions(current, normalizedRecords, [sessionId]));
-      return normalizedRecords;
     } finally {
       if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
         void reconcileSchedule().catch((error) => {
@@ -243,6 +289,7 @@ export function useStoreScheduleActions({
     reconcileSchedule,
     scheduleCoordinatorRef,
     setAttendance,
+    waitForScheduleMutationSettlement,
   ]);
 
   const addTemplate = useCallback(async (data: ClassTemplateCreate): Promise<ClassTemplate> => {
@@ -446,155 +493,67 @@ export function useStoreScheduleActions({
     studentId: string,
     name: string
   ) => {
-    if (isPreviewMode) {
-      const existing = attendanceRef.current.find(
-        (record) => record.session_id === sessionId && record.student_id === studentId
-      );
-      let next: AttendanceRecord[];
-      if (existing) {
-        const cycle: AttendanceStatus[] = ["present", "late", "absent"];
-        const idx = cycle.indexOf(existing.status);
-        const previousStatus = existing.status;
-        let nextStatusForCount: AttendanceStatus | null = previousStatus;
-        if (idx === cycle.length - 1) {
-          next = attendanceRef.current.filter((record) => record !== existing);
-          nextStatusForCount = null;
-        } else {
-          next = attendanceRef.current.map((record) =>
-            record === existing ? { ...record, status: cycle[idx + 1] } : record
-          );
-          nextStatusForCount = cycle[idx + 1];
-        }
-        setSessions((current) =>
-          updateSessionAttendanceCount(
-            current,
-            sessionId,
-            toAttendanceCountDelta(previousStatus, nextStatusForCount)
-          )
-        );
+    const commitAttendance = (
+      update: (current: AttendanceRecord[]) => AttendanceRecord[]
+    ) => {
+      const next = update(attendanceRef.current);
+      attendanceRef.current = next;
+      if (isPreviewMode) {
+        persistAttendance(next);
       } else {
-        next = [
-          ...attendanceRef.current,
-          {
-            id: localId(),
-            studio_id: "mock-studio",
-            session_id: sessionId,
-            student_id: studentId,
-            status: "present" as AttendanceStatus,
-            checked_in_at: new Date().toISOString(),
-            is_cross_program: false,
-            counts_toward_eligibility: true,
-            student_name: name,
-          },
-        ];
-        setSessions((current) =>
-          updateSessionAttendanceCount(
-            current,
-            sessionId,
-            toAttendanceCountDelta(null, "present")
-          )
-        );
+        setAttendance(next);
       }
-      persistAttendance(next);
+    };
+
+    if (isPreviewMode) {
+      await runOptimisticAttendanceToggle({
+        attendance: attendanceRef.current,
+        checkedInAt: new Date().toISOString(),
+        commitAttendance,
+        commitSessionCountDelta: (delta) => {
+          setSessions((current) => updateSessionAttendanceCount(current, sessionId, delta));
+        },
+        name,
+        optimisticId: localId(),
+        request: async () => null,
+        sessionId,
+        studentId,
+        studioId: "mock-studio",
+      });
       return;
     }
 
     const mutation = beginScheduleMutation();
     const liveRequest = mutation.request;
-    const cycle: AttendanceStatus[] = ["present", "late", "absent"];
-    const existing = attendanceRef.current.find(
-      (record) => record.session_id === sessionId && record.student_id === studentId
-    );
-    const previousStatus = existing?.status ?? null;
-    const currentIndex = existing ? cycle.indexOf(existing.status) : -1;
-    const nextStatus: AttendanceStatus | null =
-      existing && currentIndex === cycle.length - 1
-        ? null
-        : cycle[(currentIndex + 1 + cycle.length) % cycle.length];
-
-    setAttendance((current) => {
-      const next = current.filter(
-        (record) => !(record.session_id === sessionId && record.student_id === studentId)
-      );
-      if (nextStatus) {
-        next.push(
-          existing
-            ? { ...existing, status: nextStatus }
-            : {
-                id: `optimistic-${sessionId}-${studentId}`,
-                studio_id: "",
-                session_id: sessionId,
-                student_id: studentId,
-                status: nextStatus,
-                checked_in_at: new Date().toISOString(),
-                is_cross_program: false,
-                counts_toward_eligibility: true,
-                student_name: name,
-              }
-        );
-      }
-      return next;
-    });
-    setSessions((current) =>
-      updateSessionAttendanceCount(
-        current,
-        sessionId,
-        toAttendanceCountDelta(previousStatus, nextStatus)
-      )
-    );
-
     try {
-      if (!nextStatus) {
-        await api.delete(
-          `/schedule/attendance?session_id=${encodeURIComponent(sessionId)}&student_id=${encodeURIComponent(studentId)}`,
-          liveRequest.token
-        );
-        return;
-      }
-
-      const result = await api.post<AttendanceRecord>(
-        "/schedule/attendance",
-        {
-          session_id: sessionId,
-          student_id: studentId,
-          status: nextStatus,
+      await runOptimisticAttendanceToggle({
+        attendance: attendanceRef.current,
+        checkedInAt: new Date().toISOString(),
+        commitAttendance,
+        commitSessionCountDelta: (delta) => {
+          setSessions((current) => updateSessionAttendanceCount(current, sessionId, delta));
         },
-        liveRequest.token
-      );
-
-      if (!mutation.isCurrent()) {
-        return;
-      }
-      setAttendance((current) => {
-        const next = current.filter(
-          (record) => !(record.session_id === sessionId && record.student_id === studentId)
-        );
-        next.push({
-          ...result,
-          student_name: existing?.student_name || name,
-        });
-        return next;
-      });
-    } catch (error) {
-      if (mutation.isCurrent()) {
-        setAttendance((current) => {
-          const next = current.filter(
-            (record) => !(record.session_id === sessionId && record.student_id === studentId)
-          );
-          if (existing) {
-            next.push(existing);
+        isCurrent: mutation.isCurrent,
+        name,
+        optimisticId: `optimistic-${sessionId}-${studentId}`,
+        request: async (nextStatus) => {
+          if (!nextStatus) {
+            await api.delete(
+              `/schedule/attendance?session_id=${encodeURIComponent(sessionId)}&student_id=${encodeURIComponent(studentId)}`,
+              liveRequest.token
+            );
+            return null;
           }
-          return next;
-        });
-        setSessions((current) =>
-          updateSessionAttendanceCount(
-            current,
-            sessionId,
-            toAttendanceCountDelta(nextStatus, previousStatus)
-          )
-        );
-      }
-      throw error;
+
+          return api.post<AttendanceRecord>(
+            "/schedule/attendance",
+            { session_id: sessionId, student_id: studentId, status: nextStatus },
+            liveRequest.token
+          );
+        },
+        sessionId,
+        studentId,
+      });
     } finally {
       await mutation.finish();
     }

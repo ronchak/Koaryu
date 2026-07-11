@@ -3,11 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
+  beginSessionAttendanceRefresh,
+  clearSessionAttendanceRefresh,
   getActiveScheduleStudents,
+  createAttendanceToggleQueue,
   getScheduleSessionAttendance,
   getVisibleScheduleRange,
+  isCompleteScheduleRoster,
+  isSessionAttendanceReady,
   navigateScheduleDate,
   recurringClassOverlapsRange,
+  runSessionAttendanceRefresh,
+  type SessionAttendanceRefreshState,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
 import type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
@@ -32,7 +39,10 @@ type SchedulePageControllerOptions = {
     | "templates"
     | "toggleCheckIn"
   >;
-  studentsStore: Pick<StudentsStoreContextValue, "refreshStudents" | "students" | "studentsMayBePartial">;
+  studentsStore: Pick<
+    StudentsStoreContextValue,
+    "refreshStudents" | "students" | "studentsLoaded" | "studentsMayBePartial"
+  >;
 };
 
 export function useSchedulePageController({
@@ -40,7 +50,7 @@ export function useSchedulePageController({
   scheduleStore,
   studentsStore,
 }: SchedulePageControllerOptions) {
-  const { refreshStudents, students, studentsMayBePartial } = studentsStore;
+  const { refreshStudents, students, studentsLoaded, studentsMayBePartial } = studentsStore;
   const { programs } = programsStore;
   const {
     attendance,
@@ -64,7 +74,14 @@ export function useSchedulePageController({
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [studentRosterLoadError, setStudentRosterLoadError] = useState<string | null>(null);
   const [isRefreshingStudentRoster, setIsRefreshingStudentRoster] = useState(false);
-  const [pendingAttendanceId, setPendingAttendanceId] = useState<string | null>(null);
+  const [pendingAttendanceIds, setPendingAttendanceIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const [attendanceToggleQueue] = useState(() =>
+    createAttendanceToggleQueue(setPendingAttendanceIds)
+  );
+  const [sessionAttendanceRefresh, setSessionAttendanceRefresh] =
+    useState<SessionAttendanceRefreshState>(clearSessionAttendanceRefresh);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteInFlight, setDeleteInFlight] = useState<ScheduleSessionDeleteScope | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -101,9 +118,22 @@ export function useSchedulePageController({
       return;
     }
 
-    void refreshSessionAttendance(selectedSession.id).catch((error) => {
-      console.error("Failed to load session attendance", error);
+    let current = true;
+    void runSessionAttendanceRefresh({
+      isCurrent: () => current,
+      onStateChange: setSessionAttendanceRefresh,
+      refresh: () => refreshSessionAttendance(selectedSession.id),
+      sessionId: selectedSession.id,
+    }).catch((error) => {
+      if (current) {
+        console.error("Failed to load session attendance", error);
+        setAttendanceError("Could not load attendance for this class. Please try again.");
+      }
     });
+
+    return () => {
+      current = false;
+    };
   }, [refreshSessionAttendance, selectedSession]);
 
   const activeStudents = useMemo(
@@ -170,16 +200,15 @@ export function useSchedulePageController({
   }
 
   async function handleToggleAttendance(sessionId: string, studentId: string, name: string) {
-    setAttendanceError(null);
-    setPendingAttendanceId(studentId);
-    try {
-      await toggleCheckIn(sessionId, studentId, name);
-    } catch (error) {
-      console.error("Failed to update attendance", error);
-      setAttendanceError("Could not update attendance. Please try again.");
-    } finally {
-      setPendingAttendanceId(null);
-    }
+    await attendanceToggleQueue.run(studentId, async () => {
+      setAttendanceError(null);
+      try {
+        await toggleCheckIn(sessionId, studentId, name);
+      } catch (error) {
+        console.error("Failed to update attendance", error);
+        setAttendanceError("Could not update attendance. Please try again.");
+      }
+    });
   }
 
   async function handleDeleteSelectedSession(scope: ScheduleSessionDeleteScope) {
@@ -216,6 +245,7 @@ export function useSchedulePageController({
     setAttendanceError(null);
     setDeleteError(null);
     setStudentRosterLoadError(null);
+    setSessionAttendanceRefresh(beginSessionAttendanceRefresh(session.id));
     setSelectedSession(session);
     if (studentsMayBePartial) {
       setIsRefreshingStudentRoster(true);
@@ -231,6 +261,7 @@ export function useSchedulePageController({
   function closeSelectedSession() {
     setAttendanceError(null);
     setDeleteError(null);
+    setSessionAttendanceRefresh(clearSessionAttendanceRefresh());
     setSelectedSession(null);
   }
 
@@ -251,13 +282,21 @@ export function useSchedulePageController({
       deleteInFlight,
       isCreatingClass,
       isRefreshingStudentRoster,
-      pendingAttendanceId,
+      isSelectedSessionAttendanceReady: isSessionAttendanceReady(
+        sessionAttendanceRefresh,
+        selectedSession?.id ?? null
+      ),
+      pendingAttendanceIds,
       programFilter,
       programs,
       scheduleLoadError,
       selectedSession,
       selectedSessionAttendance,
       studentRosterLoadError,
+      isStudentRosterComplete: isCompleteScheduleRoster({
+        studentsLoaded,
+        studentsMayBePartial,
+      }),
       sessions,
       showAddClass,
       templates,

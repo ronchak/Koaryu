@@ -1,4 +1,5 @@
 import type { AttendanceRecord, ClassSession, Program, Student } from "@/types";
+import { buildLatestAttendanceByStudentId } from "./attendance-record-model.ts";
 
 export type ScheduleSessionDeleteScope = "session" | "series";
 
@@ -10,8 +11,21 @@ export const SESSION_STATUS_LABELS: Record<ClassSession["status"], string> = {
 };
 
 export interface SessionAttendanceSummary {
-  checkedInCount: number;
+  presentCount: number;
   absentCount: number;
+  unmarkedCount: number;
+}
+
+export function areSessionAttendanceCountersReady({
+  attendanceReady,
+  rosterComplete,
+  rosterLoading,
+}: {
+  attendanceReady: boolean;
+  rosterComplete: boolean;
+  rosterLoading: boolean;
+}) {
+  return attendanceReady && rosterComplete && !rosterLoading;
 }
 
 export interface SessionRosterRow {
@@ -76,24 +90,37 @@ export function studentBelongsToProgram(student: Student, programId: string) {
 
 export function buildSessionAttendanceSummary(
   attendance: AttendanceRecord[],
+  students: Pick<Student, "id">[],
   open: boolean
 ): SessionAttendanceSummary {
   if (!open) {
-    return { checkedInCount: 0, absentCount: 0 };
+    return { presentCount: 0, absentCount: 0, unmarkedCount: 0 };
   }
 
-  let checkedInCount = 0;
+  const rosterStudentIds = new Set(students.map((student) => student.id));
+  let presentCount = 0;
   let absentCount = 0;
 
-  for (const record of attendance) {
+  for (const record of buildAttendanceByStudentId(attendance, open).values()) {
+    if (!rosterStudentIds.has(record.student_id)) {
+      continue;
+    }
+
+    // Koaryu's attendance metrics treat present, late, and legacy excused records
+    // as attended. Only an explicit absent record belongs in the absent bucket;
+    // a roster student without any record is unmarked.
     if (record.status === "absent") {
       absentCount += 1;
     } else {
-      checkedInCount += 1;
+      presentCount += 1;
     }
   }
 
-  return { checkedInCount, absentCount };
+  return {
+    presentCount,
+    absentCount,
+    unmarkedCount: Math.max(0, students.length - presentCount - absentCount),
+  };
 }
 
 export function buildAttendanceByStudentId(attendance: AttendanceRecord[], open: boolean) {
@@ -101,7 +128,7 @@ export function buildAttendanceByStudentId(attendance: AttendanceRecord[], open:
     return new Map<string, AttendanceRecord>();
   }
 
-  return new Map(attendance.map((record) => [record.student_id, record]));
+  return buildLatestAttendanceByStudentId(attendance);
 }
 
 export function buildSessionRosterSections({
