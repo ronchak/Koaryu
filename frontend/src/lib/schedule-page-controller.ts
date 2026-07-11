@@ -247,7 +247,7 @@ export function useSchedulePageController({
     setStudentRosterLoadError(null);
     setSessionAttendanceRefresh(beginSessionAttendanceRefresh(session.id));
     setSelectedSession(session);
-    if (studentsMayBePartial) {
+    if (!isCompleteScheduleRoster({ studentsLoaded, studentsMayBePartial })) {
       setIsRefreshingStudentRoster(true);
       void refreshStudents()
         .catch((error) => {

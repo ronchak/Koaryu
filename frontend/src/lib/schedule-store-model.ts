@@ -49,6 +49,13 @@ export function getAttendanceToggleTransition(
   return { existing, nextStatus, previousStatus };
 }
 
+export function shouldRetryScheduleReadAfterCoordinatorChange(
+  authCurrent: boolean,
+  generationCurrent: boolean
+) {
+  return !authCurrent || !generationCurrent;
+}
+
 function replaceStudentAttendance(
   current: AttendanceRecord[],
   sessionId: string,
@@ -64,6 +71,20 @@ function replaceStudentAttendance(
   return next;
 }
 
+function restoreStudentAttendance(
+  current: AttendanceRecord[],
+  sessionId: string,
+  studentId: string,
+  replacements: AttendanceRecord[]
+) {
+  return [
+    ...current.filter(
+      (record) => !(record.session_id === sessionId && record.student_id === studentId)
+    ),
+    ...replacements,
+  ];
+}
+
 export async function runOptimisticAttendanceToggle({
   attendance,
   checkedInAt,
@@ -77,8 +98,11 @@ export async function runOptimisticAttendanceToggle({
   studentId,
   studioId = "",
 }: RunOptimisticAttendanceToggleOptions) {
+  const previousRecords = attendance.filter(
+    (record) => record.session_id === sessionId && record.student_id === studentId
+  );
   const transition = getAttendanceToggleTransition(attendance, sessionId, studentId);
-  const { existing, nextStatus, previousStatus } = transition;
+  const { existing, nextStatus } = transition;
   const optimisticRecord = nextStatus
     ? existing
       ? { ...existing, status: nextStatus, checked_in_at: checkedInAt }
@@ -94,7 +118,16 @@ export async function runOptimisticAttendanceToggle({
           student_name: name,
         }
     : null;
-  const countDelta = toAttendanceCountDelta(previousStatus, nextStatus);
+  const hadCountableAttendance = attendance.some(
+    (record) =>
+      record.session_id === sessionId
+      && record.student_id === studentId
+      && record.status !== "absent"
+  );
+  const countDelta = toAttendanceCountDelta(
+    hadCountableAttendance ? "present" : null,
+    nextStatus
+  );
 
   commitAttendance((current) =>
     replaceStudentAttendance(current, sessionId, studentId, optimisticRecord)
@@ -119,7 +152,7 @@ export async function runOptimisticAttendanceToggle({
   } catch (error) {
     if (isCurrent()) {
       commitAttendance((current) =>
-        replaceStudentAttendance(current, sessionId, studentId, existing)
+        restoreStudentAttendance(current, sessionId, studentId, previousRecords)
       );
       commitSessionCountDelta(-countDelta);
     }

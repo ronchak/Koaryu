@@ -12,6 +12,7 @@ import {
   mergeSessionsForRange,
   normalizeAttendanceRecords,
   runOptimisticAttendanceToggle,
+  shouldRetryScheduleReadAfterCoordinatorChange,
   setScheduleRequestedRangeState,
   updateSessionAttendanceCount,
   type ScheduleCoordinatorState,
@@ -261,8 +262,8 @@ export function useStoreScheduleActions({
           mutationsInFlight: current.mutationsInFlight,
           requestSequenceAtStart: requestSequence,
         })) {
-          if (!authCurrent || !generationCurrent) {
-            throw new Error("Attendance refresh became invalid after authentication changed.");
+          if (shouldRetryScheduleReadAfterCoordinatorChange(authCurrent, generationCurrent)) {
+            continue;
           }
           if (current.mutationsInFlight > 0) {
             await waitForScheduleMutationSettlement();
@@ -496,12 +497,16 @@ export function useStoreScheduleActions({
     const commitAttendance = (
       update: (current: AttendanceRecord[]) => AttendanceRecord[]
     ) => {
-      const next = update(attendanceRef.current);
-      attendanceRef.current = next;
       if (isPreviewMode) {
+        const next = update(attendanceRef.current);
+        attendanceRef.current = next;
         persistAttendance(next);
       } else {
-        setAttendance(next);
+        setAttendance((current) => {
+          const next = update(current);
+          attendanceRef.current = next;
+          return next;
+        });
       }
     };
 

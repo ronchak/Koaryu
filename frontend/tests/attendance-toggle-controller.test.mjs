@@ -166,6 +166,7 @@ describe("optimistic attendance toggle controller", () => {
       checked_in_at: "2026-07-10T20:00:00.000Z",
     });
     let attendance = [stalePresent, currentAbsent];
+    let sessionCount = 1;
     const request = deferred();
     const togglePromise = runOptimisticAttendanceToggle({
       attendance,
@@ -173,7 +174,9 @@ describe("optimistic attendance toggle controller", () => {
       commitAttendance(update) {
         attendance = update(attendance);
       },
-      commitSessionCountDelta() {},
+      commitSessionCountDelta(delta) {
+        sessionCount += delta;
+      },
       name: "Aiko Tanaka",
       optimisticId: "unused",
       request: () => request.promise,
@@ -182,9 +185,11 @@ describe("optimistic attendance toggle controller", () => {
     });
 
     assert.deepEqual(attendance, [], "optimistic clear must remove all matching rows");
+    assert.equal(sessionCount, 0, "clearing stale countable duplicates must repair the session count");
     request.resolve(null);
     await togglePromise;
     assert.deepEqual(attendance, []);
+    assert.equal(sessionCount, 0);
   });
 
   it("rolls an optimistic deletion and its counters back after request failure", async () => {
@@ -225,5 +230,43 @@ describe("optimistic attendance toggle controller", () => {
       absentCount: 1,
       unmarkedCount: 0,
     });
+  });
+
+  it("restores duplicate rows and their repaired count after a failed clear", async () => {
+    const stalePresent = record("present", {
+      id: "stale-present",
+      checked_in_at: "2026-07-10T19:00:00.000Z",
+    });
+    const currentAbsent = record("absent", {
+      id: "current-absent",
+      checked_in_at: "2026-07-10T20:00:00.000Z",
+    });
+    let attendance = [stalePresent, currentAbsent];
+    let sessionCount = 1;
+    const request = deferred();
+    const togglePromise = runOptimisticAttendanceToggle({
+      attendance,
+      checkedInAt: "2026-07-10T20:01:00.000Z",
+      commitAttendance(update) {
+        attendance = update(attendance);
+      },
+      commitSessionCountDelta(delta) {
+        sessionCount += delta;
+      },
+      name: "Aiko Tanaka",
+      optimisticId: "unused",
+      request: () => request.promise,
+      sessionId,
+      studentId,
+    });
+
+    assert.deepEqual(attendance, []);
+    assert.equal(sessionCount, 0);
+
+    request.reject(new Error("network failed"));
+    await assert.rejects(togglePromise, /network failed/);
+
+    assert.deepEqual(attendance, [stalePresent, currentAbsent]);
+    assert.equal(sessionCount, 1);
   });
 });
