@@ -151,3 +151,21 @@ export function buildSubscriptionRequiredStudioResetState(): LiveStudioDataReset
     leadsLoadError: SUBSCRIPTION_REQUIRED_MESSAGE,
   };
 }
+
+export function buildSubscriptionAccessRestoreState() {
+  return {
+    subscriptionRequired: false,
+    staffLoaded: false,
+    staffLoadError: null,
+    programsLoaded: false,
+    programsLoadError: null,
+    dashboardSummary: null,
+    dashboardSummaryLoaded: false,
+    studentsLoaded: false,
+    studentsLoadError: null,
+    leadsLoaded: false,
+    leadsLoadError: null,
+    scheduleLoadError: null,
+    scheduleStatus: "idle" as const,
+  };
+}

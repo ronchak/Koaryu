@@ -23,6 +23,7 @@ import { fetchStudentPage } from "@/lib/store-student-pages";
 import { useSyncedRefValue } from "@/lib/store-ref-sync";
 import {
   applyLiveStudioDataResetRefs,
+  buildSubscriptionAccessRestoreState,
   buildSignedOutStudioResetState,
   buildSubscriptionRequiredStudioResetState,
   nextLiveStudioDataResetGeneration,
@@ -601,10 +602,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [applyLiveStudioDataResetState]);
 
   const clearSubscriptionRequired = useCallback(() => {
-    setSubscriptionRequired(false);
-    setStudentsLoadError(null);
-    setProgramsLoadError(null);
-    setStaffLoadError(null);
+    const restored = buildSubscriptionAccessRestoreState();
+    setSubscriptionRequired(restored.subscriptionRequired);
+    setStaffLoaded(restored.staffLoaded);
+    setStaffLoadError(restored.staffLoadError);
+    setProgramsLoaded(restored.programsLoaded);
+    setProgramsLoadError(restored.programsLoadError);
+    setDashboardSummary(restored.dashboardSummary);
+    setDashboardSummaryLoaded(restored.dashboardSummaryLoaded);
+    setStudentsLoaded(restored.studentsLoaded);
+    setStudentsLoadError(restored.studentsLoadError);
+    setLeadsLoaded(restored.leadsLoaded);
+    setLeadsLoadError(restored.leadsLoadError);
+    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
+      scheduleCoordinatorRef.current
+    );
+    setScheduleLoadError(restored.scheduleLoadError);
+    setScheduleStatus(restored.scheduleStatus);
   }, []);
 
   useEffect(() => {
@@ -1206,12 +1220,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             })
             .catch((error) => {
               console.warn("Failed to refresh program usage after bootstrap", error);
-              if (isCurrentSession()) {
-                setProgramsLoaded(false);
-                setProgramsLoadError(
-                  error instanceof Error ? error.message : "Programs could not be loaded."
-                );
-              }
             });
         }
 
