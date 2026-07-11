@@ -4,24 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFICATION_DIR="$ROOT_DIR/supabase/verification"
 SUPABASE_DB_TARGET="${SUPABASE_DB_TARGET:-local}"
-
-if ! command -v supabase >/dev/null 2>&1; then
-  echo "Supabase CLI is required to run this check." >&2
-  exit 127
-fi
-
-case "$SUPABASE_DB_TARGET" in
-  linked)
-    db_target_flag="--linked"
-    ;;
-  local)
-    db_target_flag="--local"
-    ;;
-  *)
-    echo "SUPABASE_DB_TARGET must be 'linked' or 'local'." >&2
-    exit 2
-    ;;
-esac
+SQL_RUNNER="$ROOT_DIR/scripts/run-supabase-sql.sh"
 
 contract_files=(
   "20260425000021_program_memberships_checks.sql"
@@ -53,5 +36,5 @@ contract_files=(
 
 for contract_file in "${contract_files[@]}"; do
   echo "Running Supabase contract on $SUPABASE_DB_TARGET database: $contract_file"
-  supabase db query "$db_target_flag" --file "$VERIFICATION_DIR/$contract_file"
+  "$SQL_RUNNER" "$VERIFICATION_DIR/$contract_file"
 done

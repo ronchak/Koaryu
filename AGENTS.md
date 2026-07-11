@@ -33,6 +33,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Audit support triage privacy docs/scripts: `npm run audit:support-privacy`
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
+- Check candidate-wide workflow coverage: `npm run check:release-workflow`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 
 ## Monorepo Rules
@@ -60,6 +61,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - For backend-only changes, prefer `cd backend && venv/bin/python -m pytest <tests>`.
 - For database changes, apply files not yet in local history with `supabase migration up --local`. If a changed migration may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then run `supabase db lint --local --fail-on error` and force local helpers with `SUPABASE_DB_TARGET=local`. Use linked checks only for an explicitly intended release inspection after the linked project has the migrations.
 - For release-shaped or cross-cutting changes, combine the relevant frontend, backend, and Supabase checks.
+- Every release-candidate PR must also receive the exact-head `Release candidate gate`; use `scripts/merge-release-pr.sh` with recorded head and base SHAs after the strict `main` ruleset is active.
 - For backend schema or response-contract changes, run `npm run check:api-types` and regenerate with `npm run generate:api-types` if needed.
 
 ## Safety Boundaries

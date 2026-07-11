@@ -265,106 +265,36 @@ BEGIN
     END IF;
 END $$;
 
-RESET ROLE;
-
-SET LOCAL ROLE authenticated;
-
 DO $$
-DECLARE
-    v_owner UUID := current_setting('koaryu.verification_owner')::UUID;
-    v_expected_exception BOOLEAN := false;
 BEGIN
-    BEGIN
-        PERFORM *
-        FROM public.create_studio_onboarding(
-            v_owner,
-            'Unauthorized Authenticated Studio',
-            'UTC',
-            gen_random_uuid()::TEXT
-        );
-    EXCEPTION
-        WHEN insufficient_privilege THEN
-            v_expected_exception := true;
-    END;
-
-    IF NOT v_expected_exception THEN
+    -- PostgreSQL 17.6 can terminate the backend when a revoked SECURITY
+    -- DEFINER function is invoked from a SET ROLE block inside this larger
+    -- transactional smoke. The ACL is the invariant under test, so inspect it
+    -- directly instead of deliberately executing a forbidden function.
+    IF has_function_privilege(
+        'authenticated',
+        'public.create_studio_onboarding(uuid,text,text,text)',
+        'EXECUTE'
+    ) THEN
         RAISE EXCEPTION 'Expected authenticated role to be unable to execute create_studio_onboarding.';
     END IF;
 
-    v_expected_exception := false;
+    IF has_function_privilege(
+        'anon',
+        'public.create_studio_onboarding(uuid,text,text,text)',
+        'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'Expected anon role to be unable to execute create_studio_onboarding.';
+    END IF;
 
-    BEGIN
-        INSERT INTO public.studios (
-            name,
-            slug,
-            owner_id,
-            timezone
-        )
-        VALUES (
-            'Unauthorized Direct Studio',
-            'unauthorized-direct-' || replace(gen_random_uuid()::TEXT, '-', ''),
-            v_owner,
-            'UTC'
-        );
-    EXCEPTION
-        WHEN insufficient_privilege THEN
-            v_expected_exception := true;
-    END;
-
-    IF NOT v_expected_exception THEN
+    IF has_table_privilege('authenticated', 'public.studios', 'INSERT') THEN
         RAISE EXCEPTION 'Expected authenticated role to be unable to insert studios directly.';
     END IF;
 
-    v_expected_exception := false;
-
-    BEGIN
-        INSERT INTO public.staff_roles (
-            studio_id,
-            user_id,
-            role
-        )
-        VALUES (
-            current_setting('koaryu.verification_partial_studio')::UUID,
-            v_owner,
-            'admin'
-        );
-    EXCEPTION
-        WHEN insufficient_privilege THEN
-            v_expected_exception := true;
-    END;
-
-    IF NOT v_expected_exception THEN
+    IF has_table_privilege('authenticated', 'public.staff_roles', 'INSERT') THEN
         RAISE EXCEPTION 'Expected authenticated role to be unable to insert staff_roles directly.';
     END IF;
 END $$;
-
-RESET ROLE;
-
-SET LOCAL ROLE anon;
-
-DO $$
-DECLARE
-    v_expected_exception BOOLEAN := false;
-BEGIN
-    BEGIN
-        PERFORM *
-        FROM public.create_studio_onboarding(
-            current_setting('koaryu.verification_owner')::UUID,
-            'Unauthorized Anonymous Studio',
-            'UTC',
-            gen_random_uuid()::TEXT
-        );
-    EXCEPTION
-        WHEN insufficient_privilege THEN
-            v_expected_exception := true;
-    END;
-
-    IF NOT v_expected_exception THEN
-        RAISE EXCEPTION 'Expected anon role to be unable to execute create_studio_onboarding.';
-    END IF;
-END $$;
-
-RESET ROLE;
 
 DO $$
 DECLARE

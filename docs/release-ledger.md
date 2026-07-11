@@ -87,6 +87,7 @@ Before merging any remediation PR:
 - A skeptical reviewer must explicitly return `GREEN LIGHT` with no unresolved blocker.
 - The GitHub Codex reviewer must have no actionable unresolved finding.
 - Required CI must be green, the branch current, rollback defined, and all verification evidence recorded.
+- After the strict `main` ruleset is active, merge through `scripts/merge-release-pr.sh` with the recorded exact head and base SHAs.
 - After merge, verify the exact deployed commit and run post-deployment smoke checks.
 
 Explicit Ronak approval is required before:
