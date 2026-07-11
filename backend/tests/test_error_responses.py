@@ -139,6 +139,7 @@ class ErrorResponseTest(unittest.TestCase):
         schema = app.openapi()
         error_response = schema["components"]["schemas"]["ErrorResponse"]
         validation_error = schema["components"]["schemas"]["HTTPValidationError"]
+        validation_detail = schema["components"]["schemas"]["ValidationError"]
 
         self.assertEqual(
             error_response["properties"]["error"]["$ref"],
@@ -149,6 +150,9 @@ class ErrorResponseTest(unittest.TestCase):
             validation_error["properties"]["error"]["$ref"],
             "#/components/schemas/ErrorMeta",
         )
+        self.assertEqual(validation_detail["required"], ["loc", "msg", "type"])
+        self.assertNotIn("input", validation_detail["properties"])
+        self.assertNotIn("ctx", validation_detail["properties"])
         self.assertEqual(
             schema["paths"]["/api/v1/auth/me"]["get"]["responses"]["default"]["content"]
             ["application/json"]["schema"]["$ref"],

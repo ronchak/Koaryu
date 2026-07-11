@@ -128,6 +128,14 @@ def _install_error_openapi_contract(app: FastAPI) -> None:
             if "error" not in required:
                 required.append("error")
 
+        validation_detail_schema = schemas.get("ValidationError")
+        if isinstance(validation_detail_schema, dict):
+            properties = validation_detail_schema.get("properties")
+            if isinstance(properties, dict):
+                properties.pop("input", None)
+                properties.pop("ctx", None)
+            validation_detail_schema["required"] = ["loc", "msg", "type"]
+
         for path_item in (schema.get("paths") or {}).values():
             if not isinstance(path_item, dict):
                 continue

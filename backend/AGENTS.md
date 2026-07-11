@@ -25,6 +25,8 @@ Use this file for work under `backend/`. Fall back to the repo root `AGENTS.md` 
 ## Core Commands
 
 - Install local/dev dependencies: `cd backend && venv/bin/python -m pip install -r requirements-dev.txt`
+- Regenerate the hash-pinned runtime lock after editing `requirements.in`: `cd backend && venv/bin/pip-compile --generate-hashes --strip-extras --output-file requirements.txt requirements.in`
+- Regenerate the hash-pinned development lock after editing `requirements-dev.in`: `cd backend && venv/bin/pip-compile --generate-hashes --strip-extras --allow-unsafe --output-file requirements-dev.txt requirements-dev.in`
 - Start local API: `cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
 - Run all tests: `cd backend && venv/bin/python -m pytest tests`
 - Run targeted tests: `cd backend && venv/bin/python -m pytest tests/test_health_endpoints.py`
@@ -43,7 +45,7 @@ The local backend runs on `http://127.0.0.1:8001`.
 
 ## Production And Deployment Constraints
 
-- Keep `render.yaml`, `backend/Procfile`, `backend/runtime.txt`, and dependency/runtime assumptions aligned when changing startup behavior.
+- Keep `render.yaml`, `backend/Procfile`, `backend/runtime.txt`, the direct dependency input, and the hash-pinned runtime lock aligned when changing startup behavior.
 - The production app intentionally fails fast when critical Supabase, Stripe, or frontend configuration is invalid. Do not relax those guards casually.
 - Be careful with support-ticket and account-deletion flows; they are internal operational surfaces protected by shared secrets.
 
