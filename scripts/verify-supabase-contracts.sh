@@ -17,6 +17,7 @@ contract_files=(
   "core_operational_client_write_controls.sql"
   "email_usage_rpc_contract.sql"
   "export_jobs_admin_only_contract.sql"
+  "function_execution_security.sql"
   "lead_conversion_atomic_contract.sql"
   "remaining_operational_client_write_controls.sql"
   "program_ladder_unification.sql"
