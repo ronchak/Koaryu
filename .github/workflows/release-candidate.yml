@@ -156,7 +156,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
       - name: Set up Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1
         with:
           version: 2.95.4
 
@@ -199,9 +199,15 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
       - name: Scan repository history for secrets
-        uses: gitleaks/gitleaks-action@v2.3.9
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.27.2
+
+      - name: Scan every reachable commit and exact-head worktree
+        run: |
+          gitleaks git --redact --verbose --exit-code 1 --log-opts="--all"
+          gitleaks dir . --redact --verbose --exit-code 1
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4

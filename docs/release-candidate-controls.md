@@ -16,7 +16,7 @@ directly and verifies it before running:
   and generated API contract verification;
 - a fresh local migration replay, database lint, and the broad Supabase contract
   suite;
-- full-history Gitleaks, Bandit, and CodeQL static analysis; and
+- merge-safe full-history and exact-worktree Gitleaks, Bandit, and CodeQL static analysis; and
 - an aggregate fail-closed `Release candidate gate` job.
 
 The Supabase contracts run through PostgreSQL `psql` with `ON_ERROR_STOP=1`.

@@ -16,7 +16,11 @@ const requiredSnippets = [
   "python -m pip_audit -r requirements.txt",
   "python -m piptools compile --quiet --generate-hashes",
   "python -m bandit -r backend/app -ll",
-  "gitleaks/gitleaks-action@v2.3.9",
+  "supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1",
+  "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7",
+  "GITLEAKS_VERSION: 8.27.2",
+  'gitleaks git --redact --verbose --exit-code 1 --log-opts="--all"',
+  "gitleaks dir . --redact --verbose --exit-code 1",
   "github/codeql-action/analyze@v4",
   "npm run check:env-examples",
   "npm run audit:support-privacy",
@@ -51,6 +55,31 @@ export function validateReleaseCandidateWorkflow(source) {
 
   if (!source.includes("if: ${{ always() }}")) {
     errors.push("The aggregate release-candidate gate must evaluate all job outcomes.");
+  }
+
+  const aggregateBlock = source.slice(source.indexOf("  release-candidate:"));
+  const needsMatch = aggregateBlock.match(/\n    needs:\n((?:      - [^\n]+\n)+)/);
+  const requiredJobs = [
+    { job: "repository-controls", variable: "REPOSITORY" },
+    { job: "frontend", variable: "FRONTEND" },
+    { job: "backend", variable: "BACKEND" },
+    { job: "database", variable: "DATABASE" },
+    { job: "static-analysis", variable: "STATIC_ANALYSIS" },
+  ];
+  const requiredNeeds = requiredJobs.map(({ job }) => job);
+  const actualNeeds = needsMatch
+    ? needsMatch[1].match(/- ([^\n]+)/g)?.map((line) => line.slice(2)).sort() ?? []
+    : [];
+  if (JSON.stringify(actualNeeds) !== JSON.stringify([...requiredNeeds].sort())) {
+    errors.push("The aggregate gate must depend on every required candidate job exactly once.");
+  }
+
+  for (const { job, variable } of requiredJobs) {
+    const envLine = `${variable}_RESULT: \${{ needs.${job}.result }}`;
+    const assertion = `test "$${variable}_RESULT" = success`;
+    if (!aggregateBlock.includes(envLine) || !aggregateBlock.includes(assertion)) {
+      errors.push(`The aggregate gate must fail closed on ${job}.`);
+    }
   }
 
   return errors;

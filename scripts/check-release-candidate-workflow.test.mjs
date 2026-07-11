@@ -37,3 +37,24 @@ test("release-candidate workflow rejects a missing required suite", () => {
     /scripts\/verify-supabase-contracts\.sh/,
   );
 });
+
+test("release-candidate workflow rejects a missing aggregate dependency", () => {
+  const weakened = workflow.replace("      - database\n", "");
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /depend on every required candidate job/,
+  );
+});
+
+test("release-candidate workflow rejects removed aggregate assertions", () => {
+  const weakened = workflow.replace(
+    /          test \"\$[A-Z_]+_RESULT\" = success\n/g,
+    "          true\n",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /aggregate gate must fail closed/,
+  );
+});

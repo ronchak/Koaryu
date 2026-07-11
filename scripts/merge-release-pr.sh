@@ -45,10 +45,14 @@ fi
 
 if ! jq -e '
   [.statusCheckRollup[]
-    | select(.name == "Release candidate gate")
+    | select(
+        .__typename == "CheckRun"
+        and .name == "Release candidate gate"
+        and .workflowName == "Release candidate"
+      )
     | .conclusion] == ["SUCCESS"]
 ' <<<"$pr_json" >/dev/null; then
-  echo "Refusing merge: the exact head lacks one successful Release candidate gate." >&2
+  echo "Refusing merge: the exact head lacks one successful GitHub Actions Release candidate gate." >&2
   exit 1
 fi
 
