@@ -5,6 +5,7 @@ import { api, isSubscriptionRequiredError } from "@/lib/api";
 import type {
   BillingInvoice,
   BillingPayment,
+  BillingPaymentCohortSummary,
   BillingPayer,
   BillingPlan,
   BillingSubscription,
@@ -47,6 +48,7 @@ export function useBillingDataController({
   const [enrollments, setEnrollments] = useState<StudentBillingEnrollment[]>([]);
   const [invoices, setInvoices] = useState<BillingInvoice[]>([]);
   const [payments, setPayments] = useState<BillingPayment[]>([]);
+  const [paymentCohortSummary, setPaymentCohortSummary] = useState<BillingPaymentCohortSummary | null>(null);
   const [exportJobs, setExportJobs] = useState<ExportJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasBillingLoadSettled, setHasBillingLoadSettled] = useState(isPreviewMode);
@@ -67,6 +69,7 @@ export function useBillingDataController({
     setEnrollments([]);
     setInvoices([]);
     setPayments([]);
+    setPaymentCohortSummary(null);
     setExportJobs([]);
     setIsLoading(false);
     setHasBillingLoadSettled(settled);
@@ -104,6 +107,7 @@ export function useBillingDataController({
         api.get<StudentBillingEnrollment[]>("/billing/enrollments", token),
         api.get<BillingInvoice[]>("/billing/invoices", token),
         api.get<BillingPayment[]>("/billing/payments", token),
+        api.get<BillingPaymentCohortSummary>("/billing/payments/current-month-cohort", token),
       ] as const);
 
       const [
@@ -115,6 +119,7 @@ export function useBillingDataController({
         enrollmentsResult,
         invoicesResult,
         paymentsResult,
+        paymentCohortSummaryResult,
       ] = results;
 
       const failures: string[] = [];
@@ -153,6 +158,12 @@ export function useBillingDataController({
       applyResult("Enrollments", enrollmentsResult, setEnrollments, () => setEnrollments([]));
       applyResult("Invoices", invoicesResult, setInvoices, () => setInvoices([]));
       applyResult("Payments", paymentsResult, setPayments, () => setPayments([]));
+      applyResult(
+        "UTC-month payment cohort",
+        paymentCohortSummaryResult,
+        setPaymentCohortSummary,
+        () => setPaymentCohortSummary(null)
+      );
       setLoadedAccessKey(requestAccess.accessKey);
 
       if (failures.length > 0) {
@@ -240,6 +251,7 @@ export function useBillingDataController({
     isLoading: activeAccessKey ? isLoading : false,
     payers: hasVisibleBillingData ? payers : [],
     paymentAccount: hasVisibleBillingData ? paymentAccount : null,
+    paymentCohortSummary: hasVisibleBillingData ? paymentCohortSummary : null,
     payments: hasVisibleBillingData ? payments : [],
     plans: hasVisibleBillingData ? plans : [],
     platformBilling: hasVisibleBillingData ? platformBilling : null,

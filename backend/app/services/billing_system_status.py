@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Any, Optional
+from uuid import uuid4
 
 from supabase import Client
 
@@ -17,6 +19,11 @@ from app.services.billing_invoice_projection import _to_text
 
 
 BILLING_WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
+BILLING_WEBHOOK_RECENT_WITHIN = timedelta(days=35)
+BILLING_WEBHOOK_CLOCK_SKEW = timedelta(minutes=5)
+
+
+logger = logging.getLogger(__name__)
 
 
 class BillingSystemStatusReporter:
@@ -51,9 +58,35 @@ class BillingSystemStatusReporter:
             account_failed = False
         except Exception as exc:
             account_failed = True
-            account_row = self.connect_accounts.ensure_row(studio_id)
-            account_response = self.connect_accounts.response(account_row)
-            add_check("Connect account refresh", False, f"Could not refresh Stripe Connect account: {exc}")
+            error_id = uuid4().hex
+            self._log_readiness_exception(
+                "Stripe Connect account refresh failed during billing readiness check",
+                exc,
+                error_id=error_id,
+                studio_id=studio_id,
+            )
+            add_check(
+                "Connect account refresh",
+                False,
+                f"Could not refresh the Stripe Connect account. Reference: {error_id}",
+            )
+            try:
+                account_row = self.connect_accounts.ensure_row(studio_id)
+                account_response = self.connect_accounts.response(account_row)
+            except Exception as fallback_exc:
+                fallback_error_id = uuid4().hex
+                self._log_readiness_exception(
+                    "Stripe Connect account fallback failed during billing readiness check",
+                    fallback_exc,
+                    error_id=fallback_error_id,
+                    studio_id=studio_id,
+                )
+                account_response = StudioPaymentAccountResponse(studio_id=studio_id)
+                add_check(
+                    "Connect account fallback",
+                    False,
+                    f"Could not read the stored Stripe Connect account. Reference: {fallback_error_id}",
+                )
 
         if not account_failed:
             self._add_connect_account_checks(add_check, account_response)
@@ -62,13 +95,28 @@ class BillingSystemStatusReporter:
             self.supabase.table("studio_payment_accounts").select("studio_id").eq("studio_id", studio_id).limit(1).execute()
             add_check("Supabase billing read", True, "Supabase billing tables are reachable.")
         except Exception as exc:
-            add_check("Supabase billing read", False, f"Supabase billing tables are not reachable: {exc}")
+            error_id = uuid4().hex
+            self._log_readiness_exception(
+                "Supabase billing readiness read failed",
+                exc,
+                error_id=error_id,
+                studio_id=studio_id,
+            )
+            add_check(
+                "Supabase billing read",
+                False,
+                f"Supabase billing tables are not reachable. Reference: {error_id}",
+            )
 
         platform_webhooks = self.webhook_health(None)
-        connect_webhooks = self.webhook_health(account_response.stripe_connected_account_id)
+        connect_webhooks = (
+            self.webhook_health(account_response.stripe_connected_account_id)
+            if account_response.stripe_connected_account_id
+            else BillingWebhookHealthResponse()
+        )
         self._add_webhook_checks(add_check, platform_webhooks, connect_webhooks)
 
-        ready = all(check.status == "pass" for check in checks if check.name != "Recent Connect webhook")
+        ready = all(check.status == "pass" for check in checks)
         return BillingSystemStatusResponse(
             studio_id=studio_id,
             ready_for_live_payments=ready,
@@ -81,35 +129,118 @@ class BillingSystemStatusReporter:
 
     def webhook_health(self, account_id: Optional[str]) -> BillingWebhookHealthResponse:
         try:
-            query = (
+            latest_processed_query = (
                 self.supabase.table("stripe_events")
-                .select("type, processing_status, processed_at, created_at")
-                .order("created_at", desc=True)
-                .limit(50)
+                .select("type, processed_at")
+                .eq("processing_status", "processed")
+                .not_.is_("processed_at", "null")
+                .order("processed_at", desc=True)
+                .limit(1)
             )
-            query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
-            rows = query.execute().data or []
-        except Exception:
+            latest_processed_rows = (
+                self._scope_webhook_query(latest_processed_query, account_id).execute().data or []
+            )
+            latest_processed = latest_processed_rows[0] if latest_processed_rows else None
+            expected_livemode = self._expected_stripe_livemode()
+            pending_count = self._count_webhook_events(
+                account_id,
+                processing_status="pending",
+            )
+            processing_count = self._count_webhook_events(
+                account_id,
+                processing_status="processing",
+            )
+            failed_count = self._count_webhook_events(
+                account_id,
+                processing_status="failed",
+            )
+            stale_processing_count = self._count_webhook_events(
+                account_id,
+                processing_status="processing",
+                processing_started_before=(
+                    datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER
+                ),
+            )
+            stale_processing_count += self._count_webhook_events(
+                account_id,
+                processing_status="processing",
+                processing_started_is_null=True,
+                created_before=(
+                    datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER
+                ),
+            )
+            mode_mismatch_count = (
+                self._count_webhook_events(
+                    account_id,
+                    livemode_not=expected_livemode,
+                )
+                if expected_livemode is not None
+                else 0
+            )
+        except Exception as exc:
+            error_id = uuid4().hex
+            self._log_readiness_exception(
+                "Stripe webhook readiness query failed",
+                exc,
+                error_id=error_id,
+                stripe_account_id=account_id,
+            )
             return BillingWebhookHealthResponse(
                 stripe_account_id=account_id,
                 failed_count=1,
                 stale_processing_count=0,
+                error_reference=error_id,
             )
 
-        latest_processed = next((row for row in rows if row.get("processing_status") == "processed"), None)
         return BillingWebhookHealthResponse(
             stripe_account_id=account_id,
             latest_processed_at=_to_text((latest_processed or {}).get("processed_at")),
             latest_event_type=(latest_processed or {}).get("type"),
-            failed_count=sum(1 for row in rows if row.get("processing_status") == "failed"),
-            stale_processing_count=sum(1 for row in rows if self.is_stale_webhook_processing(row)),
+            pending_count=pending_count,
+            processing_count=processing_count,
+            failed_count=failed_count,
+            stale_processing_count=stale_processing_count,
+            mode_mismatch_count=mode_mismatch_count,
         )
 
+    def _count_webhook_events(
+        self,
+        account_id: Optional[str],
+        *,
+        processing_status: Optional[str] = None,
+        processing_started_before: Optional[datetime] = None,
+        processing_started_is_null: bool = False,
+        created_before: Optional[datetime] = None,
+        livemode_not: Optional[bool] = None,
+    ) -> int:
+        query = self.supabase.table("stripe_events").select("id", count="exact").limit(1)
+        query = self._scope_webhook_query(query, account_id)
+        if processing_status is not None:
+            query = query.eq("processing_status", processing_status)
+        if processing_started_before is not None:
+            query = query.lte("processing_started_at", processing_started_before.isoformat())
+        if processing_started_is_null:
+            query = query.is_("processing_started_at", "null")
+        if created_before is not None:
+            query = query.lte("created_at", created_before.isoformat())
+        if livemode_not is not None:
+            query = query.neq("livemode", livemode_not)
+        return int(query.execute().count or 0)
+
+    @staticmethod
+    def _scope_webhook_query(query: Any, account_id: Optional[str]):
+        if account_id:
+            return query.eq("stripe_account_id", account_id)
+        return query.is_("stripe_account_id", "null")
+
     def _add_configuration_checks(self, add_check: Callable[..., None]) -> None:
+        stripe_mode = self._expected_stripe_livemode()
         add_check(
             "Stripe API key",
-            bool(getattr(self.settings, "STRIPE_SECRET_KEY", "")),
-            "Stripe API key is configured." if getattr(self.settings, "STRIPE_SECRET_KEY", "") else "STRIPE_SECRET_KEY is missing.",
+            stripe_mode is not None,
+            "Stripe API key is configured with an explicit test or live mode."
+            if stripe_mode is not None
+            else "STRIPE_SECRET_KEY is missing or does not identify test/live mode.",
         )
         add_check(
             "Koaryu Core price",
@@ -160,39 +291,99 @@ class BillingSystemStatusReporter:
         platform_webhooks: BillingWebhookHealthResponse,
         connect_webhooks: BillingWebhookHealthResponse,
     ) -> None:
-        add_check(
-            "Platform webhook processing",
-            platform_webhooks.failed_count == 0 and platform_webhooks.stale_processing_count == 0,
-            "No failed or stale platform webhook events found." if platform_webhooks.failed_count == 0 and platform_webhooks.stale_processing_count == 0 else "Platform webhook failures or stale processing rows need review.",
-        )
-        add_check(
-            "Connect webhook processing",
-            connect_webhooks.failed_count == 0 and connect_webhooks.stale_processing_count == 0,
-            "No failed or stale Connect webhook events found." if connect_webhooks.failed_count == 0 and connect_webhooks.stale_processing_count == 0 else "Connect webhook failures or stale processing rows need review.",
-        )
-        add_check(
-            "Recent Connect webhook",
-            bool(connect_webhooks.latest_processed_at),
-            "A Connect webhook has processed for this account." if connect_webhooks.latest_processed_at else "No processed Connect webhook row is visible for this account yet.",
-            warn=True,
-        )
+        for label, health in (
+            ("Platform", platform_webhooks),
+            ("Connect", connect_webhooks),
+        ):
+            add_check(
+                f"{label} webhook query",
+                health.error_reference is None,
+                f"{label} webhook health data is reachable."
+                if health.error_reference is None
+                else f"{label} webhook health data could not be read. Reference: {health.error_reference}",
+            )
+            processing_ok = (
+                health.pending_count == 0
+                and health.failed_count == 0
+                and health.stale_processing_count == 0
+            )
+            add_check(
+                f"{label} webhook processing",
+                processing_ok,
+                f"No pending, failed, or stale {label.lower()} webhook events found."
+                if processing_ok
+                else f"{label} webhook backlog, failures, or stale processing rows need review.",
+            )
+            add_check(
+                f"{label} webhook mode",
+                self._expected_stripe_livemode() is not None and health.mode_mismatch_count == 0,
+                f"Observed {label.lower()} webhook events match the configured Stripe mode."
+                if self._expected_stripe_livemode() is not None and health.mode_mismatch_count == 0
+                else f"{label} webhook event mode does not match the configured Stripe API key.",
+            )
+            recent = self._is_recent_timestamp(health.latest_processed_at)
+            add_check(
+                f"Recent {label} webhook",
+                recent,
+                f"A recent {label.lower()} webhook has processed."
+                if recent
+                else f"No {label.lower()} webhook has processed within the readiness window.",
+            )
 
     @staticmethod
     def is_stale_webhook_processing(row: dict[str, Any]) -> bool:
         if row.get("processing_status") != "processing":
             return False
-        created_at = row.get("created_at")
-        if not created_at:
+        processing_started_at = row.get("processing_started_at") or row.get("created_at")
+        if not processing_started_at:
             return False
-        if isinstance(created_at, datetime):
-            created = created_at
-        elif isinstance(created_at, str):
+        if isinstance(processing_started_at, datetime):
+            started = processing_started_at
+        elif isinstance(processing_started_at, str):
             try:
-                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                started = datetime.fromisoformat(processing_started_at.replace("Z", "+00:00"))
             except ValueError:
                 return False
         else:
             return False
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - created >= BILLING_WEBHOOK_PROCESSING_STALE_AFTER
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - started >= BILLING_WEBHOOK_PROCESSING_STALE_AFTER
+
+    @staticmethod
+    def _log_readiness_exception(
+        message: str,
+        exc: Exception,
+        *,
+        error_id: str,
+        **context: Any,
+    ) -> None:
+        logger.error(
+            message,
+            extra={
+                "error_id": error_id,
+                "exception_type": type(exc).__name__,
+                **context,
+            },
+        )
+
+    def _expected_stripe_livemode(self) -> Optional[bool]:
+        key = str(getattr(self.settings, "STRIPE_SECRET_KEY", "")).strip()
+        if key.startswith("sk_live_"):
+            return True
+        if key.startswith("sk_test_"):
+            return False
+        return None
+
+    @staticmethod
+    def _is_recent_timestamp(value: Optional[str]) -> bool:
+        if not value:
+            return False
+        try:
+            observed_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return False
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - observed_at
+        return -BILLING_WEBHOOK_CLOCK_SKEW <= age <= BILLING_WEBHOOK_RECENT_WITHIN

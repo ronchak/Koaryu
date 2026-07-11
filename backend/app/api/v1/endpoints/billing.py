@@ -9,6 +9,7 @@ from app.schemas.billing import (
     BillingInvoiceResponse,
     BillingLinkResponse,
     BillingPaymentResponse,
+    BillingPaymentCohortSummaryResponse,
     BillingPayerAutopaySetupRequest,
     BillingPayerCreate,
     BillingPayerResponse,
@@ -491,12 +492,23 @@ async def finalize_invoice(
 @router.post("/invoices/{invoice_id}/retry", response_model=BillingInvoiceResponse)
 async def retry_invoice_payment(
     invoice_id: str,
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
-    return await BillingService(supabase).retry_invoice_payment(invoice_id, studio_id, user_id)
+    return await BillingService(supabase).retry_invoice_payment(
+        invoice_id,
+        studio_id,
+        user_id,
+        request_idempotency_key,
+    )
 
 
 @router.post("/invoices/{invoice_id}/void", response_model=BillingInvoiceResponse)
@@ -534,6 +546,21 @@ async def list_payments(
         require_platform_subscription=True,
     )
     return await BillingService(supabase).list_payments(studio_id)
+
+
+@router.get("/payments/current-month-cohort", response_model=BillingPaymentCohortSummaryResponse)
+async def get_current_month_payment_cohort_summary(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _manager_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return await BillingService(supabase).current_month_payment_cohort_summary(studio_id)
 
 
 @router.post("/payments/external", response_model=BillingPaymentResponse, status_code=201)

@@ -8,6 +8,7 @@ from fastapi import BackgroundTasks, HTTPException, status
 
 from app.api.v1.endpoints import billing as billing_endpoints
 from app.api.v1.endpoints import students as student_endpoints
+from app.main import app
 from app.schemas.billing import (
     BillingInvoiceCreate,
     BillingPayerAutopaySetupRequest,
@@ -34,6 +35,18 @@ def _front_desk_forbidden(*_args, **_kwargs):
 
 
 class BillingEndpointPermissionTest(unittest.TestCase):
+    def test_invoice_retry_idempotency_header_is_required_and_length_bounded_in_openapi(self):
+        operation = app.openapi()["paths"]["/api/v1/billing/invoices/{invoice_id}/retry"]["post"]
+        header = next(
+            parameter
+            for parameter in operation["parameters"]
+            if parameter["in"] == "header" and parameter["name"] == "Idempotency-Key"
+        )
+
+        self.assertTrue(header["required"])
+        self.assertEqual(header["schema"]["minLength"], 1)
+        self.assertEqual(header["schema"]["maxLength"], 255)
+
     def assert_admin_required(self, coroutine_factory):
         with (
             patch("app.api.v1.endpoints.billing._admin_studio_id", side_effect=_front_desk_forbidden) as admin_studio,
@@ -258,6 +271,7 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 "retry_invoice_payment",
                 lambda: billing_endpoints.retry_invoice_payment(
                     "invoice_1",
+                    request_idempotency_key="invoice-retry-key",
                     user_id="front_desk_1",
                     requested_studio_id="studio_1",
                     supabase=object(),
@@ -329,6 +343,51 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         for name, coroutine_factory in cases:
             with self.subTest(endpoint=name):
                 self.assert_admin_required(coroutine_factory)
+
+    def test_retry_invoice_propagates_request_idempotency_key(self):
+        with (
+            patch("app.api.v1.endpoints.billing._admin_studio_id", return_value="studio_1"),
+            patch("app.api.v1.endpoints.billing.BillingService") as billing_service,
+        ):
+            billing_service.return_value.retry_invoice_payment = AsyncMock(return_value={"id": "invoice_1"})
+
+            response = asyncio.run(billing_endpoints.retry_invoice_payment(
+                "invoice_1",
+                request_idempotency_key="client-operation-1",
+                user_id="admin_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            ))
+
+        self.assertEqual(response, {"id": "invoice_1"})
+        billing_service.return_value.retry_invoice_payment.assert_awaited_once_with(
+            "invoice_1",
+            "studio_1",
+            "admin_1",
+            "client-operation-1",
+        )
+
+    def test_retry_invoice_preserves_safe_definitive_payment_status_for_client(self):
+        safe_error = HTTPException(
+            status_code=402,
+            detail="Stripe declined the invoice payment. Review the payer payment method and retry.",
+        )
+        with (
+            patch("app.api.v1.endpoints.billing._admin_studio_id", return_value="studio_1"),
+            patch("app.api.v1.endpoints.billing.BillingService") as billing_service,
+        ):
+            billing_service.return_value.retry_invoice_payment = AsyncMock(side_effect=safe_error)
+            with self.assertRaises(HTTPException) as response:
+                asyncio.run(billing_endpoints.retry_invoice_payment(
+                    "invoice_1",
+                    request_idempotency_key="declined-operation",
+                    user_id="admin_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                ))
+
+        self.assertEqual(response.exception.status_code, 402)
+        self.assertEqual(response.exception.detail, safe_error.detail)
 
     def test_front_desk_can_still_use_billing_read_endpoint(self):
         service = AsyncMock()

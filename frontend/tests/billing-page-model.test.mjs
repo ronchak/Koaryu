@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildBillingPageModel } from "../src/lib/billing-page-model.ts";
+import {
+  buildBillingPageModel,
+  currentMonthPaymentTotals,
+} from "../src/lib/billing-page-model.ts";
 import {
   PREVIEW_CONNECT,
+  PREVIEW_BILLING_METRICS_AS_OF,
   PREVIEW_ENROLLMENTS,
   PREVIEW_INVOICES,
   PREVIEW_PAYERS,
@@ -89,7 +93,7 @@ function invoice(id, status, amountDue, amountPaid = 0) {
   };
 }
 
-function payment(id, status, amount) {
+function payment(id, status, amount, overrides = {}) {
   return {
     id,
     studio_id: "studio-1",
@@ -101,6 +105,7 @@ function payment(id, status, amount) {
     paid_at: "2026-05-24T00:00:00.000Z",
     created_at: "2026-05-24T00:00:00.000Z",
     updated_at: "2026-05-24T00:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -152,6 +157,18 @@ describe("billing page model", () => {
   it("derives billing metrics, lookup maps, and setup flags", () => {
     const model = buildBillingPageModel({
       ...DEFAULT_INPUT,
+      billingMetricsAsOf: new Date("2026-05-31T12:00:00Z"),
+      billingPaymentCohortSummary: {
+        period_start: "2026-05-01T00:00:00Z",
+        period_end: "2026-06-01T00:00:00Z",
+        timezone: "UTC",
+        payment_count: 2,
+        stripe_net_amount_cents: 10000,
+        external_net_amount_cents: 2500,
+        net_amount_cents: 12500,
+        scope: "payment_cohort_net_of_cumulative_refunds",
+        disclosure: "test cohort",
+      },
       billingEnrollments: [enrollment("active-enrollment", "active"), enrollment("ended-enrollment", "ended")],
       billingInvoices: [
         invoice("open-invoice", "open", 10000, 3000),
@@ -190,6 +207,7 @@ describe("billing page model", () => {
     assert.equal(model.activeStudents, 1);
     assert.deepEqual(model.billingStudentOptions, [{ id: "student-active", name: "Ace Stone" }]);
     assert.equal(model.paidRevenue, 12500);
+    assert.equal(model.currentMonthPaymentCount, 2);
     assert.equal(model.externalPaymentTotal, 2500);
     assert.equal(model.stripePaymentTotal, 10000);
     assert.equal(model.koaryuFeeBasis, 10000);
@@ -204,6 +222,88 @@ describe("billing page model", () => {
     assert.equal(model.studentNameById.get("student-preview-only"), "preview-only");
     assert.equal(model.payerNameById.get("failed-payer"), "failed-payer");
     assert.equal(model.planNameById.get("active-plan"), "active-plan");
+  });
+
+  it("date-bounds current-month collection totals and subtracts refunds", () => {
+    const totals = currentMonthPaymentTotals([
+      payment("current-stripe", "succeeded", 10000, {
+        processed_at: "2026-05-01T00:00:00.000Z",
+        refunded_amount_cents: 2500,
+      }),
+      payment("current-external", "externally_recorded", 4000, {
+        processed_at: "2026-05-31T23:59:59.999Z",
+      }),
+      payment("prior-month", "succeeded", 9000, {
+        processed_at: "2026-04-30T23:59:59.999Z",
+      }),
+      payment("next-month", "succeeded", 8000, {
+        processed_at: "2026-06-01T00:00:00.000Z",
+      }),
+      payment("fully-refunded", "refunded", 3000, {
+        processed_at: "2026-05-15T00:00:00.000Z",
+        refunded_amount_cents: 3000,
+      }),
+      payment("failed", "failed", 7000, {
+        processed_at: "2026-05-15T00:00:00.000Z",
+      }),
+    ], new Date("2026-05-20T12:00:00.000Z"));
+
+    assert.deepEqual(totals, {
+      externalPaymentTotal: 4000,
+      paidRevenue: 11500,
+      paymentCount: 3,
+      stripePaymentTotal: 7500,
+    });
+  });
+
+  it("falls back to created_at and excludes invalid or missing payment timestamps", () => {
+    const totals = currentMonthPaymentTotals([
+      payment("created-this-month", "succeeded", 2500, { processed_at: null }),
+      payment("invalid-date", "succeeded", 3000, {
+        processed_at: "not-a-date",
+      }),
+      {
+        id: "missing-date",
+        studio_id: "studio-1",
+        status: "succeeded",
+        amount_cents: 5000,
+        currency: "usd",
+        refunded_amount_cents: 0,
+      },
+    ], new Date("2026-05-20T12:00:00.000Z"));
+
+    assert.equal(totals.paidRevenue, 2500);
+    assert.equal(totals.paymentCount, 1);
+  });
+
+  it("does not present the limited live payment list as a complete cohort", () => {
+    const withoutServerSummary = buildBillingPageModel({
+      ...DEFAULT_INPUT,
+      billingPayments: [payment("limited-row", "succeeded", 999999)],
+      isPreviewMode: false,
+    });
+    const withServerSummary = buildBillingPageModel({
+      ...DEFAULT_INPUT,
+      billingPaymentCohortSummary: {
+        period_start: "2026-05-01T00:00:00Z",
+        period_end: "2026-06-01T00:00:00Z",
+        timezone: "UTC",
+        payment_count: 250,
+        stripe_net_amount_cents: 40000,
+        external_net_amount_cents: 5000,
+        net_amount_cents: 45000,
+        scope: "payment_cohort_net_of_cumulative_refunds",
+        disclosure: "test cohort",
+      },
+      billingPayments: [payment("limited-row", "succeeded", 999999)],
+      isPreviewMode: false,
+    });
+
+    assert.equal(withoutServerSummary.paidRevenue, 0);
+    assert.equal(withoutServerSummary.paymentCohortAvailable, false);
+    assert.equal(withServerSummary.paidRevenue, 45000);
+    assert.equal(withServerSummary.paymentCohortAvailable, true);
+    assert.equal(withServerSummary.currentMonthPaymentCount, 250);
   });
 
   it("uses preview student options only when the live active roster is empty", () => {
@@ -229,6 +329,7 @@ describe("billing page model", () => {
 
     const model = buildBillingPageModel({
       ...DEFAULT_INPUT,
+      billingMetricsAsOf: PREVIEW_BILLING_METRICS_AS_OF,
       billingConnect: PREVIEW_CONNECT,
       billingEnrollments: PREVIEW_ENROLLMENTS,
       billingInvoices: PREVIEW_INVOICES,

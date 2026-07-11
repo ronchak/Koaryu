@@ -3,12 +3,19 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
+from stripe import (
+    AuthenticationError as StripeAuthenticationError,
+    CardError as StripeCardError,
+    InvalidRequestError as StripeInvalidRequestError,
+    PermissionError as StripePermissionError,
+    RateLimitError as StripeRateLimitError,
+)
 
 from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceResponse
 from app.services.billing_invoice_projection import _object_get, _stripe_id
@@ -16,6 +23,16 @@ from app.services.stripe_service import StripeService
 
 
 logger = logging.getLogger(__name__)
+
+INVOICE_RETRY_LEASE_DURATION = timedelta(seconds=30)
+INVOICE_RETRY_STRIPE_KEY_MAX_AGE = timedelta(hours=23)
+INVOICE_RETRY_AMBIGUOUS_DETAIL = (
+    "Invoice payment outcome is not yet confirmed. Retry with the same operation after reconciliation."
+)
+INVOICE_RETRY_EXPIRED_DETAIL = (
+    "The prior payment attempt could not be confirmed before its Stripe retry window expired. "
+    "Review the invoice in Stripe, then start a new retry operation."
+)
 
 
 class BillingInvoiceManager:
@@ -276,17 +293,438 @@ class BillingInvoiceManager:
         self._audit(studio_id, actor_id, "billing.invoice_finalized", invoice_id, {})
         return BillingInvoiceResponse(**invoice)
 
-    async def retry_invoice_payment(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
+    async def retry_invoice_payment(
+        self,
+        invoice_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> BillingInvoiceResponse:
         invoice = self._get_row_or_404("billing_invoices", invoice_id, studio_id, "Invoice not found.")
         if not invoice.get("stripe_invoice_id") or not invoice.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Invoice is not linked to Stripe.")
-        stripe_invoice = self.stripe_service_cls().pay_connected_invoice(
-            account_id=invoice["stripe_account_id"],
-            invoice_id=invoice["stripe_invoice_id"],
+        normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
+        if not normalized_idempotency_key:
+            raise HTTPException(status_code=400, detail="Idempotency-Key is required for invoice payment retries.")
+        requested_idempotency_key = normalized_idempotency_key
+        stripe_idempotency_key = self._idempotency_key(
+            "invoice-retry",
+            studio_id,
+            invoice_id,
+            normalized_idempotency_key,
         )
-        invoice = self._update_invoice_from_stripe(invoice_id, studio_id, stripe_invoice, invoice["stripe_account_id"])
-        self._audit(studio_id, actor_id, "billing.invoice_retry_requested", invoice_id, {})
+        operation = self._find_invoice_retry_operation(
+            studio_id,
+            invoice_id,
+            normalized_idempotency_key,
+        )
+        if not operation:
+            operation = self._find_active_invoice_retry_operation(studio_id, invoice_id)
+        created = False
+        if operation:
+            normalized_idempotency_key = operation["client_idempotency_key"]
+            stripe_idempotency_key = operation["stripe_idempotency_key"]
+        else:
+            operation, created = self._claim_invoice_retry_operation(
+                studio_id,
+                invoice_id,
+                normalized_idempotency_key,
+                stripe_idempotency_key,
+            )
+        if operation["client_idempotency_key"] != requested_idempotency_key:
+            self._ensure_invoice_retry_operation_alias(
+                operation,
+                requested_idempotency_key,
+            )
+            normalized_idempotency_key = operation["client_idempotency_key"]
+            stripe_idempotency_key = operation["stripe_idempotency_key"]
+        if not created:
+            if operation.get("status") in {"processing", "reconciliation_required"}:
+                operation = self._acquire_invoice_retry_operation_lease(operation)
+            replay = self._resolve_invoice_retry_replay(invoice, operation, studio_id, actor_id)
+            if replay is not None:
+                return replay
+
+        try:
+            stripe_invoice = self.stripe_service_cls().pay_connected_invoice(
+                account_id=invoice["stripe_account_id"],
+                invoice_id=invoice["stripe_invoice_id"],
+                idempotency_key=stripe_idempotency_key,
+            )
+        except Exception as exc:
+            definitive = self._definitive_invoice_retry_error(exc)
+            if definitive is not None:
+                status_code, detail, error_code = definitive
+                self._finish_invoice_retry_operation(
+                    operation["id"],
+                    operation["lease_token"],
+                    "failed_definitive",
+                    error_code,
+                )
+                raise HTTPException(status_code=status_code, detail=detail) from None
+            self._finish_invoice_retry_operation(
+                operation["id"],
+                operation["lease_token"],
+                "reconciliation_required",
+                "ambiguous_stripe_error",
+            )
+            raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL) from None
+
+        try:
+            invoice = self._update_invoice_from_stripe(
+                invoice_id,
+                studio_id,
+                stripe_invoice,
+                invoice["stripe_account_id"],
+            )
+            if invoice.get("status") != "paid":
+                self._finish_invoice_retry_operation(
+                    operation["id"],
+                    operation["lease_token"],
+                    "reconciliation_required",
+                    "stripe_payment_nonterminal",
+                )
+                raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
+            self._audit_invoice_retry_once(
+                studio_id,
+                actor_id,
+                invoice_id,
+                normalized_idempotency_key,
+            )
+            self._finish_invoice_retry_operation(operation["id"], operation["lease_token"], "succeeded")
+        except HTTPException:
+            raise
+        except Exception:
+            self._finish_invoice_retry_operation(
+                operation["id"],
+                operation["lease_token"],
+                "reconciliation_required",
+                "local_projection_error",
+            )
+            raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL) from None
         return BillingInvoiceResponse(**invoice)
+
+    def _claim_invoice_retry_operation(
+        self,
+        studio_id: str,
+        invoice_id: str,
+        client_key: str,
+        stripe_key: str,
+    ) -> tuple[dict[str, Any], bool]:
+        existing = self._find_invoice_retry_operation(studio_id, invoice_id, client_key)
+        if existing:
+            return existing, False
+        now_value = datetime.now(timezone.utc)
+        now = now_value.isoformat()
+        lease_token = uuid4().hex
+        try:
+            result = self.supabase.table("billing_invoice_retry_operations").insert({
+                "studio_id": studio_id,
+                "invoice_id": invoice_id,
+                "client_idempotency_key": client_key,
+                "stripe_idempotency_key": stripe_key,
+                "status": "processing",
+                "lease_token": lease_token,
+                "lease_expires_at": (now_value + INVOICE_RETRY_LEASE_DURATION).isoformat(),
+                "processing_started_at": now,
+                "created_at": now,
+                "updated_at": now,
+            }).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) != "23505":
+                raise
+            existing = self._find_invoice_retry_operation(studio_id, invoice_id, client_key)
+            if existing:
+                return existing, False
+            active = self._find_active_invoice_retry_operation(studio_id, invoice_id)
+            if active:
+                return active, False
+            raise
+        if not result.data:
+            raise HTTPException(status_code=503, detail="Invoice retry operation could not be claimed.")
+        return result.data[0], True
+
+    def _acquire_invoice_retry_operation_lease(
+        self,
+        operation: dict[str, Any],
+    ) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        lease_token = uuid4().hex
+        result = (
+            self.supabase.table("billing_invoice_retry_operations")
+            .update({
+                "lease_token": lease_token,
+                "lease_expires_at": (now + INVOICE_RETRY_LEASE_DURATION).isoformat(),
+                "processing_started_at": now.isoformat(),
+            })
+            .eq("id", operation["id"])
+            .in_("status", ["processing", "reconciliation_required"])
+            .lte("lease_expires_at", now.isoformat())
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
+        return result.data[0]
+
+    def _find_active_invoice_retry_operation(
+        self,
+        studio_id: str,
+        invoice_id: str,
+    ) -> Optional[dict[str, Any]]:
+        result = (
+            self.supabase.table("billing_invoice_retry_operations")
+            .select("*")
+            .eq("studio_id", studio_id)
+            .eq("invoice_id", invoice_id)
+            .in_("status", ["processing", "reconciliation_required"])
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    def _find_invoice_retry_operation(
+        self,
+        studio_id: str,
+        invoice_id: str,
+        client_key: str,
+    ) -> Optional[dict[str, Any]]:
+        result = (
+            self.supabase.table("billing_invoice_retry_operations")
+            .select("*")
+            .eq("studio_id", studio_id)
+            .eq("invoice_id", invoice_id)
+            .eq("client_idempotency_key", client_key)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]
+        alias = (
+            self.supabase.table("billing_invoice_retry_operation_aliases")
+            .select("operation_id")
+            .eq("studio_id", studio_id)
+            .eq("invoice_id", invoice_id)
+            .eq("client_idempotency_key", client_key)
+            .limit(1)
+            .execute()
+        )
+        if not alias.data:
+            return None
+        operation = (
+            self.supabase.table("billing_invoice_retry_operations")
+            .select("*")
+            .eq("id", alias.data[0]["operation_id"])
+            .eq("studio_id", studio_id)
+            .eq("invoice_id", invoice_id)
+            .limit(1)
+            .execute()
+        )
+        return operation.data[0] if operation.data else None
+
+    def _ensure_invoice_retry_operation_alias(
+        self,
+        operation: dict[str, Any],
+        client_key: str,
+    ) -> None:
+        existing = (
+            self.supabase.table("billing_invoice_retry_operation_aliases")
+            .select("operation_id")
+            .eq("studio_id", operation["studio_id"])
+            .eq("invoice_id", operation["invoice_id"])
+            .eq("client_idempotency_key", client_key)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            if existing.data[0]["operation_id"] != operation["id"]:
+                raise HTTPException(status_code=409, detail="This idempotency key belongs to another invoice retry operation.")
+            return
+        try:
+            self.supabase.table("billing_invoice_retry_operation_aliases").insert({
+                "operation_id": operation["id"],
+                "studio_id": operation["studio_id"],
+                "invoice_id": operation["invoice_id"],
+                "client_idempotency_key": client_key,
+            }).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) != "23505":
+                raise
+            existing = (
+                self.supabase.table("billing_invoice_retry_operation_aliases")
+                .select("operation_id")
+                .eq("studio_id", operation["studio_id"])
+                .eq("invoice_id", operation["invoice_id"])
+                .eq("client_idempotency_key", client_key)
+                .limit(1)
+                .execute()
+            )
+            if not existing.data or existing.data[0]["operation_id"] != operation["id"]:
+                raise HTTPException(status_code=409, detail="This idempotency key belongs to another invoice retry operation.")
+
+    def _resolve_invoice_retry_replay(
+        self,
+        invoice: dict[str, Any],
+        operation: dict[str, Any],
+        studio_id: str,
+        actor_id: str,
+    ) -> Optional[BillingInvoiceResponse]:
+        status = operation.get("status")
+        if status == "succeeded":
+            return BillingInvoiceResponse(**invoice)
+        if status == "failed_definitive":
+            raise HTTPException(status_code=409, detail="The prior invoice payment attempt failed definitively. Start a new retry operation.")
+
+        created_at = self._parse_retry_operation_time(operation.get("created_at"))
+        age = datetime.now(timezone.utc) - created_at
+
+        try:
+            stripe_invoice = self.stripe_service_cls().retrieve_connected_invoice(
+                account_id=invoice["stripe_account_id"],
+                invoice_id=invoice["stripe_invoice_id"],
+                expand=["payment_intent"],
+            )
+            invoice = self._update_invoice_from_stripe(
+                invoice["id"],
+                studio_id,
+                stripe_invoice,
+                invoice["stripe_account_id"],
+            )
+        except Exception:
+            self._finish_invoice_retry_operation(
+                operation["id"],
+                operation["lease_token"],
+                "reconciliation_required",
+                "reconciliation_error",
+            )
+            raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL) from None
+
+        if invoice.get("status") == "paid":
+            self._audit_invoice_retry_once(
+                studio_id,
+                actor_id,
+                invoice["id"],
+                operation["client_idempotency_key"],
+            )
+            self._finish_invoice_retry_operation(operation["id"], operation["lease_token"], "succeeded")
+            return BillingInvoiceResponse(**invoice)
+        if age >= INVOICE_RETRY_STRIPE_KEY_MAX_AGE:
+            self._finish_invoice_retry_operation(
+                operation["id"],
+                operation["lease_token"],
+                "failed_definitive",
+                "stripe_key_window_expired",
+            )
+            raise HTTPException(status_code=409, detail=INVOICE_RETRY_EXPIRED_DETAIL)
+
+        self._restart_invoice_retry_operation(operation["id"], operation["lease_token"])
+        return None
+
+    def _restart_invoice_retry_operation(self, operation_id: str, lease_token: str) -> None:
+        result = (
+            self.supabase.table("billing_invoice_retry_operations")
+            .update({
+                "status": "processing",
+                "processing_started_at": datetime.now(timezone.utc).isoformat(),
+                "error_code": None,
+            })
+            .eq("id", operation_id)
+            .eq("lease_token", lease_token)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
+
+    def _finish_invoice_retry_operation(
+        self,
+        operation_id: str,
+        lease_token: str,
+        status: str,
+        error_code: Optional[str] = None,
+    ) -> None:
+        update: dict[str, Any] = {
+            "status": status,
+            "error_code": error_code,
+            "lease_token": None,
+            "lease_expires_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if status in {"succeeded", "failed_definitive"}:
+            update["completed_at"] = datetime.now(timezone.utc).isoformat()
+        result = (
+            self.supabase.table("billing_invoice_retry_operations")
+            .update(update)
+            .eq("id", operation_id)
+            .eq("lease_token", lease_token)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=503, detail=INVOICE_RETRY_AMBIGUOUS_DETAIL)
+
+    @staticmethod
+    def _parse_retry_operation_time(value: Any) -> datetime:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return datetime.min.replace(tzinfo=timezone.utc)
+        else:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    @staticmethod
+    def _definitive_invoice_retry_error(exc: Exception) -> Optional[tuple[int, str, str]]:
+        if isinstance(exc, StripeCardError):
+            return 402, "Stripe declined the invoice payment. Review the payer payment method and retry.", "card_declined"
+        if isinstance(exc, StripeInvalidRequestError):
+            return 409, "Stripe rejected the invoice payment request. Review the invoice before retrying.", "stripe_request_rejected"
+        if isinstance(exc, (StripeAuthenticationError, StripePermissionError)):
+            return 409, "Stripe billing configuration rejected the invoice payment request.", "stripe_configuration_rejected"
+        if isinstance(exc, StripeRateLimitError):
+            return 429, "Stripe rate-limited the invoice payment request. Retry later.", "stripe_rate_limited"
+        if isinstance(exc, HTTPException):
+            if 400 <= exc.status_code < 500:
+                return exc.status_code, str(exc.detail), "local_request_rejected"
+            return 409, "Stripe billing is unavailable before the payment request can be sent.", "local_execution_unavailable"
+        return None
+
+    def _audit_invoice_retry_once(
+        self,
+        studio_id: str,
+        actor_id: str,
+        invoice_id: str,
+        idempotency_key: str,
+    ) -> None:
+        audit_id = str(uuid5(
+            NAMESPACE_URL,
+            f"koaryu:billing:invoice-retry:{studio_id}:{invoice_id}:{idempotency_key}",
+        ))
+        existing = (
+            self.supabase.table("audit_logs")
+            .select("id")
+            .eq("id", audit_id)
+            .eq("studio_id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            return
+        try:
+            self.supabase.table("audit_logs").insert({
+                "id": audit_id,
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "billing.invoice_retry_requested",
+                "entity_type": "billing",
+                "entity_id": invoice_id,
+                "metadata": {"idempotency_key": idempotency_key},
+            }).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) != "23505":
+                raise
 
     async def void_invoice(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
         invoice = self._get_row_or_404("billing_invoices", invoice_id, studio_id, "Invoice not found.")

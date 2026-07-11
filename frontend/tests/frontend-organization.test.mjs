@@ -115,6 +115,18 @@ describe("frontend extracted helper behavior", () => {
     );
 
     const model = buildBillingPageModel({
+      billingMetricsAsOf: new Date("2026-05-15T12:00:00Z"),
+      billingPaymentCohortSummary: {
+        period_start: "2026-05-01T00:00:00Z",
+        period_end: "2026-06-01T00:00:00Z",
+        timezone: "UTC",
+        payment_count: 1,
+        stripe_net_amount_cents: 12900,
+        external_net_amount_cents: 0,
+        net_amount_cents: 12900,
+        scope: "payment_cohort_net_of_cumulative_refunds",
+        disclosure: "test cohort",
+      },
       billingConnect: {
         studio_id: "studio_1",
         status: "charges_enabled",
@@ -159,6 +171,7 @@ describe("frontend extracted helper behavior", () => {
           currency: "usd",
           payment_method: "card",
           status: "succeeded",
+          processed_at: "2026-05-01T00:00:00Z",
         },
       ],
       billingPlans: [{ id: "plan_1", studio_id: "studio_1", name: "Monthly", amount_cents: 12900, programs: [] }],

@@ -60,6 +60,7 @@ type BillingTabContentProps = {
   canSubmitEnrollmentForm: boolean;
   connectActionLabel: string;
   connectRequirementItems: BillingConnectRequirementItem[];
+  currentMonthPaymentCount: number;
   externalPaymentTotal: number;
   exportJobs: ExportJob[];
   failedInvoiceCount: number;
@@ -71,6 +72,7 @@ type BillingTabContentProps = {
   onConnectClick: () => void;
   openInvoiceTotal: number;
   paidRevenue: number;
+  paymentCohortAvailable: boolean;
   payerNameById: Map<string, string>;
   planNameById: Map<string, string>;
   stripePaymentTotal: number;
@@ -100,6 +102,7 @@ export function BillingTabContent({
   canSubmitEnrollmentForm,
   connectActionLabel,
   connectRequirementItems,
+  currentMonthPaymentCount,
   externalPaymentTotal,
   exportJobs,
   failedInvoiceCount,
@@ -111,6 +114,7 @@ export function BillingTabContent({
   onConnectClick,
   openInvoiceTotal,
   paidRevenue,
+  paymentCohortAvailable,
   payerNameById,
   planNameById,
   stripePaymentTotal,
@@ -202,7 +206,7 @@ export function BillingTabContent({
         activeSubscriptionCount={activeSubscriptionCount}
         billingConnect={billingConnect}
         billingInvoicesLength={billingInvoices.length}
-        billingPaymentsLength={billingPayments.length}
+        currentMonthPaymentCount={currentMonthPaymentCount}
         billingPeriod={billingPeriod}
         billingPlatform={billingPlatform}
         canManageKoaryuSubscription={canManageKoaryuSubscription}
@@ -220,6 +224,7 @@ export function BillingTabContent({
         openBillingLink={openBillingLink}
         openInvoiceTotal={openInvoiceTotal}
         paidRevenue={paidRevenue}
+        paymentCohortAvailable={paymentCohortAvailable}
         stripePaymentTotal={stripePaymentTotal}
         studentsLoaded={studentsLoaded}
       />
@@ -366,6 +371,7 @@ export function BillingTabContent({
         onExternalNoteChange={onExternalNoteChange}
         onExternalPayerChange={onExternalPayerChange}
         onRecordExternalPayment={onRecordExternalPayment}
+        paymentCohortAvailable={paymentCohortAvailable}
         stripePaymentTotal={stripePaymentTotal}
       />
     );

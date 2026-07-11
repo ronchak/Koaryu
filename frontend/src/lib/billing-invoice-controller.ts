@@ -1,7 +1,14 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import {
+  clearInvoiceRetryRequestKey,
+  clearPersistedInvoiceRetryRequestKey,
+  getOrCreateInvoiceRetryRequestKey,
+  getOrCreatePersistedInvoiceRetryRequestKey,
+  shouldRetainInvoiceRetryRequestKey,
+} from "@/lib/billing-invoice-action-model";
 import { buildBillingInvoiceCreatePayload } from "@/lib/billing-page-form-model";
 import type { BillingInvoice } from "@/types";
 
@@ -15,6 +22,7 @@ type UseBillingInvoiceControllerOptions = {
   releaseAction: (action: string) => void;
   setError: (message: string) => void;
   setMessage: (message: string) => void;
+  retryStorageScope: string | null;
 };
 
 function createInvoiceRequestKey() {
@@ -32,6 +40,7 @@ export function useBillingInvoiceController({
   releaseAction,
   setError,
   setMessage,
+  retryStorageScope,
 }: UseBillingInvoiceControllerOptions) {
   const [invoicePayerId, setInvoicePayerId] = useState("");
   const [invoiceEnrollmentId, setInvoiceEnrollmentId] = useState("");
@@ -41,6 +50,7 @@ export function useBillingInvoiceController({
   const [invoiceDescription, setInvoiceDescription] = useState("");
   const [invoiceSendHosted, setInvoiceSendHosted] = useState(true);
   const invoiceRequestKeyRef = useRef<string | null>(null);
+  const invoiceRetryRequestKeysRef = useRef(new Map<string, string>());
 
   async function handleInvoiceAction(invoiceId: string, action: BillingInvoiceAction) {
     const actionKey = `invoice:${invoiceId}:${action}`;
@@ -50,11 +60,57 @@ export function useBillingInvoiceController({
       return;
     }
     if (!token || !claimAction(actionKey)) return;
+    let retryRequestKey: string | null = null;
     try {
-      await api.post<BillingInvoice>(`/billing/invoices/${invoiceId}/${action}`, {}, token);
+      if (action === "retry") {
+        retryRequestKey = retryStorageScope
+          ? getOrCreatePersistedInvoiceRetryRequestKey(
+              retryStorageScope,
+              invoiceId,
+              createInvoiceRequestKey,
+              undefined,
+              invoiceRetryRequestKeysRef.current
+            )
+          : getOrCreateInvoiceRetryRequestKey(
+              invoiceRetryRequestKeysRef.current,
+              invoiceId,
+              createInvoiceRequestKey
+            );
+      }
+      await api.post<BillingInvoice>(`/billing/invoices/${invoiceId}/${action}`, {}, token, {
+        headers: retryRequestKey ? { "Idempotency-Key": retryRequestKey } : undefined,
+      });
+      if (action === "retry") {
+        if (retryStorageScope) {
+          clearPersistedInvoiceRetryRequestKey(
+            retryStorageScope,
+            invoiceId,
+            undefined,
+            invoiceRetryRequestKeysRef.current
+          );
+        } else {
+          clearInvoiceRetryRequestKey(invoiceRetryRequestKeysRef.current, invoiceId);
+        }
+      }
       setMessage(successMessage);
       await refreshBilling();
     } catch (err) {
+      const failureStatus = err instanceof ApiError ? err.status : null;
+      if (
+        action === "retry"
+        && !shouldRetainInvoiceRetryRequestKey(failureStatus)
+      ) {
+        if (retryStorageScope) {
+          clearPersistedInvoiceRetryRequestKey(
+            retryStorageScope,
+            invoiceId,
+            undefined,
+            invoiceRetryRequestKeysRef.current
+          );
+        } else {
+          clearInvoiceRetryRequestKey(invoiceRetryRequestKeysRef.current, invoiceId);
+        }
+      }
       setError(err instanceof Error ? err.message : "Billing action could not be completed.");
     } finally {
       releaseAction(actionKey);

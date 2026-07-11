@@ -27,6 +27,7 @@ export function BillingReportsTab({
   onExternalNoteChange,
   onExternalPayerChange,
   onRecordExternalPayment,
+  paymentCohortAvailable,
   stripePaymentTotal,
 }: {
   billingPayers: BillingPayer[];
@@ -47,15 +48,20 @@ export function BillingReportsTab({
   onExternalNoteChange: (value: string) => void;
   onExternalPayerChange: (value: string) => void;
   onRecordExternalPayment: (event: FormEvent<HTMLFormElement>) => void;
+  paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
 }) {
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-3">
-        <Metric label="Stripe payments" value={formatMoney(stripePaymentTotal)} hint="Successful card or bank payments" />
-        <Metric label="External payments" value={formatMoney(externalPaymentTotal)} hint="Cash, check, Zelle, Venmo, or outside processors" />
-        <Metric label="Koaryu fee basis" value={formatMoney(koaryuFeeBasis)} hint="0.5% applies only to Stripe Connect charges" />
+        <Metric label="UTC-month Stripe cohort" value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"} hint="Payments processed this UTC month, net of cumulative refunds" />
+        <Metric label="UTC-month external cohort" value={paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"} hint="External payments processed this UTC month" />
+        <Metric label="UTC-month fee cohort" value={paymentCohortAvailable ? formatMoney(koaryuFeeBasis) : "Unavailable"} hint="0.5% of the Stripe payment cohort net of cumulative refunds" />
       </div>
+      <p className="text-xs text-muted">
+        These figures are the current UTC month payment cohort net of cumulative refunds recorded on those payments.
+        Refund event dates are unavailable here, so this is not cash movement or true period-net revenue.
+      </p>
 
       <section className="border border-border bg-surface rounded-[6px] p-5">
         <SectionHeader icon={Download} title="Async exports" description="Large billing exports are queued instead of held in an in-memory browser request." />

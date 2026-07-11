@@ -264,6 +264,18 @@ export interface ApiBillingPayerUpdate {
   address_zip?: string | null;
 }
 
+export interface ApiBillingPaymentCohortSummaryResponse {
+  period_start: string;
+  period_end: string;
+  timezone: "UTC";
+  payment_count: number;
+  stripe_net_amount_cents: number;
+  external_net_amount_cents: number;
+  net_amount_cents: number;
+  scope: "payment_cohort_net_of_cumulative_refunds";
+  disclosure: string;
+}
+
 export interface ApiBillingPaymentResponse {
   id: string;
   studio_id: string;
@@ -427,8 +439,12 @@ export interface ApiBillingWebhookHealthResponse {
   stripe_account_id?: string | null;
   latest_processed_at?: string | null;
   latest_event_type?: string | null;
+  pending_count: number;
+  processing_count: number;
   failed_count: number;
   stale_processing_count: number;
+  mode_mismatch_count: number;
+  error_reference?: string | null;
 }
 
 export interface ApiBody_execute_csv_import_api_v1_students_import_execute_post {
