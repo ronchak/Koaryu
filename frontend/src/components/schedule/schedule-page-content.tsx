@@ -17,13 +17,15 @@ export function SchedulePageContent({
   deleteInFlight,
   isCreatingClass,
   isRefreshingStudentRoster,
-  pendingAttendanceId,
+  isSelectedSessionAttendanceReady,
+  pendingAttendanceIds,
   programFilter,
   programs,
   scheduleLoadError,
   selectedSession,
   selectedSessionAttendance,
   studentRosterLoadError,
+  isStudentRosterComplete,
   sessions,
   showAddClass,
   templates,
@@ -80,7 +82,9 @@ export function SchedulePageContent({
         studentRosterError={studentRosterLoadError}
         onDismissStudentRosterError={onDismissStudentRosterLoadError}
         isLoadingStudentRoster={isRefreshingStudentRoster}
-        pendingAttendanceStudentId={pendingAttendanceId}
+        isAttendanceReady={isSelectedSessionAttendanceReady}
+        isStudentRosterComplete={isStudentRosterComplete}
+        pendingAttendanceStudentIds={pendingAttendanceIds}
         deleteError={deleteError}
         deleteInFlight={deleteInFlight}
         onClose={onCloseSelectedSession}

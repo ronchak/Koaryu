@@ -1,4 +1,164 @@
 import type { AttendanceRecord, AttendanceStatus, ClassSession, ClassTemplate } from "@/types";
+import { getLatestAttendanceRecord } from "./attendance-record-model.ts";
+
+const ATTENDANCE_TOGGLE_CYCLE: AttendanceStatus[] = ["present", "late", "absent"];
+
+export interface AttendanceToggleTransition {
+  existing: AttendanceRecord | null;
+  nextStatus: AttendanceStatus | null;
+  previousStatus: AttendanceStatus | null;
+}
+
+export interface SessionAttendanceRefreshResult {
+  committed: boolean;
+  records: AttendanceRecord[];
+}
+
+interface RunOptimisticAttendanceToggleOptions {
+  attendance: AttendanceRecord[];
+  checkedInAt: string;
+  commitAttendance: (
+    update: (current: AttendanceRecord[]) => AttendanceRecord[]
+  ) => void;
+  commitSessionCountDelta: (delta: number) => void;
+  isCurrent?: () => boolean;
+  name: string;
+  optimisticId: string;
+  request: (nextStatus: AttendanceStatus | null) => Promise<AttendanceRecord | null>;
+  sessionId: string;
+  studentId: string;
+  studioId?: string;
+}
+
+export function getAttendanceToggleTransition(
+  attendance: AttendanceRecord[],
+  sessionId: string,
+  studentId: string
+): AttendanceToggleTransition {
+  const existing = getLatestAttendanceRecord(
+    attendance.filter(
+      (record) => record.session_id === sessionId && record.student_id === studentId
+    )
+  ) ?? null;
+  const previousStatus = existing?.status ?? null;
+  const currentIndex = existing ? ATTENDANCE_TOGGLE_CYCLE.indexOf(existing.status) : -1;
+  const nextStatus = existing && currentIndex === ATTENDANCE_TOGGLE_CYCLE.length - 1
+    ? null
+    : ATTENDANCE_TOGGLE_CYCLE[(currentIndex + 1 + ATTENDANCE_TOGGLE_CYCLE.length) % ATTENDANCE_TOGGLE_CYCLE.length];
+
+  return { existing, nextStatus, previousStatus };
+}
+
+export function shouldRetryScheduleReadAfterCoordinatorChange(
+  authCurrent: boolean,
+  generationCurrent: boolean
+) {
+  return !authCurrent || !generationCurrent;
+}
+
+function replaceStudentAttendance(
+  current: AttendanceRecord[],
+  sessionId: string,
+  studentId: string,
+  replacement: AttendanceRecord | null
+) {
+  const next = current.filter(
+    (record) => !(record.session_id === sessionId && record.student_id === studentId)
+  );
+  if (replacement) {
+    next.push(replacement);
+  }
+  return next;
+}
+
+function restoreStudentAttendance(
+  current: AttendanceRecord[],
+  sessionId: string,
+  studentId: string,
+  replacements: AttendanceRecord[]
+) {
+  return [
+    ...current.filter(
+      (record) => !(record.session_id === sessionId && record.student_id === studentId)
+    ),
+    ...replacements,
+  ];
+}
+
+export async function runOptimisticAttendanceToggle({
+  attendance,
+  checkedInAt,
+  commitAttendance,
+  commitSessionCountDelta,
+  isCurrent = () => true,
+  name,
+  optimisticId,
+  request,
+  sessionId,
+  studentId,
+  studioId = "",
+}: RunOptimisticAttendanceToggleOptions) {
+  const previousRecords = attendance.filter(
+    (record) => record.session_id === sessionId && record.student_id === studentId
+  );
+  const transition = getAttendanceToggleTransition(attendance, sessionId, studentId);
+  const { existing, nextStatus } = transition;
+  const optimisticRecord = nextStatus
+    ? existing
+      ? { ...existing, status: nextStatus, checked_in_at: checkedInAt }
+      : {
+          id: optimisticId,
+          studio_id: studioId,
+          session_id: sessionId,
+          student_id: studentId,
+          status: nextStatus,
+          checked_in_at: checkedInAt,
+          is_cross_program: false,
+          counts_toward_eligibility: true,
+          student_name: name,
+        }
+    : null;
+  const hadCountableAttendance = attendance.some(
+    (record) =>
+      record.session_id === sessionId
+      && record.student_id === studentId
+      && record.status !== "absent"
+  );
+  const countDelta = toAttendanceCountDelta(
+    hadCountableAttendance ? "present" : null,
+    nextStatus
+  );
+
+  commitAttendance((current) =>
+    replaceStudentAttendance(current, sessionId, studentId, optimisticRecord)
+  );
+  commitSessionCountDelta(countDelta);
+
+  try {
+    const result = await request(nextStatus);
+    if (!isCurrent()) {
+      return transition;
+    }
+
+    if (result) {
+      commitAttendance((current) =>
+        replaceStudentAttendance(current, sessionId, studentId, {
+          ...result,
+          student_name: existing?.student_name || name,
+        })
+      );
+    }
+    return transition;
+  } catch (error) {
+    if (isCurrent()) {
+      commitAttendance((current) =>
+        restoreStudentAttendance(current, sessionId, studentId, previousRecords)
+      );
+      commitSessionCountDelta(-countDelta);
+    }
+    throw error;
+  }
+}
 
 type ScheduleReadFreshness = {
   authCurrent: boolean;

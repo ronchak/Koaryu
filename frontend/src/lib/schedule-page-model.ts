@@ -2,6 +2,105 @@ import type { AttendanceRecord, ClassSession, Student } from "@/types";
 
 export type SchedulePageView = "month" | "week" | "day";
 
+export type SessionAttendanceRefreshState = {
+  sessionId: string | null;
+  status: "idle" | "pending" | "ready" | "error";
+};
+
+export function beginSessionAttendanceRefresh(sessionId: string): SessionAttendanceRefreshState {
+  return { sessionId, status: "pending" };
+}
+
+export function clearSessionAttendanceRefresh(): SessionAttendanceRefreshState {
+  return { sessionId: null, status: "idle" };
+}
+
+export function isSessionAttendanceReady(
+  state: SessionAttendanceRefreshState,
+  selectedSessionId: string | null
+) {
+  return Boolean(
+    selectedSessionId &&
+    state.sessionId === selectedSessionId &&
+    state.status === "ready"
+  );
+}
+
+export function isCompleteScheduleRoster({
+  studentsLoaded,
+  studentsMayBePartial,
+}: {
+  studentsLoaded: boolean;
+  studentsMayBePartial: boolean;
+}) {
+  return studentsLoaded && !studentsMayBePartial;
+}
+
+export async function runSessionAttendanceRefresh({
+  isCurrent,
+  onStateChange,
+  refresh,
+  sessionId,
+}: {
+  isCurrent: () => boolean;
+  onStateChange: (state: SessionAttendanceRefreshState) => void;
+  refresh: () => Promise<{ committed: boolean }>;
+  sessionId: string;
+}) {
+  onStateChange(beginSessionAttendanceRefresh(sessionId));
+  try {
+    while (isCurrent()) {
+      const result = await refresh();
+      if (!isCurrent()) {
+        return;
+      }
+      if (result.committed) {
+        onStateChange({ sessionId, status: "ready" });
+        return;
+      }
+    }
+  } catch (error) {
+    if (isCurrent()) {
+      onStateChange({ sessionId, status: "error" });
+    }
+    throw error;
+  }
+}
+
+export function createAttendanceToggleQueue(
+  onPendingChange: (pendingIds: ReadonlySet<string>) => void
+) {
+  const tails = new Map<string, Promise<void>>();
+
+  async function run(studentId: string, task: () => Promise<void>) {
+    const previous = tails.get(studentId);
+    const current = (async () => {
+      if (previous) {
+        try {
+          await previous;
+        } catch {
+          // The next queued toggle must run after rollback completes, even when
+          // the preceding request failed.
+        }
+      }
+      await task();
+    })();
+
+    tails.set(studentId, current);
+    onPendingChange(new Set(tails.keys()));
+    try {
+      await current;
+    } finally {
+      if (tails.get(studentId) === current) {
+        tails.delete(studentId);
+        onPendingChange(new Set(tails.keys()));
+      }
+    }
+  }
+
+  return { run };
+}
+
 export function formatScheduleDateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

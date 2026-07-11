@@ -19,6 +19,7 @@ import {
   setScheduleRequestedRangeState,
   shouldReconcileSchedule,
   shouldPreserveScheduleMutationsOnAuthChange,
+  shouldRetryScheduleReadAfterCoordinatorChange,
   toAttendanceCountDelta,
   updateSessionAttendanceCount,
 } from "../src/lib/schedule-store-model.ts";
@@ -177,6 +178,12 @@ describe("schedule store model", () => {
       shouldPreserveScheduleMutationsOnAuthChange("TOKEN_REFRESHED", null, "user-1"),
       false
     );
+  });
+
+  it("retries superseded attendance reads after auth or generation changes", () => {
+    assert.equal(shouldRetryScheduleReadAfterCoordinatorChange(false, true), true);
+    assert.equal(shouldRetryScheduleReadAfterCoordinatorChange(true, false), true);
+    assert.equal(shouldRetryScheduleReadAfterCoordinatorChange(true, true), false);
   });
 
   it("requests reconciliation after an initial mutation until a full snapshot lands", () => {

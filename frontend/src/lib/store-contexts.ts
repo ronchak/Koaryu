@@ -31,6 +31,7 @@ import type {
   StudentStatus,
   StudentUpdate,
 } from "@/types";
+import type { SessionAttendanceRefreshResult } from "@/lib/schedule-store-model";
 import type { StudentListQuery } from "@/lib/student-list-page";
 import type {
   DemoResetResponse,
@@ -121,7 +122,7 @@ export interface StoreContextValue {
   addTemplate: (data: ClassTemplateCreate) => Promise<ClassTemplate>;
   deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
   refreshScheduleRange: (startDate: string, endDate: string) => Promise<ClassSession[]>;
-  refreshSessionAttendance: (sessionId: string) => Promise<AttendanceRecord[]>;
+  refreshSessionAttendance: (sessionId: string) => Promise<SessionAttendanceRefreshResult>;
   templates: ClassTemplate[];
   attendance: AttendanceRecord[];
   toggleCheckIn: (sessionId: string, studentId: string, name: string) => Promise<void>;
