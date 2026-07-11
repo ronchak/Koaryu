@@ -66,6 +66,18 @@ Operator: `Ronak Chakraborty / Codex session`
 - Managed release program: GitHub epic [#19](https://github.com/ronchak/Koaryu/issues/19) tracks focused gates [#20](https://github.com/ronchak/Koaryu/issues/20) through [#35](https://github.com/ronchak/Koaryu/issues/35), including candidate-wide CI/merge controls, evidence required to close each gate, explicit execution ownership, dependencies, and reserved production-action boundaries.
 - Release status: **blocked**. Further production migrations remain prohibited; live billing remains closed; unknown production records remain untouched. No production configuration, data, Stripe, or infrastructure mutation occurred during this reconciliation.
 
+## Staging and Recovery Gate Audit — 2026-07-11
+
+Operator: `Codex release orchestrator`
+
+- Gate [#21](https://github.com/ronchak/Koaryu/issues/21) staging resources: Supabase `nxgsektqsgrtyfhawxbc` is `ACTIVE_HEALTHY`; the dedicated backend API is `https://koaryu-staging.onrender.com/api/v1`; the protected Vercel alias is `https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app`.
+- Proven checks: backend `/api/v1/health` returned `200`; unauthenticated auth/profile and students requests returned `401`; exact staging-origin CORS preflight returned `200`; production-origin preflight returned `400` without an allow-origin header. Branch-scoped Vercel metadata points to staging Supabase and matching non-production backend/site destinations without exposing values marked sensitive.
+- Application alignment gap: Vercel deployment `dpl_AXrjgCKzsFr6q3V2AKTU3hJjgYTa` is `READY` but built from `b78cb9863e226d17dc242259cf7099e62c6ccfd5`, while the audited repository head was `714ce8aec87ec33300181c7fc5a933c3ad5e05fc`. Render's exact deployed SHA is not captured. The current candidate is therefore not aligned or deployed to staging.
+- Isolation-control change: `scripts/verify-staging-isolation.mjs` now fails closed on production Supabase/origin/backend destinations, live Stripe key prefixes, mismatched application URLs, incorrect platform/Connect webhook destinations, preview mode, and demo-reset configuration. Its automated negative tests are part of `npm run check:env-examples`.
+- Gate #21 remains **open** pending authenticated Render/Stripe metadata, both test-mode webhook destinations and delivery evidence, exact current SHA on both providers, an authenticated frontend/API proxy and representative application smoke, and cost/ownership/cleanup records. Vercel SSO blocks anonymous frontend smoke by design.
+- Gates [#22](https://github.com/ronchak/Koaryu/issues/22) and [#23](https://github.com/ronchak/Koaryu/issues/23): the five local AEAD artifacts still match their recorded SHA-256 hashes, have mode `0600`, decrypt with the Keychain-held key, and reject a deliberately wrong key. No off-site copy was found or created, so #22 remains **open** and #23 remains blocked. No restore target was created, no production-derived data was restored, and no plaintext artifact was written.
+- Recovery next action: select and document the approved off-site provider/access/retention policy, upload only encrypted artifacts, download and verify that provider copy, then create a separate disposable restore target for authenticated tenant-safe recovery. Ordinary staging must never receive the production backup.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
