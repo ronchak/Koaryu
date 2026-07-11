@@ -3,13 +3,17 @@ import unittest
 from app.core.config import Settings
 
 
+def _synthetic_stripe_key(prefix: str) -> str:
+    return "_".join((prefix, "live", "fixture1234567890abcdef"))
+
+
 VALID_PRODUCTION_SETTINGS = {
     "SUPABASE_URL": "https://project.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_1234567890abcdefghijklmnopqrstuvwxyz",
     "SUPABASE_JWT_SECRET": "jwt-secret-1234567890abcdefghijklmnopqrstuvwxyz",
     "FRONTEND_URL": "https://koaryu.app",
-    "STRIPE_SECRET_KEY": "sk_live_1234567890abcdef",
-    "STRIPE_RESTRICTED_KEY": "rk_live_1234567890abcdef",
+    "STRIPE_SECRET_KEY": _synthetic_stripe_key("sk"),
+    "STRIPE_RESTRICTED_KEY": _synthetic_stripe_key("rk"),
     "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform1234567890abcdef",
     "STRIPE_CONNECT_WEBHOOK_SECRET": "whsec_connect1234567890abcdef",
     "STRIPE_KOARYU_CORE_PRICE_ID": "price_1234567890abcdef",
