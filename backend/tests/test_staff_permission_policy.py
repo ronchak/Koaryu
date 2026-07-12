@@ -4,6 +4,7 @@ from unittest.mock import patch
 from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.api.v1.endpoints import belts, leads, schedule, students
 from app.core.deps import (
@@ -15,6 +16,7 @@ from app.core.deps import (
     get_roster_schedule_manager_studio_id,
     get_supabase,
 )
+from app.schemas.lead import LeadCreate, LeadUpdate
 from app.services.studio_scope import (
     STAFF_ROLE_MEMBERSHIP_COLUMNS,
     STUDIO_SELECTION_REQUIRED_DETAIL,
@@ -145,6 +147,51 @@ def _assert_no_mutation(test_case: unittest.TestCase, supabase: TableBackedSupab
 
 
 class StaffPermissionPolicyTest(unittest.TestCase):
+    def test_generic_lead_mutations_cannot_enter_enrolled_stage(self):
+        for schema, payload in (
+            (LeadCreate, {"first_name": "Aiko", "last_name": "Tanaka", "stage": "enrolled"}),
+            (LeadUpdate, {"stage": "enrolled"}),
+        ):
+            with self.subTest(schema=schema.__name__):
+                with self.assertRaises(ValidationError):
+                    schema.model_validate(payload)
+
+        supabase = _supabase(
+            _staff_role("instructor"),
+            extra_tables={
+                "studio_subscriptions": [
+                    {
+                        "studio_id": "studio-a",
+                        "status": "active",
+                        "comped": False,
+                        "trial_end": None,
+                    }
+                ]
+            },
+        )
+        test_app = FastAPI()
+        test_app.include_router(leads.router)
+        test_app.dependency_overrides[get_current_user_id] = lambda: "user-1"
+        test_app.dependency_overrides[get_supabase] = lambda: supabase
+
+        with patch("app.api.v1.endpoints.leads.LeadService") as service_class:
+            create_response = TestClient(test_app).post(
+                "/leads",
+                headers={"X-Studio-Id": "studio-a"},
+                json={"first_name": "Aiko", "last_name": "Tanaka", "stage": "enrolled"},
+            )
+            update_response = TestClient(test_app).patch(
+                "/leads/lead-1",
+                headers={"X-Studio-Id": "studio-a"},
+                json={"stage": "enrolled"},
+            )
+
+        self.assertEqual(create_response.status_code, 422, create_response.text)
+        self.assertEqual(update_response.status_code, 422, update_response.text)
+        service_class.assert_not_called()
+        self.assertEqual(supabase.tables["audit_logs"], [])
+        _assert_no_mutation(self, supabase)
+
     def test_approved_role_matrix_uses_authoritative_staff_roles(self):
         for policy, resolver, allowed_roles in ROLE_POLICY_CASES:
             for role in ALL_STAFF_ROLES:

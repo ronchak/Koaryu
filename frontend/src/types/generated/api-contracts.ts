@@ -940,7 +940,7 @@ export interface ApiLeadCreate {
   email?: string | null;
   phone?: string | null;
   source?: "walk_in" | "referral" | "social" | "search" | "website" | "other";
-  stage?: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent" | "enrolled" | "closed_lost";
+  stage?: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent" | "closed_lost";
   program_interest?: string | null;
   program_id?: string | null;
   is_minor?: boolean;
@@ -982,7 +982,7 @@ export interface ApiLeadUpdate {
   email?: string | null;
   phone?: string | null;
   source?: "walk_in" | "referral" | "social" | "search" | "website" | "other" | null;
-  stage?: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent" | "enrolled" | "closed_lost" | null;
+  stage?: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent" | "closed_lost" | null;
   program_interest?: string | null;
   program_id?: string | null;
   is_minor?: boolean | null;
