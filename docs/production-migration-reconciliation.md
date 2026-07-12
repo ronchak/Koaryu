@@ -1,10 +1,10 @@
 # Production Migration Reconciliation
 
-Status: **approval package prepared; production action not authorized or executed**
+Status: **approved and executed successfully at 2026-07-12T19:08:05Z**
 
 Release gate: [#20](https://github.com/ronchak/Koaryu/issues/20)
 Inspected migration-source baseline: `49feb90f98c0b83ef6b3f38f43cb85e8e76ceb68`
-Current publication base: `d396f26552914d913125cccae5eeb247b4ff83b7`
+Execution repository base: `692f13a4c7543a937c6fcabd257e05b9ab0b1210`
 Production Supabase project: `mimguepumzsgmcaycdsh`
 
 ## Executive Conclusion
@@ -23,9 +23,26 @@ This matches Supabase's documented [`migration repair` behavior](https://supabas
 `applied` inserts a migration-history record and `reverted` deletes one without
 running the migration SQL.
 
-Repairing production migration history is a reserved action. The commands below
-must not run until Ronak explicitly approves this exact package, including the
-strictly bounded contingency-recovery scope stated in the Approval Decision.
+Repairing production migration history is a reserved action. Ronak explicitly
+approved this exact package on 2026-07-12 before execution, including the strictly
+bounded contingency-recovery scope stated in the Approval Decision.
+
+## Executed Result — 2026-07-12
+
+The documented `forward` block ran verbatim with Supabase CLI `2.95.4`. Every
+target, source-hash, stable-history, function-state, and exact-state assertion
+passed. The script added the two repository identities, verified the exact
+four-row additive state, removed the two production-only aliases, and completed
+with a matching local/remote migration list.
+
+An independent aggregate-only provider readback after execution returned:
+
+- reconciliation history: `20260710001153:atomic_recurring_session_materialization|20260710010500:fix_first_occurrence_series_delete`;
+- stable earlier-history digest: `78:b97b56e3c883c1538cf1a85bd4dfc2ae`;
+- function/owner/security/search-path/ACL digest: `2:7890f9aa36bb200f08153351f9ae98ab`.
+
+No migration SQL ran. No application, Auth, Storage, tenant, billing, or Stripe
+record changed. The `restore-initial` contingency was not needed.
 
 ## Observed Identities
 
