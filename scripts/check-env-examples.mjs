@@ -22,6 +22,7 @@ const backendSecretKeys = [
 
 const backendPublicKeys = [
   "SUPABASE_URL",
+  "SUPABASE_ALLOW_LEGACY_HS256",
   "FRONTEND_URL",
   "ENVIRONMENT",
   "DEMO_RESET_ENABLED",
@@ -61,6 +62,7 @@ const renderCriticalValues = new Map([
   ["ENVIRONMENT", "production"],
   ["DEMO_RESET_ENABLED", "false"],
   ["DEMO_RESET_STUDIO_IDS", ""],
+  ["SUPABASE_ALLOW_LEGACY_HS256", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
 

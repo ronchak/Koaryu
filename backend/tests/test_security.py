@@ -1,6 +1,8 @@
 import unittest
 import base64
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from threading import Event, Lock
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -125,6 +127,7 @@ class SecurityTokenTest(unittest.TestCase):
         settings = SimpleNamespace(
             SUPABASE_URL="https://project-ref.supabase.co/",
             SUPABASE_JWT_SECRET="jwt-secret",
+            SUPABASE_ALLOW_LEGACY_HS256=True,
         )
 
         with patch(
@@ -161,6 +164,7 @@ class SecurityTokenTest(unittest.TestCase):
             ENVIRONMENT="production",
             SUPABASE_URL="https://project-ref.supabase.co/",
             SUPABASE_JWT_SECRET=jwt_secret,
+            SUPABASE_ALLOW_LEGACY_HS256=True,
         )
         token = jwt.encode(
             _make_supabase_payload(),
@@ -173,6 +177,29 @@ class SecurityTokenTest(unittest.TestCase):
             return_value=settings,
         ):
             self.assertEqual(get_user_id_from_token(token), "user_1")
+
+    def test_hs256_validation_is_disabled_by_default_in_production(self):
+        jwt_secret = "test-jwt-secret-with-at-least-thirty-two-bytes"
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co/",
+            SUPABASE_JWT_SECRET=jwt_secret,
+        )
+        token = jwt.encode(
+            _make_supabase_payload(),
+            jwt_secret,
+            algorithm="HS256",
+        )
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ):
+            with self.assertRaises(HTTPException) as context:
+                get_user_id_from_token(token)
+
+        self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.detail, "Invalid authentication token")
 
     def test_es256_validation_uses_supabase_jwks(self):
         settings = SimpleNamespace(
@@ -238,13 +265,13 @@ class SecurityTokenTest(unittest.TestCase):
 
         fetch_jwks.assert_called_once()
 
-    def test_es256_validation_refreshes_jwks_once_for_missing_kid(self):
+    def test_es256_unknown_kid_does_not_immediately_refetch_jwks(self):
         settings = SimpleNamespace(
             ENVIRONMENT="production",
             SUPABASE_URL="https://project-ref.supabase.co",
             SUPABASE_JWT_SECRET="jwt-secret",
         )
-        token, public_jwk = _make_es256_token(kid="new-key")
+        token, _ = _make_es256_token(kid="new-key")
         _, old_jwk = _make_es256_keypair(kid="old-key")
 
         with patch(
@@ -252,14 +279,179 @@ class SecurityTokenTest(unittest.TestCase):
             return_value=settings,
         ), patch(
             "app.core.security.httpx.get",
+            return_value=FakeResponse({"keys": [old_jwk]}),
+        ) as fetch_jwks:
+            with self.assertRaises(HTTPException) as context:
+                get_user_id_from_token(token)
+
+        self.assertEqual(context.exception.status_code, 401)
+        fetch_jwks.assert_called_once()
+
+    def test_es256_unknown_kids_share_forced_refresh_throttle(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        first_token, _ = _make_es256_token(kid="unknown-one")
+        second_token, _ = _make_es256_token(kid="unknown-two")
+        _, old_jwk = _make_es256_keypair(kid="old-key")
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.core.security.httpx.get",
+            return_value=FakeResponse({"keys": [old_jwk]}),
+        ) as fetch_jwks:
+            for token in (first_token, second_token):
+                with self.assertRaises(HTTPException):
+                    get_user_id_from_token(token)
+
+        fetch_jwks.assert_called_once()
+
+    def test_es256_rotation_refreshes_after_the_cooldown(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        old_token, old_jwk = _make_es256_token(kid="old-key")
+        new_token, new_jwk = _make_es256_token(kid="new-key")
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.core.security.SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS",
+            0,
+        ), patch(
+            "app.core.security.httpx.get",
             side_effect=[
                 FakeResponse({"keys": [old_jwk]}),
-                FakeResponse({"keys": [public_jwk]}),
+                FakeResponse({"keys": [new_jwk]}),
             ],
         ) as fetch_jwks:
-            self.assertEqual(get_user_id_from_token(token), "user_1")
+            self.assertEqual(get_user_id_from_token(old_token), "user_1")
+            self.assertEqual(get_user_id_from_token(new_token), "user_1")
 
         self.assertEqual(fetch_jwks.call_count, 2)
+
+    def test_jwks_failure_is_throttled_for_expired_or_cold_cache(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        token, _ = _make_es256_token()
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.core.security.httpx.get",
+            side_effect=RuntimeError("provider unavailable"),
+        ) as fetch_jwks:
+            for _ in range(2):
+                with self.assertRaises(HTTPException) as context:
+                    get_user_id_from_token(token)
+                self.assertEqual(context.exception.status_code, 503)
+                self.assertEqual(context.exception.headers, {"Retry-After": "30"})
+
+        fetch_jwks.assert_called_once()
+
+    def test_cached_known_key_does_not_block_during_unknown_key_refresh(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        known_token, known_jwk = _make_es256_token(kid="known-key")
+        unknown_token, _ = _make_es256_token(kid="unknown-key")
+        refresh_started = Event()
+        release_refresh = Event()
+        call_lock = Lock()
+        call_count = 0
+
+        def fetch_jwks(_url, *, timeout):
+            nonlocal call_count
+            self.assertEqual(timeout, 2.0)
+            with call_lock:
+                call_count += 1
+                current_call = call_count
+            if current_call == 1:
+                return FakeResponse({"keys": [known_jwk]})
+            refresh_started.set()
+            self.assertTrue(release_refresh.wait(timeout=2))
+            return FakeResponse({"keys": [known_jwk]})
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.core.security.SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS",
+            0,
+        ), patch(
+            "app.core.security.httpx.get",
+            side_effect=fetch_jwks,
+        ):
+            self.assertEqual(get_user_id_from_token(known_token), "user_1")
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                unknown_future = executor.submit(
+                    get_user_id_from_token,
+                    unknown_token,
+                )
+                self.assertTrue(refresh_started.wait(timeout=1))
+                known_future = executor.submit(
+                    get_user_id_from_token,
+                    known_token,
+                )
+                try:
+                    self.assertEqual(known_future.result(timeout=0.2), "user_1")
+                except FutureTimeoutError:
+                    self.fail("cached known-key verification blocked behind JWKS refresh")
+                finally:
+                    release_refresh.set()
+                with self.assertRaises(HTTPException):
+                    unknown_future.result(timeout=1)
+
+        self.assertEqual(call_count, 2)
+
+    def test_concurrent_cold_valid_follower_gets_retryable_unavailable(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://project-ref.supabase.co",
+            SUPABASE_JWT_SECRET="jwt-secret",
+        )
+        token, public_jwk = _make_es256_token()
+        refresh_started = Event()
+        release_refresh = Event()
+
+        def fetch_jwks(_url, *, timeout):
+            self.assertEqual(timeout, 2.0)
+            refresh_started.set()
+            self.assertTrue(release_refresh.wait(timeout=2))
+            return FakeResponse({"keys": [public_jwk]})
+
+        with patch(
+            "app.core.security.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.core.security.httpx.get",
+            side_effect=fetch_jwks,
+        ) as fetch:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                leader = executor.submit(get_user_id_from_token, token)
+                self.assertTrue(refresh_started.wait(timeout=1))
+                follower = executor.submit(get_user_id_from_token, token)
+                with self.assertRaises(HTTPException) as context:
+                    follower.result(timeout=0.5)
+                self.assertEqual(context.exception.status_code, 503)
+                self.assertEqual(context.exception.headers, {"Retry-After": "30"})
+                release_refresh.set()
+                self.assertEqual(leader.result(timeout=1), "user_1")
+
+        fetch.assert_called_once()
 
     def test_es256_validation_rejects_missing_kid_without_remote_fallback_in_production(self):
         settings = SimpleNamespace(
@@ -351,8 +543,12 @@ class SecurityTokenTest(unittest.TestCase):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
 
-        self.assertEqual(context.exception.status_code, 401)
-        self.assertEqual(context.exception.detail, "Invalid authentication token")
+        self.assertEqual(context.exception.status_code, 503)
+        self.assertEqual(
+            context.exception.detail,
+            "Authentication keys are temporarily unavailable",
+        )
+        self.assertEqual(context.exception.headers, {"Retry-After": "30"})
         fallback_get_user.assert_not_called()
 
     def test_mixed_case_production_rejects_jwks_failure_without_remote_fallback(self):
@@ -380,8 +576,12 @@ class SecurityTokenTest(unittest.TestCase):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
 
-        self.assertEqual(context.exception.status_code, 401)
-        self.assertEqual(context.exception.detail, "Invalid authentication token")
+        self.assertEqual(context.exception.status_code, 503)
+        self.assertEqual(
+            context.exception.detail,
+            "Authentication keys are temporarily unavailable",
+        )
+        self.assertEqual(context.exception.headers, {"Retry-After": "30"})
         fallback_get_user.assert_not_called()
 
     def test_es256_validation_rejects_mismatched_jwk_metadata(self):
@@ -583,6 +783,7 @@ class SecurityTokenTest(unittest.TestCase):
         settings = SimpleNamespace(
             SUPABASE_URL="https://project-ref.supabase.co",
             SUPABASE_JWT_SECRET="jwt-secret",
+            SUPABASE_ALLOW_LEGACY_HS256=True,
         )
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
         fallback_client = SimpleNamespace(

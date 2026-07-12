@@ -1,4 +1,5 @@
 import time
+from threading import Lock
 from typing import Any
 
 import httpx
@@ -24,13 +25,21 @@ SUPABASE_ASYMMETRIC_JWT_ALGORITHMS = {
     "RS256": {"kty": "RSA"},
 }
 SUPABASE_JWKS_CACHE_TTL_SECONDS = 600
+SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS = 30
 SUPABASE_JWKS_REQUEST_TIMEOUT_SECONDS = 2.0
 
+_jwks_cache_lock = Lock()
 _jwks_cache: dict[str, Any] = {
     "url": None,
     "expires_at": 0.0,
+    "refresh_allowed_at": 0.0,
+    "refreshing": False,
     "keys": [],
 }
+
+
+class JWKSUnavailableError(Exception):
+    """The signing-key provider is temporarily unavailable or refreshing."""
 
 
 def _invalid_auth_token_exception() -> HTTPException:
@@ -43,7 +52,16 @@ def _invalid_auth_token_exception() -> HTTPException:
 
 def _clear_jwks_cache_for_tests() -> None:
     """Reset module-level JWKS cache in tests."""
-    _jwks_cache.update({"url": None, "expires_at": 0.0, "keys": []})
+    with _jwks_cache_lock:
+        _jwks_cache.update(
+            {
+                "url": None,
+                "expires_at": 0.0,
+                "refresh_allowed_at": 0.0,
+                "refreshing": False,
+                "keys": [],
+            }
+        )
 
 
 def _supabase_jwks_url(issuer: str) -> str:
@@ -51,13 +69,40 @@ def _supabase_jwks_url(issuer: str) -> str:
 
 
 def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[dict[str, Any]]:
-    now = time.monotonic()
-    if (
-        not force_refresh
-        and _jwks_cache["url"] == jwks_url
-        and _jwks_cache["expires_at"] > now
-    ):
-        return list(_jwks_cache["keys"])
+    # Claim a cache fill under the lock, but perform network I/O after releasing
+    # it. Known cached keys remain readable while one caller refreshes, and
+    # followers fail closed instead of occupying the request threadpool.
+    with _jwks_cache_lock:
+        now = time.monotonic()
+        if _jwks_cache["url"] != jwks_url:
+            _jwks_cache.update(
+                {
+                    "url": jwks_url,
+                    "expires_at": 0.0,
+                    "refresh_allowed_at": 0.0,
+                    "refreshing": False,
+                    "keys": [],
+                }
+            )
+
+        if not force_refresh and _jwks_cache["expires_at"] > now:
+            return list(_jwks_cache["keys"])
+
+        if _jwks_cache["refreshing"]:
+            raise JWKSUnavailableError("Supabase JWKS refresh is already in progress")
+
+        # A key miss may justify one early refresh for a legitimate rotation,
+        # but random kids must not turn every request into blocking network I/O.
+        if force_refresh and _jwks_cache["refresh_allowed_at"] > now:
+            return list(_jwks_cache["keys"])
+
+        if not force_refresh and _jwks_cache["refresh_allowed_at"] > now:
+            raise JWKSUnavailableError("Supabase JWKS refresh is temporarily throttled")
+
+        _jwks_cache["refreshing"] = True
+        _jwks_cache["refresh_allowed_at"] = (
+            now + SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS
+        )
 
     try:
         response = httpx.get(
@@ -66,21 +111,32 @@ def _load_supabase_jwks(jwks_url: str, *, force_refresh: bool = False) -> list[d
         )
         response.raise_for_status()
         body = response.json()
+        keys = body.get("keys") if isinstance(body, dict) else None
+        if not isinstance(keys, list) or not all(isinstance(key, dict) for key in keys):
+            raise JWKSUnavailableError("Supabase JWKS response is invalid")
     except Exception as exc:
-        raise JWTError("Supabase JWKS could not be loaded") from exc
+        with _jwks_cache_lock:
+            if _jwks_cache["url"] == jwks_url:
+                _jwks_cache["refreshing"] = False
+        if isinstance(exc, JWKSUnavailableError):
+            raise
+        raise JWKSUnavailableError("Supabase JWKS could not be loaded") from exc
 
-    keys = body.get("keys") if isinstance(body, dict) else None
-    if not isinstance(keys, list) or not all(isinstance(key, dict) for key in keys):
-        raise JWTError("Supabase JWKS response is invalid")
-
-    _jwks_cache.update(
-        {
-            "url": jwks_url,
-            "expires_at": now + SUPABASE_JWKS_CACHE_TTL_SECONDS,
-            "keys": keys,
-        }
-    )
-    return list(keys)
+    with _jwks_cache_lock:
+        if _jwks_cache["url"] != jwks_url:
+            return list(keys)
+        refreshed_at = time.monotonic()
+        _jwks_cache.update(
+            {
+                "expires_at": refreshed_at + SUPABASE_JWKS_CACHE_TTL_SECONDS,
+                "refresh_allowed_at": (
+                    refreshed_at + SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS
+                ),
+                "refreshing": False,
+                "keys": keys,
+            }
+        )
+        return list(keys)
 
 
 def _jwk_matches_header(key: dict[str, Any], *, kid: str, alg: str) -> bool:
@@ -112,7 +168,13 @@ def _select_supabase_jwk(jwks_url: str, *, kid: str, alg: str) -> dict[str, Any]
     raise JWTError("Supabase JWKS key not found")
 
 
-def _decode_supabase_token_payload(token: str, *, issuer: str, jwt_secret: str) -> dict[str, Any]:
+def _decode_supabase_token_payload(
+    token: str,
+    *,
+    issuer: str,
+    jwt_secret: str,
+    allow_legacy_hs256: bool,
+) -> dict[str, Any]:
     try:
         header = jwt.get_unverified_header(token)
     except JWTError:
@@ -122,6 +184,8 @@ def _decode_supabase_token_payload(token: str, *, issuer: str, jwt_secret: str) 
 
     alg = header.get("alg") if isinstance(header, dict) else None
     if alg == "HS256":
+        if not allow_legacy_hs256:
+            raise JWTError("Legacy HS256 JWT signing is disabled")
         return jwt.decode(
             token,
             jwt_secret,
@@ -168,11 +232,11 @@ def _is_production_environment(settings: Any) -> bool:
 def get_user_id_from_token(token: str) -> str:
     """
     Extract user_id from a validated JWT token.
-    Supabase access tokens can be signed with the legacy HS256 JWT secret or
-    the current asymmetric signing-key system. Verify locally in both cases and
-    avoid putting Supabase Auth in the hot path for production requests. If the
-    local development JWT configuration is stale/mismatched, fall back to
-    Supabase Auth verification so sign-in still works instead of hard-failing.
+    Verify current asymmetric Supabase access tokens locally. Legacy HS256 is
+    accepted only during an explicitly configured migration window. Avoid
+    putting Supabase Auth in the hot path for production requests. If local
+    development JWT configuration is stale/mismatched, fall back to Supabase
+    Auth verification so sign-in still works instead of hard-failing.
     """
     settings = get_settings()
     issuer = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1"
@@ -182,8 +246,17 @@ def get_user_id_from_token(token: str) -> str:
             token,
             issuer=issuer,
             jwt_secret=settings.SUPABASE_JWT_SECRET,
+            allow_legacy_hs256=bool(
+                getattr(settings, "SUPABASE_ALLOW_LEGACY_HS256", False)
+            ),
         )
         return _extract_authenticated_user_id(payload)
+    except JWKSUnavailableError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication keys are temporarily unavailable",
+            headers={"Retry-After": str(SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS)},
+        )
     except ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

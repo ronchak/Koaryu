@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = "https://placeholder.supabase.co"
     SUPABASE_SERVICE_ROLE_KEY: str = "placeholder-key"
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
+    SUPABASE_ALLOW_LEGACY_HS256: bool = False
     FRONTEND_URL: str = "http://localhost:4000"
     ENVIRONMENT: str = "development"
     DEMO_RESET_ENABLED: bool = False
@@ -90,7 +91,6 @@ class Settings(BaseSettings):
         required_values = {
             "SUPABASE_URL": self.SUPABASE_URL,
             "SUPABASE_SERVICE_ROLE_KEY": self.SUPABASE_SERVICE_ROLE_KEY,
-            "SUPABASE_JWT_SECRET": self.SUPABASE_JWT_SECRET,
             "FRONTEND_URL": self.FRONTEND_URL,
             "STRIPE_SECRET_KEY": self.STRIPE_SECRET_KEY,
             "STRIPE_PLATFORM_WEBHOOK_SECRET": self.STRIPE_PLATFORM_WEBHOOK_SECRET,
@@ -128,8 +128,14 @@ class Settings(BaseSettings):
         if not has_minimum_secret_length(self.SUPABASE_SERVICE_ROLE_KEY):
             missing.append("SUPABASE_SERVICE_ROLE_KEY must be a real secret value")
 
-        if not has_minimum_secret_length(self.SUPABASE_JWT_SECRET):
-            missing.append("SUPABASE_JWT_SECRET must be a real secret value")
+        if self.SUPABASE_ALLOW_LEGACY_HS256:
+            if is_placeholder_value(self.SUPABASE_JWT_SECRET) or not has_minimum_secret_length(
+                self.SUPABASE_JWT_SECRET
+            ):
+                missing.append(
+                    "SUPABASE_JWT_SECRET must be a real secret value when "
+                    "SUPABASE_ALLOW_LEGACY_HS256 is enabled"
+                )
 
         if not self.STRIPE_SECRET_KEY.startswith(("sk_live_", "sk_test_")) or not has_minimum_secret_length(
             self.STRIPE_SECRET_KEY, 16
