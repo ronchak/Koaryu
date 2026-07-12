@@ -15,6 +15,7 @@ import { Camera, X } from "lucide-react";
 type PhotoSelectResult = boolean | void | Promise<boolean | void>;
 
 interface StudentDetailSidebarProps {
+  canManageRoster: boolean;
   student: Student;
   fullName: string;
   programs: Program[];
@@ -58,6 +59,7 @@ function calculateAge(dob?: string | null): string {
 }
 
 export function StudentDetailSidebar({
+  canManageRoster,
   student,
   fullName,
   programs,
@@ -122,7 +124,7 @@ export function StudentDetailSidebar({
             <Camera className="w-3.5 h-3.5" />
             {student.photo_url ? "Replace" : "Upload"}
           </Button>
-          {student.photo_path || student.photo_url || photoPreviewUrl ? (
+          {canManageRoster && (student.photo_path || student.photo_url || photoPreviewUrl) ? (
             <Button
               variant="ghost"
               size="sm"

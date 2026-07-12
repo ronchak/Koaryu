@@ -139,6 +139,7 @@ export function StudentDetailPageContent({
           )}
 
           <StudentDetailSidebar
+            canManageRoster={canManageRoster}
             student={student}
             fullName={detail.fullName}
             programs={programs}

@@ -335,6 +335,8 @@ export function useStudentDetailPageController({
   }
 
   async function handleDeletePhoto() {
+    if (!canManageRoster) return;
+
     setPhotoError(null);
     setActionMessage(null);
     setIsPhotoSaving(true);
