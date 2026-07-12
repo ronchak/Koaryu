@@ -76,7 +76,6 @@ class Settings(BaseSettings):
     STRIPE_PLATFORM_WEBHOOK_SECRET: str = ""
     STRIPE_CONNECT_WEBHOOK_SECRET: str = ""
     STRIPE_KOARYU_CORE_PRICE_ID: str = ""
-    STRIPE_CONNECT_CLIENT_ID: str = ""
     BILLING_PLATFORM_FEE_BPS: int = 50
     ACCOUNT_DELETION_WORKER_SECRET: str = ""
     SUPPORT_TRIAGE_SECRET: str = ""
@@ -110,7 +109,6 @@ class Settings(BaseSettings):
             "STRIPE_PLATFORM_WEBHOOK_SECRET": self.STRIPE_PLATFORM_WEBHOOK_SECRET,
             "STRIPE_CONNECT_WEBHOOK_SECRET": self.STRIPE_CONNECT_WEBHOOK_SECRET,
             "STRIPE_KOARYU_CORE_PRICE_ID": self.STRIPE_KOARYU_CORE_PRICE_ID,
-            "STRIPE_CONNECT_CLIENT_ID": self.STRIPE_CONNECT_CLIENT_ID,
             "ACCOUNT_DELETION_WORKER_SECRET": self.ACCOUNT_DELETION_WORKER_SECRET,
             "SUPPORT_TRIAGE_SECRET": self.SUPPORT_TRIAGE_SECRET,
         }
@@ -211,11 +209,6 @@ class Settings(BaseSettings):
             self.STRIPE_KOARYU_CORE_PRICE_ID, 16
         ):
             missing.append("STRIPE_KOARYU_CORE_PRICE_ID must be a Stripe Price ID")
-
-        if not self.STRIPE_CONNECT_CLIENT_ID.startswith("ca_") or not has_minimum_secret_length(
-            self.STRIPE_CONNECT_CLIENT_ID, 16
-        ):
-            missing.append("STRIPE_CONNECT_CLIENT_ID must be a Stripe Connect client ID")
 
         if not has_minimum_secret_length(self.ACCOUNT_DELETION_WORKER_SECRET):
             missing.append("ACCOUNT_DELETION_WORKER_SECRET must be a long random secret")

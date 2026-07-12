@@ -58,7 +58,7 @@ Backend environment variables:
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`: Stripe webhook signing secret for platform billing events
 - `STRIPE_CONNECT_WEBHOOK_SECRET`: Stripe webhook signing secret for Connect events; comma-separated values are supported during secret rotation or split endpoint setup
 - `STRIPE_KOARYU_CORE_PRICE_ID`: recurring Stripe Price ID for the Koaryu Core subscription
-- `STRIPE_CONNECT_CLIENT_ID`: Stripe Connect client ID used for connected-account onboarding
+- Stripe connected-account onboarding uses Account Links, so it does not require a Connect OAuth client ID.
 - `BILLING_PLATFORM_FEE_BPS`: Koaryu platform fee in basis points for student billing; defaults to `50`
 - `ACCOUNT_DELETION_WORKER_SECRET`: long random secret required by the internal due-account-deletion processor
 - `SUPPORT_TRIAGE_SECRET`: long random secret required by the internal support ticket triage endpoint

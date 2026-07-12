@@ -40,8 +40,6 @@ services:
         sync: false
       - key: STRIPE_KOARYU_CORE_PRICE_ID
         sync: false
-      - key: STRIPE_CONNECT_CLIENT_ID
-        sync: false
       - key: ACCOUNT_DELETION_WORKER_SECRET
         sync: false
       - key: SUPPORT_TRIAGE_SECRET

@@ -54,12 +54,13 @@ STRIPE_RESTRICTED_KEY=
 STRIPE_PLATFORM_WEBHOOK_SECRET=
 STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
-STRIPE_CONNECT_CLIENT_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
 ```
 
 `STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
+
+Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
 
 ### Hosted Runtime Guard
 
@@ -72,7 +73,6 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critic
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`
 - `STRIPE_CONNECT_WEBHOOK_SECRET`
 - `STRIPE_KOARYU_CORE_PRICE_ID`
-- `STRIPE_CONNECT_CLIENT_ID`
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
@@ -170,7 +170,6 @@ ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
   STRIPE_PLATFORM_WEBHOOK_SECRET="$STRIPE_PLATFORM_WEBHOOK_SECRET" \
   STRIPE_CONNECT_WEBHOOK_SECRET="$STRIPE_CONNECT_WEBHOOK_SECRET" \
   STRIPE_KOARYU_CORE_PRICE_ID="$STRIPE_KOARYU_CORE_PRICE_ID" \
-  STRIPE_CONNECT_CLIENT_ID="$STRIPE_CONNECT_CLIENT_ID" \
   ACCOUNT_DELETION_WORKER_SECRET="$ACCOUNT_DELETION_WORKER_SECRET" \
   SUPPORT_TRIAGE_SECRET="$SUPPORT_TRIAGE_SECRET" \
   venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001

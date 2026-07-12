@@ -21,7 +21,6 @@ VALID_PRODUCTION_SETTINGS = {
     "STRIPE_PLATFORM_WEBHOOK_SECRET": _synthetic_webhook_secret("platform"),
     "STRIPE_CONNECT_WEBHOOK_SECRET": _synthetic_webhook_secret("connect"),
     "STRIPE_KOARYU_CORE_PRICE_ID": "price_1234567890abcdef",
-    "STRIPE_CONNECT_CLIENT_ID": "ca_1234567890abcdef",
     "ACCOUNT_DELETION_WORKER_SECRET": "delete-secret-1234567890abcdefghijklmnopqrstuvwxyz",
     "SUPPORT_TRIAGE_SECRET": "support-secret-1234567890abcdefghijklmnopqrstuvwxyz",
 }
@@ -98,7 +97,6 @@ class HostedConfigValidationTest(unittest.TestCase):
                     _synthetic_webhook_secret("connect_platform_scope"),
                     _synthetic_webhook_secret("connect_connected_scope"),
                 )),
-                "STRIPE_CONNECT_CLIENT_ID": "ca_your_connect_client_id",
             },
         )
 
