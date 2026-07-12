@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/restore-integrity-manifest-v1.json",
+  "title": "Koaryu restore integrity manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backup_set_id",
+    "captured_at",
+    "database_snapshot_digest",
+    "migration_history",
+    "tables",
+    "catalog",
+    "storage"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "backup_set_id": { "$ref": "#/$defs/backupSetId" },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "database_snapshot_digest": { "$ref": "#/$defs/sha256" },
+    "migration_history": { "$ref": "#/$defs/migrationHistory" },
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/table" }
+    },
+    "catalog": { "$ref": "#/$defs/catalog" },
+    "storage": { "$ref": "#/$defs/storage" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "safeIdList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/safeId" }
+    },
+    "migrationHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_count", "digest", "columns"],
+      "properties": {
+        "row_count": { "type": "integer", "minimum": 0 },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "columns": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "allOf": [
+            { "contains": { "const": "version" } },
+            { "contains": { "const": "statements" } },
+            { "contains": { "const": "name" } }
+          ],
+          "items": { "$ref": "#/$defs/safeId" }
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "table", "row_count", "primary_key_set_digest"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/safeId" },
+        "table": { "$ref": "#/$defs/safeId" },
+        "row_count": { "type": "integer", "minimum": 0 },
+        "primary_key_set_digest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "functions_digest",
+        "triggers_digest",
+        "rls_policies_digest",
+        "grants_digest",
+        "extensions",
+        "publications"
+      ],
+      "properties": {
+        "functions_digest": { "$ref": "#/$defs/sha256" },
+        "triggers_digest": { "$ref": "#/$defs/sha256" },
+        "rls_policies_digest": { "$ref": "#/$defs/sha256" },
+        "grants_digest": { "$ref": "#/$defs/sha256" },
+        "extensions": { "$ref": "#/$defs/safeIdList" },
+        "publications": { "$ref": "#/$defs/safeIdList" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["buckets"],
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/bucket" }
+        }
+      }
+    },
+    "bucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "object_count",
+        "object_path_digest",
+        "object_bytes_digest",
+        "configuration_digest"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeId" },
+        "object_count": { "type": "integer", "minimum": 0 },
+        "object_path_digest": { "$ref": "#/$defs/sha256" },
+        "object_bytes_digest": { "$ref": "#/$defs/sha256" },
+        "configuration_digest": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

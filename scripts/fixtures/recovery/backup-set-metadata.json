@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "backup_set_id": "koaryu-fixture-20260712",
+  "source": {
+    "project_ref": "abcdefghijklmnopqrst",
+    "captured_at": "2026-07-12T12:00:00Z",
+    "database_snapshot_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "application_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repository_migration_head": "20260711215000_harden_function_execution_boundaries.sql",
+    "remote_migration_history_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "tools": {
+    "postgres": "17.5",
+    "supabase_cli": "2.109.1",
+    "gpg": "2.5.8"
+  },
+  "encryption": {
+    "scheme": "gpg-aes256-ocb",
+    "key_id": "fixture-recovery-key-v1"
+  },
+  "retention_class": "fixture-only"
+}

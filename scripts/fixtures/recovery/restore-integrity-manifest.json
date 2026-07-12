@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "backup_set_id": "koaryu-fixture-20260712",
+  "captured_at": "2026-07-12T12:00:00Z",
+  "database_snapshot_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "migration_history": {
+    "row_count": 82,
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "columns": [
+      "version",
+      "statements",
+      "name"
+    ]
+  },
+  "tables": [
+    {
+      "schema": "auth",
+      "table": "users",
+      "row_count": 2,
+      "primary_key_set_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "schema": "public",
+      "table": "studios",
+      "row_count": 2,
+      "primary_key_set_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "catalog": {
+    "functions_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "triggers_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "rls_policies_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "grants_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "extensions": [
+      "pgcrypto"
+    ],
+    "publications": [
+      "supabase_realtime"
+    ]
+  },
+  "storage": {
+    "buckets": [
+      {
+        "id": "student-photos",
+        "object_count": 0,
+        "object_path_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "object_bytes_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "configuration_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      }
+    ]
+  }
+}

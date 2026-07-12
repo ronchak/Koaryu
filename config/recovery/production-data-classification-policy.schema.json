@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/production-data-classification-policy-v1.json",
+  "title": "Koaryu production data classification policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "policy_id",
+    "policy_version",
+    "default_label",
+    "fallback_rule_id",
+    "ambiguous_rule_id",
+    "labels",
+    "source_types",
+    "allowed_evidence_markers",
+    "rules"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "policy_id": { "$ref": "#/$defs/safeId" },
+    "policy_version": { "const": 1 },
+    "default_label": { "const": "unknown" },
+    "fallback_rule_id": { "$ref": "#/$defs/safeId" },
+    "ambiguous_rule_id": { "$ref": "#/$defs/safeId" },
+    "labels": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "contains": { "const": "unknown" },
+      "items": { "enum": ["known_demo", "known_test", "unknown"] }
+    },
+    "source_types": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "auth_user",
+          "studio",
+          "studio_subscription",
+          "studio_payment_account",
+          "stripe_event"
+        ]
+      }
+    },
+    "allowed_evidence_markers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/safeId" }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "label", "source_types", "all_evidence", "reason_code"],
+        "properties": {
+          "rule_id": { "$ref": "#/$defs/safeId" },
+          "label": { "enum": ["known_demo", "known_test"] },
+          "source_types": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "auth_user",
+                "studio",
+                "studio_subscription",
+                "studio_payment_account",
+                "stripe_event"
+              ]
+            }
+          },
+          "all_evidence": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/safeId" }
+          },
+          "reason_code": { "$ref": "#/$defs/safeId" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "safeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/classification-source-v1.json",
+  "title": "Koaryu privacy-safe production classification source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backup_set_id",
+    "source_snapshot_digest",
+    "captured_at",
+    "identifier_protection",
+    "sources"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "backup_set_id": { "$ref": "#/$defs/backupSetId" },
+    "source_snapshot_digest": { "$ref": "#/$defs/sha256" },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "identifier_protection": { "$ref": "#/$defs/identifierProtection" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "recordId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^(?=.*[0-9])[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "not": { "pattern": "^(sha256:)?[0-9a-f]{64}$" }
+    },
+    "identifierProtection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["email_strategy", "key_id"],
+      "properties": {
+        "email_strategy": { "enum": ["omitted", "hmac-sha256"] },
+        "key_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/safeId" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "email_strategy": { "const": "omitted" } } },
+          "then": { "properties": { "key_id": { "type": "null" } } },
+          "else": { "properties": { "key_id": { "$ref": "#/$defs/safeId" } } }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_type", "source_count", "records"],
+      "properties": {
+        "source_type": {
+          "enum": [
+            "auth_user",
+            "studio",
+            "studio_subscription",
+            "studio_payment_account",
+            "stripe_event"
+          ]
+        },
+        "source_count": { "type": "integer", "minimum": 0 },
+        "records": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/record" }
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "evidence"],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/recordId" },
+        "email_hmac": {
+          "type": "string",
+          "pattern": "^hmac-sha256:[A-Za-z0-9][A-Za-z0-9._:-]{2,127}:[0-9a-f]{64}$"
+        },
+        "evidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "explicit_demo_metadata",
+              "explicit_test_metadata",
+              "provider_test_mode",
+              "synthetic_fixture_identifier"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

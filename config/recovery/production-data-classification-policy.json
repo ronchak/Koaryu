@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "policy_id": "koaryu-production-data-classification",
+  "policy_version": 1,
+  "default_label": "unknown",
+  "fallback_rule_id": "default-unknown-v1",
+  "ambiguous_rule_id": "ambiguous-unknown-v1",
+  "labels": [
+    "known_demo",
+    "known_test",
+    "unknown"
+  ],
+  "source_types": [
+    "auth_user",
+    "studio",
+    "studio_subscription",
+    "studio_payment_account",
+    "stripe_event"
+  ],
+  "allowed_evidence_markers": [
+    "explicit_demo_metadata",
+    "explicit_test_metadata",
+    "provider_test_mode",
+    "synthetic_fixture_identifier"
+  ],
+  "rules": [
+    {
+      "rule_id": "known-demo-explicit-v1",
+      "label": "known_demo",
+      "source_types": [
+        "auth_user",
+        "studio"
+      ],
+      "all_evidence": [
+        "explicit_demo_metadata"
+      ],
+      "reason_code": "matched_explicit_demo_marker"
+    },
+    {
+      "rule_id": "known-demo-fixture-v1",
+      "label": "known_demo",
+      "source_types": [
+        "auth_user",
+        "studio"
+      ],
+      "all_evidence": [
+        "synthetic_fixture_identifier"
+      ],
+      "reason_code": "matched_synthetic_fixture_identifier"
+    },
+    {
+      "rule_id": "known-test-explicit-v1",
+      "label": "known_test",
+      "source_types": [
+        "auth_user",
+        "studio",
+        "studio_subscription",
+        "studio_payment_account",
+        "stripe_event"
+      ],
+      "all_evidence": [
+        "explicit_test_metadata"
+      ],
+      "reason_code": "matched_explicit_test_marker"
+    },
+    {
+      "rule_id": "known-test-provider-mode-v1",
+      "label": "known_test",
+      "source_types": [
+        "studio_subscription",
+        "studio_payment_account",
+        "stripe_event"
+      ],
+      "all_evidence": [
+        "provider_test_mode"
+      ],
+      "reason_code": "matched_provider_test_mode"
+    }
+  ]
+}

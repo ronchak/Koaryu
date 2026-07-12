@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "backup_set_id": "koaryu-fixture-20260712",
+  "source_snapshot_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "captured_at": "2026-07-12T12:00:00Z",
+  "identifier_protection": {
+    "email_strategy": "hmac-sha256",
+    "key_id": "classification-fixture-v1"
+  },
+  "sources": [
+    {
+      "source_type": "auth_user",
+      "source_count": 2,
+      "records": [
+        {
+          "record_id": "00000000-0000-4000-8000-000000000001",
+          "email_hmac": "hmac-sha256:classification-fixture-v1:7777777777777777777777777777777777777777777777777777777777777777",
+          "evidence": [
+            "explicit_demo_metadata"
+          ]
+        },
+        {
+          "record_id": "00000000-0000-4000-8000-000000000002",
+          "email_hmac": "hmac-sha256:classification-fixture-v1:8888888888888888888888888888888888888888888888888888888888888888",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "source_type": "studio",
+      "source_count": 2,
+      "records": [
+        {
+          "record_id": "10000000-0000-4000-8000-000000000001",
+          "evidence": [
+            "synthetic_fixture_identifier"
+          ]
+        },
+        {
+          "record_id": "10000000-0000-4000-8000-000000000002",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "source_type": "studio_subscription",
+      "source_count": 1,
+      "records": [
+        {
+          "record_id": "20000000-0000-4000-8000-000000000001",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "source_type": "studio_payment_account",
+      "source_count": 1,
+      "records": [
+        {
+          "record_id": "30000000-0000-4000-8000-000000000001",
+          "evidence": [
+            "explicit_test_metadata"
+          ]
+        }
+      ]
+    },
+    {
+      "source_type": "stripe_event",
+      "source_count": 2,
+      "records": [
+        {
+          "record_id": "evt_fixture_0001",
+          "evidence": [
+            "provider_test_mode"
+          ]
+        },
+        {
+          "record_id": "evt_fixture_0002",
+          "evidence": [
+            "explicit_test_metadata",
+            "provider_test_mode"
+          ]
+        }
+      ]
+    }
+  ]
+}

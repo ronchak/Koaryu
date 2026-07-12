@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/classification-manifest-v1.json",
+  "title": "Koaryu production data classification manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backup_set_id",
+    "source_snapshot_digest",
+    "generated_at",
+    "policy",
+    "identifier_protection",
+    "sources",
+    "totals"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "backup_set_id": { "$ref": "#/$defs/backupSetId" },
+    "source_snapshot_digest": { "$ref": "#/$defs/sha256" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "policy": { "$ref": "#/$defs/policyReference" },
+    "identifier_protection": { "$ref": "#/$defs/identifierProtection" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "totals": { "$ref": "#/$defs/totals" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "recordId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^(?=.*[0-9])[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "not": { "pattern": "^(sha256:)?[0-9a-f]{64}$" }
+    },
+    "identifierProtection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["email_strategy", "key_id"],
+      "properties": {
+        "email_strategy": { "enum": ["omitted", "hmac-sha256"] },
+        "key_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/safeId" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "email_strategy": { "const": "omitted" } } },
+          "then": { "properties": { "key_id": { "type": "null" } } },
+          "else": { "properties": { "key_id": { "$ref": "#/$defs/safeId" } } }
+        }
+      ]
+    },
+    "policyReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_id", "policy_version", "policy_sha256"],
+      "properties": {
+        "policy_id": { "$ref": "#/$defs/safeId" },
+        "policy_version": { "const": 1 },
+        "policy_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "partition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["known_demo", "known_test", "unknown"],
+      "properties": {
+        "known_demo": { "type": "integer", "minimum": 0 },
+        "known_test": { "type": "integer", "minimum": 0 },
+        "unknown": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_type", "source_count", "classification_counts", "records"],
+      "properties": {
+        "source_type": {
+          "enum": [
+            "auth_user",
+            "studio",
+            "studio_subscription",
+            "studio_payment_account",
+            "stripe_event"
+          ]
+        },
+        "source_count": { "type": "integer", "minimum": 0 },
+        "classification_counts": { "$ref": "#/$defs/partition" },
+        "records": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/record" }
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "evidence",
+        "evidence_fingerprint",
+        "classification",
+        "rule_id",
+        "reason_code"
+      ],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/recordId" },
+        "email_hmac": {
+          "type": "string",
+          "pattern": "^hmac-sha256:[A-Za-z0-9][A-Za-z0-9._:-]{2,127}:[0-9a-f]{64}$"
+        },
+        "evidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "explicit_demo_metadata",
+              "explicit_test_metadata",
+              "provider_test_mode",
+              "synthetic_fixture_identifier"
+            ]
+          }
+        },
+        "evidence_fingerprint": { "$ref": "#/$defs/sha256" },
+        "classification": { "enum": ["known_demo", "known_test", "unknown"] },
+        "rule_id": { "$ref": "#/$defs/safeId" },
+        "reason_code": { "$ref": "#/$defs/safeId" }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_count", "classification_counts"],
+      "properties": {
+        "source_count": { "type": "integer", "minimum": 0 },
+        "classification_counts": { "$ref": "#/$defs/partition" }
+      }
+    }
+  }
+}

@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/project-config-manifest-v1.json",
+  "title": "Koaryu secret-free Supabase project configuration manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backup_set_id",
+    "captured_at",
+    "source_project_ref",
+    "auth",
+    "api_keys",
+    "data_api",
+    "realtime",
+    "storage",
+    "integrations"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "backup_set_id": { "$ref": "#/$defs/backupSetId" },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "source_project_ref": { "type": "string", "pattern": "^[a-z]{20}$" },
+    "auth": { "$ref": "#/$defs/auth" },
+    "api_keys": { "$ref": "#/$defs/apiKeys" },
+    "data_api": { "$ref": "#/$defs/dataApi" },
+    "realtime": { "$ref": "#/$defs/realtime" },
+    "storage": { "$ref": "#/$defs/storage" },
+    "integrations": { "$ref": "#/$defs/integrations" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "site_url_origin",
+        "redirect_allow_list",
+        "email_confirmation_required",
+        "otp_length",
+        "otp_expiry_seconds",
+        "password_min_length",
+        "password_required_characters",
+        "leaked_password_protection",
+        "captcha_enabled",
+        "jwt_expiry_seconds",
+        "session",
+        "mfa"
+      ],
+      "properties": {
+        "site_url_origin": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "redirect_allow_list": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uri", "pattern": "^https://" }
+        },
+        "email_confirmation_required": { "type": "boolean" },
+        "otp_length": { "type": "integer", "minimum": 6, "maximum": 10 },
+        "otp_expiry_seconds": { "type": "integer", "minimum": 60, "maximum": 86400 },
+        "password_min_length": { "type": "integer", "minimum": 6, "maximum": 128 },
+        "password_required_characters": {
+          "type": ["string", "null"],
+          "maxLength": 160
+        },
+        "leaked_password_protection": { "type": "boolean" },
+        "captcha_enabled": { "type": "boolean" },
+        "jwt_expiry_seconds": { "type": "integer", "minimum": 300, "maximum": 86400 },
+        "session": { "$ref": "#/$defs/session" },
+        "mfa": { "$ref": "#/$defs/mfa" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inactivity_timeout_seconds", "timebox_seconds", "single_session_per_user"],
+      "properties": {
+        "inactivity_timeout_seconds": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 300 }
+          ]
+        },
+        "timebox_seconds": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 300 }
+          ]
+        },
+        "single_session_per_user": { "type": "boolean" }
+      }
+    },
+    "mfa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totp_api_enabled", "phone_api_enabled", "webauthn_api_enabled", "enforcement"],
+      "properties": {
+        "totp_api_enabled": { "type": "boolean" },
+        "phone_api_enabled": { "type": "boolean" },
+        "webauthn_api_enabled": { "type": "boolean" },
+        "enforcement": { "enum": ["none", "optional", "step_up", "all"] }
+      }
+    },
+    "apiKeys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publishable_enabled",
+        "secret_enabled",
+        "legacy_anon_enabled",
+        "legacy_service_role_enabled",
+        "signing_algorithm"
+      ],
+      "properties": {
+        "publishable_enabled": { "type": "boolean" },
+        "secret_enabled": { "type": "boolean" },
+        "legacy_anon_enabled": { "type": "boolean" },
+        "legacy_service_role_enabled": { "type": "boolean" },
+        "signing_algorithm": { "enum": ["ES256", "RS256", "HS256"] }
+      }
+    },
+    "dataApi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exposed_schemas", "automatic_table_exposure", "grants_digest"],
+      "properties": {
+        "exposed_schemas": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safeId" }
+        },
+        "automatic_table_exposure": { "type": "boolean" },
+        "grants_digest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "realtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publications"],
+      "properties": {
+        "publications": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safeId" }
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["buckets"],
+      "properties": {
+        "buckets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/bucket" }
+        }
+      }
+    },
+    "bucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "public", "file_size_limit", "allowed_mime_types"],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeId" },
+        "public": { "type": "boolean" },
+        "file_size_limit": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 1 }
+          ]
+        },
+        "allowed_mime_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    "integrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stripe_mode", "email_delivery"],
+      "properties": {
+        "stripe_mode": { "enum": ["disabled", "test", "live"] },
+        "email_delivery": { "enum": ["disabled", "sink", "configured"] }
+      }
+    }
+  }
+}

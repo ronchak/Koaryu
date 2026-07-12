@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/backup-set-manifest-v1.json",
+  "title": "Koaryu canonical encrypted backup-set manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backup_set_id",
+    "created_at",
+    "source",
+    "tools",
+    "encryption",
+    "retention_class",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "backup_set_id": { "$ref": "#/$defs/backupSetId" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "#/$defs/source" },
+    "tools": { "$ref": "#/$defs/tools" },
+    "encryption": { "$ref": "#/$defs/encryption" },
+    "retention_class": { "$ref": "#/$defs/safeId" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/artifact" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_ref",
+        "captured_at",
+        "database_snapshot_digest",
+        "application_sha",
+        "repository_migration_head",
+        "remote_migration_history_digest"
+      ],
+      "properties": {
+        "project_ref": { "type": "string", "pattern": "^[a-z]{20}$" },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "database_snapshot_digest": { "$ref": "#/$defs/sha256" },
+        "application_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "repository_migration_head": { "type": "string", "pattern": "^[0-9]{14}_[a-z0-9_]+\\.sql$" },
+        "remote_migration_history_digest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["postgres", "supabase_cli", "gpg"],
+      "properties": {
+        "postgres": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "supabase_cli": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "gpg": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "key_id"],
+      "properties": {
+        "scheme": { "const": "gpg-aes256-ocb" },
+        "key_id": { "$ref": "#/$defs/safeId" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "size_bytes", "sha256"],
+      "properties": {
+        "name": {
+          "enum": [
+            "roles.sql.gpg",
+            "schema.sql.gpg",
+            "data.sql.gpg",
+            "migration-history-schema.sql.gpg",
+            "migration-history-data.sql.gpg",
+            "project-config-manifest.json.gpg",
+            "restore-integrity-manifest.json.gpg",
+            "classification-source.json.gpg",
+            "record-classification-manifest.json.gpg",
+            "storage-objects.tar.gpg"
+          ]
+        },
+        "role": {
+          "enum": [
+            "database_roles",
+            "database_schema",
+            "database_data",
+            "migration_history_schema",
+            "migration_history_data",
+            "project_configuration",
+            "restore_integrity",
+            "classification_source",
+            "record_classification",
+            "storage_objects"
+          ]
+        },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "plaintext_contract_sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "enum": [
+                  "project-config-manifest.json.gpg",
+                  "restore-integrity-manifest.json.gpg",
+                  "classification-source.json.gpg",
+                  "record-classification-manifest.json.gpg"
+                ]
+              }
+            },
+            "required": ["name"]
+          },
+          "then": { "required": ["plaintext_contract_sha256"] },
+          "else": { "not": { "required": ["plaintext_contract_sha256"] } }
+        }
+      ]
+    }
+  }
+}

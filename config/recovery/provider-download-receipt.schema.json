@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/provider-download-receipt-v1.json",
+  "title": "Koaryu off-site provider download receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backup_set_id",
+    "provider",
+    "container_id",
+    "object_set_id",
+    "downloaded_at",
+    "operator_id",
+    "expected_manifest_sha256",
+    "objects"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "backup_set_id": { "$ref": "#/$defs/backupSetId" },
+    "provider": { "type": "string", "minLength": 2, "maxLength": 80 },
+    "container_id": { "$ref": "#/$defs/providerId" },
+    "object_set_id": { "$ref": "#/$defs/providerId" },
+    "downloaded_at": { "type": "string", "format": "date-time" },
+    "operator_id": { "$ref": "#/$defs/providerId" },
+    "expected_manifest_sha256": { "$ref": "#/$defs/sha256" },
+    "objects": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": { "$ref": "#/$defs/object" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "providerId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\r\\n?#@]+$"
+    },
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "object_id", "version_id", "size_bytes", "sha256"],
+      "properties": {
+        "name": {
+          "enum": [
+            "roles.sql.gpg",
+            "schema.sql.gpg",
+            "data.sql.gpg",
+            "migration-history-schema.sql.gpg",
+            "migration-history-data.sql.gpg",
+            "project-config-manifest.json.gpg",
+            "restore-integrity-manifest.json.gpg",
+            "classification-source.json.gpg",
+            "record-classification-manifest.json.gpg",
+            "storage-objects.tar.gpg",
+            "backup-manifest.json.gpg"
+          ]
+        },
+        "object_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "version_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

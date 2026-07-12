@@ -35,6 +35,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
+- Check encrypted recovery/classification contracts and provider-download guards: `npm run check:recovery-tooling`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 
 ## Monorepo Rules

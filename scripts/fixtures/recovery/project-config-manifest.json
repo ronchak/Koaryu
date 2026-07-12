@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "backup_set_id": "koaryu-fixture-20260712",
+  "captured_at": "2026-07-12T12:00:00Z",
+  "source_project_ref": "abcdefghijklmnopqrst",
+  "auth": {
+    "site_url_origin": "https://fixture.koaryu.invalid",
+    "redirect_allow_list": [
+      "https://fixture.koaryu.invalid/auth/callback"
+    ],
+    "email_confirmation_required": true,
+    "otp_length": 8,
+    "otp_expiry_seconds": 3600,
+    "password_min_length": 8,
+    "password_required_characters": null,
+    "leaked_password_protection": false,
+    "captcha_enabled": false,
+    "jwt_expiry_seconds": 3600,
+    "session": {
+      "inactivity_timeout_seconds": null,
+      "timebox_seconds": null,
+      "single_session_per_user": false
+    },
+    "mfa": {
+      "totp_api_enabled": true,
+      "phone_api_enabled": false,
+      "webauthn_api_enabled": false,
+      "enforcement": "none"
+    }
+  },
+  "api_keys": {
+    "publishable_enabled": true,
+    "secret_enabled": true,
+    "legacy_anon_enabled": false,
+    "legacy_service_role_enabled": false,
+    "signing_algorithm": "ES256"
+  },
+  "data_api": {
+    "exposed_schemas": [
+      "public"
+    ],
+    "automatic_table_exposure": false,
+    "grants_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "realtime": {
+    "publications": [
+      "supabase_realtime"
+    ]
+  },
+  "storage": {
+    "buckets": [
+      {
+        "id": "student-photos",
+        "public": false,
+        "file_size_limit": 5242880,
+        "allowed_mime_types": [
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ]
+      }
+    ]
+  },
+  "integrations": {
+    "stripe_mode": "test",
+    "email_delivery": "sink"
+  }
+}
