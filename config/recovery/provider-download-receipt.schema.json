@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "evidence_scope",
     "backup_set_id",
     "provider",
     "container_id",
@@ -17,8 +18,15 @@
   ],
   "properties": {
     "schema_version": { "const": 1 },
+    "evidence_scope": { "const": "untrusted_adapter_attestation" },
     "backup_set_id": { "$ref": "#/$defs/backupSetId" },
-    "provider": { "type": "string", "minLength": 2, "maxLength": 80 },
+    "provider": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$",
+      "not": {
+        "pattern": "^([Ff][Ii][Ll][Ee]([Ss][Yy][Ss][Tt][Ee][Mm])?|[Ll][Oo][Cc][Aa][Ll](-[Cc][Oo][Pp][Yy])?|[Ss][Yy][Nn][Cc][Ee][Dd]-[Ff][Oo][Ll][Dd][Ee][Rr])$"
+      }
+    },
     "container_id": { "$ref": "#/$defs/providerId" },
     "object_set_id": { "$ref": "#/$defs/providerId" },
     "downloaded_at": { "type": "string", "format": "date-time" },
@@ -28,7 +36,20 @@
       "type": "array",
       "minItems": 11,
       "maxItems": 11,
-      "items": { "$ref": "#/$defs/object" }
+      "items": { "$ref": "#/$defs/object" },
+      "allOf": [
+        { "contains": { "properties": { "name": { "const": "roles.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "schema.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "data.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "migration-history-schema.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "migration-history-data.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "project-config-manifest.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "restore-integrity-manifest.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "classification-source.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "record-classification-manifest.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "storage-objects.tar.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "backup-manifest.json.gpg" } }, "required": ["name"] } }
+      ]
     }
   },
   "$defs": {
@@ -38,7 +59,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[^\\r\\n?#@]+$"
+      "pattern": "^[^\\r\\n?#@]+$",
+      "not": { "pattern": "^[Ff][Ii][Ll][Ee]:" }
     },
     "object": {
       "type": "object",

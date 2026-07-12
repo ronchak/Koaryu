@@ -5,9 +5,11 @@ umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFY_SCRIPT="$ROOT_DIR/scripts/verify-backup-set.py"
+PROVIDER_RUNNER="$ROOT_DIR/scripts/run-approved-provider-download.py"
 DEFAULT_POLICY="$ROOT_DIR/config/recovery/production-data-classification-policy.json"
 
 provider_command=""
+provider_profile=""
 provider_locator=""
 destination=""
 known_local_source=""
@@ -17,7 +19,7 @@ passphrase_fd=""
 download_complete=false
 
 usage() {
-  echo "Usage: scripts/download-offsite-backup.sh --provider-command /absolute/adapter --provider-locator PROVIDER://OBJECT-SET --destination /new/locked/path --known-local-source /original/path --expected-manifest-sha256 sha256:... --passphrase-fd N [--classification-policy FILE]" >&2
+  echo "Usage: scripts/download-offsite-backup.sh --provider-profile REVIEWED_ID --provider-command /absolute/adapter --provider-locator provider://container/object-set --destination /new/locked/path --known-local-source /original/path --expected-manifest-sha256 sha256:... --passphrase-fd N [--classification-policy FILE]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -25,6 +27,11 @@ while [[ $# -gt 0 ]]; do
     --provider-command)
       [[ $# -ge 2 ]] || { usage; exit 2; }
       provider_command="$2"
+      shift 2
+      ;;
+    --provider-profile)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      provider_profile="$2"
       shift 2
       ;;
     --provider-locator)
@@ -72,12 +79,16 @@ done
   echo "Refusing: provider command must be an absolute non-symlink executable adapter path." >&2
   exit 2
 }
+[[ "$provider_profile" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$ ]] || {
+  echo "Refusing: provider profile id is malformed." >&2
+  exit 2
+}
 [[ -n "$provider_locator" && "$provider_locator" != /* ]] || {
   echo "Refusing: provider locator must be a non-local provider object-set identifier." >&2
   exit 2
 }
 case "$provider_locator" in
-  file:*|http:*|https:*|*\?*|*\#*|*@*|*$'\n'*|*$'\r'*)
+  [Ff][Ii][Ll][Ee]:*|[Hh][Tt][Tt][Pp]:*|[Hh][Tt][Tt][Pp][Ss]:*|*\?*|*\#*|*@*|*$'\n'*|*$'\r'*)
     echo "Refusing: provider locator is local, credential-bearing, or malformed." >&2
     exit 2
     ;;
@@ -135,18 +146,19 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-mkdir -m 700 -- "$destination"
 receipt="$destination/provider-download-receipt.json"
 
-# Adapter contract: authenticate outside this script, accept only the opaque
-# locator below, copy provider bytes into destination, and write the JSON
-# receipt without printing credentials, signed URLs, object contents, or PII.
-if ! "$provider_command" download \
+# The Python boundary pins the reviewed adapter digest, passes only an explicit
+# environment allow-list, inherits no unrelated descriptors (including the
+# recovery-key descriptor), kills same-process-group leftovers, and publishes a
+# held-file snapshot only after an exact inventory check.
+if ! python3 "$PROVIDER_RUNNER" \
+  --profile "$provider_profile" \
+  --provider-command "$provider_command" \
   --locator "$provider_locator" \
   --destination "$destination" \
-  --receipt "$receipt" \
   >/dev/null 2>&1; then
-  echo "Provider download failed; provider output was suppressed." >&2
+  echo "Provider download refused or failed; the reviewed runner suppressed adapter output." >&2
   exit 1
 fi
 
@@ -167,4 +179,4 @@ python3 "$VERIFY_SCRIPT" \
 
 download_complete=true
 trap - EXIT HUP INT TERM
-echo "Provider-origin backup download verified; preserve the locked directory and receipt for the bounded recovery drill."
+echo "Downloaded bytes and generic receipt verified; provider origin remains unproven until a provider-specific independent control is implemented."

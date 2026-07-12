@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Koaryu encrypted artifacts and optional provider-origin evidence."""
+"""Verify Koaryu encrypted artifacts and optional generic provider-receipt evidence."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from recovery_tooling import (
+    PROVIDER_RECEIPT_NAME,
     RecoveryToolingError,
     load_json,
     read_passphrase_fd,
@@ -31,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     if bool(args.provider_receipt) != bool(args.known_local_source):
         parser.error("--provider-receipt and --known-local-source must be supplied together")
     if args.provider_receipt and not args.expected_manifest_sha256:
-        parser.error("provider-origin verification requires --expected-manifest-sha256")
+        parser.error("provider-receipt verification requires --expected-manifest-sha256")
     return args
 
 
@@ -39,6 +40,16 @@ def main() -> int:
     args = parse_args()
     try:
         policy = load_json(args.classification_policy)
+        if args.provider_receipt:
+            try:
+                receipt_parent = args.provider_receipt.parent.resolve(strict=True)
+                backup_parent = args.backup_dir.resolve(strict=True)
+            except OSError as exc:
+                raise RecoveryToolingError("Provider receipt and backup directory must exist") from exc
+            if args.provider_receipt.name != PROVIDER_RECEIPT_NAME or receipt_parent != backup_parent:
+                raise RecoveryToolingError(
+                    "Provider receipt must be the canonical file inside the downloaded backup directory"
+                )
         receipt = load_json(args.provider_receipt, require_private=True) if args.provider_receipt else None
         passphrase = read_passphrase_fd(args.passphrase_fd)
         try:
@@ -56,7 +67,8 @@ def main() -> int:
             "Backup set verified: "
             f"backup_set_id={result['backup_set_id']} "
             f"artifacts={result['artifact_count']} "
-            f"provider_origin={'yes' if result['provider_origin_verified'] else 'no'}"
+            f"provider_receipt_bytes={'yes' if result['provider_receipt_matches_bytes'] else 'no'} "
+            "provider_origin=no"
         )
         return 0
     except RecoveryToolingError as exc:

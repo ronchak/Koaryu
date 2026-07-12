@@ -220,39 +220,70 @@ supabase db dump --linked --data-only --use-copy \
   --file "$DUMP_DIR/migration-history-data.sql"
 ```
 
+First derive the snapshot identity from the exact six locked plaintext payloads.
+The generator holds each regular file with `O_NOFOLLOW`, rejects hardlinks and
+non-private modes, and hashes it once. Its database snapshot digest is canonical
+JSON over the ordered artifact names, plaintext sizes, and plaintext SHA-256
+values; do not substitute a hand-authored snapshot id:
+
+```bash
+scripts/create-snapshot-bindings.py \
+  --roles "$DUMP_DIR/roles.sql" \
+  --schema "$DUMP_DIR/schema.sql" \
+  --data "$DUMP_DIR/data.sql" \
+  --migration-history-schema "$DUMP_DIR/migration-history-schema.sql" \
+  --migration-history-data "$DUMP_DIR/migration-history-data.sql" \
+  --storage-objects "$DUMP_DIR/storage-objects.tar" \
+  --output "$LOCKED_CONTRACT_DIR/snapshot-bindings.json"
+```
+
+Copy the generated `database_snapshot_digest` into backup metadata, restore
+integrity, and classification source, and copy its exact `snapshot_artifacts`
+array into restore integrity. Standalone restore-integrity validation recomputes
+that digest from all six bindings and refuses a hand-authored or stale value.
+Manifest creation decrypts the encrypted payloads to an in-memory hash stream
+and refuses any mismatch.
+
 Create the secret-free project-configuration and restore-integrity contracts
-from the schemas in `config/recovery/`. The project contract records security
-semantics—not key values—including Auth redirects, password/session/MFA
-posture, API-key types, Data API schemas and grants digest, Realtime
-publications, Storage bucket constraints, Stripe mode, and email-delivery
-posture. The integrity contract records per-table counts and primary-key-set
-digests, the complete migration-history columns/count/digest, database catalog
-digests, and Storage counts/digests. Keep both plaintext files in a locked
-temporary directory and validate them before encryption:
+from the schemas in `config/recovery/`. These are explicitly
+`operator_attested_partial`, not provider-exported complete configuration. The
+project contract records Auth core security, API-key posture, Data API grants,
+Realtime publications, Storage bucket constraints, Stripe mode, and
+email-delivery posture. Its required manual-reconfiguration inventory covers
+external Auth/OAuth, SMTP/SMS/templates, Auth hooks, Edge Functions and secrets,
+database network/pooler/SSL settings, Vault, custom domains, provider plans and
+PITR, Storage S3/transforms, Realtime limits, runtime environments, Stripe
+dashboard credentials/webhooks, and logging/alerting. The integrity contract
+records per-table counts and primary-key-set digests, migration history,
+database catalog digests, and Storage counts/digests, while clearly marking
+those semantics as unverified until a restore. Keep both plaintext source files
+in a locked private working directory, validate them before encryption, and
+remove that working directory after the encrypted set is verified:
 
 ```bash
 scripts/validate-recovery-contract.py \
   --kind project-config \
-  --input "$DUMP_DIR/project-config-manifest.json"
+  --input "$LOCKED_CONTRACT_DIR/project-config-manifest.json"
 scripts/validate-recovery-contract.py \
   --kind restore-integrity \
-  --input "$DUMP_DIR/restore-integrity-manifest.json"
+  --input "$LOCKED_CONTRACT_DIR/restore-integrity-manifest.json"
 ```
 
 Generate classification only from a privacy-safe inventory of the exact backup
-snapshot. The input must use opaque record IDs, approved explicit evidence
-markers, and either omit email-derived values or use keyed HMAC-SHA-256 with a
-separately held key. Raw emails, names, addresses, phone numbers, support text,
-and unkeyed email hashes are rejected. Every policy source type must appear,
-including empty sources:
+snapshot. Database sources require canonical UUIDs and Stripe records require
+canonical `evt_` identifiers. Phone-like values, SHA-1/MD5/SHA-256 identifiers,
+raw emails, names, addresses, support text, and arbitrary opaque ids are
+rejected. The current trusted capture path does not compute email HMACs, so
+`email_strategy` must be `omitted` and `key_id` must be `null`; a self-asserted
+HMAC is rejected. Every policy source type must appear, including empty sources:
 
 ```bash
 scripts/classify-production-records.py \
-  --input "$DUMP_DIR/classification-source.json" \
-  --output "$DUMP_DIR/record-classification-manifest.json"
+  --input "$LOCKED_CONTRACT_DIR/classification-source.json" \
+  --output "$LOCKED_CONTRACT_DIR/record-classification-manifest.json"
 scripts/verify-classification-manifest.py \
-  --source "$DUMP_DIR/classification-source.json" \
-  --manifest "$DUMP_DIR/record-classification-manifest.json"
+  --source "$LOCKED_CONTRACT_DIR/classification-source.json" \
+  --manifest "$LOCKED_CONTRACT_DIR/record-classification-manifest.json"
 ```
 
 The classifier uses the versioned policy at
@@ -262,7 +293,40 @@ approved source-scoped rule or more than one rule matches. Stable rule IDs and
 the policy digest make every decision reproducible. Classification never
 authorizes a write, deletion, anonymization, Auth action, or Stripe action.
 
-After encrypting all ten artifacts, create the canonical encrypted manifest
+Encrypt each validated JSON contract with the canonical contract encryptor.
+This tool serializes the reviewed value as canonical JSON directly into GPG;
+do not encrypt the pretty-printed source file with a separate GPG command. Open
+a fresh descriptor for every command because reading the passphrase consumes
+that descriptor:
+
+```bash
+scripts/encrypt-recovery-contract.py \
+  --kind project-config \
+  --input "$LOCKED_CONTRACT_DIR/project-config-manifest.json" \
+  --output "$BACKUP_DIR/project-config-manifest.json.gpg" \
+  --passphrase-fd 3 \
+  3< <(security find-generic-password -s com.koaryu.backup.encryption -w)
+scripts/encrypt-recovery-contract.py \
+  --kind restore-integrity \
+  --input "$LOCKED_CONTRACT_DIR/restore-integrity-manifest.json" \
+  --output "$BACKUP_DIR/restore-integrity-manifest.json.gpg" \
+  --passphrase-fd 3 \
+  3< <(security find-generic-password -s com.koaryu.backup.encryption -w)
+scripts/encrypt-recovery-contract.py \
+  --kind classification-source \
+  --input "$LOCKED_CONTRACT_DIR/classification-source.json" \
+  --output "$BACKUP_DIR/classification-source.json.gpg" \
+  --passphrase-fd 3 \
+  3< <(security find-generic-password -s com.koaryu.backup.encryption -w)
+scripts/encrypt-recovery-contract.py \
+  --kind classification-manifest \
+  --input "$LOCKED_CONTRACT_DIR/record-classification-manifest.json" \
+  --output "$BACKUP_DIR/record-classification-manifest.json.gpg" \
+  --passphrase-fd 3 \
+  3< <(security find-generic-password -s com.koaryu.backup.encryption -w)
+```
+
+After all ten artifacts are encrypted, create the canonical encrypted manifest
 before removing the locked plaintext contract inputs. The metadata and four
 reviewed contract inputs must be mode `0600`; the backup directory and
 encrypted artifacts must not be group- or world-accessible. Pass the recovery
@@ -281,10 +345,18 @@ scripts/create-encrypted-backup-manifest.py \
 ```
 
 The result is `backup-manifest.json.gpg`. Record its printed SHA-256 in the
-release ledger. It authenticates the exact artifact names, roles, sizes,
-ciphertext hashes, contract plaintext hashes, source snapshot, application SHA,
-migration head/history digest, tool versions, encryption key ID, and retention
-class. It intentionally does not contain the encryption secret.
+release ledger. It authenticates the exact artifact names, roles, ciphertext
+sizes/hashes, every decrypted plaintext size/hash, contract plaintext hashes,
+the derived source snapshot, application SHA, migration head/history digest,
+tool versions, encryption key ID, and retention class. The outer manifest is
+streamed directly into GPG; no plaintext manifest tempfile is created. Every
+artifact must use AES-256/OCB, iterated-and-salted S2K mode 3, SHA-512, count
+`65011712`, and chunk size `22`. The directory must contain exactly the canonical
+files—notes, nested directories, symlinks, devices, FIFOs, and hardlinks are all
+refused. Before reporting success, the creator snapshots and independently
+verifies the completed eleven-file set; a failed post-write verification removes
+the outer manifest so an inconsistent set cannot be mistaken for complete. The
+manifest intentionally does not contain the encryption secret.
 
 ### Historical Wave 0 capture reference
 
@@ -392,12 +464,16 @@ BACKUP_PASSWORD="$(security find-generic-password \
 
 for name in roles schema data; do
   gpg --batch --yes --symmetric --force-aead --aead-algo OCB \
-    --cipher-algo AES256 --pinentry-mode loopback --passphrase-fd 3 \
+    --cipher-algo AES256 --s2k-mode 3 --s2k-digest-algo SHA512 \
+    --s2k-count 65011712 --chunk-size 22 \
+    --pinentry-mode loopback --passphrase-fd 3 \
     --output "$BACKUP_DIR/${name}.sql.gpg" "$DUMP_DIR/${name}.sql" \
     3<<<"$BACKUP_PASSWORD"
 done
 gpg --batch --yes --symmetric --force-aead --aead-algo OCB \
-  --cipher-algo AES256 --pinentry-mode loopback --passphrase-fd 3 \
+  --cipher-algo AES256 --s2k-mode 3 --s2k-digest-algo SHA512 \
+  --s2k-count 65011712 --chunk-size 22 \
+  --pinentry-mode loopback --passphrase-fd 3 \
   --output "$BACKUP_DIR/storage-objects.tar.gpg" \
   "$DUMP_DIR/storage-objects.tar" 3<<<"$BACKUP_PASSWORD"
 
@@ -407,7 +483,7 @@ cleanup_backup
 trap - EXIT HUP INT TERM
 ```
 
-Do not place the password in a command argument, repository file, shell trace, or release record. The key is held in macOS Keychain under service `com.koaryu.backup.encryption`. GnuPG 2.5+ uses AES-256 with OCB authenticated encryption here, so tampering is rejected during decryption. Record the hashes and backup path in the release ledger, then move the encrypted artifacts to the approved off-site location. No plaintext dump may remain after verification.
+Do not place the password in a command argument, repository file, shell trace, or release record. The key is held in macOS Keychain under service `com.koaryu.backup.encryption`. Canonical artifacts use GnuPG AES-256/OCB plus iterated-and-salted SHA-512 S2K with count `65011712`; the checked-in packet validator rejects weaker modes even if decryption succeeds. Record the hashes and backup path in the release ledger, then move the encrypted artifacts to the approved off-site location. No plaintext dump may remain after verification.
 
 The historical record-classification manifest is a separate inventory artifact,
 not an output of `supabase db dump`. For future backups, use the checked-in
@@ -444,7 +520,24 @@ fails closed if object rows are already present before that upload.
 
 The July 10 artifacts have not been found outside `$HOME/Koaryu Backups/production-20260710T070020Z`. A second local path, a synced-folder path without provider-side confirmation, or the ordinary staging project does not count as off-site recovery evidence.
 
-Before copying, record the approved provider and folder/bucket, Ronak as data owner, the minimum named operator group, encryption-at-rest posture, retention window, rotation cadence, monitoring owner, deletion owner, and whether the destination adds ongoing cost. Keep the existing Koaryu AEAD artifacts encrypted; do not upload plaintext dumps or the Keychain recovery secret. A paid storage upgrade or materially higher operational burden requires the approval boundary in the release ledger.
+Before copying, record the approved provider and folder/bucket, Ronak as data
+owner, the minimum named operator group, encryption-at-rest posture, retention
+window, rotation cadence, monitoring owner, deletion owner, target RPO/RTO, and
+whether the destination adds ongoing cost. Retain at least two immutable backup
+generations, or record a reviewed one-generation bootstrap reason and complete a
+rotation test before release. Keep the existing Koaryu AEAD artifacts encrypted;
+do not upload plaintext dumps or the Keychain recovery secret. A paid storage
+upgrade or materially higher operational burden requires the approval boundary
+in the release ledger.
+
+The Keychain item on the source Mac is not independent key recovery. Before this
+gate can close, approve one recovery-key copy in a separate trust boundary (for
+example, an approved password manager, hardware-backed secondary device, or
+sealed offline record), name the primary and backup key owners, and keep that
+copy outside the backup provider container. Prove decryption from a clean account
+or separate machine where the original Keychain item is unavailable, then test a
+wrong key there as well. Evidence may record only the key version/fingerprint,
+escrow-location class, named operators, and pass/fail result—never the key.
 
 After the provider destination is approved, upload only the eleven canonical `.gpg`
 artifacts, including `backup-manifest.json.gpg`. Upload remains an explicit
@@ -452,16 +545,34 @@ provider/operator action; this repository deliberately contains no upload
 command. The provider must retain immutable object/version identifiers where
 available and must never receive plaintext or the recovery key.
 
-Download through a reviewed provider adapter into a new locked directory. The
-adapter authenticates outside the command line, accepts an opaque non-secret
-object-set locator, writes the downloaded bytes, and produces a receipt matching
-`config/recovery/provider-download-receipt.schema.json`. Provider stdout/stderr
-is suppressed so it cannot leak credentials or PII. `file://`, HTTP(S), signed
-URL-like locators, the original local directory, nested source paths, symlinks,
-and hardlinks to the original artifacts are rejected:
+No provider adapter is currently approved:
+`config/recovery/approved-provider-adapters.json` intentionally contains an
+empty list. The command below therefore fails closed today. Choosing a provider
+requires a reviewed repository change that pins the provider id, locator
+scheme, exact adapter SHA-256, and minimum environment-variable allow-list.
+Provider origin also needs an independent provider-specific control (for
+example, a separately authenticated versioned-object inventory or signed
+provider assertion); the adapter's own JSON receipt cannot prove where its
+bytes came from.
+
+Once that provider-specific review is complete, download into a new locked
+directory. The runner snapshots the pinned adapter bytes, passes only fixed
+locale/PATH plus the reviewed environment allow-list, closes every unrelated
+file descriptor including the recovery-key descriptor, suppresses provider
+stdout/stderr, runs from the private adapter snapshot with umask `077`, enforces
+a 30-minute limit, terminates same-process-group descendants, and copies a held
+exact-file inventory into a durable private snapshot. The
+denylist rejects fixed PATH/locale names plus known shell, interpreter,
+dynamic-loader, package-manager, Git, agent, and SSH execution-control families.
+The profile review must still justify every allowed name and every external
+adapter dependency. Receipts require eleven distinct
+provider object identifiers with explicit version identifiers. `FILE://` in any
+casing, HTTP(S), signed URL-like locators, the original local directory, nested
+source paths, symlinks, hardlinks, extra files, and non-regular files are rejected:
 
 ```bash
 scripts/download-offsite-backup.sh \
+  --provider-profile 'reviewed-provider-profile-v1' \
   --provider-command /absolute/path/to/reviewed-provider-adapter \
   --provider-locator 'provider://non-secret-object-set-id' \
   --destination "$FRESH_PROVIDER_DOWNLOAD_DIR" \
@@ -471,14 +582,19 @@ scripts/download-offsite-backup.sh \
   3< <(security find-generic-password -s com.koaryu.backup.encryption -w)
 ```
 
-The verifier authenticates and decrypts the outer manifest in memory, checks
-that every artifact uses the canonical GPG AES-256 OCB AEAD packet profile,
-checks all ciphertext hashes/sizes, authenticates every artifact without
-writing plaintext, validates and binds the four inner contracts,
-checks the provider receipt's object/version evidence, and prints only a
-secret-safe summary. A provider receipt is necessary evidence, not a substitute
-for independently checking the approved provider ACL and testing denied access.
-Also verify a deliberately wrong recovery key fails closed.
+After validating the receipt shape and source-path guards, the verifier copies
+the exact inventory through held file descriptors before cryptographic checks.
+It authenticates and decrypts the outer manifest in memory, enforces the complete
+GPG packet profile, checks ciphertext and plaintext hashes/sizes, validates and
+cross-binds the four inner contracts, and checks whether the generic receipt's
+object/version claims match the downloaded bytes. It always reports
+`provider_origin=no`: matching self-authored receipt data is integrity evidence,
+not independent origin evidence. Separately validate the approved provider ACL,
+denied access, version retention, and the provider-specific independent origin
+control. Also verify a deliberately wrong recovery key fails closed.
+Test denied provider read with an unauthorized identity or unauthenticated path
+without weakening the approved ACL. Record only the denied result and non-secret
+provider identifiers.
 
 The 2026-07-11 local prerequisite audit reconfirmed all five recorded SHA-256 hashes, mode `0600`, a present Keychain recovery item, successful decryption to `/dev/null` with that item, and rejection of a deliberately wrong key. No off-site artifact was found, no upload occurred, and no plaintext was written. These checks are prerequisites only; they do not close the off-site gate.
 
@@ -487,11 +603,31 @@ The 2026-07-11 local prerequisite audit reconfirmed all five recorded SHA-256 ha
 The command block in this section documents the historical Wave 0 drill only.
 It is not a restore runner for the new canonical eleven-artifact set and does
 not close Gate #23. Current checked-in tooling deliberately stops after
-provider-origin download, cryptographic authentication, contract binding, and
-integrity-manifest validation. A separately reviewed disposable-target restore
+provider-candidate download, cryptographic authentication, generic
+receipt-to-byte comparison, contract binding, and integrity-manifest validation;
+it does not prove provider origin. A separately reviewed disposable-target restore
 runner must consume the canonical manifest and re-check its recorded table,
 catalog, Auth/project-configuration, migration-history, and Storage invariants
 before this gate can close.
+
+That future runner must also fail closed unless it:
+
+- consumes the fresh provider candidate and matching receipt, never the known
+  local source;
+- uses target-specific signing/API keys, sink-only outbound messaging, and
+  test-only or disabled external integrations without copying production
+  secrets or callback destinations;
+- proves production access/refresh tokens fail, clears restored live session
+  state before exposure, and uses only a designated restore-only synthetic
+  identity for the application smoke;
+- deploys exact candidate frontend/backend SHAs and runs real authentication,
+  same-tenant allow, cross-tenant deny, and final approved staff-capability deny
+  cases through the application and direct API without recording row data;
+- compares every table, catalog, migration-history, and Storage invariant from
+  the encrypted contracts; and
+- confirms deletion or disablement of the disposable app, database, Storage,
+  credentials, sessions, downloaded artifacts, plaintext, callbacks, and aliases
+  through provider readback. Any cleanup failure keeps the gate open.
 
 A restore target is disposable and isolated. Never use current staging, production, or any project containing records that must be retained.
 

@@ -20,40 +20,38 @@
     "identifier_protection": { "$ref": "#/$defs/identifierProtection" },
     "sources": {
       "type": "array",
-      "items": { "$ref": "#/$defs/source" }
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/source" },
+      "allOf": [
+        { "contains": { "properties": { "source_type": { "const": "auth_user" } }, "required": ["source_type"] } },
+        { "contains": { "properties": { "source_type": { "const": "studio" } }, "required": ["source_type"] } },
+        { "contains": { "properties": { "source_type": { "const": "studio_subscription" } }, "required": ["source_type"] } },
+        { "contains": { "properties": { "source_type": { "const": "studio_payment_account" } }, "required": ["source_type"] } },
+        { "contains": { "properties": { "source_type": { "const": "stripe_event" } }, "required": ["source_type"] } }
+      ]
     }
   },
   "$defs": {
     "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
     "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
-    "recordId": {
+    "uuidRecordId": {
       "type": "string",
-      "minLength": 8,
-      "maxLength": 128,
-      "pattern": "^(?=.*[0-9])[A-Za-z0-9][A-Za-z0-9._:-]*$",
-      "not": { "pattern": "^(sha256:)?[0-9a-f]{64}$" }
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "stripeEventId": {
+      "type": "string",
+      "pattern": "^evt_[A-Za-z0-9]{8,124}$"
     },
     "identifierProtection": {
       "type": "object",
       "additionalProperties": false,
       "required": ["email_strategy", "key_id"],
       "properties": {
-        "email_strategy": { "enum": ["omitted", "hmac-sha256"] },
-        "key_id": {
-          "oneOf": [
-            { "type": "null" },
-            { "$ref": "#/$defs/safeId" }
-          ]
-        }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "email_strategy": { "const": "omitted" } } },
-          "then": { "properties": { "key_id": { "type": "null" } } },
-          "else": { "properties": { "key_id": { "$ref": "#/$defs/safeId" } } }
-        }
-      ]
+        "email_strategy": { "const": "omitted" },
+        "key_id": { "type": "null" }
+      }
     },
     "source": {
       "type": "object",
@@ -70,34 +68,44 @@
           ]
         },
         "source_count": { "type": "integer", "minimum": 0 },
-        "records": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/record" }
+        "records": { "type": "array" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "source_type": { "const": "stripe_event" } }, "required": ["source_type"] },
+          "then": { "properties": { "records": { "items": { "$ref": "#/$defs/stripeRecord" } } } },
+          "else": { "properties": { "records": { "items": { "$ref": "#/$defs/uuidRecord" } } } }
         }
-      }
+      ]
     },
-    "record": {
+    "uuidRecord": {
       "type": "object",
       "additionalProperties": false,
       "required": ["record_id", "evidence"],
       "properties": {
-        "record_id": { "$ref": "#/$defs/recordId" },
-        "email_hmac": {
-          "type": "string",
-          "pattern": "^hmac-sha256:[A-Za-z0-9][A-Za-z0-9._:-]{2,127}:[0-9a-f]{64}$"
-        },
-        "evidence": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "enum": [
-              "explicit_demo_metadata",
-              "explicit_test_metadata",
-              "provider_test_mode",
-              "synthetic_fixture_identifier"
-            ]
-          }
-        }
+        "record_id": { "$ref": "#/$defs/uuidRecordId" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "stripeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "evidence"],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/stripeEventId" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "explicit_demo_metadata",
+          "explicit_test_metadata",
+          "provider_test_mode",
+          "synthetic_fixture_identifier"
+        ]
       }
     }
   }

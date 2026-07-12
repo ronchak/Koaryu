@@ -12,11 +12,15 @@
     "dev:health": "sh -c 'curl -fsS http://localhost:4000 >/dev/null && curl -fsS http://127.0.0.1:8001/docs >/dev/null && echo \"Koaryu is up on 4000/8001\"'",
     "check:env-examples": "node --test scripts/check-env-examples.test.mjs scripts/verify-staging-isolation.test.mjs && node scripts/check-env-examples.mjs",
     "check:release-workflow": "node --test scripts/check-release-candidate-workflow.test.mjs scripts/merge-release-pr.test.mjs && node scripts/check-release-candidate-workflow.mjs",
-    "check:recovery-tooling": "sh -c 'command -v gpg >/dev/null 2>&1 || { echo \"GnuPG is required for recovery-tooling checks\" >&2; exit 1; }' && python3 scripts/recovery-tooling.test.py && bash -n scripts/download-offsite-backup.sh && sh -c 'if command -v shellcheck >/dev/null 2>&1; then shellcheck scripts/download-offsite-backup.sh; else echo \"shellcheck unavailable; bash syntax and fixture tests passed\"; fi'",
+    "check:recovery-tooling": "node --test scripts/recovery-schema-validation.test.mjs && sh -c 'command -v gpg >/dev/null 2>&1 || { echo \"GnuPG is required for recovery-tooling checks\" >&2; exit 1; }' && python3 scripts/recovery-tooling.test.py && /bin/bash -n scripts/download-offsite-backup.sh && sh -c 'if command -v shellcheck >/dev/null 2>&1; then shellcheck scripts/download-offsite-backup.sh; else echo \"shellcheck unavailable; Bash 3.2 syntax and fixture tests passed\"; fi'",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs",
     "audit:support-privacy": "python3 scripts/audit-support-privacy.py",
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
     "check:api-types": "backend/venv/bin/python scripts/generate-api-types.py --check",
     "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   }
 }

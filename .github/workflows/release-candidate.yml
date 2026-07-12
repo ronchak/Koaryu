@@ -17,7 +17,7 @@ concurrency:
 jobs:
   repository-controls:
     name: Candidate head and repository controls
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
@@ -35,6 +35,32 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install repository check dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install and assert pinned recovery toolchain
+        env:
+          GNUPG_PACKAGE_VERSION: 2.4.4-2ubuntu17.4
+          SHELLCHECK_PACKAGE_VERSION: 0.9.0-1
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            "gnupg2=$GNUPG_PACKAGE_VERSION" \
+            "shellcheck=$SHELLCHECK_PACKAGE_VERSION"
+          test "$(dpkg-query -W -f='${Version}' gnupg2)" = "$GNUPG_PACKAGE_VERSION"
+          test "$(dpkg-query -W -f='${Version}' shellcheck)" = "$SHELLCHECK_PACKAGE_VERSION"
+          gpg --dump-options | grep -Fx -- --force-aead
+          gpg --dump-options | grep -Fx -- --chunk-size
+          gpg --dump-options | grep -Fx -- --s2k-count
+
+      - name: Verify recovery contracts and tooling
+        run: npm run check:recovery-tooling
+
+      - name: Audit repository check dependencies
+        run: npm audit --audit-level=moderate
 
       - name: Verify candidate workflow coverage
         run: npm run check:release-workflow

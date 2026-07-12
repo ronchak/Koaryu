@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "backup_set_id": "koaryu-fixture-20260712",
-  "source_snapshot_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_snapshot_digest": "sha256:d7fd78b052f2168fcdca17d13096b7af78c963ee50690338943ccc701fddc550",
   "captured_at": "2026-07-12T12:00:00Z",
   "identifier_protection": {
-    "email_strategy": "hmac-sha256",
-    "key_id": "classification-fixture-v1"
+    "email_strategy": "omitted",
+    "key_id": null
   },
   "sources": [
     {
@@ -14,14 +14,12 @@
       "records": [
         {
           "record_id": "00000000-0000-4000-8000-000000000001",
-          "email_hmac": "hmac-sha256:classification-fixture-v1:7777777777777777777777777777777777777777777777777777777777777777",
           "evidence": [
             "explicit_demo_metadata"
           ]
         },
         {
           "record_id": "00000000-0000-4000-8000-000000000002",
-          "email_hmac": "hmac-sha256:classification-fixture-v1:8888888888888888888888888888888888888888888888888888888888888888",
           "evidence": []
         }
       ]
@@ -69,13 +67,13 @@
       "source_count": 2,
       "records": [
         {
-          "record_id": "evt_fixture_0001",
+          "record_id": "evt_fixture0001",
           "evidence": [
             "provider_test_mode"
           ]
         },
         {
-          "record_id": "evt_fixture_0002",
+          "record_id": "evt_fixture0002",
           "evidence": [
             "explicit_test_metadata",
             "provider_test_mode"

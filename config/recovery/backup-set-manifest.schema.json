@@ -26,12 +26,25 @@
       "type": "array",
       "minItems": 10,
       "maxItems": 10,
-      "items": { "$ref": "#/$defs/artifact" }
+      "items": { "$ref": "#/$defs/artifact" },
+      "allOf": [
+        { "contains": { "properties": { "name": { "const": "roles.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "schema.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "data.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "migration-history-schema.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "migration-history-data.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "project-config-manifest.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "restore-integrity-manifest.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "classification-source.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "record-classification-manifest.json.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "storage-objects.tar.gpg" } }, "required": ["name"] } }
+      ]
     }
   },
   "$defs": {
     "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "keyId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$" },
     "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
     "source": {
       "type": "object",
@@ -66,16 +79,34 @@
     "encryption": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["scheme", "key_id"],
+      "required": [
+        "scheme",
+        "key_id",
+        "s2k_mode",
+        "s2k_digest",
+        "s2k_count",
+        "aead_chunk_size"
+      ],
       "properties": {
         "scheme": { "const": "gpg-aes256-ocb" },
-        "key_id": { "$ref": "#/$defs/safeId" }
+        "key_id": { "$ref": "#/$defs/keyId" },
+        "s2k_mode": { "const": 3 },
+        "s2k_digest": { "const": "SHA512" },
+        "s2k_count": { "const": 65011712 },
+        "aead_chunk_size": { "const": 22 }
       }
     },
     "artifact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "role", "size_bytes", "sha256"],
+      "required": [
+        "name",
+        "role",
+        "size_bytes",
+        "sha256",
+        "plaintext_size_bytes",
+        "plaintext_sha256"
+      ],
       "properties": {
         "name": {
           "enum": [
@@ -107,6 +138,8 @@
         },
         "size_bytes": { "type": "integer", "minimum": 1 },
         "sha256": { "$ref": "#/$defs/sha256" },
+        "plaintext_size_bytes": { "type": "integer", "minimum": 1 },
+        "plaintext_sha256": { "$ref": "#/$defs/sha256" },
         "plaintext_contract_sha256": { "$ref": "#/$defs/sha256" }
       },
       "allOf": [
@@ -126,7 +159,17 @@
           },
           "then": { "required": ["plaintext_contract_sha256"] },
           "else": { "not": { "required": ["plaintext_contract_sha256"] } }
-        }
+        },
+        { "if": { "properties": { "name": { "const": "roles.sql.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "database_roles" } } } },
+        { "if": { "properties": { "name": { "const": "schema.sql.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "database_schema" } } } },
+        { "if": { "properties": { "name": { "const": "data.sql.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "database_data" } } } },
+        { "if": { "properties": { "name": { "const": "migration-history-schema.sql.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "migration_history_schema" } } } },
+        { "if": { "properties": { "name": { "const": "migration-history-data.sql.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "migration_history_data" } } } },
+        { "if": { "properties": { "name": { "const": "project-config-manifest.json.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "project_configuration" } } } },
+        { "if": { "properties": { "name": { "const": "restore-integrity-manifest.json.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "restore_integrity" } } } },
+        { "if": { "properties": { "name": { "const": "classification-source.json.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "classification_source" } } } },
+        { "if": { "properties": { "name": { "const": "record-classification-manifest.json.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "record_classification" } } } },
+        { "if": { "properties": { "name": { "const": "storage-objects.tar.gpg" } }, "required": ["name"] }, "then": { "properties": { "role": { "const": "storage_objects" } } } }
       ]
     }
   }

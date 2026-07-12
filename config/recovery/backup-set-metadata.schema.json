@@ -48,13 +48,24 @@
     "encryption": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["scheme", "key_id"],
+      "required": [
+        "scheme",
+        "key_id",
+        "s2k_mode",
+        "s2k_digest",
+        "s2k_count",
+        "aead_chunk_size"
+      ],
       "properties": {
         "scheme": { "const": "gpg-aes256-ocb" },
-        "key_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$" }
+        "key_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$" },
+        "s2k_mode": { "const": 3 },
+        "s2k_digest": { "const": "SHA512" },
+        "s2k_count": { "const": 65011712 },
+        "aead_chunk_size": { "const": 22 }
       }
     },
-    "retention_class": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,63}$" }
+    "retention_class": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" }
   },
   "$defs": {
     "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }

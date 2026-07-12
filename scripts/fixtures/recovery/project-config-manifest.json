@@ -3,6 +3,32 @@
   "backup_set_id": "koaryu-fixture-20260712",
   "captured_at": "2026-07-12T12:00:00Z",
   "source_project_ref": "abcdefghijklmnopqrst",
+  "evidence_scope": {
+    "assurance": "operator_attested_partial",
+    "captured_surfaces": [
+      "api_key_posture",
+      "auth_core_security",
+      "data_api_schema_and_grants",
+      "integration_mode_posture",
+      "realtime_publications",
+      "storage_bucket_configuration"
+    ],
+    "manual_reconfiguration_required": [
+      "auth_external_providers_and_oauth_credentials",
+      "auth_hooks",
+      "auth_smtp_sms_and_message_templates",
+      "custom_domains",
+      "database_network_pooler_and_ssl_settings",
+      "edge_function_code_secrets_and_schedules",
+      "logging_alerting_and_drains",
+      "provider_plan_backups_and_pitr",
+      "realtime_limits",
+      "runtime_deployment_environment",
+      "storage_s3_and_image_transformation_settings",
+      "stripe_credentials_webhook_secrets_and_dashboard_configuration",
+      "vault_secrets"
+    ]
+  },
   "auth": {
     "site_url_origin": "https://fixture.koaryu.invalid",
     "redirect_allow_list": [

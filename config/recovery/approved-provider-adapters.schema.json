@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.local/schemas/recovery/approved-provider-adapters-v1.json",
+  "title": "Koaryu reviewed off-site provider adapter trust policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "adapters"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "adapters": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/adapter" }
+    }
+  },
+  "$defs": {
+    "profileId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "provider",
+        "locator_scheme",
+        "adapter_sha256",
+        "allowed_environment_variables"
+      ],
+      "properties": {
+        "profile_id": { "$ref": "#/$defs/profileId" },
+        "provider": {
+          "allOf": [
+            { "$ref": "#/$defs/profileId" },
+            {
+              "not": {
+                "pattern": "^([Ff][Ii][Ll][Ee]([Ss][Yy][Ss][Tt][Ee][Mm])?|[Ll][Oo][Cc][Aa][Ll](-[Cc][Oo][Pp][Yy])?|[Ss][Yy][Nn][Cc][Ee][Dd]-[Ff][Oo][Ll][Dd][Ee][Rr])$"
+              }
+            }
+          ]
+        },
+        "locator_scheme": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9+.-]{1,31}$",
+          "not": { "enum": ["file", "http", "https"] }
+        },
+        "adapter_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "allowed_environment_variables": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "not": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "CDPATH",
+                    "CLASSPATH",
+                    "ENV",
+                    "IFS",
+                    "KSH_ENV",
+                    "LANG",
+                    "LC_ALL",
+                    "PATH",
+                    "PHPRC",
+                    "PROMPT_COMMAND",
+                    "PS4",
+                    "SHELLOPTS",
+                    "TCLLIBPATH",
+                    "ZDOTDIR"
+                  ]
+                },
+                {
+                  "pattern": "^(BASH_|BUNDLE_|CARGO_|DOTNET_|DYLD_|GEM_|GIT_|GPG_|JAVA_|JDK_|LD_|LUA_|NODE_|NPM_|PERL|PHP_|PYTHON|RUBY|RUST|SSH_|YARN_)"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

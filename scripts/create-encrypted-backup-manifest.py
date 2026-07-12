@@ -12,7 +12,6 @@ from recovery_tooling import (
     CONTRACT_ARTIFACTS,
     REQUIRED_ENCRYPTED_ARTIFACTS,
     RecoveryToolingError,
-    authenticate_encrypted_artifact,
     build_backup_manifest,
     canonical_json_bytes,
     decrypt_json,
@@ -20,8 +19,11 @@ from recovery_tooling import (
     load_json,
     read_passphrase_fd,
     require_private_backup_directory,
-    sha256_file,
+    require_exact_inventory,
+    measure_decrypted_artifact,
+    sha256_bytes,
     validate_encryption_packet_profile,
+    verify_backup_set,
 )
 
 
@@ -51,6 +53,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    output: Path | None = None
+    output_created = False
+    completed = False
     try:
         backup_dir = require_private_backup_directory(args.backup_dir)
         metadata = load_json(args.metadata, require_private=True)
@@ -61,33 +66,56 @@ def main() -> int:
             "classification-source": load_json(args.classification_source, require_private=True),
             "classification-manifest": load_json(args.classification_manifest, require_private=True),
         }
-        manifest = build_backup_manifest(metadata, backup_dir, contracts, policy)
         passphrase = read_passphrase_fd(args.passphrase_fd)
         try:
+            plaintext_artifacts = {}
             for artifact_name in REQUIRED_ENCRYPTED_ARTIFACTS:
                 validate_encryption_packet_profile(backup_dir / artifact_name)
+                plaintext_artifacts[artifact_name] = measure_decrypted_artifact(
+                    backup_dir / artifact_name,
+                    passphrase,
+                )
             for artifact_name, kind in CONTRACT_ARTIFACTS.items():
                 encrypted_contract = decrypt_json(backup_dir / artifact_name, passphrase)
                 if canonical_json_bytes(encrypted_contract) != canonical_json_bytes(contracts[kind]):
                     raise RecoveryToolingError(
                         "Encrypted recovery contract does not match its reviewed plaintext input"
                     )
-            for artifact_name in set(REQUIRED_ENCRYPTED_ARTIFACTS) - set(CONTRACT_ARTIFACTS):
-                authenticate_encrypted_artifact(backup_dir / artifact_name, passphrase)
+                if plaintext_artifacts[artifact_name]["plaintext_sha256"] != sha256_bytes(
+                    canonical_json_bytes(contracts[kind])
+                ):
+                    raise RecoveryToolingError(
+                        "Encrypted recovery contract is not canonical JSON"
+                    )
+            manifest = build_backup_manifest(
+                metadata,
+                backup_dir,
+                contracts,
+                policy,
+                plaintext_artifacts,
+            )
+            require_exact_inventory(backup_dir, include_manifest=False)
             output = backup_dir / BACKUP_MANIFEST_NAME
             encrypt_json(manifest, output, passphrase)
+            output_created = True
+            require_exact_inventory(backup_dir, include_manifest=True)
+            verification = verify_backup_set(backup_dir, passphrase, policy)
         finally:
             passphrase = b""
         print(
             "Encrypted backup manifest created: "
             f"backup_set_id={manifest['backup_set_id']} "
             f"artifacts={len(manifest['artifacts']) + 1} "
-            f"manifest_sha256={sha256_file(output)}"
+            f"manifest_sha256={verification['manifest_sha256']}"
         )
+        completed = True
         return 0
     except RecoveryToolingError as exc:
         print(f"Recovery tooling refused: {exc}", file=sys.stderr)
         return 2
+    finally:
+        if output_created and not completed and output is not None:
+            output.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

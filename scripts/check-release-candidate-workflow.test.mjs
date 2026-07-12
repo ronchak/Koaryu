@@ -38,6 +38,18 @@ test("release-candidate workflow rejects a missing required suite", () => {
   );
 });
 
+test("release-candidate workflow rejects a missing recovery suite", () => {
+  const weakened = workflow.replace(
+    "npm run check:recovery-tooling",
+    "npm run omitted-recovery-check",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /npm run check:recovery-tooling/,
+  );
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 

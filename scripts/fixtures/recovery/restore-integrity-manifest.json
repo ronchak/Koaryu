@@ -2,7 +2,49 @@
   "schema_version": 1,
   "backup_set_id": "koaryu-fixture-20260712",
   "captured_at": "2026-07-12T12:00:00Z",
-  "database_snapshot_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "database_snapshot_digest": "sha256:d7fd78b052f2168fcdca17d13096b7af78c963ee50690338943ccc701fddc550",
+  "evidence_scope": {
+    "assurance": "operator_attested_partial",
+    "digest_algorithm": "canonical-json-sha256-v1",
+    "unverified_until_restore": [
+      "catalog_digests",
+      "migration_history_row_semantics",
+      "storage_object_inventory_and_bytes",
+      "table_row_counts_and_primary_key_sets"
+    ]
+  },
+  "snapshot_artifacts": [
+    {
+      "name": "roles.sql.gpg",
+      "plaintext_size_bytes": 1,
+      "plaintext_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "schema.sql.gpg",
+      "plaintext_size_bytes": 1,
+      "plaintext_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "data.sql.gpg",
+      "plaintext_size_bytes": 1,
+      "plaintext_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "migration-history-schema.sql.gpg",
+      "plaintext_size_bytes": 1,
+      "plaintext_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "migration-history-data.sql.gpg",
+      "plaintext_size_bytes": 1,
+      "plaintext_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "storage-objects.tar.gpg",
+      "plaintext_size_bytes": 1,
+      "plaintext_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
   "migration_history": {
     "row_count": 82,
     "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -45,7 +87,7 @@
         "object_count": 0,
         "object_path_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
         "object_bytes_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-        "configuration_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        "configuration_digest": "sha256:1dd8b317b1813b938bb8f58bbaf900d28d0b7997ad36381ddd49727972f3a103"
       }
     ]
   }

@@ -9,6 +9,8 @@
     "backup_set_id",
     "captured_at",
     "database_snapshot_digest",
+    "evidence_scope",
+    "snapshot_artifacts",
     "migration_history",
     "tables",
     "catalog",
@@ -19,6 +21,21 @@
     "backup_set_id": { "$ref": "#/$defs/backupSetId" },
     "captured_at": { "type": "string", "format": "date-time" },
     "database_snapshot_digest": { "$ref": "#/$defs/sha256" },
+    "evidence_scope": { "$ref": "#/$defs/evidenceScope" },
+    "snapshot_artifacts": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/snapshotArtifact" },
+      "allOf": [
+        { "contains": { "properties": { "name": { "const": "roles.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "schema.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "data.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "migration-history-schema.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "migration-history-data.sql.gpg" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "storage-objects.tar.gpg" } }, "required": ["name"] } }
+      ]
+    },
     "migration_history": { "$ref": "#/$defs/migrationHistory" },
     "tables": {
       "type": "array",
@@ -32,6 +49,43 @@
     "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
     "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "evidenceScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assurance", "digest_algorithm", "unverified_until_restore"],
+      "properties": {
+        "assurance": { "const": "operator_attested_partial" },
+        "digest_algorithm": { "const": "canonical-json-sha256-v1" },
+        "unverified_until_restore": {
+          "type": "array",
+          "const": [
+            "catalog_digests",
+            "migration_history_row_semantics",
+            "storage_object_inventory_and_bytes",
+            "table_row_counts_and_primary_key_sets"
+          ]
+        }
+      }
+    },
+    "snapshotArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "plaintext_size_bytes", "plaintext_sha256"],
+      "properties": {
+        "name": {
+          "enum": [
+            "roles.sql.gpg",
+            "schema.sql.gpg",
+            "data.sql.gpg",
+            "migration-history-schema.sql.gpg",
+            "migration-history-data.sql.gpg",
+            "storage-objects.tar.gpg"
+          ]
+        },
+        "plaintext_size_bytes": { "type": "integer", "minimum": 1 },
+        "plaintext_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
     "safeIdList": {
       "type": "array",
       "uniqueItems": true,

@@ -4,7 +4,7 @@
   "source": {
     "project_ref": "abcdefghijklmnopqrst",
     "captured_at": "2026-07-12T12:00:00Z",
-    "database_snapshot_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "database_snapshot_digest": "sha256:d7fd78b052f2168fcdca17d13096b7af78c963ee50690338943ccc701fddc550",
     "application_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "repository_migration_head": "20260711215000_harden_function_execution_boundaries.sql",
     "remote_migration_history_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -16,7 +16,11 @@
   },
   "encryption": {
     "scheme": "gpg-aes256-ocb",
-    "key_id": "fixture-recovery-key-v1"
+    "key_id": "fixture-recovery-key-v1",
+    "s2k_mode": 3,
+    "s2k_digest": "SHA512",
+    "s2k_count": 65011712,
+    "aead_chunk_size": 22
   },
   "retention_class": "fixture-only"
 }

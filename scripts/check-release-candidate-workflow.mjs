@@ -22,6 +22,12 @@ const requiredSnippets = [
   'gitleaks git --redact --verbose --exit-code 1 --log-opts="--all"',
   "gitleaks dir . --redact --verbose --exit-code 1",
   "github/codeql-action/analyze@v4",
+  "runs-on: ubuntu-24.04",
+  "npm ci --ignore-scripts",
+  "GNUPG_PACKAGE_VERSION: 2.4.4-2ubuntu17.4",
+  "SHELLCHECK_PACKAGE_VERSION: 0.9.0-1",
+  "sudo apt-get install --yes --no-install-recommends",
+  "npm run check:recovery-tooling",
   "npm run check:env-examples",
   "npm run audit:support-privacy",
 ];

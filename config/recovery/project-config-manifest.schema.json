@@ -9,6 +9,7 @@
     "backup_set_id",
     "captured_at",
     "source_project_ref",
+    "evidence_scope",
     "auth",
     "api_keys",
     "data_api",
@@ -21,6 +22,7 @@
     "backup_set_id": { "$ref": "#/$defs/backupSetId" },
     "captured_at": { "type": "string", "format": "date-time" },
     "source_project_ref": { "type": "string", "pattern": "^[a-z]{20}$" },
+    "evidence_scope": { "$ref": "#/$defs/evidenceScope" },
     "auth": { "$ref": "#/$defs/auth" },
     "api_keys": { "$ref": "#/$defs/apiKeys" },
     "data_api": { "$ref": "#/$defs/dataApi" },
@@ -32,6 +34,43 @@
     "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
     "backupSetId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$" },
+    "evidenceScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assurance", "captured_surfaces", "manual_reconfiguration_required"],
+      "properties": {
+        "assurance": { "const": "operator_attested_partial" },
+        "captured_surfaces": {
+          "type": "array",
+          "const": [
+            "api_key_posture",
+            "auth_core_security",
+            "data_api_schema_and_grants",
+            "integration_mode_posture",
+            "realtime_publications",
+            "storage_bucket_configuration"
+          ]
+        },
+        "manual_reconfiguration_required": {
+          "type": "array",
+          "const": [
+            "auth_external_providers_and_oauth_credentials",
+            "auth_hooks",
+            "auth_smtp_sms_and_message_templates",
+            "custom_domains",
+            "database_network_pooler_and_ssl_settings",
+            "edge_function_code_secrets_and_schedules",
+            "logging_alerting_and_drains",
+            "provider_plan_backups_and_pitr",
+            "realtime_limits",
+            "runtime_deployment_environment",
+            "storage_s3_and_image_transformation_settings",
+            "stripe_credentials_webhook_secrets_and_dashboard_configuration",
+            "vault_secrets"
+          ]
+        }
+      }
+    },
     "auth": {
       "type": "object",
       "additionalProperties": false,
