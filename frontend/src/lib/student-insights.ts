@@ -1,11 +1,20 @@
 import type { AttendanceRecord, ClassSession, Student } from "@/types";
-import { differenceInLocalDateKeys, toLocalDateKey } from "./date";
+import { differenceInLocalDateKeys, toLocalDateKey } from "./date.ts";
 
 export interface StudentInactivityRow {
   student: Student;
   daysInactive: number;
   lastAttendanceDate?: string;
   referenceDate: string;
+}
+
+export function formatInactivityDaysForRange(
+  row: StudentInactivityRow,
+  inactivityThreshold: number
+) {
+  return row.daysInactive <= inactivityThreshold
+    ? String(row.daysInactive)
+    : `${inactivityThreshold}+`;
 }
 
 export function todayDateString() {

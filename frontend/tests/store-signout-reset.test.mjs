@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import { isLiveAuthRequestCurrent } from "../src/lib/store-bootstrap-model.ts";
 import {
+  buildSubscriptionAccessRestoreState,
   applyLiveStudioDataResetRefs,
   buildSignedOutStudioResetState,
   buildSubscriptionRequiredStudioResetState,
@@ -11,6 +12,23 @@ import {
 } from "../src/lib/store-reset-model.ts";
 
 describe("store auth reset model", () => {
+  it("returns every gated dataset to loading when subscription access is restored", () => {
+    assert.deepEqual(buildSubscriptionAccessRestoreState(), {
+      subscriptionRequired: false,
+      staffLoaded: false,
+      staffLoadError: null,
+      programsLoaded: false,
+      programsLoadError: null,
+      dashboardSummary: null,
+      dashboardSummaryLoaded: false,
+      studentsLoaded: false,
+      studentsLoadError: null,
+      leadsLoaded: false,
+      leadsLoadError: null,
+      scheduleLoadError: null,
+      scheduleStatus: "idle",
+    });
+  });
   it("clears every live studio cache for a signed-out session", () => {
     const reset = buildSignedOutStudioResetState();
 
@@ -26,6 +44,10 @@ describe("store auth reset model", () => {
     assert.equal(reset.studentsLoadError, null);
     assert.equal(reset.studentsLastLoadedAt, null);
     assert.equal(reset.studentsMayBePartial, false);
+    assert.equal(reset.leadsLoaded, false);
+    assert.equal(reset.leadsLoadError, null);
+    assert.equal(reset.scheduleStatus, "idle");
+    assert.equal(reset.scheduleLoadError, null);
     assert.equal(reset.currentLadderId, null);
     assert.equal(reset.ladderName, "");
     assert.equal(reset.subRankTerm, "Stripe");

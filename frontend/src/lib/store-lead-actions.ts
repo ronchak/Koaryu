@@ -6,6 +6,7 @@ import {
   buildPreviewLead,
   buildPreviewLeadConversion,
 } from "@/lib/lead-store-model";
+import { refreshLiveLeadDataset } from "@/lib/store-lead-refresh-model";
 import { localId } from "@/lib/store-storage";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { Lead, Program, Student } from "@/types";
@@ -19,6 +20,8 @@ interface UseStoreLeadActionsOptions {
   programsRef: StoreRef<Program[]>;
   refreshStudents: () => Promise<Student[]>;
   setLeads: Dispatch<SetStateAction<Lead[]>>;
+  setLeadsLoaded: Dispatch<SetStateAction<boolean>>;
+  setLeadsLoadError: Dispatch<SetStateAction<string | null>>;
   studentsRef: StoreRef<Student[]>;
 }
 
@@ -31,6 +34,8 @@ export function useStoreLeadActions({
   programsRef,
   refreshStudents,
   setLeads,
+  setLeadsLoaded,
+  setLeadsLoadError,
   studentsRef,
 }: UseStoreLeadActionsOptions) {
   const addLead = useCallback(async (data: Partial<Lead>) => {
@@ -81,14 +86,21 @@ export function useStoreLeadActions({
       return leadsRef.current;
     }
 
-    const request = beginLiveAuthRequest();
-    const result = await api.get<Lead[]>("/leads", request.token);
-    if (!request.isCurrent()) {
-      return result;
-    }
-    setLeads(result);
-    return result;
-  }, [beginLiveAuthRequest, isPreviewMode, leadsRef, setLeads]);
+    return refreshLiveLeadDataset({
+      beginLiveAuthRequest,
+      fetchLeads: (requestToken) => api.get<Lead[]>("/leads", requestToken),
+      setLeads,
+      setLeadsLoaded,
+      setLeadsLoadError,
+    });
+  }, [
+    beginLiveAuthRequest,
+    isPreviewMode,
+    leadsRef,
+    setLeads,
+    setLeadsLoaded,
+    setLeadsLoadError,
+  ]);
 
   const convertLeadToStudent = useCallback(async (leadId: string) => {
     const lead = leadsRef.current.find((item) => item.id === leadId);

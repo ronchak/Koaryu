@@ -15,6 +15,7 @@ import type {
   PromotionHistoryCache,
   PromotionHistoryRequests,
 } from "@/lib/store-promotion-history";
+import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 
 export const SUBSCRIPTION_REQUIRED_MESSAGE = "Koaryu Core subscription required.";
 
@@ -35,12 +36,16 @@ export interface LiveStudioDataResetState {
   studentsLastLoadedAt: number | null;
   studentsMayBePartial: boolean;
   leads: Lead[];
+  leadsLoaded: boolean;
+  leadsLoadError: string | null;
   beltLadders: BeltLadder[];
   currentLadderId: string | null;
   ladderName: string;
   subRankTerm: string;
   beltRanks: BeltRank[];
   sessions: ClassSession[];
+  scheduleLoadError: string | null;
+  scheduleStatus: DatasetLoadStatus;
   templates: ClassTemplate[];
   attendance: AttendanceRecord[];
   eligibility: EligibilityEntry[];
@@ -112,12 +117,16 @@ export function buildSignedOutStudioResetState(): LiveStudioDataResetState {
     studentsLastLoadedAt: null,
     studentsMayBePartial: false,
     leads: [],
+    leadsLoaded: false,
+    leadsLoadError: null,
     beltLadders: [],
     currentLadderId: null,
     ladderName: "",
     subRankTerm: "Stripe",
     beltRanks: [],
     sessions: [],
+    scheduleLoadError: null,
+    scheduleStatus: "idle",
     templates: [],
     attendance: [],
     eligibility: [],
@@ -138,5 +147,25 @@ export function buildSubscriptionRequiredStudioResetState(): LiveStudioDataReset
     programsLoaded: true,
     programsLoadError: SUBSCRIPTION_REQUIRED_MESSAGE,
     studentsLoadError: SUBSCRIPTION_REQUIRED_MESSAGE,
+    leadsLoaded: true,
+    leadsLoadError: SUBSCRIPTION_REQUIRED_MESSAGE,
+  };
+}
+
+export function buildSubscriptionAccessRestoreState() {
+  return {
+    subscriptionRequired: false,
+    staffLoaded: false,
+    staffLoadError: null,
+    programsLoaded: false,
+    programsLoadError: null,
+    dashboardSummary: null,
+    dashboardSummaryLoaded: false,
+    studentsLoaded: false,
+    studentsLoadError: null,
+    leadsLoaded: false,
+    leadsLoadError: null,
+    scheduleLoadError: null,
+    scheduleStatus: "idle" as const,
   };
 }

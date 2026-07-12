@@ -200,8 +200,8 @@ export function useBillingDataController({
       setPaymentAccount(account);
       if (sync) {
         setMessage(account.charges_enabled ? "Stripe verification is complete." : "Stripe account status updated.");
-        await refreshBilling();
       }
+      await refreshBilling();
     } catch (err) {
       if (!isCurrentRequest(requestId, requestAccess)) {
         return;

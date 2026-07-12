@@ -50,6 +50,31 @@ for (const viewport of [
   });
 }
 
+previewSmokeTest("dataset-specific dashboard pages settle after reload and Connect return", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToPreview(page);
+
+  for (const [path, heading] of [
+    ["/dashboard", "Dashboard"],
+    ["/students", "Students"],
+    ["/billing", "Billing"],
+    ["/reports", "Reports"],
+  ] as const) {
+    await page.goto(`${FRONTEND_URL}${path}`);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expect(page.getByText(/data is unavailable|reports are unavailable/i)).toHaveCount(0);
+  }
+
+  await page.goto(`${FRONTEND_URL}/billing?connect=return`);
+  await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+  await expect(page.getByText("Loading billing...", { exact: true })).toHaveCount(0);
+  expectNoPageErrors(pageErrors);
+});
+
 for (const viewport of [
   { name: "desktop", width: 1280, height: 900 },
   { name: "mobile", width: 390, height: 844 },

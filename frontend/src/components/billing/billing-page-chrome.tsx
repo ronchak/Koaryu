@@ -53,6 +53,7 @@ export function BillingPageFrame({
   onDismissMessage,
   onRefresh,
   setupSteps,
+  showContent,
   showLoading,
 }: {
   activeTab: BillingTab;
@@ -68,6 +69,7 @@ export function BillingPageFrame({
   onDismissMessage: () => void;
   onRefresh: () => void;
   setupSteps: BillingSetupStep[];
+  showContent: boolean;
   showLoading: boolean;
 }) {
   return (
@@ -106,7 +108,7 @@ export function BillingPageFrame({
                 showLoading={showLoading}
               />
 
-              {children}
+              {showContent ? children : null}
 
               <BillingPolicyNote />
             </>

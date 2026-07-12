@@ -20,6 +20,7 @@ export function BillingPageContent({
   onDismissError,
   onDismissMessage,
   onRefresh,
+  showBillingContent,
   showBillingLoading,
   tabContentProps,
 }: BillingPageContentProps) {
@@ -40,6 +41,7 @@ export function BillingPageContent({
         onDismissMessage={onDismissMessage}
         onRefresh={onRefresh}
         setupSteps={billingSetupSteps}
+        showContent={showBillingContent}
         showLoading={showBillingLoading}
       >
         <BillingTabContent {...tabContentProps} />

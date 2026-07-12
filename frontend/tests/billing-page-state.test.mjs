@@ -1,7 +1,92 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { shouldSettleBillingLoadEarly, shouldShowBillingLoading } from "../src/lib/billing-page-state.ts";
+import {
+  getBillingInitialLoadAction,
+  getBillingUrlAfterConnectReturn,
+  resolveBillingAuxiliaryReadiness,
+  shouldSettleBillingLoadEarly,
+  shouldShowBillingLoading,
+} from "../src/lib/billing-page-state.ts";
+
+describe("getBillingInitialLoadAction", () => {
+  it("routes Stripe Connect returns directly to status synchronization", () => {
+    assert.equal(getBillingInitialLoadAction("?connect=return"), "connect-return");
+    assert.equal(getBillingInitialLoadAction("?tab=plans&connect=return"), "connect-return");
+  });
+
+  it("uses the normal billing refresh for unrelated query parameters", () => {
+    assert.equal(getBillingInitialLoadAction(""), "billing");
+    assert.equal(getBillingInitialLoadAction("?connect=cancel"), "billing");
+  });
+});
+
+describe("getBillingUrlAfterConnectReturn", () => {
+  it("removes only the one-time Connect return marker", () => {
+    assert.equal(getBillingUrlAfterConnectReturn("?connect=return"), "/billing");
+    assert.equal(
+      getBillingUrlAfterConnectReturn("?tab=plans&connect=return&notice=1"),
+      "/billing?tab=plans&notice=1"
+    );
+  });
+});
+
+describe("resolveBillingAuxiliaryReadiness", () => {
+  const ready = {
+    activeTab: "overview",
+    bypassForConnectReturn: false,
+    programsLoadError: null,
+    programsLoaded: true,
+    studentsLoadError: null,
+    studentsLoaded: true,
+    studentsMayBePartial: false,
+  };
+
+  it("declares only the dataset consumed by the active billing tab", () => {
+    assert.equal(resolveBillingAuxiliaryReadiness(ready).status, "ready");
+    assert.equal(resolveBillingAuxiliaryReadiness({
+      ...ready,
+      programsLoaded: false,
+    }).status, "ready", "overview does not consume programs");
+    assert.equal(resolveBillingAuxiliaryReadiness({
+      ...ready,
+      studentsLoadError: "Roster timed out",
+    }).status, "error");
+    assert.equal(resolveBillingAuxiliaryReadiness({
+      ...ready,
+      activeTab: "plans",
+      programsLoaded: false,
+      studentsLoadError: "Roster timed out",
+    }).status, "loading", "plans consume programs but not students");
+    assert.equal(resolveBillingAuxiliaryReadiness({
+      ...ready,
+      activeTab: "families",
+      programsLoadError: "Programs failed",
+      programsLoaded: false,
+      studentsLoadError: "Roster failed",
+      studentsLoaded: false,
+    }).status, "ready", "families use billing data only");
+  });
+
+  it("keeps Connect return synchronization independent from auxiliary datasets", () => {
+    assert.deepEqual(resolveBillingAuxiliaryReadiness({
+      ...ready,
+      bypassForConnectReturn: true,
+      programsLoadError: "Programs failed",
+      programsLoaded: false,
+      studentsLoadError: "Roster failed",
+      studentsLoaded: false,
+    }), { error: null, status: "ready" });
+
+    assert.equal(resolveBillingAuxiliaryReadiness({
+      ...ready,
+      activeTab: "plans",
+      bypassForConnectReturn: false,
+      programsLoadError: "Programs failed",
+      programsLoaded: false,
+    }).status, "error", "tab readiness resumes after Connect synchronization");
+  });
+});
 
 describe("shouldShowBillingLoading", () => {
   it("shows loading while a live billing load is active before account data exists", () => {
