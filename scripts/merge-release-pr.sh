@@ -83,7 +83,7 @@ validate_render_provider_control() {
     and (if has("autoDeployTrigger") then .autoDeployTrigger == "off" else true end)
   ' <<<"$service")"
 
-  if [[ "$service_id" != "$render_service_id" || "$service_name" != "koaryu" ]]; then
+  if [[ "$service_id" != "$render_service_id" || "$service_name" != "Koaryu" ]]; then
     echo "Refusing merge: Render readback does not identify the pinned koaryu production service." >&2
     exit 1
   fi

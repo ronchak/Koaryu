@@ -48,7 +48,7 @@ function validPullRequest() {
 function validRenderService() {
   return {
     id: "srv-d7mogk1kh4rs73aq6hqg",
-    name: "koaryu",
+    name: "Koaryu",
     branch: "main",
     repo: "https://github.com/ronchak/Koaryu",
     rootDir: "backend",
@@ -180,6 +180,11 @@ for (const [name, options, expectedError] of [
   [
     "wrong Render service",
     { renderPayload: { ...validRenderService(), name: "koaryu-staging" } },
+    /pinned koaryu production service/,
+  ],
+  [
+    "wrong Render service-name casing",
+    { renderPayload: { ...validRenderService(), name: "koaryu" } },
     /pinned koaryu production service/,
   ],
   [
