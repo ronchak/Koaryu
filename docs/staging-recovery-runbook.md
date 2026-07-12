@@ -136,6 +136,17 @@ Use `GET /api/version` on the protected staging frontend and `GET /health/ready`
 
 Aliases and deployment heads are mutable after this timestamp. Use the linked PR and Gate #21 provider evidence for the later exact head; do not treat this time-bounded observation as a perpetual statement of current deployment state.
 
+### 2026-07-12 19:48 UTC acceptance recheck
+
+- PR #53 runtime-control head `d687621eec40c50236b7a0d6ef3ec1d0cdcb59d7` passed every required GitHub, CodeQL, secret-analysis, Supabase replay/contract, frontend/backend, API-contract, and Vercel check.
+- Render staging deployment `dep-d99unqt7vvec7389u6eg` reported `Live` for that exact SHA. `/health/live` and `/health/ready` returned `200` and the exact SHA. CORS returned `200` for the durable staging alias and `400` for `https://koaryu.app`.
+- Vercel staging deployment `dpl_8kgoNDw8erQqzWTHB9sUSxFzdPtK` reported `READY`. The generated branch alias had not advanced automatically, so the alias was explicitly reassigned to this staging deployment. Authenticated `/api/version` then reported the exact SHA; protected proxy health returned `200`, and unauthenticated proxy auth returned `401`.
+- The canonical Stripe test account, publishable key, restricted key, secret key, recurring Core Price, and both staging webhook endpoints were verified as one account boundary. The platform endpoint has six selected events and the connected-accounts endpoint has nineteen. Real disposable platform-subscription and connected-account update events were delivered successfully; Stripe reported no pending webhook delivery, and every synthetic provider object was removed afterward.
+- A disposable synthetic staging user completed password sign-in, direct and protected-proxy authenticated profile reads, a protected-proxy lead create, and direct lead read/update. The lead, activities, audit record, membership, and Auth user were then verified absent. No production-derived identity or row was used.
+- Production Render auto-deploy is `Off` on two authenticated UI readbacks. The guarded merge performs two authenticated API readbacks immediately before merging and refuses a moved PR head/base or any non-green check.
+
+This is acceptance evidence for Gate #21. Recheck the exact final PR head in the provider comments because the evidence-only commit that records this section necessarily changes the commit SHA.
+
 ## Rebuild Clean Staging
 
 1. Create or select a Supabase project that is separate from production. Set `SUPABASE_PROJECT_REF`, `SUPABASE_URL`, and test-mode Stripe variables, then run the guard above.
