@@ -21,6 +21,7 @@ class _StripeV2RequestError(Exception):
 StripeLoader = Callable[[], Any]
 RequestOptionsBuilder = Callable[..., dict[str, str]]
 StripeV2Request = Callable[..., dict[str, Any]]
+MutationAuthorizer = Callable[[str], Any]
 
 
 def stripe_v2_request(
@@ -85,12 +86,14 @@ class StripeConnectGateway:
         request_options: RequestOptionsBuilder,
         stripe_v2_post: StripeV2Request,
         stripe_v2_patch: StripeV2Request,
+        authorize_mutation: MutationAuthorizer,
     ):
         self.settings = settings
         self._stripe = stripe_loader
         self._request_options = request_options
         self._stripe_v2_post = stripe_v2_post
         self._stripe_v2_patch = stripe_v2_patch
+        self._authorize_mutation = authorize_mutation
 
     def create_account(
         self,
@@ -101,6 +104,7 @@ class StripeConnectGateway:
         business_entity_type: str = "company",
         account_generation: int = 1,
     ):
+        self._authorize_mutation("connect_account.create")
         try:
             return self._create_account_v2(
                 studio_id=studio_id,
@@ -121,6 +125,7 @@ class StripeConnectGateway:
         )
 
     def upload_branding_file(self, *, file_path: str, purpose: str) -> str:
+        self._authorize_mutation("connect_branding_file.create")
         stripe = self._stripe()
         path = Path(file_path)
         with path.open("rb") as handle:
@@ -136,6 +141,7 @@ class StripeConnectGateway:
         icon_file_id: Optional[str] = None,
         logo_file_id: Optional[str] = None,
     ) -> Any:
+        self._authorize_mutation("connect_account.branding.update")
         branding = {
             "primary_color": primary_color,
             "secondary_color": secondary_color,
@@ -177,6 +183,7 @@ class StripeConnectGateway:
         refresh_url: str,
         return_url: str,
     ):
+        self._authorize_mutation("connect_onboarding_link.create")
         try:
             return self._stripe_v2_post(
                 "/v2/core/account_links",
@@ -260,6 +267,7 @@ class StripeConnectGateway:
         return f"https://dashboard.stripe.com{mode_segment}"
 
     def _create_legacy_dashboard_login_url(self, *, account_id: str) -> str:
+        self._authorize_mutation("connect_dashboard_login_link.create")
         stripe = self._stripe()
         try:
             link = stripe.Account.create_login_link(account_id)

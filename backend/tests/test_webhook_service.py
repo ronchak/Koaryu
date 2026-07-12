@@ -12,13 +12,26 @@ import stripe
 from fastapi import HTTPException
 
 from app.services.stripe_service import StripeService
+from app.services.stripe_mutation_policy import (
+    LIVE_MUTATIONS_DISABLED_DETAIL,
+    StripeMutationBlocked,
+)
 from app.services.webhook_service import StripeWebhookService
 from tests.fakes.supabase import RpcBackedSupabase
 
 
 class _FakeSupabase(RpcBackedSupabase):
-    def __init__(self, rows):
-        super().__init__({"stripe_events": rows})
+    def __init__(self, rows, *, mapped_account_ids=("acct_1",)):
+        super().__init__({
+            "stripe_events": rows,
+            "studio_payment_accounts": [
+                {
+                    "studio_id": f"studio_{index}",
+                    "stripe_connected_account_id": account_id,
+                }
+                for index, account_id in enumerate(mapped_account_ids, start=1)
+            ],
+        })
 
     def _rpc_claim_stripe_event_for_processing(self, params: dict) -> list[dict]:
         rows = self.tables["stripe_events"]
@@ -81,6 +94,14 @@ class _FakeSupabase(RpcBackedSupabase):
 
 
 class _RpcWebhookSupabase(RpcBackedSupabase):
+    def __init__(self):
+        super().__init__({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+            }],
+        })
+
     def _rpc_claim_stripe_event_for_processing(self, _params: dict) -> list[dict]:
         return [{
                 "claim_status": "claimed",
@@ -133,14 +154,19 @@ class _FakeStripeModule:
 
 
 class _FakeSettings:
+    STRIPE_MODE = "live"
+    LIVE_BILLING_ENABLED = False
+    STRIPE_SECRET_KEY = "sk_live_fixture"
     STRIPE_CONNECT_WEBHOOK_SECRET = "whsec_connect"
     STRIPE_PLATFORM_WEBHOOK_SECRET = "whsec_platform"
 
 
 class WebhookServiceTest(unittest.TestCase):
-    def service(self, rows):
+    def service(self, rows, *, mapped_account_ids=("acct_1",)):
         with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
-            return StripeWebhookService(_FakeSupabase(rows))
+            return StripeWebhookService(
+                _FakeSupabase(rows, mapped_account_ids=mapped_account_ids)
+            )
 
     def handle_connect_event(self, rows):
         test_case = self
@@ -185,6 +211,152 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(_FakeBillingService.calls, 1)
         self.assertEqual(rows[0]["processing_status"], "processed")
         self.assertIsNone(rows[0]["processing_token"])
+
+    def test_wrong_mode_event_is_rejected_before_claim_or_storage(self):
+        rows = []
+        service = self.service(rows)
+
+        with self.assertRaises(HTTPException) as raised:
+            service._store_and_process(
+                {
+                    "id": "evt_test_mode",
+                    "account": "acct_1",
+                    "type": "account.updated",
+                    "livemode": False,
+                    "data": {"object": {"id": "acct_1"}},
+                },
+                stripe_account_id="acct_1",
+                processor="connect",
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("STRIPE_MODE", raised.exception.detail)
+        self.assertEqual(rows, [])
+        self.assertEqual(service.supabase.rpc_calls, [])
+
+    def test_missing_livemode_is_rejected_in_test_mode_before_claim_or_storage(self):
+        rows = []
+        service = self.service(rows)
+        service.settings.STRIPE_MODE = "test"
+
+        with self.assertRaises(HTTPException) as raised:
+            service._store_and_process(
+                {
+                    "id": "evt_missing_mode",
+                    "account": "acct_1",
+                    "type": "account.updated",
+                    "data": {"object": {"id": "acct_1"}},
+                },
+                stripe_account_id="acct_1",
+                processor="connect",
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("boolean", raised.exception.detail)
+        self.assertEqual(rows, [])
+        self.assertEqual(service.supabase.rpc_calls, [])
+
+    def test_string_livemode_is_rejected_before_claim_or_storage(self):
+        rows = []
+        service = self.service(rows)
+
+        with self.assertRaises(HTTPException) as raised:
+            service._store_and_process(
+                {
+                    "id": "evt_string_mode",
+                    "account": "acct_1",
+                    "type": "account.updated",
+                    "livemode": "false",
+                    "data": {"object": {"id": "acct_1"}},
+                },
+                stripe_account_id="acct_1",
+                processor="connect",
+            )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("boolean", raised.exception.detail)
+        self.assertEqual(rows, [])
+        self.assertEqual(service.supabase.rpc_calls, [])
+
+    def test_key_mode_mismatch_is_rejected_before_claim_or_storage(self):
+        rows = []
+        service = self.service(rows)
+        service.settings.STRIPE_SECRET_KEY = "sk_test_fixture"
+
+        with self.assertRaises(HTTPException) as raised:
+            service._store_and_process(
+                {
+                    "id": "evt_mismatched_configuration",
+                    "account": "acct_1",
+                    "type": "account.updated",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_1"}},
+                },
+                stripe_account_id="acct_1",
+                processor="connect",
+            )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("matching STRIPE_MODE", raised.exception.detail)
+        self.assertEqual(rows, [])
+        self.assertEqual(service.supabase.rpc_calls, [])
+
+    def test_unmapped_live_connect_event_retries_and_processes_after_mapping(self):
+        rows = []
+        service = self.service(rows, mapped_account_ids=())
+        _FakeBillingService.calls = 0
+
+        with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+            with self.assertRaises(HTTPException) as raised:
+                service._store_and_process(
+                    {
+                        "id": "evt_unmapped_live",
+                        "account": "acct_unmapped",
+                        "type": "invoice.paid",
+                        "livemode": True,
+                        "data": {"object": {"id": "in_1"}},
+                    },
+                    stripe_account_id="acct_unmapped",
+                    processor="connect",
+                )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(raised.exception.headers["Retry-After"], "60")
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["processing_status"], "failed")
+        self.assertEqual(rows[0]["error"], "unmapped_live_connect_account")
+
+        service.supabase.tables["studio_payment_accounts"].append({
+            "studio_id": "studio_mapped",
+            "stripe_connected_account_id": "acct_unmapped",
+        })
+        with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+            result = service._store_and_process(
+                {
+                    "id": "evt_unmapped_live",
+                    "account": "acct_unmapped",
+                    "type": "invoice.paid",
+                    "livemode": True,
+                    "data": {"object": {"id": "in_1"}},
+                },
+                stripe_account_id="acct_unmapped",
+                processor="connect",
+            )
+
+        self.assertEqual(result.status, "processed")
+        self.assertEqual(_FakeBillingService.calls, 1)
+        self.assertEqual(rows[0]["processing_status"], "processed")
+        self.assertIsNone(rows[0]["error"])
+
+    def test_matching_live_connect_event_projects_while_live_mutations_are_closed(self):
+        rows = []
+        _FakeBillingService.calls = 0
+
+        result = self.handle_connect_event(rows)
+
+        self.assertFalse(_FakeSettings.LIVE_BILLING_ENABLED)
+        self.assertEqual(result.status, "processed")
+        self.assertEqual(_FakeBillingService.calls, 1)
 
     def test_processed_duplicate_returns_already_processed_without_projection(self):
         rows = [{
@@ -281,6 +453,39 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["processing_status"], "failed")
         self.assertEqual(rows[0]["error"], "unexpected_processing_error")
         self.assertNotIn("raw provider secret detail", rows[0]["error"])
+
+    def test_live_mutation_interlock_keeps_webhook_failed_and_retryable(self):
+        rows = []
+        service = self.service(rows)
+
+        class InterlockedBillingService:
+            def __init__(self, _supabase):
+                pass
+
+            def project_connect_event(self, _event):
+                raise StripeMutationBlocked(
+                    status_code=503,
+                    detail=LIVE_MUTATIONS_DISABLED_DETAIL,
+                )
+
+        with patch("app.services.webhook_service.BillingService", InterlockedBillingService):
+            with self.assertRaises(StripeMutationBlocked) as raised:
+                service._store_and_process(
+                    {
+                        "id": "evt_live_interlocked",
+                        "account": "acct_1",
+                        "type": "checkout.session.completed",
+                        "livemode": True,
+                        "data": {"object": {"id": "cs_1"}},
+                    },
+                    stripe_account_id="acct_1",
+                    processor="connect",
+                )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(rows[0]["processing_status"], "failed")
+        self.assertEqual(rows[0]["error"], "live_mutation_blocked")
+        self.assertIsNone(rows[0]["processing_token"])
 
     def test_connect_webhook_uses_worker_claim_rpc_when_available(self):
         supabase = _RpcWebhookSupabase()

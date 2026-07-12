@@ -24,6 +24,8 @@ export PRODUCTION_REF=mimguepumzsgmcaycdsh
 test "$SUPABASE_PROJECT_REF" = "$EXPECTED_STAGING_REF"
 test "$SUPABASE_PROJECT_REF" != "$PRODUCTION_REF"
 test "$SUPABASE_URL" = "https://${EXPECTED_STAGING_REF}.supabase.co"
+test "${STRIPE_MODE:-}" = "test"
+test "${LIVE_BILLING_ENABLED:-}" = "false"
 
 case "${STRIPE_SECRET_KEY:-}" in
   sk_test_*) ;;
@@ -102,6 +104,8 @@ case "${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}" in
   pk_test_*) ;;
   *) echo "Refusing: staging publishable key is absent or not test mode" >&2; exit 1 ;;
 esac
+test "${STRIPE_MODE:-}" = "test"
+test "${LIVE_BILLING_ENABLED:-}" = "false"
 case "${STRIPE_SECRET_KEY:-}" in
   sk_test_*) ;;
   *) echo "Refusing: staging secret key is absent or not test mode" >&2; exit 1 ;;

@@ -40,7 +40,10 @@ API_V1_PREFIX=/api/v1
 DEMO_RESET_ENABLED=false
 DEMO_RESET_STUDIO_IDS=
 BILLING_PLATFORM_FEE_BPS=50
+STRIPE_MODE=live
+LIVE_BILLING_ENABLED=false
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
+SUPABASE_ALLOW_LEGACY_HS256=false
 ```
 
 Secret values to paste from Supabase or Stripe:
@@ -48,7 +51,6 @@ Secret values to paste from Supabase or Stripe:
 ```env
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_JWT_SECRET=
-SUPABASE_ALLOW_LEGACY_HS256=false
 STRIPE_SECRET_KEY=
 STRIPE_RESTRICTED_KEY=
 STRIPE_PLATFORM_WEBHOOK_SECRET=
@@ -61,6 +63,8 @@ SUPPORT_TRIAGE_SECRET=
 `STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
 
 Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
+
+Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. Keep `LIVE_BILLING_ENABLED=false`. Matching live webhook events continue through signature verification and reconciliation while outbound live Stripe mutations remain closed. Wrong-mode or malformed-mode events are rejected before storage. Live Connect events for an account not mapped to `studio_payment_accounts` are durably marked `unmapped_live_connect_account` without changing product state and return `503` so Stripe keeps retrying until the mapping exists.
 
 ### Hosted Runtime Guard
 
@@ -76,7 +80,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critic
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
-`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. `STRIPE_RESTRICTED_KEY` is optional, but if set it must be a non-placeholder Stripe restricted key. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
+`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
 
 Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures. An unknown or misspelled `ENVIRONMENT` fails closed.
 
@@ -163,6 +167,7 @@ Before tagging or announcing a release:
 ```bash
 cd backend
 ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
+  STRIPE_MODE=live LIVE_BILLING_ENABLED=false \
   SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co \
   SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
   SUPABASE_ALLOW_LEGACY_HS256=false \
@@ -211,7 +216,9 @@ SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
 
 ## Stripe Webhooks
 
-After Render is live, configure Stripe webhook endpoints. Use Stripe test mode first, then repeat in live mode after the same verification checklist passes.
+After Render is live, configure Stripe webhook endpoints in the mode declared by `STRIPE_MODE`. Prove the full workflow in Stripe test mode first. A separately approved live-mode deployment may ingest matching signed live events with outbound writes still closed; do not repeat test mutations in live mode or enable live billing until durable scoped authorization is implemented and reviewed.
+
+Treat a Connect delivery that returns `503` because its account mapping is not ready as an operational quarantine, not a successful ignore. Confirm the Stripe account belongs to the intended studio, complete or repair the normal `studio_payment_accounts.stripe_connected_account_id` mapping, and then let Stripe retry or resend the same event from the Dashboard. Confirm the existing `stripe_events` row becomes `processed` with a cleared error. Never add an account mapping from an unverified event payload, and never acknowledge the delivery with `2xx` merely to clear Stripe's retry queue.
 
 ```txt
 https://koaryu.onrender.com/api/v1/webhooks/stripe/platform
@@ -288,9 +295,9 @@ Copy the CLI-provided `whsec_...` into `backend/.env` as `STRIPE_CONNECT_WEBHOOK
 stripe events resend evt_... --webhook-endpoint we_...
 ```
 
-### Koaryu Payments Rollout Checks
+### Koaryu Payments Test-Mode Rollout Checks
 
-Before enabling live Koaryu Payments for a studio:
+Run these checks only against an isolated Stripe test-mode environment. They do not authorize live payments:
 
 - Confirm `/health` and `/api/v1/health` are green on Render.
 - Confirm the Stripe Dashboard shows successful deliveries to both platform and Connect endpoints.

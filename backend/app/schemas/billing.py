@@ -143,6 +143,9 @@ class BillingWebhookHealthResponse(BaseModel):
 
 class BillingSystemStatusResponse(BaseModel):
     studio_id: str
+    configured_stripe_mode: Optional[Literal["test", "live"]] = None
+    ready_for_configured_mode: bool
+    live_payments_authorized: bool
     ready_for_live_payments: bool
     checked_at: str
     payment_account: StudioPaymentAccountResponse

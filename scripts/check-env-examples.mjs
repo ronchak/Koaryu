@@ -26,6 +26,8 @@ const backendPublicKeys = [
   "ENVIRONMENT",
   "DEMO_RESET_ENABLED",
   "DEMO_RESET_STUDIO_IDS",
+  "STRIPE_MODE",
+  "LIVE_BILLING_ENABLED",
   "BILLING_PLATFORM_FEE_BPS",
   "API_V1_PREFIX",
 ];
@@ -62,6 +64,8 @@ const renderCriticalValues = new Map([
   ["DEMO_RESET_ENABLED", "false"],
   ["DEMO_RESET_STUDIO_IDS", ""],
   ["SUPABASE_ALLOW_LEGACY_HS256", "false"],
+  ["STRIPE_MODE", "live"],
+  ["LIVE_BILLING_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
 

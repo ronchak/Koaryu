@@ -16,6 +16,8 @@ VALID_PRODUCTION_SETTINGS = {
     "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_1234567890abcdefghijklmnopqrstuvwxyz",
     "SUPABASE_JWT_SECRET": "jwt-secret-1234567890abcdefghijklmnopqrstuvwxyz",
     "FRONTEND_URL": "https://koaryu.app",
+    "STRIPE_MODE": "live",
+    "LIVE_BILLING_ENABLED": False,
     "STRIPE_SECRET_KEY": _synthetic_stripe_key("sk"),
     "STRIPE_RESTRICTED_KEY": _synthetic_stripe_key("rk"),
     "STRIPE_PLATFORM_WEBHOOK_SECRET": _synthetic_webhook_secret("platform"),
@@ -31,6 +33,7 @@ VALID_STAGING_SETTINGS = {
     "FRONTEND_URL": (
         "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
     ),
+    "STRIPE_MODE": "test",
     "STRIPE_SECRET_KEY": _synthetic_stripe_key("sk", "test"),
     "STRIPE_RESTRICTED_KEY": _synthetic_stripe_key("rk", "test"),
 }
@@ -148,6 +151,56 @@ class HostedConfigValidationTest(unittest.TestCase):
 
         settings.validate_production_configuration()
 
+    def test_production_rejects_stripe_key_that_does_not_match_declared_mode(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "STRIPE_MODE": "test",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "STRIPE_SECRET_KEY must match STRIPE_MODE"):
+            settings.validate_production_configuration()
+
+    def test_production_rejects_matching_test_mode_and_test_keys(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "STRIPE_MODE": "test",
+                "STRIPE_SECRET_KEY": _synthetic_stripe_key("sk", "test"),
+                "STRIPE_RESTRICTED_KEY": _synthetic_stripe_key("rk", "test"),
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Stripe live secret key in production"):
+            settings.validate_production_configuration()
+
+    def test_production_rejects_restricted_key_that_does_not_match_declared_mode(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "STRIPE_RESTRICTED_KEY": "rk_" + "test_fixture1234567890abcdef",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Stripe live restricted key in production"):
+            settings.validate_production_configuration()
+
+    def test_production_rejects_live_billing_switch_without_durable_authorization(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "LIVE_BILLING_ENABLED": True,
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "durable live mutation authorization"):
+            settings.validate_production_configuration()
+
     def test_production_requires_jwt_secret_only_when_legacy_hs256_is_enabled(self):
         asymmetric_settings = Settings(
             ENVIRONMENT="production",
@@ -204,6 +257,18 @@ class HostedConfigValidationTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "Stripe test"):
+            settings.validate_runtime_configuration()
+
+    def test_staging_rejects_live_stripe_mode(self):
+        settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                "STRIPE_MODE": "live",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "STRIPE_SECRET_KEY must match STRIPE_MODE"):
             settings.validate_runtime_configuration()
 
     def test_staging_rejects_legacy_auth_and_demo_shortcuts(self):

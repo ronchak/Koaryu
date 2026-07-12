@@ -427,6 +427,9 @@ export interface ApiBillingSystemCheck {
 
 export interface ApiBillingSystemStatusResponse {
   studio_id: string;
+  configured_stripe_mode?: "test" | "live" | null;
+  ready_for_configured_mode: boolean;
+  live_payments_authorized: boolean;
   ready_for_live_payments: boolean;
   checked_at: string;
   payment_account: ApiStudioPaymentAccountResponse;

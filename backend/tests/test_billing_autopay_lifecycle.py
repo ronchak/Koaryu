@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from app.services.stripe_mutation_policy import (
+    LIVE_MUTATIONS_DISABLED_DETAIL,
+    StripeMutationBlocked,
+)
 from tests.billing_lifecycle_helpers import (
     BillingInvoiceCreate,
     BillingInvoiceResponse,
@@ -221,6 +225,52 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(payer["billing_status"], "no_payment_method")
         self.assertIsNone(payer.get("autopay_authorized_at"))
         self.assertEqual(payer["metadata"]["autopay_projection_error"]["type"], "RuntimeError")
+
+    def test_checkout_projection_does_not_swallow_live_mutation_interlock(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "display_name": "Rehearsal Payer",
+                "stripe_customer_id": "cus_1",
+                "autopay_status": "pending",
+                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
+                "billing_status": "no_payment_method",
+                "metadata": {},
+            }],
+        })
+
+        class InterlockedStripeService:
+            def retrieve_connected_setup_intent(self, **_payload):
+                return {"id": "seti_1", "payment_method": "pm_123"}
+
+            def set_connected_customer_default_payment_method(self, **_payload):
+                raise StripeMutationBlocked(
+                    status_code=503,
+                    detail=LIVE_MUTATIONS_DISABLED_DETAIL,
+                )
+
+        with patch("app.services.billing_service.StripeService", InterlockedStripeService):
+            with self.assertRaises(StripeMutationBlocked):
+                service._project_checkout_session({
+                    "id": "cs_1",
+                    "customer": "cus_1",
+                    "setup_intent": "seti_1",
+                    "metadata": {
+                        "product": "koaryu_payments_autopay",
+                        "studio_id": "studio_1",
+                        "payer_id": "payer_1",
+                    },
+                }, "acct_1")
+
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertEqual(payer["metadata"], {})
 
     def test_successful_checkout_projection_clears_stale_projection_error_metadata(self):
         service = self.service()
