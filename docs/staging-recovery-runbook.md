@@ -118,13 +118,21 @@ Webhook signing secrets do not encode test/live mode in their prefix. Confirm bo
 
 - Supabase `nxgsektqsgrtyfhawxbc` reported `ACTIVE_HEALTHY` on PostgreSQL 17.
 - Render `GET /api/v1/health` returned `200` after a cold wake. Unauthenticated `GET /api/v1/auth/me` and `GET /api/v1/students` each returned `401`.
-- A CORS preflight from the exact staging frontend alias returned `200` with that alias as `Access-Control-Allow-Origin`; the same preflight from `https://koaryu.app` returned `400 Disallowed CORS origin` without an allow-origin header.
+- A CORS preflight from the then-current temporary protected frontend alias returned `200` with that alias as `Access-Control-Allow-Origin`; the same preflight from `https://koaryu.app` returned `400 Disallowed CORS origin` without an allow-origin header. This was historical evidence for the retired alias, not proof for the durable `staging` alias introduced later.
 - The Vercel staging deployment `dpl_AXrjgCKzsFr6q3V2AKTU3hJjgYTa` is `READY`, protected by Vercel SSO, and built from `b78cb9863e226d17dc242259cf7099e62c6ccfd5`, not the current release-orchestration head. Its branch-scoped configuration proves the staging Supabase URL, matching public/server backend URL, the non-production site alias, live application mode, and sensitive treatment of public Supabase/Stripe keys without printing their values.
 - The gate remains open: Render's deployed Git SHA, backend secret/test-mode classification, both Stripe test-mode webhook destinations and delivery evidence, current application-SHA alignment, proxy smoke behind Vercel SSO, and an authenticated representative application smoke are not yet proven.
 
 Do not infer a provider value from application behavior. Capture Render environment metadata and exact deployed SHA through authenticated provider access, copy the two non-secret Stripe test endpoint URLs into the guard inputs, run the guard, deploy the same current SHA to both services, and then run the protected frontend and authenticated smoke checks.
 
 Use `GET /api/version` on the protected staging frontend and `GET /health/ready` on the staging backend for application-reported SHA evidence. Both endpoints reject malformed provider metadata instead of reflecting it. Reconcile those responses with authenticated Vercel and Render deployment metadata; application responses do not replace provider readback.
+
+### 2026-07-12 durable-alias recheck
+
+- The durable staging alias now points to Vercel preview deployment `dpl_5fW7LGhrUUXv1pDXC71azn4XT6YV`. Authenticated provider metadata reports it `READY`, and its `/api/version` response reports exact candidate `9cfd5123b3e1e28a274432a1fccdbf446739c89b`.
+- The protected frontend proxy reached the staging backend: `/api/proxy/health` returned `200`, while unauthenticated `/api/proxy/auth/me` returned `401`.
+- A fresh direct preflight from the durable staging origin returned `400 Disallowed CORS origin`. The retired temporary origin still returned `200`, and the production origin remained rejected. Render staging is therefore deployed with the old frontend-origin value; prior CORS evidence must not be used for the durable alias.
+- Before exact-candidate staging deployment, authenticated Render access must replace the stale staging frontend-origin value, preserve all other isolated test-only values, and deploy this candidate. The candidate's staging startup validator is designed to reject the stale value rather than boot with it.
+- No Render configuration, production provider state, production data, or billing state was changed during this recheck.
 
 ## Rebuild Clean Staging
 
