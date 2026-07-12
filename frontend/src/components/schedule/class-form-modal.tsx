@@ -35,6 +35,7 @@ export type {
 } from "@/lib/class-form-model";
 
 interface SharedClassFormModalProps {
+  allowRecurring?: boolean;
   open: boolean;
   onClose: () => void;
   isLoading?: boolean;
@@ -113,6 +114,7 @@ function SelectField({
 
 export function ClassFormModal(props: ClassFormModalProps) {
   const {
+    allowRecurring = true,
     open,
     initialValues,
     defaultMode = "weekly",
@@ -120,13 +122,15 @@ export function ClassFormModal(props: ClassFormModalProps) {
 
   if (!open) return null;
 
-  const resetKey = buildClassFormResetKey(initialValues, defaultMode);
+  const permittedDefaultMode = allowRecurring ? defaultMode : "single";
+  const resetKey = buildClassFormResetKey(initialValues, permittedDefaultMode);
 
-  return <ClassFormModalContent key={resetKey} {...props} defaultMode={defaultMode} />;
+  return <ClassFormModalContent key={resetKey} {...props} defaultMode={permittedDefaultMode} />;
 }
 
 function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: ClassFormMode }) {
   const {
+    allowRecurring = true,
     onClose,
     isLoading = false,
     error,
@@ -163,7 +167,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
   }
 
   function handleModeChange(nextMode: ClassFormMode) {
-    if (nextMode === form.mode) return;
+    if (nextMode === form.mode || (nextMode === "weekly" && !allowRecurring)) return;
 
     patchForm(
       buildClassFormModeState(form, nextMode),
@@ -225,7 +229,9 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
             <h2 className="text-base font-semibold text-text-primary">{title}</h2>
-            <p className="text-xs text-muted mt-1">Create either a standing weekly class template or a one-off session.</p>
+            <p className="text-xs text-muted mt-1">
+              {allowRecurring ? "Create a weekly template or a one-off session." : "Create a one-off session."}
+            </p>
           </div>
           <button
             type="button"
@@ -254,8 +260,8 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
               </DismissibleNotice>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
+            <div className={`grid grid-cols-1 gap-3 ${allowRecurring ? "sm:grid-cols-2" : ""}`}>
+              {allowRecurring ? <button
                 type="button"
                 onClick={() => handleModeChange("weekly")}
                 className={`text-left rounded-[8px] border px-4 py-3 transition-colors cursor-pointer ${
@@ -271,7 +277,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
                 <p className="mt-1 text-xs text-text-secondary">
                   Creates a standing weekly class slot staff can rely on.
                 </p>
-              </button>
+              </button> : null}
               <button
                 type="button"
                 onClick={() => handleModeChange("single")}

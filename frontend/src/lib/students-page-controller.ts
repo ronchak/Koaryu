@@ -22,10 +22,12 @@ import {
   type SortKey,
 } from "@/lib/students-page-model";
 import type {
+  ConfigStoreContextValue,
   ProgramsStoreContextValue,
   ScheduleStoreContextValue,
   StudentsStoreContextValue,
 } from "@/lib/store-contexts";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { Student, StudentCreate, StudentStatus } from "@/types";
 
 const STUDENTS_BOOTSTRAP_FRESH_MS = 30_000;
@@ -34,6 +36,7 @@ const STUDENTS_SEARCH_DEBOUNCE_MS = 250;
 const PAGED_STUDENTS_ROSTER_ENABLED = process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false";
 
 type StudentsPageControllerOptions = {
+  config: Pick<ConfigStoreContextValue, "currentRole">;
   programsStore: Pick<
     ProgramsStoreContextValue,
     "programs" | "programsLoadError" | "programsLoaded" | "refreshPrograms"
@@ -70,12 +73,14 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 }
 
 export function useStudentsPageController({
+  config,
   programsStore,
   scheduleStore,
   studentsStore,
 }: StudentsPageControllerOptions) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = programsStore;
   const {
     attendance,
@@ -494,7 +499,7 @@ export function useStudentsPageController({
   }
 
   async function handleDeleteSelected() {
-    if (selectedIds.size === 0) return;
+    if (!canManageRoster || selectedIds.size === 0) return;
 
     setIsDeleting(true);
     setDeleteError(null);
@@ -523,7 +528,7 @@ export function useStudentsPageController({
   }
 
   async function handleAddTags() {
-    if (selectedIds.size === 0) return;
+    if (!canManageRoster || selectedIds.size === 0) return;
 
     const tags = parseBulkTagsInput(tagInput);
 
@@ -567,7 +572,7 @@ export function useStudentsPageController({
   }
 
   async function handleBulkStatusUpdate() {
-    if (selectedIds.size === 0) return;
+    if (!canManageRoster || selectedIds.size === 0) return;
 
     setIsUpdatingStatus(true);
     setBulkActionError(null);
@@ -629,6 +634,7 @@ export function useStudentsPageController({
       allSelected,
       bulkActionError,
       bulkStatus,
+      canManageRoster,
       deleteError,
       filtered,
       fullRosterRequested,
@@ -675,7 +681,9 @@ export function useStudentsPageController({
       onDeleteSelected: handleDeleteSelected,
       onDismissActionMessage: () => setActionMessage(null),
       onDismissRosterQueryNotice: () => router.push("/students"),
-      onImportCsv: () => router.push("/students/import"),
+      onImportCsv: () => {
+        if (canManageRoster) router.push("/students/import");
+      },
       onNextPage: () => {
         setSelectedIds(new Set());
         setActiveBulkPanel(null);

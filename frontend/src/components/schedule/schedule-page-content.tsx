@@ -11,6 +11,7 @@ export function SchedulePageContent({
   actionMessage,
   activeStudents,
   attendanceError,
+  canManageSchedule,
   createClassError,
   currentDate,
   deleteError,
@@ -72,6 +73,7 @@ export function SchedulePageContent({
       />
 
       <ScheduleSessionDetailModal
+        canManageSchedule={canManageSchedule}
         open={Boolean(selectedSession)}
         session={selectedSession}
         students={activeStudents}
@@ -94,13 +96,14 @@ export function SchedulePageContent({
       />
 
       <ClassFormModal
+        allowRecurring={canManageSchedule}
         open={showAddClass}
         onClose={onCloseAddClass}
         isLoading={isCreatingClass}
         error={createClassError}
         onDismissError={onDismissCreateClassError}
         title="Add class"
-        defaultMode="weekly"
+        defaultMode={canManageSchedule ? "weekly" : "single"}
         programs={programs}
         onSubmit={onCreateClass}
       />

@@ -98,6 +98,16 @@ Operator: `Codex release orchestrator`
 - Independent aggregate-only provider readback confirmed final reconciliation history `20260710001153:atomic_recurring_session_materialization|20260710010500:fix_first_occurrence_series_delete`, unchanged earlier-history digest `78:b97b56e3c883c1538cf1a85bd4dfc2ae`, and unchanged function/owner/security/search-path/ACL digest `2:7890f9aa36bb200f08153351f9ae98ab`.
 - Gate #20's history divergence is resolved. This action ran no migration SQL and changed no application, Auth, Storage, tenant, billing, or Stripe record. Live billing remains closed and unknown production records remain untouched.
 
+## Koaryu MVP Candidate Rollback Contract — 2026-07-12
+
+- Candidate identity: the deployable artifact is the exact full PR-head SHA recorded in the implementation PR and provider readbacks. Do not substitute a merge commit or rebuild from a moving branch.
+- Previous production application: Vercel is verified at `692f13a4c7543a937c6fcabd257e05b9ab0b1210`; the same SHA is the latest recorded Render production deployment, but Render must be read back before release because the historical runtime does not expose a commit SHA.
+- Schema compatibility: this candidate adds no migration and requires no database rollback. It uses the existing authoritative `staff_roles` table and existing atomic lead-conversion, promotion, and recurring-session contracts. Removing `status` from the generic billing-enrollment PATCH request is backward compatible for valid callers; lifecycle clients must use the existing named transition routes.
+- Rollback trigger: roll back both applications if exact SHA alignment fails, health/readiness fails, an approved role can no longer complete a supported MVP workflow, a denied role reaches a restricted mutation, generic billing status is accepted, live Stripe mutation is not fail-closed, or an immediate new relevant production error appears.
+- Application rollback: stop promotion, redeploy Render and Vercel to the previous verified application SHA, read both provider SHAs back, then repeat health plus read-only/non-financial authentication, dashboard, roster, schedule, attendance, leads, and billing-page smoke checks.
+- Database action: none. Do not reset, restore, rewrite migration history, delete records, or apply a compensating migration for this application-only rollback.
+- Data and payment boundary: production records, Auth identities, Stripe objects, webhook configuration, and live billing state are not rollback targets and must remain untouched. The verified encrypted copy is recovery evidence, not an application-rollback input.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.

@@ -388,7 +388,6 @@ class StudentBillingEnrollmentUpdate(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     next_bill_on: Optional[str] = Field(default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date"))
-    status: Optional[BillingEnrollmentStatus] = None
 
 
 class StudentBillingEnrollmentResponse(BaseModel):

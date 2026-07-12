@@ -107,6 +107,7 @@ import {
   sortPrograms,
 } from "@/lib/program-store-model";
 import { loadIndependentDataset } from "@/lib/page-dataset-readiness";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 
 export {
   useBeltStore,
@@ -273,13 +274,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       rangeRequestSequence,
     };
 
+    const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
+    const sessionsRequest = hasStaffPermission(currentRole, "manage_schedule")
+      ? api.post<ClassSession[]>(`/schedule/sessions/materialize?${rangeQuery}`, {}, request.token)
+      : api.get<ClassSession[]>(`/schedule/sessions?${rangeQuery}`, request.token);
     const [templatesResult, sessionsResult, attendanceResult] = await Promise.allSettled([
       api.get<ClassTemplate[]>("/schedule/templates", request.token),
-      api.post<ClassSession[]>(
-        `/schedule/sessions/materialize?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
-        {},
-        request.token
-      ),
+      sessionsRequest,
       api.get<AttendanceRecord[]>(
         `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
         request.token
@@ -349,7 +350,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     setScheduleLoadError(null);
     setScheduleStatus("ready");
-  }, [beginLiveAuthRequest]);
+  }, [beginLiveAuthRequest, currentRole]);
 
   const reconcileSchedule = useCallback(async () => {
     const requestToken = tokenRef.current;
@@ -1506,6 +1507,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   } = useStoreScheduleActions({
     attendanceRef,
     beginLiveAuthRequest,
+    currentRole,
     isPreviewMode,
     persistAttendance,
     persistSessions,

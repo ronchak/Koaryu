@@ -13,6 +13,7 @@ export type BeltTrackerTab = "eligibility" | "ladder";
 type BeltTrackerShellProps = {
   actionMessage: string | null;
   beltPrograms: Program[];
+  canConfigureBelts: boolean;
   children: ReactNode;
   dirty: boolean;
   isSwitchingLadder: boolean;
@@ -32,6 +33,7 @@ const TABS: { id: BeltTrackerTab; label: string }[] = [
 export function BeltTrackerShell({
   actionMessage,
   beltPrograms,
+  canConfigureBelts,
   children,
   dirty,
   isSwitchingLadder,
@@ -48,22 +50,22 @@ export function BeltTrackerShell({
         title="Belt Tracker"
         description="Track rank progression and promotion readiness."
       >
-        {tab === "eligibility" ? (
+        {tab === "eligibility" && canConfigureBelts ? (
           <Button variant="secondary" size="sm" onClick={() => onTabChange("ladder")}>
             <Settings className="w-3.5 h-3.5" />
             Configure ranks
           </Button>
-        ) : (
+        ) : tab === "ladder" ? (
           <Button variant="secondary" size="sm" onClick={() => onTabChange("eligibility")}>
             <Award className="w-3.5 h-3.5" />
             View eligibility
           </Button>
-        )}
+        ) : null}
       </Header>
 
       <div className="flex-1 flex flex-col">
         <div className="flex items-center gap-4 px-8 py-3 border-b border-border">
-          {TABS.map((item) => (
+          {TABS.filter((item) => item.id !== "ladder" || canConfigureBelts).map((item) => (
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}

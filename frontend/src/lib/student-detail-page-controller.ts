@@ -14,6 +14,7 @@ import type {
   ProgramsStoreContextValue,
   StudentsStoreContextValue,
 } from "@/lib/store-contexts";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { BeltLadder, Promotion, Student, StudentUpdate } from "@/types";
 
 const EMPTY_PROMOTION_HISTORY: Promotion[] = [];
@@ -23,7 +24,7 @@ type StudentDetailPageControllerOptions = {
     BeltsStoreContextValue,
     "beltLadders" | "loadPromotionHistory" | "promotionHistoryByStudent"
   >;
-  config: Pick<ConfigStoreContextValue, "isPreviewMode" | "token">;
+  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
   programsStore: Pick<ProgramsStoreContextValue, "programs">;
   studentsStore: Pick<
     StudentsStoreContextValue,
@@ -46,6 +47,7 @@ export function useStudentDetailPageController({
   const router = useRouter();
   const id = params.id as string;
   const { isPreviewMode, token } = config;
+  const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
   const {
     deleteStudentPhoto,
     deleteStudents,
@@ -285,6 +287,8 @@ export function useStudentDetailPageController({
   }
 
   async function handleDeleteStudent() {
+    if (!canManageRoster) return;
+
     setIsDeleting(true);
     setDeleteError(null);
 
@@ -331,6 +335,8 @@ export function useStudentDetailPageController({
   }
 
   async function handleDeletePhoto() {
+    if (!canManageRoster) return;
+
     setPhotoError(null);
     setActionMessage(null);
     setIsPhotoSaving(true);
@@ -354,6 +360,7 @@ export function useStudentDetailPageController({
     contentProps: {
       actionMessage,
       beltLoadError,
+      canManageRoster,
       deleteError,
       detail,
       isDeleting,

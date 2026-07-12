@@ -127,11 +127,13 @@ export function StudentRosterLoadError({
 }
 
 export function StudentRosterEmptyState({
+  canManageRoster,
   hasActiveFilters,
   onAddStudent,
   onClearFilters,
   onImportCsv,
 }: {
+  canManageRoster: boolean;
   hasActiveFilters: boolean;
   onAddStudent: () => void;
   onClearFilters: () => void;
@@ -158,10 +160,12 @@ export function StudentRosterEmptyState({
             <UserPlus aria-hidden="true" className="w-3.5 h-3.5" />
             Add student
           </Button>
-          <Button variant="secondary" size="sm" onClick={onImportCsv}>
-            <Upload aria-hidden="true" className="w-3.5 h-3.5" />
-            Import CSV
-          </Button>
+          {canManageRoster ? (
+            <Button variant="secondary" size="sm" onClick={onImportCsv}>
+              <Upload aria-hidden="true" className="w-3.5 h-3.5" />
+              Import CSV
+            </Button>
+          ) : null}
         </div>
       )}
     </div>
@@ -170,6 +174,7 @@ export function StudentRosterEmptyState({
 
 export function StudentRosterTable({
   allSelected,
+  canManageRoster,
   filtered,
   handleSort,
   inactivityByStudentId,
@@ -183,6 +188,7 @@ export function StudentRosterTable({
   toggleSelectAll,
 }: {
   allSelected: boolean;
+  canManageRoster: boolean;
   filtered: StudentRosterRow[];
   handleSort: (key: SortKey) => void;
   inactivityByStudentId: ReadonlyMap<string, string>;
@@ -199,15 +205,17 @@ export function StudentRosterTable({
     <table className="w-full text-sm">
       <thead>
         <tr className="border-b border-border">
-          <th className="w-10 px-4 py-3">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleSelectAll}
-              aria-label={allSelected ? "Deselect all visible students" : "Select all visible students"}
-              className="accent-[var(--accent)] cursor-pointer"
-            />
-          </th>
+          {canManageRoster ? (
+            <th className="w-10 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                aria-label={allSelected ? "Deselect all visible students" : "Select all visible students"}
+                className="accent-[var(--accent)] cursor-pointer"
+              />
+            </th>
+          ) : null}
           <th
             aria-sort={getSortState("name", sortKey, sortDir)}
             className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
@@ -282,22 +290,24 @@ export function StudentRosterTable({
                 hover:bg-surface-raised
               `}
             >
-              <td
-                className="px-4 py-3"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleSelect(student.id);
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onClick={stopStudentSelectionPropagation}
-                  onChange={() => toggleSelect(student.id)}
-                  aria-label={isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
-                  className="accent-[var(--accent)] cursor-pointer"
-                />
-              </td>
+              {canManageRoster ? (
+                <td
+                  className="px-4 py-3"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelect(student.id);
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onClick={stopStudentSelectionPropagation}
+                    onChange={() => toggleSelect(student.id)}
+                    aria-label={isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
+                    className="accent-[var(--accent)] cursor-pointer"
+                  />
+                </td>
+              ) : null}
               <td className="px-4 py-3">
                 <button
                   type="button"

@@ -20,6 +20,7 @@ from app.schemas.billing import (
     PlatformPortalRequest,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentForStudentCreate,
+    StudentBillingEnrollmentUpdate,
 )
 
 
@@ -120,6 +121,14 @@ class BillingRequestSchemaTest(unittest.TestCase):
 
         self.assertEqual(enrollment.billing_plan_id, "plan_1")
         self.assertIsNone(enrollment.payer_id)
+
+    def test_enrollment_update_rejects_lifecycle_status_and_unknown_fields(self):
+        for field_name, value in (("status", "paused"), ("unexpected", True)):
+            with self.subTest(field_name=field_name):
+                with self.assertRaises(ValidationError) as context:
+                    StudentBillingEnrollmentUpdate.model_validate({field_name: value})
+
+                self.assertIn("Extra inputs are not permitted", str(context.exception))
 
     def test_external_payment_requires_positive_amount(self):
         with self.assertRaises(ValidationError) as context:

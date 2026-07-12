@@ -19,13 +19,16 @@ import {
 } from "@/lib/schedule-page-model";
 import type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 import type {
+  ConfigStoreContextValue,
   ProgramsStoreContextValue,
   ScheduleStoreContextValue,
   StudentsStoreContextValue,
 } from "@/lib/store-contexts";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { ClassSession } from "@/types";
 
 type SchedulePageControllerOptions = {
+  config: Pick<ConfigStoreContextValue, "currentRole">;
   programsStore: Pick<ProgramsStoreContextValue, "programs">;
   scheduleStore: Pick<
     ScheduleStoreContextValue,
@@ -46,10 +49,12 @@ type SchedulePageControllerOptions = {
 };
 
 export function useSchedulePageController({
+  config,
   programsStore,
   scheduleStore,
   studentsStore,
 }: SchedulePageControllerOptions) {
+  const canManageSchedule = hasStaffPermission(config.currentRole, "manage_schedule");
   const { refreshStudents, students, studentsLoaded, studentsMayBePartial } = studentsStore;
   const { programs } = programsStore;
   const {
@@ -154,6 +159,8 @@ export function useSchedulePageController({
   }
 
   async function handleCreateClass(payload: ClassFormSubmitPayload) {
+    if (payload.kind === "weekly_template" && !canManageSchedule) return;
+
     setCreateClassError(null);
     setIsCreatingClass(true);
 
@@ -212,7 +219,7 @@ export function useSchedulePageController({
   }
 
   async function handleDeleteSelectedSession(scope: ScheduleSessionDeleteScope) {
-    if (!selectedSession) {
+    if (!canManageSchedule || !selectedSession) {
       return;
     }
 
@@ -276,6 +283,7 @@ export function useSchedulePageController({
       actionMessage,
       activeStudents,
       attendanceError,
+      canManageSchedule,
       createClassError,
       currentDate,
       deleteError,
@@ -302,7 +310,7 @@ export function useSchedulePageController({
       templates,
       view,
       onCreateClass: handleCreateClass,
-      onDeleteSelectedSeries: selectedSession?.template_id
+      onDeleteSelectedSeries: canManageSchedule && selectedSession?.template_id
         ? async () => {
             await handleDeleteSelectedSession("series");
           }

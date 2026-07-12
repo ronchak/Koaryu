@@ -14,7 +14,7 @@ import { useConfigStore, useLeadStore, useProgramStore } from "@/lib/store";
 import { UserPlus } from "lucide-react";
 
 export default function LeadsPage() {
-  const { isPreviewMode, token } = useConfigStore();
+  const { currentRole, isPreviewMode, token } = useConfigStore();
   const { programs } = useProgramStore();
   const {
     leads: baseLeads,
@@ -27,6 +27,7 @@ export default function LeadsPage() {
     addLead,
     baseLeads,
     convertLeadToStudent,
+    currentRole,
     isPreviewMode,
     programs,
     today,
@@ -104,6 +105,7 @@ export default function LeadsPage() {
         />
 
         <LeadPipelineBoard
+          canConvertLeads={controller.canConvertLeads}
           draggedLeadId={controller.draggedLead}
           draggedLeadRecord={draggedLeadRecord}
           dropTargetStage={controller.dropTargetStage}
@@ -132,6 +134,7 @@ export default function LeadsPage() {
 
       {selectedLead && (
         <LeadDetailModal
+          canConvertLeads={controller.canConvertLeads}
           followUpValue={controller.getFollowUpInputValue(selectedLead)}
           lead={selectedLead}
           leadActionError={controller.leadActionError}

@@ -101,6 +101,7 @@ export function StudentRosterNotices({
 
 export function StudentRosterToolbar({
   activeBulkPanel,
+  canManageRoster,
   isRosterRefreshing,
   onProgramFilterChange,
   onSearchChange,
@@ -113,6 +114,7 @@ export function StudentRosterToolbar({
   statusFilter,
 }: {
   activeBulkPanel: StudentRosterBulkPanel | null;
+  canManageRoster: boolean;
   isRosterRefreshing: boolean;
   onProgramFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
@@ -169,7 +171,7 @@ export function StudentRosterToolbar({
         <span className="text-xs text-muted">Updating roster…</span>
       ) : null}
 
-      {selectedCount > 0 ? (
+      {canManageRoster && selectedCount > 0 ? (
         <div className="flex items-center gap-2 ml-auto px-3 py-1.5 bg-surface-raised border border-border rounded-[6px]">
           <span className="text-xs text-text-secondary">
             {selectedCount} selected

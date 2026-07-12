@@ -15,6 +15,7 @@ import type { Lead, LeadStage, Program } from "@/types";
 import { Calendar, GripVertical } from "lucide-react";
 
 interface LeadPipelineBoardProps {
+  canConvertLeads: boolean;
   draggedLeadId: string | null;
   draggedLeadRecord: Lead | null;
   dropTargetStage: LeadStage | null;
@@ -45,6 +46,7 @@ interface LeadPipelineBoardProps {
 }
 
 export function LeadPipelineBoard({
+  canConvertLeads,
   draggedLeadId,
   draggedLeadRecord,
   dropTargetStage,
@@ -68,7 +70,8 @@ export function LeadPipelineBoard({
           const stageLeads = leadsByStage[stage.id] || [];
           const canDropIntoStage =
             draggedLeadRecord?.stage !== undefined &&
-            draggedLeadRecord.stage !== stage.id;
+            draggedLeadRecord.stage !== stage.id &&
+            (stage.id !== "enrolled" || canConvertLeads);
           const isDropActive = canDropIntoStage && dropTargetStage === stage.id;
 
           return (

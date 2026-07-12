@@ -17,6 +17,7 @@ BILLING_STATUS_UNAVAILABLE_DETAIL = {
 }
 MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environment."
 STAFF_ROLE_MEMBERSHIP_COLUMNS = "studio_id, role, created_at"
+STUDIO_SELECTION_REQUIRED_DETAIL = "Select a studio before making this change."
 
 
 def ensure_studio_record(
@@ -178,6 +179,7 @@ def resolve_optional_staff_role_for_user(
     *,
     user_email: Optional[str] = None,
     require_platform_subscription: bool = False,
+    require_explicit_studio_selection: bool = False,
 ) -> Optional[dict]:
     """
     Resolve the authenticated user's authoritative studio membership.
@@ -208,6 +210,12 @@ def resolve_optional_staff_role_for_user(
     if not roles:
         return None
 
+    if require_explicit_studio_selection and len(roles) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=STUDIO_SELECTION_REQUIRED_DETAIL,
+        )
+
     # Preserve a deterministic default for sessions that do not yet carry
     # explicit studio selection. Prefer the most recently created membership,
     # which matches the latest studio a user just onboarded into more often
@@ -226,12 +234,14 @@ def resolve_staff_role_for_user(
     requested_studio_id: Optional[str] = None,
     *,
     require_platform_subscription: bool = False,
+    require_explicit_studio_selection: bool = False,
 ) -> dict:
     membership = resolve_optional_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
         require_platform_subscription=require_platform_subscription,
+        require_explicit_studio_selection=require_explicit_studio_selection,
     )
 
     if membership is None:
@@ -241,6 +251,134 @@ def resolve_staff_role_for_user(
         )
 
     return membership
+
+
+def resolve_write_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+        require_explicit_studio_selection=True,
+    )
+
+
+def _resolve_write_staff_role_for_allowed_roles(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str],
+    *,
+    allowed_roles: set[str],
+    detail: str,
+    require_platform_subscription: bool = False,
+) -> dict:
+    membership = resolve_write_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+    )
+
+    if membership.get("role") not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=detail,
+        )
+
+    if require_platform_subscription:
+        ensure_platform_subscription_access(supabase, membership["studio_id"])
+
+    return membership
+
+
+def resolve_roster_schedule_manager_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return _resolve_write_staff_role_for_allowed_roles(
+        supabase,
+        user_id,
+        requested_studio_id,
+        allowed_roles={"admin", "front_desk"},
+        detail="Only studio admins and front desk staff can perform roster or schedule bulk and deletion actions.",
+        require_platform_subscription=require_platform_subscription,
+    )
+
+
+def resolve_belt_configuration_admin_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return _resolve_write_staff_role_for_allowed_roles(
+        supabase,
+        user_id,
+        requested_studio_id,
+        allowed_roles={"admin"},
+        detail="Only studio admins can manage belt configuration.",
+        require_platform_subscription=require_platform_subscription,
+    )
+
+
+def resolve_promotion_manager_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return _resolve_write_staff_role_for_allowed_roles(
+        supabase,
+        user_id,
+        requested_studio_id,
+        allowed_roles={"admin", "instructor"},
+        detail="Only studio admins and instructors can promote students.",
+        require_platform_subscription=require_platform_subscription,
+    )
+
+
+def resolve_lead_conversion_manager_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return _resolve_write_staff_role_for_allowed_roles(
+        supabase,
+        user_id,
+        requested_studio_id,
+        allowed_roles={"admin", "front_desk"},
+        detail="Only studio admins and front desk staff can convert leads.",
+        require_platform_subscription=require_platform_subscription,
+    )
+
+
+def resolve_billing_admin_write_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return _resolve_write_staff_role_for_allowed_roles(
+        supabase,
+        user_id,
+        requested_studio_id,
+        allowed_roles={"admin"},
+        detail="Only studio admins can manage billing setup.",
+        require_platform_subscription=require_platform_subscription,
+    )
 
 
 def resolve_admin_staff_role_for_user(

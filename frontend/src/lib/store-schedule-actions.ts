@@ -22,6 +22,7 @@ import {
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
@@ -30,6 +31,7 @@ import type {
   ClassSessionDeleteScope,
   ClassTemplate,
   ClassTemplateCreate,
+  StaffRoleName,
 } from "@/types";
 
 const SCHEDULE_ATTENDANCE_BULK_THRESHOLD = 3;
@@ -37,6 +39,7 @@ const SCHEDULE_ATTENDANCE_BULK_THRESHOLD = 3;
 interface UseStoreScheduleActionsOptions {
   attendanceRef: StoreRef<AttendanceRecord[]>;
   beginLiveAuthRequest: BeginLiveAuthRequest;
+  currentRole: StaffRoleName | null;
   isPreviewMode: boolean;
   persistAttendance: (next: AttendanceRecord[]) => void;
   persistSessions: (next: ClassSession[]) => void;
@@ -55,6 +58,7 @@ interface UseStoreScheduleActionsOptions {
 export function useStoreScheduleActions({
   attendanceRef,
   beginLiveAuthRequest,
+  currentRole,
   isPreviewMode,
   persistAttendance,
   persistSessions,
@@ -69,6 +73,7 @@ export function useStoreScheduleActions({
   setTemplates,
   templatesRef,
 }: UseStoreScheduleActionsOptions) {
+  const canManageSchedule = hasStaffPermission(currentRole, "manage_schedule");
   const scheduleMutationWaitersRef = useRef(new Set<() => void>());
 
   const releaseScheduleMutationWaiters = useCallback(() => {
@@ -180,11 +185,14 @@ export function useStoreScheduleActions({
         mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
         requestSequenceAtStart: attendanceRequestSequence,
       });
-      const rangeSessions = await api.post<ClassSession[]>(
-        `/schedule/sessions/materialize?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
-        {},
-        request.token
-      );
+      const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
+      const rangeSessions = canManageSchedule
+        ? await api.post<ClassSession[]>(
+            `/schedule/sessions/materialize?${rangeQuery}`,
+            {},
+            request.token
+          )
+        : await api.get<ClassSession[]>(`/schedule/sessions?${rangeQuery}`, request.token);
       const attendanceQuery = rangeSessions.length >= SCHEDULE_ATTENDANCE_BULK_THRESHOLD
         ? `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`
         : `/schedule/attendance?${rangeSessions
@@ -235,6 +243,7 @@ export function useStoreScheduleActions({
     }
   }, [
     beginLiveAuthRequest,
+    canManageSchedule,
     isPreviewMode,
     reconcileSchedule,
     scheduleCoordinatorRef,

@@ -25,6 +25,7 @@ type ImportOptionChangeHandler = <K extends keyof CsvImportOptions>(
 
 type StudentImportPageContentProps = {
   activeImportKey: string | null;
+  canManageRoster: boolean;
   dragOver: boolean;
   errorMessage: string | null;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -57,6 +58,7 @@ type StudentImportPageContentProps = {
 
 export function StudentImportPageContent({
   activeImportKey,
+  canManageRoster,
   dragOver,
   errorMessage,
   fileInputRef,
@@ -87,6 +89,22 @@ export function StudentImportPageContent({
   onViewStudents,
 }: StudentImportPageContentProps) {
   const stageIndex = getStudentImportStageIndex(stage);
+
+  if (!canManageRoster) {
+    return (
+      <>
+        <Header title="Import Students" description="Bulk roster imports are limited by staff role.">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back
+          </Button>
+        </Header>
+        <div className="flex-1 p-8 text-sm text-text-secondary">
+          Only admins and front-desk staff can import students.
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

@@ -3,6 +3,7 @@
 import { useMemo, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import {
   PIPELINE_STAGES,
   buildLeadUpdateSuccessMessage,
@@ -14,7 +15,7 @@ import {
   getStageLabel,
   removeOptimisticLeadUpdate,
 } from "@/lib/leads-page-model";
-import type { Lead, LeadStage, Program } from "@/types";
+import type { Lead, LeadStage, Program, StaffRoleName } from "@/types";
 
 type LeadStoreActions = {
   addLead: (data: Partial<Lead>) => Promise<void>;
@@ -24,6 +25,7 @@ type LeadStoreActions = {
 
 type LeadsPageControllerOptions = LeadStoreActions & {
   baseLeads: Lead[];
+  currentRole: StaffRoleName | null;
   isPreviewMode: boolean;
   programs: Program[];
   today: string;
@@ -34,6 +36,7 @@ export function useLeadsPageController({
   addLead,
   baseLeads,
   convertLeadToStudent,
+  currentRole,
   isPreviewMode,
   programs,
   today,
@@ -41,6 +44,7 @@ export function useLeadsPageController({
   updateLead,
 }: LeadsPageControllerOptions) {
   const router = useRouter();
+  const canConvertLeads = hasStaffPermission(currentRole, "convert_leads");
   const [showAddLead, setShowAddLead] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [showLost, setShowLost] = useState(false);
@@ -124,7 +128,7 @@ export function useLeadsPageController({
   }
 
   function handleStageDragOver(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
-    if (!model.draggedLeadRecord) {
+    if (!model.draggedLeadRecord || (stage === "enrolled" && !canConvertLeads)) {
       return;
     }
 
@@ -148,6 +152,8 @@ export function useLeadsPageController({
   }
 
   async function handleConvertLead(lead: Lead) {
+    if (!canConvertLeads) return;
+
     setLeadActionError(null);
     setPendingLeadId(lead.id);
     const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, {
@@ -224,6 +230,8 @@ export function useLeadsPageController({
   }
 
   async function handleStageSelection(lead: Lead, nextStage: LeadStage) {
+    if (nextStage === "enrolled" && !canConvertLeads) return;
+
     if (nextStage === "enrolled") {
       await handleConvertLead(lead);
       return;
@@ -237,6 +245,11 @@ export function useLeadsPageController({
 
   async function handleDrop(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
     event.preventDefault();
+
+    if (stage === "enrolled" && !canConvertLeads) {
+      clearDragState();
+      return;
+    }
 
     const droppedLeadId = event.dataTransfer.getData("text/plain") || draggedLead;
     if (!droppedLeadId) {
@@ -298,10 +311,12 @@ export function useLeadsPageController({
   }
 
   async function handleMarkContacted(lead: Lead, advanceStage: boolean) {
+    const nextStage = advanceStage ? getNextStage(lead.stage) : null;
+    if (nextStage === "enrolled" && !canConvertLeads) return;
+
     setLeadActionError(null);
     setActionMessage(null);
     setPendingLeadId(lead.id);
-    const nextStage = advanceStage ? getNextStage(lead.stage) : null;
     const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, {
       stage: nextStage ?? lead.stage,
       follow_up_date: null,
@@ -362,6 +377,7 @@ export function useLeadsPageController({
     actionMessage,
     addLeadProgramId,
     addLeadError,
+    canConvertLeads,
     clearDragState,
     clearSelectedLead,
     closeAddLeadModal,
