@@ -9,6 +9,8 @@ import type {
   StudioPaymentAccount,
 } from "@/types";
 
+export const PREVIEW_BILLING_METRICS_AS_OF = new Date("2026-04-15T12:00:00Z");
+
 export const PREVIEW_PLATFORM: PlatformBillingStatus = {
   studio_id: "mock-studio",
   plan_name: "Koaryu Core",

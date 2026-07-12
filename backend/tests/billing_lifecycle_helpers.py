@@ -139,10 +139,12 @@ class _FakeStripeService:
     connected_invoice_item_calls = []
     retrieve_calls = []
     finalize_invoice_calls = []
+    pay_invoice_calls = []
     send_invoice_calls = []
     retrieve_account_response = None
     invoice_response = None
     finalize_invoice_response = None
+    pay_invoice_error_after_call = None
     send_invoice_response = None
     send_invoice_error = None
     subscription_response = None
@@ -163,10 +165,12 @@ class _FakeStripeService:
         cls.connected_invoice_item_calls = []
         cls.retrieve_calls = []
         cls.finalize_invoice_calls = []
+        cls.pay_invoice_calls = []
         cls.send_invoice_calls = []
         cls.retrieve_account_response = None
         cls.invoice_response = None
         cls.finalize_invoice_response = None
+        cls.pay_invoice_error_after_call = None
         cls.send_invoice_response = None
         cls.send_invoice_error = None
         cls.subscription_response = None
@@ -237,6 +241,26 @@ class _FakeStripeService:
             "amount_due": 123,
             "amount_paid": 0,
             "amount_remaining": 123,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
+            "created": 200,
+        }
+
+    def pay_connected_invoice(self, *, account_id: str, invoice_id: str, idempotency_key: str):
+        self.__class__.pay_invoice_calls.append({
+            "account_id": account_id,
+            "invoice_id": invoice_id,
+            "idempotency_key": idempotency_key,
+        })
+        if self.__class__.pay_invoice_error_after_call:
+            raise self.__class__.pay_invoice_error_after_call
+        return self.__class__.invoice_response or {
+            "id": invoice_id,
+            "status": "paid",
+            "amount_due": 123,
+            "amount_paid": 123,
+            "amount_remaining": 0,
             "currency": "usd",
             "customer": "cus_1",
             "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},

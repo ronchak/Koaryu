@@ -84,7 +84,7 @@ export function BillingOverviewTab({
   activeSubscriptionCount,
   billingConnect,
   billingInvoicesLength,
-  billingPaymentsLength,
+  currentMonthPaymentCount,
   billingPeriod,
   billingPlatform,
   canManageKoaryuSubscription,
@@ -102,6 +102,7 @@ export function BillingOverviewTab({
   openBillingLink,
   openInvoiceTotal,
   paidRevenue,
+  paymentCohortAvailable,
   stripePaymentTotal,
   studentsLoaded,
 }: {
@@ -109,7 +110,7 @@ export function BillingOverviewTab({
   activeSubscriptionCount: number;
   billingConnect: StudioPaymentAccount | null;
   billingInvoicesLength: number;
-  billingPaymentsLength: number;
+  currentMonthPaymentCount: number;
   billingPeriod: BillingPeriodCopy;
   billingPlatform: PlatformBillingStatus | null;
   canManageKoaryuSubscription: boolean;
@@ -127,6 +128,7 @@ export function BillingOverviewTab({
   openBillingLink: OpenBillingLink;
   openInvoiceTotal: number;
   paidRevenue: number;
+  paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
   studentsLoaded: boolean;
 }) {
@@ -135,9 +137,11 @@ export function BillingOverviewTab({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <OverviewMetricCard
           icon={Banknote}
-          label="Collected"
-          value={formatMoney(paidRevenue)}
-          helper={`${billingPaymentsLength} payment records this month`}
+          label="UTC-month payment cohort"
+          value={paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable"}
+          helper={paymentCohortAvailable
+            ? `${currentMonthPaymentCount} payments processed this UTC month, net of cumulative refunds`
+            : "Complete UTC-month cohort could not be loaded"}
           tone="success"
         />
         <OverviewMetricCard
@@ -237,11 +241,11 @@ export function BillingOverviewTab({
               <p className="mt-1 text-sm text-text-primary">Studio account</p>
             </div>
             <div>
-              <p className="text-xs text-muted">Stripe revenue</p>
+              <p className="text-xs text-muted">UTC-month Stripe payment cohort</p>
               <p className="mt-1 text-sm text-text-primary">{formatMoney(stripePaymentTotal)}</p>
             </div>
             <div>
-              <p className="text-xs text-muted">External revenue</p>
+              <p className="text-xs text-muted">UTC-month external payment cohort</p>
               <p className="mt-1 text-sm text-text-primary">{formatMoney(externalPaymentTotal)}</p>
             </div>
           </div>

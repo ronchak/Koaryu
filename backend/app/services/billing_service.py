@@ -9,6 +9,7 @@ from app.schemas.billing import (
     BillingInvoiceCreate,
     BillingLinkResponse,
     BillingPaymentResponse,
+    BillingPaymentCohortSummaryResponse,
     BillingPayerCreate,
     BillingPayerAutopaySetupRequest,
     BillingPayerResponse,
@@ -282,11 +283,18 @@ class BillingService(BillingPrivateFacadeMixin):
             actor_id,
         )
 
-    async def retry_invoice_payment(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
+    async def retry_invoice_payment(
+        self,
+        invoice_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> BillingInvoiceResponse:
         return await BillingInvoiceManager(self, stripe_service_cls=StripeService).retry_invoice_payment(
             invoice_id,
             studio_id,
             actor_id,
+            idempotency_key,
         )
 
     async def void_invoice(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
@@ -305,6 +313,15 @@ class BillingService(BillingPrivateFacadeMixin):
 
     async def list_payments(self, studio_id: str) -> list[BillingPaymentResponse]:
         return await BillingPaymentManager(self, stripe_service_cls=StripeService).list_payments(studio_id)
+
+    async def current_month_payment_cohort_summary(
+        self,
+        studio_id: str,
+    ) -> BillingPaymentCohortSummaryResponse:
+        return await BillingPaymentManager(
+            self,
+            stripe_service_cls=StripeService,
+        ).current_month_payment_cohort_summary(studio_id)
 
     async def record_external_payment(
         self,

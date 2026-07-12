@@ -26,6 +26,18 @@ from tests.billing_lifecycle_helpers import (
     timedelta,
     timezone,
 )
+from stripe import CardError as StripeCardError, IdempotencyError as StripeIdempotencyError
+from app.services.billing_invoices import BillingInvoiceManager
+from postgrest.exceptions import APIError as PostgrestAPIError
+
+
+def _unique_conflict() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "23505",
+        "message": "duplicate key value violates unique constraint",
+        "details": "",
+        "hint": "",
+    })
 
 class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
     def test_interval_mapping_for_stripe_prices(self):
@@ -209,6 +221,447 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertRegex(invoice.last_payment_error, r"Reference: [0-9a-f]{32}$")
         self.assertNotIn("req_123", invoice.last_payment_error)
         self.assertNotIn("sk_live", invoice.last_payment_error)
+
+    def test_retry_invoice_payment_requires_request_idempotency_key(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+            }],
+        })
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.retry_invoice_payment("invoice_1", "studio_1", "actor_1"))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("Idempotency-Key", context.exception.detail)
+        self.assertEqual(_FakeStripeService.pay_invoice_calls, [])
+
+    def test_retry_invoice_payment_reuses_stable_stripe_key_after_lost_response(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "invoice_type": "manual",
+                "status": "open",
+                "amount_due_cents": 123,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 123,
+                "currency": "usd",
+                "application_fee_amount_cents": 0,
+                "external": False,
+                "created_at": "2026-05-01T00:00:00Z",
+                "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.pay_invoice_error_after_call = TimeoutError("response lost")
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as ambiguous:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1",
+                    "studio_1",
+                    "actor_1",
+                    "client-operation-1",
+                ))
+            self.assertEqual(ambiguous.exception.status_code, 503)
+            _FakeStripeService.pay_invoice_error_after_call = None
+            invoice = asyncio.run(service.retry_invoice_payment(
+                "invoice_1",
+                "studio_1",
+                "actor_1",
+                "client-operation-1",
+            ))
+
+        self.assertEqual(invoice.id, "invoice_1")
+        self.assertEqual(
+            [call["idempotency_key"] for call in _FakeStripeService.pay_invoice_calls],
+            [
+                "koaryu:invoice-retry:studio_1:invoice_1:client-operation-1",
+                "koaryu:invoice-retry:studio_1:invoice_1:client-operation-1",
+            ],
+        )
+        self.assertEqual(len(service.supabase.tables["audit_logs"]), 1)
+
+    def test_retry_invoice_payment_distinguishes_separate_client_operations(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "invoice_type": "manual",
+                "status": "open",
+                "amount_due_cents": 123,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 123,
+                "currency": "usd",
+                "application_fee_amount_cents": 0,
+                "external": False,
+                "created_at": "2026-05-01T00:00:00Z",
+                "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "client-operation-1"
+            ))
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "client-operation-2"
+            ))
+
+        keys = [call["idempotency_key"] for call in _FakeStripeService.pay_invoice_calls]
+        self.assertEqual(len(keys), 2)
+        self.assertNotEqual(keys[0], keys[1])
+
+    def test_retry_invoice_payment_replay_does_not_duplicate_audit(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1",
+                "stripe_account_id": "acct_1",
+                "invoice_type": "manual",
+                "status": "open",
+                "amount_due_cents": 123,
+                "amount_paid_cents": 0,
+                "amount_remaining_cents": 123,
+                "currency": "usd",
+                "application_fee_amount_cents": 0,
+                "external": False,
+                "created_at": "2026-05-01T00:00:00Z",
+                "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "response-loss-operation"
+            ))
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "response-loss-operation"
+            ))
+
+        self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 1)
+        self.assertEqual(len(service.supabase.tables["audit_logs"]), 1)
+        self.assertEqual(
+            service.supabase.tables["audit_logs"][0]["metadata"]["idempotency_key"],
+            "response-loss-operation",
+        )
+
+    def test_retry_card_decline_is_safe_4xx_and_new_operation_can_retry(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+                "invoice_type": "manual", "status": "open", "amount_due_cents": 123,
+                "amount_paid_cents": 0, "amount_remaining_cents": 123, "currency": "usd",
+                "application_fee_amount_cents": 0, "external": False,
+                "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.pay_invoice_error_after_call = StripeCardError(
+            "sensitive Stripe decline detail",
+            param=None,
+            code="card_declined",
+        )
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as declined:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "declined-operation"
+                ))
+            _FakeStripeService.pay_invoice_error_after_call = None
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "corrected-operation"
+            ))
+
+        self.assertEqual(declined.exception.status_code, 402)
+        self.assertNotIn("sensitive", declined.exception.detail)
+        operations = service.supabase.tables["billing_invoice_retry_operations"]
+        self.assertEqual([row["status"] for row in operations], ["failed_definitive", "succeeded"])
+        self.assertEqual(len(_FakeStripeService.pay_invoice_calls), 2)
+
+    def test_new_client_key_reconciles_and_resumes_active_server_operation(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+                "invoice_type": "manual", "status": "open", "amount_due_cents": 123,
+                "amount_paid_cents": 0, "amount_remaining_cents": 123, "currency": "usd",
+                "application_fee_amount_cents": 0, "external": False,
+                "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.pay_invoice_error_after_call = TimeoutError("response lost")
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as ambiguous:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "blocked-storage-key-1"
+                ))
+            self.assertEqual(ambiguous.exception.status_code, 503)
+            _FakeStripeService.pay_invoice_error_after_call = None
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "blocked-storage-key-2"
+            ))
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "blocked-storage-key-2"
+            ))
+
+        keys = [call["idempotency_key"] for call in _FakeStripeService.pay_invoice_calls]
+        self.assertEqual(keys, [keys[0], keys[0]])
+        operations = service.supabase.tables["billing_invoice_retry_operations"]
+        self.assertEqual(len(operations), 1)
+        self.assertEqual(operations[0]["client_idempotency_key"], "blocked-storage-key-1")
+        self.assertEqual(operations[0]["status"], "succeeded")
+        aliases = service.supabase.tables["billing_invoice_retry_operation_aliases"]
+        self.assertEqual(len(aliases), 1)
+        self.assertEqual(aliases[0]["client_idempotency_key"], "blocked-storage-key-2")
+
+    def test_expired_ambiguous_operation_reconciles_before_allowing_new_payment(self):
+        service = self.service()
+        old = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        recent = datetime.now(timezone.utc).isoformat()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+                "invoice_type": "manual", "status": "open", "amount_due_cents": 123,
+                "amount_paid_cents": 0, "amount_remaining_cents": 123, "currency": "usd",
+                "application_fee_amount_cents": 0, "external": False,
+                "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "billing_invoice_retry_operations": [{
+                "id": "operation_1", "studio_id": "studio_1", "invoice_id": "invoice_1",
+                "client_idempotency_key": "expired-key", "stripe_idempotency_key": "stripe-expired-key",
+                "status": "reconciliation_required", "processing_started_at": recent,
+                "lease_token": None, "lease_expires_at": old,
+                "created_at": old, "updated_at": old,
+            }],
+            "audit_logs": [],
+        })
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as expired:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "new-key-before-reconcile"
+                ))
+            self.assertEqual(_FakeStripeService.pay_invoice_calls, [])
+            asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "new-key-after-reconcile"
+            ))
+
+        self.assertEqual(expired.exception.status_code, 409)
+        self.assertIn("Stripe retry window expired", expired.exception.detail)
+        operations = service.supabase.tables["billing_invoice_retry_operations"]
+        self.assertEqual([row["status"] for row in operations], ["failed_definitive", "succeeded"])
+
+    def test_fresh_operation_lease_blocks_concurrent_reconciliation_and_records_aliases(self):
+        service = self.service()
+        now = datetime.now(timezone.utc)
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+                "invoice_type": "manual", "status": "open", "amount_due_cents": 123,
+                "amount_paid_cents": 0, "amount_remaining_cents": 123, "currency": "usd",
+                "application_fee_amount_cents": 0, "external": False,
+                "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "billing_invoice_retry_operations": [{
+                "id": "operation_1", "studio_id": "studio_1", "invoice_id": "invoice_1",
+                "client_idempotency_key": "owner-key", "stripe_idempotency_key": "stripe-owner-key",
+                "status": "processing", "processing_started_at": now.isoformat(),
+                "lease_token": "owner-token",
+                "lease_expires_at": (now + timedelta(seconds=30)).isoformat(),
+                "created_at": (now - timedelta(minutes=1)).isoformat(), "updated_at": now.isoformat(),
+            }],
+            "audit_logs": [],
+        })
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            for contender in ("contender-key-1", "contender-key-2"):
+                with self.assertRaises(HTTPException) as ambiguous:
+                    asyncio.run(service.retry_invoice_payment(
+                        "invoice_1", "studio_1", "actor_1", contender
+                    ))
+                self.assertEqual(ambiguous.exception.status_code, 503)
+
+        self.assertEqual(_FakeStripeService.pay_invoice_calls, [])
+        aliases = service.supabase.tables["billing_invoice_retry_operation_aliases"]
+        self.assertEqual(
+            {row["client_idempotency_key"] for row in aliases},
+            {"contender-key-1", "contender-key-2"},
+        )
+
+    def test_expired_operation_lease_compare_and_swap_allows_only_one_winner(self):
+        service = self.service()
+        old = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        operation = {
+            "id": "operation_1", "studio_id": "studio_1", "invoice_id": "invoice_1",
+            "client_idempotency_key": "owner-key", "stripe_idempotency_key": "stripe-owner-key",
+            "status": "reconciliation_required", "processing_started_at": old,
+            "lease_token": None, "lease_expires_at": old,
+            "created_at": old, "updated_at": old,
+        }
+        service.supabase = _FakeSupabase({
+            "billing_invoice_retry_operations": [operation],
+        })
+        manager = BillingInvoiceManager(service, stripe_service_cls=_FakeStripeService)
+
+        winner = manager._acquire_invoice_retry_operation_lease(operation)
+        with self.assertRaises(HTTPException) as loser:
+            manager._acquire_invoice_retry_operation_lease(operation)
+
+        self.assertTrue(winner["lease_token"])
+        self.assertEqual(loser.exception.status_code, 503)
+
+    def test_stripe_concurrency_idempotency_error_remains_ambiguous_and_active(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+                "invoice_type": "manual", "status": "open", "amount_due_cents": 123,
+                "amount_paid_cents": 0, "amount_remaining_cents": 123, "currency": "usd",
+                "application_fee_amount_cents": 0, "external": False,
+                "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.pay_invoice_error_after_call = StripeIdempotencyError(
+            "another request with the same key is executing"
+        )
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as ambiguous:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "concurrent-stripe-key"
+                ))
+
+        self.assertEqual(ambiguous.exception.status_code, 503)
+        operation = service.supabase.tables["billing_invoice_retry_operations"][0]
+        self.assertEqual(operation["status"], "reconciliation_required")
+        self.assertIsNone(operation["lease_token"])
+
+    def test_nonterminal_stripe_response_keeps_operation_active_and_guards_new_retry(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+                "invoice_type": "manual", "status": "open", "amount_due_cents": 123,
+                "amount_paid_cents": 0, "amount_remaining_cents": 123, "currency": "usd",
+                "application_fee_amount_cents": 0, "external": False,
+                "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "audit_logs": [],
+        })
+        _FakeStripeService.invoice_response = {
+            "id": "in_1", "status": "open", "amount_due": 123, "amount_paid": 0,
+            "amount_remaining": 123, "currency": "usd", "customer": "cus_1",
+            "payment_intent": {"id": "pi_1", "status": "processing"},
+            "metadata": {"studio_id": "studio_1", "invoice_id": "invoice_1"},
+            "created": 200,
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as first:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "processing-key"
+                ))
+            with self.assertRaises(HTTPException) as adopted:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "new-key-while-processing"
+                ))
+
+        self.assertEqual(first.exception.status_code, 503)
+        self.assertEqual(adopted.exception.status_code, 503)
+        operations = service.supabase.tables["billing_invoice_retry_operations"]
+        self.assertEqual(len(operations), 1)
+        self.assertEqual(operations[0]["status"], "reconciliation_required")
+        self.assertEqual(service.supabase.tables["audit_logs"], [])
+        self.assertEqual(
+            service.supabase.tables["billing_invoice_retry_operation_aliases"][0]["client_idempotency_key"],
+            "new-key-while-processing",
+        )
+
+    def test_initial_claim_race_persists_adopter_alias_before_returning(self):
+        service = self.service()
+        now = datetime.now(timezone.utc)
+        service.supabase = _FakeSupabase({
+            "billing_invoices": [{
+                "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+                "invoice_type": "manual", "status": "open", "amount_due_cents": 123,
+                "amount_paid_cents": 0, "amount_remaining_cents": 123, "currency": "usd",
+                "application_fee_amount_cents": 0, "external": False,
+                "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+            }],
+            "billing_invoice_retry_operations": [],
+            "audit_logs": [],
+        })
+        service.supabase.unique_constraints["billing_invoice_retry_operations"] = [("studio_id", "invoice_id")]
+        service.supabase.unique_conflict_error_factory = lambda _table, _columns: _unique_conflict()
+
+        def insert_competing_claim(table, _payloads, rows):
+            if table != "billing_invoice_retry_operations":
+                return
+            service.supabase.before_insert = None
+            rows.append({
+                "id": "winning-operation", "studio_id": "studio_1", "invoice_id": "invoice_1",
+                "client_idempotency_key": "winning-key", "stripe_idempotency_key": "stripe-winning-key",
+                "status": "processing", "lease_token": "winning-lease",
+                "lease_expires_at": (now + timedelta(seconds=30)).isoformat(),
+                "processing_started_at": now.isoformat(), "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            })
+
+        service.supabase.before_insert = insert_competing_claim
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as racing_response:
+                asyncio.run(service.retry_invoice_payment(
+                    "invoice_1", "studio_1", "actor_1", "adopter-key"
+                ))
+
+            winning = service.supabase.tables["billing_invoice_retry_operations"][0]
+            winning["status"] = "succeeded"
+            winning["lease_token"] = None
+            winning["lease_expires_at"] = now.isoformat()
+            invoice = service.supabase.tables["billing_invoices"][0]
+            invoice.update({"status": "paid", "amount_paid_cents": 123, "amount_remaining_cents": 0})
+            replay = asyncio.run(service.retry_invoice_payment(
+                "invoice_1", "studio_1", "actor_1", "adopter-key"
+            ))
+
+        self.assertEqual(racing_response.exception.status_code, 503)
+        self.assertEqual(replay.status, "paid")
+        self.assertEqual(_FakeStripeService.pay_invoice_calls, [])
+        aliases = service.supabase.tables["billing_invoice_retry_operation_aliases"]
+        self.assertEqual(len(aliases), 1)
+        self.assertEqual(aliases[0]["operation_id"], "winning-operation")
+        self.assertEqual(aliases[0]["client_idempotency_key"], "adopter-key")
 
     def test_create_invoice_reuses_matching_idempotency_key(self):
         service = self.service()

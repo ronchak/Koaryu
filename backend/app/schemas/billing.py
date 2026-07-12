@@ -133,8 +133,12 @@ class BillingWebhookHealthResponse(BaseModel):
     stripe_account_id: Optional[str] = None
     latest_processed_at: Optional[str] = None
     latest_event_type: Optional[str] = None
+    pending_count: int = 0
+    processing_count: int = 0
     failed_count: int = 0
     stale_processing_count: int = 0
+    mode_mismatch_count: int = 0
+    error_reference: Optional[str] = None
 
 
 class BillingSystemStatusResponse(BaseModel):
@@ -525,6 +529,21 @@ class BillingPaymentResponse(BaseModel):
     processed_at: Optional[str] = None
     created_at: str
     updated_at: str
+
+
+class BillingPaymentCohortSummaryResponse(BaseModel):
+    period_start: str
+    period_end: str
+    timezone: Literal["UTC"] = "UTC"
+    payment_count: int = 0
+    stripe_net_amount_cents: int = 0
+    external_net_amount_cents: int = 0
+    net_amount_cents: int = 0
+    scope: Literal["payment_cohort_net_of_cumulative_refunds"] = "payment_cohort_net_of_cumulative_refunds"
+    disclosure: str = (
+        "Payments processed in the current UTC month, net of cumulative refunds recorded on those payments. "
+        "Refunds do not expose event dates here, so this is not cash movement or true period-net revenue."
+    )
 
 
 class ExternalPaymentCreate(BaseModel):

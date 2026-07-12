@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -165,6 +166,68 @@ class _FakeStripeService:
 
 
 class BillingPaymentManagerTests(unittest.TestCase):
+    def test_current_month_cohort_summary_is_complete_beyond_list_limit(self):
+        current_rows = [
+            {
+                "id": f"payment_{index}",
+                "studio_id": "studio_1",
+                "status": "succeeded",
+                "amount_cents": 100,
+                "refunded_amount_cents": 0,
+                "processed_at": "2026-07-15T12:00:00+00:00",
+            }
+            for index in range(205)
+        ]
+        current_rows.extend([
+            {
+                "id": "payment_partial_refund",
+                "studio_id": "studio_1",
+                "status": "succeeded",
+                "amount_cents": 1000,
+                "refunded_amount_cents": 400,
+                "processed_at": "2026-07-16T12:00:00+00:00",
+            },
+            {
+                "id": "payment_external",
+                "studio_id": "studio_1",
+                "status": "externally_recorded",
+                "amount_cents": 500,
+                "refunded_amount_cents": 0,
+                "processed_at": "2026-07-31T23:59:59+00:00",
+            },
+            {
+                "id": "payment_prior_month_refunded_now",
+                "studio_id": "studio_1",
+                "status": "refunded",
+                "amount_cents": 900,
+                "refunded_amount_cents": 900,
+                "processed_at": "2026-06-30T23:59:59+00:00",
+            },
+            {
+                "id": "payment_other_studio",
+                "studio_id": "studio_2",
+                "status": "succeeded",
+                "amount_cents": 99999,
+                "refunded_amount_cents": 0,
+                "processed_at": "2026-07-15T12:00:00+00:00",
+            },
+        ])
+        manager = BillingPaymentManager(_BillingFacade({"billing_payments": current_rows}))
+
+        summary = asyncio.run(manager.current_month_payment_cohort_summary(
+            "studio_1",
+            as_of=datetime(2026, 7, 20, tzinfo=timezone.utc),
+        ))
+
+        self.assertEqual(summary.payment_count, 207)
+        self.assertEqual(summary.stripe_net_amount_cents, 21100)
+        self.assertEqual(summary.external_net_amount_cents, 500)
+        self.assertEqual(summary.net_amount_cents, 21600)
+        self.assertEqual(summary.period_start, "2026-07-01T00:00:00+00:00")
+        self.assertEqual(summary.period_end, "2026-08-01T00:00:00+00:00")
+        self.assertIn("cumulative refunds", summary.disclosure)
+        self.assertIn("not cash movement or true period-net revenue", summary.disclosure)
+
     def test_external_payment_request_hash_honors_empty_effective_payer_id(self):
         payload = ExternalPaymentCreate(
             payer_id="request-payer",

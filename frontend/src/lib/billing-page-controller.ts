@@ -26,6 +26,7 @@ import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import {
   PREVIEW_CONNECT,
+  PREVIEW_BILLING_METRICS_AS_OF,
   PREVIEW_ENROLLMENTS,
   PREVIEW_INVOICES,
   PREVIEW_PAYERS,
@@ -55,7 +56,7 @@ type BillingPageControllerOptions = {
     | "studentsLoadError"
     | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentRole">;
+  studioStore: Pick<StudioStoreContextValue, "currentRole" | "currentUserId">;
 };
 
 export function useBillingPageController({
@@ -67,7 +68,7 @@ export function useBillingPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
-  const { currentRole } = studioStore;
+  const { currentRole, currentUserId } = studioStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const {
     refreshStudents,
@@ -105,6 +106,7 @@ export function useBillingPageController({
     isLoading,
     payers,
     paymentAccount,
+    paymentCohortSummary,
     payments,
     plans,
     platformBilling,
@@ -190,6 +192,8 @@ export function useBillingPageController({
     [billingConnect?.requirements_due]
   );
   const billingPageModel = useMemo(() => buildBillingPageModel({
+    billingMetricsAsOf: isPreviewMode ? PREVIEW_BILLING_METRICS_AS_OF : undefined,
+    billingPaymentCohortSummary: isPreviewMode ? null : paymentCohortSummary,
     billingConnect,
     billingEnrollments,
     billingInvoices,
@@ -207,6 +211,7 @@ export function useBillingPageController({
     billingInvoices,
     billingPayers,
     billingPayments,
+    paymentCohortSummary,
     billingPlans,
     billingSubscriptions,
     isPreviewMode,
@@ -218,6 +223,7 @@ export function useBillingPageController({
     activeStudents,
     activeSubscriptionCount,
     billingStudentOptions,
+    currentMonthPaymentCount,
     externalPaymentTotal,
     failedInvoiceCount,
     hasBillingPlans,
@@ -227,6 +233,7 @@ export function useBillingPageController({
     koaryuFeeBasis,
     openInvoiceTotal,
     paidRevenue,
+    paymentCohortAvailable,
     payerNameById,
     paymentsReady,
     planNameById,
@@ -391,6 +398,9 @@ export function useBillingPageController({
     refreshBilling,
     setError,
     setMessage,
+    retryStorageScope: billingConnect?.studio_id && currentUserId
+      ? `${currentUserId}:${billingConnect.studio_id}`
+      : null,
     token,
   });
 
@@ -434,6 +444,7 @@ export function useBillingPageController({
         canSubmitEnrollmentForm,
         connectActionLabel,
         connectRequirementItems,
+        currentMonthPaymentCount,
         externalPaymentTotal,
         exportJobs,
         failedInvoiceCount,
@@ -445,6 +456,7 @@ export function useBillingPageController({
         onConnectClick: handleConnectClick,
         openInvoiceTotal,
         paidRevenue,
+        paymentCohortAvailable,
         payerNameById,
         planNameById,
         stripePaymentTotal,

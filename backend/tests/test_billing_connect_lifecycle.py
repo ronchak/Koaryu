@@ -469,6 +469,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
                 {
                     "stripe_account_id": None,
                     "type": "customer.subscription.updated",
+                    "livemode": True,
                     "processing_status": "processed",
                     "processed_at": now.isoformat(),
                     "created_at": now.isoformat(),
@@ -476,6 +477,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
                 {
                     "stripe_account_id": "acct_existing",
                     "type": "invoice.paid",
+                    "livemode": True,
                     "processing_status": "processed",
                     "processed_at": now.isoformat(),
                     "created_at": now.isoformat(),
@@ -518,7 +520,9 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
             "stripe_events": [{
                 "stripe_account_id": "acct_existing",
                 "type": "invoice.paid",
+                "livemode": True,
                 "processing_status": "processing",
+                "processing_started_at": old.isoformat(),
                 "processed_at": None,
                 "created_at": old.isoformat(),
             }],
