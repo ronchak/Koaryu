@@ -1,12 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
 from app.core.request_body_limits import RequestBodyLimitMiddleware
+from app.api.v1.endpoints.health import health_live, health_ready
 from app.api.v1.router import router as v1_router
 
 settings = get_settings()
-settings.validate_production_configuration()
+settings.validate_runtime_configuration()
 allowed_origins = {settings.FRONTEND_URL}
 
 if settings.FRONTEND_URL.startswith("http://localhost:"):
@@ -53,6 +54,12 @@ async def root():
     return {"name": "Koaryu API", "version": "1.0.0"}
 
 
-@app.api_route("/health", methods=["GET", "HEAD"])
-async def root_health():
-    return {"status": "ok", "version": "1.0.0", "service": "koaryu-api"}
+@app.api_route("/health", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/health/live", methods=["GET", "HEAD"], include_in_schema=False)
+async def root_health_live(response: Response):
+    return await health_live(response)
+
+
+@app.api_route("/health/ready", methods=["GET", "HEAD"], include_in_schema=False)
+async def root_health_ready(response: Response):
+    return await health_ready(response)

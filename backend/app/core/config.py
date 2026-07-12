@@ -4,6 +4,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
+KOARYU_STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
+KOARYU_STAGING_FRONTEND_URL = (
+    "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
+)
+PERMISSIVE_ENVIRONMENTS = {"development", "test"}
+STRICT_ENVIRONMENTS = {"production", "staging"}
+
+
 PLACEHOLDER_MARKERS = (
     "placeholder",
     "your-",
@@ -82,10 +90,16 @@ class Settings(BaseSettings):
         "extra": "ignore"
     }
 
-    def validate_production_configuration(self) -> None:
-        """Raise at startup when production is missing live-service config."""
-        if self.ENVIRONMENT.lower() != "production":
+    def validate_runtime_configuration(self) -> None:
+        """Fail closed when a hosted environment has incomplete or unsafe config."""
+        environment = self.ENVIRONMENT.strip().lower()
+        if environment in PERMISSIVE_ENVIRONMENTS:
             return
+        if environment not in STRICT_ENVIRONMENTS:
+            raise RuntimeError(
+                "Runtime configuration is incomplete or unsafe: "
+                "ENVIRONMENT must be development, test, staging, or production"
+            )
 
         missing: list[str] = []
         required_values = {
@@ -115,7 +129,11 @@ class Settings(BaseSettings):
                 missing.append(name)
 
         if self.DEMO_RESET_ENABLED:
-            missing.append("DEMO_RESET_ENABLED must be false in production")
+            missing.append(f"DEMO_RESET_ENABLED must be false in {environment}")
+        if self.DEMO_RESET_STUDIO_IDS.strip():
+            missing.append(f"DEMO_RESET_STUDIO_IDS must be empty in {environment}")
+        if self.API_V1_PREFIX != "/api/v1":
+            missing.append("API_V1_PREFIX must be /api/v1")
 
         supabase = urlparse(self.SUPABASE_URL)
         if supabase.scheme != "https" or not supabase.netloc or supabase.hostname in {"localhost", "127.0.0.1"}:
@@ -128,7 +146,9 @@ class Settings(BaseSettings):
         if not has_minimum_secret_length(self.SUPABASE_SERVICE_ROLE_KEY):
             missing.append("SUPABASE_SERVICE_ROLE_KEY must be a real secret value")
 
-        if self.SUPABASE_ALLOW_LEGACY_HS256:
+        if environment == "staging" and self.SUPABASE_ALLOW_LEGACY_HS256:
+            missing.append("SUPABASE_ALLOW_LEGACY_HS256 must be false in staging")
+        elif self.SUPABASE_ALLOW_LEGACY_HS256:
             if is_placeholder_value(self.SUPABASE_JWT_SECRET) or not has_minimum_secret_length(
                 self.SUPABASE_JWT_SECRET
             ):
@@ -137,16 +157,36 @@ class Settings(BaseSettings):
                     "SUPABASE_ALLOW_LEGACY_HS256 is enabled"
                 )
 
-        if not self.STRIPE_SECRET_KEY.startswith(("sk_live_", "sk_test_")) or not has_minimum_secret_length(
+        stripe_secret_prefixes = (
+            ("sk_test_",)
+            if environment == "staging"
+            else ("sk_live_", "sk_test_")
+        )
+        if not self.STRIPE_SECRET_KEY.startswith(stripe_secret_prefixes) or not has_minimum_secret_length(
             self.STRIPE_SECRET_KEY, 16
         ):
-            missing.append("STRIPE_SECRET_KEY must be a Stripe secret key")
+            if environment == "staging":
+                missing.append("STRIPE_SECRET_KEY must be a Stripe test secret key in staging")
+            else:
+                missing.append("STRIPE_SECRET_KEY must be a Stripe secret key")
 
         restricted_key = self.STRIPE_RESTRICTED_KEY.strip()
+        restricted_key_prefixes = (
+            ("rk_test_",)
+            if environment == "staging"
+            else ("rk_live_", "rk_test_")
+        )
         if restricted_key and (
-            not restricted_key.startswith(("rk_live_", "rk_test_")) or not has_minimum_secret_length(restricted_key, 16)
+            not restricted_key.startswith(restricted_key_prefixes)
+            or not has_minimum_secret_length(restricted_key, 16)
         ):
-            missing.append("STRIPE_RESTRICTED_KEY must be a Stripe restricted key when set")
+            if environment == "staging":
+                missing.append(
+                    "STRIPE_RESTRICTED_KEY must be a Stripe test restricted key "
+                    "in staging when set"
+                )
+            else:
+                missing.append("STRIPE_RESTRICTED_KEY must be a Stripe restricted key when set")
 
         platform_webhook_secret = self.STRIPE_PLATFORM_WEBHOOK_SECRET.strip()
         if (
@@ -183,9 +223,20 @@ class Settings(BaseSettings):
         if not has_minimum_secret_length(self.SUPPORT_TRIAGE_SECRET):
             missing.append("SUPPORT_TRIAGE_SECRET must be a long random secret")
 
+        if environment == "staging":
+            if self.SUPABASE_URL != KOARYU_STAGING_SUPABASE_URL:
+                missing.append("SUPABASE_URL must match Koaryu's pinned staging project")
+            if self.FRONTEND_URL != KOARYU_STAGING_FRONTEND_URL:
+                missing.append("FRONTEND_URL must match Koaryu's pinned staging frontend")
+
         if missing:
             detail = ", ".join(dict.fromkeys(missing))
-            raise RuntimeError(f"Production configuration is incomplete or unsafe: {detail}")
+            label = environment.capitalize()
+            raise RuntimeError(f"{label} configuration is incomplete or unsafe: {detail}")
+
+    def validate_production_configuration(self) -> None:
+        """Backward-compatible alias for the hosted runtime guard."""
+        self.validate_runtime_configuration()
 
 
 @lru_cache()

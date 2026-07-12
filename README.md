@@ -218,7 +218,8 @@ Koaryu has two billing surfaces:
 Before presenting billing live, verify both surfaces after the latest deploy:
 
 - Render and Vercel deployments are green for the same commit.
-- `/health` and `/api/v1/health` return `200` from the deployed backend.
+- `/health/live` and `/api/v1/health/live` prove process liveness; `/health/ready` and `/api/v1/health/ready` recheck hosted runtime configuration. The older `/health` aliases remain available.
+- `/api/version` returns safe Vercel environment and exact-commit metadata for deployment comparison.
 - A studio admin can open Koaryu Core checkout or billing portal without creating duplicate active subscriptions.
 - `/api/v1/billing/system/status` reports configured Stripe keys, connected-account readiness, Supabase reachability, and healthy platform/Connect webhook processing for the target studio.
 - Stripe Dashboard shows successful deliveries for the platform and Connect webhook endpoints.

@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, status
 
+from app.services.platform_billing_service import PlatformBillingService
 from app.services.studio_scope import (
     MISSING_STRIPE_CONFIGURATION_DETAIL,
     ensure_platform_subscription_access,
@@ -101,6 +102,46 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
         self.assertEqual(supabase.query_log, [])
+
+    def test_access_does_not_use_no_stripe_fallback_in_staging(self):
+        supabase = fake_supabase({
+            "status": "active",
+            "comped": False,
+            "trial_end": None,
+        })
+
+        with (
+            patch("app.services.studio_scope.get_settings", return_value=SimpleNamespace(ENVIRONMENT="staging")),
+            patch(
+                "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
+                side_effect=HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=MISSING_STRIPE_CONFIGURATION_DETAIL,
+                ),
+            ),
+        ):
+            with self.assertRaises(HTTPException) as context:
+                get_platform_subscription_access(supabase, "studio_1")
+
+        self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
+        self.assertEqual(supabase.query_log, [])
+
+    def test_platform_repair_degradation_is_development_only(self):
+        error = HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=MISSING_STRIPE_CONFIGURATION_DETAIL,
+        )
+        service = PlatformBillingService(fake_supabase({"status": "active", "comped": False}))
+
+        service.settings = SimpleNamespace(ENVIRONMENT="development")
+        self.assertTrue(service._can_degrade_access_repair(error))
+
+        service.settings = SimpleNamespace(ENVIRONMENT="staging")
+        self.assertFalse(service._can_degrade_access_repair(error))
+
+        service.settings = SimpleNamespace(ENVIRONMENT="production")
+        self.assertFalse(service._can_degrade_access_repair(error))
 
     def test_ensure_platform_subscription_access_allows_repaired_active_status(self):
         supabase = fake_supabase({

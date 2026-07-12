@@ -31,6 +31,12 @@ Run the static workflow guard locally with:
 npm run check:release-workflow
 ```
 
+## Provider Promotion Controls
+
+Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'`. The bootstrap change keeps Render's process health check on the backward-compatible `/health`; switch the provider to `/health/live` only after the approved artifact containing that endpoint is already live.
+
+`npm run check:env-examples` fails if either repository provider control drifts or if the account-deletion cron is removed. Repository text cannot prove Render's current service setting: before the bootstrap merge, an authenticated operator must turn production auto-deploy off through Render and capture an authenticated readback. The guarded merge command independently rechecks that live provider state and refuses to merge without it. After the fixed candidate passes staging, deploy or promote that exact SHA explicitly, read back Vercel `/api/version` and Render `/health/ready`, and compare both full SHAs with the release ledger before assigning production traffic.
+
 ## Main-Branch Ruleset
 
 After the workflow exists on `main` and has produced the named check, maintain
@@ -52,15 +58,20 @@ equivalent to server-side enforcement.
 Record both immutable SHAs immediately before the merge:
 
 ```bash
+read -r -s -p "Render API key: " RENDER_API_KEY; export RENDER_API_KEY; echo
 gh pr view <pr> --json headRefOid,baseRefOid
 scripts/merge-release-pr.sh <pr> <expected-head-sha> <expected-base-sha>
+unset RENDER_API_KEY
 ```
 
 The script fails closed when the head or base moved, the PR is a draft, GitHub
 does not report a clean merge, the candidate gate is absent or unsuccessful,
-or any visible check is pending or failing. It then passes the expected head to
-GitHub's merge API. Strict required checks provide the corresponding base-drift
-guard at merge time.
+or any visible check is pending or failing. It also performs two authenticated,
+just-in-time Render service readbacks and refuses the merge unless the repository-pinned
+`koaryu` production service ID and its canonical identity are on `main` with auto-deploy off. The sanitized
+readback JSON is safe to copy into the release ledger; the API key is never
+printed. The script then passes the expected head to GitHub's merge API. Strict
+required checks provide the corresponding base-drift guard at merge time.
 
 Repository merges still require the evidence in `docs/pr-verification-matrix.md`:
 resolved review findings, skeptical green light, rollback implications, and any

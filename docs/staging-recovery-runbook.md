@@ -9,7 +9,7 @@ Use this runbook to rebuild Koaryu staging, prove that it is isolated from produ
 | Production | `mimguepumzsgmcaycdsh` | Live configuration is production-only | Never use as a staging, replay, or restore target |
 | Current staging | `nxgsektqsgrtyfhawxbc` | Test only | May contain sanitized fixtures; must not contain production-derived rows |
 
-The current `koaryu-staging` project is isolated: all 80 repository migrations were replayed, the production backup was **not** restored into it, and it contains only the synthetic `River City Martial Arts` fixture. The dedicated staging backend API is `https://koaryu-staging.onrender.com/api/v1`, and the protected staging frontend alias is `https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app`. The temporary hosted restore target used for the July 10 drill was `zmmacdleiaohvxdubrav`; it was deleted after validation.
+The current `koaryu-staging` project is isolated: all 82 repository migrations were replayed, the production backup was **not** restored into it, and it contains only the synthetic `River City Martial Arts` fixture. The dedicated staging backend API is `https://koaryu-staging.onrender.com/api/v1`, and the protected durable staging frontend alias is `https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app`. The temporary hosted restore target used for the July 10 drill was `zmmacdleiaohvxdubrav`; it was deleted after validation.
 
 Staging frontend and backend configuration must point only to `nxgsektqsgrtyfhawxbc`. They must not contain the production Supabase ref, any `sk_live_`/`rk_live_`/`pk_live_` Stripe value, the production frontend origin, or a production backend destination. Never print secret values while checking this.
 
@@ -37,12 +37,14 @@ esac
 
 Before a frontend or backend staging deploy, run the automated application guard with a private, non-traced environment assembled from both providers. `STAGING_PLATFORM_WEBHOOK_DESTINATION` and `STAGING_CONNECT_WEBHOOK_DESTINATION` are non-secret audit inputs copied from the Stripe test-mode dashboard; the signing secrets remain secret inputs. The guard prints only a pass/fail summary, enforces exact origins and webhook destinations, and rejects production destinations and live Stripe key prefixes.
 
+The backend independently enforces the same hosted posture at startup when `ENVIRONMENT=staging`: the pinned staging Supabase/frontend identities, test Stripe key shapes, complete webhook and internal-operation secrets, disabled legacy HS256, disabled demo reset, and `/api/v1` prefix are mandatory. A manual shell guard cannot make an unsafe backend boot successfully.
+
 ```bash
 set -euo pipefail
 set +x
 export EXPECTED_STAGING_REF=nxgsektqsgrtyfhawxbc
 export PRODUCTION_REF=mimguepumzsgmcaycdsh
-export EXPECTED_STAGING_FRONTEND_ORIGIN=https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app
+export EXPECTED_STAGING_FRONTEND_ORIGIN=https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
 export EXPECTED_STAGING_BACKEND_API=https://koaryu-staging.onrender.com/api/v1
 export STAGING_PLATFORM_WEBHOOK_DESTINATION=https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/platform
 export STAGING_CONNECT_WEBHOOK_DESTINATION=https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/connect
@@ -121,6 +123,8 @@ Webhook signing secrets do not encode test/live mode in their prefix. Confirm bo
 - The gate remains open: Render's deployed Git SHA, backend secret/test-mode classification, both Stripe test-mode webhook destinations and delivery evidence, current application-SHA alignment, proxy smoke behind Vercel SSO, and an authenticated representative application smoke are not yet proven.
 
 Do not infer a provider value from application behavior. Capture Render environment metadata and exact deployed SHA through authenticated provider access, copy the two non-secret Stripe test endpoint URLs into the guard inputs, run the guard, deploy the same current SHA to both services, and then run the protected frontend and authenticated smoke checks.
+
+Use `GET /api/version` on the protected staging frontend and `GET /health/ready` on the staging backend for application-reported SHA evidence. Both endpoints reject malformed provider metadata instead of reflecting it. Reconcile those responses with authenticated Vercel and Render deployment metadata; application responses do not replace provider readback.
 
 ## Rebuild Clean Staging
 

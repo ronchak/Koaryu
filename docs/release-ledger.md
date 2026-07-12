@@ -25,7 +25,7 @@ Operator: `Ronak Chakraborty / Codex session`
 - Environment: `koaryu-staging`, Supabase `nxgsektqsgrtyfhawxbc`.
 - Migration/application baseline commit: `c9cc18a4d021662c46f0b76fadb7266503db21cb`.
 - Sanitized-seed repair revision: `bca10d223ae0594d1bb6d659d2ede8606caa9c66` on `codex/production-remediation-wave0`; this repair is not present in the migration/application baseline `c9cc18a`.
-- Migration state: all 80 repository migrations replayed into a fresh project.
+- Migration state: all 82 repository migrations replayed into a fresh project.
 - Billing: test Stripe only; production Supabase, live Stripe keys, and production webhook destinations are prohibited.
 - Data status: production-derived rows do not remain in this project. The only tenant is the synthetic `River City Martial Arts` fixture: 32 students, 20 guardians, 296 attendance rows, 36 class sessions, 9 leads, 1 staff role, and 7 billing payments.
 - Created at: `2026-07-10T02:33:20Z`. A branch-scoped Vercel preview is isolated to this staging Supabase project and test Stripe configuration. No staging backend exists yet, so the application-isolation deploy gate remains blocked until the dedicated backend is created and verified.
@@ -63,6 +63,16 @@ Operator: `Codex release orchestrator`
 - Isolation control: `scripts/verify-staging-isolation.mjs` fails closed on production Supabase/origin/backend destinations, live Stripe key prefixes, mismatched application URLs, incorrect platform/Connect webhook destinations, preview mode, and demo-reset configuration. The guard prints no secret values; webhook signing-secret prefixes cannot prove Stripe mode, so dashboard destination and delivery evidence remain required.
 - Gate status: #21 remains **open** pending authenticated Render environment/SHA evidence, Stripe test-mode endpoint and delivery evidence for both webhooks, an exact-current-SHA deploy on both providers, protected frontend/API-proxy smoke, authenticated representative application smoke, and cost/ownership/cleanup records.
 - Recovery status: the five local AEAD artifacts retain their recorded hashes and mode `0600`, decrypt with the Keychain-held key, and reject a deliberately wrong key. No approved off-site destination or provider-downloaded copy exists, so #22 remains **open** and #23 remains blocked. No upload, restore, plaintext write, production mutation, or production-derived staging load occurred.
+
+## Durable Staging Branch Transition — 2026-07-12
+
+Operator: `Codex release orchestrator`
+
+- The durable protected frontend origin is `https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app`; current runtime and isolation guards pin that exact origin.
+- Authenticated `vercel env run` readback confirmed the `staging` branch public configuration now uses the dedicated staging backend for both API variables, Supabase `nxgsektqsgrtyfhawxbc`, the durable staging site origin, `NEXT_PUBLIC_PREVIEW_MODE=false`, `NEXT_PUBLIC_USE_API_PROXY=true`, `NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG=false`, and the paged roster. Three values that had contained copied encrypted payload text were replaced with their canonical plaintext URLs. Sensitive values were neither printed nor changed.
+- The durable alias currently points to preview deployment `dpl_6JvsLSKgSmRL54DTQ7cXKcstJ22z`, built manually from protected-main commit `692f13a4c7543a937c6fcabd257e05b9ab0b1210` with `gitCommitRef=staging`. It is not yet the runtime-control candidate.
+- PR [#53](https://github.com/ronchak/Koaryu/pull/53) is the immutable record for the current staging/runtime-control candidate and exact-head CI. Exact-candidate Vercel and Render staging deployment, durable-alias promotion, CORS/proxy/readiness checks, and authenticated provider SHA readback remain open.
+- Production provider state was not changed. Production Render auto-deploy disable and authenticated readback remain a hard pre-merge gate.
 
 ## Production Migration Reconciliation Audit — 2026-07-12
 
