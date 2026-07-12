@@ -14,6 +14,7 @@ type StudentDetailPageContentProps = StudentDetailPageController["contentProps"]
 export function StudentDetailPageContent({
   actionMessage,
   beltLoadError,
+  canManageRoster,
   deleteError,
   detail,
   isDeleting,
@@ -81,10 +82,12 @@ export function StudentDetailPageContent({
           <Pencil className="w-3.5 h-3.5" />
           Edit
         </Button>
-        <Button variant="danger" size="sm" onClick={onShowDeleteConfirm}>
-          <Trash2 className="w-3.5 h-3.5" />
-          Delete
-        </Button>
+        {canManageRoster ? (
+          <Button variant="danger" size="sm" onClick={onShowDeleteConfirm}>
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete
+          </Button>
+        ) : null}
       </Header>
 
       {actionMessage ? (
@@ -97,7 +100,7 @@ export function StudentDetailPageContent({
 
       <div className="flex-1 p-8">
         <div className="max-w-3xl grid grid-cols-3 gap-6">
-          {(showDeleteConfirm || deleteError) && (
+          {canManageRoster && (showDeleteConfirm || deleteError) && (
             <div className="col-span-3 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">

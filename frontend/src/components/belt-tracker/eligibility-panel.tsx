@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 
 type EligibilityPanelProps = {
+  canConfigureBelts: boolean;
+  canPromoteStudents: boolean;
   collapsedGroups: Set<string>;
   eligibilityGroups: EligibilityGroup[];
   eligibilityLoadError: string | null;
@@ -40,6 +42,8 @@ type EligibilityPanelProps = {
 };
 
 export function EligibilityPanel({
+  canConfigureBelts,
+  canPromoteStudents,
   collapsedGroups,
   eligibilityGroups,
   eligibilityLoadError,
@@ -98,10 +102,12 @@ export function EligibilityPanel({
               : "No active students to evaluate."}
           </p>
           <div className="mt-4 flex items-center gap-3">
-            <Button variant="secondary" size="sm" onClick={onConfigureRanks}>
-              <Settings className="w-3.5 h-3.5" />
-              Configure ranks
-            </Button>
+            {canConfigureBelts ? (
+              <Button variant="secondary" size="sm" onClick={onConfigureRanks}>
+                <Settings className="w-3.5 h-3.5" />
+                Configure ranks
+              </Button>
+            ) : null}
             <Button variant="primary" size="sm" onClick={onViewStudents}>
               <Users className="w-3.5 h-3.5" />
               View students
@@ -242,7 +248,7 @@ export function EligibilityPanel({
                             )}
                         </td>
                         <td className="px-4 py-3">
-                          {allMet && (
+                          {allMet && canPromoteStudents && (
                             <Button
                               variant="primary"
                               size="sm"

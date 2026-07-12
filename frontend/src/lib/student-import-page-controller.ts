@@ -26,10 +26,11 @@ import type {
   ConfigStoreContextValue,
   StudentsStoreContextValue,
 } from "@/lib/store-contexts";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { CsvImportOptions, CsvImportResult, CsvParseResponse } from "@/types";
 
 type StudentImportPageControllerOptions = {
-  config: Pick<ConfigStoreContextValue, "isPreviewMode" | "token">;
+  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
   studentsStore: Pick<StudentsStoreContextValue, "importStudents">;
 };
 
@@ -39,6 +40,7 @@ export function useStudentImportPageController({
 }: StudentImportPageControllerOptions) {
   const router = useRouter();
   const { isPreviewMode, token } = config;
+  const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
   const { importStudents } = studentsStore;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRequestRef = useRef(0);
@@ -306,7 +308,7 @@ export function useStudentImportPageController({
   }
 
   async function handleImport() {
-    if (activeOperation !== null) {
+    if (!canManageRoster || activeOperation !== null) {
       return;
     }
     const requestFile = file;
@@ -399,6 +401,7 @@ export function useStudentImportPageController({
   return {
     contentProps: {
       activeImportKey,
+      canManageRoster,
       dragOver,
       errorMessage,
       fileInputRef,

@@ -19,6 +19,7 @@ import type { Lead, LeadStage, Program } from "@/types";
 import { Mail, Phone, X } from "lucide-react";
 
 interface LeadDetailModalProps {
+  canConvertLeads: boolean;
   followUpValue: string;
   lead: Lead;
   leadActionError: string | null;
@@ -36,6 +37,7 @@ interface LeadDetailModalProps {
 }
 
 export function LeadDetailModal({
+  canConvertLeads,
   followUpValue,
   lead,
   leadActionError,
@@ -95,7 +97,11 @@ export function LeadDetailModal({
           >
             {[...PIPELINE_STAGES, { id: "closed_lost" as LeadStage, label: "Closed Lost" }].map(
               (stage) => (
-                <option key={stage.id} value={stage.id}>
+                <option
+                  key={stage.id}
+                  value={stage.id}
+                  disabled={stage.id === "enrolled" && !canConvertLeads}
+                >
                   {stage.label}
                 </option>
               )
@@ -214,7 +220,7 @@ export function LeadDetailModal({
               >
                 Mark contacted
               </Button>
-              {nextStage && (
+              {nextStage && (nextStage !== "enrolled" || canConvertLeads) && (
                 <Button
                   variant="primary"
                   size="sm"
@@ -251,7 +257,7 @@ export function LeadDetailModal({
         )}
 
         <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-          {lead.stage !== "enrolled" && lead.stage !== "closed_lost" && (
+          {canConvertLeads && lead.stage !== "enrolled" && lead.stage !== "closed_lost" && (
             <Button
               variant="primary"
               size="sm"

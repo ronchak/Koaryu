@@ -24,11 +24,12 @@ import type {
   ProgramsStoreContextValue,
   StudentsStoreContextValue,
 } from "@/lib/store-contexts";
+import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { EligibilityEntry, Promotion } from "@/types";
 
 type BeltTrackerPageControllerOptions = {
   beltStore: BeltsStoreContextValue;
-  config: Pick<ConfigStoreContextValue, "isPreviewMode" | "token">;
+  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
   programsStore: Pick<
     ProgramsStoreContextValue,
     "programs" | "programsLoaded" | "programsLoadError" | "refreshPrograms"
@@ -57,10 +58,13 @@ export function useBeltTrackerPageController({
     subRankTerm: storeSubRankTerm,
   } = beltStore;
   const { isPreviewMode, token } = config;
+  const canConfigureBelts = hasStaffPermission(config.currentRole, "configure_belts");
+  const canPromoteStudents = hasStaffPermission(config.currentRole, "promote_students");
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const { refreshStudents } = studentsStore;
 
   const [tab, setTab] = useState<"eligibility" | "ladder">("eligibility");
+  const visibleTab = canConfigureBelts ? tab : "eligibility";
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [draftRanks, setDraftRanks] = useState(beltRanks);
   const [draftSubRankTerm, setDraftSubRankTerm] = useState(storeSubRankTerm);
@@ -293,16 +297,17 @@ export function useBeltTrackerPageController({
   }
 
   const handleStartPromotion = useCallback((entry: EligibilityEntry) => {
+    if (!canPromoteStudents) return;
     if (!entry.next_rank_id) {
       return;
     }
     setPromotionError(null);
     setPromotionNotes("");
     setPromoteEntry(entry);
-  }, []);
+  }, [canPromoteStudents]);
 
   async function handleConfirmPromotion() {
-    if (!promoteEntry || promotionInFlightRef.current) return;
+    if (!canPromoteStudents || !promoteEntry || promotionInFlightRef.current) return;
 
     const validationError = validatePromotionTarget({
       currentLadder,
@@ -355,10 +360,10 @@ export function useBeltTrackerPageController({
 
   return {
     dialogsProps: {
-      addBeltModalOpen: addBeltModal,
-      addTipForGroup,
-      deleteRank,
-      editRank,
+      addBeltModalOpen: canConfigureBelts && addBeltModal,
+      addTipForGroup: canConfigureBelts ? addTipForGroup : null,
+      deleteRank: canConfigureBelts ? deleteRank : null,
+      editRank: canConfigureBelts ? editRank : null,
       groups,
       isPromoting,
       onAddBeltClose: () => setAddBeltModal(false),
@@ -378,13 +383,15 @@ export function useBeltTrackerPageController({
       onEditClose: () => setEditRankId(null),
       onEditSave: handleEdit,
       onPromotionNotesChange: setPromotionNotes,
-      promoteEntry,
+      promoteEntry: canPromoteStudents ? promoteEntry : null,
       promotionError,
       promotionNotes,
       rankById,
       subRankTerm,
     },
     eligibilityPanelProps: {
+      canConfigureBelts,
+      canPromoteStudents,
       collapsedGroups: collapsedEligibilityGroups,
       eligibilityGroups,
       eligibilityLoadError,
@@ -392,7 +399,9 @@ export function useBeltTrackerPageController({
       isEligibilityLoadErrorDismissed: isLoadNoticeDismissed("eligibility", eligibilityLoadError),
       isProgramsLoadErrorDismissed: isLoadNoticeDismissed("programs", programsLoadError),
       ladderError,
-      onConfigureRanks: () => setTab("ladder"),
+      onConfigureRanks: () => {
+        if (canConfigureBelts) setTab("ladder");
+      },
       onDismissEligibilityLoadError: () => dismissLoadNotice("eligibility", eligibilityLoadError),
       onDismissLadderError: () => setLadderError(null),
       onDismissProgramsLoadError: () => dismissLoadNotice("programs", programsLoadError),
@@ -455,16 +464,19 @@ export function useBeltTrackerPageController({
     shellProps: {
       actionMessage,
       beltPrograms,
+      canConfigureBelts,
       dirty,
       isSwitchingLadder,
       onDismissActionMessage: () => setActionMessage(null),
       onSelectProgram: handleSelectProgram,
-      onTabChange: setTab,
+      onTabChange: (nextTab: "eligibility" | "ladder") => {
+        if (nextTab === "eligibility" || canConfigureBelts) setTab(nextTab);
+      },
       programsLoaded,
       selectedProgramId: selectedProgram?.id ?? null,
-      tab,
+      tab: visibleTab,
     },
-    tab,
+    tab: visibleTab,
   };
 }
 

@@ -37,6 +37,7 @@ type StudentRosterPageContentProps = {
   allSelected: boolean;
   bulkActionError: string | null;
   bulkStatus: StudentStatus;
+  canManageRoster: boolean;
   deleteError: string | null;
   filtered: StudentRosterRow[];
   fullRosterRequested: boolean;
@@ -107,6 +108,7 @@ export function StudentRosterPageContent({
   allSelected,
   bulkActionError,
   bulkStatus,
+  canManageRoster,
   deleteError,
   filtered,
   fullRosterRequested,
@@ -179,10 +181,12 @@ export function StudentRosterPageContent({
             : `${visibleTotal} ${visibleTotal === 1 ? "student" : "students"}`
         }
       >
-        <Button variant="secondary" size="sm" onClick={onImportCsv}>
-          <Upload className="w-3.5 h-3.5" />
-          Import CSV
-        </Button>
+        {canManageRoster ? (
+          <Button variant="secondary" size="sm" onClick={onImportCsv}>
+            <Upload className="w-3.5 h-3.5" />
+            Import CSV
+          </Button>
+        ) : null}
         <Button variant="primary" size="sm" onClick={onAddStudent}>
           <UserPlus className="w-3.5 h-3.5" />
           Add student
@@ -204,6 +208,7 @@ export function StudentRosterPageContent({
 
         <StudentRosterToolbar
           activeBulkPanel={activeBulkPanel}
+          canManageRoster={canManageRoster}
           isRosterRefreshing={isRosterRefreshing}
           onProgramFilterChange={onProgramFilterChange}
           onSearchChange={onSearchChange}
@@ -216,25 +221,27 @@ export function StudentRosterPageContent({
           statusFilter={statusFilter}
         />
 
-        <StudentRosterBulkActionPanels
-          activeBulkPanel={activeBulkPanel}
-          bulkActionError={bulkActionError}
-          bulkStatus={bulkStatus}
-          deleteError={deleteError}
-          isAddingTags={isAddingTags}
-          isDeleting={isDeleting}
-          isUpdatingStatus={isUpdatingStatus}
-          onAddTags={onAddTags}
-          onBulkStatusChange={onBulkStatusChange}
-          onBulkStatusUpdate={onBulkStatusUpdate}
-          onCancelDelete={onCancelDelete}
-          onCancelStatus={onCancelStatus}
-          onCancelTags={onCancelTags}
-          onDeleteSelected={onDeleteSelected}
-          onTagInputChange={onTagInputChange}
-          selectedCount={selectedCount}
-          tagInput={tagInput}
-        />
+        {canManageRoster ? (
+          <StudentRosterBulkActionPanels
+            activeBulkPanel={activeBulkPanel}
+            bulkActionError={bulkActionError}
+            bulkStatus={bulkStatus}
+            deleteError={deleteError}
+            isAddingTags={isAddingTags}
+            isDeleting={isDeleting}
+            isUpdatingStatus={isUpdatingStatus}
+            onAddTags={onAddTags}
+            onBulkStatusChange={onBulkStatusChange}
+            onBulkStatusUpdate={onBulkStatusUpdate}
+            onCancelDelete={onCancelDelete}
+            onCancelStatus={onCancelStatus}
+            onCancelTags={onCancelTags}
+            onDeleteSelected={onDeleteSelected}
+            onTagInputChange={onTagInputChange}
+            selectedCount={selectedCount}
+            tagInput={tagInput}
+          />
+        ) : null}
 
         <div className="overflow-x-auto flex-1">
           {activeLoadError ? (
@@ -246,6 +253,7 @@ export function StudentRosterPageContent({
             <StudentRosterLoading />
           ) : filtered.length === 0 ? (
             <StudentRosterEmptyState
+              canManageRoster={canManageRoster}
               hasActiveFilters={hasActiveFilters}
               onAddStudent={onAddStudent}
               onClearFilters={onClearFilters}
@@ -254,6 +262,7 @@ export function StudentRosterPageContent({
           ) : (
             <StudentRosterTable
               allSelected={allSelected}
+              canManageRoster={canManageRoster}
               filtered={filtered}
               handleSort={onSort}
               inactivityByStudentId={inactivityByStudentId}

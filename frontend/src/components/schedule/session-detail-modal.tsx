@@ -30,6 +30,7 @@ import type { AttendanceRecord, AttendanceStatus, ClassSession, Program, Student
 export type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 
 export interface ScheduleSessionDetailModalProps {
+  canManageSchedule: boolean;
   open: boolean;
   session: ClassSession | null;
   students: Student[];
@@ -70,6 +71,7 @@ const STATUS_ACCENT: Record<AttendanceStatus, string> = {
 };
 
 export function ScheduleSessionDetailModal({
+  canManageSchedule,
   open,
   session,
   students,
@@ -476,7 +478,7 @@ export function ScheduleSessionDetailModal({
           </div>
 
           {/* ── Delete zone ── */}
-          <div className="border-t border-border px-6 py-5">
+          {canManageSchedule ? <div className="border-t border-border px-6 py-5">
             <div className="border border-danger/15 bg-danger/[0.03] px-4 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -570,7 +572,7 @@ export function ScheduleSessionDetailModal({
                 </div>
               ) : null}
             </div>
-          </div>
+          </div> : null}
         </div>
     </ModalFrame>
   );
