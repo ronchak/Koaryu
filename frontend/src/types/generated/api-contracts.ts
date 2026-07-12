@@ -1154,7 +1154,6 @@ export interface ApiStudentBillingEnrollmentUpdate {
   start_date?: string | null;
   end_date?: string | null;
   next_bill_on?: string | null;
-  status?: "pending" | "active" | "paused" | "ended" | "canceled" | null;
 }
 
 export interface ApiStudentCreate {
