@@ -53,6 +53,8 @@ Backend environment variables:
 - `ENVIRONMENT`: environment label such as `development` or `production`
 - `DEMO_RESET_ENABLED`: set to `true` only for controlled demo/staging environments where demo data tools should be available
 - `DEMO_RESET_STUDIO_IDS`: comma-separated studio IDs that demo reset and clear-studio-data may target; keep empty in production
+- `STRIPE_MODE`: explicit Stripe environment, `test` or `live`; it must match the secret and optional restricted key prefixes
+- `LIVE_BILLING_ENABLED`: defaults to `false`; it is a global prerequisite, not sufficient authorization, for outbound live Stripe mutations
 - `STRIPE_SECRET_KEY`: Stripe secret key used by Koaryu Core billing and connected-account billing operations
 - `STRIPE_RESTRICTED_KEY`: optional restricted Stripe key for dashboard/API operations that should not need the full secret key
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`: Stripe webhook signing secret for platform billing events
@@ -63,7 +65,7 @@ Backend environment variables:
 - `ACCOUNT_DELETION_WORKER_SECRET`: long random secret required by the internal due-account-deletion processor
 - `SUPPORT_TRIAGE_SECRET`: long random secret required by the internal support ticket triage endpoint
 
-When `ENVIRONMENT=production`, the backend fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, or pointed at a local origin. This is intentional: a broken deploy should fail loudly rather than booting into a half-live billing state.
+When `ENVIRONMENT=production`, the backend fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. `LIVE_BILLING_ENABLED=true` is rejected until Koaryu has durable scoped authorization for live mutations. A live-mode deployment with the switch off still verifies and reconciles matching live webhooks; outbound Stripe writes remain closed.
 
 Local defaults in this repo assume:
 
@@ -220,11 +222,11 @@ Before presenting billing live, verify both surfaces after the latest deploy:
 - Render and Vercel deployments are green for the same commit.
 - `/health/live` and `/api/v1/health/live` prove process liveness; `/health/ready` and `/api/v1/health/ready` recheck hosted runtime configuration. The older `/health` aliases remain available.
 - `/api/version` returns safe Vercel environment and exact-commit metadata for deployment comparison.
-- A studio admin can open Koaryu Core checkout or billing portal without creating duplicate active subscriptions.
+- In Stripe test mode, a studio admin can open Koaryu Core checkout or billing portal without creating duplicate active subscriptions. Production live mutations remain intentionally unavailable until durable scoped authorization is implemented and enabled.
 - `/api/v1/billing/system/status` reports configured Stripe keys, connected-account readiness, Supabase reachability, and healthy platform/Connect webhook processing for the target studio.
 - Stripe Dashboard shows successful deliveries for the platform and Connect webhook endpoints.
 - The target studio's Stripe Connect account has `charges_enabled`, `payouts_enabled`, `details_submitted`, and no currently due requirements.
-- At least one live or test-mode rehearsal has covered payer creation, saved card/autopay authorization, subscription enrollment, invoice payment projection, and cancellation cleanup.
+- At least one test-mode rehearsal has covered payer creation, saved card/autopay authorization, subscription enrollment, invoice payment projection, and cancellation cleanup. Do not run this mutation rehearsal in live mode while the production interlock is closed.
 
 If Stripe has the right object state but Koaryu looks stale, use the authenticated billing reconciliation endpoint documented in `docs/render-backend-deployment.md`.
 

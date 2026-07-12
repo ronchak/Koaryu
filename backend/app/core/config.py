@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 
@@ -71,6 +72,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEMO_RESET_ENABLED: bool = False
     DEMO_RESET_STUDIO_IDS: str = ""
+    STRIPE_MODE: Literal["test", "live"] = "test"
+    LIVE_BILLING_ENABLED: bool = False
     STRIPE_SECRET_KEY: str = ""
     STRIPE_RESTRICTED_KEY: str = ""
     STRIPE_PLATFORM_WEBHOOK_SECRET: str = ""
@@ -167,6 +170,8 @@ class Settings(BaseSettings):
                 missing.append("STRIPE_SECRET_KEY must be a Stripe test secret key in staging")
             else:
                 missing.append("STRIPE_SECRET_KEY must be a Stripe secret key")
+        elif not self.STRIPE_SECRET_KEY.startswith(f"sk_{self.STRIPE_MODE}_"):
+            missing.append("STRIPE_SECRET_KEY must match STRIPE_MODE")
 
         restricted_key = self.STRIPE_RESTRICTED_KEY.strip()
         restricted_key_prefixes = (
@@ -185,6 +190,13 @@ class Settings(BaseSettings):
                 )
             else:
                 missing.append("STRIPE_RESTRICTED_KEY must be a Stripe restricted key when set")
+        elif restricted_key and not restricted_key.startswith(f"rk_{self.STRIPE_MODE}_"):
+            missing.append("STRIPE_RESTRICTED_KEY must match STRIPE_MODE when set")
+
+        if self.LIVE_BILLING_ENABLED:
+            missing.append(
+                "LIVE_BILLING_ENABLED must remain false until durable live mutation authorization is configured"
+            )
 
         platform_webhook_secret = self.STRIPE_PLATFORM_WEBHOOK_SECRET.strip()
         if (

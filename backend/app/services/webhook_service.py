@@ -14,13 +14,17 @@ from app.schemas.billing import WebhookProcessResponse
 from app.services.billing_service import BillingService
 from app.services.platform_billing_service import PlatformBillingService
 from app.services.stripe_service import StripeService
+from app.services.stripe_mutation_policy import declared_stripe_mode
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
+WEBHOOK_UNMAPPED_ACCOUNT_RETRY_AFTER_SECONDS = 60
 WEBHOOK_FAILURE_STRIPE_ERROR = "stripe_error"
 WEBHOOK_FAILURE_DATABASE_ERROR = "database_projection_error"
 WEBHOOK_FAILURE_UNEXPECTED_ERROR = "unexpected_processing_error"
+WEBHOOK_FAILURE_UNMAPPED_LIVE_CONNECT_ACCOUNT = "unmapped_live_connect_account"
+WEBHOOK_MODE_MISMATCH_DETAIL = "Stripe webhook mode does not match configured STRIPE_MODE."
 
 
 class StripeWebhookService:
@@ -56,6 +60,17 @@ class StripeWebhookService:
         event_id = event_dict.get("id")
         event_type = event_dict.get("type") or "unknown"
         livemode = bool(event_dict.get("livemode"))
+        configured_mode = declared_stripe_mode(self.settings)
+        if configured_mode is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="STRIPE_MODE is not configured.",
+            )
+        if livemode != (configured_mode == "live"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=WEBHOOK_MODE_MISMATCH_DETAIL,
+            )
         if not event_id:
             return WebhookProcessResponse(status="ignored")
 
@@ -85,6 +100,22 @@ class StripeWebhookService:
         if not row_id:
             return WebhookProcessResponse(status="ignored")
 
+        if processor != "platform" and livemode and not self._is_mapped_connect_account(stripe_account_id):
+            if not self._finish_event_processing(
+                row_id,
+                claim_token,
+                "failed",
+                error=WEBHOOK_FAILURE_UNMAPPED_LIVE_CONNECT_ACCOUNT,
+            ):
+                raise RuntimeError(
+                    "Webhook processing lease was lost before the event could be quarantined."
+                )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Connect account mapping is not ready. Retry this webhook after the account is mapped.",
+                headers={"Retry-After": str(WEBHOOK_UNMAPPED_ACCOUNT_RETRY_AFTER_SECONDS)},
+            )
+
         try:
             if processor == "platform":
                 PlatformBillingService(self.supabase).project_subscription_event(event_dict, hydrate_subscription=True)
@@ -96,6 +127,18 @@ class StripeWebhookService:
         except Exception as exc:
             self._finish_event_processing(row_id, claim_token, "failed", error=self._failure_code(exc))
             raise
+
+    def _is_mapped_connect_account(self, stripe_account_id: Optional[str]) -> bool:
+        if not stripe_account_id:
+            return False
+        response = (
+            self.supabase.table("studio_payment_accounts")
+            .select("studio_id")
+            .eq("stripe_connected_account_id", stripe_account_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(response.data)
 
     def _claim_event_for_processing(
         self,

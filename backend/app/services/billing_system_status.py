@@ -16,6 +16,11 @@ from app.schemas.billing import (
 )
 from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _to_text
+from app.services.stripe_mutation_policy import (
+    StripeMutationPolicy,
+    configured_stripe_mode,
+    expected_stripe_livemode,
+)
 
 
 BILLING_WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
@@ -113,10 +118,19 @@ class BillingSystemStatusReporter:
         )
         self._add_webhook_checks(add_check, platform_webhooks, connect_webhooks)
 
-        ready = all(check.status == "pass" for check in checks)
+        stripe_mode = configured_stripe_mode(self.settings)
+        ready_for_configured_mode = all(check.status == "pass" for check in checks)
+        live_payments_authorized = StripeMutationPolicy(self.settings).live_payments_authorized()
         return BillingSystemStatusResponse(
             studio_id=studio_id,
-            ready_for_live_payments=ready,
+            configured_stripe_mode=stripe_mode,
+            ready_for_configured_mode=ready_for_configured_mode,
+            live_payments_authorized=live_payments_authorized,
+            ready_for_live_payments=(
+                stripe_mode == "live"
+                and live_payments_authorized
+                and ready_for_configured_mode
+            ),
             checked_at=checked_at,
             payment_account=account_response,
             platform_webhooks=platform_webhooks,
@@ -230,13 +244,28 @@ class BillingSystemStatusReporter:
         return query.is_("stripe_account_id", "null")
 
     def _add_configuration_checks(self, add_check: Callable[..., None]) -> None:
-        stripe_mode = self._expected_stripe_livemode()
+        stripe_mode = configured_stripe_mode(self.settings)
         add_check(
-            "Stripe API key",
+            "Stripe mode and API key",
             stripe_mode is not None,
-            "Stripe API key is configured with an explicit test or live mode."
+            "STRIPE_MODE and STRIPE_SECRET_KEY identify the same Stripe mode."
             if stripe_mode is not None
-            else "STRIPE_SECRET_KEY is missing or does not identify test/live mode.",
+            else "STRIPE_MODE is missing or does not match STRIPE_SECRET_KEY.",
+        )
+        live_payments_authorized = StripeMutationPolicy(self.settings).live_payments_authorized()
+        mutations_authorized = stripe_mode == "test" or (
+            stripe_mode == "live" and live_payments_authorized
+        )
+        add_check(
+            "Stripe outbound mutations",
+            mutations_authorized,
+            "Test-mode Stripe mutations are authorized automatically."
+            if stripe_mode == "test"
+            else (
+                "Durable authorization permits live Stripe mutations."
+                if live_payments_authorized
+                else "Live Stripe mutations are closed until durable authorization is configured."
+            ),
         )
         add_check(
             "Koaryu Core price",
@@ -315,7 +344,7 @@ class BillingSystemStatusReporter:
                 self._expected_stripe_livemode() is not None and health.mode_mismatch_count == 0,
                 f"Observed {label.lower()} webhook events match the configured Stripe mode."
                 if self._expected_stripe_livemode() is not None and health.mode_mismatch_count == 0
-                else f"{label} webhook event mode does not match the configured Stripe API key.",
+                else f"{label} webhook event mode does not match STRIPE_MODE.",
             )
             recent = self._is_recent_timestamp(health.latest_processed_at)
             add_check(
@@ -362,12 +391,7 @@ class BillingSystemStatusReporter:
         )
 
     def _expected_stripe_livemode(self) -> Optional[bool]:
-        key = str(getattr(self.settings, "STRIPE_SECRET_KEY", "")).strip()
-        if key.startswith("sk_live_"):
-            return True
-        if key.startswith("sk_test_"):
-            return False
-        return None
+        return expected_stripe_livemode(self.settings)
 
     @staticmethod
     def _is_recent_timestamp(value: Optional[str]) -> bool:

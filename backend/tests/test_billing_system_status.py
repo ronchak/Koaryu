@@ -24,8 +24,15 @@ class _FailingConnectAccounts(_ConnectAccounts):
         raise RuntimeError("stored-connect-secret-detail")
 
 
-def _settings(secret_key: str = TEST_STRIPE_LIVE_KEY):
+def _settings(
+    secret_key: str = TEST_STRIPE_LIVE_KEY,
+    *,
+    stripe_mode: str = "live",
+    live_billing_enabled: bool = False,
+):
     return type("Settings", (), {
+        "STRIPE_MODE": stripe_mode,
+        "LIVE_BILLING_ENABLED": live_billing_enabled,
         "STRIPE_SECRET_KEY": secret_key,
         "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
         "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform",
@@ -82,6 +89,36 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             "processing_started_at": (now - timedelta(minutes=11)).isoformat(),
             "created_at": now.isoformat(),
         }))
+
+    def test_test_mode_can_be_ready_without_claiming_live_payment_readiness(self):
+        now = datetime.now(timezone.utc)
+
+        async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
+            return _ready_account()
+
+        reporter = BillingSystemStatusReporter(
+            TableBackedSupabase({
+                "studio_payment_accounts": [{"studio_id": "studio_1"}],
+                "stripe_events": [
+                    _processed_event(account_id=None, observed_at=now, livemode=False),
+                    _processed_event(account_id="acct_1", observed_at=now, livemode=False),
+                ],
+            }),
+            settings=_settings(
+                "sk_" + "test_configured",
+                stripe_mode="test",
+                live_billing_enabled=False,
+            ),
+            connect_accounts=_ConnectAccounts(),
+            payment_account_loader=load_account,
+        )
+
+        response = asyncio.run(reporter.get_system_status("studio_1"))
+
+        self.assertEqual(response.configured_stripe_mode, "test")
+        self.assertTrue(response.ready_for_configured_mode)
+        self.assertFalse(response.live_payments_authorized)
+        self.assertFalse(response.ready_for_live_payments)
         self.assertTrue(BillingSystemStatusReporter.is_stale_webhook_processing({
             "processing_status": "processing",
             "processing_started_at": None,

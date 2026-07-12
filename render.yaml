@@ -22,6 +22,10 @@ services:
         value: ""
       - key: BILLING_PLATFORM_FEE_BPS
         value: "50"
+      - key: STRIPE_MODE
+        value: live
+      - key: LIVE_BILLING_ENABLED
+        value: "false"
       - key: SUPABASE_URL
         value: https://mimguepumzsgmcaycdsh.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY

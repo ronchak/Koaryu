@@ -59,7 +59,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_connect_account_creation_uses_accounts_v2_full_dashboard(self):
         service = StripeService()
-        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
         def fake_v2_post(path, payload, *, idempotency_key=None):
@@ -88,7 +88,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_connect_account_creation_passes_individual_entity_type(self):
         service = StripeService()
-        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
         def fake_v2_post(path, payload, *, idempotency_key=None):
@@ -111,7 +111,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_connect_onboarding_link_uses_accounts_v2_account_links(self):
         service = StripeService()
-        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
         def fake_v2_post(path, payload, *, idempotency_key=None):
@@ -141,7 +141,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_connect_onboarding_link_falls_back_to_accounts_v1_when_accounts_v2_blocked(self):
         service = StripeService()
-        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
         class _LegacyAccountLink:
@@ -175,7 +175,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_connected_account_branding_update_uses_accounts_v2(self):
         service = StripeService()
-        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
         def fake_v2_patch(path, payload, *, idempotency_key=None):
@@ -204,7 +204,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_connected_account_branding_update_falls_back_to_accounts_v1(self):
         service = StripeService()
-        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_live_123"})()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
         class _BrandingAccount:
@@ -442,7 +442,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("charges are not enabled", context.exception.detail)
 
-    def test_billing_system_status_reports_live_readiness_and_webhook_health(self):
+    def test_billing_system_status_reports_live_mode_closed_and_webhook_health(self):
         service = self.service()
         now = datetime.now(timezone.utc)
         service.settings = type("Settings", (), {
@@ -487,12 +487,18 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         response = asyncio.run(service.get_system_status("studio_1"))
 
-        self.assertTrue(response.ready_for_live_payments)
+        self.assertEqual(response.configured_stripe_mode, "live")
+        self.assertFalse(response.ready_for_configured_mode)
+        self.assertFalse(response.live_payments_authorized)
+        self.assertFalse(response.ready_for_live_payments)
         self.assertEqual(response.payment_account.status, "charges_enabled")
         self.assertEqual(response.connect_webhooks.latest_event_type, "invoice.paid")
         self.assertIn("Supabase billing read", {check.name for check in response.checks})
         self.assertNotIn("Supabase write path", {check.name for check in response.checks})
-        self.assertFalse([check for check in response.checks if check.status == "fail"])
+        outbound_check = next(
+            check for check in response.checks if check.name == "Stripe outbound mutations"
+        )
+        self.assertEqual(outbound_check.status, "fail")
 
     def test_billing_system_status_flags_stale_connect_webhook_processing(self):
         service = self.service()

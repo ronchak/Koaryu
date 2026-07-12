@@ -193,6 +193,12 @@ export function verifyStagingIsolation(env) {
   if ((env.DEMO_RESET_STUDIO_IDS ?? "").trim()) {
     throw new Error("DEMO_RESET_STUDIO_IDS must be empty during release-gate verification.");
   }
+  if (required(env, "STRIPE_MODE").toLowerCase() !== "test") {
+    throw new Error("STRIPE_MODE must be test for staging release-gate verification.");
+  }
+  if (required(env, "LIVE_BILLING_ENABLED").toLowerCase() !== "false") {
+    throw new Error("LIVE_BILLING_ENABLED must be false for staging release-gate verification.");
+  }
 
   requireCredentialShape(
     "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
@@ -226,7 +232,7 @@ export function verifyStagingIsolation(env) {
     checks: [
       "dedicated origins",
       "staging Supabase ref",
-      "test-mode Stripe keys",
+      "explicit test-mode Stripe configuration",
       "platform and Connect webhook destinations",
       "live application mode",
       "server-side API proxy enabled",
