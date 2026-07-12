@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -215,13 +216,12 @@ class PlatformBillingService:
                     try:
                         subscription = StripeService().retrieve_subscription(subscription_id)
                         update.update(self._project_subscription(subscription))
-                    except Exception:
-                        logger.exception(
-                            "Stripe checkout completion subscription hydration failed",
-                            extra={
-                                "studio_id": studio_id,
-                                "stripe_subscription_id": subscription_id,
-                            },
+                    except Exception as exc:
+                        logger.error(
+                            "Stripe checkout completion subscription hydration failed; "
+                            "reference=%s; error_type=%s",
+                            uuid4().hex,
+                            type(exc).__name__,
                         )
                         update["status"] = "incomplete"
                 else:

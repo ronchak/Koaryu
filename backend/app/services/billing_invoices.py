@@ -267,13 +267,10 @@ class BillingInvoiceManager:
                 )
             except Exception as exc:
                 error_id = uuid4().hex
-                logger.exception(
-                    "Stripe hosted invoice email send failed",
-                    extra={
-                        "error_id": error_id,
-                        "invoice_id": invoice_id,
-                        "studio_id": studio_id,
-                    },
+                logger.error(
+                    "Stripe hosted invoice email send failed; reference=%s; error_type=%s",
+                    error_id,
+                    type(exc).__name__,
                 )
                 send_error = (
                     "Stripe finalized the hosted invoice, but Koaryu could not send the email. "

@@ -7,6 +7,10 @@ def _synthetic_stripe_key(prefix: str) -> str:
     return "_".join((prefix, "live", "fixture1234567890abcdef"))
 
 
+def _synthetic_webhook_secret(scope: str) -> str:
+    return "_".join(("whsec", scope, "fixture1234567890abcdef"))
+
+
 VALID_PRODUCTION_SETTINGS = {
     "SUPABASE_URL": "https://project.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_1234567890abcdefghijklmnopqrstuvwxyz",
@@ -14,8 +18,8 @@ VALID_PRODUCTION_SETTINGS = {
     "FRONTEND_URL": "https://koaryu.app",
     "STRIPE_SECRET_KEY": _synthetic_stripe_key("sk"),
     "STRIPE_RESTRICTED_KEY": _synthetic_stripe_key("rk"),
-    "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform1234567890abcdef",
-    "STRIPE_CONNECT_WEBHOOK_SECRET": "whsec_connect1234567890abcdef",
+    "STRIPE_PLATFORM_WEBHOOK_SECRET": _synthetic_webhook_secret("platform"),
+    "STRIPE_CONNECT_WEBHOOK_SECRET": _synthetic_webhook_secret("connect"),
     "STRIPE_KOARYU_CORE_PRICE_ID": "price_1234567890abcdef",
     "STRIPE_CONNECT_CLIENT_ID": "ca_1234567890abcdef",
     "ACCOUNT_DELETION_WORKER_SECRET": "delete-secret-1234567890abcdefghijklmnopqrstuvwxyz",
@@ -63,7 +67,10 @@ class ProductionConfigValidationTest(unittest.TestCase):
                 "SUPABASE_SERVICE_ROLE_KEY": "your-supabase-service-role-key",
                 "STRIPE_SECRET_KEY": "sk_live_or_test_your_key",
                 "STRIPE_RESTRICTED_KEY": "rk_live_or_test_your_key",
-                "STRIPE_CONNECT_WEBHOOK_SECRET": "whsec_connect_platform_scope,whsec_connect_connected_scope",
+                "STRIPE_CONNECT_WEBHOOK_SECRET": ",".join((
+                    _synthetic_webhook_secret("connect_platform_scope"),
+                    _synthetic_webhook_secret("connect_connected_scope"),
+                )),
                 "STRIPE_CONNECT_CLIENT_ID": "ca_your_connect_client_id",
             },
         )
