@@ -126,13 +126,15 @@ Do not infer a provider value from application behavior. Capture Render environm
 
 Use `GET /api/version` on the protected staging frontend and `GET /health/ready` on the staging backend for application-reported SHA evidence. Both endpoints reject malformed provider metadata instead of reflecting it. Reconcile those responses with authenticated Vercel and Render deployment metadata; application responses do not replace provider readback.
 
-### 2026-07-12 durable-alias recheck
+### 2026-07-12 17:20 UTC durable-alias recheck
 
-- The durable staging alias now points to Vercel preview deployment `dpl_5fW7LGhrUUXv1pDXC71azn4XT6YV`. Authenticated provider metadata reports it `READY`, and its `/api/version` response reports exact candidate `9cfd5123b3e1e28a274432a1fccdbf446739c89b`.
+- At this timestamp, the durable staging alias pointed to Vercel preview deployment `dpl_5fW7LGhrUUXv1pDXC71azn4XT6YV`. Authenticated provider metadata reported it `READY`, and its `/api/version` response reported candidate `9cfd5123b3e1e28a274432a1fccdbf446739c89b`.
 - The protected frontend proxy reached the staging backend: `/api/proxy/health` returned `200`, while unauthenticated `/api/proxy/auth/me` returned `401`.
 - A fresh direct preflight from the durable staging origin returned `400 Disallowed CORS origin`. The retired temporary origin still returned `200`, and the production origin remained rejected. Render staging is therefore deployed with the old frontend-origin value; prior CORS evidence must not be used for the durable alias.
 - Before exact-candidate staging deployment, authenticated Render access must replace the stale staging frontend-origin value, preserve all other isolated test-only values, and deploy this candidate. The candidate's staging startup validator is designed to reject the stale value rather than boot with it.
 - No Render configuration, production provider state, production data, or billing state was changed during this recheck.
+
+Aliases and deployment heads are mutable after this timestamp. Use the linked PR and Gate #21 provider evidence for the later exact head; do not treat this time-bounded observation as a perpetual statement of current deployment state.
 
 ## Rebuild Clean Staging
 
