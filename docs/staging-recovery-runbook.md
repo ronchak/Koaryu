@@ -9,7 +9,7 @@ Use this runbook to rebuild Koaryu staging, prove that it is isolated from produ
 | Production | `mimguepumzsgmcaycdsh` | Live configuration is production-only | Never use as a staging, replay, or restore target |
 | Current staging | `nxgsektqsgrtyfhawxbc` | Test only | May contain sanitized fixtures; must not contain production-derived rows |
 
-The current `koaryu-staging` project is isolated: all 80 repository migrations were replayed, the production backup was **not** restored into it, and it contains only the synthetic `River City Martial Arts` fixture. The temporary hosted restore target used for the July 10 drill was `zmmacdleiaohvxdubrav`; it was deleted after validation.
+The current `koaryu-staging` project is isolated: all 80 repository migrations were replayed, the production backup was **not** restored into it, and it contains only the synthetic `River City Martial Arts` fixture. The dedicated staging backend API is `https://koaryu-staging.onrender.com/api/v1`, and the protected staging frontend alias is `https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app`. The temporary hosted restore target used for the July 10 drill was `zmmacdleiaohvxdubrav`; it was deleted after validation.
 
 Staging frontend and backend configuration must point only to `nxgsektqsgrtyfhawxbc`. They must not contain the production Supabase ref, any `sk_live_`/`rk_live_`/`pk_live_` Stripe value, the production frontend origin, or a production backend destination. Never print secret values while checking this.
 
@@ -35,7 +35,23 @@ case "${STRIPE_RESTRICTED_KEY:-}" in
 esac
 ```
 
-Before a frontend or backend staging deploy, also run the application guard below. It intentionally fails while the expected staging origins are unknown. Assign dedicated staging URLs first; do not substitute production URLs to make the guard pass.
+Before a frontend or backend staging deploy, run the automated application guard with a private, non-traced environment assembled from both providers. `STAGING_PLATFORM_WEBHOOK_DESTINATION` and `STAGING_CONNECT_WEBHOOK_DESTINATION` are non-secret audit inputs copied from the Stripe test-mode dashboard; the signing secrets remain secret inputs. The guard prints only a pass/fail summary, enforces exact origins and webhook destinations, and rejects production destinations and live Stripe key prefixes.
+
+```bash
+set -euo pipefail
+set +x
+export EXPECTED_STAGING_REF=nxgsektqsgrtyfhawxbc
+export PRODUCTION_REF=mimguepumzsgmcaycdsh
+export EXPECTED_STAGING_FRONTEND_ORIGIN=https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app
+export EXPECTED_STAGING_BACKEND_API=https://koaryu-staging.onrender.com/api/v1
+export STAGING_PLATFORM_WEBHOOK_DESTINATION=https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/platform
+export STAGING_CONNECT_WEBHOOK_DESTINATION=https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/connect
+
+# Load the configured frontend/backend values without tracing them, then run:
+npm run verify:staging-isolation
+```
+
+The shell assertions below remain a minimal fallback for a private operator shell. They intentionally fail while the expected staging origins are unknown. Assign dedicated staging URLs first; do not substitute production URLs to make the guard pass.
 
 ```bash
 set -euo pipefail
@@ -94,7 +110,17 @@ case "${STRIPE_RESTRICTED_KEY:-}" in
 esac
 ```
 
-Webhook signing secrets do not encode test/live mode in their prefix. Confirm both configured endpoint URLs in the Stripe dashboard are the dedicated staging backend before installing those secrets. The current branch-scoped Vercel preview is isolated to staging Supabase and test Stripe, but the application gate remains blocked because the dedicated staging backend has not been created.
+Webhook signing secrets do not encode test/live mode in their prefix. Confirm both configured endpoint URLs in the Stripe test-mode dashboard are the dedicated staging backend before installing those secrets.
+
+### 2026-07-11 staging audit
+
+- Supabase `nxgsektqsgrtyfhawxbc` reported `ACTIVE_HEALTHY` on PostgreSQL 17.
+- Render `GET /api/v1/health` returned `200` after a cold wake. Unauthenticated `GET /api/v1/auth/me` and `GET /api/v1/students` each returned `401`.
+- A CORS preflight from the exact staging frontend alias returned `200` with that alias as `Access-Control-Allow-Origin`; the same preflight from `https://koaryu.app` returned `400 Disallowed CORS origin` without an allow-origin header.
+- The Vercel staging deployment `dpl_AXrjgCKzsFr6q3V2AKTU3hJjgYTa` is `READY`, protected by Vercel SSO, and built from `b78cb9863e226d17dc242259cf7099e62c6ccfd5`, not the current release-orchestration head. Its branch-scoped configuration proves the staging Supabase URL, matching public/server backend URL, the non-production site alias, live application mode, and sensitive treatment of public Supabase/Stripe keys without printing their values.
+- The gate remains open: Render's deployed Git SHA, backend secret/test-mode classification, both Stripe test-mode webhook destinations and delivery evidence, current application-SHA alignment, proxy smoke behind Vercel SSO, and an authenticated representative application smoke are not yet proven.
+
+Do not infer a provider value from application behavior. Capture Render environment metadata and exact deployed SHA through authenticated provider access, copy the two non-secret Stripe test endpoint URLs into the guard inputs, run the guard, deploy the same current SHA to both services, and then run the protected frontend and authenticated smoke checks.
 
 ## Rebuild Clean Staging
 
@@ -271,6 +297,16 @@ encrypt any object bytes present; a SQL dump alone is not a Storage backup.
 Future data dumps exclude `storage.objects` and transient multipart rows because
 the Storage API recreates them when the archived bytes are uploaded. The restore
 fails closed if object rows are already present before that upload.
+
+## Off-site copy gate
+
+The July 10 artifacts have not been found outside `$HOME/Koaryu Backups/production-20260710T070020Z`. A second local path, a synced-folder path without provider-side confirmation, or the ordinary staging project does not count as off-site recovery evidence.
+
+Before copying, record the approved provider and folder/bucket, Ronak as data owner, the minimum named operator group, encryption-at-rest posture, retention window, rotation cadence, monitoring owner, deletion owner, and whether the destination adds ongoing cost. Keep the existing Koaryu AEAD artifacts encrypted; do not upload plaintext dumps or the Keychain recovery secret. A paid storage upgrade or materially higher operational burden requires the approval boundary in the release ledger.
+
+After the provider destination is approved, upload only the five `.gpg` artifacts, then download them into a new locked temporary directory through an authenticated provider session. Verify all five recorded SHA-256 hashes against that downloaded copy before decrypting. A local source-path checksum does not close the gate. Also verify that an unauthorized identity cannot read the provider object and that a deliberately wrong recovery key fails closed. Record provider object identifiers and access-policy evidence without including signed URLs, access tokens, raw PII, or secrets.
+
+The 2026-07-11 local prerequisite audit reconfirmed all five recorded SHA-256 hashes, mode `0600`, a present Keychain recovery item, successful decryption to `/dev/null` with that item, and rejection of a deliberately wrong key. No off-site artifact was found, no upload occurred, and no plaintext was written. These checks are prerequisites only; they do not close the off-site gate.
 
 ## Restore Drill
 
