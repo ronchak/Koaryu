@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from supabase import Client
-from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
+from app.core.deps import (
+    get_belt_configuration_admin_studio_id,
+    get_current_studio_id,
+    get_current_user_id,
+    get_promotion_manager_studio_id,
+    get_supabase,
+)
 from app.schemas.belt import (
     BeltLadderCreate, BeltLadderUpdate, BeltLadderSyncRequest, BeltLadderResponse,
     BeltRankCreate, BeltRankUpdate, BeltRankResponse,
@@ -34,7 +40,7 @@ async def list_ladders(
 async def create_ladder(
     data: BeltLadderCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_belt_configuration_admin_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).create_ladder(data, studio_id, user_id)
@@ -45,7 +51,7 @@ async def update_ladder(
     ladder_id: str,
     data: BeltLadderUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_belt_configuration_admin_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).update_ladder(ladder_id, data, studio_id, user_id)
@@ -56,7 +62,7 @@ async def sync_ladder(
     ladder_id: str,
     data: BeltLadderSyncRequest,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_belt_configuration_admin_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).sync_ladder(ladder_id, data, studio_id, user_id)
@@ -66,7 +72,7 @@ async def sync_ladder(
 async def create_rank(
     ladder_id: str,
     data: BeltRankCreate,
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_belt_configuration_admin_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).create_rank(ladder_id, data, studio_id)
@@ -76,7 +82,7 @@ async def create_rank(
 async def update_rank(
     rank_id: str,
     data: BeltRankUpdate,
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_belt_configuration_admin_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).update_rank(rank_id, data, studio_id)
@@ -85,7 +91,7 @@ async def update_rank(
 @router.delete("/ranks/{rank_id}", status_code=204)
 async def delete_rank(
     rank_id: str,
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_belt_configuration_admin_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     await BeltService(supabase).delete_rank(rank_id, studio_id)
@@ -114,7 +120,7 @@ async def list_promotions(
 async def promote_student(
     data: PromoteStudent,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_promotion_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).promote_student(data, studio_id, user_id)

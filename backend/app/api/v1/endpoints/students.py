@@ -1,7 +1,14 @@
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header
 from typing import Optional
 from supabase import Client
-from app.core.deps import get_current_user_id, get_current_studio_id, get_requested_studio_id, get_supabase
+from app.core.deps import (
+    get_current_studio_id,
+    get_current_user_id,
+    get_current_write_studio_id,
+    get_requested_studio_id,
+    get_roster_schedule_manager_studio_id,
+    get_supabase,
+)
 from app.schemas.billing import (
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentForStudentCreate,
@@ -23,7 +30,7 @@ from app.schemas.student import (
 )
 from app.services.billing_service import BillingService
 from app.services.studio_scope import (
-    resolve_billing_admin_staff_role_for_user,
+    resolve_billing_admin_write_staff_role_for_user as resolve_billing_admin_staff_role_for_user,
     resolve_billing_manager_staff_role_for_user,
 )
 from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES, validate_csv_import_mapping
@@ -97,7 +104,7 @@ async def list_students(
 async def create_student(
     data: StudentCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -119,7 +126,7 @@ async def update_student(
     student_id: str,
     data: StudentUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -131,7 +138,7 @@ async def upload_student_photo(
     student_id: str,
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -142,7 +149,7 @@ async def upload_student_photo(
 async def delete_student_photo(
     student_id: str,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -153,7 +160,7 @@ async def delete_student_photo(
 async def delete_student(
     student_id: str,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -175,7 +182,7 @@ async def add_student_program(
     student_id: str,
     data: StudentProgramMembershipCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -188,7 +195,7 @@ async def update_student_program(
     membership_id: str,
     data: StudentProgramMembershipUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -200,7 +207,7 @@ async def remove_student_program(
     student_id: str,
     membership_id: str,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -245,7 +252,7 @@ async def add_student_billing_enrollment(
 async def bulk_update_tags(
     data: BulkTagUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -257,7 +264,7 @@ async def bulk_update_tags(
 async def bulk_update_status(
     data: BulkStatusUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -316,7 +323,7 @@ async def execute_csv_import(
     options: Optional[str] = Query(None, description="Legacy JSON string of import options"),
     request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     """Execute the import for all valid rows. Skips invalid rows and returns summary."""

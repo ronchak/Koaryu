@@ -5,7 +5,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
 from app.core.security import get_user_id_from_token
 from app.db.supabase import create_supabase_client
-from app.services.studio_scope import resolve_staff_role_for_user
+from app.services.studio_scope import (
+    resolve_belt_configuration_admin_staff_role_for_user,
+    resolve_lead_conversion_manager_staff_role_for_user,
+    resolve_promotion_manager_staff_role_for_user,
+    resolve_roster_schedule_manager_staff_role_for_user,
+    resolve_staff_role_for_user,
+    resolve_write_staff_role_for_user,
+)
 from supabase import Client
 
 security = HTTPBearer(auto_error=False)
@@ -74,6 +81,76 @@ async def get_current_studio_id(
     request does not yet carry active studio state.
     """
     membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return membership["studio_id"]
+
+
+async def get_current_write_studio_id(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+) -> str:
+    membership = resolve_write_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return membership["studio_id"]
+
+
+async def get_roster_schedule_manager_studio_id(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+) -> str:
+    membership = resolve_roster_schedule_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return membership["studio_id"]
+
+
+async def get_belt_configuration_admin_studio_id(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+) -> str:
+    membership = resolve_belt_configuration_admin_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return membership["studio_id"]
+
+
+async def get_promotion_manager_studio_id(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+) -> str:
+    membership = resolve_promotion_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return membership["studio_id"]
+
+
+async def get_lead_conversion_manager_studio_id(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+) -> str:
+    membership = resolve_lead_conversion_manager_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,

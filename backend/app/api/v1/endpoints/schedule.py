@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from supabase import Client
-from app.core.deps import get_current_user_id, get_current_studio_id, get_supabase
+from app.core.deps import (
+    get_current_studio_id,
+    get_current_user_id,
+    get_current_write_studio_id,
+    get_roster_schedule_manager_studio_id,
+    get_supabase,
+)
 from app.schemas.schedule import (
     ClassTemplateCreate, ClassTemplateUpdate, ClassTemplateResponse,
     ClassSessionCreate, ClassSessionResponse,
@@ -31,7 +37,7 @@ async def list_templates(
 async def create_template(
     data: ClassTemplateCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).create_template(data, studio_id, user_id)
@@ -42,7 +48,7 @@ async def update_template(
     template_id: str,
     data: ClassTemplateUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).update_template(template_id, data, studio_id, user_id)
@@ -52,7 +58,7 @@ async def update_template(
 async def delete_template(
     template_id: str,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     await ScheduleService(supabase).delete_template(template_id, studio_id, user_id)
@@ -92,7 +98,7 @@ async def materialize_session_range(
             f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
         ),
     ),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).materialize_session_range(
@@ -106,7 +112,7 @@ async def materialize_session_range(
 async def create_session(
     data: ClassSessionCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).create_session(data, studio_id, user_id)
@@ -117,7 +123,7 @@ async def delete_session(
     session_id: str,
     scope: ClassSessionDeleteScopeValue = Query("session"),
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     await ScheduleService(supabase).delete_session(session_id, studio_id, user_id, scope)
@@ -127,7 +133,7 @@ async def delete_session(
 async def generate_week(
     week_start: str = Query(..., description="Monday date YYYY-MM-DD"),
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).generate_sessions_for_week(studio_id, week_start, user_id)
@@ -164,7 +170,7 @@ async def list_attendance(
 async def check_in(
     data: AttendanceCheckIn,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).check_in(data, studio_id, user_id)
@@ -174,7 +180,7 @@ async def check_in(
 async def clear_attendance(
     session_id: str = Query(...),
     student_id: str = Query(...),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     await ScheduleService(supabase).clear_attendance(session_id, student_id, studio_id)
@@ -184,7 +190,7 @@ async def clear_attendance(
 async def bulk_check_in(
     data: AttendanceBulkCheckIn,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).bulk_check_in(data, studio_id, user_id)
