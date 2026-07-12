@@ -92,10 +92,11 @@ Operator: `Codex release orchestrator`
 
 Operator: `Codex release orchestrator`
 
-- Current protected `main`: `d396f26552914d913125cccae5eeb247b4ff83b7`; current repository migration head: `20260711215000_harden_function_execution_boundaries.sql`.
-- A guarded read-only production query on Supabase `mimguepumzsgmcaycdsh` reconfirmed the pinned 78-row earlier-history digest `78:b97b56e3c883c1538cf1a85bd4dfc2ae` and the same two production-only identities: `20260710010051` and `20260710010735`. No production mutation occurred.
+- Execution repository base: protected `main` `692f13a4c7543a937c6fcabd257e05b9ab0b1210`; repository migration head: `20260711215000_harden_function_execution_boundaries.sql`.
+- Ronak explicitly approved the exact bounded package on 2026-07-12. At `2026-07-12T19:08:05Z`, the documented `forward` block ran verbatim with Supabase CLI `2.95.4`: it added both repository identities, verified the exact four-row additive state, removed both production-only aliases, and completed with a matching local/remote list. The contingency path was not needed.
 - The [history-only reconciliation package](production-migration-reconciliation.md) pins the exact inspected migration-source commit and file hashes, schema/function/ACL equivalence, PostgreSQL 17 rehearsal, additive-first repair order, full-history guards, failure recovery, and exact approval scope under issue [#20](https://github.com/ronchak/Koaryu/issues/20).
-- Production execution remains **unapproved and blocked**. Further production migrations remain prohibited; the newer repository billing/function-hardening migrations have not been applied to production. Live billing remains closed and unknown production records remain untouched.
+- Independent aggregate-only provider readback confirmed final reconciliation history `20260710001153:atomic_recurring_session_materialization|20260710010500:fix_first_occurrence_series_delete`, unchanged earlier-history digest `78:b97b56e3c883c1538cf1a85bd4dfc2ae`, and unchanged function/owner/security/search-path/ACL digest `2:7890f9aa36bb200f08153351f9ae98ab`.
+- Gate #20's history divergence is resolved. This action ran no migration SQL and changed no application, Auth, Storage, tenant, billing, or Stripe record. Live billing remains closed and unknown production records remain untouched.
 
 ## Release Entry Template
 
