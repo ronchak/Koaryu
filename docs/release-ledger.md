@@ -64,6 +64,15 @@ Operator: `Codex release orchestrator`
 - Gate status: #21 remains **open** pending authenticated Render environment/SHA evidence, Stripe test-mode endpoint and delivery evidence for both webhooks, an exact-current-SHA deploy on both providers, protected frontend/API-proxy smoke, authenticated representative application smoke, and cost/ownership/cleanup records.
 - Recovery status: the five local AEAD artifacts retain their recorded hashes and mode `0600`, decrypt with the Keychain-held key, and reject a deliberately wrong key. No approved off-site destination or provider-downloaded copy exists, so #22 remains **open** and #23 remains blocked. No upload, restore, plaintext write, production mutation, or production-derived staging load occurred.
 
+## Production Migration Reconciliation Audit — 2026-07-12
+
+Operator: `Codex release orchestrator`
+
+- Current protected `main`: `d396f26552914d913125cccae5eeb247b4ff83b7`; current repository migration head: `20260711215000_harden_function_execution_boundaries.sql`.
+- A guarded read-only production query on Supabase `mimguepumzsgmcaycdsh` reconfirmed the pinned 78-row earlier-history digest `78:b97b56e3c883c1538cf1a85bd4dfc2ae` and the same two production-only identities: `20260710010051` and `20260710010735`. No production mutation occurred.
+- The [history-only reconciliation package](production-migration-reconciliation.md) pins the exact inspected migration-source commit and file hashes, schema/function/ACL equivalence, PostgreSQL 17 rehearsal, additive-first repair order, full-history guards, failure recovery, and exact approval scope under issue [#20](https://github.com/ronchak/Koaryu/issues/20).
+- Production execution remains **unapproved and blocked**. Further production migrations remain prohibited; the newer repository billing/function-hardening migrations have not been applied to production. Live billing remains closed and unknown production records remain untouched.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
