@@ -8,7 +8,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    autoDeployTrigger: commit
+    autoDeployTrigger: 'off'
     envVars:
       - key: FRONTEND_URL
         value: https://koaryu.app
@@ -39,8 +39,6 @@ services:
       - key: STRIPE_CONNECT_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_KOARYU_CORE_PRICE_ID
-        sync: false
-      - key: STRIPE_CONNECT_CLIENT_ID
         sync: false
       - key: ACCOUNT_DELETION_WORKER_SECRET
         sync: false

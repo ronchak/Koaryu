@@ -45,6 +45,23 @@ function validPullRequest() {
   };
 }
 
+function validRenderService() {
+  return {
+    id: "srv-d7mogk1kh4rs73aq6hqg",
+    name: "Koaryu",
+    branch: "main",
+    repo: "https://github.com/ronchak/Koaryu",
+    rootDir: "backend",
+    type: "web_service",
+    serviceDetails: {
+      url: "https://koaryu.onrender.com",
+      healthCheckPath: "/health",
+    },
+    autoDeployTrigger: "off",
+    autoDeploy: "no",
+  };
+}
+
 function runGuard(
   payload,
   {
@@ -53,12 +70,17 @@ function runGuard(
     expectedBase = BASE_SHA,
     prNumber = "7",
     ghRepo = "attacker/redirected-repository",
+    renderPayload = validRenderService(),
+    secondRenderPayload = renderPayload,
+    renderApiKey = "test-render-api-key",
   } = {},
 ) {
   const fakeBin = mkdtempSync(path.join(tmpdir(), "koaryu-merge-guard-"));
   const callLog = path.join(fakeBin, "calls.log");
   const viewCount = path.join(fakeBin, "view-count");
   const fakeGh = path.join(fakeBin, "gh");
+  const renderCount = path.join(fakeBin, "render-count");
+  const fakeCurl = path.join(fakeBin, "curl");
   writeFileSync(
     fakeGh,
     `#!/bin/sh
@@ -84,6 +106,23 @@ exit 1
 `,
   );
   chmodSync(fakeGh, 0o755);
+  writeFileSync(
+    fakeCurl,
+    `#!/bin/sh
+count=0
+if [ -f "$RENDER_VIEW_COUNT" ]; then
+  count="$(sed -n '1p' "$RENDER_VIEW_COUNT")"
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$RENDER_VIEW_COUNT"
+if [ "$count" -eq 1 ]; then
+  printf '%s' "$RENDER_JSON_FIRST"
+else
+  printf '%s' "$RENDER_JSON_SECOND"
+fi
+`,
+  );
+  chmodSync(fakeCurl, 0o755);
 
   try {
     const result = spawnSync(
@@ -99,6 +138,10 @@ exit 1
           GH_REPO: ghRepo,
           PR_JSON_FIRST: JSON.stringify(payload),
           PR_JSON_SECOND: JSON.stringify(secondPayload),
+          RENDER_API_KEY: renderApiKey,
+          RENDER_VIEW_COUNT: renderCount,
+          RENDER_JSON_FIRST: JSON.stringify(renderPayload),
+          RENDER_JSON_SECOND: JSON.stringify(secondRenderPayload),
         },
       },
     );
@@ -123,7 +166,55 @@ test("guarded merge passes the exact head to GitHub after every check succeeds",
     result.calls.at(-1),
     `pr merge 7 --repo ${REPOSITORY} --merge --match-head-commit ${HEAD_SHA}`,
   );
+  assert.doesNotMatch(result.stdout + result.stderr, /test-render-api-key/);
+  assert.match(result.stdout, /"authenticated_readback":true/);
+  assert.match(result.stdout, /"auto_deploy":"off"/);
 });
+
+for (const [name, options, expectedError] of [
+  [
+    "enabled Render auto-deploy",
+    { renderPayload: { ...validRenderService(), autoDeployTrigger: "commit", autoDeploy: "yes" } },
+    /auto-deploy is not disabled/,
+  ],
+  [
+    "wrong Render service",
+    { renderPayload: { ...validRenderService(), name: "koaryu-staging" } },
+    /pinned koaryu production service/,
+  ],
+  [
+    "wrong Render service-name casing",
+    { renderPayload: { ...validRenderService(), name: "koaryu" } },
+    /pinned koaryu production service/,
+  ],
+  [
+    "wrong Render service id",
+    { renderPayload: { ...validRenderService(), id: "srv-other" } },
+    /pinned koaryu production service/,
+  ],
+  [
+    "wrong canonical Render identity",
+    { renderPayload: { ...validRenderService(), repo: "https://github.com/attacker/Koaryu" } },
+    /canonical production repository/,
+  ],
+  ["missing Render branch", { renderPayload: { ...validRenderService(), branch: undefined } }, /not main/],
+  ["null Render branch", { renderPayload: { ...validRenderService(), branch: null } }, /not main/],
+  ["empty Render branch", { renderPayload: { ...validRenderService(), branch: "" } }, /not main/],
+  [
+    "Render provider drift before merge",
+    { secondRenderPayload: { ...validRenderService(), autoDeployTrigger: "commit" } },
+    /auto-deploy is not disabled/,
+  ],
+  ["missing Render API key", { renderApiKey: "" }, /RENDER_API_KEY is required/],
+]) {
+  test(`guarded merge rejects ${name}`, () => {
+    const result = runGuard(validPullRequest(), options);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, expectedError);
+    assert.equal(result.calls.some((call) => call.startsWith("pr merge ")), false);
+  });
+}
 
 const rejectionCases = [
   ["non-main base branch", (payload) => { payload.baseRefName = "codex/stacked-base"; }, /not main/],

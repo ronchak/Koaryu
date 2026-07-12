@@ -8,7 +8,7 @@ const PRODUCTION_BACKEND_HOST = "koaryu.onrender.com";
 const KOARYU_PRODUCTION_REF = "mimguepumzsgmcaycdsh";
 const KOARYU_STAGING_REF = "nxgsektqsgrtyfhawxbc";
 const KOARYU_STAGING_FRONTEND =
-  "https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app";
+  "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app";
 const KOARYU_STAGING_BACKEND = "https://koaryu-staging.onrender.com/api/v1";
 
 function normalizeUrl(name, value, { requireApiV1 = false } = {}) {
@@ -181,6 +181,12 @@ export function verifyStagingIsolation(env) {
   if (required(env, "NEXT_PUBLIC_PREVIEW_MODE").toLowerCase() !== "false") {
     throw new Error("NEXT_PUBLIC_PREVIEW_MODE must be false for application smoke checks.");
   }
+  if (required(env, "NEXT_PUBLIC_USE_API_PROXY").toLowerCase() !== "true") {
+    throw new Error("NEXT_PUBLIC_USE_API_PROXY must be true for application smoke checks.");
+  }
+  if (required(env, "NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG").toLowerCase() !== "false") {
+    throw new Error("NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG must be false for application smoke checks.");
+  }
   if (required(env, "DEMO_RESET_ENABLED").toLowerCase() !== "false") {
     throw new Error("DEMO_RESET_ENABLED must be false during release-gate verification.");
   }
@@ -223,6 +229,8 @@ export function verifyStagingIsolation(env) {
       "test-mode Stripe keys",
       "platform and Connect webhook destinations",
       "live application mode",
+      "server-side API proxy enabled",
+      "performance debug disabled",
       "demo reset disabled",
       "production destinations rejected",
     ],

@@ -16,11 +16,14 @@ Expected service settings:
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Health check path: `/health`
+- Bootstrap health check path: `/health`; switch explicitly to `/health/live` only after the approved artifact containing that endpoint is live
+- Automatic production deploys: off; deploy one reviewed commit explicitly
 
 Render should use Python `3.11`. The backend includes both `backend/runtime.txt` (`python-3.11.9`) and `backend/.python-version` (`3.11`) so Render does not default to a newer Python release that lacks compatible wheels for pinned dependencies.
 
 The configured `starter` Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
+
+`render.yaml` intentionally sets `autoDeployTrigger: 'off'`. A merge to `main` must not release the backend before the fixed candidate has passed staging. Trigger the production deploy with the exact approved commit SHA, then read the deployed SHA back from Render before recording the release. Do not re-enable commit auto-deploy as a shortcut.
 
 For a live dojo-floor demo, use the configured starter service only after it is warm, or use a larger always-on backend. Cold starts on small Render instances can still make the first authenticated or billing click feel broken even when the service is healthy.
 
@@ -51,16 +54,17 @@ STRIPE_RESTRICTED_KEY=
 STRIPE_PLATFORM_WEBHOOK_SECRET=
 STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
-STRIPE_CONNECT_CLIENT_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
 ```
 
 `STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
 
-### Production Startup Guard
+Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
 
-When `ENVIRONMENT=production`, FastAPI validates critical live-service configuration during import. The service refuses to boot if any of the following are blank, placeholder-shaped, too short for a production secret, or invalid for production:
+### Hosted Runtime Guard
+
+When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critical service configuration during import. The service refuses to boot if any of the following are blank, placeholder-shaped, too short for a hosted secret, or invalid for that environment:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -69,11 +73,12 @@ When `ENVIRONMENT=production`, FastAPI validates critical live-service configura
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`
 - `STRIPE_CONNECT_WEBHOOK_SECRET`
 - `STRIPE_KOARYU_CORE_PRICE_ID`
-- `STRIPE_CONNECT_CLIENT_ID`
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
-`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. `STRIPE_RESTRICTED_KEY` is optional, but if set it must be a non-placeholder Stripe restricted key. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for `Production configuration is incomplete` and fix the named config vars before redeploying.
+`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. `STRIPE_RESTRICTED_KEY` is optional, but if set it must be a non-placeholder Stripe restricted key. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
+
+Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures. An unknown or misspelled `ENVIRONMENT` fails closed.
 
 Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
 
@@ -125,10 +130,14 @@ Use `docs/support-triage.md` as the runbook. Do not post full ticket details, pa
 After the first deploy finishes:
 
 ```bash
-curl https://koaryu.onrender.com/health
-curl https://koaryu.onrender.com/api/v1/health
+curl https://koaryu.onrender.com/health/live
+curl https://koaryu.onrender.com/health/ready
+curl https://koaryu.onrender.com/api/v1/health/live
+curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
+
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. Readiness rechecks runtime configuration but does not yet probe Supabase or Stripe network availability.
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 
@@ -161,7 +170,6 @@ ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
   STRIPE_PLATFORM_WEBHOOK_SECRET="$STRIPE_PLATFORM_WEBHOOK_SECRET" \
   STRIPE_CONNECT_WEBHOOK_SECRET="$STRIPE_CONNECT_WEBHOOK_SECRET" \
   STRIPE_KOARYU_CORE_PRICE_ID="$STRIPE_KOARYU_CORE_PRICE_ID" \
-  STRIPE_CONNECT_CLIENT_ID="$STRIPE_CONNECT_CLIENT_ID" \
   ACCOUNT_DELETION_WORKER_SECRET="$ACCOUNT_DELETION_WORKER_SECRET" \
   SUPPORT_TRIAGE_SECRET="$SUPPORT_TRIAGE_SECRET" \
   venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
@@ -170,8 +178,10 @@ ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
 In another shell:
 
 ```bash
-curl -fsS http://127.0.0.1:8001/health
-curl -fsS http://127.0.0.1:8001/api/v1/health
+curl -fsS http://127.0.0.1:8001/health/live
+curl -fsS http://127.0.0.1:8001/health/ready
+curl -fsS http://127.0.0.1:8001/api/v1/health/live
+curl -fsS http://127.0.0.1:8001/api/v1/health/ready
 ```
 
 For frontend changes, run at least the targeted lint pass for the release surface:

@@ -9,7 +9,7 @@ Use this runbook to rebuild Koaryu staging, prove that it is isolated from produ
 | Production | `mimguepumzsgmcaycdsh` | Live configuration is production-only | Never use as a staging, replay, or restore target |
 | Current staging | `nxgsektqsgrtyfhawxbc` | Test only | May contain sanitized fixtures; must not contain production-derived rows |
 
-The current `koaryu-staging` project is isolated: all 80 repository migrations were replayed, the production backup was **not** restored into it, and it contains only the synthetic `River City Martial Arts` fixture. The dedicated staging backend API is `https://koaryu-staging.onrender.com/api/v1`, and the protected staging frontend alias is `https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app`. The temporary hosted restore target used for the July 10 drill was `zmmacdleiaohvxdubrav`; it was deleted after validation.
+The current `koaryu-staging` project is isolated: all 82 repository migrations were replayed, the production backup was **not** restored into it, and it contains only the synthetic `River City Martial Arts` fixture. The dedicated staging backend API is `https://koaryu-staging.onrender.com/api/v1`, and the protected durable staging frontend alias is `https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app`. The temporary hosted restore target used for the July 10 drill was `zmmacdleiaohvxdubrav`; it was deleted after validation.
 
 Staging frontend and backend configuration must point only to `nxgsektqsgrtyfhawxbc`. They must not contain the production Supabase ref, any `sk_live_`/`rk_live_`/`pk_live_` Stripe value, the production frontend origin, or a production backend destination. Never print secret values while checking this.
 
@@ -37,12 +37,14 @@ esac
 
 Before a frontend or backend staging deploy, run the automated application guard with a private, non-traced environment assembled from both providers. `STAGING_PLATFORM_WEBHOOK_DESTINATION` and `STAGING_CONNECT_WEBHOOK_DESTINATION` are non-secret audit inputs copied from the Stripe test-mode dashboard; the signing secrets remain secret inputs. The guard prints only a pass/fail summary, enforces exact origins and webhook destinations, and rejects production destinations and live Stripe key prefixes.
 
+The backend independently enforces the same hosted posture at startup when `ENVIRONMENT=staging`: the pinned staging Supabase/frontend identities, test Stripe key shapes, complete webhook and internal-operation secrets, disabled legacy HS256, disabled demo reset, and `/api/v1` prefix are mandatory. A manual shell guard cannot make an unsafe backend boot successfully.
+
 ```bash
 set -euo pipefail
 set +x
 export EXPECTED_STAGING_REF=nxgsektqsgrtyfhawxbc
 export PRODUCTION_REF=mimguepumzsgmcaycdsh
-export EXPECTED_STAGING_FRONTEND_ORIGIN=https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app
+export EXPECTED_STAGING_FRONTEND_ORIGIN=https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
 export EXPECTED_STAGING_BACKEND_API=https://koaryu-staging.onrender.com/api/v1
 export STAGING_PLATFORM_WEBHOOK_DESTINATION=https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/platform
 export STAGING_CONNECT_WEBHOOK_DESTINATION=https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/connect
@@ -116,11 +118,34 @@ Webhook signing secrets do not encode test/live mode in their prefix. Confirm bo
 
 - Supabase `nxgsektqsgrtyfhawxbc` reported `ACTIVE_HEALTHY` on PostgreSQL 17.
 - Render `GET /api/v1/health` returned `200` after a cold wake. Unauthenticated `GET /api/v1/auth/me` and `GET /api/v1/students` each returned `401`.
-- A CORS preflight from the exact staging frontend alias returned `200` with that alias as `Access-Control-Allow-Origin`; the same preflight from `https://koaryu.app` returned `400 Disallowed CORS origin` without an allow-origin header.
+- A CORS preflight from the then-current temporary protected frontend alias returned `200` with that alias as `Access-Control-Allow-Origin`; the same preflight from `https://koaryu.app` returned `400 Disallowed CORS origin` without an allow-origin header. This was historical evidence for the retired alias, not proof for the durable `staging` alias introduced later.
 - The Vercel staging deployment `dpl_AXrjgCKzsFr6q3V2AKTU3hJjgYTa` is `READY`, protected by Vercel SSO, and built from `b78cb9863e226d17dc242259cf7099e62c6ccfd5`, not the current release-orchestration head. Its branch-scoped configuration proves the staging Supabase URL, matching public/server backend URL, the non-production site alias, live application mode, and sensitive treatment of public Supabase/Stripe keys without printing their values.
 - The gate remains open: Render's deployed Git SHA, backend secret/test-mode classification, both Stripe test-mode webhook destinations and delivery evidence, current application-SHA alignment, proxy smoke behind Vercel SSO, and an authenticated representative application smoke are not yet proven.
 
 Do not infer a provider value from application behavior. Capture Render environment metadata and exact deployed SHA through authenticated provider access, copy the two non-secret Stripe test endpoint URLs into the guard inputs, run the guard, deploy the same current SHA to both services, and then run the protected frontend and authenticated smoke checks.
+
+Use `GET /api/version` on the protected staging frontend and `GET /health/ready` on the staging backend for application-reported SHA evidence. Both endpoints reject malformed provider metadata instead of reflecting it. Reconcile those responses with authenticated Vercel and Render deployment metadata; application responses do not replace provider readback.
+
+### 2026-07-12 17:20 UTC durable-alias recheck
+
+- At this timestamp, the durable staging alias pointed to Vercel preview deployment `dpl_5fW7LGhrUUXv1pDXC71azn4XT6YV`. Authenticated provider metadata reported it `READY`, and its `/api/version` response reported candidate `9cfd5123b3e1e28a274432a1fccdbf446739c89b`.
+- The protected frontend proxy reached the staging backend: `/api/proxy/health` returned `200`, while unauthenticated `/api/proxy/auth/me` returned `401`.
+- A fresh direct preflight from the durable staging origin returned `400 Disallowed CORS origin`. The retired temporary origin still returned `200`, and the production origin remained rejected. Render staging is therefore deployed with the old frontend-origin value; prior CORS evidence must not be used for the durable alias.
+- Before exact-candidate staging deployment, authenticated Render access must replace the stale staging frontend-origin value, preserve all other isolated test-only values, and deploy this candidate. The candidate's staging startup validator is designed to reject the stale value rather than boot with it.
+- No Render configuration, production provider state, production data, or billing state was changed during this recheck.
+
+Aliases and deployment heads are mutable after this timestamp. Use the linked PR and Gate #21 provider evidence for the later exact head; do not treat this time-bounded observation as a perpetual statement of current deployment state.
+
+### 2026-07-12 19:48 UTC acceptance recheck
+
+- PR #53 runtime-control head `d687621eec40c50236b7a0d6ef3ec1d0cdcb59d7` passed every required GitHub, CodeQL, secret-analysis, Supabase replay/contract, frontend/backend, API-contract, and Vercel check.
+- Render staging deployment `dep-d99unqt7vvec7389u6eg` reported `Live` for that exact SHA. `/health/live` and `/health/ready` returned `200` and the exact SHA. CORS returned `200` for the durable staging alias and `400` for `https://koaryu.app`.
+- Vercel staging deployment `dpl_8kgoNDw8erQqzWTHB9sUSxFzdPtK` reported `READY`. The generated branch alias had not advanced automatically, so the alias was explicitly reassigned to this staging deployment. Authenticated `/api/version` then reported the exact SHA; protected proxy health returned `200`, and unauthenticated proxy auth returned `401`.
+- The canonical Stripe test account, publishable key, restricted key, secret key, recurring Core Price, and both staging webhook endpoints were verified as one account boundary. The platform endpoint has six selected events and the connected-accounts endpoint has nineteen. Real disposable platform-subscription and connected-account update events were delivered successfully; Stripe reported no pending webhook delivery, and every synthetic provider object was removed afterward.
+- A disposable synthetic staging user completed password sign-in, direct and protected-proxy authenticated profile reads, a protected-proxy lead create, and direct lead read/update. The lead, activities, audit record, membership, and Auth user were then verified absent. No production-derived identity or row was used.
+- Production Render auto-deploy is `Off` on two authenticated UI readbacks. The guarded merge performs two authenticated API readbacks immediately before merging and refuses a moved PR head/base or any non-green check.
+
+This is acceptance evidence for Gate #21. Recheck the exact final PR head in the provider comments because the evidence-only commit that records this section necessarily changes the commit SHA.
 
 ## Rebuild Clean Staging
 

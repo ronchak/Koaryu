@@ -10,6 +10,7 @@ import {
   isSecretLikeKey,
   parseEnvText,
   validateEnvExample,
+  validateProviderDeploymentControls,
   validateRenderManifest,
 } from "./check-env-examples.mjs";
 
@@ -145,5 +146,41 @@ envVars:
       assert.ok(failures.some((failure) => failure.includes(key) && failure.includes("must equal")));
     }
     assert.ok(failures.some((failure) => failure.includes("FRONTEND_URL") && failure.includes("must match")));
+  });
+
+  it("requires manual production promotion while preserving staging and cron controls", () => {
+    const renderSource = `
+services:
+  - type: web
+    name: koaryu
+    healthCheckPath: /health
+    autoDeployTrigger: 'off'
+`;
+    const vercelConfig = {
+      git: { deploymentEnabled: { main: false, staging: true } },
+      crons: [{ path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" }],
+    };
+
+    assert.deepEqual(validateProviderDeploymentControls(renderSource, vercelConfig), []);
+  });
+
+  it("rejects provider config that can deploy main automatically", () => {
+    const unsafeRender = `
+services:
+  - type: web
+    name: koaryu
+    healthCheckPath: /health/live
+    autoDeployTrigger: commit
+`;
+    const unsafeVercel = {
+      git: { deploymentEnabled: { main: false, staging: true, "*": true } },
+      crons: [],
+    };
+    const failures = validateProviderDeploymentControls(unsafeRender, unsafeVercel);
+
+    assert.ok(failures.some((failure) => failure.includes("autoDeployTrigger must be off")));
+    assert.ok(failures.some((failure) => failure.includes("bootstrap healthCheckPath must remain /health")));
+    assert.ok(failures.some((failure) => failure.includes("enabled branch pattern \"*\"")));
+    assert.ok(failures.some((failure) => failure.includes("cron contract must be preserved")));
   });
 });

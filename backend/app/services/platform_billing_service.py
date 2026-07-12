@@ -306,7 +306,7 @@ class PlatformBillingService:
 
     def _can_degrade_access_repair(self, exc: Exception) -> bool:
         environment = getattr(self.settings, "ENVIRONMENT", "development")
-        return self.is_noncritical_access_repair_error(exc) and environment.lower() != "production"
+        return self.is_noncritical_access_repair_error(exc) and environment.strip().lower() == "development"
 
     def _update_subscription_row(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
         result = (

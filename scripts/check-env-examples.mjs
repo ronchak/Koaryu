@@ -15,7 +15,6 @@ const backendSecretKeys = [
   "STRIPE_PLATFORM_WEBHOOK_SECRET",
   "STRIPE_CONNECT_WEBHOOK_SECRET",
   "STRIPE_KOARYU_CORE_PRICE_ID",
-  "STRIPE_CONNECT_CLIENT_ID",
   "ACCOUNT_DELETION_WORKER_SECRET",
   "SUPPORT_TRIAGE_SECRET",
 ];
@@ -317,11 +316,66 @@ export function validateRenderManifest(
   return failures;
 }
 
+function renderServiceBlock(source, serviceName) {
+  return source
+    .split(/(?=^  - type:)/m)
+    .find((block) => new RegExp(`^    name: ${serviceName}$`, "m").test(block));
+}
+
+function renderScalar(block, key) {
+  const match = block?.match(new RegExp(`^    ${key}:\\s*([^#\\n]+)`, "m"));
+  return match?.[1].trim().replace(/^(?:'([^']*)'|"([^"]*)")$/, "$1$2") ?? null;
+}
+
+export function validateProviderDeploymentControls(renderSource, vercelConfig) {
+  const failures = [];
+  const productionService = renderServiceBlock(renderSource, "koaryu");
+  if (!productionService) {
+    failures.push("render.yaml: production service koaryu is missing");
+  } else {
+    if (renderScalar(productionService, "autoDeployTrigger") !== "off") {
+      failures.push("render.yaml: production autoDeployTrigger must be off");
+    }
+    if (renderScalar(productionService, "healthCheckPath") !== "/health") {
+      failures.push("render.yaml: bootstrap healthCheckPath must remain /health until /health/live is deployed");
+    }
+  }
+
+  const deploymentEnabled = vercelConfig?.git?.deploymentEnabled;
+  if (!deploymentEnabled || typeof deploymentEnabled !== "object" || Array.isArray(deploymentEnabled)) {
+    failures.push("frontend/vercel.json: git.deploymentEnabled must be a branch map");
+  } else {
+    if (deploymentEnabled.main !== false) {
+      failures.push("frontend/vercel.json: automatic main deployments must be disabled");
+    }
+    if (deploymentEnabled.staging !== true) {
+      failures.push("frontend/vercel.json: automatic staging deployments must remain enabled");
+    }
+    for (const [pattern, enabled] of Object.entries(deploymentEnabled)) {
+      const isExactNonMainBranch = /^[A-Za-z0-9._/-]+$/.test(pattern) && pattern !== "main";
+      if (enabled === true && !isExactNonMainBranch) {
+        failures.push(
+          `frontend/vercel.json: enabled branch pattern ${JSON.stringify(pattern)} must be an exact non-main branch`,
+        );
+      }
+    }
+  }
+
+  const deletionCron = vercelConfig?.crons?.find(
+    (cron) => cron?.path === "/api/cron/account-deletions/process-due",
+  );
+  if (deletionCron?.schedule !== "0 8 * * *") {
+    failures.push("frontend/vercel.json: the account-deletion cron contract must be preserved");
+  }
+  return failures;
+}
+
 export function runEnvExampleCheck() {
   const backendSettingsKeys = extractBackendSettingsKeys(
     readFileSync(resolve(ROOT, "backend/app/core/config.py"), "utf8"),
   );
-  const renderEnvEntries = extractRenderEnvEntries(readFileSync(resolve(ROOT, "render.yaml"), "utf8"));
+  const renderSource = readFileSync(resolve(ROOT, "render.yaml"), "utf8");
+  const renderEnvEntries = extractRenderEnvEntries(renderSource);
   const frontendRequiredKeys = unique([
     ...frontendPublicKeys,
     ...frontendSecretKeys,
@@ -390,6 +444,16 @@ export function runEnvExampleCheck() {
     backendPlaceholderKeys,
     renderExampleValues,
   ));
+  try {
+    const vercelConfig = JSON.parse(
+      readFileSync(resolve(ROOT, "frontend/vercel.json"), "utf8"),
+    );
+    failures.push(...validateProviderDeploymentControls(renderSource, vercelConfig));
+  } catch (error) {
+    failures.push(
+      `frontend/vercel.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   if (failures.length > 0) {
     for (const failure of failures) {

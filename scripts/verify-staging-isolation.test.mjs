@@ -12,12 +12,12 @@ function validEnvironment() {
     EXPECTED_STAGING_REF: "nxgsektqsgrtyfhawxbc",
     PRODUCTION_REF: "mimguepumzsgmcaycdsh",
     EXPECTED_STAGING_FRONTEND_ORIGIN:
-      "https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app",
+      "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app",
     EXPECTED_STAGING_BACKEND_API: "https://koaryu-staging.onrender.com/api/v1",
     NEXT_PUBLIC_SITE_URL:
-      "https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app",
+      "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app",
     FRONTEND_URL:
-      "https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app",
+      "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app",
     NEXT_PUBLIC_API_URL: "https://koaryu-staging.onrender.com/api/v1",
     BACKEND_API_URL: "https://koaryu-staging.onrender.com/api/v1",
     NEXT_PUBLIC_SUPABASE_URL: "https://nxgsektqsgrtyfhawxbc.supabase.co",
@@ -28,6 +28,8 @@ function validEnvironment() {
       "https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/connect",
     ENVIRONMENT: "staging",
     NEXT_PUBLIC_PREVIEW_MODE: "false",
+    NEXT_PUBLIC_USE_API_PROXY: "true",
+    NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG: "false",
     DEMO_RESET_ENABLED: "false",
     DEMO_RESET_STUDIO_IDS: "",
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: syntheticCredential("pk_test_", "A"),
@@ -45,7 +47,7 @@ describe("staging isolation guard", () => {
   it("accepts an exact isolated staging configuration", () => {
     const result = verifyStagingIsolation(validEnvironment());
     assert.equal(result.environment, "staging");
-    assert.equal(result.checks.length, 7);
+    assert.equal(result.checks.length, 9);
   });
 
   for (const [name, value] of [
@@ -121,6 +123,14 @@ describe("staging isolation guard", () => {
       () => verifyStagingIsolation({ ...validEnvironment(), DEMO_RESET_STUDIO_IDS: "fixture" }),
       /DEMO_RESET_STUDIO_IDS/,
     );
+    assert.throws(
+      () => verifyStagingIsolation({ ...validEnvironment(), NEXT_PUBLIC_USE_API_PROXY: "false" }),
+      /USE_API_PROXY/,
+    );
+    assert.throws(
+      () => verifyStagingIsolation({ ...validEnvironment(), NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG: "true" }),
+      /PERFORMANCE_DEBUG/,
+    );
   });
 
   it("rejects a trailing slash that would break exact CORS origin matching", () => {
@@ -128,7 +138,7 @@ describe("staging isolation guard", () => {
       () => verifyStagingIsolation({
         ...validEnvironment(),
         FRONTEND_URL:
-          "https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app/",
+          "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app/",
       }),
       /canonical URL form/,
     );
@@ -139,7 +149,7 @@ describe("staging isolation guard", () => {
       () => verifyStagingIsolation({
         ...validEnvironment(),
         FRONTEND_URL:
-          " https://koaryu-git-codex-production-eb9d24-ronakchak2569-8303s-projects.vercel.app ",
+          " https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app ",
       }),
       /surrounding whitespace/,
     );

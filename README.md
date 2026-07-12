@@ -58,7 +58,7 @@ Backend environment variables:
 - `STRIPE_PLATFORM_WEBHOOK_SECRET`: Stripe webhook signing secret for platform billing events
 - `STRIPE_CONNECT_WEBHOOK_SECRET`: Stripe webhook signing secret for Connect events; comma-separated values are supported during secret rotation or split endpoint setup
 - `STRIPE_KOARYU_CORE_PRICE_ID`: recurring Stripe Price ID for the Koaryu Core subscription
-- `STRIPE_CONNECT_CLIENT_ID`: Stripe Connect client ID used for connected-account onboarding
+- Stripe connected-account onboarding uses Account Links, so it does not require a Connect OAuth client ID.
 - `BILLING_PLATFORM_FEE_BPS`: Koaryu platform fee in basis points for student billing; defaults to `50`
 - `ACCOUNT_DELETION_WORKER_SECRET`: long random secret required by the internal due-account-deletion processor
 - `SUPPORT_TRIAGE_SECRET`: long random secret required by the internal support ticket triage endpoint
@@ -218,7 +218,8 @@ Koaryu has two billing surfaces:
 Before presenting billing live, verify both surfaces after the latest deploy:
 
 - Render and Vercel deployments are green for the same commit.
-- `/health` and `/api/v1/health` return `200` from the deployed backend.
+- `/health/live` and `/api/v1/health/live` prove process liveness; `/health/ready` and `/api/v1/health/ready` recheck hosted runtime configuration. The older `/health` aliases remain available.
+- `/api/version` returns safe Vercel environment and exact-commit metadata for deployment comparison.
 - A studio admin can open Koaryu Core checkout or billing portal without creating duplicate active subscriptions.
 - `/api/v1/billing/system/status` reports configured Stripe keys, connected-account readiness, Supabase reachability, and healthy platform/Connect webhook processing for the target studio.
 - Stripe Dashboard shows successful deliveries for the platform and Connect webhook endpoints.
