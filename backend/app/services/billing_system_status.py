@@ -63,7 +63,6 @@ class BillingSystemStatusReporter:
                 "Stripe Connect account refresh failed during billing readiness check",
                 exc,
                 error_id=error_id,
-                studio_id=studio_id,
             )
             add_check(
                 "Connect account refresh",
@@ -79,7 +78,6 @@ class BillingSystemStatusReporter:
                     "Stripe Connect account fallback failed during billing readiness check",
                     fallback_exc,
                     error_id=fallback_error_id,
-                    studio_id=studio_id,
                 )
                 account_response = StudioPaymentAccountResponse(studio_id=studio_id)
                 add_check(
@@ -100,7 +98,6 @@ class BillingSystemStatusReporter:
                 "Supabase billing readiness read failed",
                 exc,
                 error_id=error_id,
-                studio_id=studio_id,
             )
             add_check(
                 "Supabase billing read",
@@ -183,7 +180,6 @@ class BillingSystemStatusReporter:
                 "Stripe webhook readiness query failed",
                 exc,
                 error_id=error_id,
-                stripe_account_id=account_id,
             )
             return BillingWebhookHealthResponse(
                 stripe_account_id=account_id,
@@ -356,14 +352,12 @@ class BillingSystemStatusReporter:
         exc: Exception,
         *,
         error_id: str,
-        **context: Any,
     ) -> None:
         logger.error(
             message,
             extra={
                 "error_id": error_id,
                 "exception_type": type(exc).__name__,
-                **context,
             },
         )
 

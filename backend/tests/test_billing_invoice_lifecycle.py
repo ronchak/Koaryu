@@ -214,13 +214,24 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             "Stripe request req_123 with sk_live secret detail"
         )
 
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            invoice = asyncio.run(service.finalize_invoice("invoice_1", "studio_1", "actor_1"))
+        with self.assertLogs("app.services.billing_invoices", level="ERROR") as captured_logs:
+            with patch("app.services.billing_service.StripeService", _FakeStripeService):
+                invoice = asyncio.run(service.finalize_invoice("invoice_1", "studio_1", "actor_1"))
 
         self.assertIn("Koaryu could not send the email", invoice.last_payment_error)
         self.assertRegex(invoice.last_payment_error, r"Reference: [0-9a-f]{32}$")
         self.assertNotIn("req_123", invoice.last_payment_error)
         self.assertNotIn("sk_live", invoice.last_payment_error)
+        rendered_logs = "\n".join(captured_logs.output)
+        self.assertIn("error_type=RuntimeError", rendered_logs)
+        log_record = captured_logs.records[0]
+        logged_reference = log_record.getMessage().split("reference=", 1)[1].split(";", 1)[0]
+        self.assertEqual(invoice.last_payment_error.rsplit("Reference: ", 1)[1], logged_reference)
+        self.assertIsNone(log_record.exc_info)
+        self.assertNotIn("invoice_id", log_record.__dict__)
+        self.assertNotIn("studio_id", log_record.__dict__)
+        for sensitive_value in ("invoice_1", "studio_1", "actor_1", "req_123", "sk_live"):
+            self.assertNotIn(sensitive_value, repr(log_record.__dict__))
 
     def test_retry_invoice_payment_requires_request_idempotency_key(self):
         service = self.service()

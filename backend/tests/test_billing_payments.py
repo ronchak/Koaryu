@@ -341,7 +341,8 @@ class BillingPaymentManagerTests(unittest.TestCase):
             external_method="check",
         )
 
-        first = asyncio.run(manager.record_external_payment(payload, "studio_1", "actor_1", "payment-key-1"))
+        with self.assertLogs("app.services.billing_payments", level="ERROR") as captured_logs:
+            first = asyncio.run(manager.record_external_payment(payload, "studio_1", "actor_1", "payment-key-1"))
 
         invoice = facade.supabase.tables["billing_invoices"][0]
         self.assertEqual(first.status, "externally_recorded")
@@ -355,6 +356,23 @@ class BillingPaymentManagerTests(unittest.TestCase):
         self.assertEqual(facade.supabase.rpc_calls, [])
         self.assertEqual(len(facade.supabase.tables["billing_payments"]), 1)
         self.assertEqual(len(facade.supabase.tables["audit_logs"]), 1)
+        rendered_logs = "\n".join(captured_logs.output)
+        self.assertIn("error_type=RuntimeError", rendered_logs)
+        log_record = captured_logs.records[0]
+        logged_reference = log_record.getMessage().split("reference=", 1)[1].split(";", 1)[0]
+        self.assertEqual(invoice["last_payment_error"].rsplit("Reference: ", 1)[1], logged_reference)
+        self.assertIsNone(log_record.exc_info)
+        for sensitive_key in ("invoice_id", "payment_id", "studio_id"):
+            self.assertNotIn(sensitive_key, log_record.__dict__)
+        for sensitive_value in (
+            "invoice_1",
+            "studio_1",
+            "actor_1",
+            "billing_payments_1",
+            "payment-key-1",
+            "Stripe unavailable",
+        ):
+            self.assertNotIn(sensitive_value, repr(log_record.__dict__))
 
         _FakeStripeService.pay_error = None
         second = asyncio.run(manager.record_external_payment(payload, "studio_1", "actor_1", "payment-key-1"))

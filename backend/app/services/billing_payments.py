@@ -337,16 +337,12 @@ class BillingPaymentManager:
                 paid_out_of_band=True,
                 idempotency_key=self._idempotency_key("external-invoice-pay", payment["id"]),
             )
-        except Exception:
+        except Exception as exc:
             error_id = uuid4().hex
-            logger.exception(
-                "Stripe out-of-band invoice sync failed",
-                extra={
-                    "error_id": error_id,
-                    "invoice_id": invoice.get("id"),
-                    "payment_id": payment.get("id"),
-                    "studio_id": studio_id,
-                },
+            logger.error(
+                "Stripe out-of-band invoice sync failed; reference=%s; error_type=%s",
+                error_id,
+                type(exc).__name__,
             )
             update = {
                 "status": "open",

@@ -218,6 +218,8 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertEqual(log_record.exception_type, "RuntimeError")
         self.assertNotIn("sk_live_secret-value", log_record.getMessage())
         self.assertEqual(detail.rsplit("Reference: ", 1)[1], log_record.error_id)
+        self.assertNotIn("studio_id", log_record.__dict__)
+        self.assertNotIn("studio_1", repr(log_record.__dict__))
 
     def test_connect_fallback_failure_is_sanitized_and_correlated(self):
         async def fail_account(_studio_id: str) -> StudioPaymentAccountResponse:
@@ -242,6 +244,9 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertNotIn("stored-connect-secret-detail", detail)
         self.assertEqual(detail.rsplit("Reference: ", 1)[1], fallback_log.error_id)
         self.assertEqual(fallback_log.exception_type, "RuntimeError")
+        self.assertIsNone(fallback_log.exc_info)
+        self.assertNotIn("studio_id", fallback_log.__dict__)
+        self.assertNotIn("studio_1", repr(fallback_log.__dict__))
 
     def test_database_failure_detail_is_sanitized(self):
         supabase = TableBackedSupabase({
@@ -274,6 +279,9 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertRegex(detail, r"Reference: [0-9a-f]{32}$")
         self.assertEqual(detail.rsplit("Reference: ", 1)[1], database_log.error_id)
         self.assertEqual(database_log.exception_type, "RuntimeError")
+        self.assertIsNone(database_log.exc_info)
+        self.assertNotIn("studio_id", database_log.__dict__)
+        self.assertNotIn("studio_1", repr(database_log.__dict__))
 
     def test_webhook_query_failure_is_sanitized_and_correlated(self):
         supabase = TableBackedSupabase({
@@ -300,6 +308,9 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         platform_reference = platform_check.detail.rsplit("Reference: ", 1)[1]
         self.assertIn(platform_reference, [record.error_id for record in captured_logs.records])
         self.assertTrue(all(record.exception_type == "RuntimeError" for record in captured_logs.records))
+        self.assertTrue(all(record.exc_info is None for record in captured_logs.records))
+        self.assertTrue(all("stripe_account_id" not in record.__dict__ for record in captured_logs.records))
+        self.assertNotIn("studio_1", repr([record.__dict__ for record in captured_logs.records]))
 
 
 if __name__ == "__main__":

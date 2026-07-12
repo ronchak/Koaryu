@@ -6,6 +6,46 @@ from tests.platform_billing_helpers import PlatformBillingServiceTestCase
 
 
 class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
+    def test_checkout_hydration_failure_logs_only_safe_diagnostics(self):
+        rows = [{"studio_id": "studio_sensitive", "status": "incomplete"}]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def retrieve_subscription(self, _subscription_id):
+                raise RuntimeError("sk_live_secret req_sensitive")
+
+        with self.assertLogs("app.services.platform_billing_service", level="ERROR") as captured_logs:
+            with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+                service.project_subscription_event({
+                    "id": "evt_sensitive",
+                    "created": 100,
+                    "type": "checkout.session.completed",
+                    "data": {
+                        "object": {
+                            "customer": "cus_sensitive",
+                            "subscription": "sub_sensitive",
+                            "payment_status": "paid",
+                            "metadata": {"studio_id": "studio_sensitive"},
+                        },
+                    },
+                })
+
+        log_record = captured_logs.records[0]
+        self.assertRegex(log_record.getMessage(), r"reference=[0-9a-f]{32}; error_type=RuntimeError$")
+        self.assertIsNone(log_record.exc_info)
+        for sensitive_key in ("studio_id", "stripe_subscription_id"):
+            self.assertNotIn(sensitive_key, log_record.__dict__)
+        for sensitive_value in (
+            "studio_sensitive",
+            "sub_sensitive",
+            "cus_sensitive",
+            "evt_sensitive",
+            "sk_live_secret",
+            "req_sensitive",
+        ):
+            self.assertNotIn(sensitive_value, repr(log_record.__dict__))
+        self.assertEqual(rows[0]["status"], "incomplete")
+
     def test_project_subscription_uses_item_period_bounds_and_clears_trial_fields(self):
         rows = [{
             "studio_id": "studio_1",
