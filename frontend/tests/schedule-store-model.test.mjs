@@ -188,6 +188,66 @@ describe("schedule store model", () => {
     assert.equal(attempts, 3);
   });
 
+  it("waits for an in-flight mutation before spending a range attempt", async () => {
+    let releaseSettlement;
+    const settlement = new Promise((resolve) => {
+      releaseSettlement = resolve;
+    });
+    let attempts = 0;
+    let settled = false;
+
+    const refresh = runScheduleRangeRefreshWithRetry(
+      async () => {
+        attempts += 1;
+        return { committed: true, value: "settled-range" };
+      },
+      3,
+      () => settlement
+    ).then((value) => {
+      settled = true;
+      return value;
+    });
+
+    await Promise.resolve();
+    assert.equal(attempts, 0);
+    assert.equal(settled, false);
+
+    releaseSettlement();
+    assert.equal(await refresh, "settled-range");
+    assert.equal(attempts, 1);
+  });
+
+  it("waits again when a mutation supersedes an active range read", async () => {
+    let releaseSecondSettlement;
+    const secondSettlement = new Promise((resolve) => {
+      releaseSecondSettlement = resolve;
+    });
+    let gateCalls = 0;
+    let attempts = 0;
+
+    const refresh = runScheduleRangeRefreshWithRetry(
+      async () => {
+        attempts += 1;
+        return attempts === 1
+          ? { committed: false, value: "superseded" }
+          : { committed: true, value: "complete-range" };
+      },
+      3,
+      () => {
+        gateCalls += 1;
+        return gateCalls === 1 ? Promise.resolve() : secondSettlement;
+      }
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(attempts, 1);
+    assert.equal(gateCalls, 2);
+
+    releaseSecondSettlement();
+    assert.equal(await refresh, "complete-range");
+    assert.equal(attempts, 2);
+  });
+
   it("fails closed when a range remains superseded", async () => {
     await assert.rejects(
       runScheduleRangeRefreshWithRetry(async () => ({ committed: false, value: [] }), 2),

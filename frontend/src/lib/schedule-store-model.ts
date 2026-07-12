@@ -185,9 +185,11 @@ export function isScheduleRangeCommitCurrent(
 
 export async function runScheduleRangeRefreshWithRetry<T>(
   attempt: () => Promise<{ committed: boolean; value: T }>,
-  maximumAttempts = 3
+  maximumAttempts = 3,
+  waitForStableCoordinator: () => Promise<void> = () => Promise.resolve()
 ): Promise<T> {
   for (let attemptNumber = 0; attemptNumber < maximumAttempts; attemptNumber += 1) {
+    await waitForStableCoordinator();
     const result = await attempt();
     if (result.committed) {
       return result.value;

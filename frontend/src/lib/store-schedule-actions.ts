@@ -225,7 +225,7 @@ export function useStoreScheduleActions({
         mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
       );
       return { committed: true, value: rangeSessions };
-      });
+      }, 3, waitForScheduleMutationSettlement);
     } finally {
       if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
         void reconcileSchedule().catch((error) => {
@@ -241,6 +241,7 @@ export function useStoreScheduleActions({
     sessionsRef,
     setAttendance,
     setSessions,
+    waitForScheduleMutationSettlement,
   ]);
 
   const refreshSessionAttendance = useCallback(async (

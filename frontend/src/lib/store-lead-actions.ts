@@ -6,6 +6,7 @@ import {
   buildPreviewLead,
   buildPreviewLeadConversion,
 } from "@/lib/lead-store-model";
+import { refreshLiveLeadDataset } from "@/lib/store-lead-refresh-model";
 import { localId } from "@/lib/store-storage";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { Lead, Program, Student } from "@/types";
@@ -85,24 +86,13 @@ export function useStoreLeadActions({
       return leadsRef.current;
     }
 
-    const request = beginLiveAuthRequest();
-    setLeadsLoadError(null);
-    setLeadsLoaded(false);
-    try {
-      const result = await api.get<Lead[]>("/leads", request.token);
-      if (!request.isCurrent()) {
-        return result;
-      }
-      setLeads(result);
-      setLeadsLoaded(true);
-      return result;
-    } catch (error) {
-      if (request.isCurrent()) {
-        setLeadsLoadError(error instanceof Error ? error.message : "Leads could not be loaded.");
-        setLeadsLoaded(false);
-      }
-      throw error;
-    }
+    return refreshLiveLeadDataset({
+      beginLiveAuthRequest,
+      fetchLeads: (requestToken) => api.get<Lead[]>("/leads", requestToken),
+      setLeads,
+      setLeadsLoaded,
+      setLeadsLoadError,
+    });
   }, [
     beginLiveAuthRequest,
     isPreviewMode,
