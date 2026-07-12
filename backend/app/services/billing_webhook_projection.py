@@ -14,6 +14,7 @@ from app.services.billing_invoice_projection import (
     local_invoice_status,
 )
 from app.services.stripe_service import StripeService
+from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.billing_subscription_webhook_projection import BillingSubscriptionWebhookProjector
 from app.services.billing_webhook_event_state import (
     INVOICE_STATUS_ORDER,
@@ -185,6 +186,10 @@ class BillingWebhookProjector:
                     payment_fields = self._payment_method_fields_from_customer(customer)
                 else:
                     payment_fields = self._payment_method_fields_from_payment_method(_object_get(setup_intent, "payment_method"))
+            except StripeMutationBlocked:
+                # Preserve Stripe retry semantics when this projection would need
+                # an outbound mutation that the live interlock intentionally blocks.
+                raise
             except Exception as exc:
                 metadata = dict(payer.get("metadata") or {})
                 metadata["autopay_projection_error"] = {

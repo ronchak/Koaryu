@@ -158,27 +158,19 @@ class Settings(BaseSettings):
                     "SUPABASE_ALLOW_LEGACY_HS256 is enabled"
                 )
 
-        stripe_secret_prefixes = (
-            ("sk_test_",)
-            if environment == "staging"
-            else ("sk_live_", "sk_test_")
-        )
+        stripe_secret_prefixes = ("sk_test_",) if environment == "staging" else ("sk_live_",)
         if not self.STRIPE_SECRET_KEY.startswith(stripe_secret_prefixes) or not has_minimum_secret_length(
             self.STRIPE_SECRET_KEY, 16
         ):
             if environment == "staging":
                 missing.append("STRIPE_SECRET_KEY must be a Stripe test secret key in staging")
             else:
-                missing.append("STRIPE_SECRET_KEY must be a Stripe secret key")
+                missing.append("STRIPE_SECRET_KEY must be a Stripe live secret key in production")
         elif not self.STRIPE_SECRET_KEY.startswith(f"sk_{self.STRIPE_MODE}_"):
             missing.append("STRIPE_SECRET_KEY must match STRIPE_MODE")
 
         restricted_key = self.STRIPE_RESTRICTED_KEY.strip()
-        restricted_key_prefixes = (
-            ("rk_test_",)
-            if environment == "staging"
-            else ("rk_live_", "rk_test_")
-        )
+        restricted_key_prefixes = ("rk_test_",) if environment == "staging" else ("rk_live_",)
         if restricted_key and (
             not restricted_key.startswith(restricted_key_prefixes)
             or not has_minimum_secret_length(restricted_key, 16)
@@ -189,7 +181,9 @@ class Settings(BaseSettings):
                     "in staging when set"
                 )
             else:
-                missing.append("STRIPE_RESTRICTED_KEY must be a Stripe restricted key when set")
+                missing.append(
+                    "STRIPE_RESTRICTED_KEY must be a Stripe live restricted key in production when set"
+                )
         elif restricted_key and not restricted_key.startswith(f"rk_{self.STRIPE_MODE}_"):
             missing.append("STRIPE_RESTRICTED_KEY must match STRIPE_MODE when set")
 

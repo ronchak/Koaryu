@@ -14,7 +14,7 @@ from app.schemas.billing import WebhookProcessResponse
 from app.services.billing_service import BillingService
 from app.services.platform_billing_service import PlatformBillingService
 from app.services.stripe_service import StripeService
-from app.services.stripe_mutation_policy import declared_stripe_mode
+from app.services.stripe_mutation_policy import StripeMutationBlocked, configured_stripe_mode
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
@@ -24,7 +24,12 @@ WEBHOOK_FAILURE_STRIPE_ERROR = "stripe_error"
 WEBHOOK_FAILURE_DATABASE_ERROR = "database_projection_error"
 WEBHOOK_FAILURE_UNEXPECTED_ERROR = "unexpected_processing_error"
 WEBHOOK_FAILURE_UNMAPPED_LIVE_CONNECT_ACCOUNT = "unmapped_live_connect_account"
+WEBHOOK_FAILURE_LIVE_MUTATION_BLOCKED = "live_mutation_blocked"
 WEBHOOK_MODE_MISMATCH_DETAIL = "Stripe webhook mode does not match configured STRIPE_MODE."
+WEBHOOK_INVALID_LIVEMODE_DETAIL = "Stripe webhook livemode must be a boolean."
+WEBHOOK_CONFIGURATION_MISMATCH_DETAIL = (
+    "Stripe webhook configuration must have a matching STRIPE_MODE and secret key."
+)
 
 
 class StripeWebhookService:
@@ -59,12 +64,18 @@ class StripeWebhookService:
         event_dict = self._event_to_dict(event)
         event_id = event_dict.get("id")
         event_type = event_dict.get("type") or "unknown"
-        livemode = bool(event_dict.get("livemode"))
-        configured_mode = declared_stripe_mode(self.settings)
+        raw_livemode = event_dict.get("livemode")
+        if not isinstance(raw_livemode, bool):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=WEBHOOK_INVALID_LIVEMODE_DETAIL,
+            )
+        livemode = raw_livemode
+        configured_mode = configured_stripe_mode(self.settings)
         if configured_mode is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="STRIPE_MODE is not configured.",
+                detail=WEBHOOK_CONFIGURATION_MISMATCH_DETAIL,
             )
         if livemode != (configured_mode == "live"):
             raise HTTPException(
@@ -181,6 +192,8 @@ class StripeWebhookService:
 
     @staticmethod
     def _failure_code(exc: Exception) -> str:
+        if isinstance(exc, StripeMutationBlocked):
+            return WEBHOOK_FAILURE_LIVE_MUTATION_BLOCKED
         if isinstance(exc, StripeError):
             return WEBHOOK_FAILURE_STRIPE_ERROR
         if isinstance(exc, PostgrestAPIError):

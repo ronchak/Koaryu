@@ -15,6 +15,10 @@ LIVE_MUTATIONS_REQUIRE_DURABLE_AUTHORIZATION_DETAIL = (
 STRIPE_MODE_MISMATCH_DETAIL = "Stripe mode does not match the configured Stripe API key."
 
 
+class StripeMutationBlocked(HTTPException):
+    """Typed fail-closed response that must not be swallowed by billing workflows."""
+
+
 def stripe_key_mode(value: Any) -> Optional[StripeMode]:
     key = str(value or "").strip()
     if key.startswith("sk_test_"):
@@ -79,7 +83,7 @@ class StripeMutationPolicy:
         key_mode = stripe_key_mode(key)
 
         if declared_mode is None or key_mode != declared_mode:
-            raise HTTPException(
+            raise StripeMutationBlocked(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=STRIPE_MODE_MISMATCH_DETAIL,
             )
@@ -88,12 +92,12 @@ class StripeMutationPolicy:
             return StripeMutationPermit(operation=operation, mode="test")
 
         if not bool(getattr(self.settings, "LIVE_BILLING_ENABLED", False)):
-            raise HTTPException(
+            raise StripeMutationBlocked(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=LIVE_MUTATIONS_DISABLED_DETAIL,
             )
 
-        raise HTTPException(
+        raise StripeMutationBlocked(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=LIVE_MUTATIONS_REQUIRE_DURABLE_AUTHORIZATION_DETAIL,
         )

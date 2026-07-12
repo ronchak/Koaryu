@@ -64,7 +64,7 @@ SUPPORT_TRIAGE_SECRET=
 
 Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
 
-`STRIPE_MODE` is authoritative for inbound event mode and must match `STRIPE_SECRET_KEY` plus `STRIPE_RESTRICTED_KEY` when that optional key is set. Keep `LIVE_BILLING_ENABLED=false`. Matching live webhook events continue through signature verification and reconciliation while outbound live Stripe mutations remain closed. Wrong-mode events are rejected before storage. Live Connect events for an account not mapped to `studio_payment_accounts` are durably marked `unmapped_live_connect_account` without changing product state and return `503` so Stripe keeps retrying until the mapping exists.
+Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. Keep `LIVE_BILLING_ENABLED=false`. Matching live webhook events continue through signature verification and reconciliation while outbound live Stripe mutations remain closed. Wrong-mode or malformed-mode events are rejected before storage. Live Connect events for an account not mapped to `studio_payment_accounts` are durably marked `unmapped_live_connect_account` without changing product state and return `503` so Stripe keeps retrying until the mapping exists.
 
 ### Hosted Runtime Guard
 
@@ -80,7 +80,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critic
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
-`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. `STRIPE_RESTRICTED_KEY` is optional, but if set it must be a non-placeholder key in the declared Stripe mode. Production startup rejects mismatched Stripe modes and rejects `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
+`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
 
 Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures. An unknown or misspelled `ENVIRONMENT` fails closed.
 

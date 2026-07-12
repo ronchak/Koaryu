@@ -65,7 +65,7 @@ Backend environment variables:
 - `ACCOUNT_DELETION_WORKER_SECRET`: long random secret required by the internal due-account-deletion processor
 - `SUPPORT_TRIAGE_SECRET`: long random secret required by the internal support ticket triage endpoint
 
-When `ENVIRONMENT=production`, the backend fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. `LIVE_BILLING_ENABLED=true` is rejected until Koaryu has durable scoped authorization for live mutations. A live-mode deployment with the switch off still verifies and reconciles matching live webhooks; outbound Stripe writes remain closed.
+When `ENVIRONMENT=production`, the backend requires `STRIPE_MODE=live` with matching `sk_live_` and optional `rk_live_` keys, and fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. This prevents test Stripe identifiers from being written into production tenant records. `LIVE_BILLING_ENABLED=true` is rejected until Koaryu has durable scoped authorization for live mutations. A live-mode deployment with the switch off still verifies and reconciles matching live webhooks; outbound Stripe writes remain closed.
 
 Local defaults in this repo assume:
 
