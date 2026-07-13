@@ -31,7 +31,10 @@ import type {
   StudentStatus,
   StudentUpdate,
 } from "@/types";
-import type { SessionAttendanceRefreshResult } from "@/lib/schedule-store-model";
+import type {
+  ScheduleRangeRefreshIntent,
+  SessionAttendanceRefreshResult,
+} from "@/lib/schedule-store-model";
 import type { StudentListQuery } from "@/lib/student-list-page";
 import type {
   DemoResetResponse,
@@ -124,7 +127,11 @@ export interface StoreContextValue {
   addSession: (data: ClassSessionCreate) => Promise<void>;
   addTemplate: (data: ClassTemplateCreate) => Promise<ClassTemplate>;
   deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
-  refreshScheduleRange: (startDate: string, endDate: string) => Promise<ClassSession[]>;
+  refreshScheduleRange: (
+    startDate: string,
+    endDate: string,
+    intent: ScheduleRangeRefreshIntent
+  ) => Promise<ClassSession[]>;
   refreshSessionAttendance: (sessionId: string) => Promise<SessionAttendanceRefreshResult>;
   refreshSchedule: () => Promise<void>;
   scheduleLoadError: string | null;

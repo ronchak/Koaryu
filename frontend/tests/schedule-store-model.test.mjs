@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   beginScheduleMutationState,
+  buildScheduleRangeRequest,
   compareSessions,
   createScheduleCoordinatorState,
   createScheduleReconciliationQueue,
@@ -71,6 +72,27 @@ function template(overrides = {}) {
 }
 
 describe("schedule store model", () => {
+  it("keeps reads GET-only and requires authorized materialization intent for POST", () => {
+    assert.deepEqual(
+      buildScheduleRangeRequest("2026-07-01", "2026-07-31", "read", true),
+      {
+        method: "GET",
+        path: "/schedule/sessions?start_date=2026-07-01&end_date=2026-07-31",
+      }
+    );
+    assert.deepEqual(
+      buildScheduleRangeRequest("2026-07-01", "2026-07-31", "materialize", true),
+      {
+        method: "POST",
+        path: "/schedule/sessions/materialize?start_date=2026-07-01&end_date=2026-07-31",
+      }
+    );
+    assert.equal(
+      buildScheduleRangeRequest("2026-07-01", "2026-07-31", "materialize", false).method,
+      "GET"
+    );
+  });
+
   it("rejects stale reads after a newer request or schedule mutation", () => {
     const current = {
       authCurrent: true,
@@ -315,6 +337,195 @@ describe("schedule store model", () => {
 
     assert.equal(attempts, 2);
     assert.equal(authoritative, true);
+  });
+
+  it("does not let a later read replace materialization queued behind a blocked read", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    const calls = [];
+    let releaseRead;
+    let markReadStarted;
+    const readStarted = new Promise((resolve) => {
+      markReadStarted = resolve;
+    });
+    const readBlocked = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+
+    const initialRead = requestReconciliation(async () => {
+      calls.push("initial-read");
+      markReadStarted();
+      await readBlocked;
+    }, () => true, "read");
+    await readStarted;
+    const materialize = requestReconciliation(async () => {
+      calls.push("materialize");
+    }, () => true, "materialize");
+    const laterRead = requestReconciliation(async () => {
+      calls.push("later-read");
+    }, () => true, "read");
+
+    releaseRead();
+    await Promise.all([initialRead, materialize, laterRead]);
+
+    assert.deepEqual(calls, ["initial-read", "materialize"]);
+  });
+
+  it("runs queued materialization after an active read satisfies the ordinary guard", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    const calls = [];
+    let authoritative = false;
+    let releaseRead;
+    let markReadStarted;
+    const readStarted = new Promise((resolve) => {
+      markReadStarted = resolve;
+    });
+    const readBlocked = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+
+    const read = requestReconciliation(async () => {
+      calls.push("read");
+      markReadStarted();
+      await readBlocked;
+      authoritative = true;
+    }, () => !authoritative, "read");
+    await readStarted;
+    const materialize = requestReconciliation(async () => {
+      calls.push("materialize");
+    }, () => !authoritative, "materialize");
+
+    releaseRead();
+    await Promise.all([read, materialize]);
+
+    assert.deepEqual(calls, ["read", "materialize"]);
+  });
+
+  it("defers forced materialization until mutation safety is restored", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    const calls = [];
+    let authoritative = false;
+    let mutationSettled = true;
+    let releaseRead;
+    let markReadStarted;
+    const readStarted = new Promise((resolve) => {
+      markReadStarted = resolve;
+    });
+    const readBlocked = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+    const isExecutionSafe = () => mutationSettled;
+
+    const read = requestReconciliation(async () => {
+      calls.push("read");
+      markReadStarted();
+      await readBlocked;
+      authoritative = true;
+    }, () => !authoritative, "read", isExecutionSafe);
+    await readStarted;
+    const forcedMaterialize = requestReconciliation(async () => {
+      calls.push("materialize-during-mutation");
+    }, () => !authoritative, "materialize", isExecutionSafe);
+
+    mutationSettled = false;
+    releaseRead();
+    await Promise.all([read, forcedMaterialize]);
+    assert.deepEqual(calls, ["read"]);
+
+    mutationSettled = true;
+    await requestReconciliation(async () => {
+      calls.push("materialize-after-settlement");
+    }, () => !authoritative, "materialize", isExecutionSafe);
+
+    assert.deepEqual(calls, ["read", "materialize-after-settlement"]);
+  });
+
+  it("discards deferred materialization after a destructive generation change", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    const calls = [];
+    let mutationSettled = true;
+    let releaseRead;
+    let markReadStarted;
+    const readStarted = new Promise((resolve) => {
+      markReadStarted = resolve;
+    });
+    const readBlocked = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+    const isExecutionSafe = () => mutationSettled;
+
+    const oldRead = requestReconciliation(async () => {
+      calls.push("old-read");
+      markReadStarted();
+      await readBlocked;
+    }, () => true, "read", isExecutionSafe, 1);
+    await readStarted;
+    const oldMaterialize = requestReconciliation(async () => {
+      calls.push("old-materialize");
+    }, () => true, "materialize", isExecutionSafe, 1);
+
+    mutationSettled = false;
+    releaseRead();
+    await Promise.all([oldRead, oldMaterialize]);
+    assert.deepEqual(calls, ["old-read"]);
+
+    mutationSettled = true;
+    await requestReconciliation(async () => {
+      calls.push("new-auth-read");
+    }, () => true, "read", isExecutionSafe, 2);
+
+    assert.deepEqual(calls, ["old-read", "new-auth-read"]);
+  });
+
+  it("preserves deferred materialization across a same-generation token refresh", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    const calls = [];
+    let mutationSettled = true;
+    let releaseRead;
+    let markReadStarted;
+    const readStarted = new Promise((resolve) => {
+      markReadStarted = resolve;
+    });
+    const readBlocked = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+    const isExecutionSafe = () => mutationSettled;
+
+    const read = requestReconciliation(async () => {
+      calls.push("read-before-refresh");
+      markReadStarted();
+      await readBlocked;
+    }, () => true, "read", isExecutionSafe, 7);
+    await readStarted;
+    const materialize = requestReconciliation(async () => {
+      calls.push("materialize-after-refresh");
+    }, () => true, "materialize", isExecutionSafe, 7);
+
+    mutationSettled = false;
+    releaseRead();
+    await Promise.all([read, materialize]);
+    assert.deepEqual(calls, ["read-before-refresh"]);
+
+    mutationSettled = true;
+    await requestReconciliation(async () => {
+      calls.push("same-user-auth-read");
+    }, () => true, "read", isExecutionSafe, 7);
+
+    assert.deepEqual(calls, ["read-before-refresh", "materialize-after-refresh"]);
+  });
+
+  it("does not let an unsafe old active request restore itself over a newer generation", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    const calls = [];
+    const oldMaterialize = requestReconciliation(async () => {
+      calls.push("old-materialize");
+    }, () => true, "materialize", () => false, 1);
+    const newRead = requestReconciliation(async () => {
+      calls.push("new-read");
+    }, () => true, "read", () => true, 2);
+
+    await Promise.all([oldMaterialize, newRead]);
+
+    assert.deepEqual(calls, ["new-read"]);
   });
 
   it("uses the latest reconciliation attempt after an auth generation changes", async () => {

@@ -102,7 +102,7 @@ export function useSchedulePageController({
     async function loadRange() {
       setScheduleLoadError(null);
       try {
-        await refreshScheduleRange(visibleRange.start, visibleRange.end);
+        await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load schedule range", error);
@@ -187,7 +187,7 @@ export function useSchedulePageController({
         });
 
         if (recurringClassOverlapsRange(payload.recurrence, visibleRange)) {
-          await refreshScheduleRange(visibleRange.start, visibleRange.end);
+          await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
         }
       }
       setShowAddClass(false);

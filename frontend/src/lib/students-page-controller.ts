@@ -178,7 +178,7 @@ export function useStudentsPageController({
     setInactivityScheduleError(null);
     setInactivityScheduleStatus("loading");
     try {
-      await refreshScheduleRange(range.startDate, range.endDate);
+      await refreshScheduleRange(range.startDate, range.endDate, "read");
       if (inactivityScheduleRequestSeqRef.current === requestSequence) {
         setInactivityScheduleStatus("ready");
       }

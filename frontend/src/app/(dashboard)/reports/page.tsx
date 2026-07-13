@@ -50,7 +50,8 @@ export default function ReportsPage() {
     try {
       await refreshScheduleRange(
         reportScheduleRange.startDate,
-        reportScheduleRange.endDate
+        reportScheduleRange.endDate,
+        "read"
       );
       if (reportScheduleRequestSeqRef.current === requestSequence) {
         setReportScheduleStatus("ready");

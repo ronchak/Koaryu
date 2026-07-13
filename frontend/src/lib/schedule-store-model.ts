@@ -198,6 +198,24 @@ export async function runScheduleRangeRefreshWithRetry<T>(
   throw new Error("Schedule range refresh was superseded. Please retry.");
 }
 
+export type ScheduleRangeRefreshIntent = "read" | "materialize";
+
+export function buildScheduleRangeRequest(
+  startDate: string,
+  endDate: string,
+  intent: ScheduleRangeRefreshIntent,
+  canMaterialize: boolean
+) {
+  const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
+  const shouldMaterialize = intent === "materialize" && canMaterialize;
+  return {
+    method: shouldMaterialize ? "POST" as const : "GET" as const,
+    path: shouldMaterialize
+      ? `/schedule/sessions/materialize?${rangeQuery}`
+      : `/schedule/sessions?${rangeQuery}`,
+  };
+}
+
 export type ScheduleCoordinatorState = {
   attendanceRequestSequence: number;
   dataRevision: number;
@@ -332,42 +350,125 @@ export function shouldReconcileSchedule(current: ScheduleCoordinatorState) {
 
 export function createScheduleReconciliationQueue() {
   let inFlight: Promise<void> | null = null;
-  let replayRequested = false;
-  let latestAttempt: (() => Promise<void>) | null = null;
-  let latestShouldRun: (() => boolean) | null = null;
+  let activeGeneration: number | null = null;
+  let activeIntent: ScheduleRangeRefreshIntent | null = null;
+  let pendingRequest: {
+    attempt: () => Promise<void>;
+    generation: number;
+    isExecutionSafe: () => boolean;
+    forceRun: boolean;
+    intent: ScheduleRangeRefreshIntent;
+    shouldRun: () => boolean;
+  } | null = null;
+
+  const enqueuePending = (request: NonNullable<typeof pendingRequest>) => {
+    if (pendingRequest && request.generation !== pendingRequest.generation) {
+      if (request.generation > pendingRequest.generation) {
+        pendingRequest = request;
+      }
+      return;
+    }
+    if (!pendingRequest || request.intent === "materialize" || pendingRequest.intent === "read") {
+      request.forceRun = request.forceRun || pendingRequest?.forceRun || false;
+      pendingRequest = request;
+    }
+  };
+
+  const deferActiveRequest = (request: NonNullable<typeof pendingRequest>) => {
+    if (!pendingRequest) {
+      pendingRequest = request;
+      return;
+    }
+    if (request.generation !== pendingRequest.generation) {
+      if (request.generation > pendingRequest.generation) {
+        pendingRequest = request;
+      }
+      return;
+    }
+    pendingRequest.forceRun = pendingRequest.forceRun || request.forceRun;
+    if (request.intent === "materialize" && pendingRequest.intent === "read") {
+      request.forceRun = request.forceRun || pendingRequest.forceRun;
+      pendingRequest = request;
+    }
+  };
 
   return function requestScheduleReconciliation(
     attempt: () => Promise<void>,
-    shouldRun: () => boolean
+    shouldRun: () => boolean,
+    intent: ScheduleRangeRefreshIntent = "read",
+    isExecutionSafe: () => boolean = () => true,
+    generation = 0
   ): Promise<void> {
-    latestAttempt = attempt;
-    latestShouldRun = shouldRun;
+    const request = {
+      attempt,
+      forceRun: false,
+      generation,
+      intent,
+      isExecutionSafe,
+      shouldRun,
+    };
 
     if (inFlight) {
-      replayRequested = true;
+      if (activeGeneration !== null && generation < activeGeneration) {
+        return inFlight;
+      }
+      // A read can satisfy the shared snapshot guard, but it cannot satisfy a
+      // materialization request. Keep the higher-priority request and run it once.
+      const forceRun = generation === activeGeneration
+        && intent === "materialize"
+        && activeIntent === "read";
+      request.forceRun = forceRun;
+      enqueuePending(request);
       return inFlight;
     }
 
+    enqueuePending(request);
+    const requestToRun = pendingRequest ?? request;
+    pendingRequest = null;
+    activeGeneration = requestToRun.generation;
+    activeIntent = requestToRun.intent;
     const run = async () => {
-      while (true) {
-        const replayAlreadyRequested = replayRequested;
-        replayRequested = false;
-        const currentAttempt = latestAttempt;
-        const currentShouldRun = latestShouldRun;
-        if (!currentAttempt || !currentShouldRun?.()) {
-          return;
-        }
+      let currentRequest = requestToRun;
+      while (currentRequest) {
+        activeGeneration = currentRequest.generation;
+        activeIntent = currentRequest.intent;
         let attemptError: unknown;
         let attemptFailed = false;
-        try {
-          await currentAttempt();
-        } catch (error) {
-          attemptError = error;
-          attemptFailed = true;
+        const shouldAttempt = currentRequest.forceRun || currentRequest.shouldRun();
+        // Priority may override snapshot satisfaction, never mutation settlement.
+        if (shouldAttempt && !currentRequest.isExecutionSafe()) {
+          if (
+            pendingRequest
+            && pendingRequest.generation > currentRequest.generation
+          ) {
+            currentRequest = pendingRequest;
+            pendingRequest = null;
+            continue;
+          }
+          deferActiveRequest(currentRequest);
+          return;
+        }
+        if (shouldAttempt) {
+          try {
+            await currentRequest.attempt();
+          } catch (error) {
+            attemptError = error;
+            attemptFailed = true;
+          }
         }
 
-        const shouldReplay = replayRequested || replayAlreadyRequested;
-        if (shouldReplay && latestShouldRun?.()) {
+        const nextRequest = pendingRequest;
+        pendingRequest = null;
+        if (nextRequest) {
+          if (
+            attemptFailed
+            && currentRequest.intent === "materialize"
+            && nextRequest.intent === "read"
+            && currentRequest.generation === nextRequest.generation
+          ) {
+            throw attemptError;
+          }
+          currentRequest = nextRequest;
           continue;
         }
         if (attemptFailed) {
@@ -382,6 +483,8 @@ export function createScheduleReconciliationQueue() {
     const clearInFlight = () => {
       if (inFlight === runPromise) {
         inFlight = null;
+        activeGeneration = null;
+        activeIntent = null;
       }
     };
     void runPromise.then(clearInFlight, clearInFlight);
