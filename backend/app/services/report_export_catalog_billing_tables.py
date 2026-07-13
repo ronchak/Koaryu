@@ -5,9 +5,13 @@ from typing import Any
 from app.services.report_export_catalog_types import CsvReport, _report
 
 
+def _deferred_billing_report(*args: Any, **kwargs: Any) -> CsvReport:
+    return _report(*args, availability="deferred_billing", **kwargs)
+
+
 def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, CsvReport]:
     return {
-        "billing_payers": _report(
+        "billing_payers": _deferred_billing_report(
             "billing_payers",
             "Billing payers",
             "billing-payers.csv",
@@ -38,7 +42,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_payers",
             order_by=(("display_name", False),),
         ),
-        "billing_plans": _report(
+        "billing_plans": _deferred_billing_report(
             "billing_plans",
             "Billing plans",
             "billing-plans.csv",
@@ -69,7 +73,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_plans",
             order_by=(("created_at", True),),
         ),
-        "billing_plan_programs": _report(
+        "billing_plan_programs": _deferred_billing_report(
             "billing_plan_programs",
             "Billing plan programs",
             "billing-plan-programs.csv",
@@ -83,7 +87,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_plan_programs",
             order_by=(("created_at", True),),
         ),
-        "billing_subscriptions": _report(
+        "billing_subscriptions": _deferred_billing_report(
             "billing_subscriptions",
             "Billing subscriptions",
             "billing-subscriptions.csv",
@@ -110,7 +114,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_subscriptions",
             order_by=(("created_at", True),),
         ),
-        "student_billing_enrollments": _report(
+        "student_billing_enrollments": _deferred_billing_report(
             "student_billing_enrollments",
             "Student billing enrollments",
             "student-billing-enrollments.csv",
@@ -136,7 +140,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="student_billing_enrollments",
             order_by=(("created_at", True),),
         ),
-        "billing_invoices": _report(
+        "billing_invoices": _deferred_billing_report(
             "billing_invoices",
             "Billing invoices",
             "billing-invoices.csv",
@@ -175,7 +179,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_invoices",
             order_by=(("created_at", True),),
         ),
-        "billing_invoice_items": _report(
+        "billing_invoice_items": _deferred_billing_report(
             "billing_invoice_items",
             "Billing invoice items",
             "billing-invoice-items.csv",
@@ -198,7 +202,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_invoice_items",
             order_by=(("created_at", True),),
         ),
-        "billing_payments": _report(
+        "billing_payments": _deferred_billing_report(
             "billing_payments",
             "Billing payments",
             "billing-payments.csv",
@@ -232,7 +236,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_payments",
             order_by=(("created_at", True),),
         ),
-        "billing_refunds": _report(
+        "billing_refunds": _deferred_billing_report(
             "billing_refunds",
             "Billing refunds",
             "billing-refunds.csv",
@@ -254,7 +258,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_refunds",
             order_by=(("created_at", True),),
         ),
-        "billing_disputes": _report(
+        "billing_disputes": _deferred_billing_report(
             "billing_disputes",
             "Billing disputes",
             "billing-disputes.csv",
@@ -277,7 +281,7 @@ def build_billing_table_report_catalog(report_service_cls: Any) -> dict[str, Csv
             table="billing_disputes",
             order_by=(("created_at", True),),
         ),
-        "billing_adjustments": _report(
+        "billing_adjustments": _deferred_billing_report(
             "billing_adjustments",
             "Billing adjustments",
             "billing-adjustments.csv",

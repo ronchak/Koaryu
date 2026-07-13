@@ -5,6 +5,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.api.v1.endpoints.reports import export_report_csv
+from app.services.report_export_catalog_billing_tables import build_billing_table_report_catalog
 from app.services.report_export_data import ReportExportDataFetcher
 from app.services.report_export_service import ReportExportService, require_report_export_access
 from tests.fakes.supabase import TableBackedSupabase
@@ -36,6 +37,24 @@ def student_row(index: int, *, studio_id: str = "studio-1") -> dict:
 
 
 class ReportExportServiceTest(unittest.TestCase):
+    def test_deferred_billing_reports_are_not_in_friendly_pilot_catalog(self):
+        service = ReportExportService(TableBackedSupabase({}))
+        deferred_reports = build_billing_table_report_catalog(ReportExportService)
+
+        self.assertTrue(deferred_reports)
+        self.assertTrue(all(
+            report.availability == "deferred_billing"
+            for report in deferred_reports.values()
+        ))
+        self.assertTrue(set(deferred_reports).isdisjoint(
+            report.id for report in service.list_reports()
+        ))
+
+        for report_id in deferred_reports:
+            with self.subTest(report_id=report_id), self.assertRaises(HTTPException) as context:
+                service.get_report(report_id)
+            self.assertEqual(context.exception.status_code, 404)
+
     def test_table_report_export_pages_rows(self):
         rows = [student_row(index) for index in range(1005)]
         rows.append(student_row(9999, studio_id="studio-2"))
@@ -161,6 +180,50 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 403)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "students" for query in supabase.log))
+
+    def test_export_report_csv_rejects_instructor_before_data_or_audit(self):
+        supabase = TableBackedSupabase({
+            "students": [student_row(1)],
+            "audit_logs": [],
+        })
+
+        with patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "instructor"},
+        ):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(export_report_csv(
+                    "students",
+                    user_id="user-1",
+                    requested_studio_id="studio-1",
+                    supabase=supabase,
+                ))
+
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertEqual(supabase.tables["audit_logs"], [])
+        self.assertFalse(any(query["table"] == "students" for query in supabase.log))
+
+    def test_export_report_csv_rejects_deferred_billing_report_before_data_or_audit(self):
+        supabase = TableBackedSupabase({
+            "billing_payments": [{"id": "payment-1", "studio_id": "studio-1"}],
+            "audit_logs": [],
+        })
+
+        with patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(export_report_csv(
+                    "billing_payments",
+                    user_id="user-1",
+                    requested_studio_id="studio-1",
+                    supabase=supabase,
+                ))
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(supabase.tables["audit_logs"], [])
+        self.assertFalse(any(query["table"] == "billing_payments" for query in supabase.log))
 
     def test_export_report_csv_does_not_audit_completion_when_generation_fails(self):
         supabase = TableBackedSupabase({

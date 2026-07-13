@@ -10,9 +10,14 @@ from app.services.report_export_catalog_types import CsvReport
 
 
 def build_report_catalog(report_service_cls: Any) -> dict[str, CsvReport]:
-    return {
+    complete_catalog = {
         **build_intelligence_report_catalog(report_service_cls),
         **build_core_table_report_catalog(report_service_cls),
         **build_billing_table_report_catalog(report_service_cls),
         **build_operations_report_catalog(report_service_cls),
+    }
+    return {
+        report_id: report
+        for report_id, report in complete_catalog.items()
+        if report.availability == "friendly_pilot_core"
     }

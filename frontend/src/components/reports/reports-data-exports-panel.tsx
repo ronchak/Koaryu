@@ -70,22 +70,6 @@ const EXPORT_GROUPS: ExportGroup[] = [
     ],
   },
   {
-    title: "Billing",
-    reports: [
-      { id: "billing_payers", title: "Payers", description: "Family payer contact details, balances, autopay state, and billing status." },
-      { id: "billing_plans", title: "Billing Plans", description: "Plan pricing, interval, signup fees, Stripe references, policies, and archive state." },
-      { id: "billing_plan_programs", title: "Plan Programs", description: "Which programs each billing plan applies to." },
-      { id: "billing_subscriptions", title: "Billing Subscriptions", description: "Payer-level Stripe subscription groups, collection modes, fee percent, and period dates." },
-      { id: "student_billing_enrollments", title: "Student Billing Enrollments", description: "Student, payer, plan, billing status, subscription, and next-bill dates." },
-      { id: "billing_invoices", title: "Invoices", description: "Invoice status, due dates, paid amounts, hosted URLs, and Stripe IDs." },
-      { id: "billing_invoice_items", title: "Invoice Items", description: "Line-item descriptions, quantities, unit amounts, and totals." },
-      { id: "billing_payments", title: "Payments", description: "Stripe and external payment records, methods, notes, and processing timestamps." },
-      { id: "billing_refunds", title: "Refunds", description: "Refund amounts, reasons, Stripe IDs, and status." },
-      { id: "billing_disputes", title: "Disputes", description: "Chargeback/dispute amount, reason, liability owner, and status." },
-      { id: "billing_adjustments", title: "Adjustments", description: "Manual payer or student balance adjustments with reasons and notes." },
-    ],
-  },
-  {
     title: "Administration",
     reports: [
       { id: "studio_overview", title: "Studio Overview", description: "Studio profile, Koaryu subscription state, and payment-account readiness." },
