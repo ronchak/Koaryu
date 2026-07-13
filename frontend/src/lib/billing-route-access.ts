@@ -11,6 +11,12 @@ export function canAccessBillingRoute(
   if (!isBillingRoute(pathname)) {
     return false;
   }
+  if (
+    pathname === "/billing/connect/refresh"
+    || pathname.startsWith("/billing/connect/refresh/")
+  ) {
+    return false;
+  }
   if (pathname === "/billing/connect" || pathname.startsWith("/billing/connect/")) {
     return role === "admin";
   }

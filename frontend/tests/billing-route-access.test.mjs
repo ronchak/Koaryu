@@ -22,8 +22,12 @@ describe("billing route authorization", () => {
     assert.equal(canAccessBillingRoute("/students", "admin"), false);
   });
 
-  it("keeps nested Stripe Connect routes admin-only", () => {
-    assert.equal(canAccessBillingRoute("/billing/connect/refresh", "admin"), true);
+  it("keeps Connect reads admin-only while blocking the provider-mutation refresh route", () => {
+    assert.equal(canAccessBillingRoute("/billing/connect", "admin"), true);
+    assert.equal(canAccessBillingRoute("/billing/connect/status", "admin"), true);
+    assert.equal(canAccessBillingRoute("/billing/connect", "front_desk"), false);
+    assert.equal(canAccessBillingRoute("/billing/connect/refresh", "admin"), false);
+    assert.equal(canAccessBillingRoute("/billing/connect/refresh/", "admin"), false);
     assert.equal(canAccessBillingRoute("/billing/connect/refresh", "front_desk"), false);
     assert.equal(canAccessBillingRoute("/billing/connect/refresh", "instructor"), false);
   });
