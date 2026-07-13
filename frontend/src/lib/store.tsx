@@ -107,7 +107,7 @@ import {
   sortPrograms,
 } from "@/lib/program-store-model";
 import { loadIndependentDataset } from "@/lib/page-dataset-readiness";
-import { hasStaffPermission } from "@/lib/staff-permissions";
+import { canMaterializeScheduleRange } from "@/lib/staff-permissions";
 
 export {
   useBeltStore,
@@ -275,7 +275,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
 
     const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
-    const sessionsRequest = hasStaffPermission(currentRole, "manage_schedule")
+    const sessionsRequest = canMaterializeScheduleRange(currentRole)
       ? api.post<ClassSession[]>(`/schedule/sessions/materialize?${rangeQuery}`, {}, request.token)
       : api.get<ClassSession[]>(`/schedule/sessions?${rangeQuery}`, request.token);
     const [templatesResult, sessionsResult, attendanceResult] = await Promise.allSettled([

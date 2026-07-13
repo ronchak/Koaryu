@@ -22,7 +22,7 @@ import {
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
-import { hasStaffPermission } from "@/lib/staff-permissions";
+import { canMaterializeScheduleRange } from "@/lib/staff-permissions";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
@@ -73,7 +73,7 @@ export function useStoreScheduleActions({
   setTemplates,
   templatesRef,
 }: UseStoreScheduleActionsOptions) {
-  const canManageSchedule = hasStaffPermission(currentRole, "manage_schedule");
+  const canMaterializeSchedule = canMaterializeScheduleRange(currentRole);
   const scheduleMutationWaitersRef = useRef(new Set<() => void>());
 
   const releaseScheduleMutationWaiters = useCallback(() => {
@@ -186,7 +186,7 @@ export function useStoreScheduleActions({
         requestSequenceAtStart: attendanceRequestSequence,
       });
       const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
-      const rangeSessions = canManageSchedule
+      const rangeSessions = canMaterializeSchedule
         ? await api.post<ClassSession[]>(
             `/schedule/sessions/materialize?${rangeQuery}`,
             {},
@@ -243,7 +243,7 @@ export function useStoreScheduleActions({
     }
   }, [
     beginLiveAuthRequest,
-    canManageSchedule,
+    canMaterializeSchedule,
     isPreviewMode,
     reconcileSchedule,
     scheduleCoordinatorRef,

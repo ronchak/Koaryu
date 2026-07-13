@@ -74,6 +74,7 @@ def _routes(*values: tuple[str, str]) -> set[tuple[str, str]]:
 AFFECTED_ROUTE_DEPENDENCIES = {
     get_current_write_studio_id: _routes(
         ("POST", "/students/{student_id}/photo"),
+        ("POST", "/schedule/sessions/materialize"),
         ("POST", "/schedule/attendance"),
         ("DELETE", "/schedule/attendance"),
         ("POST", "/schedule/attendance/bulk"),
@@ -94,7 +95,6 @@ AFFECTED_ROUTE_DEPENDENCIES = {
         ("POST", "/schedule/templates"),
         ("PATCH", "/schedule/templates/{template_id}"),
         ("DELETE", "/schedule/templates/{template_id}"),
-        ("POST", "/schedule/sessions/materialize"),
         ("POST", "/schedule/sessions"),
         ("DELETE", "/schedule/sessions/{session_id}"),
         ("POST", "/schedule/sessions/generate-week"),
@@ -405,6 +405,39 @@ class StaffPermissionPolicyTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         service_class.return_value.update_student.assert_awaited_once()
+
+    def test_instructor_can_materialize_recurring_sessions_for_attendance(self):
+        supabase = _supabase(
+            _staff_role("instructor"),
+            extra_tables={
+                "studio_subscriptions": [{
+                    "studio_id": "studio-a",
+                    "status": "active",
+                    "comped": False,
+                    "trial_end": None,
+                }],
+            },
+        )
+        test_app = FastAPI()
+        test_app.include_router(schedule.router)
+        test_app.dependency_overrides[get_current_user_id] = lambda: "user-1"
+        test_app.dependency_overrides[get_supabase] = lambda: supabase
+
+        with patch("app.api.v1.endpoints.schedule.ScheduleService") as service_class:
+            service_class.return_value.materialize_session_range = AsyncMock(return_value=[])
+            response = TestClient(test_app).post(
+                "/schedule/sessions/materialize",
+                headers={"X-Studio-Id": "studio-a"},
+                params={"start_date": "2026-07-13", "end_date": "2026-07-19"},
+                json={},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        service_class.return_value.materialize_session_range.assert_awaited_once_with(
+            "studio-a",
+            "2026-07-13",
+            "2026-07-19",
+        )
 
     def test_affected_mutation_routes_use_the_reviewed_dependencies(self):
         observed = {dependency: set() for dependency in AFFECTED_ROUTE_DEPENDENCIES}

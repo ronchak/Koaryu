@@ -38,3 +38,7 @@ export function hasStaffPermission(
 ): boolean {
   return role ? ROLE_PERMISSIONS[role].has(permission) : false;
 }
+
+export function canMaterializeScheduleRange(role: StaffRoleName | null): boolean {
+  return hasStaffPermission(role, "take_attendance");
+}

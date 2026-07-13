@@ -98,7 +98,7 @@ async def materialize_session_range(
             f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
         ),
     ),
-    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).materialize_session_range(
