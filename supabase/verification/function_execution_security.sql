@@ -70,12 +70,20 @@ BEGIN
 
         v_is_authenticated_helper := (
             v_function.schema_name = 'private'
-            AND v_function.function_name IN (
-                'is_staff_in_studio',
-                'is_admin_or_front_desk_in_studio',
-                'is_admin_in_studio'
+            AND (
+                (
+                    v_function.function_name IN (
+                        'is_staff_in_studio',
+                        'is_admin_or_front_desk_in_studio',
+                        'is_admin_in_studio'
+                    )
+                    AND pg_catalog.oidvectortypes(v_function.proargtypes) = 'uuid'
+                )
+                OR (
+                    v_function.function_name = 'has_unambiguous_studio_membership'
+                    AND pg_catalog.oidvectortypes(v_function.proargtypes) = ''
+                )
             )
-            AND pg_catalog.oidvectortypes(v_function.proargtypes) = 'uuid'
         );
 
         IF v_is_authenticated_helper THEN
