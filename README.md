@@ -14,6 +14,8 @@ Current public positioning uses a flat `$27/month` Koaryu Core studio subscripti
 
 Release notes are tracked in [CHANGELOG.md](CHANGELOG.md). Keep that file as the source of truth for released changes and avoid duplicating unreleased notes here.
 
+Friendly Pilot operators should start with [Friendly Pilot Operations](docs/friendly-pilot-operations.md). The exact supported billing surface and its live-mutation interlock are documented in [Friendly Pilot Billing Boundary](docs/friendly-pilot-billing-boundary.md).
+
 ## Architecture
 
 ```
@@ -165,6 +167,8 @@ The current Supabase/auth flow is hardened around a strict fresh-account experie
 
 Studio membership is the tenant boundary. Backend services and RLS policies are intended to scope records by `studio_id`, and the live frontend onboarding gate now relies on the backend auth profile instead of a fragile direct `staff_roles` query.
 
+Friendly Pilot Core supports exactly one studio membership per user. Creating or accepting a second active membership is rejected. An unexpected historical multi-membership is preserved but fails closed with a bounded support-remediation message; active multi-studio selection is not a supported workflow.
+
 ## Deployment And Demo Notes
 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
@@ -212,23 +216,13 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 
 ## Billing Readiness
 
-Koaryu has two billing surfaces:
+Friendly Pilot billing is **Contract Only**. Admin and Front Desk may view existing plans, families, student billing records, invoices, and payments. The only supported routine writes are an external-only local student billing attachment, a payer-level external payment record, and read-based reconciliation of an existing Stripe-linked invoice. Instructor access is denied before billing data is fetched.
 
-- Koaryu Core billing: the studio's subscription to Koaryu.
-- Koaryu Payments: a connected studio charging its own students/payers through Stripe Connect.
+Plan and payer changes, autopay, provider-backed enrollment lifecycle, invoice creation/finalization/retry/void, refunds, exports, Stripe Connect setup, and Koaryu Core checkout/portal are not supported pilot operations. Non-preview provider-mutation controls are hidden or disabled. Preview actions are demonstrations only and do not change provider state.
 
-Before presenting billing live, verify both surfaces after the latest deploy:
+Keep `LIVE_BILLING_ENABLED=false`. Live outbound Stripe mutation requires a separate transition-specific approval and durable authorization that this release does not provide; setting the flag alone is insufficient and hosted configuration rejects it. Inbound signed live webhooks and provider reads may continue to reconcile existing state.
 
-- Render and Vercel deployments are green for the same commit.
-- `/health/live` and `/api/v1/health/live` prove process liveness; `/health/ready` and `/api/v1/health/ready` recheck hosted runtime configuration. The older `/health` aliases remain available.
-- `/api/version` returns safe Vercel environment and exact-commit metadata for deployment comparison.
-- In Stripe test mode, a studio admin can open Koaryu Core checkout or billing portal without creating duplicate active subscriptions. Production live mutations remain intentionally unavailable until durable scoped authorization is implemented and enabled.
-- `/api/v1/billing/system/status` reports configured Stripe keys, connected-account readiness, Supabase reachability, and healthy platform/Connect webhook processing for the target studio.
-- Stripe Dashboard shows successful deliveries for the platform and Connect webhook endpoints.
-- The target studio's Stripe Connect account has `charges_enabled`, `payouts_enabled`, `details_submitted`, and no currently due requirements.
-- At least one test-mode rehearsal has covered payer creation, saved card/autopay authorization, subscription enrollment, invoice payment projection, and cancellation cleanup. Do not run this mutation rehearsal in live mode while the production interlock is closed.
-
-If Stripe has the right object state but Koaryu looks stale, use the authenticated billing reconciliation endpoint documented in `docs/render-backend-deployment.md`.
+Before presenting the supported surface, verify Render and Vercel are green for the same exact commit, health/readiness checks pass, Instructor denial discloses no billing data, and the three named routine transitions behave as described in [Friendly Pilot Billing Boundary](docs/friendly-pilot-billing-boundary.md).
 
 ## Recent Live-Mode Improvements
 

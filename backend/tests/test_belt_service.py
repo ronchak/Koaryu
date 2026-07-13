@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from app.schemas.belt import PromoteStudent
+from app.schemas.belt import DemoteStudent, PromoteStudent
 from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.belt_service import BeltService
 from tests.fakes.supabase import RpcBackedSupabase
@@ -46,6 +46,35 @@ class FakeSupabase(RpcBackedSupabase):
             "entity_id": promotion["id"],
         })
         return promotion
+
+    def _rpc_record_student_demotion(self, params: dict):
+        row = {
+            "id": "aaaaaaaa-9999-9999-9999-999999999999",
+            "studio_id": params["p_studio_id"],
+            "student_id": params["p_student_id"],
+            "student_program_membership_id": params["p_student_program_membership_id"],
+            "program_id": params["p_program_id"],
+            "from_rank_id": params["p_from_rank_id"],
+            "to_rank_id": params["p_to_rank_id"],
+            "promoted_by": params["p_demoted_by"],
+            "notes": params["p_reason"],
+            "promoted_at": "2026-07-12T12:00:00Z",
+        }
+        self.tables["promotions"].append(dict(row))
+        for membership in self.tables["student_program_memberships"]:
+            if membership["id"] == params["p_student_program_membership_id"]:
+                membership["current_belt_rank_id"] = params["p_to_rank_id"]
+        for student in self.tables["students"]:
+            if student["id"] == params["p_student_id"]:
+                student["current_belt_rank_id"] = params["p_to_rank_id"]
+        self.tables["audit_logs"].append({
+            "studio_id": params["p_studio_id"],
+            "actor_id": params["p_demoted_by"],
+            "action": "student.demoted",
+            "entity_id": row["id"],
+            "metadata": {"reason": params["p_reason"]},
+        })
+        return row
 
 
 class BeltServiceTest(unittest.TestCase):
@@ -113,6 +142,98 @@ class BeltServiceTest(unittest.TestCase):
         self.assertEqual(supabase.tables["students"][0]["current_belt_rank_id"], TO_RANK_ID)
         self.assertEqual(supabase.tables["student_program_memberships"][0]["current_belt_rank_id"], TO_RANK_ID)
         self.assertEqual(supabase.tables["audit_logs"][0]["entity_id"], response.id)
+
+    def test_demote_student_records_previous_rank_and_reason_through_atomic_rpc(self):
+        supabase = FakeSupabase({
+            "belt_ranks": [
+                {"id": TO_RANK_ID, "studio_id": STUDIO_ID, "ladder_id": LADDER_ID, "display_order": 1},
+                {"id": FROM_RANK_ID, "studio_id": STUDIO_ID, "ladder_id": LADDER_ID, "display_order": 2},
+            ],
+            "belt_ladders": [{"id": LADDER_ID, "studio_id": STUDIO_ID, "program_id": PROGRAM_ID}],
+            "students": [{
+                "id": STUDENT_ID,
+                "studio_id": STUDIO_ID,
+                "program_id": PROGRAM_ID,
+                "current_belt_rank_id": FROM_RANK_ID,
+            }],
+            "student_program_memberships": [{
+                "id": MEMBERSHIP_ID,
+                "student_id": STUDENT_ID,
+                "studio_id": STUDIO_ID,
+                "program_id": PROGRAM_ID,
+                "status": "active",
+                "ended_at": None,
+                "current_belt_rank_id": FROM_RANK_ID,
+            }],
+            "promotions": [],
+            "audit_logs": [],
+        })
+
+        response = asyncio.run(BeltService(supabase).demote_student(
+            DemoteStudent(
+                student_id=STUDENT_ID,
+                student_program_membership_id=MEMBERSHIP_ID,
+                to_rank_id=TO_RANK_ID,
+                reason="Correcting an earlier rank entry",
+            ),
+            STUDIO_ID,
+            ACTOR_ID,
+        ))
+
+        self.assertEqual(response.to_rank_id, TO_RANK_ID)
+        self.assertEqual(supabase.rpc_calls[0][0], "record_student_demotion")
+        self.assertEqual(
+            supabase.rpc_calls[0][1]["p_reason"],
+            "Correcting an earlier rank entry",
+        )
+        self.assertEqual(supabase.tables["audit_logs"][0]["action"], "student.demoted")
+        self.assertEqual(
+            supabase.tables["audit_logs"][0]["metadata"]["reason"],
+            "Correcting an earlier rank entry",
+        )
+        self.assertEqual(supabase.tables["students"][0]["current_belt_rank_id"], TO_RANK_ID)
+
+    def test_demote_student_rejects_skipping_ranks_before_rpc(self):
+        middle_rank_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        supabase = FakeSupabase({
+            "belt_ranks": [
+                {"id": TO_RANK_ID, "studio_id": STUDIO_ID, "ladder_id": LADDER_ID, "display_order": 1},
+                {"id": middle_rank_id, "studio_id": STUDIO_ID, "ladder_id": LADDER_ID, "display_order": 2},
+                {"id": FROM_RANK_ID, "studio_id": STUDIO_ID, "ladder_id": LADDER_ID, "display_order": 3},
+            ],
+            "belt_ladders": [{"id": LADDER_ID, "studio_id": STUDIO_ID, "program_id": PROGRAM_ID}],
+            "students": [{
+                "id": STUDENT_ID,
+                "studio_id": STUDIO_ID,
+                "program_id": PROGRAM_ID,
+                "current_belt_rank_id": FROM_RANK_ID,
+            }],
+            "student_program_memberships": [{
+                "id": MEMBERSHIP_ID,
+                "student_id": STUDENT_ID,
+                "studio_id": STUDIO_ID,
+                "program_id": PROGRAM_ID,
+                "status": "active",
+                "ended_at": None,
+                "current_belt_rank_id": FROM_RANK_ID,
+            }],
+            "promotions": [],
+            "audit_logs": [],
+        })
+
+        with self.assertRaisesRegex(Exception, "previous rank"):
+            asyncio.run(BeltService(supabase).demote_student(
+                DemoteStudent(
+                    student_id=STUDENT_ID,
+                    student_program_membership_id=MEMBERSHIP_ID,
+                    to_rank_id=TO_RANK_ID,
+                    reason="Correction",
+                ),
+                STUDIO_ID,
+                ACTOR_ID,
+            ))
+
+        self.assertEqual(supabase.rpc_calls, [])
 
     def test_list_ladders_does_not_repair_program_ladders(self):
         supabase = FakeSupabase({

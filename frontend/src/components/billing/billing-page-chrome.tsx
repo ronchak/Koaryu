@@ -26,6 +26,7 @@ import {
   type SetupStep,
 } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
+import { FRIENDLY_PILOT_BILLING_BOUNDARY_MESSAGE } from "@/lib/billing-pilot-policy";
 
 export type BillingTab = "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
 export type BillingSetupStep = SetupStep;
@@ -45,6 +46,7 @@ export function BillingPageFrame({
   completedStepCount,
   error,
   isLiveRestricted,
+  isPreviewMode,
   isLoading,
   isRefreshDisabled,
   message,
@@ -61,6 +63,7 @@ export function BillingPageFrame({
   completedStepCount: number;
   error: string;
   isLiveRestricted: boolean;
+  isPreviewMode: boolean;
   isLoading: boolean;
   isRefreshDisabled: boolean;
   message: string;
@@ -108,6 +111,12 @@ export function BillingPageFrame({
                 showLoading={showLoading}
               />
 
+              <section className="rounded-[6px] border border-warning/40 bg-warning/5 p-4 text-xs text-text-secondary">
+                {isPreviewMode
+                  ? "Preview mode uses demo-only billing actions and does not change provider state."
+                  : FRIENDLY_PILOT_BILLING_BOUNDARY_MESSAGE}
+              </section>
+
               {showContent ? children : null}
 
               <BillingPolicyNote />
@@ -147,8 +156,8 @@ export function BillingSetupNavigation({
       <OverviewPanel>
         <OverviewPanelHeader
           eyebrow={`${completedStepCount} / ${steps.length} complete`}
-          title="Tuition setup path"
-          description="Move left to right: set up payments, create tuition plans, add families, attach students, then collect or send invoices."
+          title="Friendly Pilot billing review"
+          description="Review current provider state, plans, and families; attach external billing records; then record external payments or reconcile invoices."
         />
         <SetupStepList steps={steps} />
       </OverviewPanel>

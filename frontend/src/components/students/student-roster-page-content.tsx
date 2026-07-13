@@ -37,6 +37,7 @@ type StudentRosterPageContentProps = {
   allSelected: boolean;
   bulkActionError: string | null;
   bulkStatus: StudentStatus;
+  canCreateStudents: boolean;
   canManageRoster: boolean;
   deleteError: string | null;
   filtered: StudentRosterRow[];
@@ -108,6 +109,7 @@ export function StudentRosterPageContent({
   allSelected,
   bulkActionError,
   bulkStatus,
+  canCreateStudents,
   canManageRoster,
   deleteError,
   filtered,
@@ -187,10 +189,12 @@ export function StudentRosterPageContent({
             Import CSV
           </Button>
         ) : null}
-        <Button variant="primary" size="sm" onClick={onAddStudent}>
-          <UserPlus className="w-3.5 h-3.5" />
-          Add student
-        </Button>
+        {canCreateStudents ? (
+          <Button variant="primary" size="sm" onClick={onAddStudent}>
+            <UserPlus className="w-3.5 h-3.5" />
+            Add student
+          </Button>
+        ) : null}
       </Header>
 
       <div className="flex-1 flex flex-col">
@@ -293,7 +297,7 @@ export function StudentRosterPageContent({
         />
       </div>
 
-      {showForm ? (
+      {showForm && canCreateStudents ? (
         <StudentForm
           onSubmit={onAddStudentSubmit}
           onClose={onCloseStudentForm}

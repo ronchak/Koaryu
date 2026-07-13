@@ -15,6 +15,7 @@ export function StudentDetailPageContent({
   actionMessage,
   beltLoadError,
   canManageRoster,
+  canManageStudentLifecycle,
   deleteError,
   detail,
   isDeleting,
@@ -63,7 +64,7 @@ export function StudentDetailPageContent({
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <p className="text-sm text-text-secondary">
-              {loadError || "This student doesn't exist or has been deleted."}
+              {loadError || "This student doesn't exist or has been archived."}
             </p>
           </div>
         </div>
@@ -85,7 +86,7 @@ export function StudentDetailPageContent({
         {canManageRoster ? (
           <Button variant="danger" size="sm" onClick={onShowDeleteConfirm}>
             <Trash2 className="w-3.5 h-3.5" />
-            Delete
+            Archive
           </Button>
         ) : null}
       </Header>
@@ -98,18 +99,18 @@ export function StudentDetailPageContent({
         </div>
       ) : null}
 
-      <div className="flex-1 p-8">
-        <div className="max-w-3xl grid grid-cols-3 gap-6">
+      <div className="flex-1 p-4 sm:p-6 lg:p-8">
+        <div className="grid max-w-3xl grid-cols-1 gap-6 lg:grid-cols-3">
           {canManageRoster && (showDeleteConfirm || deleteError) && (
-            <div className="col-span-3 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3">
+            <div className="col-span-1 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3 lg:col-span-3">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
-                    <p className="text-sm font-medium text-text-primary">Delete this student?</p>
+                    <p className="text-sm font-medium text-text-primary">Archive this student?</p>
                   </div>
                   <p className="text-xs text-muted mt-1">
-                    This removes {detail.fullName} from the active roster and cannot be undone from the UI.
+                    This removes {detail.fullName} from the active roster. Their history is preserved.
                   </p>
                   {deleteError ? (
                     <p className="text-xs text-danger mt-2">{deleteError}</p>
@@ -131,7 +132,7 @@ export function StudentDetailPageContent({
                     onClick={onDeleteStudent}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    Delete
+                    Archive
                   </Button>
                 </div>
               </div>
@@ -177,6 +178,7 @@ export function StudentDetailPageContent({
           onClose={onCloseEdit}
           isLoading={isSaving}
           initialData={detail.editInitialData}
+          canManageLifecycle={canManageStudentLifecycle}
         />
       )}
     </>

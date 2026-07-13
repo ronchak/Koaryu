@@ -247,30 +247,30 @@ const featurePageDrafts: MarketingPageDraft[] = [
     eyebrow: "Billing",
     metaTitle: "Martial Arts Studio Billing and Tuition Software | Koaryu",
     description:
-      "Create tuition plans, connect families and payers, track invoices, and keep payment issues visible while Stripe handles processing.",
+      "Review existing tuition plans, family payer context, invoices, and payment issues without presenting unsupported provider changes as complete.",
     summary:
-      "Koaryu keeps billing operational: which families are set up, which invoices need attention, which students are attached to plans, and what staff should do next.",
+      "Friendly Pilot keeps existing billing state visible to Admin and Front Desk, supports external-only local records and read-based invoice reconciliation, and denies Instructor access before billing data is fetched.",
     icon: "credit-card",
-    primaryAction: "Set up tuition plans",
+    primaryAction: "Review billing status",
     sections: [
       {
-        title: "Tuition plans that match programs",
+        title: "Existing tuition context",
         description:
-          "Independent studios need practical recurring tuition management without turning the software into a finance console.",
+          "Independent studios need a truthful view of the billing records already associated with their students and families.",
         bullets: [
-          "Plans for monthly tuition, trial conversions, sibling cases, and external payment tracking",
-          "Student billing assignments that connect the roster to family payers",
-          "Visibility into who is missing a plan or payment method",
+          "Read existing plans, family payer context, student billing assignments, invoices, and payments",
+          "Attach an external-only local billing record without changing Stripe",
+          "Keep missing or failed billing context visible to authorized staff",
         ],
       },
       {
-        title: "Stripe for payment processing",
+        title: "Provider state without provider mutation",
         description:
-          "Koaryu keeps the studio workflow visible while Stripe handles card and bank/payment infrastructure.",
+          "Friendly Pilot can read and reconcile an existing Stripe-linked invoice while live outbound provider changes remain closed.",
         bullets: [
-          "Connect onboarding for studios that want to collect through Koaryu",
-          "Invoice and payer status in the same workspace as student operations",
-          "Advanced processor details kept behind the owner-facing setup path",
+          "Reconcile an existing provider invoice through a read and update the local projection",
+          "Record payer-level cash, check, Zelle, Venmo, or other external outcomes locally",
+          "Keep plan, payer, autopay, invoice-lifecycle, refund, and Connect changes outside this release",
         ],
       },
       {
@@ -286,8 +286,8 @@ const featurePageDrafts: MarketingPageDraft[] = [
     ],
     proof: [
       { label: "Pricing", value: "$27", detail: "Flat Koaryu platform subscription" },
-      { label: "Processing", value: "Stripe", detail: "Payment infrastructure handled by Stripe" },
-      { label: "Tuition", value: "Visible", detail: "Plans, payers, invoices, and issues" },
+      { label: "Provider writes", value: "Closed", detail: "Separate approval required" },
+      { label: "Tuition", value: "Visible", detail: "Existing plans, payers, invoices, and issues" },
     ],
     related: [
       { kind: "feature", slug: "student-management" },
@@ -335,7 +335,7 @@ const useCasePageDrafts: MarketingPageDraft[] = [
         description:
           "The product should make migration feel calm, not like handing the school to a black box.",
         bullets: [
-          "Exportable records and clear setup steps",
+          "Clear setup steps and studio-scoped records",
           "Simple pricing that does not rise with every new student",
           "Operational language designed for studio owners and instructors",
         ],
@@ -344,7 +344,7 @@ const useCasePageDrafts: MarketingPageDraft[] = [
     proof: [
       { label: "Migration", value: "Incremental", detail: "Start with the roster" },
       { label: "Records", value: "Connected", detail: "Students, ranks, attendance, billing" },
-      { label: "Control", value: "Exportable", detail: "Studio history should stay yours" },
+      { label: "Control", value: "Scoped", detail: "Studio history stays tenant-bound" },
     ],
     related: [
       { kind: "feature", slug: "student-management" },
@@ -466,20 +466,20 @@ const useCasePageDrafts: MarketingPageDraft[] = [
     eyebrow: "Tuition cleanup",
     metaTitle: "Martial Arts Tuition Cleanup Workflow | Koaryu",
     description:
-      "Give owners a clear workflow for missing billing plans, payer setup, overdue invoices, failed payments, and external payment notes.",
+      "Give authorized staff a clear view of existing tuition records, overdue invoices, failed payments, and external payment notes.",
     summary:
-      "Tuition problems are easier to solve when they are visible early. Koaryu keeps payer context, invoices, student billing plans, and external payment notes in the same operating picture.",
+      "Tuition problems are easier to address when they are visible early. Friendly Pilot keeps existing payer context, invoices, student billing records, and external payment notes in the same operating picture.",
     icon: "credit-card",
     primaryAction: "Review tuition attention",
     sections: [
       {
-        title: "Find the setup gaps first",
+        title: "Find the record gaps first",
         description:
-          "Before a studio can collect cleanly, every active student needs the right plan and payer context.",
+          "Authorized staff can identify which existing records need attention without changing provider setup.",
         bullets: [
-          "See students missing billing assignments or payer information",
-          "Separate autopay, invoice-link, external, and no-payment-method situations",
-          "Keep sibling and family billing context close to the roster",
+          "See students missing local billing assignments or payer context",
+          "Separate existing provider-linked invoices from external payment records",
+          "Attach an external-only local student billing record when appropriate",
         ],
       },
       {
@@ -488,8 +488,8 @@ const useCasePageDrafts: MarketingPageDraft[] = [
           "The owner needs to know who needs help and what to say, not stare at processor details.",
         bullets: [
           "Track overdue invoices and payment statuses alongside family context",
-          "Use Stripe-connected payment visibility when the studio is ready",
-          "Record external payment outcomes without pretending every studio collects the same way",
+          "Reconcile an existing Stripe-linked invoice through a provider read",
+          "Record payer-level external outcomes without claiming that Koaryu moved money",
         ],
       },
       {

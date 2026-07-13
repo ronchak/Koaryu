@@ -11,13 +11,13 @@ import {
 import type { ExportJob } from "@/types";
 
 type BillingReportActionsOptions = {
-  canManageStudioBilling: boolean;
+  canManageRoutineBilling: boolean;
   runtime: BillingActionRuntime;
   setExportJobs: Dispatch<SetStateAction<ExportJob[]>>;
 };
 
 export function useBillingReportActions({
-  canManageStudioBilling,
+  canManageRoutineBilling,
   runtime,
   setExportJobs,
 }: BillingReportActionsOptions) {
@@ -32,35 +32,17 @@ export function useBillingReportActions({
   }
 
   async function handleCreateExport(exportType: string) {
-    if (!canManageStudioBilling) {
-      runtime.setError("Only studio admins can queue billing exports.");
-      return;
-    }
-    if (runtime.isPreviewMode) {
-      runtime.setMessage("Demo export queued. Live exports run asynchronously.");
-      return;
-    }
-    const action = `export:${exportType}`;
-    if (!runtime.token || !runtime.claimAction(action)) {
-      return;
-    }
-    try {
-      const job = await api.post<ExportJob>("/billing/exports", { export_type: exportType, filters: {} }, runtime.token);
-      setExportJobs((current) => [job, ...current]);
-      runtime.setMessage("Export queued. Koaryu will attach a download when it is ready.");
-    } catch (err) {
-      runtime.setError(err instanceof Error ? err.message : "Export could not be queued.");
-    } finally {
-      runtime.releaseAction(action);
-    }
+    void exportType;
+    void setExportJobs;
+    runtime.setError("Billing exports are not enabled for the Friendly Pilot release.");
   }
 
   async function handleRecordExternalPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     runtime.setError("");
     runtime.setMessage("");
-    if (!canManageStudioBilling) {
-      runtime.setError("Only studio admins can record billing payments.");
+    if (!canManageRoutineBilling) {
+      runtime.setError("Only studio admins and front desk staff can record external payments.");
       return;
     }
     const payloadResult = buildExternalBillingPaymentPayload({

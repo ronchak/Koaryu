@@ -101,16 +101,24 @@ export function buildInitialStudentFormFields(initialData?: StudentFormInitialDa
   };
 }
 
-export function validateStudentFormFields(fields: StudentFormFields): StudentFormValidation | null {
+export function validateStudentFormFields(
+  fields: StudentFormFields,
+  options?: { includeLifecycleFields?: boolean }
+): StudentFormValidation | null {
   if (!fields.legalFirst.trim() || !fields.legalLast.trim()) {
     return { message: "First name and last name are required.", tab: "info" };
   }
 
-  if (fields.holdEnd && !fields.holdStart) {
+  if (options?.includeLifecycleFields !== false && fields.holdEnd && !fields.holdStart) {
     return { message: "Add a hold start date before setting a hold end date.", tab: "info" };
   }
 
-  if (fields.holdStart && fields.holdEnd && fields.holdEnd < fields.holdStart) {
+  if (
+    options?.includeLifecycleFields !== false
+    && fields.holdStart
+    && fields.holdEnd
+    && fields.holdEnd < fields.holdStart
+  ) {
     return { message: "Hold end date cannot be before the hold start date.", tab: "info" };
   }
 
@@ -162,15 +170,14 @@ export function buildStudentCreatePayload(
 
 export function buildStudentUpdatePayload(
   fields: StudentFormFields,
-  initialData?: StudentFormInitialData
+  initialData?: StudentFormInitialData,
+  options?: { includeLifecycleFields?: boolean }
 ): StudentUpdate {
-  return {
+  const payload: StudentUpdate = {
     legal_first_name: fields.legalFirst.trim(),
     legal_last_name: fields.legalLast.trim(),
     preferred_name: textOrNull(fields.preferredName),
     date_of_birth: fields.dob || null,
-    hold_start_date: fields.holdStart || null,
-    hold_end_date: fields.holdEnd || null,
     email: textOrNull(fields.email),
     phone: textOrNull(fields.phone),
     address_line1: textOrNull(fields.addressLine1),
@@ -180,28 +187,37 @@ export function buildStudentUpdatePayload(
     emergency_contact_name: textOrNull(fields.emergencyName),
     emergency_contact_phone: textOrNull(fields.emergencyPhone),
     emergency_contact_relation: textOrNull(fields.emergencyRelation),
-    status: fields.status,
-    membership_start_date: fields.membershipStart || null,
-    program_id: fields.programIds[0] || null,
-    program_ids: fields.programIds,
-    current_belt_rank_id: initialData?.current_belt_rank_id ?? null,
     notes: textOrNull(fields.notes),
     tags: parseTags(fields.tags),
   };
+
+  if (options?.includeLifecycleFields !== false) {
+    payload.hold_start_date = fields.holdStart || null;
+    payload.hold_end_date = fields.holdEnd || null;
+    payload.status = fields.status;
+    payload.membership_start_date = fields.membershipStart || null;
+    payload.program_id = fields.programIds[0] || null;
+    payload.program_ids = fields.programIds;
+    payload.current_belt_rank_id = initialData?.current_belt_rank_id ?? null;
+  }
+
+  return payload;
 }
 
 export function buildStudentFormSubmitPayload(
   fields: StudentFormFields,
-  initialData?: StudentFormInitialData
+  initialData?: StudentFormInitialData,
+  options?: { includeLifecycleFields?: boolean }
 ): StudentCreate | StudentUpdate {
   return initialData
-    ? buildStudentUpdatePayload(fields, initialData)
+    ? buildStudentUpdatePayload(fields, initialData, options)
     : buildStudentCreatePayload(fields);
 }
 
 type UseStudentFormStateOptions =
   {
     initialData?: StudentFormInitialData;
+    includeLifecycleFields?: boolean;
     onSubmit: (data: StudentCreate | StudentUpdate) => Promise<void> | void;
   };
 
@@ -222,7 +238,9 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
     event.preventDefault();
     setError("");
 
-    const validation = validateStudentFormFields(fields);
+    const validation = validateStudentFormFields(fields, {
+      includeLifecycleFields: options.includeLifecycleFields,
+    });
     if (validation) {
       setError(validation.message);
       setTab(validation.tab);
@@ -230,7 +248,9 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
     }
 
     try {
-      await options.onSubmit(buildStudentFormSubmitPayload(fields, initialData));
+      await options.onSubmit(buildStudentFormSubmitPayload(fields, initialData, {
+        includeLifecycleFields: options.includeLifecycleFields,
+      }));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to add student");
     }

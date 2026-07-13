@@ -8,6 +8,7 @@ from app.db.supabase import create_supabase_client
 from app.services.studio_scope import (
     resolve_belt_configuration_admin_staff_role_for_user,
     resolve_lead_conversion_manager_staff_role_for_user,
+    resolve_lead_manager_staff_role_for_user,
     resolve_promotion_manager_staff_role_for_user,
     resolve_roster_schedule_manager_staff_role_for_user,
     resolve_staff_role_for_user,
@@ -103,6 +104,19 @@ async def get_current_write_studio_id(
     return membership["studio_id"]
 
 
+async def get_current_write_staff_role(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+) -> dict:
+    return resolve_write_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+
+
 async def get_roster_schedule_manager_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
@@ -151,6 +165,20 @@ async def get_lead_conversion_manager_studio_id(
     supabase: Client = Depends(get_supabase),
 ) -> str:
     membership = resolve_lead_conversion_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
+    return membership["studio_id"]
+
+
+async def get_lead_manager_studio_id(
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+) -> str:
+    membership = resolve_lead_manager_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,

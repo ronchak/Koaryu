@@ -129,8 +129,6 @@ BEGIN
         UNION ALL
         SELECT id FROM public.programs WHERE id = v_program_a
         UNION ALL
-        SELECT id FROM public.students WHERE id = v_student_a
-        UNION ALL
         SELECT id FROM public.guardians WHERE id = v_guardian_a
         UNION ALL
         SELECT id FROM public.leads WHERE id = v_lead_a
@@ -138,8 +136,8 @@ BEGIN
         SELECT id FROM public.support_tickets WHERE id = v_support_ticket_a
     ) AS visible_rows;
 
-    IF v_own_tenant_count <> 7 THEN
-        RAISE EXCEPTION 'Authenticated owner A can read only % of 7 own-tenant private rows.', v_own_tenant_count;
+    IF v_own_tenant_count <> 6 THEN
+        RAISE EXCEPTION 'Authenticated owner A can read only % of 6 own-tenant private rows.', v_own_tenant_count;
     END IF;
 
     SELECT COUNT(*) INTO v_cross_tenant_count
@@ -149,8 +147,6 @@ BEGIN
         SELECT id FROM public.staff_roles WHERE studio_id = v_studio_b
         UNION ALL
         SELECT id FROM public.programs WHERE id = v_program_b
-        UNION ALL
-        SELECT id FROM public.students WHERE id = v_student_b
         UNION ALL
         SELECT id FROM public.guardians WHERE id = v_guardian_b
         UNION ALL

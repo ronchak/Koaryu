@@ -295,9 +295,9 @@ Copy the CLI-provided `whsec_...` into `backend/.env` as `STRIPE_CONNECT_WEBHOOK
 stripe events resend evt_... --webhook-endpoint we_...
 ```
 
-### Koaryu Payments Test-Mode Rollout Checks
+### Future Koaryu Payments Test-Mode Rehearsal
 
-Run these checks only against an isolated Stripe test-mode environment. They do not authorize live payments:
+This is a future, separately scoped provider-lifecycle rehearsal, not a Friendly Pilot Core release checklist. Run it only after an explicit narrow test-mode approval against isolated staging and Stripe test mode. It does not authorize a production application deploy, a production migration, or live payments:
 
 - Confirm `/health` and `/api/v1/health` are green on Render.
 - Confirm the Stripe Dashboard shows successful deliveries to both platform and Connect endpoints.
@@ -312,21 +312,24 @@ Run these checks only against an isolated Stripe test-mode environment. They do 
 - Use Stripe's `pm_card_createDispute` test PaymentMethod and confirm `charge.dispute.created` projects into `billing_disputes`.
 - Run a reconciliation pass for any object whose webhook delivery was missed or delayed.
 
-### Dojo Demo Checklist
+### Friendly Pilot Studio Checklist
 
-Before walking into a dojo with billing enabled:
+Before daily pilot use at a dojo:
 
 - Confirm Render and Vercel both deployed the same intended commit.
-- Confirm `/health` and `/api/v1/health` are green from the demo network or hotspot.
-- Open the app on the actual demo device and complete login, dashboard load, Settings load, Billing load, and a billing status check.
-- Confirm the target studio's Connect account reports `charges_enabled`, `payouts_enabled`, `details_submitted`, and no currently due requirements.
-- Confirm Stripe Dashboard shows recent successful deliveries to both platform and Connect webhook endpoints.
-- Use a clean demo studio dataset with realistic plans, students, and payers instead of old verification artifacts.
+- Confirm `/health/live`, `/health/ready`, and their `/api/v1` aliases are green from the studio network or hotspot.
+- Open the app on the actual studio device and complete login, dashboard, Students, student detail, Schedule, attendance, Settings, and Help checks.
+- Verify Admin and Front Desk can read existing billing state and use only external-only local attachment, payer-level external-payment recording, and read-based reconciliation of an existing Stripe-linked invoice.
+- Verify an Instructor receives the billing access-denied page before any billing data is shown or fetched.
+- Confirm `LIVE_BILLING_ENABLED=false`; do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
+- Use the preserved production pilot dataset. Do not reset, replace, clean, or reseed production records.
 - Keep `DEMO_RESET_STUDIO_IDS` empty in production; in demo/staging, list only disposable studio IDs that demo reset or clear-studio-data may target.
 
 ### Billing Readiness and Recovery
 
-Authenticated studio admins can check the live billing surface with:
+The broad authenticated system-status and reconciliation endpoints below are Admin-only support surfaces, not ordinary Friendly Pilot controls. The supported routine invoice action is the invoice-specific read-based reconciliation documented in [Friendly Pilot Billing Boundary](friendly-pilot-billing-boundary.md).
+
+Authenticated studio admins can check the broader billing surface with:
 
 ```bash
 curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
@@ -357,3 +360,9 @@ Supported `object_type` values are `connect_account`, `payer`, `invoice`, `subsc
 - Treat plan pricing as immutable. Create a new connected-account Price for amount or interval changes; migrate active subscriptions deliberately.
 - Preserve test data until the verification pass is reviewed. Delete or archive Stripe/Supabase test artifacts only after an explicit cleanup approval.
 - Production startup intentionally fails closed when required billing configuration is absent. Treat a boot failure as a configuration problem to fix, not as a reason to remove the guard.
+
+### Alerts and post-deploy contact check
+
+Ronak Chakraborty is the current alert owner and recipient; email is the preferred channel. Provider-native Render, Vercel, Supabase, and Stripe alerts are primary. A scheduled or Codex-generated digest is supplemental and must not be the only real-time signal.
+
+After every staging or production application deployment, check once that the expected provider email notification path reaches the owner and record pass, failure, or unverified status in the release evidence. Also inspect immediate provider health/log signals once. Do not claim alert coverage for a provider or event class that has not been read back and exercised.

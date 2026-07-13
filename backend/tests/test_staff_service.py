@@ -7,7 +7,7 @@ from gotrue.errors import AuthApiError
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.staff import StaffInviteCreate
-from app.services.staff_service import StaffService
+from app.services.staff_service import SINGLE_STUDIO_MEMBERSHIP_DETAIL, StaffService
 from tests.fakes.supabase import TableBackedSupabase
 
 
@@ -131,6 +131,30 @@ class StaffServiceInviteTest(unittest.TestCase):
         self.assertEqual(supabase.tables["staff_roles"][0]["invited_email"], "instructor@example.com")
         self.assertEqual(response.user_id, "user_invited")
         self.assertEqual(response.status, "pending")
+
+    def test_invite_link_rejects_existing_membership_in_another_studio_and_cleans_up(self):
+        supabase = FakeSupabase()
+        supabase.tables["staff_roles"].append({
+            "id": "existing-role",
+            "studio_id": "studio_existing",
+            "user_id": "user_invited",
+            "role": "instructor",
+            "created_at": "2026-07-12T12:00:00+00:00",
+        })
+        service = StaffService(supabase)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.invite_staff(
+                StaffInviteCreate(email="instructor@example.com", role="instructor"),
+                "studio_new",
+                "admin_1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(context.exception.detail, SINGLE_STUDIO_MEMBERSHIP_DETAIL)
+        self.assertEqual(len(supabase.tables["staff_roles"]), 1)
+        self.assertEqual(supabase.tables["staff_roles"][0]["id"], "existing-role")
+        self.assertIn(("auth_delete", "user_invited"), supabase.operations)
 
     def test_invite_failure_removes_pending_staff_role(self):
         supabase = FakeSupabase()

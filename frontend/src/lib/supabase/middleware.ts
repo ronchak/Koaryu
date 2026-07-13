@@ -7,6 +7,8 @@ import {
   STUDIO_STATE_COOKIE,
   STUDIO_STATE_COOKIE_MAX_AGE_SECONDS,
 } from "@/lib/studio-state-cookie";
+import { canAccessBillingRoute, isBillingRoute } from "@/lib/billing-route-access";
+import type { StaffRoleName } from "@/types";
 
 const PUBLIC_STATUS_ROUTES = new Set(["/404", "/500", "/502", "/503", "/504"]);
 
@@ -115,10 +117,20 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
   const isOnboardingRoute = pathname.startsWith("/onboarding");
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+  let authProfile: {
+    studio_id?: string | null;
+    role?: StaffRoleName | null;
+  } | null = null;
 
-  function redirectTo(path: string, options?: { clearStudioState?: boolean }) {
+  function redirectTo(
+    path: string,
+    options?: { clearSearch?: boolean; clearStudioState?: boolean }
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = path;
+    if (options?.clearSearch) {
+      url.search = "";
+    }
     const response = NextResponse.redirect(url);
     copyResponseCookies(supabaseResponse, response);
     if (options?.clearStudioState) {
@@ -172,8 +184,9 @@ export async function updateSession(request: NextRequest) {
         throw new Error(`/auth/me returned ${authMeResponse.status}`);
       }
 
-      const authProfile = (await authMeResponse.json()) as {
+      authProfile = (await authMeResponse.json()) as {
         studio_id?: string | null;
+        role?: StaffRoleName | null;
       };
 
       hasStudio = Boolean(authProfile.studio_id);
@@ -203,6 +216,51 @@ export async function updateSession(request: NextRequest) {
 
   if (!isOnboardingRoute && !hasStudio) {
     return redirectTo("/onboarding");
+  }
+
+  if (isBillingRoute(pathname)) {
+    if (!apiBaseUrl) {
+      return serviceUnavailable();
+    }
+
+    if (!authProfile) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        return redirectTo("/login", { clearStudioState: true });
+      }
+
+      try {
+        const authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          cache: "no-store",
+        });
+
+        if (authMeResponse.status === 401 || authMeResponse.status === 403) {
+          return redirectTo("/login", { clearStudioState: true });
+        }
+
+        if (!authMeResponse.ok) {
+          throw new Error(`/auth/me returned ${authMeResponse.status}`);
+        }
+
+        authProfile = (await authMeResponse.json()) as {
+          studio_id?: string | null;
+          role?: StaffRoleName | null;
+        };
+      } catch (error) {
+        console.error("Failed to resolve billing route authorization", error);
+        return serviceUnavailable();
+      }
+    }
+
+    if (!canAccessBillingRoute(pathname, authProfile.role)) {
+      return redirectTo("/access-denied", { clearSearch: true });
+    }
   }
 
   return supabaseResponse;

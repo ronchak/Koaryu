@@ -2,8 +2,15 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { hasStaffPermission } from "../src/lib/staff-permissions.ts";
 describe("staff permission policy", () => {
-  it("allows roster bulk operations, schedule management, and lead conversion to admin and front desk", () => {
-    for (const permission of ["manage_roster_bulk", "manage_schedule", "convert_leads"]) {
+  it("allows roster, lifecycle, schedule, and lead management to admin and front desk", () => {
+    for (const permission of [
+      "create_students",
+      "manage_student_lifecycle",
+      "manage_roster_bulk",
+      "manage_schedule",
+      "manage_leads",
+      "convert_leads",
+    ]) {
       assert.equal(hasStaffPermission("admin", permission), true);
       assert.equal(hasStaffPermission("front_desk", permission), true);
       assert.equal(hasStaffPermission("instructor", permission), false);

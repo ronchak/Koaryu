@@ -45,6 +45,7 @@ export function useLeadsPageController({
 }: LeadsPageControllerOptions) {
   const router = useRouter();
   const canConvertLeads = hasStaffPermission(currentRole, "convert_leads");
+  const canManageLeads = hasStaffPermission(currentRole, "manage_leads");
   const [showAddLead, setShowAddLead] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [showLost, setShowLost] = useState(false);
@@ -92,6 +93,7 @@ export function useLeadsPageController({
   }
 
   function openAddLeadModal() {
+    if (!canManageLeads) return;
     setAddLeadError(null);
     setAddLeadProgramId(null);
     setShowAddLead(true);
@@ -121,6 +123,7 @@ export function useLeadsPageController({
   }
 
   function handleCardDragStart(event: DragEvent<HTMLDivElement>, leadId: string) {
+    if (!canManageLeads) return;
     setDraggedLead(leadId);
     setDropTargetStage(null);
     event.dataTransfer.effectAllowed = "move";
@@ -128,7 +131,7 @@ export function useLeadsPageController({
   }
 
   function handleStageDragOver(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
-    if (!model.draggedLeadRecord || (stage === "enrolled" && !canConvertLeads)) {
+    if (!canManageLeads || !model.draggedLeadRecord || (stage === "enrolled" && !canConvertLeads)) {
       return;
     }
 
@@ -152,7 +155,7 @@ export function useLeadsPageController({
   }
 
   async function handleConvertLead(lead: Lead) {
-    if (!canConvertLeads) return;
+    if (!canManageLeads || !canConvertLeads) return;
 
     setLeadActionError(null);
     setPendingLeadId(lead.id);
@@ -183,6 +186,7 @@ export function useLeadsPageController({
   }
 
   async function handleAddLead(data: Partial<Lead>) {
+    if (!canManageLeads) return;
     setAddLeadError(null);
     setActionMessage(null);
     setIsAddingLead(true);
@@ -204,6 +208,7 @@ export function useLeadsPageController({
     updates: Partial<Lead>,
     options?: { closeAfterSuccess?: boolean }
   ) {
+    if (!canManageLeads) return;
     setLeadActionError(null);
     setActionMessage(null);
     setPendingLeadId(lead.id);
@@ -230,6 +235,7 @@ export function useLeadsPageController({
   }
 
   async function handleStageSelection(lead: Lead, nextStage: LeadStage) {
+    if (!canManageLeads) return;
     if (nextStage === "enrolled" && !canConvertLeads) return;
 
     if (nextStage === "enrolled") {
@@ -245,6 +251,11 @@ export function useLeadsPageController({
 
   async function handleDrop(event: DragEvent<HTMLDivElement>, stage: LeadStage) {
     event.preventDefault();
+
+    if (!canManageLeads) {
+      clearDragState();
+      return;
+    }
 
     if (stage === "enrolled" && !canConvertLeads) {
       clearDragState();
@@ -272,6 +283,7 @@ export function useLeadsPageController({
   }
 
   async function handleKeyboardMoveLead(lead: Lead, direction: -1 | 1) {
+    if (!canManageLeads) return;
     const currentIndex = PIPELINE_STAGES.findIndex((stage) => stage.id === lead.stage);
     if (currentIndex === -1) {
       return;
@@ -286,7 +298,7 @@ export function useLeadsPageController({
   }
 
   async function logFollowUpActivity(leadId: string, description: string) {
-    if (isPreviewMode || !token) {
+    if (!canManageLeads || isPreviewMode || !token) {
       return;
     }
 
@@ -301,6 +313,7 @@ export function useLeadsPageController({
   }
 
   async function handleRescheduleLead(lead: Lead) {
+    if (!canManageLeads) return;
     const nextDate = getFollowUpInputValue(lead);
     if (!nextDate) {
       setLeadActionError("Choose a follow-up date before rescheduling.");
@@ -311,6 +324,7 @@ export function useLeadsPageController({
   }
 
   async function handleMarkContacted(lead: Lead, advanceStage: boolean) {
+    if (!canManageLeads) return;
     const nextStage = advanceStage ? getNextStage(lead.stage) : null;
     if (nextStage === "enrolled" && !canConvertLeads) return;
 
@@ -366,6 +380,7 @@ export function useLeadsPageController({
   }
 
   function handleMarkLost(lead: Lead) {
+    if (!canManageLeads) return;
     return handleLeadUpdate(
       lead,
       { stage: "closed_lost", lost_reason: "other" },
@@ -378,6 +393,7 @@ export function useLeadsPageController({
     addLeadProgramId,
     addLeadError,
     canConvertLeads,
+    canManageLeads,
     clearDragState,
     clearSelectedLead,
     closeAddLeadModal,

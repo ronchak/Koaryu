@@ -139,7 +139,6 @@ class StudentResponse(BaseModel):
     membership_start_date: Optional[str] = None
     program_id: Optional[str] = None
     current_belt_rank_id: Optional[str] = None
-    stripe_customer_id: Optional[str] = None
     photo_path: Optional[str] = None
     photo_url: Optional[str] = None
     photo_updated_at: Optional[str] = None

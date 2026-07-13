@@ -16,6 +16,7 @@ import { Calendar, GripVertical } from "lucide-react";
 
 interface LeadPipelineBoardProps {
   canConvertLeads: boolean;
+  canManageLeads: boolean;
   draggedLeadId: string | null;
   draggedLeadRecord: Lead | null;
   dropTargetStage: LeadStage | null;
@@ -47,6 +48,7 @@ interface LeadPipelineBoardProps {
 
 export function LeadPipelineBoard({
   canConvertLeads,
+  canManageLeads,
   draggedLeadId,
   draggedLeadRecord,
   dropTargetStage,
@@ -69,6 +71,7 @@ export function LeadPipelineBoard({
         {PIPELINE_STAGES.map((stage) => {
           const stageLeads = leadsByStage[stage.id] || [];
           const canDropIntoStage =
+            canManageLeads &&
             draggedLeadRecord?.stage !== undefined &&
             draggedLeadRecord.stage !== stage.id &&
             (stage.id !== "enrolled" || canConvertLeads);
@@ -78,6 +81,7 @@ export function LeadPipelineBoard({
             <LeadPipelineStageColumn
               key={stage.id}
               canDropIntoStage={canDropIntoStage}
+              canManageLeads={canManageLeads}
               draggedLeadId={draggedLeadId}
               isDropActive={isDropActive}
               pendingLeadId={pendingLeadId}
@@ -103,6 +107,7 @@ export function LeadPipelineBoard({
 
 interface LeadPipelineStageColumnProps {
   canDropIntoStage: boolean;
+  canManageLeads: boolean;
   draggedLeadId: string | null;
   isDropActive: boolean;
   pendingLeadId: string | null;
@@ -134,6 +139,7 @@ interface LeadPipelineStageColumnProps {
 
 function LeadPipelineStageColumn({
   canDropIntoStage,
+  canManageLeads,
   draggedLeadId,
   isDropActive,
   pendingLeadId,
@@ -203,6 +209,7 @@ function LeadPipelineStageColumn({
           <LeadPipelineCard
             key={lead.id}
             draggedLeadId={draggedLeadId}
+            canManageLeads={canManageLeads}
             lead={lead}
             pendingLeadId={pendingLeadId}
             programById={programById}
@@ -215,7 +222,11 @@ function LeadPipelineStageColumn({
         ))}
 
         {stageLeads.length === 0 && (
-          <LeadStageEmptyState stage={stage} onAddLead={onAddLead} />
+          <LeadStageEmptyState
+            canManageLeads={canManageLeads}
+            stage={stage}
+            onAddLead={onAddLead}
+          />
         )}
       </div>
     </div>
@@ -223,6 +234,7 @@ function LeadPipelineStageColumn({
 }
 
 interface LeadPipelineCardProps {
+  canManageLeads: boolean;
   draggedLeadId: string | null;
   lead: Lead;
   pendingLeadId: string | null;
@@ -238,6 +250,7 @@ interface LeadPipelineCardProps {
 }
 
 function LeadPipelineCard({
+  canManageLeads,
   draggedLeadId,
   lead,
   pendingLeadId,
@@ -259,12 +272,14 @@ function LeadPipelineCard({
     }
 
     if (event.key === "ArrowRight") {
+      if (!canManageLeads) return;
       event.preventDefault();
       void onKeyboardMoveLead(lead, 1);
       return;
     }
 
     if (event.key === "ArrowLeft") {
+      if (!canManageLeads) return;
       event.preventDefault();
       void onKeyboardMoveLead(lead, -1);
     }
@@ -274,7 +289,7 @@ function LeadPipelineCard({
     <div
       role="button"
       tabIndex={0}
-      draggable
+      draggable={canManageLeads}
       onDragStart={(event) => onCardDragStart(event, lead.id)}
       onDragEnd={onCardDragEnd}
       onClick={() => onSelectLead(lead.id)}
@@ -295,7 +310,9 @@ function LeadPipelineCard({
           <p className="break-words text-sm font-semibold text-text-primary leading-tight">
             {fullName(lead)}
           </p>
-          <GripVertical className="w-3 h-3 text-border flex-shrink-0 cursor-grab mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+          {canManageLeads ? (
+            <GripVertical className="w-3 h-3 text-border flex-shrink-0 cursor-grab mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+          ) : null}
         </div>
         <p className="text-[10px] text-text-secondary mt-1 truncate">
           {getProgramLabel(lead, program)}
@@ -337,11 +354,12 @@ function LeadPipelineCard({
 }
 
 interface LeadStageEmptyStateProps {
+  canManageLeads: boolean;
   stage: (typeof PIPELINE_STAGES)[number];
   onAddLead: () => void;
 }
 
-function LeadStageEmptyState({ stage, onAddLead }: LeadStageEmptyStateProps) {
+function LeadStageEmptyState({ canManageLeads, stage, onAddLead }: LeadStageEmptyStateProps) {
   return (
     <div className="text-center py-8">
       <p className="text-xs text-muted">
@@ -349,7 +367,7 @@ function LeadStageEmptyState({ stage, onAddLead }: LeadStageEmptyStateProps) {
           ? "New inquiries will start here."
           : `No leads in ${stage.label.toLowerCase()}.`}
       </p>
-      {stage.id === "inquiry" ? (
+      {canManageLeads && stage.id === "inquiry" ? (
         <button
           type="button"
           onClick={onAddLead}

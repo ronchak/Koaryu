@@ -34,10 +34,12 @@ type EligibilityPanelProps = {
   onDismissLadderError: () => void;
   onDismissProgramsLoadError: () => void;
   onStartPromotion: (entry: EligibilityEntry) => void;
+  onStartDemotion: (entry: EligibilityEntry) => void;
   onToggleGroup: (groupKey: string) => void;
   onViewStudents: () => void;
   programsLoadError: string | null;
   rankById: Map<string, BeltRank>;
+  previousRankByCurrentRankId: Map<string, BeltRank>;
   selectedProgramName: string | null;
 };
 
@@ -56,10 +58,12 @@ export function EligibilityPanel({
   onDismissLadderError,
   onDismissProgramsLoadError,
   onStartPromotion,
+  onStartDemotion,
   onToggleGroup,
   onViewStudents,
   programsLoadError,
   rankById,
+  previousRankByCurrentRankId,
   selectedProgramName,
 }: EligibilityPanelProps) {
   return (
@@ -177,6 +181,9 @@ export function EligibilityPanel({
                     const allMet = isEligibilityEntryReady(entry);
                     const currentRank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
                     const nextRank = entry.next_rank_id ? rankById.get(entry.next_rank_id) : undefined;
+                    const previousRank = entry.current_rank_id
+                      ? previousRankByCurrentRankId.get(entry.current_rank_id)
+                      : undefined;
                     return (
                       <tr
                         key={`${entry.student_program_membership_id ?? entry.program_id ?? "legacy"}-${entry.student_id}`}
@@ -248,21 +255,34 @@ export function EligibilityPanel({
                             )}
                         </td>
                         <td className="px-4 py-3">
-                          {allMet && canPromoteStudents && (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              disabled={!entry.next_rank_id}
-                              onClick={() => {
-                                if (!entry.next_rank_id) {
-                                  return;
-                                }
-                                onStartPromotion(entry);
-                              }}
-                            >
-                              <ChevronUp className="w-3 h-3" />Promote
-                            </Button>
-                          )}
+                          {canPromoteStudents ? (
+                            <div className="flex flex-wrap gap-2">
+                              {previousRank ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => onStartDemotion(entry)}
+                                >
+                                  <ChevronDown className="w-3 h-3" />Demote
+                                </Button>
+                              ) : null}
+                              {allMet ? (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  disabled={!entry.next_rank_id}
+                                  onClick={() => {
+                                    if (!entry.next_rank_id) {
+                                      return;
+                                    }
+                                    onStartPromotion(entry);
+                                  }}
+                                >
+                                  <ChevronUp className="w-3 h-3" />Promote
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </td>
                       </tr>
                     );

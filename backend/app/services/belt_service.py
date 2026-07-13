@@ -8,7 +8,7 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from app.schemas.belt import (
     BeltLadderCreate, BeltLadderUpdate, BeltLadderSyncRequest, BeltLadderResponse,
     BeltRankCreate, BeltRankUpdate, BeltRankResponse,
-    PromoteStudent, PromotionResponse,
+    DemoteStudent, PromoteStudent, PromotionResponse,
     EligibilityEntry,
 )
 from app.services.belt_eligibility import BeltEligibilityCalculator
@@ -486,6 +486,11 @@ class BeltService:
         self, data: PromoteStudent, studio_id: str, actor_id: str
     ) -> PromotionResponse:
         return await BeltPromotionRecorder(self.supabase).promote_student(data, studio_id, actor_id)
+
+    async def demote_student(
+        self, data: DemoteStudent, studio_id: str, actor_id: str
+    ) -> PromotionResponse:
+        return await BeltPromotionRecorder(self.supabase).demote_student(data, studio_id, actor_id)
 
     def _record_promotion_atomic(self, promo: dict[str, Any], *, student_program_id: Optional[str]) -> dict[str, Any]:
         return BeltPromotionRecorder(self.supabase)._record_promotion_atomic(

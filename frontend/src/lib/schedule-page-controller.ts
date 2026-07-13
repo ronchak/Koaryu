@@ -159,7 +159,7 @@ export function useSchedulePageController({
   }
 
   async function handleCreateClass(payload: ClassFormSubmitPayload) {
-    if (payload.kind === "weekly_template" && !canManageSchedule) return;
+    if (!canManageSchedule) return;
 
     setCreateClassError(null);
     setIsCreatingClass(true);

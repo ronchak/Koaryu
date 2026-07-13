@@ -427,11 +427,11 @@ function buildDashboardSetupSteps({
   if (canSeeBilling) {
     steps.push({
       id: "tuition",
-      title: "Create tuition plans",
-      description: "Set up the plans families pay for, then connect Stripe when you are ready to collect through Koaryu.",
+      title: "Review existing billing",
+      description: "Confirm current plans, family records, invoices, and supported external-payment tracking.",
       complete: isDashboardBillingSetupComplete({ billingSummary, summary }),
       href: "/billing",
-      actionLabel: "Create plans",
+      actionLabel: "Review billing",
     });
   }
 
@@ -566,8 +566,8 @@ function buildDashboardTodayActions({
   } else if (billingActionKind === "payments-setup") {
     actions.push({
       id: "payments-setup",
-      title: "Finish payment setup",
-      description: "Create tuition plans or finish Stripe Connect when you are ready to collect through Koaryu.",
+      title: "Review billing records",
+      description: "Check existing plan, family, and invoice records without changing provider setup.",
       href: "/billing",
       icon: CreditCard,
       tone: "neutral",

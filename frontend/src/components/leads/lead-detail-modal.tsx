@@ -20,6 +20,7 @@ import { Mail, Phone, X } from "lucide-react";
 
 interface LeadDetailModalProps {
   canConvertLeads: boolean;
+  canManageLeads: boolean;
   followUpValue: string;
   lead: Lead;
   leadActionError: string | null;
@@ -38,6 +39,7 @@ interface LeadDetailModalProps {
 
 export function LeadDetailModal({
   canConvertLeads,
+  canManageLeads,
   followUpValue,
   lead,
   leadActionError,
@@ -89,7 +91,7 @@ export function LeadDetailModal({
           <select
             id="lead-detail-stage"
             value={lead.stage}
-            disabled={isPending}
+            disabled={isPending || !canManageLeads}
             onChange={(event) => {
               void onStageSelection(lead, event.target.value as LeadStage);
             }}
@@ -182,7 +184,8 @@ export function LeadDetailModal({
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          {canManageLeads ? (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <label htmlFor="lead-detail-follow-up-date" className="sr-only">
               Follow-up date
             </label>
@@ -206,9 +209,10 @@ export function LeadDetailModal({
             >
               Reschedule
             </Button>
-          </div>
+            </div>
+          ) : null}
 
-          {lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
+          {canManageLeads && lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="ghost"
@@ -256,7 +260,8 @@ export function LeadDetailModal({
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+        {canManageLeads ? (
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
           {canConvertLeads && lead.stage !== "enrolled" && lead.stage !== "closed_lost" && (
             <Button
               variant="primary"
@@ -281,7 +286,8 @@ export function LeadDetailModal({
               Mark lost
             </Button>
           )}
-        </div>
+          </div>
+        ) : null}
       </div>
     </ModalFrame>
   );

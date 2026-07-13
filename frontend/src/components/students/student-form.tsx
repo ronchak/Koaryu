@@ -16,6 +16,7 @@ import { X } from "lucide-react";
 interface StudentFormBaseProps {
   onClose: () => void;
   isLoading?: boolean;
+  canManageLifecycle?: boolean;
 }
 
 type StudentFormProps =
@@ -29,7 +30,7 @@ type StudentFormProps =
     });
 
 export function StudentForm(props: StudentFormProps) {
-  const { onClose, isLoading, initialData } = props;
+  const { onClose, isLoading, initialData, canManageLifecycle = true } = props;
   const { programs } = useProgramStore();
   const isEdit = !!initialData;
   const submitFormPayload = (data: StudentCreate | StudentUpdate) => {
@@ -40,6 +41,7 @@ export function StudentForm(props: StudentFormProps) {
   };
   const { error, fields, handleSubmit, setField, setTab, tab } = useStudentFormState({
     initialData,
+    includeLifecycleFields: canManageLifecycle,
     onSubmit: submitFormPayload,
   });
   const statusSelectId = "student-form-status";
@@ -89,7 +91,7 @@ export function StudentForm(props: StudentFormProps) {
             {/* ---- Basic Info Tab ---- */}
             {tab === "info" && (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className={`grid gap-3 ${canManageLifecycle ? "grid-cols-2" : "grid-cols-1"}`}>
                   <Input
                     label="Legal first name *"
                     value={fields.legalFirst}
@@ -118,14 +120,17 @@ export function StudentForm(props: StudentFormProps) {
                     value={fields.dob}
                     onChange={(e) => setField("dob", e.target.value)}
                   />
-                  <Input
-                    label="Membership start"
-                    type="date"
-                    value={fields.membershipStart}
-                    onChange={(e) => setField("membershipStart", e.target.value)}
-                  />
+                  {canManageLifecycle ? (
+                    <Input
+                      label="Membership start"
+                      type="date"
+                      value={fields.membershipStart}
+                      onChange={(e) => setField("membershipStart", e.target.value)}
+                    />
+                  ) : null}
                 </div>
-                <div className="rounded-[6px] border border-border bg-surface-raised/50 p-4">
+                {canManageLifecycle ? (
+                  <div className="rounded-[6px] border border-border bg-surface-raised/50 p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-text-secondary mb-3">
                     Hold / Vacation
                   </p>
@@ -146,8 +151,10 @@ export function StudentForm(props: StudentFormProps) {
                   <p className="mt-2 text-xs text-muted">
                     Students on an active hold are excluded from inactivity alerts until the hold ends.
                   </p>
-                </div>
-                <div className="flex flex-col gap-1.5">
+                  </div>
+                ) : null}
+                {canManageLifecycle ? (
+                  <div className="flex flex-col gap-1.5">
                   <label htmlFor={statusSelectId} className="text-sm text-text-secondary font-medium">Status</label>
                   <select
                     id={statusSelectId}
@@ -161,15 +168,18 @@ export function StudentForm(props: StudentFormProps) {
                     <option value="paused">Paused</option>
                     <option value="canceled">Canceled</option>
                   </select>
-                </div>
-                <ProgramPicker
-                  programs={programs}
-                  label="Programs"
-                  multiple
-                  values={fields.programIds}
-                  onChange={() => undefined}
-                  onChangeMany={(programIds) => setField("programIds", programIds)}
-                />
+                  </div>
+                ) : null}
+                {canManageLifecycle ? (
+                  <ProgramPicker
+                    programs={programs}
+                    label="Programs"
+                    multiple
+                    values={fields.programIds}
+                    onChange={() => undefined}
+                    onChangeMany={(programIds) => setField("programIds", programIds)}
+                  />
+                ) : null}
                 <Input
                   label="Tags"
                   value={fields.tags}

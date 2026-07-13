@@ -108,6 +108,23 @@ Operator: `Codex release orchestrator`
 - Database action: none. Do not reset, restore, rewrite migration history, delete records, or apply a compensating migration for this application-only rollback.
 - Data and payment boundary: production records, Auth identities, Stripe objects, webhook configuration, and live billing state are not rollback targets and must remain untouched. The verified encrypted copy is recovery evidence, not an application-rollback input.
 
+## Friendly Pilot Core Candidate Preparation — 2026-07-12
+
+- Baseline application identity: Phase 0 read-only provider reconciliation found Vercel production and both Render readiness endpoints at `931ed2fb732e51b84a53258d994bc4cc4f6d3231`. Vercel/Render must be read back again immediately before any approved release because provider aliases and deployments are mutable.
+- Candidate identity: pending freeze. The only deployable artifact will be the exact reviewed full candidate SHA recorded after a clean commit; staging, CI, and both application providers must report that same SHA.
+- Schema change: one additive migration, `20260713010426_friendly_pilot_authorization_guards.sql`, is included. It preserves all existing rows, rejects only prospective cross-studio membership links, revokes browser-role direct `students` table reads, and exposes the service-role-only atomic demotion RPC. Record its SHA-256 at candidate freeze.
+- Application rollback: stop promotion and redeploy both Render and Vercel to `931ed2fb732e51b84a53258d994bc4cc4f6d3231`, then verify both provider SHAs, health/readiness, authentication, roster, schedule, attendance, Instructor denial, and the read-only billing page. Do not change Supabase or Stripe as part of application rollback.
+- Database recovery: after the additive migration is released, do not rewrite or mark down migration history. Preserve the authorization guards and use a separately reviewed forward-only corrective migration if a defect is found. A production restore is disaster recovery, not ordinary release rollback.
+- Approval boundary: application deployment, production migration, and live Stripe activation are three independent approvals. This candidate has no approval for any of them yet and does not request live Stripe activation. `LIVE_BILLING_ENABLED` remains `false`.
+- Data boundary: candidate preparation performed no production write. Production tenant records, demo data, Auth identities, Storage objects, historical memberships, Stripe objects, webhook configuration, and payment state remain preservation targets.
+
+### Recovery copy evidence
+
+- The five encrypted artifacts from `$HOME/Koaryu Backups/production-20260710T070020Z` were independently verified on a second machine with identical filenames, sizes, mode `0600`, and the SHA-256 hashes recorded in Wave 0.
+- This proves a second-machine encrypted copy. It does **not** prove geographic separation, provider-independent off-site storage, a current 24-hour RPO, or a full application recovery.
+- The restore drill still lacks an authenticated tenant-safe application read. The current Supabase Free plan has no proven native daily-backup or PITR entitlement, so the provisional RPO of 24 hours and RTO of 4 hours remain unproven planning targets.
+- The backup key remains in macOS Keychain. Copying it to a physically controlled recovery flash drive remains a human-only action; no key material belongs in this repository or release evidence.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.

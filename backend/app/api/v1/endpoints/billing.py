@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -36,9 +36,17 @@ from app.services.billing_service import BillingService
 from app.services.studio_scope import (
     resolve_billing_admin_staff_role_for_user,
     resolve_billing_manager_staff_role_for_user,
+    resolve_billing_routine_write_staff_role_for_user,
 )
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+EXTERNAL_ENROLLMENT_ONLY_DETAIL = (
+    "Friendly Pilot billing attachments support external collection only."
+)
+PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL = (
+    "Friendly Pilot external payments must target one payer, not an invoice."
+)
 
 
 def _admin_studio_id(
@@ -64,6 +72,21 @@ def _manager_studio_id(
     require_platform_subscription: bool = False,
 ) -> str:
     return resolve_billing_manager_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=require_platform_subscription,
+    )["studio_id"]
+
+
+def _routine_studio_id(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str],
+    *,
+    require_platform_subscription: bool = False,
+) -> str:
+    return resolve_billing_routine_write_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
@@ -392,12 +415,17 @@ async def create_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(
+    studio_id = _routine_studio_id(
         supabase,
         user_id,
         requested_studio_id,
         require_platform_subscription=True,
     )
+    if data.collection_mode != "external":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=EXTERNAL_ENROLLMENT_ONLY_DETAIL,
+        )
     return await BillingService(supabase).add_student_billing_enrollment(data, studio_id, user_id)
 
 
@@ -529,7 +557,12 @@ async def reconcile_invoice(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id, require_platform_subscription=True)
+    studio_id = _routine_studio_id(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=True,
+    )
     return await BillingService(supabase).reconcile_invoice(invoice_id, studio_id, user_id)
 
 
@@ -571,12 +604,17 @@ async def record_external_payment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(
+    studio_id = _routine_studio_id(
         supabase,
         user_id,
         requested_studio_id,
         require_platform_subscription=True,
     )
+    if not data.payer_id or data.invoice_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL,
+        )
     return await BillingService(supabase).record_external_payment(
         data,
         studio_id,

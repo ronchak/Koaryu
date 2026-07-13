@@ -1,20 +1,12 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
-import { api, ApiError } from "@/lib/api";
-import {
-  clearInvoiceRetryRequestKey,
-  clearPersistedInvoiceRetryRequestKey,
-  getOrCreateInvoiceRetryRequestKey,
-  getOrCreatePersistedInvoiceRetryRequestKey,
-  shouldRetainInvoiceRetryRequestKey,
-} from "@/lib/billing-invoice-action-model";
-import { buildBillingInvoiceCreatePayload } from "@/lib/billing-page-form-model";
+import { api } from "@/lib/api";
 import type { BillingInvoice } from "@/types";
 
 export type BillingInvoiceAction = "finalize" | "void" | "retry" | "reconcile";
 
 type UseBillingInvoiceControllerOptions = {
+  canReconcileInvoices: boolean;
   isPreviewMode: boolean;
   token: string | null;
   refreshBilling: () => Promise<void>;
@@ -22,17 +14,10 @@ type UseBillingInvoiceControllerOptions = {
   releaseAction: (action: string) => void;
   setError: (message: string) => void;
   setMessage: (message: string) => void;
-  retryStorageScope: string | null;
 };
 
-function createInvoiceRequestKey() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `invoice-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 export function useBillingInvoiceController({
+  canReconcileInvoices,
   isPreviewMode,
   token,
   refreshBilling,
@@ -40,19 +25,16 @@ export function useBillingInvoiceController({
   releaseAction,
   setError,
   setMessage,
-  retryStorageScope,
 }: UseBillingInvoiceControllerOptions) {
-  const [invoicePayerId, setInvoicePayerId] = useState("");
-  const [invoiceEnrollmentId, setInvoiceEnrollmentId] = useState("");
-  const [invoiceStudentId, setInvoiceStudentId] = useState("");
-  const [invoiceAmount, setInvoiceAmount] = useState("");
-  const [invoiceDueDate, setInvoiceDueDate] = useState("");
-  const [invoiceDescription, setInvoiceDescription] = useState("");
-  const [invoiceSendHosted, setInvoiceSendHosted] = useState(true);
-  const invoiceRequestKeyRef = useRef<string | null>(null);
-  const invoiceRetryRequestKeysRef = useRef(new Map<string, string>());
-
   async function handleInvoiceAction(invoiceId: string, action: BillingInvoiceAction) {
+    if (action !== "reconcile") {
+      setError("Provider invoice mutations are not enabled for the Friendly Pilot release.");
+      return;
+    }
+    if (!canReconcileInvoices) {
+      setError("Only studio admins and front desk staff can reconcile invoices.");
+      return;
+    }
     const actionKey = `invoice:${invoiceId}:${action}`;
     const successMessage = `Invoice ${action} requested.`;
     if (isPreviewMode) {
@@ -60,127 +42,19 @@ export function useBillingInvoiceController({
       return;
     }
     if (!token || !claimAction(actionKey)) return;
-    let retryRequestKey: string | null = null;
     try {
-      if (action === "retry") {
-        retryRequestKey = retryStorageScope
-          ? getOrCreatePersistedInvoiceRetryRequestKey(
-              retryStorageScope,
-              invoiceId,
-              createInvoiceRequestKey,
-              undefined,
-              invoiceRetryRequestKeysRef.current
-            )
-          : getOrCreateInvoiceRetryRequestKey(
-              invoiceRetryRequestKeysRef.current,
-              invoiceId,
-              createInvoiceRequestKey
-            );
-      }
-      await api.post<BillingInvoice>(`/billing/invoices/${invoiceId}/${action}`, {}, token, {
-        headers: retryRequestKey ? { "Idempotency-Key": retryRequestKey } : undefined,
-      });
-      if (action === "retry") {
-        if (retryStorageScope) {
-          clearPersistedInvoiceRetryRequestKey(
-            retryStorageScope,
-            invoiceId,
-            undefined,
-            invoiceRetryRequestKeysRef.current
-          );
-        } else {
-          clearInvoiceRetryRequestKey(invoiceRetryRequestKeysRef.current, invoiceId);
-        }
-      }
+      await api.post<BillingInvoice>(`/billing/invoices/${invoiceId}/reconcile`, {}, token);
       setMessage(successMessage);
       await refreshBilling();
     } catch (err) {
-      const failureStatus = err instanceof ApiError ? err.status : null;
-      if (
-        action === "retry"
-        && !shouldRetainInvoiceRetryRequestKey(failureStatus)
-      ) {
-        if (retryStorageScope) {
-          clearPersistedInvoiceRetryRequestKey(
-            retryStorageScope,
-            invoiceId,
-            undefined,
-            invoiceRetryRequestKeysRef.current
-          );
-        } else {
-          clearInvoiceRetryRequestKey(invoiceRetryRequestKeysRef.current, invoiceId);
-        }
-      }
       setError(err instanceof Error ? err.message : "Billing action could not be completed.");
     } finally {
       releaseAction(actionKey);
     }
   }
 
-  async function handleCreateInvoice(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setMessage("");
-    const payloadResult = buildBillingInvoiceCreatePayload({
-      invoicePayerId,
-      invoiceEnrollmentId,
-      invoiceStudentId,
-      invoiceAmount,
-      invoiceDueDate,
-      invoiceDescription,
-      invoiceSendHosted,
-    });
-    if (!payloadResult.ok) {
-      setError(payloadResult.error);
-      return;
-    }
-    if (isPreviewMode) {
-      setMessage(invoiceSendHosted ? "Demo hosted invoice drafted." : "Demo invoice drafted.");
-      setInvoiceAmount("");
-      setInvoiceDescription("");
-      return;
-    }
-    if (!token) return;
-    const action = "create-invoice";
-    if (!claimAction(action)) return;
-    try {
-      invoiceRequestKeyRef.current ??= createInvoiceRequestKey();
-      const requestKey = invoiceRequestKeyRef.current;
-      await api.post<BillingInvoice>("/billing/invoices", payloadResult.payload, token, {
-        headers: { "Idempotency-Key": requestKey },
-      });
-      setMessage(invoiceSendHosted ? "Hosted invoice created." : "Invoice drafted.");
-      invoiceRequestKeyRef.current = null;
-      setInvoiceAmount("");
-      setInvoiceDescription("");
-      await refreshBilling();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Invoice could not be created.");
-    } finally {
-      releaseAction(action);
-    }
-  }
-
   return {
-    invoiceAmount,
-    invoiceDescription,
-    invoiceDueDate,
-    invoiceEnrollmentId,
-    invoicePayerId,
-    invoiceSendHosted,
-    invoiceStudentId,
-    onCreateInvoice: handleCreateInvoice,
     onInvoiceAction: handleInvoiceAction,
-    onInvoiceAmountChange: setInvoiceAmount,
-    onInvoiceDescriptionChange: setInvoiceDescription,
-    onInvoiceDraftChange: () => {
-      invoiceRequestKeyRef.current = null;
-    },
-    onInvoiceDueDateChange: setInvoiceDueDate,
-    onInvoiceEnrollmentChange: setInvoiceEnrollmentId,
-    onInvoicePayerChange: setInvoicePayerId,
-    onInvoiceSendHostedChange: setInvoiceSendHosted,
-    onInvoiceStudentChange: setInvoiceStudentId,
   };
 }
 

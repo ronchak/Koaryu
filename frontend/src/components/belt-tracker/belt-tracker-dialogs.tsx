@@ -1,6 +1,7 @@
 "use client";
 
 import { DeleteRankConfirmModal } from "@/components/belt-tracker/delete-rank-confirm-modal";
+import { DemotionConfirmModal } from "@/components/belt-tracker/demotion-confirm-modal";
 import { RankFormModal, type RankFormData } from "@/components/belt-tracker/rank-form-modal";
 import { RankBadge } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
@@ -14,22 +15,32 @@ type BeltTrackerDialogsProps = {
   addBeltModalOpen: boolean;
   addTipForGroup: number | null;
   deleteRank: BeltRank | null;
+  demoteEntry: EligibilityEntry | null;
+  demotionError: string | null;
+  demotionReason: string;
+  demotionTargetRank: BeltRank | null;
   editRank: BeltRank | null;
   groups: BeltGroup[];
   isPromoting: boolean;
+  isDemoting: boolean;
   onAddBeltClose: () => void;
   onAddBeltSave: (data: RankFormData) => void;
   onAddTipClose: () => void;
   onAddTipSave: (groupIndex: number, data: RankFormData) => void;
   onCancelPromotion: () => void;
+  onCancelDemotion: () => void;
+  onCloseDemotion: () => void;
   onClosePromotion: () => void;
   onConfirmDelete: () => void;
   onConfirmPromotion: () => void;
+  onConfirmDemotion: () => void;
   onDeleteCancel: () => void;
   onDismissPromotionError: () => void;
+  onDismissDemotionError: () => void;
   onEditClose: () => void;
   onEditSave: (data: RankFormData) => void;
   onPromotionNotesChange: (notes: string) => void;
+  onDemotionReasonChange: (reason: string) => void;
   promoteEntry: EligibilityEntry | null;
   promotionError: string | null;
   promotionNotes: string;
@@ -41,22 +52,32 @@ export function BeltTrackerDialogs({
   addBeltModalOpen,
   addTipForGroup,
   deleteRank,
+  demoteEntry,
+  demotionError,
+  demotionReason,
+  demotionTargetRank,
   editRank,
   groups,
   isPromoting,
+  isDemoting,
   onAddBeltClose,
   onAddBeltSave,
   onAddTipClose,
   onAddTipSave,
   onCancelPromotion,
+  onCancelDemotion,
+  onCloseDemotion,
   onClosePromotion,
   onConfirmDelete,
   onConfirmPromotion,
+  onConfirmDemotion,
   onDeleteCancel,
   onDismissPromotionError,
+  onDismissDemotionError,
   onEditClose,
   onEditSave,
   onPromotionNotesChange,
+  onDemotionReasonChange,
   promoteEntry,
   promotionError,
   promotionNotes,
@@ -131,6 +152,22 @@ export function BeltTrackerDialogs({
           rankById={rankById}
         />
       )}
+
+      {demoteEntry && demotionTargetRank ? (
+        <DemotionConfirmModal
+          entry={demoteEntry}
+          error={demotionError}
+          isDemoting={isDemoting}
+          onCancel={onCancelDemotion}
+          onClose={onCloseDemotion}
+          onConfirm={onConfirmDemotion}
+          onDismissError={onDismissDemotionError}
+          onReasonChange={onDemotionReasonChange}
+          rankById={rankById}
+          reason={demotionReason}
+          targetRank={demotionTargetRank}
+        />
+      ) : null}
     </>
   );
 }

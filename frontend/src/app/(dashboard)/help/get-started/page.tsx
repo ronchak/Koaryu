@@ -29,8 +29,9 @@ const steps = [
     icon: Calendar,
   },
   {
-    title: "Turn on billing",
-    description: "Connect Stripe, create plans, add payers, and verify webhook health before charging students.",
+    title: "Review supported billing records",
+    description:
+      "Admin or Front Desk can review existing billing state, attach external-only records, record payer-level external payments, and reconcile existing provider invoices.",
     href: "/billing",
     icon: CreditCard,
   },
@@ -40,7 +41,7 @@ export default function GetStartedPage() {
   return (
     <AccountPageShell
       title="Get started"
-      description="A practical first-run path for turning a blank Koaryu studio into something demo-ready."
+      description="A practical first-day path for operating one Friendly Pilot studio."
     >
       <AccountSection title="Recommended setup order">
         <div className="space-y-3">
@@ -66,6 +67,46 @@ export default function GetStartedPage() {
             );
           })}
         </div>
+      </AccountSection>
+
+      <AccountSection title="Staff roles and studio boundary">
+        <div className="space-y-2 text-sm leading-6 text-text-secondary">
+          <p>
+            Admin controls staff, studio settings, and protected configuration. Front Desk handles students,
+            rosters, leads, schedules, attendance, and supported routine billing. Instructors may edit existing
+            student profiles, take attendance, and use named promotion or demotion actions, but cannot create or
+            archive students, manage leads or schedules, or view any billing data.
+          </p>
+          <p>
+            Each user belongs to one studio. If Koaryu reports an unexpected existing multi-studio membership,
+            stop and contact support; the memberships are preserved and the app fails closed until they are
+            reviewed.
+          </p>
+        </div>
+      </AccountSection>
+
+      <AccountSection title="First-day checks">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-text-secondary">
+          <li>Verify one Admin, one Front Desk, and one Instructor account against the expected permissions.</li>
+          <li>Check a sample of imported students, guardians, programs, ranks, and statuses.</li>
+          <li>Open the current schedule on the phone used at the studio and record attendance for a test class.</li>
+          <li>Confirm an Instructor receives the billing access-denied page without billing data.</li>
+          <li>Submit a signed-in test request through Contact support and confirm the expected notification path.</li>
+        </ol>
+      </AccountSection>
+
+      <AccountSection title="Daily rhythm">
+        <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-text-secondary">
+          <li>Review dashboard attention items, leads, and today&apos;s classes.</li>
+          <li>Take attendance from the correct class and use named rank actions so history stays auditable.</li>
+          <li>Have Admin or Front Desk review billing attention and refresh before retrying an ambiguous action.</li>
+          <li>Use Contact support for access, missing-data, or provider/local-state disagreements.</li>
+        </ul>
+        <p className="mt-4 text-sm leading-6 text-text-secondary">
+          Friendly Pilot does not create plans or payers, enable autopay, change provider-backed enrollments,
+          create or retry invoices, issue refunds, or activate Stripe. Live outbound Stripe mutation remains
+          closed and requires a separate explicit approval.
+        </p>
       </AccountSection>
 
       <Button asChild variant="secondary" size="sm">

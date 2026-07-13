@@ -193,7 +193,7 @@ export function AccountMenu({
         <span
           className={`
             flex flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent
-            ${collapsed ? "h-8 w-8" : compact ? "h-7 w-7" : "h-7 w-7"}
+            ${collapsed ? "h-8 w-8" : compact ? "h-11 w-11" : "h-7 w-7"}
           `}
           aria-hidden="true"
         >

@@ -13,6 +13,7 @@ export function BillingPageContent({
   connectEntityModal,
   error,
   isLiveRestricted,
+  isPreviewMode,
   isLoading,
   isRefreshDisabled,
   message,
@@ -33,6 +34,7 @@ export function BillingPageContent({
         completedStepCount={billingSetupCompleteCount}
         error={error}
         isLiveRestricted={isLiveRestricted}
+        isPreviewMode={isPreviewMode}
         isLoading={isLoading}
         isRefreshDisabled={isRefreshDisabled}
         message={message}

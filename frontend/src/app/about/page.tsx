@@ -36,7 +36,7 @@ const principles = [
   {
     title: "Studio data should stay understandable",
     description:
-      "Student, guardian, attendance, rank, lead, and billing records should be visible, exportable, and scoped to the school.",
+      "Student, guardian, attendance, rank, lead, and supported billing records stay visible and scoped to the school; billing exports are not part of Friendly Pilot.",
     icon: ShieldCheck,
   },
   {
@@ -131,15 +131,16 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl">
           <ScrollReveal>
             <div className="max-w-3xl">
-              <p className="text-xs font-medium uppercase tracking-widest text-accent">Public context</p>
+              <p className="text-xs font-medium uppercase tracking-widest text-accent">Friendly Pilot Core</p>
               <h2 className="mt-4 text-3xl font-semibold sm:text-4xl">
-                A clear public home for what Koaryu is and who it serves.
+                Reliable daily operations for one independent studio.
               </h2>
               <p className="mt-5 text-sm leading-7 text-text-secondary">
-                This page gives owners, instructors, and partners a straightforward
-                place to understand Koaryu&apos;s point of view: independent schools
-                deserve martial-arts-native software that keeps daily operations
-                clear without turning the studio into a generic gym.
+                Friendly Pilot Core supports one studio per user with explicit Admin,
+                Front Desk, and Instructor boundaries. It centers the roster, ranks,
+                schedule, attendance, leads, and honest visibility into existing billing
+                records. Provider-backed billing changes and live Stripe activation are
+                separate releases, not hidden promises inside this one.
               </p>
             </div>
           </ScrollReveal>

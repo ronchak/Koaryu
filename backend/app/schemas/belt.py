@@ -85,6 +85,14 @@ class PromoteStudent(BaseModel):
     notes: Optional[str] = None
 
 
+class DemoteStudent(BaseModel):
+    student_id: str
+    to_rank_id: str
+    student_program_membership_id: Optional[str] = None
+    program_id: Optional[str] = None
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class PromotionResponse(BaseModel):
     id: str
     studio_id: str

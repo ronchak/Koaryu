@@ -138,6 +138,39 @@ describe("student form state", () => {
     assert.equal(Object.hasOwn(payload, "guardians"), false);
   });
 
+  it("omits lifecycle fields from instructor profile updates", () => {
+    const fields = {
+      ...buildInitialStudentFormFields({ current_belt_rank_id: "rank-a" }),
+      legalFirst: "Aiko",
+      legalLast: "Tanaka",
+      status: "paused",
+      holdEnd: "2026-06-01",
+      programIds: ["program-a"],
+    };
+    const payload = buildStudentUpdatePayload(
+      fields,
+      { current_belt_rank_id: "rank-a" },
+      { includeLifecycleFields: false }
+    );
+
+    for (const field of [
+      "status",
+      "hold_start_date",
+      "hold_end_date",
+      "membership_start_date",
+      "program_id",
+      "program_ids",
+      "current_belt_rank_id",
+    ]) {
+      assert.equal(Object.hasOwn(payload, field), false, field);
+    }
+    assert.equal(payload.legal_first_name, "Aiko");
+    assert.equal(
+      validateStudentFormFields(fields, { includeLifecycleFields: false }),
+      null
+    );
+  });
+
   it("selects create or update payloads from the same submit decision as the form hook", () => {
     const createPayload = buildStudentFormSubmitPayload({
       ...buildInitialStudentFormFields(),

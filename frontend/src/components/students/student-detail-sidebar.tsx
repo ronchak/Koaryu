@@ -80,7 +80,7 @@ export function StudentDetailSidebar({
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <div className="col-span-1 space-y-4">
+    <div className="col-span-1 min-w-0 space-y-4">
       <div className="bg-surface border border-border rounded-[6px] p-5 text-center">
         <StudentAvatar
           student={student}

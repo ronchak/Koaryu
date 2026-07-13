@@ -9,7 +9,6 @@ import {
   CreditCard,
   Link2,
   Mail,
-  RefreshCw,
   type LucideIcon,
   Users,
 } from "lucide-react";
@@ -98,13 +97,13 @@ export function BillingOverviewTab({
   isActionLoading,
   isLoadingAction,
   onConnectClick,
-  onConnectReset,
   openBillingLink,
   openInvoiceTotal,
   paidRevenue,
   paymentCohortAvailable,
   stripePaymentTotal,
   studentsLoaded,
+  providerMutationsEnabled,
 }: {
   activeStudents: number;
   activeSubscriptionCount: number;
@@ -124,13 +123,13 @@ export function BillingOverviewTab({
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
   onConnectClick: () => void;
-  onConnectReset: () => void;
   openBillingLink: OpenBillingLink;
   openInvoiceTotal: number;
   paidRevenue: number;
   paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
   studentsLoaded: boolean;
+  providerMutationsEnabled: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -194,7 +193,8 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!canManageKoaryuSubscription || isActionLoading}
+              disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
+              title={providerMutationsEnabled ? undefined : "Live Stripe checkout requires separate approval."}
               isLoading={isLoadingAction("checkout")}
               onClick={() => void openBillingLink("/platform-billing/checkout", {
                 success_url: window.location.href,
@@ -207,9 +207,13 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!canOpenCustomerPortal || isActionLoading}
+              disabled={!providerMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
               isLoading={isLoadingAction("portal")}
-              title={canOpenCustomerPortal ? undefined : "Available after Koaryu Core checkout creates a Stripe customer."}
+              title={!providerMutationsEnabled
+                ? "Live Stripe portal access requires separate approval."
+                : canOpenCustomerPortal
+                  ? undefined
+                  : "Available after Koaryu Core checkout creates a Stripe customer."}
               onClick={() => void openBillingLink("/platform-billing/portal", {
                 return_url: window.location.href,
               }, "portal")}
@@ -278,7 +282,8 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!canManageKoaryuSubscription || isActionLoading}
+              disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
+              title={providerMutationsEnabled ? undefined : "Stripe Connect activation requires separate approval."}
               isLoading={isLoadingAction("connect")}
               onClick={onConnectClick}
             >
@@ -288,9 +293,13 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+              disabled={!providerMutationsEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
               isLoading={isLoadingAction("dashboard")}
-              title={canOpenStripeDashboard ? "Open Stripe to review account status, requirements, payments, and payouts." : "Available after Stripe Connect creates an account."}
+              title={!providerMutationsEnabled
+                ? "Stripe dashboard link creation requires separate approval."
+                : canOpenStripeDashboard
+                  ? "Open Stripe to review account status, requirements, payments, and payouts."
+                  : "Available after Stripe Connect creates an account."}
               onClick={() => void openBillingLink("/billing/connect/dashboard-link", {
                 return_url: window.location.href,
               }, "dashboard")}
@@ -299,17 +308,7 @@ export function BillingOverviewTab({
               {isLoadingAction("dashboard") ? "Opening Stripe..." : "Stripe dashboard"}
             </Button>
             {hasStripeConnectedAccount ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!canManageKoaryuSubscription || isActionLoading}
-                isLoading={isLoadingAction("connect-reset")}
-                title="Use only before real Stripe billing history exists. Koaryu blocks reconnects once this studio has live Stripe billing history."
-                onClick={onConnectReset}
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                {isLoadingAction("connect-reset") ? "Clearing..." : "Reconnect Stripe"}
-              </Button>
+              <span className="self-center text-xs text-muted">Reconnect is unavailable in Friendly Pilot.</span>
             ) : null}
           </div>
         </section>

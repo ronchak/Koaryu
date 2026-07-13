@@ -93,7 +93,7 @@ export function Sidebar({
                 href={item.href}
                 prefetch={item.prefetch}
                 className={`
-                  flex min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-2 py-2 text-xs
+                  flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-2 py-2 text-xs
                   transition-[background-color,color,border-color] duration-150
                   ${
                     isActive
