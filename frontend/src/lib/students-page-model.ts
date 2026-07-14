@@ -67,6 +67,12 @@ interface StudentRosterLoadStateInput {
   usesDerivedRosterFilters: boolean;
 }
 
+interface StudentRosterEmptyStateInput {
+  canCreateStudents: boolean;
+  canManageRoster: boolean;
+  hasActiveFilters: boolean;
+}
+
 export function formatDate(d?: string | null) {
   if (!d) return "\u2014";
   return new Date(d).toLocaleDateString("en-US", {
@@ -200,6 +206,23 @@ export function buildStudentRosterLoadState({
     pageStart,
     totalPages,
     visibleTotal,
+  };
+}
+
+export function buildStudentRosterEmptyState({
+  canCreateStudents,
+  canManageRoster,
+  hasActiveFilters,
+}: StudentRosterEmptyStateInput) {
+  return {
+    message: hasActiveFilters
+      ? "No students match your filters."
+      : canCreateStudents
+        ? "No students yet. Add your first student to get started."
+        : "No students yet.",
+    showAddStudent: !hasActiveFilters && canCreateStudents,
+    showClearFilters: hasActiveFilters,
+    showImportCsv: !hasActiveFilters && canManageRoster,
   };
 }
 

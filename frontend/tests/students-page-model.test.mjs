@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   buildInactivityScheduleDateRange,
   buildStudentQueryFilterState,
+  buildStudentRosterEmptyState,
   buildStudentRosterLoadState,
   buildStudentRows,
   filterStudentRows,
@@ -325,6 +326,64 @@ describe("students page model", () => {
         pageStart: 101,
         totalPages: 3,
         visibleTotal: 121,
+      }
+    );
+  });
+
+  it("builds capability-aware roster empty states", () => {
+    assert.deepEqual(
+      buildStudentRosterEmptyState({
+        canCreateStudents: false,
+        canManageRoster: false,
+        hasActiveFilters: false,
+      }),
+      {
+        message: "No students yet.",
+        showAddStudent: false,
+        showClearFilters: false,
+        showImportCsv: false,
+      }
+    );
+
+    assert.deepEqual(
+      buildStudentRosterEmptyState({
+        canCreateStudents: true,
+        canManageRoster: true,
+        hasActiveFilters: false,
+      }),
+      {
+        message: "No students yet. Add your first student to get started.",
+        showAddStudent: true,
+        showClearFilters: false,
+        showImportCsv: true,
+      }
+    );
+
+    assert.deepEqual(
+      buildStudentRosterEmptyState({
+        canCreateStudents: false,
+        canManageRoster: true,
+        hasActiveFilters: false,
+      }),
+      {
+        message: "No students yet.",
+        showAddStudent: false,
+        showClearFilters: false,
+        showImportCsv: true,
+      }
+    );
+
+    assert.deepEqual(
+      buildStudentRosterEmptyState({
+        canCreateStudents: true,
+        canManageRoster: true,
+        hasActiveFilters: true,
+      }),
+      {
+        message: "No students match your filters.",
+        showAddStudent: false,
+        showClearFilters: true,
+        showImportCsv: false,
       }
     );
   });

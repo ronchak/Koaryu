@@ -257,6 +257,7 @@ export function StudentRosterPageContent({
             <StudentRosterLoading />
           ) : filtered.length === 0 ? (
             <StudentRosterEmptyState
+              canCreateStudents={canCreateStudents}
               canManageRoster={canManageRoster}
               hasActiveFilters={hasActiveFilters}
               onAddStudent={onAddStudent}
