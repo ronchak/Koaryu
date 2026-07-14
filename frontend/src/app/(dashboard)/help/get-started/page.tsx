@@ -41,7 +41,7 @@ export default function GetStartedPage() {
   return (
     <AccountPageShell
       title="Get started"
-      description="A practical first-day path for operating one Friendly Pilot studio."
+      description="A practical first-day path for operating one Koaryu studio."
     >
       <AccountSection title="Recommended setup order">
         <div className="space-y-3">
@@ -103,9 +103,9 @@ export default function GetStartedPage() {
           <li>Use Contact support for access, missing-data, or provider/local-state disagreements.</li>
         </ul>
         <p className="mt-4 text-sm leading-6 text-text-secondary">
-          Friendly Pilot does not create plans or payers, enable autopay, change provider-backed enrollments,
-          create or retry invoices, issue refunds, or activate Stripe. Live outbound Stripe mutation remains
-          closed and requires a separate explicit approval.
+          Koaryu keeps provider reads and invoice reconciliation available, but does not currently create plans
+          or payers, enable autopay, change provider-backed enrollments, create or retry invoices, issue refunds,
+          or activate Stripe. Live outbound Stripe writes are currently disabled.
         </p>
       </AccountSection>
 

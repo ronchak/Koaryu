@@ -249,7 +249,7 @@ const featurePageDrafts: MarketingPageDraft[] = [
     description:
       "Review existing tuition plans, family payer context, invoices, and payment issues without presenting unsupported provider changes as complete.",
     summary:
-      "Friendly Pilot keeps existing billing state visible to Admin and Front Desk, supports external-only local records and read-based invoice reconciliation, and denies Instructor access before billing data is fetched.",
+      "Koaryu keeps existing billing state visible to Admin and Front Desk, supports external-only local records and read-based invoice reconciliation, and denies Instructor access before billing data is fetched.",
     icon: "credit-card",
     primaryAction: "Review billing status",
     sections: [
@@ -266,11 +266,11 @@ const featurePageDrafts: MarketingPageDraft[] = [
       {
         title: "Provider state without provider mutation",
         description:
-          "Friendly Pilot can read and reconcile an existing Stripe-linked invoice while live outbound provider changes remain closed.",
+          "Koaryu can read and reconcile an existing Stripe-linked invoice while live outbound provider changes remain disabled.",
         bullets: [
           "Reconcile an existing provider invoice through a read and update the local projection",
           "Record payer-level cash, check, Zelle, Venmo, or other external outcomes locally",
-          "Keep plan, payer, autopay, invoice-lifecycle, refund, and Connect changes outside this release",
+          "Plan, payer, autopay, invoice-lifecycle, refund, and Connect changes are currently unavailable",
         ],
       },
       {
@@ -286,7 +286,7 @@ const featurePageDrafts: MarketingPageDraft[] = [
     ],
     proof: [
       { label: "Pricing", value: "$27", detail: "Flat Koaryu platform subscription" },
-      { label: "Provider writes", value: "Closed", detail: "Separate approval required" },
+      { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" },
       { label: "Tuition", value: "Visible", detail: "Existing plans, payers, invoices, and issues" },
     ],
     related: [
@@ -468,7 +468,7 @@ const useCasePageDrafts: MarketingPageDraft[] = [
     description:
       "Give authorized staff a clear view of existing tuition records, overdue invoices, failed payments, and external payment notes.",
     summary:
-      "Tuition problems are easier to address when they are visible early. Friendly Pilot keeps existing payer context, invoices, student billing records, and external payment notes in the same operating picture.",
+      "Tuition problems are easier to address when they are visible early. Koaryu keeps existing payer context, invoices, student billing records, and external payment notes in the same operating picture.",
     icon: "credit-card",
     primaryAction: "Review tuition attention",
     sections: [

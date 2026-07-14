@@ -24,9 +24,9 @@ import {
 import { requirementGroupItems } from "@/lib/billing-page-utils";
 import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
 import {
-  areFriendlyPilotProviderMutationsEnabled,
-  canManageFriendlyPilotRoutineBilling,
-} from "@/lib/billing-pilot-policy";
+  areProviderMutationsEnabled,
+  canManageRoutineBilling,
+} from "@/lib/billing-policy";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import {
   PREVIEW_CONNECT,
@@ -93,8 +93,8 @@ export function useBillingPageController({
   const canManageKoaryuSubscription = currentRole === "admin";
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
   const canManageStudioBilling = currentRole === "admin";
-  const canManageRoutineBilling = canManageFriendlyPilotRoutineBilling(currentRole);
-  const providerMutationsEnabled = areFriendlyPilotProviderMutationsEnabled(isPreviewMode);
+  const canManageRoutineBillingActions = canManageRoutineBilling(currentRole);
+  const providerMutationsEnabled = areProviderMutationsEnabled(isPreviewMode);
   const isLiveRestricted = !isPreviewMode && currentRole !== null && !canViewStudioBilling;
   const shouldSettleEarly = shouldSettleBillingLoadEarly({
     isPreviewMode,
@@ -157,7 +157,7 @@ export function useBillingPageController({
   const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;
   const billingActions = useBillingActionController({
     billingConnect,
-    canManageRoutineBilling,
+    canManageRoutineBilling: canManageRoutineBillingActions,
     isPreviewMode,
     refreshBilling,
     setError,
@@ -166,12 +166,12 @@ export function useBillingPageController({
     token,
   });
   const isEnrollmentPayerSelectDisabled = shouldDisableStudentBillingEnrollmentPayerSelect({
-    canManageStudioBilling: canManageRoutineBilling,
+    canManageStudioBilling: canManageRoutineBillingActions,
     collectionMode: billingActions.enrollmentCollectionMode,
     payerCount: billingPayers.length,
   });
   const canSubmitEnrollmentForm = canSubmitStudentBillingEnrollmentForm({
-    canManageStudioBilling: canManageRoutineBilling,
+    canManageStudioBilling: canManageRoutineBillingActions,
     collectionMode: billingActions.enrollmentCollectionMode,
     isActionLoading: billingActions.isActionLoading,
     payerCount: billingPayers.length,
@@ -252,7 +252,7 @@ export function useBillingPageController({
       title: "Review payment status",
       description: paymentsReady
         ? "Review the studio's existing Stripe status without changing provider state."
-        : "External payments can be tracked while live Stripe activation remains separately gated.",
+        : "External payments can be tracked while live Stripe activation remains unavailable.",
       complete: paymentsReady,
       onSelect: () => setActiveTab("overview"),
       actionLabel: paymentsReady ? "Review status" : "Review setup",
@@ -260,7 +260,7 @@ export function useBillingPageController({
     {
       id: "plans",
       title: "Review tuition plans",
-      description: "Review the studio's existing tuition plans. Plan changes are outside this release.",
+      description: "Review the studio's existing tuition plans. Plan changes are currently unavailable.",
       complete: hasBillingPlans,
       onSelect: () => setActiveTab("plans"),
       actionLabel: "Review plans",
@@ -399,7 +399,7 @@ export function useBillingPageController({
   }
 
   const invoiceController = useBillingInvoiceController({
-    canReconcileInvoices: canManageRoutineBilling,
+    canReconcileInvoices: canManageRoutineBillingActions,
     claimAction: billingActions.claimAction,
     isPreviewMode,
     releaseAction: billingActions.releaseAction,
@@ -444,7 +444,7 @@ export function useBillingPageController({
         billingPlatform,
         billingStudentOptions,
         canManageKoaryuSubscription,
-        canManageRoutineBilling,
+        canManageRoutineBilling: canManageRoutineBillingActions,
         canOpenCustomerPortal,
         canOpenStripeDashboard,
         canSubmitEnrollmentForm,

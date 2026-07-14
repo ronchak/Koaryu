@@ -12,7 +12,7 @@ export function BillingFamiliesTab({ billingPayers }: { billingPayers: BillingPa
         <SectionHeader
           icon={Users}
           title="Family payer accounts are read-only"
-          description="Friendly Pilot displays existing payer and provider status. Creating, syncing, or changing autopay is outside this release."
+          description="Koaryu displays existing payer and provider status. Creating or syncing payers and changing autopay are currently unavailable."
         />
       </section>
 

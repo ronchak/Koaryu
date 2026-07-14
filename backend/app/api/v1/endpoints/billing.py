@@ -42,10 +42,10 @@ from app.services.studio_scope import (
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 EXTERNAL_ENROLLMENT_ONLY_DETAIL = (
-    "Friendly Pilot billing attachments support external collection only."
+    "Billing attachments currently support external collection only."
 )
 PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL = (
-    "Friendly Pilot external payments must target one payer, not an invoice."
+    "External payments must currently target one payer, not an invoice."
 )
 
 

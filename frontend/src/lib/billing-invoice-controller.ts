@@ -28,7 +28,7 @@ export function useBillingInvoiceController({
 }: UseBillingInvoiceControllerOptions) {
   async function handleInvoiceAction(invoiceId: string, action: BillingInvoiceAction) {
     if (action !== "reconcile") {
-      setError("Provider invoice mutations are not enabled for the Friendly Pilot release.");
+      setError("Provider invoice changes are currently disabled.");
       return;
     }
     if (!canReconcileInvoices) {

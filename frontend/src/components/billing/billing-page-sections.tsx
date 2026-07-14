@@ -194,7 +194,7 @@ export function BillingOverviewTab({
               variant="primary"
               size="sm"
               disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={providerMutationsEnabled ? undefined : "Live Stripe checkout requires separate approval."}
+              title={providerMutationsEnabled ? undefined : "Live Stripe checkout is currently disabled."}
               isLoading={isLoadingAction("checkout")}
               onClick={() => void openBillingLink("/platform-billing/checkout", {
                 success_url: window.location.href,
@@ -210,7 +210,7 @@ export function BillingOverviewTab({
               disabled={!providerMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
               isLoading={isLoadingAction("portal")}
               title={!providerMutationsEnabled
-                ? "Live Stripe portal access requires separate approval."
+                ? "Live Stripe portal access is currently disabled."
                 : canOpenCustomerPortal
                   ? undefined
                   : "Available after Koaryu Core checkout creates a Stripe customer."}
@@ -283,7 +283,7 @@ export function BillingOverviewTab({
               variant="primary"
               size="sm"
               disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={providerMutationsEnabled ? undefined : "Stripe Connect activation requires separate approval."}
+              title={providerMutationsEnabled ? undefined : "Stripe Connect activation is currently disabled."}
               isLoading={isLoadingAction("connect")}
               onClick={onConnectClick}
             >
@@ -296,7 +296,7 @@ export function BillingOverviewTab({
               disabled={!providerMutationsEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
               isLoading={isLoadingAction("dashboard")}
               title={!providerMutationsEnabled
-                ? "Stripe dashboard link creation requires separate approval."
+                ? "Stripe dashboard link creation is currently disabled."
                 : canOpenStripeDashboard
                   ? "Open Stripe to review account status, requirements, payments, and payouts."
                   : "Available after Stripe Connect creates an account."}
@@ -308,7 +308,7 @@ export function BillingOverviewTab({
               {isLoadingAction("dashboard") ? "Opening Stripe..." : "Stripe dashboard"}
             </Button>
             {hasStripeConnectedAccount ? (
-              <span className="self-center text-xs text-muted">Reconnect is unavailable in Friendly Pilot.</span>
+              <span className="self-center text-xs text-muted">Reconnect is currently unavailable.</span>
             ) : null}
           </div>
         </section>

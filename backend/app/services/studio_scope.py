@@ -201,7 +201,7 @@ def resolve_optional_staff_role_for_user(
     _ = user_email
     roles = list_staff_roles_for_user(supabase, user_id)
 
-    # Friendly Pilot Core supports exactly one studio per Auth identity. Fail
+    # Koaryu supports exactly one studio per Auth identity. Fail
     # closed before considering a caller-controlled selector so historical
     # duplicate memberships cannot be used to enter either tenant.
     if len(roles) > 1:

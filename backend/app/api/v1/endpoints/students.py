@@ -265,7 +265,7 @@ async def add_student_billing_enrollment(
     if data.collection_mode != "external":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Friendly Pilot billing attachments support external collection only.",
+            detail="Billing attachments currently support external collection only.",
         )
     payload = StudentBillingEnrollmentCreate(student_id=student_id, **data.model_dump())
     return await BillingService(supabase).add_student_billing_enrollment(payload, studio_id, user_id)

@@ -31,7 +31,7 @@ export function BillingInvoicesTab({
         <SectionHeader
           icon={Receipt}
           title="Invoices are read and reconcile only"
-          description="Friendly Pilot can refresh local state from an existing Stripe invoice. Creating, finalizing, retrying, or voiding provider invoices is outside this release."
+          description="Koaryu can refresh local state from an existing Stripe invoice. Creating, finalizing, retrying, or voiding provider invoices is currently unavailable."
         />
       </section>
 

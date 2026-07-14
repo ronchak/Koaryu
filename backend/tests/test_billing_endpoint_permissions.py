@@ -461,10 +461,14 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 ))
 
         self.assertEqual(enrollment_error.exception.status_code, 409)
+        self.assertEqual(
+            enrollment_error.exception.detail,
+            "Billing attachments currently support external collection only.",
+        )
         self.assertEqual(payment_error.exception.status_code, 409)
         self.assertEqual(
             payment_error.exception.detail,
-            billing_endpoints.PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL,
+            "External payments must currently target one payer, not an invoice.",
         )
         service.assert_not_called()
 
@@ -537,6 +541,34 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         payload = service.add_student_billing_enrollment.await_args.args[0]
         self.assertEqual(payload.collection_mode, "external")
         self.assertEqual(payload.student_id, "student_1")
+
+    def test_student_scoped_provider_enrollment_returns_stable_unavailable_copy(self):
+        with (
+            patch(
+                "app.api.v1.endpoints.students.resolve_billing_routine_write_staff_role_for_user",
+                return_value={"studio_id": "studio_1", "role": "front_desk"},
+            ),
+            patch("app.api.v1.endpoints.students.BillingService") as service,
+        ):
+            with self.assertRaises(HTTPException) as enrollment_error:
+                asyncio.run(student_endpoints.add_student_billing_enrollment(
+                    "student_1",
+                    StudentBillingEnrollmentForStudentCreate(
+                        plan_id="plan_1",
+                        payer_id="payer_1",
+                        collection_mode="invoice_link",
+                    ),
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                ))
+
+        self.assertEqual(enrollment_error.exception.status_code, 409)
+        self.assertEqual(
+            enrollment_error.exception.detail,
+            "Billing attachments currently support external collection only.",
+        )
+        service.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Literal, Optional
 
 
-ReportAvailability = Literal["friendly_pilot_core", "deferred_billing"]
+ReportAvailability = Literal["available", "deferred_billing"]
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class CsvReport:
     custom_builder: Optional[Callable[[Any, str], list[dict[str, Any]]]] = None
     min_role: str = "admin"
     contains_sensitive_data: bool = True
-    availability: ReportAvailability = "friendly_pilot_core"
+    availability: ReportAvailability = "available"
 
 
 def _report(
@@ -32,7 +32,7 @@ def _report(
     custom_builder: Optional[Callable[[Any, str], list[dict[str, Any]]]] = None,
     min_role: str = "admin",
     contains_sensitive_data: bool = True,
-    availability: ReportAvailability = "friendly_pilot_core",
+    availability: ReportAvailability = "available",
 ) -> CsvReport:
     return CsvReport(
         id=id,
