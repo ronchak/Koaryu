@@ -16,6 +16,7 @@ import type {
   CsvImportOptions,
   CsvImportResult,
   DashboardSummary,
+  DemoteStudent,
   EligibilityEntry,
   Lead,
   Program,
@@ -121,6 +122,7 @@ export interface StoreContextValue {
     studentId: string,
     options?: { force?: boolean; signal?: AbortSignal }
   ) => Promise<Promotion[]>;
+  demoteStudent: (data: DemoteStudent) => Promise<Promotion>;
   promoteStudent: (studentId: string, toRankId: string, notes?: string) => Promise<Promotion>;
 
   sessions: ClassSession[];
@@ -229,6 +231,7 @@ export type BeltsStoreContextValue = Pick<
   | "eligibilityLoadError"
   | "promotionHistoryByStudent"
   | "loadPromotionHistory"
+  | "demoteStudent"
   | "promoteStudent"
 >;
 export type ScheduleStoreContextValue = Pick<

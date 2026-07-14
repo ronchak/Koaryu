@@ -58,6 +58,15 @@ export function buildPromotionHistoryWithPrependedItem(
   );
 }
 
+export function buildPromotionHistoryWithPrependedItemIfCached(
+  cache: PromotionHistoryCache,
+  studentId: string,
+  promotion: Promotion
+): Promotion[] | null {
+  const cached = cache[studentId];
+  return cached ? prependPromotionHistoryItem(cached.items, promotion) : null;
+}
+
 export function toPromotionHistoryByStudent(
   cache: PromotionHistoryCache
 ): Record<string, Promotion[]> {
@@ -149,7 +158,11 @@ export async function loadPromotionHistoryWithCache({
   const liveRequest = beginLiveAuthRequest();
   const request = fetchPromotionHistory(studentId, liveRequest.token)
     .then((result) => {
-      if (isGenerationCurrent(generation) && liveRequest.isCurrent()) {
+      if (
+        requests[studentId] === request
+        && isGenerationCurrent(generation)
+        && liveRequest.isCurrent()
+      ) {
         commitCache(studentId, result);
       }
       return result;

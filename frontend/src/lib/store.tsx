@@ -1482,6 +1482,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Belt tracker ──
   const {
+    demoteStudent,
     loadPromotionHistory,
     promoteStudent,
     setBeltRanks,
@@ -1606,6 +1607,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     deleteSession,
     deleteStudentPhoto,
     deleteStudents,
+    demoteStudent,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,

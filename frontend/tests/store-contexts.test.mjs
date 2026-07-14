@@ -85,6 +85,7 @@ function renderWithStoreContexts(child) {
     eligibilityLoadError: null,
     promotionHistoryByStudent: {},
     loadPromotionHistory: async () => [],
+    demoteStudent: async () => ({}),
     promoteStudent: async () => ({}),
   };
   const schedule = {

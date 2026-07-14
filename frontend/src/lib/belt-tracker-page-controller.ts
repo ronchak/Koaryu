@@ -47,6 +47,7 @@ export function useBeltTrackerPageController({
     beltLadders,
     beltRanks,
     currentLadderId,
+    demoteStudent,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
@@ -400,28 +401,13 @@ export function useBeltTrackerPageController({
     setIsDemoting(true);
     setDemotionError(null);
     try {
-      if (isPreviewMode) {
-        await promoteStudent(demoteEntry.student_id, demotionTargetRank.id, reason);
-      } else {
-        if (!token) {
-          throw new Error("Not authenticated");
-        }
-        await api.post<Promotion>(
-          "/belts/demote",
-          {
-            student_id: demoteEntry.student_id,
-            to_rank_id: demotionTargetRank.id,
-            student_program_membership_id: demoteEntry.student_program_membership_id,
-            program_id: demoteEntry.program_id,
-            reason,
-          },
-          token
-        );
-        await Promise.all([
-          refreshStudents().catch(() => []),
-          currentLadderId ? setCurrentLadder(currentLadderId) : Promise.resolve(),
-        ]);
-      }
+      await demoteStudent({
+        student_id: demoteEntry.student_id,
+        to_rank_id: demotionTargetRank.id,
+        student_program_membership_id: demoteEntry.student_program_membership_id,
+        program_id: demoteEntry.program_id,
+        reason,
+      });
       setActionMessage(
         `${demoteEntry.student_name} demoted to ${demotionTargetRank.name}.`
       );

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildPromotionHistoryWithPrependedItem,
+  buildPromotionHistoryWithPrependedItemIfCached,
   getPromotionHistoryCacheItems,
   loadPromotionHistoryWithCache,
   prependPromotionHistoryItem,
@@ -28,6 +30,11 @@ describe("store promotion history model", () => {
     const first = promotion("promotion-1");
     const updatedFirst = promotion("promotion-1", { notes: "Updated" });
     const second = promotion("promotion-2");
+    const demotion = promotion("demotion-1", {
+      from_rank_id: "blue",
+      to_rank_id: "white",
+      notes: "Correcting an earlier rank entry",
+    });
 
     const cache = setPromotionHistoryCacheItems(
       {},
@@ -46,6 +53,32 @@ describe("store promotion history model", () => {
       ]
     );
     assert.deepEqual(toPromotionHistoryByStudent(cache), { "student-1": [first] });
+    assert.deepEqual(
+      buildPromotionHistoryWithPrependedItem(cache, "student-1", demotion),
+      [demotion, first]
+    );
+  });
+
+  it("prepends live mutations only when a complete history cache exists", () => {
+    const existing = promotion("promotion-1");
+    const demotion = promotion("demotion-1", {
+      from_rank_id: "blue",
+      to_rank_id: "white",
+    });
+    const cache = setPromotionHistoryCacheItems({}, "student-1", [existing]);
+
+    assert.deepEqual(
+      buildPromotionHistoryWithPrependedItemIfCached(cache, "student-1", demotion),
+      [demotion, existing]
+    );
+    assert.equal(
+      buildPromotionHistoryWithPrependedItemIfCached({}, "student-1", demotion),
+      null
+    );
+    assert.deepEqual(
+      buildPromotionHistoryWithPrependedItem({}, "student-1", demotion),
+      [demotion]
+    );
   });
 
   it("resolves cache, in-flight, preview, and live load plans", async () => {
@@ -143,5 +176,34 @@ describe("store promotion history model", () => {
     });
 
     assert.deepEqual(committed, [["student-1", fetched]]);
+  });
+
+  it("does not commit a live history request after it is superseded", async () => {
+    const requests = {};
+    const committed = [];
+    let resolveFetch;
+    const fetchResult = new Promise((resolve) => {
+      resolveFetch = resolve;
+    });
+
+    const loadPromise = loadPromotionHistoryWithCache({
+      studentId: "student-1",
+      isPreviewMode: false,
+      cache: {},
+      requests,
+      generation: 1,
+      isGenerationCurrent: () => true,
+      beginLiveAuthRequest: () => ({ token: "token-1", isCurrent: () => true }),
+      fetchPromotionHistory: async () => fetchResult,
+      commitCache: (studentId, items) => committed.push([studentId, items]),
+    });
+
+    assert.ok(requests["student-1"] instanceof Promise);
+    delete requests["student-1"];
+    resolveFetch([promotion("stale-promotion")]);
+
+    assert.deepEqual(await loadPromise, [promotion("stale-promotion")]);
+    assert.deepEqual(committed, []);
+    assert.equal(requests["student-1"], undefined);
   });
 });
