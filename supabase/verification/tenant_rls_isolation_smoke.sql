@@ -10,6 +10,9 @@ DECLARE
     v_studio_b UUID := gen_random_uuid();
     v_ambiguous_studio_a UUID := gen_random_uuid();
     v_ambiguous_studio_b UUID := gen_random_uuid();
+    v_zero_onboarding_studio UUID := gen_random_uuid();
+    v_ambiguous_insert_studio UUID := gen_random_uuid();
+    v_service_write_studio UUID := gen_random_uuid();
     v_program_a UUID := gen_random_uuid();
     v_program_b UUID := gen_random_uuid();
     v_ambiguous_program UUID := gen_random_uuid();
@@ -29,6 +32,13 @@ DECLARE
     v_zero_membership_visible_count INTEGER;
     v_ambiguous_visible_count INTEGER;
     v_service_visible_count INTEGER;
+    v_ambiguous_insert_denied BOOLEAN := false;
+    v_ambiguous_update_count INTEGER := 0;
+    v_ambiguous_delete_count INTEGER := 0;
+    v_zero_update_count INTEGER := 0;
+    v_zero_delete_count INTEGER := 0;
+    v_service_update_count INTEGER := 0;
+    v_service_delete_count INTEGER := 0;
     v_cross_tenant_updates INTEGER := 0;
 BEGIN
     IF to_regprocedure('private.has_unambiguous_studio_membership()') IS NULL THEN
@@ -61,9 +71,9 @@ BEGIN
               JOIN pg_catalog.pg_roles AS policy_role
                 ON policy_role.oid = ANY(policy.polroles)
               WHERE policy.polrelid = relation.oid
-                AND policy.polname = 'reject_ambiguous_staff_membership_select'
+                AND policy.polname = 'reject_ambiguous_staff_membership_access'
                 AND NOT policy.polpermissive
-                AND policy.polcmd = 'r'
+                AND policy.polcmd = '*'
                 AND policy_role.rolname = 'authenticated'
                 AND pg_catalog.regexp_replace(
                     pg_catalog.pg_get_expr(policy.polqual, policy.polrelid),
@@ -71,9 +81,15 @@ BEGIN
                     '',
                     'g'
                 ) = '(SELECTprivate.has_unambiguous_studio_membership()AShas_unambiguous_studio_membership)'
+                AND pg_catalog.regexp_replace(
+                    pg_catalog.pg_get_expr(policy.polwithcheck, policy.polrelid),
+                    '[[:space:]]+',
+                    '',
+                    'g'
+                ) = '(SELECTprivate.has_unambiguous_studio_membership()AShas_unambiguous_studio_membership)'
           )
     ) THEN
-        RAISE EXCEPTION 'A public RLS table is missing the ambiguous-membership read guard.';
+        RAISE EXCEPTION 'A public RLS table is missing the all-command ambiguous-membership guard.';
     END IF;
 
     INSERT INTO auth.users (
@@ -264,6 +280,11 @@ BEGIN
         v_ambiguous_owner
     );
 
+    -- Exercise the restrictive guard against a permissive owner-write path.
+    -- These DDL changes are visible only inside this rollback-only transaction.
+    EXECUTE 'GRANT INSERT, UPDATE, DELETE ON TABLE public.studios TO authenticated';
+    EXECUTE 'CREATE POLICY tenant_rls_verification_owner_write ON public.studios FOR ALL TO authenticated USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid())';
+
     PERFORM set_config('request.jwt.claim.sub', v_owner_a::TEXT, true);
     PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
     EXECUTE 'SET LOCAL ROLE authenticated';
@@ -328,6 +349,29 @@ BEGIN
         RAISE EXCEPTION 'The restrictive guard granted % row(s) to a zero-membership identity.', v_zero_membership_visible_count;
     END IF;
 
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES (
+        v_zero_onboarding_studio,
+        'Koaryu RLS Zero-Membership Onboarding',
+        'koaryu-rls-zero-onboarding-' || replace(v_zero_onboarding_studio::TEXT, '-', ''),
+        v_zero_membership_user
+    );
+
+    UPDATE public.studios
+    SET name = 'Koaryu RLS Zero-Membership Onboarding Updated'
+    WHERE id = v_zero_onboarding_studio;
+    GET DIAGNOSTICS v_zero_update_count = ROW_COUNT;
+
+    DELETE FROM public.studios
+    WHERE id = v_zero_onboarding_studio;
+    GET DIAGNOSTICS v_zero_delete_count = ROW_COUNT;
+
+    IF v_zero_update_count <> 1 OR v_zero_delete_count <> 1 THEN
+        RAISE EXCEPTION 'Zero-membership onboarding write path changed: update %, delete %.',
+            v_zero_update_count,
+            v_zero_delete_count;
+    END IF;
+
     EXECUTE 'RESET ROLE';
     PERFORM set_config('request.jwt.claim.sub', v_ambiguous_owner::TEXT, true);
     PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
@@ -366,6 +410,37 @@ BEGIN
         RAISE EXCEPTION 'A private role helper authorized an ambiguous staff identity.';
     END IF;
 
+    BEGIN
+        INSERT INTO public.studios (id, name, slug, owner_id)
+        VALUES (
+            v_ambiguous_insert_studio,
+            'Koaryu RLS Rejected Ambiguous Insert',
+            'koaryu-rls-rejected-insert-' || replace(v_ambiguous_insert_studio::TEXT, '-', ''),
+            v_ambiguous_owner
+        );
+    EXCEPTION
+        WHEN insufficient_privilege THEN
+            v_ambiguous_insert_denied := true;
+    END;
+
+    UPDATE public.studios
+    SET name = 'Koaryu RLS Rejected Ambiguous Update'
+    WHERE id = v_ambiguous_studio_a;
+    GET DIAGNOSTICS v_ambiguous_update_count = ROW_COUNT;
+
+    DELETE FROM public.studios
+    WHERE id = v_ambiguous_studio_b;
+    GET DIAGNOSTICS v_ambiguous_delete_count = ROW_COUNT;
+
+    IF NOT v_ambiguous_insert_denied
+       OR v_ambiguous_update_count <> 0
+       OR v_ambiguous_delete_count <> 0 THEN
+        RAISE EXCEPTION 'Ambiguous identity write guard failed: insert %, update %, delete %.',
+            v_ambiguous_insert_denied,
+            v_ambiguous_update_count,
+            v_ambiguous_delete_count;
+    END IF;
+
     EXECUTE 'RESET ROLE';
     PERFORM set_config('request.jwt.claim.sub', '', true);
     PERFORM set_config('request.jwt.claim.role', '', true);
@@ -394,6 +469,29 @@ BEGIN
 
     IF v_service_visible_count <> 8 THEN
         RAISE EXCEPTION 'Service role can read only % of 8 preserved historical rows.', v_service_visible_count;
+    END IF;
+
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES (
+        v_service_write_studio,
+        'Koaryu RLS Service Write',
+        'koaryu-rls-service-write-' || replace(v_service_write_studio::TEXT, '-', ''),
+        v_zero_membership_user
+    );
+
+    UPDATE public.studios
+    SET name = 'Koaryu RLS Service Write Updated'
+    WHERE id = v_service_write_studio;
+    GET DIAGNOSTICS v_service_update_count = ROW_COUNT;
+
+    DELETE FROM public.studios
+    WHERE id = v_service_write_studio;
+    GET DIAGNOSTICS v_service_delete_count = ROW_COUNT;
+
+    IF v_service_update_count <> 1 OR v_service_delete_count <> 1 THEN
+        RAISE EXCEPTION 'Service-role write behavior changed: update %, delete %.',
+            v_service_update_count,
+            v_service_delete_count;
     END IF;
 
     EXECUTE 'RESET ROLE';

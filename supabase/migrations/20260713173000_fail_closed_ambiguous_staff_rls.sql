@@ -2,7 +2,7 @@
 --
 -- The write trigger added by the Friendly Pilot candidate prevents new
 -- cross-studio memberships. Existing rows are intentionally preserved, so the
--- Data API also needs a read-time guard that applies before every table's
+-- Data API also needs an all-command guard that applies before every table's
 -- existing tenant and role policy.
 
 CREATE OR REPLACE FUNCTION private.has_unambiguous_studio_membership()
@@ -99,9 +99,9 @@ TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION private.is_admin_in_studio(UUID)
 TO authenticated, service_role;
 
--- A restrictive SELECT policy composes with, rather than replaces, each
+-- A restrictive all-command policy composes with, rather than replaces, each
 -- table's existing permissive authorization policy: it cannot grant a table
--- privilege or make a row visible on its own. Centralizing this invariant also
+-- privilege or authorize a row on its own. Centralizing this invariant also
 -- avoids duplicating a subtle historical-data check across dozens of tenant,
 -- owner, self, support, and billing policies. Cover every current public RLS
 -- table so owner/self policies cannot become an alternate read path. Non-RLS
@@ -128,8 +128,15 @@ BEGIN
         );
 
         EXECUTE pg_catalog.format(
-            'CREATE POLICY %I ON %I.%I AS RESTRICTIVE FOR SELECT TO authenticated USING ((SELECT private.has_unambiguous_studio_membership()))',
-            'reject_ambiguous_staff_membership_select',
+            'DROP POLICY IF EXISTS %I ON %I.%I',
+            'reject_ambiguous_staff_membership_access',
+            target_table.schema_name,
+            target_table.table_name
+        );
+
+        EXECUTE pg_catalog.format(
+            'CREATE POLICY %I ON %I.%I AS RESTRICTIVE FOR ALL TO authenticated USING ((SELECT private.has_unambiguous_studio_membership())) WITH CHECK ((SELECT private.has_unambiguous_studio_membership()))',
+            'reject_ambiguous_staff_membership_access',
             target_table.schema_name,
             target_table.table_name
         );
