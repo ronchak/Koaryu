@@ -5,7 +5,13 @@ import { StatusBadge } from "@/components/students/status-badge";
 import { StudentAvatar } from "@/components/students/student-avatar";
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
-import { formatDate, type SortDir, type SortKey, type StudentRosterRow } from "@/lib/students-page-model";
+import {
+  buildStudentRosterEmptyState,
+  formatDate,
+  type SortDir,
+  type SortKey,
+  type StudentRosterRow,
+} from "@/lib/students-page-model";
 import { stopStudentSelectionPropagation } from "@/lib/student-selection-events";
 import type { Program } from "@/types";
 import {
@@ -127,47 +133,55 @@ export function StudentRosterLoadError({
 }
 
 export function StudentRosterEmptyState({
+  canCreateStudents,
   canManageRoster,
   hasActiveFilters,
   onAddStudent,
   onClearFilters,
   onImportCsv,
 }: {
+  canCreateStudents: boolean;
   canManageRoster: boolean;
   hasActiveFilters: boolean;
   onAddStudent: () => void;
   onClearFilters: () => void;
   onImportCsv: () => void;
 }) {
+  const state = buildStudentRosterEmptyState({
+    canCreateStudents,
+    canManageRoster,
+    hasActiveFilters,
+  });
+
   return (
     <div className="flex flex-col items-center justify-center py-20">
       <User aria-hidden="true" className="w-8 h-8 text-muted mb-3" />
       <p className="text-sm text-text-secondary">
-        {hasActiveFilters
-          ? "No students match your filters."
-          : "No students yet. Add your first student to get started."}
+        {state.message}
       </p>
-      {hasActiveFilters ? (
+      {state.showClearFilters ? (
         <button
           onClick={onClearFilters}
           className="mt-3 text-sm text-accent hover:text-accent-hover cursor-pointer"
         >
           Clear filters
         </button>
-      ) : (
+      ) : state.showAddStudent || state.showImportCsv ? (
         <div className="mt-4 flex items-center gap-3">
-          <Button variant="primary" size="sm" onClick={onAddStudent}>
-            <UserPlus aria-hidden="true" className="w-3.5 h-3.5" />
-            Add student
-          </Button>
-          {canManageRoster ? (
+          {state.showAddStudent ? (
+            <Button variant="primary" size="sm" onClick={onAddStudent}>
+              <UserPlus aria-hidden="true" className="w-3.5 h-3.5" />
+              Add student
+            </Button>
+          ) : null}
+          {state.showImportCsv ? (
             <Button variant="secondary" size="sm" onClick={onImportCsv}>
               <Upload aria-hidden="true" className="w-3.5 h-3.5" />
               Import CSV
             </Button>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

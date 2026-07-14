@@ -62,14 +62,16 @@ export default function LeadsPage() {
         >
           Lost ({lostLeads.length})
         </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={controller.openAddLeadModal}
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          Add lead
-        </Button>
+        {controller.canManageLeads ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={controller.openAddLeadModal}
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Add lead
+          </Button>
+        ) : null}
       </Header>
 
       {controller.leadActionError && !selectedLead && (
@@ -89,7 +91,7 @@ export default function LeadsPage() {
       )}
 
       <div className="flex-1 flex flex-col overflow-x-hidden">
-        <FollowUpPanel
+        {controller.canManageLeads ? <FollowUpPanel
           dueTodayCount={dueTodayCount}
           followUpQueue={followUpQueue}
           overdueCount={overdueCount}
@@ -102,10 +104,11 @@ export default function LeadsPage() {
           onMarkContacted={controller.handleMarkContacted}
           onRescheduleLead={controller.handleRescheduleLead}
           onSelectLead={controller.selectLead}
-        />
+        /> : null}
 
         <LeadPipelineBoard
           canConvertLeads={controller.canConvertLeads}
+          canManageLeads={controller.canManageLeads}
           draggedLeadId={controller.draggedLead}
           draggedLeadRecord={draggedLeadRecord}
           dropTargetStage={controller.dropTargetStage}
@@ -135,6 +138,7 @@ export default function LeadsPage() {
       {selectedLead && (
         <LeadDetailModal
           canConvertLeads={controller.canConvertLeads}
+          canManageLeads={controller.canManageLeads}
           followUpValue={controller.getFollowUpInputValue(selectedLead)}
           lead={selectedLead}
           leadActionError={controller.leadActionError}
@@ -152,7 +156,7 @@ export default function LeadsPage() {
         />
       )}
 
-      {controller.showAddLead && (
+      {controller.canManageLeads && controller.showAddLead && (
         <AddLeadModal
           activePrograms={activePrograms}
           addLeadError={controller.addLeadError}

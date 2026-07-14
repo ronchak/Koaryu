@@ -33,9 +33,9 @@ function formatDateTime(d?: string | null) {
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="flex items-start gap-4 py-2.5 border-b border-border last:border-0">
-      <span className="text-xs text-muted w-36 flex-shrink-0 pt-0.5">{label}</span>
-      <span className="text-sm text-text-primary font-mono">{value || "—"}</span>
+    <div className="flex min-w-0 flex-col items-start gap-1 border-b border-border py-2.5 last:border-0 sm:flex-row sm:gap-4">
+      <span className="w-auto flex-shrink-0 pt-0.5 text-xs text-muted sm:w-36">{label}</span>
+      <span className="min-w-0 break-words font-mono text-sm text-text-primary [overflow-wrap:anywhere]">{value || "—"}</span>
     </div>
   );
 }
@@ -54,7 +54,7 @@ export function StudentDetailSections({
     student.hold_start_date || student.hold_end_date || student.status === "paused";
 
   return (
-    <div className="col-span-2 space-y-4">
+    <div className="col-span-1 min-w-0 space-y-4 lg:col-span-2">
       <section className="bg-surface border border-border rounded-[6px] p-5">
         <h3 className="text-sm font-medium text-text-primary mb-4 flex items-center gap-2">
           <Mail className="w-3.5 h-3.5 text-muted" />

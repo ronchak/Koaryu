@@ -11,7 +11,7 @@ import type { ExportJob, StudioPaymentAccount } from "@/types";
 
 type UseBillingActionControllerOptions = {
   billingConnect: StudioPaymentAccount | null;
-  canManageStudioBilling: boolean;
+  canManageRoutineBilling: boolean;
   isPreviewMode: boolean;
   refreshBilling: () => Promise<void>;
   setError: (message: string) => void;
@@ -22,7 +22,7 @@ type UseBillingActionControllerOptions = {
 
 export function useBillingActionController({
   billingConnect,
-  canManageStudioBilling,
+  canManageRoutineBilling,
   isPreviewMode,
   refreshBilling,
   setError,
@@ -40,9 +40,9 @@ export function useBillingActionController({
   const connectActions = useBillingConnectActions(runtime);
   const planActions = useBillingPlanActions({ billingConnect, runtime });
   const payerActions = useBillingPayerActions(runtime);
-  const enrollmentActions = useBillingEnrollmentActions(runtime);
+  const enrollmentActions = useBillingEnrollmentActions({ canManageRoutineBilling, runtime });
   const reportActions = useBillingReportActions({
-    canManageStudioBilling,
+    canManageRoutineBilling,
     runtime,
     setExportJobs,
   });

@@ -3,6 +3,7 @@ import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { api } from "@/lib/api";
 import {
   beginScheduleMutationState,
+  buildScheduleRangeRequest,
   compareSessions,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
@@ -18,11 +19,12 @@ import {
   setScheduleRequestedRangeState,
   updateSessionAttendanceCount,
   type ScheduleCoordinatorState,
+  type ScheduleRangeRefreshIntent,
   type SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
-import { hasStaffPermission } from "@/lib/staff-permissions";
+import { canMaterializeScheduleRange } from "@/lib/staff-permissions";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
@@ -44,7 +46,7 @@ interface UseStoreScheduleActionsOptions {
   persistAttendance: (next: AttendanceRecord[]) => void;
   persistSessions: (next: ClassSession[]) => void;
   persistTemplates: (next: ClassTemplate[]) => void;
-  reconcileSchedule: () => Promise<void>;
+  reconcileSchedule: (intent: ScheduleRangeRefreshIntent) => Promise<void>;
   scheduleCoordinatorRef: StoreRef<ScheduleCoordinatorState>;
   sessionsRef: StoreRef<ClassSession[]>;
   setAttendance: Dispatch<SetStateAction<AttendanceRecord[]>>;
@@ -73,7 +75,7 @@ export function useStoreScheduleActions({
   setTemplates,
   templatesRef,
 }: UseStoreScheduleActionsOptions) {
-  const canManageSchedule = hasStaffPermission(currentRole, "manage_schedule");
+  const canMaterializeSchedule = canMaterializeScheduleRange(currentRole);
   const scheduleMutationWaitersRef = useRef(new Set<() => void>());
 
   const releaseScheduleMutationWaiters = useCallback(() => {
@@ -126,7 +128,7 @@ export function useStoreScheduleActions({
             afterFinish !== beforeFinish
             && shouldReconcileSchedule(afterFinish)
           ) {
-            await reconcileSchedule();
+            await reconcileSchedule("materialize");
           }
         } catch (error) {
           console.error("Failed to reconcile schedule after a mutation", error);
@@ -146,7 +148,8 @@ export function useStoreScheduleActions({
 
   const refreshScheduleRange = useCallback(async (
     startDate: string,
-    endDate: string
+    endDate: string,
+    intent: ScheduleRangeRefreshIntent
   ): Promise<ClassSession[]> => {
     if (isPreviewMode) {
       return sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate);
@@ -185,14 +188,19 @@ export function useStoreScheduleActions({
         mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
         requestSequenceAtStart: attendanceRequestSequence,
       });
-      const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
-      const rangeSessions = canManageSchedule
+      const rangeRequest = buildScheduleRangeRequest(
+        startDate,
+        endDate,
+        intent,
+        canMaterializeSchedule
+      );
+      const rangeSessions = rangeRequest.method === "POST"
         ? await api.post<ClassSession[]>(
-            `/schedule/sessions/materialize?${rangeQuery}`,
+            rangeRequest.path,
             {},
             request.token
           )
-        : await api.get<ClassSession[]>(`/schedule/sessions?${rangeQuery}`, request.token);
+        : await api.get<ClassSession[]>(rangeRequest.path, request.token);
       const attendanceQuery = rangeSessions.length >= SCHEDULE_ATTENDANCE_BULK_THRESHOLD
         ? `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`
         : `/schedule/attendance?${rangeSessions
@@ -236,14 +244,14 @@ export function useStoreScheduleActions({
       }, 3, waitForScheduleMutationSettlement);
     } finally {
       if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
-        void reconcileSchedule().catch((error) => {
+        void reconcileSchedule(intent).catch((error) => {
           console.error("Failed to reconcile schedule after a range refresh", error);
         });
       }
     }
   }, [
     beginLiveAuthRequest,
-    canManageSchedule,
+    canMaterializeSchedule,
     isPreviewMode,
     reconcileSchedule,
     scheduleCoordinatorRef,
@@ -308,7 +316,7 @@ export function useStoreScheduleActions({
       }
     } finally {
       if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
-        void reconcileSchedule().catch((error) => {
+        void reconcileSchedule("materialize").catch((error) => {
           console.error("Failed to reconcile schedule after an attendance refresh", error);
         });
       }

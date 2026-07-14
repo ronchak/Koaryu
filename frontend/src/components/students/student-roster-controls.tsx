@@ -127,8 +127,8 @@ export function StudentRosterToolbar({
   statusFilter: StudentRosterStatusFilter | "";
 }) {
   return (
-    <div className="flex items-center gap-3 px-8 py-4 border-b border-border">
-      <div className="relative flex-1 max-w-xs">
+    <div className="flex flex-col items-stretch gap-3 border-b border-border px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:px-8">
+      <div className="relative w-full flex-1 lg:max-w-xs">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
         <input
           type="text"
@@ -144,7 +144,7 @@ export function StudentRosterToolbar({
         aria-label="Filter by status"
         value={statusFilter}
         onChange={(event) => onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")}
-        className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+        className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
       >
         {STATUS_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
@@ -157,7 +157,7 @@ export function StudentRosterToolbar({
         aria-label="Filter by program"
         value={programFilter}
         onChange={(event) => onProgramFilterChange(event.target.value)}
-        className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+        className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
       >
         <option value="">All programs</option>
         {programs.filter((program) => !program.archived_at).map((program) => (
@@ -172,7 +172,7 @@ export function StudentRosterToolbar({
       ) : null}
 
       {canManageRoster && selectedCount > 0 ? (
-        <div className="flex items-center gap-2 ml-auto px-3 py-1.5 bg-surface-raised border border-border rounded-[6px]">
+        <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-border bg-surface-raised px-3 py-2 lg:ml-auto">
           <span className="text-xs text-text-secondary">
             {selectedCount} selected
           </span>
@@ -204,7 +204,7 @@ export function StudentRosterToolbar({
             onClick={() => onToggleBulkPanel("delete")}
             className="text-xs text-danger hover:text-danger/80 cursor-pointer"
           >
-            Delete
+            Archive
           </button>
         </div>
       ) : null}
@@ -363,7 +363,7 @@ export function StudentRosterBulkActionPanels({
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
                 <p className="text-sm font-medium text-text-primary">
-                  Delete {selectedCount} selected {selectedCount === 1 ? "student" : "students"}?
+                  Archive {selectedCount} selected {selectedCount === 1 ? "student" : "students"}?
                 </p>
               </div>
               <p className="text-xs text-muted mt-1">
@@ -389,7 +389,7 @@ export function StudentRosterBulkActionPanels({
                 onClick={onDeleteSelected}
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Delete
+                Archive
               </Button>
             </div>
           </div>

@@ -140,11 +140,11 @@ class BillingRequestSchemaTest(unittest.TestCase):
 
         self.assertIn("greater than or equal to 1", str(context.exception))
 
-    def test_external_payment_requires_payer_or_invoice_target(self):
-        with self.assertRaises(ValidationError) as context:
-            ExternalPaymentCreate(amount_cents=500, external_method="cash")
+    def test_external_payment_defers_target_validation_to_runtime_boundaries(self):
+        payment = ExternalPaymentCreate(amount_cents=500, external_method="cash")
 
-        self.assertIn("External payments must target a payer or invoice.", str(context.exception))
+        self.assertIsNone(payment.payer_id)
+        self.assertIsNone(payment.invoice_id)
 
     def test_public_billing_mutation_schemas_reject_extra_fields(self):
         cases = [

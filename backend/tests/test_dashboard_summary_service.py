@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from datetime import date
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
@@ -240,6 +240,16 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         ]
         self.assertTrue(student_fetches)
         self.assertTrue(all(("id", False) in entry["orders"] for entry in student_fetches))
+
+    def test_summary_store_fetch_one_handles_empty_maybe_single_response(self):
+        fake_supabase = MagicMock()
+        maybe_single_query = fake_supabase.table.return_value.select.return_value.maybe_single.return_value
+        maybe_single_query.execute.return_value = None
+        store = DashboardSummaryStore(fake_supabase)
+
+        row = store.fetch_one("studio_payment_accounts", "studio_id", lambda query: query)
+
+        self.assertIsNone(row)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,9 @@ BASE_STAFF_ROLE_COLUMNS = "id, studio_id, user_id, role, created_at"
 EXTENDED_STAFF_ROLE_COLUMNS = (
     "id, studio_id, user_id, role, invited_by, invited_email, created_at, updated_at"
 )
+SINGLE_STUDIO_MEMBERSHIP_DETAIL = (
+    "This account cannot be added to another studio. Contact Koaryu support."
+)
 
 
 def _to_text(value: Any) -> Optional[str]:
@@ -114,10 +117,14 @@ class StaffService:
             result = self._link_pending_staff_role(pending_role["id"], studio_id, user.id)
         except PostgrestAPIError as exc:
             self._cleanup_failed_invite_link(pending_role["id"], studio_id, user.id)
-            if exc.code == "23505":
+            if exc.code == "23505" or self._is_single_studio_membership_conflict(exc):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="That user is already a staff member in this studio.",
+                    detail=(
+                        SINGLE_STUDIO_MEMBERSHIP_DETAIL
+                        if self._is_single_studio_membership_conflict(exc)
+                        else "That user is already a staff member in this studio."
+                    ),
                 ) from exc
             raise
         except Exception:
@@ -231,6 +238,7 @@ class StaffService:
             return self.supabase.table("staff_roles").insert(base_row).execute()
 
     def _link_pending_staff_role(self, staff_role_id: str, studio_id: str, user_id: str):
+        self._ensure_single_studio_membership_candidate(user_id, studio_id)
         return (
             self.supabase.table("staff_roles")
             .update({"user_id": user_id})
@@ -238,6 +246,19 @@ class StaffService:
             .eq("studio_id", studio_id)
             .execute()
         )
+
+    def _ensure_single_studio_membership_candidate(self, user_id: str, studio_id: str) -> None:
+        result = (
+            self.supabase.table("staff_roles")
+            .select("studio_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if any(row.get("studio_id") != studio_id for row in (result.data or [])):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=SINGLE_STUDIO_MEMBERSHIP_DETAIL,
+            )
 
     def _recover_missing_pending_staff_role(
         self,
@@ -272,10 +293,14 @@ class StaffService:
             result = self._link_pending_staff_role(recovered_role_id, studio_id, user_id)
         except PostgrestAPIError as exc:
             self._delete_pending_staff_role(recovered_role_id, studio_id)
-            if exc.code == "23505":
+            if exc.code == "23505" or self._is_single_studio_membership_conflict(exc):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="That user is already a staff member in this studio.",
+                    detail=(
+                        SINGLE_STUDIO_MEMBERSHIP_DETAIL
+                        if self._is_single_studio_membership_conflict(exc)
+                        else "That user is already a staff member in this studio."
+                    ),
                 ) from exc
             raise
         except Exception:
@@ -285,6 +310,18 @@ class StaffService:
         if not result.data:
             self._delete_pending_staff_role(recovered_role_id, studio_id)
         return result
+
+    @staticmethod
+    def _is_single_studio_membership_conflict(exc: PostgrestAPIError) -> bool:
+        error_text = " ".join(
+            str(value)
+            for value in (
+                getattr(exc, "message", ""),
+                getattr(exc, "details", ""),
+                exc,
+            )
+        ).lower()
+        return exc.code == "P0001" and "one studio" in error_text
 
     def _delete_pending_staff_role(self, staff_role_id: str, studio_id: str) -> None:
         (

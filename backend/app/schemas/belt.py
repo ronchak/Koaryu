@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Annotated, Optional
+
+from pydantic import BaseModel, Field, StringConstraints
 
 
 # ---- Belt Ladder ----
@@ -83,6 +84,17 @@ class PromoteStudent(BaseModel):
     student_program_membership_id: Optional[str] = None
     program_id: Optional[str] = None
     notes: Optional[str] = None
+
+
+class DemoteStudent(BaseModel):
+    student_id: str
+    to_rank_id: str
+    student_program_membership_id: Optional[str] = None
+    program_id: Optional[str] = None
+    reason: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=1000),
+    ]
 
 
 class PromotionResponse(BaseModel):

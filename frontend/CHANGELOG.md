@@ -2,6 +2,23 @@
 
 All notable Koaryu release changes are tracked here.
 
+## 0.1.2 - 2026-07-12
+
+### Added
+
+- Added single-studio membership enforcement with fail-closed historical-conflict handling, a named audited student-demotion action, and a Friendly Pilot operations guide.
+- Added the Contract Only billing boundary for external-only local student billing records, payer-level external payments, and read-based invoice reconciliation.
+
+### Fixed
+
+- Enforced the locked Admin, Front Desk, and Instructor permissions, including Instructor billing denial before data fetch and removal of direct student billing metadata exposure.
+- Corrected pilot-critical mobile overflow and touch targets across the Students roster/detail, Billing family/invoice cards, schedule controls, and mobile navigation.
+
+### Improved
+
+- Replaced misleading billing lifecycle controls and copy with read-only or explicitly supported behavior while keeping live outbound Stripe mutation fail-closed.
+- Updated pilot setup, role, support, rollback, recovery, and alert documentation without changing production data or provider state.
+
 ## 0.1.1 - 2026-06-21
 
 ### Added

@@ -12,6 +12,7 @@ import {
 } from "@/lib/belt-store-model";
 import {
   buildPromotionHistoryWithPrependedItem,
+  buildPromotionHistoryWithPrependedItemIfCached,
   loadPromotionHistoryWithCache,
   type PromotionHistoryCache,
   type PromotionHistoryRequests,
@@ -22,6 +23,7 @@ import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type {
   BeltLadder,
   BeltRank,
+  DemoteStudent,
   EligibilityEntry,
   Promotion,
   Student,
@@ -305,6 +307,28 @@ export function useStoreBeltActions({
     promotionHistoryRequestsRef,
   ]);
 
+  const commitPromotionHistoryItem = useCallback((studentId: string, item: Promotion) => {
+    commitPromotionHistoryCache(
+      studentId,
+      buildPromotionHistoryWithPrependedItem(
+        promotionHistoryCacheRef.current,
+        studentId,
+        item
+      )
+    );
+  }, [commitPromotionHistoryCache, promotionHistoryCacheRef]);
+
+  const commitLivePromotionHistoryItem = useCallback((studentId: string, item: Promotion) => {
+    const history = buildPromotionHistoryWithPrependedItemIfCached(
+      promotionHistoryCacheRef.current,
+      studentId,
+      item
+    );
+    if (history) {
+      commitPromotionHistoryCache(studentId, history);
+    }
+  }, [commitPromotionHistoryCache, promotionHistoryCacheRef]);
+
   const promoteStudent = useCallback(async (studentId: string, toRankId: string, notes?: string) => {
     if (isPreviewMode) {
       const previewPromotion = buildPreviewPromotion(studentsRef.current, beltRanksRef.current, {
@@ -314,15 +338,7 @@ export function useStoreBeltActions({
         idFactory: localId,
       });
       persistStudents(previewPromotion.students);
-
-      commitPromotionHistoryCache(
-        studentId,
-        buildPromotionHistoryWithPrependedItem(
-          promotionHistoryCacheRef.current,
-          studentId,
-          previewPromotion.promotion
-        )
-      );
+      commitPromotionHistoryItem(studentId, previewPromotion.promotion);
 
       return previewPromotion.promotion;
     }
@@ -341,31 +357,68 @@ export function useStoreBeltActions({
       return result;
     }
 
-    commitPromotionHistoryCache(
-      studentId,
-      buildPromotionHistoryWithPrependedItem(
-        promotionHistoryCacheRef.current,
-        studentId,
-        result
-      )
-    );
+    commitLivePromotionHistoryItem(studentId, result);
 
     await Promise.all([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
     return result;
   }, [
     beginLiveAuthRequest,
     beltRanksRef,
-    commitPromotionHistoryCache,
+    commitPromotionHistoryItem,
+    commitLivePromotionHistoryItem,
     currentLadderIdRef,
     isPreviewMode,
     persistStudents,
-    promotionHistoryCacheRef,
+    refreshBelts,
+    refreshStudents,
+    studentsRef,
+  ]);
+
+  const demoteStudent = useCallback(async (data: DemoteStudent) => {
+    if (isPreviewMode) {
+      const previewDemotion = buildPreviewPromotion(studentsRef.current, beltRanksRef.current, {
+        studentId: data.student_id,
+        toRankId: data.to_rank_id,
+        notes: data.reason,
+        idFactory: localId,
+      });
+      persistStudents(previewDemotion.students);
+      commitPromotionHistoryItem(data.student_id, previewDemotion.promotion);
+
+      return previewDemotion.promotion;
+    }
+
+    const liveRequest = beginLiveAuthRequest();
+    const result = await api.post<Promotion>(
+      "/belts/demote",
+      data,
+      liveRequest.token
+    );
+    if (!liveRequest.isCurrent()) {
+      return result;
+    }
+
+    delete promotionHistoryRequestsRef.current[data.student_id];
+    commitLivePromotionHistoryItem(data.student_id, result);
+
+    await Promise.allSettled([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
+    return result;
+  }, [
+    beginLiveAuthRequest,
+    beltRanksRef,
+    commitPromotionHistoryItem,
+    commitLivePromotionHistoryItem,
+    currentLadderIdRef,
+    isPreviewMode,
+    persistStudents,
+    promotionHistoryRequestsRef,
     refreshBelts,
     refreshStudents,
     studentsRef,
   ]);
 
   return {
+    demoteStudent,
     loadPromotionHistory,
     promoteStudent,
     refreshBelts,

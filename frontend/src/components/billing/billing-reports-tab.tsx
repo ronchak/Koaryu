@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { Banknote, Download, FileText, Plus } from "lucide-react";
+import { Banknote, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatMoney } from "@/lib/billing-page-utils";
@@ -11,7 +11,7 @@ import { Metric, SectionHeader, StatusPill } from "./billing-page-sections";
 export function BillingReportsTab({
   billingPayers,
   billingPayments,
-  canManageStudioBilling,
+  canManageRoutineBilling,
   externalAmount,
   externalMethod,
   externalNote,
@@ -21,7 +21,6 @@ export function BillingReportsTab({
   isActionLoading,
   isLoadingAction,
   koaryuFeeBasis,
-  onCreateExport,
   onExternalAmountChange,
   onExternalMethodChange,
   onExternalNoteChange,
@@ -32,7 +31,7 @@ export function BillingReportsTab({
 }: {
   billingPayers: BillingPayer[];
   billingPayments: BillingPayment[];
-  canManageStudioBilling: boolean;
+  canManageRoutineBilling: boolean;
   externalAmount: string;
   externalMethod: string;
   externalNote: string;
@@ -42,7 +41,6 @@ export function BillingReportsTab({
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
   koaryuFeeBasis: number;
-  onCreateExport: (exportType: string) => void;
   onExternalAmountChange: (value: string) => void;
   onExternalMethodChange: (value: string) => void;
   onExternalNoteChange: (value: string) => void;
@@ -64,21 +62,7 @@ export function BillingReportsTab({
       </p>
 
       <section className="border border-border bg-surface rounded-[6px] p-5">
-        <SectionHeader icon={Download} title="Async exports" description="Large billing exports are queued instead of held in an in-memory browser request." />
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction("export:revenue")} onClick={() => onCreateExport("revenue")}>
-            <FileText className="h-3.5 w-3.5" />
-            {isLoadingAction("export:revenue") ? "Queueing..." : "Revenue CSV"}
-          </Button>
-          <Button size="sm" variant="secondary" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction("export:invoices")} onClick={() => onCreateExport("invoices")}>
-            <FileText className="h-3.5 w-3.5" />
-            {isLoadingAction("export:invoices") ? "Queueing..." : "Invoice CSV"}
-          </Button>
-          <Button size="sm" variant="secondary" disabled={!canManageStudioBilling || isActionLoading} isLoading={isLoadingAction("export:failed_payments")} onClick={() => onCreateExport("failed_payments")}>
-            <FileText className="h-3.5 w-3.5" />
-            {isLoadingAction("export:failed_payments") ? "Queueing..." : "Failed payments CSV"}
-          </Button>
-        </div>
+        <SectionHeader icon={Download} title="Billing exports are read-only" description="New CSV exports are not enabled for Friendly Pilot. Existing job history remains visible for operational context." />
         {exportJobs.length ? (
           <div className="mt-4 divide-y divide-border border border-border rounded-[6px]">
             {exportJobs.map((job) => (
@@ -92,7 +76,7 @@ export function BillingReportsTab({
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-xs text-muted">No exports queued in this session.</p>
+          <p className="mt-3 text-xs text-muted">No historical export jobs.</p>
         )}
       </section>
 
@@ -105,7 +89,7 @@ export function BillingReportsTab({
               id="external-payer"
               value={externalPayerId}
               onChange={(event) => onExternalPayerChange(event.target.value)}
-              disabled={!canManageStudioBilling || billingPayers.length === 0}
+              disabled={!canManageRoutineBilling || billingPayers.length === 0}
               className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
             >
               <option value="">Choose payer</option>
@@ -114,10 +98,10 @@ export function BillingReportsTab({
               ))}
             </select>
           </div>
-          <Input label="Amount" value={externalAmount} onChange={(event) => onExternalAmountChange(event.target.value)} placeholder="129" inputMode="decimal" disabled={!canManageStudioBilling} />
-          <Input label="Method" value={externalMethod} onChange={(event) => onExternalMethodChange(event.target.value)} placeholder="Zelle" disabled={!canManageStudioBilling} />
-          <Input label="Note" value={externalNote} onChange={(event) => onExternalNoteChange(event.target.value)} placeholder="Optional" disabled={!canManageStudioBilling} />
-          <Button type="submit" size="sm" disabled={!canManageStudioBilling || isActionLoading || billingPayers.length === 0} isLoading={isLoadingAction("record-external")}>
+          <Input label="Amount" value={externalAmount} onChange={(event) => onExternalAmountChange(event.target.value)} placeholder="129" inputMode="decimal" disabled={!canManageRoutineBilling} />
+          <Input label="Method" value={externalMethod} onChange={(event) => onExternalMethodChange(event.target.value)} placeholder="Zelle" disabled={!canManageRoutineBilling} />
+          <Input label="Note" value={externalNote} onChange={(event) => onExternalNoteChange(event.target.value)} placeholder="Optional" disabled={!canManageRoutineBilling} />
+          <Button type="submit" size="sm" disabled={!canManageRoutineBilling || isActionLoading || billingPayers.length === 0} isLoading={isLoadingAction("record-external")}>
             <Plus className="h-3.5 w-3.5" />
             {isLoadingAction("record-external") ? "Recording..." : "Record"}
           </Button>

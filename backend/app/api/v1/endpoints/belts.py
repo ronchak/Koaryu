@@ -11,7 +11,7 @@ from app.core.deps import (
 from app.schemas.belt import (
     BeltLadderCreate, BeltLadderUpdate, BeltLadderSyncRequest, BeltLadderResponse,
     BeltRankCreate, BeltRankUpdate, BeltRankResponse,
-    PromoteStudent, PromotionResponse,
+    DemoteStudent, PromoteStudent, PromotionResponse,
     EligibilityEntry,
 )
 from app.services.belt_service import BeltService
@@ -124,3 +124,13 @@ async def promote_student(
     supabase: Client = Depends(get_supabase),
 ):
     return await BeltService(supabase).promote_student(data, studio_id, user_id)
+
+
+@router.post("/demote", response_model=PromotionResponse, status_code=201)
+async def demote_student(
+    data: DemoteStudent,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_promotion_manager_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    return await BeltService(supabase).demote_student(data, studio_id, user_id)

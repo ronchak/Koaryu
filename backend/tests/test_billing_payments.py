@@ -11,6 +11,7 @@ from app.schemas.billing import BillingRefundCreate, ExportJobCreate, ExternalPa
 from app.services.billing_payments import (
     EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL,
     EXTERNAL_PAYMENT_OVERPAY_DETAIL,
+    EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL,
     BillingPaymentManager,
     build_external_payment_request_hash,
 )
@@ -239,6 +240,29 @@ class BillingPaymentManagerTests(unittest.TestCase):
         empty_effective_payer_hash = build_external_payment_request_hash(payload, effective_payer_id="")
 
         self.assertNotEqual(empty_effective_payer_hash, request_payer_hash)
+
+    def test_external_payment_rejects_missing_target_before_any_side_effect(self):
+        facade = _BillingFacade({
+            "billing_payments": [],
+            "audit_logs": [],
+        })
+        manager = BillingPaymentManager(facade)
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(manager.record_external_payment(
+                ExternalPaymentCreate(amount_cents=500, external_method="cash"),
+                "studio_1",
+                "actor_1",
+                "payment-key-1",
+            ))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertEqual(context.exception.detail, EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL)
+        self.assertEqual(facade.supabase.query_log, [])
+        self.assertEqual(facade.supabase.rpc_calls, [])
+        self.assertEqual(facade.supabase.tables["billing_payments"], [])
+        self.assertEqual(facade.supabase.tables["audit_logs"], [])
+        self.assertEqual(facade.balance_recomputes, [])
 
     def test_external_payment_updates_invoice_and_recomputes_payer_balance(self):
         _FakeStripeService.reset()

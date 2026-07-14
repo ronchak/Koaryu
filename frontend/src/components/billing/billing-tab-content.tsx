@@ -16,31 +16,12 @@ import type {
   BillingPlan,
   ExportJob,
   PlatformBillingStatus,
-  Program,
   StudentBillingEnrollment,
   StudioPaymentAccount,
 } from "@/types";
 
-type BillingPeriodCopy = {
-  label: string;
-  value: string;
-};
-
-type BillingConnectRequirementItem = {
-  id: string;
-  label: string;
-  description: string;
-  complete: boolean;
-};
-
-type BillingStudentOption = {
-  id: string;
-  name: string;
-};
-
 type BillingTabContentProps = {
   actions: BillingActionController;
-  activePrograms: Program[];
   activeStudents: number;
   activeSubscriptionCount: number;
   activeTab: BillingTab;
@@ -49,17 +30,17 @@ type BillingTabContentProps = {
   billingInvoices: BillingInvoice[];
   billingPayers: BillingPayer[];
   billingPayments: BillingPayment[];
-  billingPeriod: BillingPeriodCopy;
+  billingPeriod: { label: string; value: string };
   billingPlans: BillingPlan[];
   billingPlatform: PlatformBillingStatus | null;
-  billingStudentOptions: BillingStudentOption[];
+  billingStudentOptions: { id: string; name: string }[];
   canManageKoaryuSubscription: boolean;
-  canManageStudioBilling: boolean;
+  canManageRoutineBilling: boolean;
   canOpenCustomerPortal: boolean;
   canOpenStripeDashboard: boolean;
   canSubmitEnrollmentForm: boolean;
   connectActionLabel: string;
-  connectRequirementItems: BillingConnectRequirementItem[];
+  connectRequirementItems: { id: string; label: string; description: string; complete: boolean }[];
   currentMonthPaymentCount: number;
   externalPaymentTotal: number;
   exportJobs: ExportJob[];
@@ -75,54 +56,55 @@ type BillingTabContentProps = {
   paymentCohortAvailable: boolean;
   payerNameById: Map<string, string>;
   planNameById: Map<string, string>;
+  providerMutationsEnabled: boolean;
   stripePaymentTotal: number;
   studentNameById: Map<string, string>;
   studentsLoaded: boolean;
 };
 
-export function BillingTabContent({
-  actions,
-  activePrograms,
-  activeStudents,
-  activeSubscriptionCount,
-  activeTab,
-  billingConnect,
-  billingEnrollments,
-  billingInvoices,
-  billingPayers,
-  billingPayments,
-  billingPeriod,
-  billingPlans,
-  billingPlatform,
-  billingStudentOptions,
-  canManageKoaryuSubscription,
-  canManageStudioBilling,
-  canOpenCustomerPortal,
-  canOpenStripeDashboard,
-  canSubmitEnrollmentForm,
-  connectActionLabel,
-  connectRequirementItems,
-  currentMonthPaymentCount,
-  externalPaymentTotal,
-  exportJobs,
-  failedInvoiceCount,
-  hasStripeConnectedAccount,
-  isEnrollmentPayerSelectDisabled,
-  isPreviewMode,
-  invoiceController,
-  koaryuFeeBasis,
-  onConnectClick,
-  openInvoiceTotal,
-  paidRevenue,
-  paymentCohortAvailable,
-  payerNameById,
-  planNameById,
-  stripePaymentTotal,
-  studentNameById,
-  studentsLoaded,
-}: BillingTabContentProps) {
+export function BillingTabContent(props: BillingTabContentProps) {
   const {
-    enrollmentCollectionMode,
+    actions,
+    activeStudents,
+    activeSubscriptionCount,
+    activeTab,
+    billingConnect,
+    billingEnrollments,
+    billingInvoices,
+    billingPayers,
+    billingPayments,
+    billingPeriod,
+    billingPlans,
+    billingPlatform,
+    billingStudentOptions,
+    canManageKoaryuSubscription,
+    canManageRoutineBilling,
+    canOpenCustomerPortal,
+    canOpenStripeDashboard,
+    canSubmitEnrollmentForm,
+    connectActionLabel,
+    connectRequirementItems,
+    currentMonthPaymentCount,
+    externalPaymentTotal,
+    exportJobs,
+    failedInvoiceCount,
+    hasStripeConnectedAccount,
+    invoiceController,
+    isEnrollmentPayerSelectDisabled,
+    isPreviewMode,
+    koaryuFeeBasis,
+    onConnectClick,
+    openInvoiceTotal,
+    paidRevenue,
+    paymentCohortAvailable,
+    payerNameById,
+    planNameById,
+    providerMutationsEnabled,
+    stripePaymentTotal,
+    studentNameById,
+    studentsLoaded,
+  } = props;
+  const {
     enrollmentEndDate,
     enrollmentNextBillDate,
     enrollmentPayerId,
@@ -135,17 +117,8 @@ export function BillingTabContent({
     externalPayerId,
     isActionLoading,
     isLoadingAction,
-    onAutopayDisable,
-    onAutopaySetup,
-    onConnectReset,
     onCreateEnrollment,
-    onCreateExport,
-    onCreatePayer,
-    onCreatePlan,
-    onEnrollmentAction,
-    onEnrollmentCollectionModeChange,
     onEnrollmentEndDateChange,
-    onEnrollmentModeUpdate,
     onEnrollmentNextBillDateChange,
     onEnrollmentPayerChange,
     onEnrollmentPlanChange,
@@ -155,50 +128,10 @@ export function BillingTabContent({
     onExternalMethodChange,
     onExternalNoteChange,
     onExternalPayerChange,
-    onPayerEmailChange,
-    onPayerNameChange,
-    onPayerPhoneChange,
-    onPayerSync,
-    onPlanAmountChange,
-    onPlanDescriptionChange,
-    onPlanIntervalChange,
-    onPlanNameChange,
-    onPlanProgramToggle,
-    onPlanSignupFeeChange,
-    onPlanSync,
-    onPlanTrialDaysChange,
     onRecordExternalPayment,
     openBillingLink,
-    payerEmail,
-    payerName,
-    payerPhone,
-    planAmount,
-    planDescription,
-    planInterval,
-    planName,
-    planProgramIds,
-    planSignupFee,
-    planTrialDays,
   } = actions;
-  const {
-    invoiceAmount,
-    invoiceDescription,
-    invoiceDueDate,
-    invoiceEnrollmentId,
-    invoicePayerId,
-    invoiceSendHosted,
-    invoiceStudentId,
-    onCreateInvoice,
-    onInvoiceAction,
-    onInvoiceAmountChange,
-    onInvoiceDescriptionChange,
-    onInvoiceDraftChange,
-    onInvoiceDueDateChange,
-    onInvoiceEnrollmentChange,
-    onInvoicePayerChange,
-    onInvoiceSendHostedChange,
-    onInvoiceStudentChange,
-  } = invoiceController;
+
   if (activeTab === "overview") {
     return (
       <BillingOverviewTab
@@ -220,66 +153,18 @@ export function BillingTabContent({
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
         onConnectClick={onConnectClick}
-        onConnectReset={onConnectReset}
         openBillingLink={openBillingLink}
         openInvoiceTotal={openInvoiceTotal}
         paidRevenue={paidRevenue}
         paymentCohortAvailable={paymentCohortAvailable}
+        providerMutationsEnabled={providerMutationsEnabled}
         stripePaymentTotal={stripePaymentTotal}
         studentsLoaded={studentsLoaded}
       />
     );
   }
-
-  if (activeTab === "plans") {
-    return (
-      <BillingPlansTab
-        activePrograms={activePrograms}
-        billingPlans={billingPlans}
-        canManageStudioBilling={canManageStudioBilling}
-        isActionLoading={isActionLoading}
-        isLoadingAction={isLoadingAction}
-        onCreatePlan={onCreatePlan}
-        onPlanAmountChange={onPlanAmountChange}
-        onPlanDescriptionChange={onPlanDescriptionChange}
-        onPlanIntervalChange={onPlanIntervalChange}
-        onPlanNameChange={onPlanNameChange}
-        onPlanProgramToggle={onPlanProgramToggle}
-        onPlanSignupFeeChange={onPlanSignupFeeChange}
-        onPlanSync={onPlanSync}
-        onPlanTrialDaysChange={onPlanTrialDaysChange}
-        planAmount={planAmount}
-        planDescription={planDescription}
-        planInterval={planInterval}
-        planName={planName}
-        planProgramIds={planProgramIds}
-        planSignupFee={planSignupFee}
-        planTrialDays={planTrialDays}
-      />
-    );
-  }
-
-  if (activeTab === "families") {
-    return (
-      <BillingFamiliesTab
-        billingPayers={billingPayers}
-        canManageStudioBilling={canManageStudioBilling}
-        isActionLoading={isActionLoading}
-        isLoadingAction={isLoadingAction}
-        onAutopayDisable={onAutopayDisable}
-        onAutopaySetup={onAutopaySetup}
-        onCreatePayer={onCreatePayer}
-        onPayerEmailChange={onPayerEmailChange}
-        onPayerNameChange={onPayerNameChange}
-        onPayerPhoneChange={onPayerPhoneChange}
-        onPayerSync={onPayerSync}
-        payerEmail={payerEmail}
-        payerName={payerName}
-        payerPhone={payerPhone}
-      />
-    );
-  }
-
+  if (activeTab === "plans") return <BillingPlansTab billingPlans={billingPlans} />;
+  if (activeTab === "families") return <BillingFamiliesTab billingPayers={billingPayers} />;
   if (activeTab === "enrollments") {
     return (
       <BillingEnrollmentsTab
@@ -287,23 +172,18 @@ export function BillingTabContent({
         billingPayers={billingPayers}
         billingPlans={billingPlans}
         billingStudentOptions={billingStudentOptions}
-        canManageStudioBilling={canManageStudioBilling}
+        canManageRoutineBilling={canManageRoutineBilling}
         canSubmitEnrollmentForm={canSubmitEnrollmentForm}
-        enrollmentCollectionMode={enrollmentCollectionMode}
         enrollmentEndDate={enrollmentEndDate}
         enrollmentNextBillDate={enrollmentNextBillDate}
         enrollmentPayerId={enrollmentPayerId}
         enrollmentPlanId={enrollmentPlanId}
         enrollmentStartDate={enrollmentStartDate}
         enrollmentStudentId={enrollmentStudentId}
-        isActionLoading={isActionLoading}
         isEnrollmentPayerSelectDisabled={isEnrollmentPayerSelectDisabled}
         isLoadingAction={isLoadingAction}
         onCreateEnrollment={onCreateEnrollment}
-        onEnrollmentAction={onEnrollmentAction}
-        onEnrollmentCollectionModeChange={onEnrollmentCollectionModeChange}
         onEnrollmentEndDateChange={onEnrollmentEndDateChange}
-        onEnrollmentModeUpdate={onEnrollmentModeUpdate}
         onEnrollmentNextBillDateChange={onEnrollmentNextBillDateChange}
         onEnrollmentPayerChange={onEnrollmentPayerChange}
         onEnrollmentPlanChange={onEnrollmentPlanChange}
@@ -315,47 +195,25 @@ export function BillingTabContent({
       />
     );
   }
-
   if (activeTab === "invoices") {
     return (
       <BillingInvoicesSection
-        billingEnrollments={billingEnrollments}
         billingInvoices={billingInvoices}
         billingPayers={billingPayers}
-        billingStudentOptions={billingStudentOptions}
-        canManageStudioBilling={canManageStudioBilling}
+        canReconcileInvoices={canManageRoutineBilling}
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
         isPreviewMode={isPreviewMode}
-        invoiceAmount={invoiceAmount}
-        invoiceDescription={invoiceDescription}
-        invoiceDueDate={invoiceDueDate}
-        invoiceEnrollmentId={invoiceEnrollmentId}
-        invoicePayerId={invoicePayerId}
-        invoiceSendHosted={invoiceSendHosted}
-        invoiceStudentId={invoiceStudentId}
-        onCreateInvoice={onCreateInvoice}
-        onInvoiceAction={onInvoiceAction}
-        onInvoiceAmountChange={onInvoiceAmountChange}
-        onInvoiceDescriptionChange={onInvoiceDescriptionChange}
-        onInvoiceDraftChange={onInvoiceDraftChange}
-        onInvoiceDueDateChange={onInvoiceDueDateChange}
-        onInvoiceEnrollmentChange={onInvoiceEnrollmentChange}
-        onInvoicePayerChange={onInvoicePayerChange}
-        onInvoiceSendHostedChange={onInvoiceSendHostedChange}
-        onInvoiceStudentChange={onInvoiceStudentChange}
-        planNameById={planNameById}
-        studentNameById={studentNameById}
+        onInvoiceAction={invoiceController.onInvoiceAction}
       />
     );
   }
-
   if (activeTab === "reports") {
     return (
       <BillingReportsTab
         billingPayers={billingPayers}
         billingPayments={billingPayments}
-        canManageStudioBilling={canManageStudioBilling}
+        canManageRoutineBilling={canManageRoutineBilling}
         externalAmount={externalAmount}
         externalMethod={externalMethod}
         externalNote={externalNote}
@@ -365,7 +223,6 @@ export function BillingTabContent({
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
         koaryuFeeBasis={koaryuFeeBasis}
-        onCreateExport={onCreateExport}
         onExternalAmountChange={onExternalAmountChange}
         onExternalMethodChange={onExternalMethodChange}
         onExternalNoteChange={onExternalNoteChange}
@@ -376,6 +233,5 @@ export function BillingTabContent({
       />
     );
   }
-
   return null;
 }

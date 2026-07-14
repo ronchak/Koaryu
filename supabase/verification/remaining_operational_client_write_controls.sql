@@ -58,6 +58,7 @@ BEGIN
             WHERE policy.schemaname = 'public'
               AND policy.tablename = v_table
               AND policy.cmd IN ('ALL', 'INSERT', 'UPDATE', 'DELETE')
+              AND policy.permissive = 'PERMISSIVE'
               AND policy.roles && ARRAY['public'::name, 'anon'::name, 'authenticated'::name]
         ) THEN
             RAISE EXCEPTION 'Browser-facing write policy still exists on public.%.', v_table;

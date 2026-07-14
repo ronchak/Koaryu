@@ -22,6 +22,7 @@ import {
 import type { ClassSession, ClassTemplate, Program } from "@/types";
 
 interface SchedulePageSectionProps {
+  canManageSchedule: boolean;
   currentDate: Date;
   view: SchedulePageView;
   programFilter: string;
@@ -68,6 +69,7 @@ function getSessionButtonLabel(session: ClassSession) {
 }
 
 export function SchedulePageSection({
+  canManageSchedule,
   currentDate,
   view,
   programFilter,
@@ -165,24 +167,26 @@ export function SchedulePageSection({
   return (
     <>
       <Header title="Schedule" description="Class schedule and attendance.">
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onOpenAddClass}
-        >
-          <Plus aria-hidden="true" className="w-3.5 h-3.5" />
-          Add class
-        </Button>
+        {canManageSchedule ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onOpenAddClass}
+          >
+            <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+            Add class
+          </Button>
+        ) : null}
       </Header>
 
-      <div className="flex-1 flex flex-col">
-      <div className="flex items-center justify-between px-6 sm:px-8 py-4 border-b border-border">
-        <div className="flex items-center gap-1.5" role="group" aria-label="Schedule date navigation">
+      <div className="flex flex-1 flex-col">
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5" role="group" aria-label="Schedule date navigation">
           <button
             type="button"
             onClick={() => onNavigate(-1)}
             aria-label={`Previous ${view}`}
-            className="p-1.5 hover:bg-surface-raised text-text-secondary transition-colors cursor-pointer"
+            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center hover:bg-surface-raised text-text-secondary transition-colors"
           >
             <ChevronLeft aria-hidden="true" className="w-4 h-4" />
           </button>
@@ -190,7 +194,7 @@ export function SchedulePageSection({
             type="button"
             onClick={onJumpToToday}
             aria-label="Jump to today"
-            className="px-3 py-1 text-xs font-medium text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+            className="min-h-11 cursor-pointer px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
           >
             Today
           </button>
@@ -198,16 +202,16 @@ export function SchedulePageSection({
             type="button"
             onClick={() => onNavigate(1)}
             aria-label={`Next ${view}`}
-            className="p-1.5 hover:bg-surface-raised text-text-secondary transition-colors cursor-pointer"
+            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center hover:bg-surface-raised text-text-secondary transition-colors"
           >
             <ChevronRight aria-hidden="true" className="w-4 h-4" />
           </button>
-          <span className="text-sm text-text-primary ml-3 font-semibold tracking-tight">
+          <span className="w-full min-w-0 break-words pt-1 text-sm font-semibold tracking-tight text-text-primary sm:ml-3 sm:w-auto sm:pt-0">
             {getToolbarLabel()}
           </span>
         </div>
 
-        <div className="flex items-center bg-surface border border-border p-0.5" role="group" aria-label="Schedule view">
+        <div className="grid w-full grid-cols-3 items-center border border-border bg-surface p-0.5 sm:w-auto" role="group" aria-label="Schedule view">
           {SCHEDULE_VIEWS.map((nextView) => (
             <button
               key={nextView}
@@ -215,7 +219,7 @@ export function SchedulePageSection({
               onClick={() => onViewChange(nextView)}
               aria-pressed={view === nextView}
               aria-label={`Show ${nextView} schedule view`}
-              className={`px-3 py-1 text-xs capitalize cursor-pointer transition-colors ${
+              className={`min-h-11 cursor-pointer px-3 py-1 text-xs capitalize transition-colors ${
                 view === nextView
                   ? "bg-accent text-accent-contrast font-medium"
                   : "text-text-secondary hover:text-text-primary"
@@ -227,12 +231,12 @@ export function SchedulePageSection({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 sm:px-8 py-3">
+      <div className="flex flex-col items-stretch gap-3 border-b border-border px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 lg:px-8">
         <select
           value={programFilter}
           onChange={(event) => onProgramFilterChange(event.target.value)}
           aria-label="Filter schedule by program"
-          className="px-3 py-1.5 text-sm bg-surface-raised border border-border text-text-primary focus:border-accent focus:outline-none"
+          className="min-h-11 w-full border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:w-auto"
         >
           <option value="">All programs</option>
           {activePrograms.map((program) => (
@@ -244,7 +248,7 @@ export function SchedulePageSection({
         {programFilter ? (
           <ProgramBadge program={programById.get(programFilter)} />
         ) : (
-          <span className="text-xs text-muted">Showing classes from every program</span>
+          <span className="break-words text-xs text-muted">Showing classes from every program</span>
         )}
       </div>
 
@@ -265,7 +269,7 @@ export function SchedulePageSection({
       ) : null}
 
       {view === "month" && (
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-3 sm:p-6">
           <MonthScheduleView
             month={currentDate}
             sessions={filteredSessions}
@@ -430,15 +434,17 @@ export function SchedulePageSection({
             <div className="text-center py-16 border border-border bg-surface">
               <Calendar aria-hidden="true" className="w-5 h-5 text-muted mx-auto mb-3" />
               <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="mt-5"
-                onClick={onOpenAddClass}
-              >
-                <Plus aria-hidden="true" className="w-3.5 h-3.5" />
-                Add class
-              </Button>
+              {canManageSchedule ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-5"
+                  onClick={onOpenAddClass}
+                >
+                  <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+                  Add class
+                </Button>
+              ) : null}
             </div>
           ) : (
             <div className="space-y-2">

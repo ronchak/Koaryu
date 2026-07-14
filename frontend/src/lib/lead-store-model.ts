@@ -118,7 +118,6 @@ export function buildPreviewLeadConversion(
         updated_at: nowIso,
       },
     ],
-    stripe_customer_id: undefined,
     notes: lead.notes,
     tags: ["converted-lead"],
     guardians: lead.is_minor && guardianName

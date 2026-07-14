@@ -6,12 +6,18 @@ import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import { buildStudentBillingEnrollmentCreatePayload } from "@/lib/billing-page-form-model";
 import type { StudentBillingEnrollment } from "@/types";
 
-export function useBillingEnrollmentActions(runtime: BillingActionRuntime) {
+export function useBillingEnrollmentActions({
+  canManageRoutineBilling,
+  runtime,
+}: {
+  canManageRoutineBilling: boolean;
+  runtime: BillingActionRuntime;
+}) {
   const [enrollmentStudentId, setEnrollmentStudentId] = useState("");
   const [enrollmentPayerId, setEnrollmentPayerId] = useState("");
   const [enrollmentPlanId, setEnrollmentPlanId] = useState("");
   const [enrollmentCollectionMode, setEnrollmentCollectionMode] =
-    useState<StudentBillingEnrollment["collection_mode"]>("autopay");
+    useState<StudentBillingEnrollment["collection_mode"]>("external");
   const [enrollmentStartDate, setEnrollmentStartDate] = useState("");
   const [enrollmentEndDate, setEnrollmentEndDate] = useState("");
   const [enrollmentNextBillDate, setEnrollmentNextBillDate] = useState("");
@@ -20,50 +26,35 @@ export function useBillingEnrollmentActions(runtime: BillingActionRuntime) {
     setEnrollmentStudentId("");
     setEnrollmentPayerId("");
     setEnrollmentPlanId("");
-    setEnrollmentCollectionMode("autopay");
+    setEnrollmentCollectionMode("external");
     setEnrollmentStartDate("");
     setEnrollmentEndDate("");
     setEnrollmentNextBillDate("");
   }
 
   async function handleEnrollmentAction(enrollmentId: string, action: "pause" | "resume" | "cancel") {
-    await runtime.postBillingAction<StudentBillingEnrollment>({
-      action: `enrollment:${enrollmentId}:${action}`,
-      path: `/billing/enrollments/${enrollmentId}/${action}`,
-      successMessage: `Enrollment ${action} requested.`,
-    });
+    void enrollmentId;
+    void action;
+    runtime.setError("Enrollment lifecycle changes are not enabled for the Friendly Pilot release.");
   }
 
   async function handleEnrollmentModeUpdate(
     enrollmentId: string,
     collectionMode: StudentBillingEnrollment["collection_mode"]
   ) {
-    if (runtime.isPreviewMode) {
-      runtime.setMessage("Demo enrollment collection mode updated.");
-      return;
-    }
-    if (!runtime.token || !runtime.claimAction(`enrollment-mode:${enrollmentId}`)) {
-      return;
-    }
-    try {
-      await api.patch<StudentBillingEnrollment>(
-        `/billing/enrollments/${enrollmentId}`,
-        { collection_mode: collectionMode },
-        runtime.token
-      );
-      runtime.setMessage("Enrollment collection mode updated.");
-      await runtime.refreshBilling();
-    } catch (err) {
-      runtime.setError(err instanceof Error ? err.message : "Enrollment could not be updated.");
-    } finally {
-      runtime.releaseAction(`enrollment-mode:${enrollmentId}`);
-    }
+    void enrollmentId;
+    void collectionMode;
+    runtime.setError("Collection-mode changes are not enabled for the Friendly Pilot release.");
   }
 
   async function handleCreateEnrollment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     runtime.setError("");
     runtime.setMessage("");
+    if (!canManageRoutineBilling) {
+      runtime.setError("Only studio admins and front desk staff can attach external billing records.");
+      return;
+    }
     const payloadResult = buildStudentBillingEnrollmentCreatePayload({
       enrollmentStudentId,
       enrollmentPayerId,

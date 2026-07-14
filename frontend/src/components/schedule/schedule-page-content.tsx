@@ -53,6 +53,7 @@ export function SchedulePageContent({
   return (
     <>
       <SchedulePageSection
+        canManageSchedule={canManageSchedule}
         currentDate={currentDate}
         view={view}
         programFilter={programFilter}

@@ -329,13 +329,22 @@ fails closed if object rows are already present before that upload.
 
 ## Off-site copy gate
 
-The July 10 artifacts have not been found outside `$HOME/Koaryu Backups/production-20260710T070020Z`. A second local path, a synced-folder path without provider-side confirmation, or the ordinary staging project does not count as off-site recovery evidence.
+On 2026-07-12, all five July 10 encrypted artifacts were verified on a separate second machine with identical filenames, sizes, mode `0600`, and the SHA-256 hashes recorded in the release ledger. That is valid second-machine copy evidence, but it is not proof of geographic separation or an approved provider-independent off-site destination. A second local machine, a synced-folder path without provider-side confirmation, or the ordinary staging project does not close the off-site gate.
 
 Before copying, record the approved provider and folder/bucket, Ronak as data owner, the minimum named operator group, encryption-at-rest posture, retention window, rotation cadence, monitoring owner, deletion owner, and whether the destination adds ongoing cost. Keep the existing Koaryu AEAD artifacts encrypted; do not upload plaintext dumps or the Keychain recovery secret. A paid storage upgrade or materially higher operational burden requires the approval boundary in the release ledger.
 
 After the provider destination is approved, upload only the five `.gpg` artifacts, then download them into a new locked temporary directory through an authenticated provider session. Verify all five recorded SHA-256 hashes against that downloaded copy before decrypting. A local source-path checksum does not close the gate. Also verify that an unauthorized identity cannot read the provider object and that a deliberately wrong recovery key fails closed. Record provider object identifiers and access-policy evidence without including signed URLs, access tokens, raw PII, or secrets.
 
-The 2026-07-11 local prerequisite audit reconfirmed all five recorded SHA-256 hashes, mode `0600`, a present Keychain recovery item, successful decryption to `/dev/null` with that item, and rejection of a deliberately wrong key. No off-site artifact was found, no upload occurred, and no plaintext was written. These checks are prerequisites only; they do not close the off-site gate.
+The 2026-07-11 local prerequisite audit reconfirmed all five recorded SHA-256 hashes, mode `0600`, a present Keychain recovery item, successful decryption to `/dev/null` with that item, and rejection of a deliberately wrong key. The 2026-07-12 second-machine verification adds copy redundancy but no approved provider object or geographic evidence. No provider upload occurred and no plaintext was written. These checks are prerequisites only; they do not close the off-site gate.
+
+The recovery key remains in macOS Keychain. Copying the key to a physically controlled recovery flash drive is an outstanding human-only step. Never copy the key into the repository, cloud notes, a release comment, or the same location as the encrypted artifacts.
+
+## Current recovery readiness
+
+- Provisional planning targets are RPO of no more than 24 hours and RTO of no more than 4 hours. They are not verified promises.
+- The Supabase organization was read back on the Free plan during Friendly Pilot Phase 0. Native daily backups and PITR are not proven entitlements at that plan, and the latest encrypted capture was approximately 72 hours old at the audit. The 24-hour RPO is therefore not currently met by evidence.
+- The restore drill recovered database/Auth structure and validated aggregate counts, but it did not complete an authenticated tenant-safe application read. The 4-hour RTO and full application recovery remain unproven.
+- The five-artifact second-machine copy improves recoverability but does not replace an approved off-site destination, a current capture cadence, or a full application restore drill.
 
 ## Restore Drill
 

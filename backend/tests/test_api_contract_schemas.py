@@ -3,6 +3,7 @@ import unittest
 from pydantic import ValidationError
 
 from app.schemas.auth import AuthResponse, UserProfile
+from app.schemas.belt import DemoteStudent
 from app.schemas.billing import BillingSubscriptionResponse, StudentBillingEnrollmentResponse
 from app.schemas.lead import LeadCreate, LeadResponse, LeadUpdate
 from app.schemas.schedule import AttendanceCheckIn, ClassSessionResponse
@@ -16,6 +17,23 @@ from app.schemas.student import (
 
 
 class ApiContractSchemaTest(unittest.TestCase):
+    def test_demotion_reason_is_trimmed_and_requires_non_whitespace_text(self):
+        demotion = DemoteStudent(
+            student_id="student-1",
+            to_rank_id="rank-1",
+            reason="  Correcting an earlier rank entry  ",
+        )
+
+        self.assertEqual(demotion.reason, "Correcting an earlier rank entry")
+        for reason in ("", "   ", "\t\n"):
+            with self.subTest(reason=repr(reason)):
+                with self.assertRaises(ValidationError):
+                    DemoteStudent(
+                        student_id="student-1",
+                        to_rank_id="rank-1",
+                        reason=reason,
+                    )
+
     def test_auth_role_uses_staff_role_contract(self):
         auth = AuthResponse(
             user=UserProfile(id="user-1", email="owner@example.com"),

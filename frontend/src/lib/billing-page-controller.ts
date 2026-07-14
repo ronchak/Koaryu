@@ -23,6 +23,10 @@ import {
 } from "@/lib/billing-page-state";
 import { requirementGroupItems } from "@/lib/billing-page-utils";
 import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
+import {
+  areFriendlyPilotProviderMutationsEnabled,
+  canManageFriendlyPilotRoutineBilling,
+} from "@/lib/billing-pilot-policy";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import {
   PREVIEW_CONNECT,
@@ -56,7 +60,7 @@ type BillingPageControllerOptions = {
     | "studentsLoadError"
     | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentRole" | "currentUserId">;
+  studioStore: Pick<StudioStoreContextValue, "currentRole">;
 };
 
 export function useBillingPageController({
@@ -68,7 +72,7 @@ export function useBillingPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
-  const { currentRole, currentUserId } = studioStore;
+  const { currentRole } = studioStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const {
     refreshStudents,
@@ -89,6 +93,8 @@ export function useBillingPageController({
   const canManageKoaryuSubscription = currentRole === "admin";
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
   const canManageStudioBilling = currentRole === "admin";
+  const canManageRoutineBilling = canManageFriendlyPilotRoutineBilling(currentRole);
+  const providerMutationsEnabled = areFriendlyPilotProviderMutationsEnabled(isPreviewMode);
   const isLiveRestricted = !isPreviewMode && currentRole !== null && !canViewStudioBilling;
   const shouldSettleEarly = shouldSettleBillingLoadEarly({
     isPreviewMode,
@@ -151,7 +157,7 @@ export function useBillingPageController({
   const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;
   const billingActions = useBillingActionController({
     billingConnect,
-    canManageStudioBilling,
+    canManageRoutineBilling,
     isPreviewMode,
     refreshBilling,
     setError,
@@ -160,12 +166,12 @@ export function useBillingPageController({
     token,
   });
   const isEnrollmentPayerSelectDisabled = shouldDisableStudentBillingEnrollmentPayerSelect({
-    canManageStudioBilling,
+    canManageStudioBilling: canManageRoutineBilling,
     collectionMode: billingActions.enrollmentCollectionMode,
     payerCount: billingPayers.length,
   });
   const canSubmitEnrollmentForm = canSubmitStudentBillingEnrollmentForm({
-    canManageStudioBilling,
+    canManageStudioBilling: canManageRoutineBilling,
     collectionMode: billingActions.enrollmentCollectionMode,
     isActionLoading: billingActions.isActionLoading,
     payerCount: billingPayers.length,
@@ -243,29 +249,29 @@ export function useBillingPageController({
   const billingSetupSteps = useMemo<BillingSetupStep[]>(() => [
     {
       id: "payments",
-      title: "Set up payments",
+      title: "Review payment status",
       description: paymentsReady
-        ? "Stripe can collect card payments and send payouts for this studio."
-        : "Connect Stripe when the studio is ready for autopay and hosted invoices. External payments can still be tracked.",
+        ? "Review the studio's existing Stripe status without changing provider state."
+        : "External payments can be tracked while live Stripe activation remains separately gated.",
       complete: paymentsReady,
       onSelect: () => setActiveTab("overview"),
       actionLabel: paymentsReady ? "Review status" : "Review setup",
     },
     {
       id: "plans",
-      title: "Create tuition plans",
-      description: "Define monthly tuition, paid-in-full offers, signup fees, trial days, and program fit.",
+      title: "Review tuition plans",
+      description: "Review the studio's existing tuition plans. Plan changes are outside this release.",
       complete: hasBillingPlans,
       onSelect: () => setActiveTab("plans"),
-      actionLabel: "Create plan",
+      actionLabel: "Review plans",
     },
     {
       id: "families",
-      title: "Add families",
-      description: "Create payer accounts for parents, guardians, or adult students who handle tuition.",
+      title: "Review families",
+      description: "Review existing payer accounts for parents, guardians, or adult students.",
       complete: hasFamilyAccounts,
       onSelect: () => setActiveTab("families"),
-      actionLabel: "Add family",
+      actionLabel: "Review families",
     },
     {
       id: "student-billing",
@@ -277,11 +283,11 @@ export function useBillingPageController({
     },
     {
       id: "collect",
-      title: "Collect or send invoice",
-      description: "Send a hosted invoice, collect through autopay, or record a cash, check, Zelle, or Venmo payment.",
+      title: "Review invoices and payments",
+      description: "Record payer-level external payments and reconcile existing provider invoices.",
       complete: hasCollectionHistory,
       onSelect: () => setActiveTab("invoices"),
-      actionLabel: "Create invoice",
+      actionLabel: "Review invoices",
     },
   ], [
     hasBillingPlans,
@@ -323,7 +329,7 @@ export function useBillingPageController({
       return;
     }
     const timer = window.setTimeout(() => {
-      void refreshConnectStatus({ sync: canManageStudioBilling })
+      void refreshConnectStatus({ sync: canManageStudioBilling && providerMutationsEnabled })
         .finally(() => {
           skipNextNormalBillingRefreshRef.current = true;
           setConnectReturnPending(false);
@@ -335,6 +341,7 @@ export function useBillingPageController({
     canManageStudioBilling,
     connectReturnPending,
     currentRole,
+    providerMutationsEnabled,
     refreshConnectStatus,
     router,
     searchParams,
@@ -392,15 +399,13 @@ export function useBillingPageController({
   }
 
   const invoiceController = useBillingInvoiceController({
+    canReconcileInvoices: canManageRoutineBilling,
     claimAction: billingActions.claimAction,
     isPreviewMode,
     releaseAction: billingActions.releaseAction,
     refreshBilling,
     setError,
     setMessage,
-    retryStorageScope: billingConnect?.studio_id && currentUserId
-      ? `${currentUserId}:${billingConnect.studio_id}`
-      : null,
     token,
   });
 
@@ -412,6 +417,7 @@ export function useBillingPageController({
       connectEntityModal,
       error: auxiliaryReadiness.error || error,
       isLiveRestricted,
+      isPreviewMode,
       isLoading,
       isRefreshDisabled: isPreviewMode || isLoading || !canViewStudioBilling,
       message,
@@ -438,7 +444,7 @@ export function useBillingPageController({
         billingPlatform,
         billingStudentOptions,
         canManageKoaryuSubscription,
-        canManageStudioBilling,
+        canManageRoutineBilling,
         canOpenCustomerPortal,
         canOpenStripeDashboard,
         canSubmitEnrollmentForm,
@@ -451,6 +457,7 @@ export function useBillingPageController({
         hasStripeConnectedAccount,
         isEnrollmentPayerSelectDisabled,
         isPreviewMode,
+        providerMutationsEnabled,
         invoiceController,
         koaryuFeeBasis,
         onConnectClick: handleConnectClick,

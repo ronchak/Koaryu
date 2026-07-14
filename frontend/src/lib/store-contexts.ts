@@ -16,6 +16,7 @@ import type {
   CsvImportOptions,
   CsvImportResult,
   DashboardSummary,
+  DemoteStudent,
   EligibilityEntry,
   Lead,
   Program,
@@ -31,7 +32,10 @@ import type {
   StudentStatus,
   StudentUpdate,
 } from "@/types";
-import type { SessionAttendanceRefreshResult } from "@/lib/schedule-store-model";
+import type {
+  ScheduleRangeRefreshIntent,
+  SessionAttendanceRefreshResult,
+} from "@/lib/schedule-store-model";
 import type { StudentListQuery } from "@/lib/student-list-page";
 import type {
   DemoResetResponse,
@@ -118,13 +122,18 @@ export interface StoreContextValue {
     studentId: string,
     options?: { force?: boolean; signal?: AbortSignal }
   ) => Promise<Promotion[]>;
+  demoteStudent: (data: DemoteStudent) => Promise<Promotion>;
   promoteStudent: (studentId: string, toRankId: string, notes?: string) => Promise<Promotion>;
 
   sessions: ClassSession[];
   addSession: (data: ClassSessionCreate) => Promise<void>;
   addTemplate: (data: ClassTemplateCreate) => Promise<ClassTemplate>;
   deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
-  refreshScheduleRange: (startDate: string, endDate: string) => Promise<ClassSession[]>;
+  refreshScheduleRange: (
+    startDate: string,
+    endDate: string,
+    intent: ScheduleRangeRefreshIntent
+  ) => Promise<ClassSession[]>;
   refreshSessionAttendance: (sessionId: string) => Promise<SessionAttendanceRefreshResult>;
   refreshSchedule: () => Promise<void>;
   scheduleLoadError: string | null;
@@ -222,6 +231,7 @@ export type BeltsStoreContextValue = Pick<
   | "eligibilityLoadError"
   | "promotionHistoryByStudent"
   | "loadPromotionHistory"
+  | "demoteStudent"
   | "promoteStudent"
 >;
 export type ScheduleStoreContextValue = Pick<

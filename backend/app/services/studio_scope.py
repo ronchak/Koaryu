@@ -17,7 +17,13 @@ BILLING_STATUS_UNAVAILABLE_DETAIL = {
 }
 MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environment."
 STAFF_ROLE_MEMBERSHIP_COLUMNS = "studio_id, role, created_at"
-STUDIO_SELECTION_REQUIRED_DETAIL = "Select a studio before making this change."
+MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL = {
+    "code": "MULTIPLE_STUDIO_MEMBERSHIPS",
+    "message": (
+        "This account has more than one studio membership. "
+        "Contact the account owner or Koaryu support before continuing."
+    ),
+}
 
 
 def ensure_studio_record(
@@ -195,6 +201,15 @@ def resolve_optional_staff_role_for_user(
     _ = user_email
     roles = list_staff_roles_for_user(supabase, user_id)
 
+    # Friendly Pilot Core supports exactly one studio per Auth identity. Fail
+    # closed before considering a caller-controlled selector so historical
+    # duplicate memberships cannot be used to enter either tenant.
+    if len(roles) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL,
+        )
+
     if requested_studio_id:
         for role in roles:
             if role["studio_id"] == requested_studio_id:
@@ -210,16 +225,9 @@ def resolve_optional_staff_role_for_user(
     if not roles:
         return None
 
-    if require_explicit_studio_selection and len(roles) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=STUDIO_SELECTION_REQUIRED_DETAIL,
-        )
-
-    # Preserve a deterministic default for sessions that do not yet carry
-    # explicit studio selection. Prefer the most recently created membership,
-    # which matches the latest studio a user just onboarded into more often
-    # than the oldest historical membership.
+    # Kept as a compatibility parameter for existing callers. Multi-membership
+    # accounts are rejected above for both reads and writes.
+    _ = require_explicit_studio_selection
     membership = roles[0]
 
     if require_platform_subscription:
@@ -342,7 +350,7 @@ def resolve_promotion_manager_staff_role_for_user(
         user_id,
         requested_studio_id,
         allowed_roles={"admin", "instructor"},
-        detail="Only studio admins and instructors can promote students.",
+        detail="Only studio admins and instructors can promote or demote students.",
         require_platform_subscription=require_platform_subscription,
     )
 
@@ -364,6 +372,23 @@ def resolve_lead_conversion_manager_staff_role_for_user(
     )
 
 
+def resolve_lead_manager_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return _resolve_write_staff_role_for_allowed_roles(
+        supabase,
+        user_id,
+        requested_studio_id,
+        allowed_roles={"admin", "front_desk"},
+        detail="Only studio admins and front desk staff can manage leads.",
+        require_platform_subscription=require_platform_subscription,
+    )
+
+
 def resolve_billing_admin_write_staff_role_for_user(
     supabase: Client,
     user_id: str,
@@ -377,6 +402,23 @@ def resolve_billing_admin_write_staff_role_for_user(
         requested_studio_id,
         allowed_roles={"admin"},
         detail="Only studio admins can manage billing setup.",
+        require_platform_subscription=require_platform_subscription,
+    )
+
+
+def resolve_billing_routine_write_staff_role_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    require_platform_subscription: bool = False,
+) -> dict:
+    return _resolve_write_staff_role_for_allowed_roles(
+        supabase,
+        user_id,
+        requested_studio_id,
+        allowed_roles={"admin", "front_desk"},
+        detail="Only studio admins and front desk staff can perform routine billing actions.",
         require_platform_subscription=require_platform_subscription,
     )
 
@@ -438,7 +480,6 @@ def resolve_billing_admin_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
-        require_platform_subscription=require_platform_subscription,
     )
 
     if membership.get("role") != "admin":
@@ -446,6 +487,9 @@ def resolve_billing_admin_staff_role_for_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only studio admins can manage billing setup.",
         )
+
+    if require_platform_subscription:
+        ensure_platform_subscription_access(supabase, membership["studio_id"])
 
     return membership
 
@@ -461,7 +505,6 @@ def resolve_billing_manager_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
-        require_platform_subscription=require_platform_subscription,
     )
 
     if membership.get("role") not in {"admin", "front_desk"}:
@@ -469,5 +512,8 @@ def resolve_billing_manager_staff_role_for_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only studio admins and front desk staff can view billing.",
         )
+
+    if require_platform_subscription:
+        ensure_platform_subscription_access(supabase, membership["studio_id"])
 
     return membership

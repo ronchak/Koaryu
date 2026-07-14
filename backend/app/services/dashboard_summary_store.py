@@ -47,6 +47,8 @@ class DashboardSummaryStore:
         result = apply_filters(
             self.supabase.table(table).select(columns)
         ).maybe_single().execute()
+        if result is None:
+            return None
         return result.data or None
 
     def fetch_studio_summary(self, studio_id: str) -> dict[str, Any]:

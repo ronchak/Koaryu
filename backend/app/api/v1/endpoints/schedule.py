@@ -37,7 +37,7 @@ async def list_templates(
 async def create_template(
     data: ClassTemplateCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_write_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).create_template(data, studio_id, user_id)
@@ -48,7 +48,7 @@ async def update_template(
     template_id: str,
     data: ClassTemplateUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_write_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).update_template(template_id, data, studio_id, user_id)
@@ -98,7 +98,7 @@ async def materialize_session_range(
             f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
         ),
     ),
-    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
+    studio_id: str = Depends(get_current_write_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).materialize_session_range(
@@ -112,7 +112,7 @@ async def materialize_session_range(
 async def create_session(
     data: ClassSessionCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_write_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     return await ScheduleService(supabase).create_session(data, studio_id, user_id)

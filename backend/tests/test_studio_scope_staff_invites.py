@@ -3,7 +3,11 @@ from types import SimpleNamespace
 
 from fastapi import HTTPException
 
-from app.services.studio_scope import resolve_optional_staff_role_for_user, resolve_staff_role_for_user
+from app.services.studio_scope import (
+    MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL,
+    resolve_optional_staff_role_for_user,
+    resolve_staff_role_for_user,
+)
 from tests.fakes.supabase import TableBackedSupabase
 
 
@@ -33,6 +37,31 @@ class FakeSupabase(TableBackedSupabase):
 
 
 class StudioScopePendingStaffInviteTest(unittest.TestCase):
+    def test_read_resolution_fails_closed_for_historical_multi_studio_memberships(self):
+        supabase = FakeSupabase([
+            {
+                "id": "role_1",
+                "studio_id": "studio_1",
+                "user_id": "user_1",
+                "role": "admin",
+                "created_at": "2026-05-24T12:00:00+00:00",
+            },
+            {
+                "id": "role_2",
+                "studio_id": "studio_2",
+                "user_id": "user_1",
+                "role": "admin",
+                "created_at": "2026-05-23T12:00:00+00:00",
+            },
+        ])
+
+        for selector in (None, "studio_1", "studio_2"):
+            with self.subTest(selector=selector):
+                with self.assertRaises(HTTPException) as context:
+                    resolve_staff_role_for_user(supabase, "user_1", selector)
+                self.assertEqual(context.exception.status_code, 409)
+                self.assertEqual(context.exception.detail, MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL)
+
     def test_resolve_does_not_claim_pending_staff_invite_by_auth_email(self):
         supabase = FakeSupabase([
             {

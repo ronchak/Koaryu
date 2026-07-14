@@ -48,6 +48,10 @@ export function useStudentDetailPageController({
   const id = params.id as string;
   const { isPreviewMode, token } = config;
   const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
+  const canManageStudentLifecycle = hasStaffPermission(
+    config.currentRole,
+    "manage_student_lifecycle"
+  );
   const {
     deleteStudentPhoto,
     deleteStudents,
@@ -296,7 +300,7 @@ export function useStudentDetailPageController({
       await deleteStudents([id]);
       router.push("/students");
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Failed to delete student.");
+      setDeleteError(error instanceof Error ? error.message : "Failed to archive student.");
       setIsDeleting(false);
     }
   }
@@ -361,6 +365,7 @@ export function useStudentDetailPageController({
       actionMessage,
       beltLoadError,
       canManageRoster,
+      canManageStudentLifecycle,
       deleteError,
       detail,
       isDeleting,

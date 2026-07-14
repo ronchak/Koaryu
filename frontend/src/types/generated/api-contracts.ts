@@ -820,6 +820,14 @@ export interface ApiDemoResetResponse {
   counts: ApiDemoResetCounts;
 }
 
+export interface ApiDemoteStudent {
+  student_id: string;
+  to_rank_id: string;
+  student_program_membership_id?: string | null;
+  program_id?: string | null;
+  reason: string;
+}
+
 export interface ApiEligibilityEntry {
   student_id: string;
   student_program_membership_id?: string | null;
@@ -1254,7 +1262,6 @@ export interface ApiStudentResponse {
   membership_start_date?: string | null;
   program_id?: string | null;
   current_belt_rank_id?: string | null;
-  stripe_customer_id?: string | null;
   photo_path?: string | null;
   photo_url?: string | null;
   photo_updated_at?: string | null;

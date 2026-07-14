@@ -132,6 +132,7 @@ export type ClassSessionDeleteScope = ApiContracts.ApiClassSessionDeleteScope["s
 export type BeltLadder = ApiContracts.ApiBeltLadderResponse;
 export type BeltRank = ApiContracts.ApiBeltRankResponse;
 export type EligibilityEntry = ApiContracts.ApiEligibilityEntry;
+export type DemoteStudent = ApiContracts.ApiDemoteStudent;
 export type Promotion = ApiContracts.ApiPromotionResponse;
 
 // ---- Leads (Phase 5) ----

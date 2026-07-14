@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header, status
 from typing import Optional
 from supabase import Client
 from app.core.deps import (
     get_current_studio_id,
     get_current_user_id,
+    get_current_write_staff_role,
     get_current_write_studio_id,
     get_requested_studio_id,
     get_roster_schedule_manager_studio_id,
@@ -30,14 +31,24 @@ from app.schemas.student import (
 )
 from app.services.billing_service import BillingService
 from app.services.studio_scope import (
-    resolve_billing_admin_write_staff_role_for_user as resolve_billing_admin_staff_role_for_user,
     resolve_billing_manager_staff_role_for_user,
+    resolve_billing_routine_write_staff_role_for_user,
 )
 from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES, validate_csv_import_mapping
 from app.services.student_service import StudentService
 import json
 
 router = APIRouter(prefix="/students", tags=["students"])
+
+INSTRUCTOR_RESTRICTED_STUDENT_UPDATE_FIELDS = {
+    "status",
+    "hold_start_date",
+    "hold_end_date",
+    "membership_start_date",
+    "program_id",
+    "program_ids",
+    "current_belt_rank_id",
+}
 
 
 def parse_import_request(
@@ -104,7 +115,7 @@ async def list_students(
 async def create_student(
     data: StudentCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_write_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -126,11 +137,18 @@ async def update_student(
     student_id: str,
     data: StudentUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_write_studio_id),
+    membership: dict = Depends(get_current_write_staff_role),
     supabase: Client = Depends(get_supabase),
 ):
+    if membership.get("role") == "instructor" and (
+        data.model_fields_set & INSTRUCTOR_RESTRICTED_STUDENT_UPDATE_FIELDS
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructors can update ordinary student profile information only.",
+        )
     service = StudentService(supabase)
-    return await service.update_student(student_id, data, studio_id, user_id)
+    return await service.update_student(student_id, data, membership["studio_id"], user_id)
 
 
 @router.post("/{student_id}/photo", response_model=StudentResponse)
@@ -182,7 +200,7 @@ async def add_student_program(
     student_id: str,
     data: StudentProgramMembershipCreate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_write_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -195,7 +213,7 @@ async def update_student_program(
     membership_id: str,
     data: StudentProgramMembershipUpdate,
     user_id: str = Depends(get_current_user_id),
-    studio_id: str = Depends(get_current_write_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     service = StudentService(supabase)
@@ -238,12 +256,17 @@ async def add_student_billing_enrollment(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = resolve_billing_admin_staff_role_for_user(
+    studio_id = resolve_billing_routine_write_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
         require_platform_subscription=True,
     )["studio_id"]
+    if data.collection_mode != "external":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Friendly Pilot billing attachments support external collection only.",
+        )
     payload = StudentBillingEnrollmentCreate(student_id=student_id, **data.model_dump())
     return await BillingService(supabase).add_student_billing_enrollment(payload, studio_id, user_id)
 

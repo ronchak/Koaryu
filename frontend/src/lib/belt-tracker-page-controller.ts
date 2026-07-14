@@ -47,6 +47,7 @@ export function useBeltTrackerPageController({
     beltLadders,
     beltRanks,
     currentLadderId,
+    demoteStudent,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
@@ -88,6 +89,11 @@ export function useBeltTrackerPageController({
   const [promotionError, setPromotionError] = useState<string | null>(null);
   const [isPromoting, setIsPromoting] = useState(false);
   const promotionInFlightRef = useRef(false);
+  const [demoteEntry, setDemoteEntry] = useState<EligibilityEntry | null>(null);
+  const [demotionReason, setDemotionReason] = useState("");
+  const [demotionError, setDemotionError] = useState<string | null>(null);
+  const [isDemoting, setIsDemoting] = useState(false);
+  const demotionInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!programsLoaded && !programsLoadError) {
@@ -129,6 +135,17 @@ export function useBeltTrackerPageController({
     () => new Map(eligibilityRanks.map((rank) => [rank.id, rank])),
     [eligibilityRanks]
   );
+  const previousRankByCurrentRankId = useMemo(() => {
+    const orderedRanks = [...eligibilityRanks].sort(
+      (left, right) => left.display_order - right.display_order
+    );
+    return new Map(
+      orderedRanks.slice(1).map((rank, index) => [rank.id, orderedRanks[index]])
+    );
+  }, [eligibilityRanks]);
+  const demotionTargetRank = demoteEntry?.current_rank_id
+    ? previousRankByCurrentRankId.get(demoteEntry.current_rank_id) ?? null
+    : null;
   const eligibilityMatchesLadder = Boolean(currentLadder?.id && eligibilityLadderId === currentLadder.id);
   const visibleEligibility = useMemo(
     () => eligibilityMatchesLadder ? eligibility : [],
@@ -358,6 +375,53 @@ export function useBeltTrackerPageController({
     }
   }
 
+  const handleStartDemotion = useCallback((entry: EligibilityEntry) => {
+    if (!canPromoteStudents || !entry.current_rank_id) return;
+    if (!previousRankByCurrentRankId.has(entry.current_rank_id)) return;
+    setDemotionError(null);
+    setDemotionReason("");
+    setDemoteEntry(entry);
+  }, [canPromoteStudents, previousRankByCurrentRankId]);
+
+  async function handleConfirmDemotion() {
+    if (
+      !canPromoteStudents
+      || !demoteEntry
+      || !demotionTargetRank
+      || demotionInFlightRef.current
+    ) return;
+
+    const reason = demotionReason.trim();
+    if (!reason) {
+      setDemotionError("Add a reason so this demotion is auditable.");
+      return;
+    }
+
+    demotionInFlightRef.current = true;
+    setIsDemoting(true);
+    setDemotionError(null);
+    try {
+      await demoteStudent({
+        student_id: demoteEntry.student_id,
+        to_rank_id: demotionTargetRank.id,
+        student_program_membership_id: demoteEntry.student_program_membership_id,
+        program_id: demoteEntry.program_id,
+        reason,
+      });
+      setActionMessage(
+        `${demoteEntry.student_name} demoted to ${demotionTargetRank.name}.`
+      );
+      setDemoteEntry(null);
+      setDemotionReason("");
+    } catch (error) {
+      console.error("Failed to demote student", error);
+      setDemotionError("Could not record the demotion. Please try again.");
+    } finally {
+      demotionInFlightRef.current = false;
+      setIsDemoting(false);
+    }
+  }
+
   return {
     dialogsProps: {
       addBeltModalOpen: canConfigureBelts && addBeltModal,
@@ -365,6 +429,11 @@ export function useBeltTrackerPageController({
       deleteRank: canConfigureBelts ? deleteRank : null,
       editRank: canConfigureBelts ? editRank : null,
       groups,
+      demoteEntry: canPromoteStudents ? demoteEntry : null,
+      demotionError,
+      demotionReason,
+      demotionTargetRank,
+      isDemoting,
       isPromoting,
       onAddBeltClose: () => setAddBeltModal(false),
       onAddBeltSave: handleAddBelt,
@@ -375,14 +444,23 @@ export function useBeltTrackerPageController({
         setPromotionError(null);
         setPromotionNotes("");
       },
+      onCancelDemotion: () => {
+        setDemoteEntry(null);
+        setDemotionError(null);
+        setDemotionReason("");
+      },
+      onCloseDemotion: () => setDemoteEntry(null),
+      onConfirmDemotion: handleConfirmDemotion,
       onClosePromotion: () => setPromoteEntry(null),
       onConfirmDelete: handleDelete,
       onConfirmPromotion: handleConfirmPromotion,
       onDeleteCancel: () => setDeleteRankId(null),
       onDismissPromotionError: () => setPromotionError(null),
+      onDismissDemotionError: () => setDemotionError(null),
       onEditClose: () => setEditRankId(null),
       onEditSave: handleEdit,
       onPromotionNotesChange: setPromotionNotes,
+      onDemotionReasonChange: setDemotionReason,
       promoteEntry: canPromoteStudents ? promoteEntry : null,
       promotionError,
       promotionNotes,
@@ -406,10 +484,12 @@ export function useBeltTrackerPageController({
       onDismissLadderError: () => setLadderError(null),
       onDismissProgramsLoadError: () => dismissLoadNotice("programs", programsLoadError),
       onStartPromotion: handleStartPromotion,
+      onStartDemotion: handleStartDemotion,
       onToggleGroup: toggleEligibilityGroup,
       onViewStudents: () => window.location.assign("/students"),
       programsLoadError,
       rankById,
+      previousRankByCurrentRankId,
       selectedProgramName: selectedProgram?.name ?? null,
     },
     rankPlanPanelProps: {

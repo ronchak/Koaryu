@@ -81,6 +81,7 @@ export function useStudentsPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
+  const canCreateStudents = hasStaffPermission(config.currentRole, "create_students");
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = programsStore;
   const {
     attendance,
@@ -177,7 +178,7 @@ export function useStudentsPageController({
     setInactivityScheduleError(null);
     setInactivityScheduleStatus("loading");
     try {
-      await refreshScheduleRange(range.startDate, range.endDate);
+      await refreshScheduleRange(range.startDate, range.endDate, "read");
       if (inactivityScheduleRequestSeqRef.current === requestSequence) {
         setInactivityScheduleStatus("ready");
       }
@@ -516,10 +517,10 @@ export function useStudentsPageController({
         await reloadVisibleRosterAfterMutation("delete");
       }
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Failed to delete selected students.");
+      setDeleteError(error instanceof Error ? error.message : "Failed to archive selected students.");
       if (!usesDerivedRosterFilters) {
         void reloadVisibleRoster().catch((refreshError) => {
-          console.error("Failed to refresh students after delete error", refreshError);
+          console.error("Failed to refresh students after archive error", refreshError);
         });
       }
     } finally {
@@ -608,6 +609,7 @@ export function useStudentsPageController({
   }
 
   async function handleAddStudent(data: StudentCreate) {
+    if (!canCreateStudents) return;
     setIsAdding(true);
     try {
       await addStudent(data);
@@ -634,6 +636,7 @@ export function useStudentsPageController({
       allSelected,
       bulkActionError,
       bulkStatus,
+      canCreateStudents,
       canManageRoster,
       deleteError,
       filtered,
@@ -652,7 +655,9 @@ export function useStudentsPageController({
       isUpdatingStatus,
       newStudentDays,
       newStudentStartDate,
-      onAddStudent: () => setShowForm(true),
+      onAddStudent: () => {
+        if (canCreateStudents) setShowForm(true);
+      },
       onAddStudentSubmit: handleAddStudent,
       onAddTags: handleAddTags,
       onBulkStatusChange: setBulkStatus,

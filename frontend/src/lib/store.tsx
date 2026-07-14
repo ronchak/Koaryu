@@ -59,6 +59,7 @@ import {
   MOCK_STAFF_MEMBERS,
 } from "@/lib/preview-studio-data";
 import {
+  buildScheduleRangeRequest,
   createScheduleReconciliationQueue,
   createScheduleCoordinatorState,
   compareSessions,
@@ -72,7 +73,7 @@ import {
   resolveScheduleReconciliationRange,
   resetScheduleCoordinatorState,
   shouldPreserveScheduleMutationsOnAuthChange,
-  shouldReconcileSchedule,
+  type ScheduleRangeRefreshIntent,
 } from "@/lib/schedule-store-model";
 import { useStoreBeltActions } from "@/lib/store-belt-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
@@ -107,7 +108,7 @@ import {
   sortPrograms,
 } from "@/lib/program-store-model";
 import { loadIndependentDataset } from "@/lib/page-dataset-readiness";
-import { hasStaffPermission } from "@/lib/staff-permissions";
+import { canMaterializeScheduleRange } from "@/lib/staff-permissions";
 
 export {
   useBeltStore,
@@ -184,6 +185,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const attendanceRef = useRef<AttendanceRecord[]>(attendance);
   const scheduleCoordinatorRef = useRef(createScheduleCoordinatorState());
   const scheduleReconciliationQueueRef = useRef(createScheduleReconciliationQueue());
+  const scheduleReconciliationScopeRef = useRef(0);
+  const destructivelyResetScheduleCoordinator = useCallback((
+    hasAuthoritativeSnapshot = false
+  ) => {
+    scheduleReconciliationScopeRef.current += 1;
+    scheduleReconciliationQueueRef.current.invalidate(
+      scheduleReconciliationScopeRef.current
+    );
+    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
+      scheduleCoordinatorRef.current,
+      hasAuthoritativeSnapshot
+    );
+  }, []);
   const [scheduleStatus, setScheduleStatus] = useState<"idle" | "loading" | "ready" | "error">(
     isPreviewMode ? "ready" : "idle"
   );
@@ -257,7 +271,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const reconcileScheduleAttempt = useCallback(async () => {
+  const reconcileScheduleAttempt = useCallback(async (
+    intent: ScheduleRangeRefreshIntent
+  ) => {
     const request = beginLiveAuthRequest();
     const coordinator = scheduleCoordinatorRef.current;
     const { startDate, endDate } = resolveScheduleReconciliationRange(
@@ -274,10 +290,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       rangeRequestSequence,
     };
 
-    const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
-    const sessionsRequest = hasStaffPermission(currentRole, "manage_schedule")
-      ? api.post<ClassSession[]>(`/schedule/sessions/materialize?${rangeQuery}`, {}, request.token)
-      : api.get<ClassSession[]>(`/schedule/sessions?${rangeQuery}`, request.token);
+    const rangeRequest = buildScheduleRangeRequest(
+      startDate,
+      endDate,
+      intent,
+      canMaterializeScheduleRange(currentRole)
+    );
+    const sessionsRequest = rangeRequest.method === "POST"
+      ? api.post<ClassSession[]>(rangeRequest.path, {}, request.token)
+      : api.get<ClassSession[]>(rangeRequest.path, request.token);
     const [templatesResult, sessionsResult, attendanceResult] = await Promise.allSettled([
       api.get<ClassTemplate[]>("/schedule/templates", request.token),
       sessionsRequest,
@@ -352,13 +373,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setScheduleStatus("ready");
   }, [beginLiveAuthRequest, currentRole]);
 
-  const reconcileSchedule = useCallback(async () => {
+  const reconcileSchedule = useCallback(async (intent: ScheduleRangeRefreshIntent) => {
     const requestToken = tokenRef.current;
     const requestGeneration = authGenerationRef.current;
     try {
       await scheduleReconciliationQueueRef.current(
-        reconcileScheduleAttempt,
-        () => shouldReconcileSchedule(scheduleCoordinatorRef.current)
+        () => reconcileScheduleAttempt(intent),
+        () => !scheduleCoordinatorRef.current.hasAuthoritativeSnapshot,
+        intent,
+        () => scheduleCoordinatorRef.current.mutationsInFlight === 0,
+        scheduleReconciliationScopeRef.current
       );
     } catch (error) {
       if (
@@ -399,7 +423,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setScheduleStatus("loading");
 
     try {
-      await reconcileSchedule();
+      await reconcileSchedule("read");
       if (isCurrent()) {
         if (isAuthoritativeScheduleReady(scheduleCoordinatorRef.current)) {
           setScheduleStatus("ready");
@@ -554,9 +578,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLadderNameState(state.ladderName);
     setSubRankTermState(state.subRankTerm);
     setBeltRanksState(state.beltRanks);
-    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
-      scheduleCoordinatorRef.current
-    );
+    destructivelyResetScheduleCoordinator();
     setScheduleLoadError(state.scheduleLoadError);
     setScheduleStatus(state.scheduleStatus);
     setSessions(state.sessions);
@@ -569,7 +591,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [updateCurrentLadderId]);
+  }, [destructivelyResetScheduleCoordinator, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
@@ -615,12 +637,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStudentsLoadError(restored.studentsLoadError);
     setLeadsLoaded(restored.leadsLoaded);
     setLeadsLoadError(restored.leadsLoadError);
-    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
-      scheduleCoordinatorRef.current
-    );
+    destructivelyResetScheduleCoordinator();
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
-  }, []);
+  }, [destructivelyResetScheduleCoordinator]);
 
   useEffect(() => {
     if (!hydrated || !subscriptionRequired || pathname === "/subscription-required") {
@@ -632,10 +652,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
     dashboardSummaryRequestSeqRef.current += 1;
-    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
-      scheduleCoordinatorRef.current,
-      true
-    );
+    destructivelyResetScheduleCoordinator(true);
     setStudioNameState(data.studio_name);
     commitStudents(data.students);
     setPrograms(data.programs || programsRef.current);
@@ -659,14 +676,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents]);
+  }, [applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
     dashboardSummaryRequestSeqRef.current += 1;
-    scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
-      scheduleCoordinatorRef.current,
-      true
-    );
+    destructivelyResetScheduleCoordinator(true);
     if (studioNameValue) {
       setStudioNameState(studioNameValue);
       save(KEYS.studioName, studioNameValue);
@@ -699,6 +713,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
+    destructivelyResetScheduleCoordinator,
     isPreviewMode,
     updateCurrentLadderId,
   ]);
@@ -871,9 +886,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (tokenRef.current !== sessionToken) {
         authGenerationRef.current += 1;
         dashboardSummaryRequestSeqRef.current += 1;
-        scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
-          scheduleCoordinatorRef.current
-        );
+        destructivelyResetScheduleCoordinator();
       }
       const sessionGeneration = authGenerationRef.current;
       const isCurrentSession = () =>
@@ -1290,23 +1303,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (session) {
         const tokenChanged = tokenRef.current !== session.access_token;
         if (tokenChanged) {
+          const preservesScheduleGeneration = shouldPreserveScheduleMutationsOnAuthChange(
+            event,
+            authUserIdRef.current,
+            session.user.id
+          );
           setScheduleLoadError(null);
           setScheduleStatus("loading");
           authGenerationRef.current += 1;
           dashboardSummaryRequestSeqRef.current += 1;
-          scheduleCoordinatorRef.current = shouldPreserveScheduleMutationsOnAuthChange(
-            event,
-            authUserIdRef.current,
-            session.user.id
-          )
-            ? refreshScheduleCoordinatorAuthState(scheduleCoordinatorRef.current)
-            : resetScheduleCoordinatorState(scheduleCoordinatorRef.current);
+          if (preservesScheduleGeneration) {
+            scheduleCoordinatorRef.current = refreshScheduleCoordinatorAuthState(
+              scheduleCoordinatorRef.current
+            );
+          } else {
+            destructivelyResetScheduleCoordinator();
+          }
         }
         tokenRef.current = session.access_token;
         authUserIdRef.current = session.user.id;
         setToken(session.access_token);
         if (tokenChanged) {
-          void reconcileSchedule().catch((error) => {
+          void reconcileSchedule("read").catch((error) => {
             console.error("Failed to reconcile schedule after an auth token change", error);
           });
         }
@@ -1324,7 +1342,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1464,6 +1482,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Belt tracker ──
   const {
+    demoteStudent,
     loadPromotionHistory,
     promoteStudent,
     setBeltRanks,
@@ -1588,6 +1607,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     deleteSession,
     deleteStudentPhoto,
     deleteStudents,
+    demoteStudent,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
