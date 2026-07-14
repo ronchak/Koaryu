@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL = "Idempotency-Key is required for external payments."
 EXTERNAL_PAYMENT_OVERPAY_DETAIL = "External payment exceeds the invoice remaining balance."
+EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL = "External payments must target a payer or invoice."
 
 
 def build_external_payment_request_hash(
@@ -160,6 +161,9 @@ class BillingPaymentManager:
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingPaymentResponse:
+        if not data.payer_id and not data.invoice_id:
+            raise HTTPException(status_code=400, detail=EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL)
+
         invoice = None
         if data.invoice_id:
             invoice = self._get_row_or_404("billing_invoices", data.invoice_id, studio_id, "Invoice not found.")

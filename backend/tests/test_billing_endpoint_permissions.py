@@ -4,10 +4,12 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from fastapi import BackgroundTasks, HTTPException, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, status
+from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import billing as billing_endpoints
 from app.api.v1.endpoints import students as student_endpoints
+from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.main import app
 from app.schemas.billing import (
     BillingInvoiceCreate,
@@ -460,6 +462,53 @@ class BillingEndpointPermissionTest(unittest.TestCase):
 
         self.assertEqual(enrollment_error.exception.status_code, 409)
         self.assertEqual(payment_error.exception.status_code, 409)
+        self.assertEqual(
+            payment_error.exception.detail,
+            billing_endpoints.PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL,
+        )
+        service.assert_not_called()
+
+    def test_contract_only_external_payment_http_boundary_rejects_missing_or_invoice_targets(self):
+        test_app = FastAPI()
+        test_app.include_router(billing_endpoints.router)
+        test_app.dependency_overrides[get_current_user_id] = lambda: "admin_1"
+        test_app.dependency_overrides[get_requested_studio_id] = lambda: "studio_1"
+        test_app.dependency_overrides[get_supabase] = lambda: object()
+
+        rejected_payloads = (
+            {"amount_cents": 1000, "external_method": "cash"},
+            {"invoice_id": "invoice_1", "amount_cents": 1000, "external_method": "cash"},
+            {
+                "payer_id": "payer_1",
+                "invoice_id": "invoice_1",
+                "amount_cents": 1000,
+                "external_method": "cash",
+            },
+        )
+
+        with (
+            patch(
+                "app.api.v1.endpoints.billing._routine_studio_id",
+                return_value="studio_1",
+            ) as routine_studio,
+            patch("app.api.v1.endpoints.billing.BillingService") as service,
+        ):
+            client = TestClient(test_app)
+            for payload in rejected_payloads:
+                with self.subTest(payload=payload):
+                    response = client.post(
+                        "/billing/payments/external",
+                        headers={"Idempotency-Key": "payment-key"},
+                        json=payload,
+                    )
+
+                    self.assertEqual(response.status_code, 409, response.text)
+                    self.assertEqual(
+                        response.json(),
+                        {"detail": billing_endpoints.PAYER_EXTERNAL_PAYMENT_ONLY_DETAIL},
+                    )
+
+        self.assertEqual(routine_studio.call_count, len(rejected_payloads))
         service.assert_not_called()
 
     def test_front_desk_can_create_student_scoped_external_enrollment_only(self):

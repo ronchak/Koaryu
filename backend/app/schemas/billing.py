@@ -558,12 +558,6 @@ class ExternalPaymentCreate(BaseModel):
     external_method: str = Field(min_length=1, max_length=80)
     note: Optional[str] = None
 
-    @model_validator(mode="after")
-    def require_payment_target(self) -> "ExternalPaymentCreate":
-        if not self.payer_id and not self.invoice_id:
-            raise ValueError("External payments must target a payer or invoice.")
-        return self
-
 
 class ExportJobCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
