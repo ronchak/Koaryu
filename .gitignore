@@ -29,6 +29,9 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Supabase CLI state
+supabase/.temp/
+
 # IDEs
 .vscode/
 .idea/
