@@ -476,6 +476,35 @@ describe("schedule store model", () => {
     assert.deepEqual(calls, ["old-read", "new-auth-read"]);
   });
 
+  it("invalidates queued materialization on reset without requiring a replacement request", async () => {
+    const requestReconciliation = createScheduleReconciliationQueue();
+    const calls = [];
+    let releaseRead;
+    let markReadStarted;
+    const readStarted = new Promise((resolve) => {
+      markReadStarted = resolve;
+    });
+    const readBlocked = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+
+    const oldRead = requestReconciliation(async () => {
+      calls.push("old-read");
+      markReadStarted();
+      await readBlocked;
+    }, () => true, "read", () => true, 1);
+    await readStarted;
+    const oldMaterialize = requestReconciliation(async () => {
+      calls.push("stale-materialize");
+    }, () => true, "materialize", () => true, 1);
+
+    requestReconciliation.invalidate(2);
+    releaseRead();
+    await Promise.all([oldRead, oldMaterialize]);
+
+    assert.deepEqual(calls, ["old-read"]);
+  });
+
   it("preserves deferred materialization across a same-generation token refresh", async () => {
     const requestReconciliation = createScheduleReconciliationQueue();
     const calls = [];

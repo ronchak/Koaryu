@@ -348,10 +348,22 @@ export function shouldReconcileSchedule(current: ScheduleCoordinatorState) {
   return current.mutationsInFlight === 0 && !current.hasAuthoritativeSnapshot;
 }
 
-export function createScheduleReconciliationQueue() {
+export type ScheduleReconciliationQueue = {
+  (
+    attempt: () => Promise<void>,
+    shouldRun: () => boolean,
+    intent?: ScheduleRangeRefreshIntent,
+    isExecutionSafe?: () => boolean,
+    generation?: number
+  ): Promise<void>;
+  invalidate: (minimumGeneration: number) => void;
+};
+
+export function createScheduleReconciliationQueue(): ScheduleReconciliationQueue {
   let inFlight: Promise<void> | null = null;
   let activeGeneration: number | null = null;
   let activeIntent: ScheduleRangeRefreshIntent | null = null;
+  let minimumGeneration = 0;
   let pendingRequest: {
     attempt: () => Promise<void>;
     generation: number;
@@ -392,13 +404,16 @@ export function createScheduleReconciliationQueue() {
     }
   };
 
-  return function requestScheduleReconciliation(
+  const requestScheduleReconciliation = function (
     attempt: () => Promise<void>,
     shouldRun: () => boolean,
     intent: ScheduleRangeRefreshIntent = "read",
     isExecutionSafe: () => boolean = () => true,
     generation = 0
   ): Promise<void> {
+    if (generation < minimumGeneration) {
+      return inFlight ?? Promise.resolve();
+    }
     const request = {
       attempt,
       forceRun: false,
@@ -430,6 +445,15 @@ export function createScheduleReconciliationQueue() {
     const run = async () => {
       let currentRequest = requestToRun;
       while (currentRequest) {
+        if (currentRequest.generation < minimumGeneration) {
+          const nextRequest = pendingRequest;
+          pendingRequest = null;
+          if (nextRequest) {
+            currentRequest = nextRequest;
+            continue;
+          }
+          return;
+        }
         activeGeneration = currentRequest.generation;
         activeIntent = currentRequest.intent;
         let attemptError: unknown;
@@ -455,6 +479,16 @@ export function createScheduleReconciliationQueue() {
             attemptError = error;
             attemptFailed = true;
           }
+        }
+
+        if (currentRequest.generation < minimumGeneration) {
+          const nextRequest = pendingRequest;
+          pendingRequest = null;
+          if (nextRequest) {
+            currentRequest = nextRequest;
+            continue;
+          }
+          return;
         }
 
         const nextRequest = pendingRequest;
@@ -489,7 +523,16 @@ export function createScheduleReconciliationQueue() {
     };
     void runPromise.then(clearInFlight, clearInFlight);
     return runPromise;
+  } as ScheduleReconciliationQueue;
+
+  requestScheduleReconciliation.invalidate = (nextMinimumGeneration: number) => {
+    minimumGeneration = Math.max(minimumGeneration, nextMinimumGeneration);
+    if (pendingRequest && pendingRequest.generation < minimumGeneration) {
+      pendingRequest = null;
+    }
   };
+
+  return requestScheduleReconciliation;
 }
 
 export function isScheduleReadCurrent({

@@ -190,6 +190,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     hasAuthoritativeSnapshot = false
   ) => {
     scheduleReconciliationScopeRef.current += 1;
+    scheduleReconciliationQueueRef.current.invalidate(
+      scheduleReconciliationScopeRef.current
+    );
     scheduleCoordinatorRef.current = resetScheduleCoordinatorState(
       scheduleCoordinatorRef.current,
       hasAuthoritativeSnapshot
