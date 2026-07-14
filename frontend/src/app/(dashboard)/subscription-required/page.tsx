@@ -166,8 +166,8 @@ export default function SubscriptionRequiredPage() {
                 </div>
                 <div className="space-y-2">
                   <CheckCircle2 className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-medium text-text-primary">Live Stripe remains closed</p>
-                  <p className="text-sm leading-6 text-text-secondary">Provider mutations require a separate approval.</p>
+                  <p className="text-sm font-medium text-text-primary">Live Stripe remains disabled</p>
+                  <p className="text-sm leading-6 text-text-secondary">Provider writes are currently unavailable.</p>
                 </div>
                 <div className="space-y-2">
                   <CheckCircle2 className="h-4 w-4 text-accent" />
@@ -200,7 +200,7 @@ export default function SubscriptionRequiredPage() {
               <div className="min-w-0">
                 {isAdmin ? (
                   <p className="text-sm text-text-secondary">
-                    Koaryu Core checkout and portal actions require a separate live Stripe approval.
+                    Koaryu Core checkout and portal actions are currently disabled.
                     Contact support to restore access for this studio.
                   </p>
                 ) : (

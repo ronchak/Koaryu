@@ -12,7 +12,7 @@ export function BillingPlansTab({ billingPlans }: { billingPlans: BillingPlan[] 
         <SectionHeader
           icon={Receipt}
           title="Tuition plans are read-only"
-          description="Friendly Pilot displays existing local and provider references. Creating or syncing plans is outside this release."
+          description="Koaryu displays existing local and provider references. Creating or syncing plans is currently unavailable."
         />
       </section>
 

@@ -7,7 +7,7 @@ const pageSource = readFileSync(
   "utf8"
 );
 
-describe("subscription-required Friendly Pilot contract", () => {
+describe("subscription-required billing contract", () => {
   it("keeps the page read-only and routes blocked studios to support", () => {
     assert.doesNotMatch(pageSource, /api\.post/);
     assert.doesNotMatch(pageSource, /platform-billing\/(?:checkout|portal)/);
@@ -23,7 +23,7 @@ describe("subscription-required Friendly Pilot contract", () => {
     assert.match(pageSource, /showAdminBillingDetails = isAdmin && billingStatus !== null/);
     assert.match(pageSource, /Billing details are limited to studio administrators/);
     assert.match(pageSource, /No subscription status, price, or payment details are shown/);
-    assert.match(pageSource, /separate live Stripe approval/i);
+    assert.match(pageSource, /checkout and portal actions are currently disabled/i);
     assert.match(pageSource, /mailto:support@koaryu\.app/);
   });
 });

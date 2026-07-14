@@ -7,7 +7,7 @@ const panelSource = readFileSync(
   "utf8"
 );
 
-describe("Friendly Pilot report export catalog", () => {
+describe("report export catalog", () => {
   it("does not ship the deferred raw billing CSV catalog in Reports", () => {
     assert.doesNotMatch(panelSource, /title:\s*["']Billing["']/);
     assert.doesNotMatch(

@@ -36,7 +36,7 @@ const principles = [
   {
     title: "Studio data should stay understandable",
     description:
-      "Student, guardian, attendance, rank, lead, and supported billing records stay visible and scoped to the school; billing exports are not part of Friendly Pilot.",
+      "Student, guardian, attendance, rank, lead, and supported billing records stay visible and scoped to the school; new billing exports are currently unavailable.",
     icon: ShieldCheck,
   },
   {
@@ -131,16 +131,16 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl">
           <ScrollReveal>
             <div className="max-w-3xl">
-              <p className="text-xs font-medium uppercase tracking-widest text-accent">Friendly Pilot Core</p>
+              <p className="text-xs font-medium uppercase tracking-widest text-accent">Koaryu</p>
               <h2 className="mt-4 text-3xl font-semibold sm:text-4xl">
                 Reliable daily operations for one independent studio.
               </h2>
               <p className="mt-5 text-sm leading-7 text-text-secondary">
-                Friendly Pilot Core supports one studio per user with explicit Admin,
+                Koaryu supports one studio per user with explicit Admin,
                 Front Desk, and Instructor boundaries. It centers the roster, ranks,
                 schedule, attendance, leads, and honest visibility into existing billing
                 records. Provider-backed billing changes and live Stripe activation are
-                separate releases, not hidden promises inside this one.
+                currently unavailable.
               </p>
             </div>
           </ScrollReveal>

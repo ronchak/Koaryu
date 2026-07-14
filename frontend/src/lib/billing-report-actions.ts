@@ -34,7 +34,7 @@ export function useBillingReportActions({
   async function handleCreateExport(exportType: string) {
     void exportType;
     void setExportJobs;
-    runtime.setError("Billing exports are not enabled for the Friendly Pilot release.");
+    runtime.setError("New billing exports are currently unavailable.");
   }
 
   async function handleRecordExternalPayment(event: FormEvent<HTMLFormElement>) {

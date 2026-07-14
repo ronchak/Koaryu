@@ -62,7 +62,7 @@ export function BillingReportsTab({
       </p>
 
       <section className="border border-border bg-surface rounded-[6px] p-5">
-        <SectionHeader icon={Download} title="Billing exports are read-only" description="New CSV exports are not enabled for Friendly Pilot. Existing job history remains visible for operational context." />
+        <SectionHeader icon={Download} title="Billing exports are read-only" description="New CSV exports are currently unavailable. Existing job history remains visible for operational context." />
         {exportJobs.length ? (
           <div className="mt-4 divide-y divide-border border border-border rounded-[6px]">
             {exportJobs.map((job) => (

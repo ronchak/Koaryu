@@ -26,7 +26,7 @@ import {
   type SetupStep,
 } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
-import { FRIENDLY_PILOT_BILLING_BOUNDARY_MESSAGE } from "@/lib/billing-pilot-policy";
+import { BILLING_BOUNDARY_MESSAGE } from "@/lib/billing-policy";
 
 export type BillingTab = "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
 export type BillingSetupStep = SetupStep;
@@ -114,7 +114,7 @@ export function BillingPageFrame({
               <section className="rounded-[6px] border border-warning/40 bg-warning/5 p-4 text-xs text-text-secondary">
                 {isPreviewMode
                   ? "Preview mode uses demo-only billing actions and does not change provider state."
-                  : FRIENDLY_PILOT_BILLING_BOUNDARY_MESSAGE}
+                  : BILLING_BOUNDARY_MESSAGE}
               </section>
 
               {showContent ? children : null}
@@ -156,7 +156,7 @@ export function BillingSetupNavigation({
       <OverviewPanel>
         <OverviewPanelHeader
           eyebrow={`${completedStepCount} / ${steps.length} complete`}
-          title="Friendly Pilot billing review"
+          title="Billing review"
           description="Review current provider state, plans, and families; attach external billing records; then record external payments or reconcile invoices."
         />
         <SetupStepList steps={steps} />

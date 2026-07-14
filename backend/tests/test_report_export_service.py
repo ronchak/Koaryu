@@ -37,7 +37,7 @@ def student_row(index: int, *, studio_id: str = "studio-1") -> dict:
 
 
 class ReportExportServiceTest(unittest.TestCase):
-    def test_deferred_billing_reports_are_not_in_friendly_pilot_catalog(self):
+    def test_deferred_billing_reports_are_not_in_available_catalog(self):
         service = ReportExportService(TableBackedSupabase({}))
         deferred_reports = build_billing_table_report_catalog(ReportExportService)
 

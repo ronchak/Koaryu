@@ -19,5 +19,5 @@ def build_report_catalog(report_service_cls: Any) -> dict[str, CsvReport]:
     return {
         report_id: report
         for report_id, report in complete_catalog.items()
-        if report.availability == "friendly_pilot_core"
+        if report.availability == "available"
     }

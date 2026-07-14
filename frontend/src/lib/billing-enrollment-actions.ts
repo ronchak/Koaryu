@@ -35,7 +35,7 @@ export function useBillingEnrollmentActions({
   async function handleEnrollmentAction(enrollmentId: string, action: "pause" | "resume" | "cancel") {
     void enrollmentId;
     void action;
-    runtime.setError("Enrollment lifecycle changes are not enabled for the Friendly Pilot release.");
+    runtime.setError("Enrollment lifecycle changes are currently unavailable.");
   }
 
   async function handleEnrollmentModeUpdate(
@@ -44,7 +44,7 @@ export function useBillingEnrollmentActions({
   ) {
     void enrollmentId;
     void collectionMode;
-    runtime.setError("Collection-mode changes are not enabled for the Friendly Pilot release.");
+    runtime.setError("Collection-mode changes are currently unavailable.");
   }
 
   async function handleCreateEnrollment(event: FormEvent<HTMLFormElement>) {
