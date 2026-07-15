@@ -297,7 +297,7 @@ stripe events resend evt_... --webhook-endpoint we_...
 
 ### Future Koaryu Payments Test-Mode Rehearsal
 
-This is a future, separately scoped provider-lifecycle rehearsal, not a Friendly Pilot Core release checklist. Run it only after an explicit narrow test-mode approval against isolated staging and Stripe test mode. It does not authorize a production application deploy, a production migration, or live payments:
+This is a future, separately scoped provider-lifecycle rehearsal, not part of the routine Koaryu release checklist. Run it only after explicit narrow test-mode approval against isolated staging and Stripe test mode. It does not authorize a production application deploy, a production migration, or live payments:
 
 - Confirm `/health` and `/api/v1/health` are green on Render.
 - Confirm the Stripe Dashboard shows successful deliveries to both platform and Connect endpoints.
@@ -312,9 +312,9 @@ This is a future, separately scoped provider-lifecycle rehearsal, not a Friendly
 - Use Stripe's `pm_card_createDispute` test PaymentMethod and confirm `charge.dispute.created` projects into `billing_disputes`.
 - Run a reconciliation pass for any object whose webhook delivery was missed or delayed.
 
-### Friendly Pilot Studio Checklist
+### Koaryu Studio Checklist
 
-Before daily pilot use at a dojo:
+Before daily use at a dojo:
 
 - Confirm Render and Vercel both deployed the same intended commit.
 - Confirm `/health/live`, `/health/ready`, and their `/api/v1` aliases are green from the studio network or hotspot.
@@ -322,12 +322,12 @@ Before daily pilot use at a dojo:
 - Verify Admin and Front Desk can read existing billing state and use only external-only local attachment, payer-level external-payment recording, and read-based reconciliation of an existing Stripe-linked invoice.
 - Verify an Instructor receives the billing access-denied page before any billing data is shown or fetched.
 - Confirm `LIVE_BILLING_ENABLED=false`; do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
-- Use the preserved production pilot dataset. Do not reset, replace, clean, or reseed production records.
+- Use the preserved production dataset. Do not reset, replace, clean, or reseed production records.
 - Keep `DEMO_RESET_STUDIO_IDS` empty in production; in demo/staging, list only disposable studio IDs that demo reset or clear-studio-data may target.
 
 ### Billing Readiness and Recovery
 
-The broad authenticated system-status and reconciliation endpoints below are Admin-only support surfaces, not ordinary Friendly Pilot controls. The supported routine invoice action is the invoice-specific read-based reconciliation documented in [Friendly Pilot Billing Boundary](friendly-pilot-billing-boundary.md).
+The broad authenticated system-status and reconciliation endpoints below are Admin-only support surfaces, not ordinary Koaryu controls. The supported routine invoice action is the invoice-specific read-based reconciliation documented in [Billing Boundary](billing-boundary.md).
 
 Authenticated studio admins can check the broader billing surface with:
 

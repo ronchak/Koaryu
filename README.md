@@ -14,7 +14,7 @@ Current public positioning uses a flat `$27/month` Koaryu Core studio subscripti
 
 Release notes are tracked in [CHANGELOG.md](CHANGELOG.md). Keep that file as the source of truth for released changes and avoid duplicating unreleased notes here.
 
-Friendly Pilot operators should start with [Friendly Pilot Operations](docs/friendly-pilot-operations.md). The exact supported billing surface and its live-mutation interlock are documented in [Friendly Pilot Billing Boundary](docs/friendly-pilot-billing-boundary.md).
+Koaryu operators should start with [Koaryu Operations](docs/koaryu-operations.md). The exact supported billing surface and its live-mutation interlock are documented in [Billing Boundary](docs/billing-boundary.md).
 
 ## Architecture
 
@@ -167,7 +167,7 @@ The current Supabase/auth flow is hardened around a strict fresh-account experie
 
 Studio membership is the tenant boundary. Backend services and RLS policies are intended to scope records by `studio_id`, and the live frontend onboarding gate now relies on the backend auth profile instead of a fragile direct `staff_roles` query.
 
-Friendly Pilot Core supports exactly one studio membership per user. Creating or accepting a second active membership is rejected. An unexpected historical multi-membership is preserved but fails closed with a bounded support-remediation message; active multi-studio selection is not a supported workflow.
+Koaryu supports exactly one studio membership per user. Creating or accepting a second active membership is rejected. An unexpected historical multi-membership is preserved but fails closed with a bounded support-remediation message; active multi-studio selection is not a supported workflow.
 
 ## Deployment And Demo Notes
 
@@ -216,13 +216,13 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 
 ## Billing Readiness
 
-Friendly Pilot billing is **Contract Only**. Admin and Front Desk may view existing plans, families, student billing records, invoices, and payments. The only supported routine writes are an external-only local student billing attachment, a payer-level external payment record, and read-based reconciliation of an existing Stripe-linked invoice. Instructor access is denied before billing data is fetched.
+Koaryu billing is **Contract Only**. Admin and Front Desk may view existing plans, families, student billing records, invoices, and payments. The only supported routine writes are an external-only local student billing attachment, a payer-level external payment record, and read-based reconciliation of an existing Stripe-linked invoice. Instructor access is denied before billing data is fetched.
 
-Plan and payer changes, autopay, provider-backed enrollment lifecycle, invoice creation/finalization/retry/void, refunds, exports, Stripe Connect setup, and Koaryu Core checkout/portal are not supported pilot operations. Non-preview provider-mutation controls are hidden or disabled. Preview actions are demonstrations only and do not change provider state.
+Plan and payer changes, autopay, provider-backed enrollment lifecycle, invoice creation/finalization/retry/void, refunds, exports, Stripe Connect setup, and Koaryu Core checkout/portal are currently unsupported. Non-preview provider-mutation controls are hidden or disabled. Preview actions are demonstrations only and do not change provider state.
 
-Keep `LIVE_BILLING_ENABLED=false`. Live outbound Stripe mutation requires a separate transition-specific approval and durable authorization that this release does not provide; setting the flag alone is insufficient and hosted configuration rejects it. Inbound signed live webhooks and provider reads may continue to reconcile existing state.
+Keep `LIVE_BILLING_ENABLED=false`. Live outbound Stripe mutation requires transition-specific approval and durable authorization that are not currently available; setting the flag alone is insufficient and hosted configuration rejects it. Inbound signed live webhooks and provider reads may continue to reconcile existing state.
 
-Before presenting the supported surface, verify Render and Vercel are green for the same exact commit, health/readiness checks pass, Instructor denial discloses no billing data, and the three named routine transitions behave as described in [Friendly Pilot Billing Boundary](docs/friendly-pilot-billing-boundary.md).
+Before presenting the supported surface, verify Render and Vercel are green for the same exact commit, health/readiness checks pass, Instructor denial discloses no billing data, and the three named routine transitions behave as described in [Billing Boundary](docs/billing-boundary.md).
 
 ## Recent Live-Mode Improvements
 

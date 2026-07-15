@@ -1,6 +1,6 @@
 # Koaryu Outreach Style Notes
 
-Captured from the first four sent outreach emails on 2026-05-20.
+Originally captured from the first four sent outreach emails on 2026-05-20 and updated for the production product. Historical offer language from those emails is not current outreach guidance.
 
 ## Sent Pattern
 
@@ -21,20 +21,19 @@ Captured from the first four sent outreach emails on 2026-05-20.
   - fake data only goes so far
   - real studio structure, complexity, or rhythm is the point
   - the studio is a strong test case for Koaryu
-- Keep the release state honest:
-  - close to deployment-ready
-  - not pretending it is finished without feedback from real schools
+- Keep the product state honest:
+  - Koaryu is live and available as a production product
+  - invite feedback without describing the product as unfinished or temporarily released
 - Keep contact uncertainty practical:
   - "If there is a better person or address for studio admin/software questions, a quick redirect would help a lot."
-- Pilot ask:
+- Product ask:
   - short call to show where Koaryu is
   - ask whether it could be useful for that studio
-  - free during the pilot and until broader release
   - feedback on what breaks, what feels clunky, what is missing, and what would make it more useful day to day
 - Pricing note:
   - paid version will be `$27/month`
   - can add "which as far as I can tell is the cheapest price on the market for a product like this"
-  - follow with "but that is definitely not what I'm asking for right now"
+  - do not offer legacy free-access terms unless a current offer has been explicitly approved
   - treat `$27/month` as current outreach positioning; older PRD tier tables are archived strategy notes, not current copy
 - Close:
   - `Thanks for your consideration,`
@@ -45,7 +44,7 @@ Captured from the first four sent outreach emails on 2026-05-20.
 
 - Candid founder note, not sales sequence.
 - Personal but not sentimental.
-- Say "I’m planning on keeping it free" rather than more polished pilot language.
+- Avoid temporary-program or release-management language.
 - "More useful to you day to day" works better than abstract product feedback phrasing.
 - No em dashes.
 - Avoid long feature lists beyond the one concrete scope sentence.

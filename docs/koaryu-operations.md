@@ -1,13 +1,13 @@
-# Friendly Pilot Operations
+# Koaryu Operations
 
-This guide is the operating contract for the single-studio Friendly Pilot Core release. It describes supported behavior, not the longer-term roadmap. The detailed billing boundary is in [Friendly Pilot Billing Boundary](friendly-pilot-billing-boundary.md).
+This guide is the operating contract for the single-studio Koaryu product. It describes currently supported behavior, not the longer-term roadmap. The detailed billing boundary is in [Billing Boundary](billing-boundary.md).
 
 ## Supported studio model
 
 - One Koaryu user belongs to exactly one studio at a time.
 - Creating or accepting a second active studio membership is rejected.
 - An unexpected historical multi-membership fails closed with a non-disclosing remediation message. Do not delete or rewrite either membership. The owner should contact support so the memberships can be reviewed and resolved through a separately approved, record-preserving procedure.
-- Multi-studio selection and active multi-studio operation are not supported in Friendly Pilot Core.
+- Multi-studio selection and active multi-studio operation are not supported in Koaryu.
 
 ## Staff permission matrix
 
@@ -23,13 +23,13 @@ The backend is authoritative. Hiding a control in the UI is not an authorization
 | Promote/demote | Yes | No | Yes, through named audited actions |
 | Lead management and conversion | Yes | Yes | No |
 | Schedule administration | Yes | Yes | Read/attendance only |
-| Friendly Pilot routine billing | Yes | Yes | No access |
+| Routine billing | Yes | Yes | No access |
 | Refunds, voids, and financial overrides | Admin-only; not shipped | No | No |
 | Stripe, payout, tax, and legal settings | Admin-only; not shipped | No | No |
 | Staff/studio administration | Yes | No | No |
 | Belt-system configuration/deletion | Yes | No | No |
 
-For this release, routine billing means only viewing existing billing state, attaching an external-only local student billing record, recording a payer-level external payment, and reconciling an existing Stripe-linked invoice through a provider read. Instructors are denied before billing data is fetched and receive no billing amounts, names, counts, plans, provider metadata, or financial summaries.
+Routine billing currently means only viewing existing billing state, attaching an external-only local student billing record, recording a payer-level external payment, and reconciling an existing Stripe-linked invoice through a provider read. Instructors are denied before billing data is fetched and receive no billing amounts, names, counts, plans, provider metadata, or financial summaries.
 
 ## First-day checklist
 
@@ -77,4 +77,4 @@ Use [Staging and Recovery Runbook](staging-recovery-runbook.md) for backup and r
 - Self-service parent portals, new integrations, custom permission builders, or a broad authorization rewrite.
 - New recovery infrastructure, enterprise monitoring, or guarantees beyond the evidence above.
 
-Stop at this release boundary. Any deferred capability requires its own scope, evidence, review, and approval.
+Stop at the current product boundary. Deferred capabilities remain unavailable until they receive their own scope, evidence, review, and approval.

@@ -1,28 +1,28 @@
-# Friendly Pilot Billing Boundary
+# Billing Boundary
 
-## Release disposition
+## Product disposition
 
-Friendly Pilot billing is **CONTRACT ONLY**. The supported production behavior is limited to:
+Koaryu billing is **CONTRACT ONLY**. The supported production behavior is limited to:
 
 1. Admin and Front Desk viewing billing and reconciliation state.
 2. Admin and Front Desk attaching an **external-only local billing record** to a student.
 3. Admin and Front Desk recording a **payer-level external payment**.
 4. Admin and Front Desk reconciling an existing Stripe-linked invoice through a provider read.
 
-All Stripe Connect setup, platform-subscription changes, provider-backed enrollment lifecycle, hosted-invoice mutation, autopay changes, refunds, voids, provider plan or payer synchronization, and exports remain outside the supported release. Instructors receive no billing access. Preview-mode actions are demonstrations only and do not change provider state.
+Stripe Connect setup, platform-subscription changes, provider-backed enrollment lifecycle, hosted-invoice mutation, autopay changes, refunds, voids, provider plan or payer synchronization, and exports are currently unsupported. Instructors receive no billing access. Preview-mode actions are demonstrations only and do not change provider state.
 
 Readiness terms used below:
 
 - `READ-ONLY LIVE`: provider or local data can be read; no outbound financial mutation.
 - `LOCAL-ONLY`: supported local database mutation with no Stripe effect.
 - `FAIL-CLOSED`: live outbound Stripe mutation is blocked by the central mutation policy.
-- `HIDDEN`: no ordinary Friendly Pilot UI control.
+- `HIDDEN`: no ordinary Koaryu UI control.
 - `BROKEN`: implementation exists but does not complete the represented workflow.
 - `DECORATIVE`: preview/demo behavior only.
 
 ## Authorization contract
 
-| Capability | Admin | Front Desk | Instructor | Release disposition |
+| Capability | Admin | Front Desk | Instructor | Product disposition |
 | --- | --- | --- | --- | --- |
 | View billing summaries, plans, payers, enrollments, invoices, and payments | Yes | Yes | No | `READ-ONLY LIVE` |
 | Attach an external-only billing record to a student | Yes | Yes | No | Supported routine, `LOCAL-ONLY` |
@@ -37,7 +37,7 @@ Every staff route resolves authoritative `staff_roles` membership before service
 
 ## Visible control inventory
 
-| Surface or control | Handler or endpoint | Role | Side effects | Friendly Pilot disposition |
+| Surface or control | Handler or endpoint | Role | Side effects | Product disposition |
 | --- | --- | --- | --- | --- |
 | Billing route and nested routes | Shared server billing gate | Admin / Front Desk | None | Supported; Instructor receives a non-disclosing denied page |
 | Refresh | Billing data GET set | Admin / Front Desk | Reads local state; Connect status may refresh a local projection from a provider read | Supported read |
@@ -220,7 +220,7 @@ The domain write and audit insert are not one database transaction. After an amb
 
 ## Independent production approvals and live activation gate
 
-Application deployment, production migration, and live Stripe activation are three independent approvals. This release does not request live Stripe activation.
+Application deployment, production migration, and live Stripe activation are three independent approvals. Live Stripe activation is not currently approved.
 
 `LIVE_BILLING_ENABLED` remains `false`. The mutation policy has no durable live-authorization source, and hosted configuration validation rejects enabling the flag; even setting the flag alone cannot issue a live mutation permit.
 
@@ -239,7 +239,7 @@ Approval for one transition never approves another transition or the broader bil
 
 ## Billing stopping condition
 
-The billing domain is complete for Friendly Pilot when:
+The billing domain meets the current product boundary when:
 
 - only the three named routine transitions are visible and operable;
 - provider/global/exceptional controls are removed, disabled, or truthfully labeled;
@@ -264,4 +264,4 @@ Primary proof lives in:
 - `backend/tests/test_billing_webhook_ordering_lifecycle.py`
 - `backend/tests/test_stripe_mutation_policy.py`
 - `frontend/tests/billing-route-access.test.mjs`
-- `frontend/tests/billing-pilot-policy.test.mjs`
+- `frontend/tests/billing-policy.test.mjs`

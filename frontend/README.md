@@ -107,7 +107,7 @@ Keep `/login`, `/signup`, `/onboarding`, `/subscription-required`, and dashboard
 
 ## API Proxy And Studio Identity
 
-Studio identity is always derived from the authenticated backend user before data access. Friendly Pilot Core supports one authoritative `staff_roles` membership. An unexpected historical multi-membership is rejected before any legacy `X-Studio-Id` selector can influence resolution; the rows are preserved for bounded support remediation. For a valid single membership, `X-Studio-Id` is only a matching selector and never grants access by itself.
+Studio identity is always derived from the authenticated backend user before data access. Koaryu supports one authoritative `staff_roles` membership. An unexpected historical multi-membership is rejected before any legacy `X-Studio-Id` selector can influence resolution; the rows are preserved for bounded support remediation. For a valid single membership, `X-Studio-Id` is only a matching selector and never grants access by itself.
 
 When `NEXT_PUBLIC_USE_API_PROXY=true`, browser API requests go through `/api/proxy`. In that mode the browser API wrapper does not send `X-Studio-Id`, and the proxy ignores any caller-supplied studio header. The proxy forwards `X-Studio-Id` upstream only from the `koaryu-active-studio` cookie observed by the Next.js server. Direct browser-to-backend mode still attaches the active-studio header because there is no Next.js server boundary to derive it, but the shared browser API helper strips any caller-supplied studio header before it adds the active selector.
 
