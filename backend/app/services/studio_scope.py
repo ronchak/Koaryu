@@ -94,15 +94,16 @@ def list_staff_roles_for_user(
 
 
 def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
-    try:
-        from app.services.platform_billing_service import PlatformBillingService
+    from app.services.platform_billing_service import (
+        AccessRepairDeferred,
+        AccessRepairProviderError,
+        PlatformBillingService,
+    )
 
+    try:
         row = PlatformBillingService(supabase).get_access_status_row(studio_id, strict_repairs=True)
         return _platform_subscription_access_from_row(row)
-    except Exception as exc:
-        if _is_noncritical_access_repair_error(exc):
-            return _get_local_platform_subscription_access(supabase, studio_id)
-
+    except (AccessRepairProviderError, AccessRepairDeferred) as exc:
         # A provider fault must never upgrade a studio, so local state is
         # consulted here only to deny. When the local row already shows the
         # studio as non-entitled the answer does not depend on Stripe at all,
@@ -110,10 +111,24 @@ def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
         # returning BILLING_STATUS_UNAVAILABLE instead told a lapsed studio that
         # Koaryu was broken. A locally entitled row is still not trusted while
         # it cannot be verified, so it continues to fail closed below.
+        #
+        # AccessRepairDeferred arrives here for the same reason: it is a repair
+        # that failed earlier in the window, replayed, and it must produce the
+        # answer that failure produced.
         local_access = _get_local_platform_subscription_access(supabase, studio_id)
         if local_access["subscription_required"]:
             return local_access
 
+        raise _billing_status_unavailable_exception() from exc
+    except Exception as exc:
+        if _is_noncritical_access_repair_error(exc):
+            return _get_local_platform_subscription_access(supabase, studio_id)
+
+        # Our own code failed — a persistence write, the projector, Supabase.
+        # That is no evidence about this studio's entitlement, so it is not
+        # answered from local state: telling a studio SUBSCRIPTION_REQUIRED
+        # because our projector raised presents our outage as their billing
+        # problem, and hides the fault behind a response that looks routine.
         raise _billing_status_unavailable_exception() from exc
 
 

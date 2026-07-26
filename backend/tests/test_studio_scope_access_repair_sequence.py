@@ -30,11 +30,11 @@ class UnreachableStripeService:
 
     def retrieve_subscription(self, subscription_id):
         type(self).calls += 1
-        raise RuntimeError("Stripe timeout")
+        raise TimeoutError("Stripe timeout")
 
     def list_customer_subscriptions(self, customer_id):
         type(self).calls += 1
-        raise RuntimeError("Stripe timeout")
+        raise TimeoutError("Stripe timeout")
 
 
 class ConfirmsActiveStripeService:

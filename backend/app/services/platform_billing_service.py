@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import logging
+import socket
 from datetime import datetime, timezone
 from time import monotonic
 from typing import Any, Optional
 from uuid import uuid4
+
+try:  # pragma: no cover - exercised by whichever stripe version is installed
+    from stripe import error as stripe_error
+except ImportError:  # pragma: no cover
+    stripe_error = None
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -52,9 +58,17 @@ MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environ
 # another repair can notice that a studio has paid. So the two outcomes are
 # throttled very differently, because they are not the same risk.
 #
-# The repair call FAILED. This is the case that stalls the worker, and it costs
-# nothing to back off hard: Stripe cannot confirm a payment while it is
-# unreachable, so no amount of retrying would let a paid studio in any sooner.
+# The repair call FAILED and Stripe was UNREACHABLE. This is the case that
+# stalls the worker, and it costs nothing to back off hard: Stripe cannot
+# confirm a payment while it is unreachable, so no amount of retrying would let
+# a paid studio in any sooner.
+#
+# That justification covers connection failures and timeouts and nothing else.
+# A reachable-but-erroring Stripe — a 5xx, a rate limit, a bad subscription id —
+# returns fast, so it never ties up the worker, and checkout and webhook
+# delivery are separate surfaces from the retrieve: a payment can genuinely land
+# while a retrieve is erroring. Backing those off buys no availability and costs
+# a paid studio real time, so they take the short window instead.
 ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS = 60
 
 # The repair call SUCCEEDED and the studio is still not entitled. Stripe is
@@ -63,6 +77,33 @@ ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS = 60
 # the threshold where a person waiting on a confirmed payment would notice, and
 # treat it as burst collapsing for a single page load rather than a rate limit.
 ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS = 5
+
+class AccessRepairProviderError(Exception):
+    """A repair failed inside the Stripe call itself.
+
+    Raised only at the provider call sites, so anything that reaches the
+    authorization path *without* this wrapper came from our own code — a failed
+    persistence write, a projector defect, a Supabase fault. That distinction
+    cannot be recovered by inspecting the exception afterwards, because
+    `_update_subscription_row` raises the same `HTTPException` type the provider
+    layer does, so it is recorded at the point where it is still known.
+    """
+
+    def __init__(self, original: Exception, *, reachable: bool):
+        super().__init__(str(original))
+        self.original = original
+        # False only for connection failures and timeouts. Those are the ones
+        # that stall the worker and the only ones the 60s backoff is justified
+        # for; a reachable Stripe returning an error returns fast.
+        self.reachable = reachable
+
+
+def _provider_failure(exc: Exception) -> AccessRepairProviderError:
+    unreachable = isinstance(exc, (TimeoutError, ConnectionError, socket.timeout))
+    if not unreachable and stripe_error is not None:
+        unreachable = isinstance(exc, stripe_error.APIConnectionError)
+    return AccessRepairProviderError(exc, reachable=not unreachable)
+
 
 class AccessRepairDeferred(Exception):
     """A repair was suppressed by the throttle and its recorded outcome was a fault.
@@ -149,7 +190,7 @@ class PlatformBillingService:
             row = self._repair_missing_subscription(row, strict_repairs=strict_repairs)
             row = self._repair_stale_subscription_state(row, strict_repairs=strict_repairs)
             row = self._repair_subscription_periods(row, strict_repairs=strict_repairs)
-        except Exception:
+        except AccessRepairProviderError as exc:
             # The provider call failed and the caller will fail closed. Record
             # the backoff before re-raising: this is the path that repeats a
             # full Stripe timeout on every request, and an earlier version of
@@ -158,9 +199,18 @@ class PlatformBillingService:
             if strict_repairs:
                 self._open_access_repair_window(
                     studio_id,
-                    ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS,
+                    ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS
+                    if exc.reachable
+                    else ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS,
                     replay_fault=True,
                 )
+            raise
+        except Exception:
+            # Not a provider fault: our own persistence, projection or
+            # configuration failed. It opens no window — backing off cannot help
+            # and would present our outage as Stripe's — and the caller must not
+            # answer it from local state, because a bug here is no evidence
+            # about the studio's entitlement.
             raise
         if strict_repairs:
             self._note_access_repair_outcome(studio_id, row)
@@ -452,7 +502,24 @@ class PlatformBillingService:
 
     def _can_degrade_access_repair(self, exc: Exception) -> bool:
         environment = getattr(self.settings, "ENVIRONMENT", "development")
+        if isinstance(exc, AccessRepairProviderError):
+            exc = exc.original
         return self.is_noncritical_access_repair_error(exc) and environment.strip().lower() == "development"
+
+    @staticmethod
+    def _provider_call(call, *args):
+        """Run a Stripe call so its failures stay distinguishable from ours.
+
+        A missing Stripe configuration is deliberately left untagged: it is a
+        deployment fault rather than a provider one, and `_can_degrade_access_repair`
+        still has to recognise it by type.
+        """
+        try:
+            return call(*args)
+        except Exception as exc:
+            if PlatformBillingService.is_noncritical_access_repair_error(exc):
+                raise
+            raise _provider_failure(exc) from exc
 
     def _update_subscription_row(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
         result = (
@@ -531,7 +598,7 @@ class PlatformBillingService:
             return row
         subscription_id = row.get("stripe_subscription_id")
         try:
-            subscription = StripeService().retrieve_subscription(subscription_id)
+            subscription = self._provider_call(StripeService().retrieve_subscription, subscription_id)
             return self._update_subscription_row(row["studio_id"], self._project_subscription(subscription))
         except Exception as exc:
             if strict_repairs and not self._can_degrade_access_repair(exc):
@@ -542,7 +609,10 @@ class PlatformBillingService:
         if not self._should_repair_subscription_state(row):
             return row
         try:
-            subscription = StripeService().retrieve_subscription(row["stripe_subscription_id"])
+            subscription = self._provider_call(
+                StripeService().retrieve_subscription,
+                row["stripe_subscription_id"],
+            )
             return self._update_subscription_row(row["studio_id"], self._project_subscription(subscription))
         except Exception as exc:
             if strict_repairs and not self._can_degrade_access_repair(exc):
@@ -567,7 +637,10 @@ class PlatformBillingService:
             return row
 
         try:
-            subscriptions = StripeService().list_customer_subscriptions(row["stripe_customer_id"])
+            subscriptions = self._provider_call(
+                StripeService().list_customer_subscriptions,
+                row["stripe_customer_id"],
+            )
         except Exception as exc:
             if strict_repairs and not self._can_degrade_access_repair(exc):
                 raise
