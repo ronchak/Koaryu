@@ -264,6 +264,31 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
             ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS,
         )
 
+    # --- the guard list cannot drift from the repair chain -----------------
+
+    def test_every_repair_in_the_chain_is_visible_to_the_throttle_predicate(self):
+        """A repair the predicate cannot see is a repair the throttle cannot bound.
+
+        The chain and the predicate used to be two hand-maintained lists that
+        happened to agree. A fourth repair added to one and missed in the other
+        would silently restore an unthrottled retry for its shape — deny-side
+        and availability-only, and so invisible until it was measured.
+        """
+        guards = [guard for guard, _repair in platform_billing_service.ACCESS_REPAIR_STEPS]
+        repairs = [repair for _guard, repair in platform_billing_service.ACCESS_REPAIR_STEPS]
+
+        self.assertEqual(len(guards), len(set(guards)))
+        self.assertEqual(len(repairs), len(set(repairs)))
+
+        # Every `_repair_*` method that takes strict_repairs is part of the
+        # authorization chain, so it must be paired with a guard here.
+        chain_repairs = {
+            name
+            for name in dir(platform_billing_service.PlatformBillingService)
+            if name.startswith("_repair_")
+        }
+        self.assertEqual({repair.__name__ for repair in repairs}, chain_repairs)
+
     # --- scoping ----------------------------------------------------------
 
     def test_admin_status_refresh_is_not_throttled(self):

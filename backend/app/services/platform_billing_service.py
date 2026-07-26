@@ -78,6 +78,7 @@ ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS = 60
 # treat it as burst collapsing for a single page load rather than a rate limit.
 ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS = 5
 
+
 class AccessRepairProviderError(Exception):
     """A repair failed inside the Stripe call itself.
 
@@ -148,6 +149,22 @@ class _AccessRepairWindow:
 # opened, and never a different one. A fault replays as a fault; a verified row
 # replays as that row. Access-neutrality is then structural rather than argued,
 # and holds for every row shape in both directions.
+#
+# CONCURRENCY — read this before moving the authorization path off the event
+# loop. Checking the window and recording it are not atomic. That is safe today
+# only because no `await` separates them: every caller of this path reaches it
+# through a synchronous call inside an async dependency, so requests for one
+# studio serialise on the event-loop thread and the first records its window
+# before the second checks it.
+#
+# The invariant is the absence of an await boundary, not the word "synchronous".
+# A plain `def` path operation or dependency puts this code in FastAPI's
+# threadpool today, with no other refactor required, and a burst of requests for
+# one studio would then all call Stripe. Anything that introduces such a
+# boundary — the threadpool move in #61 above all — must first make
+# check-and-record atomic or single-flight, or accept and document a bounded
+# herd of one burst per window. Running uvicorn with --workers > 1 is a separate
+# and milder matter: the throttle simply becomes per-worker.
 _access_repair_retry_after: dict[str, _AccessRepairWindow] = {}
 
 
@@ -187,9 +204,8 @@ class PlatformBillingService:
                 # reproduces exactly what the repair itself returned.
                 return row
         try:
-            row = self._repair_missing_subscription(row, strict_repairs=strict_repairs)
-            row = self._repair_stale_subscription_state(row, strict_repairs=strict_repairs)
-            row = self._repair_subscription_periods(row, strict_repairs=strict_repairs)
+            for _guard, repair in ACCESS_REPAIR_STEPS:
+                row = repair(self, row, strict_repairs=strict_repairs)
         except AccessRepairProviderError as exc:
             # The provider call failed and the caller will fail closed. Record
             # the backoff before re-raising: this is the path that repeats a
@@ -252,11 +268,7 @@ class PlatformBillingService:
         )
 
     def _access_repair_pending(self, row: dict[str, Any]) -> bool:
-        return (
-            self._should_repair_missing_subscription(row)
-            or self._should_repair_subscription_state(row)
-            or self._should_repair_subscription_periods(row)
-        )
+        return any(guard(self, row) for guard, _repair in ACCESS_REPAIR_STEPS)
 
     async def get_email_usage(self, studio_id: str) -> EmailUsageResponse:
         return self._email_usage(studio_id)
@@ -743,3 +755,26 @@ class PlatformBillingService:
             "entity_id": entity_id,
             "metadata": metadata,
         }).execute()
+
+
+# One ordered list, two consumers: the repair chain runs these in sequence, and
+# the throttle predicate asks whether any of them would still fire on the
+# post-repair row. They used to be two hand-maintained lists that happened to
+# agree. A fourth repair added to the chain and missed in the predicate would
+# have silently restored an unthrottled retry for whatever shape it covers —
+# deny-side and availability-only, and therefore invisible. Pairing them here
+# means a new repair cannot be added to one without the other.
+ACCESS_REPAIR_STEPS = (
+    (
+        PlatformBillingService._should_repair_missing_subscription,
+        PlatformBillingService._repair_missing_subscription,
+    ),
+    (
+        PlatformBillingService._should_repair_subscription_state,
+        PlatformBillingService._repair_stale_subscription_state,
+    ),
+    (
+        PlatformBillingService._should_repair_subscription_periods,
+        PlatformBillingService._repair_subscription_periods,
+    ),
+)
