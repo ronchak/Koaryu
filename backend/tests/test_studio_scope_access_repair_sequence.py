@@ -59,6 +59,26 @@ class ConfirmsActiveStripeService:
         return []
 
 
+class ConfirmsCanceledStripeService:
+    """Reachable, and confirms the studio really is lapsed."""
+
+    calls = 0
+
+    def retrieve_subscription(self, subscription_id):
+        type(self).calls += 1
+        return {
+            "id": subscription_id or "sub_123",
+            "customer": "cus_123",
+            "status": "canceled",
+            "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+            "cancel_at_period_end": False,
+        }
+
+    def list_customer_subscriptions(self, customer_id):
+        type(self).calls += 1
+        return []
+
+
 def row(**overrides) -> dict:
     base = {
         "studio_id": "studio_1",
@@ -92,6 +112,7 @@ class AccessRepairSequenceTest(unittest.TestCase):
         platform_billing_service._access_repair_retry_after.clear()
         UnreachableStripeService.calls = 0
         ConfirmsActiveStripeService.calls = 0
+        ConfirmsCanceledStripeService.calls = 0
 
     def tearDown(self):
         platform_billing_service._access_repair_retry_after.clear()
@@ -175,6 +196,48 @@ class AccessRepairSequenceTest(unittest.TestCase):
 
         self.assertEqual([first, second], ["allowed", "allowed"])
         self.assertEqual(ConfirmsActiveStripeService.calls, 1)
+
+    def test_a_recorded_outcome_is_not_replayed_onto_a_different_row(self):
+        """A window is a statement about one row state, not about a studio.
+
+        The row is re-read from Supabase on every request, and webhook
+        projection or an Admin refresh can rewrite it mid-window. Replaying a
+        "Stripe verified this" verdict onto a row Stripe never saw is the same
+        mistake as assuming a repair-pending row must be deny-side — one level
+        up. Here a lapsed row is verified as lapsed, then becomes entitled-
+        looking and self-inconsistent inside the 5s window; without the
+        fingerprint check it was admitted with no provider call at all.
+        """
+        supabase = FakeSupabase([dict(row(status="canceled"))])
+
+        self.assertEqual(self.attempt(supabase, ConfirmsCanceledStripeService, 0.0), "402")
+
+        supabase.tables["studio_subscriptions"][0].update({
+            "status": "active",
+            "current_period_start": None,
+            "current_period_end": None,
+        })
+
+        # Re-verified against Stripe rather than replayed, so the answer comes
+        # from what Stripe says and not from an unverified local edit.
+        self.assertEqual(self.attempt(supabase, ConfirmsCanceledStripeService, 1.0), "402")
+        self.assertEqual(ConfirmsCanceledStripeService.calls, 2)
+
+    def test_a_fault_window_is_also_not_replayed_onto_a_different_row(self):
+        supabase = FakeSupabase([dict(row(status="canceled"))])
+
+        self.assertEqual(self.attempt(supabase, UnreachableStripeService, 0.0), "402")
+
+        supabase.tables["studio_subscriptions"][0].update({
+            "status": "active",
+            "current_period_start": None,
+            "current_period_end": None,
+        })
+
+        # Still fails closed, and pays one timeout to learn that, because the
+        # row it would have to trust is one no repair has ever verified.
+        self.assertEqual(self.attempt(supabase, UnreachableStripeService, 1.0), "503")
+        self.assertEqual(UnreachableStripeService.calls, 2)
 
     def test_a_repair_landing_inside_the_window_takes_effect_immediately(self):
         """A webhook or an Admin refresh during the window is not ignored.

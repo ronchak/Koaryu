@@ -131,14 +131,21 @@ class _AccessRepairWindow:
     503 into an allow on every request after the first.
     """
 
-    __slots__ = ("retry_after", "replay_fault")
+    __slots__ = ("retry_after", "replay_fault", "row_fingerprint")
 
-    def __init__(self, retry_after: float, *, replay_fault: bool):
+    def __init__(self, retry_after: float, *, replay_fault: bool, row_fingerprint: tuple):
         self.retry_after = retry_after
         # True: the repair raised, and the caller failed closed. False: the
         # repair succeeded against a reachable Stripe and left the row
         # unrepaired, so the row it returned is verified and may be replayed.
         self.replay_fault = replay_fault
+        # A recorded outcome is a statement about one row state, not about a
+        # studio. The row is re-read from Supabase on every request, and webhook
+        # projection or an Admin refresh can rewrite it mid-window, so an
+        # outcome replayed onto a row it was not recorded for is a different
+        # claim than the one that was verified — which is the same mistake, one
+        # level up, as assuming a repair-pending row must be deny-side.
+        self.row_fingerprint = row_fingerprint
 
 
 # Keyed by studio_id. Process-local by design: it is a retry throttle, not a
@@ -189,19 +196,25 @@ class PlatformBillingService:
         # throttled; explicit billing reads still reconcile on every call.
         if strict_repairs:
             window = self._active_access_repair_window(studio_id)
+            if window is not None and window.row_fingerprint != self._row_fingerprint(row):
+                # The row is not the one the outcome was recorded for — webhook
+                # projection or an Admin refresh rewrote it. The recorded
+                # outcome says nothing about this row, so the window is void and
+                # the new state is resolved on its own merits.
+                _access_repair_retry_after.pop(studio_id, None)
+                window = None
             if window is not None:
                 if not self._access_repair_pending(row):
-                    # A webhook or an Admin refresh repaired the row inside the
-                    # window. There is nothing left to suppress, and replaying a
-                    # stale outcome would discard reconciliation that already
-                    # happened.
+                    # Nothing left to suppress. Reachable only when a repair
+                    # left the row consistent but the guards still disagreed at
+                    # record time; harmless, and cheaper than keeping the entry.
                     _access_repair_retry_after.pop(studio_id, None)
                     return row
                 if window.replay_fault:
                     raise AccessRepairDeferred(studio_id)
                 # The repair succeeded against a reachable Stripe and left the
-                # row unrepaired. That row is verified, so returning it
-                # reproduces exactly what the repair itself returned.
+                # row unrepaired. This is provably that same row, so returning
+                # it reproduces exactly what the repair itself returned.
                 return row
         try:
             for _guard, repair in ACCESS_REPAIR_STEPS:
@@ -213,12 +226,15 @@ class PlatformBillingService:
             # this throttle recorded nothing here, so the outage it was written
             # to contain went entirely unthrottled.
             if strict_repairs:
+                # `row` here is whatever the chain last persisted before the
+                # failure, which is what the next request will read back.
                 self._open_access_repair_window(
                     studio_id,
                     ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS
                     if exc.reachable
                     else ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS,
                     replay_fault=True,
+                    row=row,
                 )
             raise
         except Exception:
@@ -231,6 +247,24 @@ class PlatformBillingService:
         if strict_repairs:
             self._note_access_repair_outcome(studio_id, row)
         return row
+
+    @staticmethod
+    def _row_fingerprint(row: dict[str, Any]) -> tuple:
+        """Every field either repair guard or the access evaluator reads.
+
+        Deliberately the union of both, not just the evaluator's three: a change
+        that flips only a guard changes whether a repair is pending, which is
+        what the window is a statement about.
+        """
+        return (
+            row.get("status"),
+            bool(row.get("comped", False)),
+            row.get("trial_end"),
+            row.get("current_period_start"),
+            row.get("current_period_end"),
+            row.get("stripe_subscription_id"),
+            row.get("stripe_customer_id"),
+        )
 
     @staticmethod
     def _active_access_repair_window(studio_id: str) -> Optional[_AccessRepairWindow]:
@@ -251,10 +285,18 @@ class PlatformBillingService:
             studio_id,
             ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS,
             replay_fault=False,
+            row=row,
         )
 
-    @staticmethod
-    def _open_access_repair_window(studio_id: str, seconds: float, *, replay_fault: bool) -> None:
+    @classmethod
+    def _open_access_repair_window(
+        cls,
+        studio_id: str,
+        seconds: float,
+        *,
+        replay_fault: bool,
+        row: dict[str, Any],
+    ) -> None:
         now = monotonic()
         # The map only holds studios that stayed unrepaired, so it is bounded by
         # tenant count, but prune expired entries so a long-lived process cannot
@@ -265,6 +307,7 @@ class PlatformBillingService:
         _access_repair_retry_after[studio_id] = _AccessRepairWindow(
             now + seconds,
             replay_fault=replay_fault,
+            row_fingerprint=cls._row_fingerprint(row),
         )
 
     def _access_repair_pending(self, row: dict[str, Any]) -> bool:
