@@ -8,6 +8,7 @@ from app.services import platform_billing_service
 from app.services.platform_billing_service import (
     ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS,
     ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS,
+    AccessRepairDeferred,
 )
 from tests.platform_billing_helpers import PlatformBillingServiceTestCase
 
@@ -139,12 +140,14 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
         with self.assertRaises(Exception):
             self.access(service, UnreachableStripeService, 0.0)
 
-        # Every later request inside the backoff resolves from the local row
-        # instead of waiting out another provider timeout. The studio is still
-        # denied downstream — the row is unchanged — but the worker is free.
+        # Every later request inside the backoff is answered without waiting out
+        # another provider timeout, so the worker is free. It replays the fault
+        # rather than the unverified row: this method used to assert that the
+        # raw row came back, which is precisely how the suppressed path came to
+        # hand an unverified row to the access evaluator.
         for tick in (1.0, 2.0, 30.0, 59.0):
-            row = self.access(service, UnreachableStripeService, tick)
-            self.assertEqual(row["status"], "canceled")
+            with self.assertRaises(AccessRepairDeferred):
+                self.access(service, UnreachableStripeService, tick)
 
         self.assertEqual(UnreachableStripeService.calls, 1)
 

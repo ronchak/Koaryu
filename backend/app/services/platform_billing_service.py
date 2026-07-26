@@ -64,12 +64,50 @@ ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS = 60
 # treat it as burst collapsing for a single page load rather than a rate limit.
 ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS = 5
 
-# Keyed by studio_id, holding the monotonic time after which a repair may be
-# attempted again. Process-local by design: it is a retry throttle, not a cache
-# of entitlement. Losing it on restart is harmless, and suppressing a repair can
-# only ever leave the local row in place, which is the deny-side answer — it can
-# never grant access that local state does not already support.
-_access_repair_retry_after: dict[str, float] = {}
+class AccessRepairDeferred(Exception):
+    """A repair was suppressed by the throttle and its recorded outcome was a fault.
+
+    Raised so the caller reproduces the answer the failed repair produced rather
+    than evaluating an unverified row. It carries no provider information and is
+    deliberately not a provider error: nothing was contacted.
+    """
+
+    def __init__(self, studio_id: str):
+        super().__init__(f"Koaryu Core subscription repair deferred for studio {studio_id}.")
+        self.studio_id = studio_id
+
+
+class _AccessRepairWindow:
+    """What a suppressed request must replay, and until when.
+
+    An earlier version stored only the deadline, on the premise that suppressing
+    a repair "can never grant access that local state does not already support".
+    That premise is false: the three repair guards inspect Stripe identifiers and
+    period integrity, while the access evaluator inspects only status, comped and
+    trial_end. An `active` row with null periods satisfies the first and is
+    admitted by the second, so replaying it as a plain row turned a fail-closed
+    503 into an allow on every request after the first.
+    """
+
+    __slots__ = ("retry_after", "replay_fault")
+
+    def __init__(self, retry_after: float, *, replay_fault: bool):
+        self.retry_after = retry_after
+        # True: the repair raised, and the caller failed closed. False: the
+        # repair succeeded against a reachable Stripe and left the row
+        # unrepaired, so the row it returned is verified and may be replayed.
+        self.replay_fault = replay_fault
+
+
+# Keyed by studio_id. Process-local by design: it is a retry throttle, not a
+# cache of entitlement. Losing it on restart is harmless.
+#
+# The invariant that makes suppression safe is not a claim about which rows
+# reach it — it is that suppression replays the outcome recorded when the window
+# opened, and never a different one. A fault replays as a fault; a verified row
+# replays as that row. Access-neutrality is then structural rather than argued,
+# and holds for every row shape in both directions.
+_access_repair_retry_after: dict[str, _AccessRepairWindow] = {}
 
 
 class PlatformBillingService:
@@ -91,8 +129,22 @@ class PlatformBillingService:
         row = self._ensure_subscription_row(studio_id)
         # strict_repairs marks the authorization path. Only that path is
         # throttled; explicit billing reads still reconcile on every call.
-        if strict_repairs and self._access_repair_suppressed(studio_id):
-            return row
+        if strict_repairs:
+            window = self._active_access_repair_window(studio_id)
+            if window is not None:
+                if not self._access_repair_pending(row):
+                    # A webhook or an Admin refresh repaired the row inside the
+                    # window. There is nothing left to suppress, and replaying a
+                    # stale outcome would discard reconciliation that already
+                    # happened.
+                    _access_repair_retry_after.pop(studio_id, None)
+                    return row
+                if window.replay_fault:
+                    raise AccessRepairDeferred(studio_id)
+                # The repair succeeded against a reachable Stripe and left the
+                # row unrepaired. That row is verified, so returning it
+                # reproduces exactly what the repair itself returned.
+                return row
         try:
             row = self._repair_missing_subscription(row, strict_repairs=strict_repairs)
             row = self._repair_stale_subscription_state(row, strict_repairs=strict_repairs)
@@ -104,39 +156,50 @@ class PlatformBillingService:
             # this throttle recorded nothing here, so the outage it was written
             # to contain went entirely unthrottled.
             if strict_repairs:
-                self._open_access_repair_window(studio_id, ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS)
+                self._open_access_repair_window(
+                    studio_id,
+                    ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS,
+                    replay_fault=True,
+                )
             raise
         if strict_repairs:
             self._note_access_repair_outcome(studio_id, row)
         return row
 
     @staticmethod
-    def _access_repair_suppressed(studio_id: str) -> bool:
-        retry_after = _access_repair_retry_after.get(studio_id)
-        if retry_after is None:
-            return False
-        if monotonic() >= retry_after:
+    def _active_access_repair_window(studio_id: str) -> Optional[_AccessRepairWindow]:
+        window = _access_repair_retry_after.get(studio_id)
+        if window is None:
+            return None
+        if monotonic() >= window.retry_after:
             _access_repair_retry_after.pop(studio_id, None)
-            return False
-        return True
+            return None
+        return window
 
     def _note_access_repair_outcome(self, studio_id: str, row: dict[str, Any]) -> None:
         """Open a short recheck window when a successful repair left the row unrepaired."""
         if not self._access_repair_pending(row):
             _access_repair_retry_after.pop(studio_id, None)
             return
-        self._open_access_repair_window(studio_id, ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS)
+        self._open_access_repair_window(
+            studio_id,
+            ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS,
+            replay_fault=False,
+        )
 
     @staticmethod
-    def _open_access_repair_window(studio_id: str, seconds: float) -> None:
+    def _open_access_repair_window(studio_id: str, seconds: float, *, replay_fault: bool) -> None:
         now = monotonic()
         # The map only holds studios that stayed unrepaired, so it is bounded by
         # tenant count, but prune expired entries so a long-lived process cannot
         # retain studios that have since been fixed.
-        for key, retry_after in list(_access_repair_retry_after.items()):
-            if now >= retry_after:
+        for key, window in list(_access_repair_retry_after.items()):
+            if now >= window.retry_after:
                 _access_repair_retry_after.pop(key, None)
-        _access_repair_retry_after[studio_id] = now + seconds
+        _access_repair_retry_after[studio_id] = _AccessRepairWindow(
+            now + seconds,
+            replay_fault=replay_fault,
+        )
 
     def _access_repair_pending(self, row: dict[str, Any]) -> bool:
         return (
