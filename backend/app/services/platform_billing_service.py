@@ -204,13 +204,15 @@ class PlatformBillingService:
                 #
                 # Logged because a fingerprint that flapped on an *unchanged*
                 # row would void every window and silently restore the
-                # unthrottled retry this whole path exists to prevent — and it
-                # would look exactly like the pre-throttle behaviour. A steady
-                # trickle here for one studio is the signal.
-                logger.debug(
-                    "Access repair window voided by a changed subscription row; studio=%s",
-                    studio_id,
-                )
+                # unthrottled retry this whole path exists to prevent, while
+                # looking exactly like the pre-throttle behaviour. Volume is the
+                # signal: this should be rare, so a steady stream means the
+                # fingerprint is not round-tripping.
+                #
+                # No studio_id: the only other logger call in this module
+                # deliberately emits a random reference rather than identifiers,
+                # and a rate is all the signal needs to be.
+                logger.debug("Access repair window voided by a changed subscription row")
                 _access_repair_retry_after.pop(studio_id, None)
                 window = None
             if window is not None:
