@@ -42,10 +42,25 @@ Splitting by outcome fixes both, because the two cases have opposite economics:
 
 | Repair outcome | Cost of retrying | Can a retry let a paid studio in? | Window |
 | --- | --- | --- | --- |
-| Failed | A full provider timeout on the single worker | No — Stripe cannot confirm a payment while unreachable | 60s |
+| Failed, Stripe unreachable | A full provider timeout on the single worker | No — Stripe cannot confirm a payment while unreachable | 60s |
+| Failed, Stripe reachable but erroring | One fast error response | Yes — checkout and webhooks are separate surfaces from the retrieve | 5s |
 | Succeeded, still not entitled | One fast API call | Yes — this is the only thing that notices a lost webhook | 5s |
 
-Measured after the change: five requests during an outage now make **one** provider call, and a studio that pays while its webhook is lost waits **at most 5 seconds**.
+The first two rows were one row until review. Keying every failure to 60s
+justified it with "Stripe cannot confirm a payment while unreachable", which is
+true only of connection failures and timeouts. A 5xx or a rate limit returns
+fast, so it never ties up the worker — the sole thing the long backoff buys —
+while still costing a paid studio a minute. A fault in *our* code is not a
+provider failure at all: it opens no window, and it is no longer answered from
+local state, because a projector or persistence bug is no evidence about a
+studio's entitlement and returning `402 SUBSCRIPTION_REQUIRED` presented our
+outage as the studio's billing problem.
+
+Measured after the change: five requests during an outage now make **one**
+provider call. A studio that pays while its webhook is lost waits **at most 5
+seconds** after a successful repair or a fast provider error, and at most 60
+seconds while Stripe is genuinely unreachable — during which no payment can be
+confirmed anyway.
 
 The lost-webhook delay is the residual cost, and it is bounded rather than eliminated: the normal path updates the row within seconds via webhook projection and is not throttled, and an Admin can force reconciliation from the billing page. `test_a_paid_studio_gets_in_within_the_recheck_window` pins delay-then-recover, `test_provider_outage_is_backed_off_after_the_first_timeout` pins the outage behaviour, and `test_recheck_window_stays_imperceptible` fails if anyone widens the 5s window.
 
@@ -102,11 +117,36 @@ Each row shape was exercised against a counting Stripe stub with `ENVIRONMENT=pr
 | `canceled` | 1, then 5s recheck | `503` | denied `402` |
 | `incomplete` | 1, then 5s recheck | `503` | denied `402` |
 
-With the provider unreachable, the first request in each of those rows pays one timeout and the next 60s resolve from the local row without calling Stripe.
+Every row above is a **first** request. Deciding each shape once is what let an
+access widening through review: with the provider unreachable, the first request
+for `active` + missing periods failed closed exactly as the table says, and the
+*second* request inside the recorded window was allowed. The repair guards
+inspect Stripe identifiers and period integrity; the access evaluator inspects
+only status, comped and `trial_end`. Those sets overlap, so an unverified
+`active` row replayed from the window was admitted on its status alone.
+
+The matrix is now committed as a test with the second-request dimension it was
+missing (`test_access_repair_outcome_neutrality.py`), and suppression replays
+the outcome recorded when the window opened rather than the bare row. With the
+provider unreachable, the first request pays one timeout and every request
+inside the window reproduces that same fail-closed answer without calling
+Stripe.
+
+A sustained outage therefore costs one stalled request per affected studio per
+window — the first one after each expiry. That is the intended residual cost and
+the real number.
 
 ## Note for the async request I/O work
 
-The throttle is read and written without a lock. That is safe today only because these calls are synchronous on a single event loop, so concurrent requests for the same studio serialise and the first one records its window before the second checks it. Moving this path onto a threadpool removes that guarantee: several requests for the same studio could pass the check together and all call Stripe. Whoever picks up that work should either make the record-and-check atomic or accept and document a bounded herd of one burst per window.
+The throttle is read and written without a lock. The precise invariant is that
+no `await` separates the check from the record — not that the calls are
+"synchronous". A plain `def` path operation or dependency puts this code in
+FastAPI's threadpool today, with no other refactor required, so the hazard is
+not gated on the async work landing. Whoever introduces such a boundary should
+either make record-and-check atomic or single-flight, or accept and document a
+bounded herd of one burst per window. This warning now also lives on the
+declaration of `_access_repair_retry_after`, which is the file that work will
+actually be editing.
 
 ## Scope guard
 
@@ -114,8 +154,8 @@ This change does not enable live billing, redesign pricing, rewrite the Stripe i
 
 ## Verification
 
-- `backend`: full suite, 591 passed, and order-independent.
+- `backend`: full suite, 605 passed, and order-independent.
 - `npm run check:api-types`, `npm run check:env-examples`, `git diff --check`: clean.
-- Access matrix: 18 row shapes × reachable/unreachable Stripe, diffed against a worktree of the pre-change tree after every revision. The set of allowed rows is identical each time.
+- Access matrix: 22 row shapes × reachable/unreachable Stripe × two consecutive requests, now committed as `backend/tests/test_access_repair_outcome_neutrality.py` rather than run by hand. It was an uncommitted single-request script, which is why it certified a change that widened access on the second request.
 - Regression anchors, both verified to fail without the fix rather than merely to pass with it. Suppressing the retry window makes the healthy-provider test fail `5 != 1`; before the outage path recorded a window at all, five requests during an outage made five provider calls and recorded zero entries.
 - No migration, so no Supabase gate applies.
