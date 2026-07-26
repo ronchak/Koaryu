@@ -20,11 +20,27 @@ The real defect was non-convergence. `_should_repair_subscription_state` fires f
 
 Three changes, no migration:
 
-1. **Retry throttle on the authorization path.** `ACCESS_REPAIR_RETRY_INTERVAL_SECONDS` bounds how often a studio that stayed unrepaired re-consults Stripe. Webhook projection and the Admin-only status refresh bypass it, so reconciliation is not delayed where it is explicitly requested.
+1. **Retry throttle on the authorization path.** `ACCESS_REPAIR_RETRY_INTERVAL_SECONDS` (60s) bounds how often a studio that stayed unrepaired re-consults Stripe. Webhook projection and the Admin-only status refresh bypass it, so reconciliation is not delayed where it is explicitly requested.
 2. **Honest denial for locally lapsed studios.** A provider fault previously produced `503 BILLING_STATUS_UNAVAILABLE` even when the local row already showed the studio as not entitled. That told a lapsed studio Koaryu was broken. Local state is now consulted on a fault, but only ever to deny: a not-entitled row returns `402 SUBSCRIPTION_REQUIRED`, and an entitled-but-unverifiable row still fails closed with `503`.
 3. **Normalized the `comped` guard default.** `_repair_missing_subscription` defaulted to `True` while `_should_repair_subscription_state` and the access decision defaulted to `False`. The column is `NOT NULL` and the row is selected with `*`, so this was latent rather than live, but the two guards disagreed about the same field.
 
 No studio that is denied access before this change is granted access after it.
+
+## Known tradeoff introduced by the throttle
+
+Repairing on every request was also an accidental safety net: when webhook delivery failed, a studio that paid mid-session was let in on its very next request, because that request re-consulted Stripe. Throttling gives that up for the length of the window.
+
+Measured, with `ENVIRONMENT=production` and webhooks never arriving:
+
+| | request 1 | request 2, after paying |
+| --- | --- | --- |
+| Before | `402` | **allowed** |
+| After, inside the window | `402` | `402` |
+| After, once the window closes | `402` | allowed |
+
+So a studio can remain denied for up to one window after paying, but only when webhook delivery has failed — the normal path updates the row within seconds and is not throttled, and the Admin billing refresh forces reconciliation on demand. The window was chosen at 60s to bound that delay to something a person will sit through while still removing almost all of the repeated provider calls. `test_throttle_delays_but_does_not_lose_a_lost_webhook_upgrade` pins the behaviour, and a companion test fails if the window is ever widened past 60s.
+
+This direction was missed on the first pass: the change was checked for granting access that had been denied, but not for denying access that had been granted. Both directions are now covered.
 
 ## Deliberately not done
 

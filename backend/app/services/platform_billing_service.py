@@ -52,7 +52,15 @@ MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environ
 # lost: webhook projection still updates the row as events arrive, and the
 # Admin-only platform status refresh calls get_access_status_row() without
 # strict repairs, which bypasses this window entirely.
-ACCESS_REPAIR_RETRY_INTERVAL_SECONDS = 300
+#
+# The window is deliberately short. Repairing on every request also acted as a
+# safety net when webhook delivery failed: a studio that paid while its
+# webhooks were lost got in on its very next request. Throttling gives that up
+# for the length of the window, so a studio can stay denied for up to this long
+# after paying if no webhook ever arrives. Sixty seconds bounds that delay to
+# something a person will sit through while still removing ~99% of the repeated
+# provider calls, which is the behaviour that could stall the single worker.
+ACCESS_REPAIR_RETRY_INTERVAL_SECONDS = 60
 
 # Keyed by studio_id. Process-local by design: it is a retry throttle, not a
 # cache of entitlement, so losing it on restart is harmless and it never

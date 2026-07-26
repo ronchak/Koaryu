@@ -106,6 +106,48 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
         self.assertEqual(row["status"], "active")
         self.assertNotIn("studio_1", platform_billing_service._access_repair_attempts)
 
+    def test_throttle_delays_but_does_not_lose_a_lost_webhook_upgrade(self):
+        """Documents the cost of throttling, so it stays bounded and visible.
+
+        Repairing on every request also acted as a safety net when webhook
+        delivery failed: a studio that paid mid-session got in on its next
+        request. Inside the retry window that no longer happens, so a studio
+        whose webhook is lost stays denied until the window closes. The delay
+        must stay bounded by ACCESS_REPAIR_RETRY_INTERVAL_SECONDS and must
+        never become permanent.
+        """
+        service = self.service(lapsed_rows(status="incomplete"))
+        # Stripe has not seen the payment yet, so the first repair is a no-op.
+        CountingStripeService.reported_status = "incomplete"
+
+        def access_row(now):
+            with (
+                patch("app.services.platform_billing_service.StripeService", CountingStripeService),
+                patch("app.services.platform_billing_service.monotonic", return_value=now),
+            ):
+                return service.get_access_status_row("studio_1", strict_repairs=True)
+
+        # Stripe agrees the studio is not yet paid; the retry window opens.
+        first = access_row(0.0)
+        self.assertEqual(first["status"], "incomplete")
+
+        # The studio pays. No webhook arrives, so only a repair could notice.
+        CountingStripeService.reported_status = "active"
+
+        inside = access_row(ACCESS_REPAIR_RETRY_INTERVAL_SECONDS - 1)
+        self.assertEqual(inside["status"], "incomplete", "still throttled inside the window")
+
+        outside = access_row(ACCESS_REPAIR_RETRY_INTERVAL_SECONDS + 1)
+        self.assertEqual(outside["status"], "active", "must recover once the window closes")
+
+    def test_retry_window_stays_short_enough_to_bound_that_delay(self):
+        self.assertLessEqual(
+            ACCESS_REPAIR_RETRY_INTERVAL_SECONDS,
+            60,
+            "a longer window extends how long a paid studio can stay locked out "
+            "when webhook delivery fails",
+        )
+
     def test_throttle_is_scoped_per_studio(self):
         rows = lapsed_rows()
         rows.append({
