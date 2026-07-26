@@ -20,27 +20,40 @@ The real defect was non-convergence. `_should_repair_subscription_state` fires f
 
 Three changes, no migration:
 
-1. **Retry throttle on the authorization path.** `ACCESS_REPAIR_RETRY_INTERVAL_SECONDS` (60s) bounds how often a studio that stayed unrepaired re-consults Stripe. Webhook projection and the Admin-only status refresh bypass it, so reconciliation is not delayed where it is explicitly requested.
+1. **Outcome-based retry throttle on the authorization path.** The two failure shapes are not the same risk, so they are throttled differently:
+   - the repair call **failed** → `ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS` (60s). This is the case that stalls the worker, and backing off costs no entitlement latency, because Stripe cannot confirm a payment while it is unreachable.
+   - the repair call **succeeded** and the studio is still not entitled → `ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS` (5s). Stripe is healthy, so a recheck is one fast call rather than a timeout, and it is the only thing that notices a payment whose webhook was lost.
+
+   Webhook projection and the Admin-only status refresh bypass both windows.
 2. **Honest denial for locally lapsed studios.** A provider fault previously produced `503 BILLING_STATUS_UNAVAILABLE` even when the local row already showed the studio as not entitled. That told a lapsed studio Koaryu was broken. Local state is now consulted on a fault, but only ever to deny: a not-entitled row returns `402 SUBSCRIPTION_REQUIRED`, and an entitled-but-unverifiable row still fails closed with `503`.
 3. **Normalized the `comped` guard default.** `_repair_missing_subscription` defaulted to `True` while `_should_repair_subscription_state` and the access decision defaulted to `False`. The column is `NOT NULL` and the row is selected with `*`, so this was latent rather than live, but the two guards disagreed about the same field.
 
 No studio that is denied access before this change is granted access after it.
 
-## Known tradeoff introduced by the throttle
+## Why the throttle is outcome-based
 
-Repairing on every request was also an accidental safety net: when webhook delivery failed, a studio that paid mid-session was let in on its very next request, because that request re-consulted Stripe. Throttling gives that up for the length of the window.
+The first version of this throttle used a single fixed window for every outcome. That was wrong in both directions, and the two mistakes cancelled out into something that looked reasonable.
 
-Measured, with `ENVIRONMENT=production` and webhooks never arriving:
+**It did not throttle the outage at all.** The repair raises on provider failure, and the window was only recorded after the repairs returned, so the exception skipped the bookkeeping entirely. Measured with `ENVIRONMENT=production` and Stripe timing out: five consecutive requests produced **five** provider timeouts and **zero** throttle entries. The scenario the throttle was written to contain was the one scenario it never touched.
 
-| | request 1 | request 2, after paying |
-| --- | --- | --- |
-| Before | `402` | **allowed** |
-| After, inside the window | `402` | `402` |
-| After, once the window closes | `402` | allowed |
+**It delayed the case that was already cheap.** The only calls it actually suppressed were successful ones — fast calls against a healthy provider — and suppressing those is what locked out a studio that had just paid.
 
-So a studio can remain denied for up to one window after paying, but only when webhook delivery has failed — the normal path updates the row within seconds and is not throttled, and the Admin billing refresh forces reconciliation on demand. The window was chosen at 60s to bound that delay to something a person will sit through while still removing almost all of the repeated provider calls. `test_throttle_delays_but_does_not_lose_a_lost_webhook_upgrade` pins the behaviour, and a companion test fails if the window is ever widened past 60s.
+Splitting by outcome fixes both, because the two cases have opposite economics:
 
-This direction was missed on the first pass: the change was checked for granting access that had been denied, but not for denying access that had been granted. Both directions are now covered.
+| Repair outcome | Cost of retrying | Can a retry let a paid studio in? | Window |
+| --- | --- | --- | --- |
+| Failed | A full provider timeout on the single worker | No — Stripe cannot confirm a payment while unreachable | 60s |
+| Succeeded, still not entitled | One fast API call | Yes — this is the only thing that notices a lost webhook | 5s |
+
+Measured after the change: five requests during an outage now make **one** provider call, and a studio that pays while its webhook is lost waits **at most 5 seconds**.
+
+The lost-webhook delay is the residual cost, and it is bounded rather than eliminated: the normal path updates the row within seconds via webhook projection and is not throttled, and an Admin can force reconciliation from the billing page. `test_a_paid_studio_gets_in_within_the_recheck_window` pins delay-then-recover, `test_provider_outage_is_backed_off_after_the_first_timeout` pins the outage behaviour, and `test_recheck_window_stays_imperceptible` fails if anyone widens the 5s window.
+
+Two review gaps produced this, both now closed. The change was originally checked only for *granting* access that had been denied, never for *denying* access that had been granted. And the throttle's own tests stubbed a Stripe that succeeded, so no test exercised the failure path the feature existed for.
+
+## Test isolation
+
+The throttle is process-local module state, so `backend/tests/conftest.py` clears it around every test. Without that, a test leaving a window open silently suppresses the repair in whichever test runs next — which happened, and surfaced as an unrelated pre-existing test failing for reasons that had nothing to do with what it asserts.
 
 ## Deliberately not done
 

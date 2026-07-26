@@ -43,29 +43,33 @@ MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environ
 
 # A studio whose local subscription row is already non-entitled re-attempts a
 # Stripe repair on every authenticated request: the repair writes the same
-# non-live status back, so the trigger condition never clears. While Stripe is
-# healthy that is only wasted latency, but during a provider degradation each
-# such request waits out a full Stripe timeout on the single production Uvicorn
-# worker, so one lapsed studio can slow requests for every other tenant.
+# non-live status back, so the trigger condition never clears. During a provider
+# degradation each such request waits out a full Stripe timeout on the single
+# production Uvicorn worker, so one lapsed studio can slow every other tenant.
 #
-# Throttle that retry on the authorization path only. Reconciliation is not
-# lost: webhook projection still updates the row as events arrive, and the
-# Admin-only platform status refresh calls get_access_status_row() without
-# strict repairs, which bypasses this window entirely.
+# Throttling that retry has to reckon with the fact that repairing on every
+# request was also an accidental safety net: when webhook delivery fails, only
+# another repair can notice that a studio has paid. So the two outcomes are
+# throttled very differently, because they are not the same risk.
 #
-# The window is deliberately short. Repairing on every request also acted as a
-# safety net when webhook delivery failed: a studio that paid while its
-# webhooks were lost got in on its very next request. Throttling gives that up
-# for the length of the window, so a studio can stay denied for up to this long
-# after paying if no webhook ever arrives. Sixty seconds bounds that delay to
-# something a person will sit through while still removing ~99% of the repeated
-# provider calls, which is the behaviour that could stall the single worker.
-ACCESS_REPAIR_RETRY_INTERVAL_SECONDS = 60
+# The repair call FAILED. This is the case that stalls the worker, and it costs
+# nothing to back off hard: Stripe cannot confirm a payment while it is
+# unreachable, so no amount of retrying would let a paid studio in any sooner.
+ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS = 60
 
-# Keyed by studio_id. Process-local by design: it is a retry throttle, not a
-# cache of entitlement, so losing it on restart is harmless and it never
-# influences whether access is granted.
-_access_repair_attempts: dict[str, float] = {}
+# The repair call SUCCEEDED and the studio is still not entitled. Stripe is
+# healthy, so a recheck is one fast call rather than a timeout, and it is the
+# only thing that will notice a payment whose webhook was lost. Keep this below
+# the threshold where a person waiting on a confirmed payment would notice, and
+# treat it as burst collapsing for a single page load rather than a rate limit.
+ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS = 5
+
+# Keyed by studio_id, holding the monotonic time after which a repair may be
+# attempted again. Process-local by design: it is a retry throttle, not a cache
+# of entitlement. Losing it on restart is harmless, and suppressing a repair can
+# only ever leave the local row in place, which is the deny-side answer — it can
+# never grant access that local state does not already support.
+_access_repair_retry_after: dict[str, float] = {}
 
 
 class PlatformBillingService:
@@ -87,38 +91,52 @@ class PlatformBillingService:
         row = self._ensure_subscription_row(studio_id)
         # strict_repairs marks the authorization path. Only that path is
         # throttled; explicit billing reads still reconcile on every call.
-        if strict_repairs and self._access_repair_recently_attempted(studio_id):
+        if strict_repairs and self._access_repair_suppressed(studio_id):
             return row
-        row = self._repair_missing_subscription(row, strict_repairs=strict_repairs)
-        row = self._repair_stale_subscription_state(row, strict_repairs=strict_repairs)
-        row = self._repair_subscription_periods(row, strict_repairs=strict_repairs)
+        try:
+            row = self._repair_missing_subscription(row, strict_repairs=strict_repairs)
+            row = self._repair_stale_subscription_state(row, strict_repairs=strict_repairs)
+            row = self._repair_subscription_periods(row, strict_repairs=strict_repairs)
+        except Exception:
+            # The provider call failed and the caller will fail closed. Record
+            # the backoff before re-raising: this is the path that repeats a
+            # full Stripe timeout on every request, and an earlier version of
+            # this throttle recorded nothing here, so the outage it was written
+            # to contain went entirely unthrottled.
+            if strict_repairs:
+                self._open_access_repair_window(studio_id, ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS)
+            raise
         if strict_repairs:
             self._note_access_repair_outcome(studio_id, row)
         return row
 
     @staticmethod
-    def _access_repair_recently_attempted(studio_id: str) -> bool:
-        attempted_at = _access_repair_attempts.get(studio_id)
-        if attempted_at is None:
+    def _access_repair_suppressed(studio_id: str) -> bool:
+        retry_after = _access_repair_retry_after.get(studio_id)
+        if retry_after is None:
             return False
-        if monotonic() - attempted_at >= ACCESS_REPAIR_RETRY_INTERVAL_SECONDS:
-            _access_repair_attempts.pop(studio_id, None)
+        if monotonic() >= retry_after:
+            _access_repair_retry_after.pop(studio_id, None)
             return False
         return True
 
     def _note_access_repair_outcome(self, studio_id: str, row: dict[str, Any]) -> None:
-        """Open a retry window only when repair ran and left the row unrepaired."""
+        """Open a short recheck window when a successful repair left the row unrepaired."""
         if not self._access_repair_pending(row):
-            _access_repair_attempts.pop(studio_id, None)
+            _access_repair_retry_after.pop(studio_id, None)
             return
+        self._open_access_repair_window(studio_id, ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS)
+
+    @staticmethod
+    def _open_access_repair_window(studio_id: str, seconds: float) -> None:
         now = monotonic()
         # The map only holds studios that stayed unrepaired, so it is bounded by
         # tenant count, but prune expired entries so a long-lived process cannot
         # retain studios that have since been fixed.
-        for key, attempted_at in list(_access_repair_attempts.items()):
-            if now - attempted_at >= ACCESS_REPAIR_RETRY_INTERVAL_SECONDS:
-                _access_repair_attempts.pop(key, None)
-        _access_repair_attempts[studio_id] = now
+        for key, retry_after in list(_access_repair_retry_after.items()):
+            if now >= retry_after:
+                _access_repair_retry_after.pop(key, None)
+        _access_repair_retry_after[studio_id] = now + seconds
 
     def _access_repair_pending(self, row: dict[str, Any]) -> bool:
         return (

@@ -41,7 +41,9 @@ Routine tenant requests resolve Koaryu Core entitlement before the request proce
 
 When the local row is not self-consistent, the resolver may attempt one bounded Stripe repair so a studio whose projection is stale-negative is not denied in error. That retry is throttled per studio, because the repair writes the same status back for a genuinely lapsed studio and would otherwise repeat on every request. Webhook projection and the Admin-only `GET /platform-billing/status` refresh are not throttled.
 
-Operational consequence: if webhook delivery fails, a studio that has just paid can stay denied for up to one throttle window (60s) before a request re-consults Stripe. The normal path does not depend on this — webhook projection updates the row within seconds — and an Admin can force reconciliation immediately from the billing page.
+The throttle is keyed on what the repair did, because the two outcomes carry opposite risk. A repair that **failed** backs off for 60s: that is the case that ties up the single worker with provider timeouts, and retrying sooner cannot help, since Stripe confirms no payments while it is unreachable. A repair that **succeeded** and left the studio unentitled is rechecked after 5s: the call is fast, and it is the only thing that notices a payment whose webhook was lost.
+
+Operational consequence: if webhook delivery fails, a studio that has just paid stays denied for at most five seconds before a request re-consults Stripe. The normal path does not depend on this — webhook projection updates the row within seconds — and an Admin can force reconciliation immediately from the billing page.
 
 Provider faults never grant access. Local state is consulted on a fault only to deny:
 
