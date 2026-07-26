@@ -57,7 +57,9 @@ studio's entitlement and returning `402 SUBSCRIPTION_REQUIRED` presented our
 outage as the studio's billing problem.
 
 Measured after the change: five requests during an outage now make **one**
-provider call. A studio that pays while its webhook is lost waits **at most 5
+provider call. That figure is about *provider* faults; a fault in Koaryu's own
+code opens no window by design, so it is retried on every request — correctly,
+since it returns fast and never stalls the worker. A studio that pays while its webhook is lost waits **at most 5
 seconds** after a successful repair or a fast provider error, and at most 60
 seconds while Stripe is genuinely unreachable — during which no payment can be
 confirmed anyway.
@@ -154,7 +156,7 @@ This change does not enable live billing, redesign pricing, rewrite the Stripe i
 
 ## Verification
 
-- `backend`: full suite, 605 passed, and order-independent.
+- `backend`: full suite, 610 passed, and order-independent.
 - `npm run check:api-types`, `npm run check:env-examples`, `git diff --check`: clean.
 - Access matrix: 22 row shapes × reachable/unreachable Stripe × two consecutive requests, now committed as `backend/tests/test_access_repair_outcome_neutrality.py` rather than run by hand. It was an uncommitted single-request script, which is why it certified a change that widened access on the second request.
 - Regression anchors, both verified to fail without the fix rather than merely to pass with it. Suppressing the retry window makes the healthy-provider test fail `5 != 1`; before the outage path recorded a window at all, five requests during an outage made five provider calls and recorded zero entries.

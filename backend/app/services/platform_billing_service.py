@@ -201,13 +201,25 @@ class PlatformBillingService:
                 # projection or an Admin refresh rewrote it. The recorded
                 # outcome says nothing about this row, so the window is void and
                 # the new state is resolved on its own merits.
+                #
+                # Logged because a fingerprint that flapped on an *unchanged*
+                # row would void every window and silently restore the
+                # unthrottled retry this whole path exists to prevent — and it
+                # would look exactly like the pre-throttle behaviour. A steady
+                # trickle here for one studio is the signal.
+                logger.debug(
+                    "Access repair window voided by a changed subscription row; studio=%s",
+                    studio_id,
+                )
                 _access_repair_retry_after.pop(studio_id, None)
                 window = None
             if window is not None:
                 if not self._access_repair_pending(row):
-                    # Nothing left to suppress. Reachable only when a repair
-                    # left the row consistent but the guards still disagreed at
-                    # record time; harmless, and cheaper than keeping the entry.
+                    # Defensive. Pending-ness is a pure function of the
+                    # fingerprinted fields plus a clock term that only ever
+                    # moves deny-ward, so an unchanged fingerprint should not be
+                    # able to stop being pending. Kept because the cost is one
+                    # comparison and the failure it guards against is silent.
                     _access_repair_retry_after.pop(studio_id, None)
                     return row
                 if window.replay_fault:
@@ -255,6 +267,23 @@ class PlatformBillingService:
         Deliberately the union of both, not just the evaluator's three: a change
         that flips only a guard changes whether a repair is pending, which is
         what the window is a statement about.
+
+        Only `status` and `trial_end` can change an access outcome today, and
+        only those two are pinned by mutation-tested coverage. The rest are
+        defensive, for reasons that are all contingent:
+
+        - the period fields and the Stripe ids are read by the guards but not by
+          `_platform_subscription_access_from_row`, so they can only flip
+          pending-ness, and a pending-ness flip takes the clear-the-window path
+          above, which already agrees with an unthrottled request;
+        - `comped` *is* read by the evaluator, but no repair writes it, so a
+          repaired row and an unrepaired one always agree about it.
+
+        Both of those stop being true the moment a repair learns to write
+        `comped`, or the evaluator learns to read a period field. Narrowing this
+        tuple to what is provably load-bearing today would make that future
+        change silently reintroduce the widening this window exists to prevent,
+        so it stays the full union.
         """
         return (
             row.get("status"),
@@ -562,17 +591,39 @@ class PlatformBillingService:
         return self.is_noncritical_access_repair_error(exc) and environment.strip().lower() == "development"
 
     @staticmethod
+    def _is_stripe_deployment_error(exc: Exception) -> bool:
+        """Stripe could not be called because this deployment is not set up.
+
+        Neither a provider fault nor a bug in the request: nothing was
+        contacted, and no retry schedule can help. A missing configuration also
+        has to stay recognisable by type so `_can_degrade_access_repair` can
+        keep degrading it in development.
+        """
+        if PlatformBillingService.is_noncritical_access_repair_error(exc):
+            return True
+        # The SDK-missing sibling is raised one function away from the config
+        # error and means the same class of thing. Wrapping it as a provider
+        # fault bought a 5s window and answered a lapsed studio with
+        # SUBSCRIPTION_REQUIRED, which is a broken deploy reported as a billing
+        # problem.
+        return (
+            isinstance(exc, HTTPException)
+            and exc.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+            and isinstance(exc.detail, str)
+            and "Stripe SDK is not installed" in exc.detail
+        )
+
+    @staticmethod
     def _provider_call(call, *args):
         """Run a Stripe call so its failures stay distinguishable from ours.
 
-        A missing Stripe configuration is deliberately left untagged: it is a
-        deployment fault rather than a provider one, and `_can_degrade_access_repair`
-        still has to recognise it by type.
+        Deployment errors are deliberately left untagged so they are treated as
+        our own fault rather than the provider's.
         """
         try:
             return call(*args)
         except Exception as exc:
-            if PlatformBillingService.is_noncritical_access_repair_error(exc):
+            if PlatformBillingService._is_stripe_deployment_error(exc):
                 raise
             raise _provider_failure(exc) from exc
 

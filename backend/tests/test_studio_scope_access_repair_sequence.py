@@ -79,6 +79,27 @@ class ConfirmsCanceledStripeService:
         return []
 
 
+class ConfirmsCanceledNoPeriodsStripeService:
+    """Confirms the studio is lapsed and returns no period fields, so a repaired
+    row stays repair-pending and the throttle keeps mattering."""
+
+    calls = 0
+
+    def retrieve_subscription(self, subscription_id):
+        type(self).calls += 1
+        return {
+            "id": subscription_id or "sub_123",
+            "customer": "cus_123",
+            "status": "canceled",
+            "items": {"data": [{}]},
+            "cancel_at_period_end": False,
+        }
+
+    def list_customer_subscriptions(self, customer_id):
+        type(self).calls += 1
+        return []
+
+
 def row(**overrides) -> dict:
     base = {
         "studio_id": "studio_1",
@@ -113,6 +134,7 @@ class AccessRepairSequenceTest(unittest.TestCase):
         UnreachableStripeService.calls = 0
         ConfirmsActiveStripeService.calls = 0
         ConfirmsCanceledStripeService.calls = 0
+        ConfirmsCanceledNoPeriodsStripeService.calls = 0
 
     def tearDown(self):
         platform_billing_service._access_repair_retry_after.clear()
@@ -222,6 +244,55 @@ class AccessRepairSequenceTest(unittest.TestCase):
         # from what Stripe says and not from an unverified local edit.
         self.assertEqual(self.attempt(supabase, ConfirmsCanceledStripeService, 1.0), "402")
         self.assertEqual(ConfirmsCanceledStripeService.calls, 2)
+
+    def test_every_fingerprinted_field_is_load_bearing_on_its_own(self):
+        """One field at a time, because together they cover for each other.
+
+        The sibling tests above mutate status and both period fields at once, so
+        any single surviving fingerprint field is enough to make them pass —
+        which means dropping one from `_row_fingerprint` leaves the whole suite
+        green while re-opening the widening. Each case here changes exactly one
+        field, from a lapsed row Stripe verified as lapsed to a shape that would
+        be admitted or would need a different repair.
+        """
+        one_field_changes = {
+            "status": {"status": "active"},
+            "comped": {"comped": True},
+            "trial_end": {"trial_end": "2099-01-01T00:00:00+00:00"},
+            "current_period_start": {"current_period_start": 100},
+            "current_period_end": {"current_period_end": 200},
+            "stripe_subscription_id": {"stripe_subscription_id": None},
+            "stripe_customer_id": {"stripe_customer_id": None},
+        }
+        # No period fields, and a Stripe that does not supply them, so the row
+        # stays repair-pending after each mutation. A row that becomes both
+        # entitled and self-consistent is admitted with no provider call at all
+        # — correctly, and identically on `main` — which would make this test
+        # pass for the wrong reason.
+        lapsed = row(status="canceled", current_period_start=None, current_period_end=None)
+
+        for field, change in one_field_changes.items():
+            with self.subTest(field):
+                # What this mutated row is worth on its own, with no window.
+                platform_billing_service._access_repair_retry_after.clear()
+                mutated = FakeSupabase([{**lapsed, **change}])
+                baseline = self.attempt(mutated, ConfirmsCanceledNoPeriodsStripeService, 0.0)
+
+                platform_billing_service._access_repair_retry_after.clear()
+                ConfirmsCanceledNoPeriodsStripeService.calls = 0
+                supabase = FakeSupabase([dict(lapsed)])
+
+                self.assertEqual(
+                    self.attempt(supabase, ConfirmsCanceledNoPeriodsStripeService, 0.0), "402"
+                )
+                supabase.tables["studio_subscriptions"][0].update(change)
+
+                self.assertEqual(
+                    self.attempt(supabase, ConfirmsCanceledNoPeriodsStripeService, 1.0),
+                    baseline,
+                    f"a change to {field} alone did not void the window, so the row was "
+                    f"answered under a verdict recorded for a different row",
+                )
 
     def test_a_fault_window_is_also_not_replayed_onto_a_different_row(self):
         supabase = FakeSupabase([dict(row(status="canceled"))])

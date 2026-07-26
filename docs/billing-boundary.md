@@ -56,9 +56,10 @@ Provider faults never grant access. Local state is consulted on a fault only to 
 | Entitled and self-consistent | not contacted | Request proceeds |
 | Not entitled | either | `402 SUBSCRIPTION_REQUIRED` |
 | Entitled but unverifiable | no | `503 BILLING_STATUS_UNAVAILABLE`, fail-closed |
+| Entitled, verified by Stripe under 5s ago | no | Request proceeds, until the window expires |
 | Any state, Koaryu's own fault | n/a | `503 BILLING_STATUS_UNAVAILABLE`, fail-closed |
 
-An entitled-looking local row is deliberately not trusted while it cannot be verified, on the first request and on every request answered from a throttle window. Serving it during a provider outage was considered and rejected: it would trade a bounded outage for unbounded unpaid access.
+An entitled-looking local row is deliberately not trusted while it cannot be verified, on the first request and on every request answered from a throttle window — with one bounded exception. When a repair *succeeded* and Stripe itself confirmed the row moments earlier, that verdict is replayed for the remaining few seconds of the recheck window even if Stripe then becomes unreachable. It is a verdict Stripe gave, not a local row being trusted, and it expires within `ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS`. Serving it during a provider outage was considered and rejected: it would trade a bounded outage for unbounded unpaid access.
 
 ## Visible control inventory
 
