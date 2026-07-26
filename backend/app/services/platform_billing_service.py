@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from time import monotonic
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -40,6 +41,24 @@ EMAIL_OVERAGE_RATE_CENTS = 0.2
 LIVE_STRIPE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid", "paused"}
 MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environment."
 
+# A studio whose local subscription row is already non-entitled re-attempts a
+# Stripe repair on every authenticated request: the repair writes the same
+# non-live status back, so the trigger condition never clears. While Stripe is
+# healthy that is only wasted latency, but during a provider degradation each
+# such request waits out a full Stripe timeout on the single production Uvicorn
+# worker, so one lapsed studio can slow requests for every other tenant.
+#
+# Throttle that retry on the authorization path only. Reconciliation is not
+# lost: webhook projection still updates the row as events arrive, and the
+# Admin-only platform status refresh calls get_access_status_row() without
+# strict repairs, which bypasses this window entirely.
+ACCESS_REPAIR_RETRY_INTERVAL_SECONDS = 300
+
+# Keyed by studio_id. Process-local by design: it is a retry throttle, not a
+# cache of entitlement, so losing it on restart is harmless and it never
+# influences whether access is granted.
+_access_repair_attempts: dict[str, float] = {}
+
 
 class PlatformBillingService:
     def __init__(self, supabase: Client):
@@ -58,9 +77,47 @@ class PlatformBillingService:
 
     def get_access_status_row(self, studio_id: str, *, strict_repairs: bool = False) -> dict[str, Any]:
         row = self._ensure_subscription_row(studio_id)
+        # strict_repairs marks the authorization path. Only that path is
+        # throttled; explicit billing reads still reconcile on every call.
+        if strict_repairs and self._access_repair_recently_attempted(studio_id):
+            return row
         row = self._repair_missing_subscription(row, strict_repairs=strict_repairs)
         row = self._repair_stale_subscription_state(row, strict_repairs=strict_repairs)
-        return self._repair_subscription_periods(row, strict_repairs=strict_repairs)
+        row = self._repair_subscription_periods(row, strict_repairs=strict_repairs)
+        if strict_repairs:
+            self._note_access_repair_outcome(studio_id, row)
+        return row
+
+    @staticmethod
+    def _access_repair_recently_attempted(studio_id: str) -> bool:
+        attempted_at = _access_repair_attempts.get(studio_id)
+        if attempted_at is None:
+            return False
+        if monotonic() - attempted_at >= ACCESS_REPAIR_RETRY_INTERVAL_SECONDS:
+            _access_repair_attempts.pop(studio_id, None)
+            return False
+        return True
+
+    def _note_access_repair_outcome(self, studio_id: str, row: dict[str, Any]) -> None:
+        """Open a retry window only when repair ran and left the row unrepaired."""
+        if not self._access_repair_pending(row):
+            _access_repair_attempts.pop(studio_id, None)
+            return
+        now = monotonic()
+        # The map only holds studios that stayed unrepaired, so it is bounded by
+        # tenant count, but prune expired entries so a long-lived process cannot
+        # retain studios that have since been fixed.
+        for key, attempted_at in list(_access_repair_attempts.items()):
+            if now - attempted_at >= ACCESS_REPAIR_RETRY_INTERVAL_SECONDS:
+                _access_repair_attempts.pop(key, None)
+        _access_repair_attempts[studio_id] = now
+
+    def _access_repair_pending(self, row: dict[str, Any]) -> bool:
+        return (
+            self._should_repair_missing_subscription(row)
+            or self._should_repair_subscription_state(row)
+            or self._should_repair_subscription_periods(row)
+        )
 
     async def get_email_usage(self, studio_id: str) -> EmailUsageResponse:
         return self._email_usage(studio_id)
@@ -403,10 +460,21 @@ class PlatformBillingService:
                 raise
             return row
 
-    def _repair_missing_subscription(self, row: dict[str, Any], *, strict_repairs: bool = False) -> dict[str, Any]:
+    def _should_repair_missing_subscription(self, row: dict[str, Any]) -> bool:
         if row.get("stripe_subscription_id"):
-            return row
-        if not row.get("stripe_customer_id") or bool(row.get("comped", True)):
+            return False
+        if not row.get("stripe_customer_id"):
+            return False
+        # `comped` defaults to False here to match _should_repair_subscription_state
+        # and _platform_subscription_access_from_row. The guards previously
+        # disagreed (True vs False), so a row without the key skipped
+        # subscription-link repair while still being eligible for stale-state
+        # repair. The column is NOT NULL and the row is selected with `*`, so the
+        # key is always present in practice; this only removes a latent trap.
+        return not bool(row.get("comped", False))
+
+    def _repair_missing_subscription(self, row: dict[str, Any], *, strict_repairs: bool = False) -> dict[str, Any]:
+        if not self._should_repair_missing_subscription(row):
             return row
 
         try:

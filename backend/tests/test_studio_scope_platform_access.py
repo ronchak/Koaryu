@@ -57,7 +57,10 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
-        self.assertEqual(supabase.query_log, [])
+        # The local row is now consulted on a provider fault, but only ever to
+        # deny. An entitled-looking local row must not grant access while it
+        # cannot be verified, so this still fails closed.
+        self.assertEqual(len(supabase.query_log), 1)
 
     def test_access_falls_back_to_local_row_when_stripe_is_not_configured(self):
         supabase = fake_supabase({
@@ -101,7 +104,8 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
-        self.assertEqual(supabase.query_log, [])
+        # Local state is read only to deny; an entitled local row still fails closed.
+        self.assertEqual(len(supabase.query_log), 1)
 
     def test_access_does_not_use_no_stripe_fallback_in_staging(self):
         supabase = fake_supabase({
@@ -125,7 +129,8 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
-        self.assertEqual(supabase.query_log, [])
+        # Local state is read only to deny; an entitled local row still fails closed.
+        self.assertEqual(len(supabase.query_log), 1)
 
     def test_platform_repair_degradation_is_development_only(self):
         error = HTTPException(
@@ -161,9 +166,40 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         ):
             ensure_platform_subscription_access(supabase, "studio_1")
 
-    def test_ensure_platform_subscription_access_reports_unavailable_when_service_fails(self):
+    def test_ensure_platform_subscription_access_denies_locally_lapsed_studio_when_service_fails(self):
+        """A studio the local row already shows as lapsed does not need Stripe.
+
+        The answer is the same whether or not the provider is reachable, so the
+        studio is told its subscription needs attention instead of being handed
+        a generic service error it cannot act on.
+        """
         supabase = fake_supabase({
             "status": "incomplete",
+            "comped": False,
+            "trial_end": None,
+        })
+
+        with patch(
+            "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
+            side_effect=RuntimeError("Stripe unavailable"),
+        ):
+            with self.assertRaises(HTTPException) as context:
+                ensure_platform_subscription_access(supabase, "studio_1")
+
+        self.assertEqual(context.exception.status_code, status.HTTP_402_PAYMENT_REQUIRED)
+        self.assertEqual(context.exception.detail["code"], "SUBSCRIPTION_REQUIRED")
+        self.assertEqual(context.exception.detail["status"], "incomplete")
+        self.assertTrue(context.exception.detail["subscription_required"])
+
+    def test_locally_entitled_studio_still_fails_closed_when_service_fails(self):
+        """The provider fault path must never upgrade a studio.
+
+        Local state is consulted only to deny. An entitled-looking local row that
+        cannot be verified continues to return BILLING_STATUS_UNAVAILABLE rather
+        than granting access.
+        """
+        supabase = fake_supabase({
+            "status": "active",
             "comped": False,
             "trial_end": None,
         })

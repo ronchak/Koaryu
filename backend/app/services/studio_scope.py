@@ -102,6 +102,18 @@ def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
     except Exception as exc:
         if _is_noncritical_access_repair_error(exc):
             return _get_local_platform_subscription_access(supabase, studio_id)
+
+        # A provider fault must never upgrade a studio, so local state is
+        # consulted here only to deny. When the local row already shows the
+        # studio as non-entitled the answer does not depend on Stripe at all,
+        # and reporting SUBSCRIPTION_REQUIRED is both accurate and actionable;
+        # returning BILLING_STATUS_UNAVAILABLE instead told a lapsed studio that
+        # Koaryu was broken. A locally entitled row is still not trusted while
+        # it cannot be verified, so it continues to fail closed below.
+        local_access = _get_local_platform_subscription_access(supabase, studio_id)
+        if local_access["subscription_required"]:
+            return local_access
+
         raise _billing_status_unavailable_exception() from exc
 
 

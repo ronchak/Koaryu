@@ -35,6 +35,22 @@ Readiness terms used below:
 
 Every staff route resolves authoritative `staff_roles` membership before service construction. Unexpected multi-membership fails closed. Instructor denial occurs before client billing code or sensitive billing fetches.
 
+## Platform-subscription enforcement on routine requests
+
+Routine tenant requests resolve Koaryu Core entitlement before the request proceeds. A studio whose local subscription row is already entitled and self-consistent is admitted without contacting Stripe.
+
+When the local row is not self-consistent, the resolver may attempt one bounded Stripe repair so a studio whose projection is stale-negative is not denied in error. That retry is throttled per studio, because the repair writes the same status back for a genuinely lapsed studio and would otherwise repeat on every request. Webhook projection and the Admin-only `GET /platform-billing/status` refresh are not throttled.
+
+Provider faults never grant access. Local state is consulted on a fault only to deny:
+
+| Local subscription state | Stripe reachable | Result |
+| --- | --- | --- |
+| Entitled and self-consistent | not contacted | Request proceeds |
+| Not entitled | either | `402 SUBSCRIPTION_REQUIRED` |
+| Entitled but unverifiable | no | `503 BILLING_STATUS_UNAVAILABLE`, fail-closed |
+
+An entitled-looking local row is deliberately not trusted while it cannot be verified. Serving it during a provider outage was considered and rejected: it would trade a bounded outage for unbounded unpaid access.
+
 ## Visible control inventory
 
 | Surface or control | Handler or endpoint | Role | Side effects | Product disposition |
