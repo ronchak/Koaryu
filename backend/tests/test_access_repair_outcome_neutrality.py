@@ -103,6 +103,51 @@ def confirming(status_value: str, *, periods: bool, trial_end=None):
     return ConfirmingStripeService
 
 
+def split_brain():
+    """A Stripe whose two endpoints disagree.
+
+    `_should_repair_missing_subscription` consults `list_customer_subscriptions`,
+    while the other two guards consult `retrieve_subscription`. So the Stripe
+    identifiers do not merely decide *whether* a repair is pending — they decide
+    *which endpoint* the pending repair will ask, and the two can return
+    different statuses for the same studio. A stub whose `list` always returns
+    `[]` can never show that, which is why the sweep below could not see that
+    the ids are load-bearing.
+    """
+
+    class SplitBrainStripeService:
+        calls = 0
+
+        def retrieve_subscription(self, subscription_id):
+            type(self).calls += 1
+            status_value = "canceled" if subscription_id == "sub_from_list" else "active"
+            return {
+                "id": subscription_id or "sub_123",
+                "customer": "cus_123",
+                "status": status_value,
+                "items": {"data": [{}]},
+                "cancel_at_period_end": False,
+            }
+
+        def list_customer_subscriptions(self, customer_id):
+            type(self).calls += 1
+            if customer_id != "cus_123":
+                return []
+            return [{
+                "id": "sub_from_list",
+                "customer": customer_id,
+                "status": "canceled",
+                # select_core_subscription only considers subscriptions whose
+                # metadata names this studio, so without it nothing is ever
+                # selected and the two endpoints cannot be seen to disagree.
+                "metadata": {"studio_id": "studio_1"},
+                "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+                "cancel_at_period_end": False,
+            }]
+
+    return SplitBrainStripeService
+
+
 def row(**overrides) -> dict:
     base = {
         "studio_id": "studio_1",
@@ -134,6 +179,13 @@ ROW_SHAPES = {
     "trialing with no trial_end": row(status="trialing", trial_end=None),
     "active with no subscription id": row(stripe_subscription_id=None),
     "trialing with no subscription id": row(status="trialing", trial_end=FUTURE, stripe_subscription_id=None),
+    # A second customer id, so the sweep can swap between customers rather than
+    # only nulling one. Nulling a customer id only ever switches the
+    # missing-subscription guard off, which cannot change an outcome; pointing
+    # it at a *different* customer changes what that guard finds.
+    "active with another customer id and no subscription id": row(
+        stripe_subscription_id=None, stripe_customer_id="cus_unknown"
+    ),
     # deny-side
     "canceled": row(status="canceled"),
     "incomplete": row(status="incomplete"),
@@ -279,14 +331,24 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
         id. So this sweeps every (shape, field, value) combination and asserts
         the replayed answer still equals what the mutated row is worth alone.
 
-        Dropping `status` or `trial_end` from `_row_fingerprint` fails this.
-        The other five survive, and that is a fact about the code rather than a
-        gap here: the evaluator reads only status, comped and trial_end, so the
-        period fields and the Stripe ids can only flip pending-ness — which
-        takes the clear-the-window path and already matches an unthrottled
-        request — and no repair writes `comped`, so a repaired row and an
-        unrepaired one never disagree about it. They are kept in the fingerprint
-        defensively; see `_row_fingerprint`.
+        Dropping `status`, `trial_end`, `stripe_subscription_id` or
+        `stripe_customer_id` from `_row_fingerprint` fails this.
+
+        The Stripe ids need the `endpoints that disagree` stub to show up. They
+        do not merely flip pending-ness: they decide *which* provider endpoint
+        the pending repair consults — `_should_repair_missing_subscription` asks
+        `list_customer_subscriptions`, the other two guards ask
+        `retrieve_subscription` — and those can answer differently for the same
+        studio. A stub whose `list` always returns `[]` makes them look
+        interchangeable.
+
+        Nulling a customer id can never diverge — it only switches the
+        missing-subscription guard off — so the shapes include a second customer
+        id, letting the sweep swap between customers rather than only clearing
+        one.
+
+        `comped` and the two period fields survive, and that is a fact about the
+        code rather than a gap here; see `_row_fingerprint`.
         """
         fields = (
             "status",
@@ -307,6 +369,7 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
             "canceled": confirming("canceled", periods=False),
             "active": confirming("active", periods=False),
             "trialing past its trial_end": confirming("trialing", periods=False, trial_end=PAST),
+            "endpoints that disagree": split_brain(),
         }
 
         for confirms_label, stripe_cls in confirmations.items():

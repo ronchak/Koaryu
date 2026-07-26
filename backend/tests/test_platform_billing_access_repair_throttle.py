@@ -256,6 +256,45 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
         # still recognises it and it is re-raised as itself outside development.
         self.assertIsNone(self.window_bought_by(missing_config, expect_raises=HTTPException))
 
+    def test_a_missing_stripe_sdk_is_not_treated_as_an_outage_either(self):
+        """The 409 config error's sibling, raised one function away in StripeService.
+
+        It means the same class of thing — Stripe could not be called because
+        this deployment is not set up — so it must classify the same way. While
+        only the 409 was carved out, a broken deploy bought a provider backoff
+        and answered a lapsed studio with SUBSCRIPTION_REQUIRED, reporting a
+        Koaryu deployment fault as the studio's billing problem.
+        """
+        missing_sdk = HTTPException(
+            status_code=500,
+            detail="Stripe SDK is not installed. Install backend requirements before using live billing.",
+        )
+
+        self.assertIsNone(self.window_bought_by(missing_sdk, expect_raises=HTTPException))
+
+    def test_deployment_errors_are_distinguished_from_provider_errors(self):
+        """The classifier itself, so the boundary is pinned rather than implied."""
+        service = self.service(lapsed_rows())
+
+        deployment = [
+            HTTPException(status_code=409, detail=platform_billing_service.MISSING_STRIPE_CONFIGURATION_DETAIL),
+            HTTPException(status_code=500, detail="Stripe SDK is not installed. Install backend requirements."),
+        ]
+        not_deployment = [
+            # Our own persistence failure, which happens to share the type.
+            HTTPException(status_code=404, detail="Koaryu Core billing record not found."),
+            HTTPException(status_code=500, detail="Something else entirely."),
+            TimeoutError("timed out"),
+            RuntimeError("stripe returned 502"),
+        ]
+
+        for exc in deployment:
+            with self.subTest(f"deployment: {exc.detail}"):
+                self.assertTrue(service._is_stripe_deployment_error(exc))
+        for exc in not_deployment:
+            with self.subTest(f"not deployment: {exc}"):
+                self.assertFalse(service._is_stripe_deployment_error(exc))
+
     def test_outage_backoff_is_longer_than_the_healthy_recheck(self):
         """Backing off hard during an outage costs no entitlement latency,
         because Stripe cannot confirm a payment while it is unreachable."""

@@ -156,7 +156,7 @@ This change does not enable live billing, redesign pricing, rewrite the Stripe i
 
 ## Verification
 
-- `backend`: full suite, 610 passed, and order-independent.
+- `backend`: full suite, 612 passed, and order-independent.
 - `npm run check:api-types`, `npm run check:env-examples`, `git diff --check`: clean.
 - Access matrix: 22 row shapes × reachable/unreachable Stripe × two consecutive requests, now committed as `backend/tests/test_access_repair_outcome_neutrality.py` rather than run by hand. It was an uncommitted single-request script, which is why it certified a change that widened access on the second request.
 - Regression anchors, both verified to fail without the fix rather than merely to pass with it. Suppressing the retry window makes the healthy-provider test fail `5 != 1`; before the outage path recorded a window at all, five requests during an outage made five provider calls and recorded zero entries.

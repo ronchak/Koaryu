@@ -268,16 +268,24 @@ class PlatformBillingService:
         that flips only a guard changes whether a repair is pending, which is
         what the window is a statement about.
 
-        Only `status` and `trial_end` can change an access outcome today, and
-        only those two are pinned by mutation-tested coverage. The rest are
-        defensive, for reasons that are all contingent:
+        Four of the seven are load-bearing today, and each is pinned by a
+        mutation-tested case: `status` and `trial_end` because the evaluator
+        reads them, and the two Stripe ids for a subtler reason — they select
+        *which provider endpoint* a pending repair consults.
+        `_should_repair_missing_subscription` asks `list_customer_subscriptions`
+        while the other two guards ask `retrieve_subscription`, and those can
+        answer differently for the same studio, so moving an id can change the
+        status a repair arrives at rather than merely whether one runs.
 
-        - the period fields and the Stripe ids are read by the guards but not by
-          `_platform_subscription_access_from_row`, so they can only flip
-          pending-ness, and a pending-ness flip takes the clear-the-window path
-          above, which already agrees with an unthrottled request;
-        - `comped` *is* read by the evaluator, but no repair writes it, so a
-          repaired row and an unrepaired one always agree about it.
+        The remaining three are defensive, for reasons that are contingent:
+
+        - the period fields are read by the guards but not by
+          `_platform_subscription_access_from_row`, and they only ever switch
+          the periods guard on and off — which consults the same endpoint with
+          the same id, so the repair reaches the same status either way;
+        - `comped` *is* read by the evaluator, but no repair writes it, and
+          setting it disables the two guards that could reach a different
+          endpoint.
 
         Both of those stop being true the moment a repair learns to write
         `comped`, or the evaluator learns to read a period field. Narrowing this
