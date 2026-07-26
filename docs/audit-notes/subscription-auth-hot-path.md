@@ -98,9 +98,15 @@ Each row shape was exercised against a counting Stripe stub with `ENVIRONMENT=pr
 | `active` + valid periods | 0 | allowed | allowed |
 | `past_due` + valid periods | 0 | denied `402` | denied `402` |
 | `comped` / `trialing` (future end) | 0 | allowed | allowed |
-| `active`, missing periods | 1 | `503` | `503` (fail-closed, unchanged) |
-| `canceled` | 1, throttled | `503` | denied `402` |
-| `incomplete` | 1, throttled | `503` | denied `402` |
+| `active`, missing periods | 1, then 5s recheck | `503` | `503` (fail-closed, unchanged) |
+| `canceled` | 1, then 5s recheck | `503` | denied `402` |
+| `incomplete` | 1, then 5s recheck | `503` | denied `402` |
+
+With the provider unreachable, the first request in each of those rows pays one timeout and the next 60s resolve from the local row without calling Stripe.
+
+## Note for the async request I/O work
+
+The throttle is read and written without a lock. That is safe today only because these calls are synchronous on a single event loop, so concurrent requests for the same studio serialise and the first one records its window before the second checks it. Moving this path onto a threadpool removes that guarantee: several requests for the same studio could pass the check together and all call Stripe. Whoever picks up that work should either make the record-and-check atomic or accept and document a bounded herd of one burst per window.
 
 ## Scope guard
 
@@ -108,7 +114,8 @@ This change does not enable live billing, redesign pricing, rewrite the Stripe i
 
 ## Verification
 
-- `backend`: full suite, 587 passed.
+- `backend`: full suite, 591 passed, and order-independent.
 - `npm run check:api-types`, `npm run check:env-examples`, `git diff --check`: clean.
-- Regression anchor: with the retry window disabled to simulate pre-fix behaviour, the throttle tests fail `5 != 1`, confirming they detect a reintroduction rather than merely passing.
+- Access matrix: 18 row shapes × reachable/unreachable Stripe, diffed against a worktree of the pre-change tree after every revision. The set of allowed rows is identical each time.
+- Regression anchors, both verified to fail without the fix rather than merely to pass with it. Suppressing the retry window makes the healthy-provider test fail `5 != 1`; before the outage path recorded a window at all, five requests during an outage made five provider calls and recorded zero entries.
 - No migration, so no Supabase gate applies.
