@@ -444,6 +444,11 @@ BEGIN
     END IF;
 END $$;
 
+-- Disarm the forced-failure trigger. It is installed only for the rollback
+-- check above, and anything appended after this point would otherwise have
+-- its audit insert rejected too.
+DROP TRIGGER reject_comp_audit_for_rollback_check ON public.audit_logs;
+
 -- `metadata` is JSONB NOT NULL, but the JSON scalar `null` satisfies NOT NULL
 -- and is not SQL NULL. COALESCE therefore does not catch it, and an unguarded
 -- jsonb_set raises 'cannot set path in scalar', aborting the comp entirely for
