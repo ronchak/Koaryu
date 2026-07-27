@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import floor
 from unittest.mock import patch
 
@@ -10,7 +10,14 @@ from app.services.platform_billing_service import PlatformBillingService
 from tests.fakes.supabase import RpcBackedSupabase
 
 
+# This fake must mirror clear_studio_comp_for_billing_event in SQL. Easy-to-miss
+# boundaries include PostgreSQL's +/-15:59:59 UTC-offset limit, its finite event
+# epoch range, and the same-second provider-wins ordering rule.
 class FakeSupabase(RpcBackedSupabase):
+    POSTGRES_MAX_UTC_OFFSET = timedelta(hours=15, minutes=59, seconds=59)
+    POSTGRES_MIN_EVENT_EPOCH = -210866803200
+    POSTGRES_END_EVENT_EPOCH = 9224318016000
+
     def __init__(self, rows: list[dict]):
         super().__init__({
             "studio_subscriptions": rows,
@@ -49,17 +56,34 @@ class FakeSupabase(RpcBackedSupabase):
         if not row.get("comped", False):
             return False
 
+        event_created = params.get("p_event_created")
+        if (
+            event_created is not None
+            and not (
+                self.POSTGRES_MIN_EVENT_EPOCH
+                <= event_created
+                < self.POSTGRES_END_EVENT_EPOCH
+            )
+        ):
+            return False
+
         metadata = row.get("metadata")
         comp_value = metadata.get("comp") if isinstance(metadata, dict) else None
         comp = comp_value if isinstance(comp_value, dict) else {}
         if comp.get("state") == "granted":
-            event_created = params.get("p_event_created")
             granted_at = comp.get("at")
             if event_created is None or not granted_at:
                 return False
             try:
-                grant_epoch = self._parse_timestamp(granted_at).timestamp()
-            except (TypeError, ValueError):
+                granted_at_timestamp = self._parse_timestamp(granted_at)
+                utc_offset = granted_at_timestamp.utcoffset()
+                if (
+                    utc_offset is not None
+                    and abs(utc_offset) > self.POSTGRES_MAX_UTC_OFFSET
+                ):
+                    return False
+                grant_epoch = granted_at_timestamp.timestamp()
+            except (OSError, OverflowError, TypeError, ValueError):
                 return False
             if float(event_created) < floor(grant_epoch):
                 return False

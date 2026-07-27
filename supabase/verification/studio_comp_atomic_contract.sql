@@ -139,6 +139,25 @@ BEGIN
     IF NOT v_cleared OR v_row.comped THEN
         RAISE EXCEPTION 'An event newer than the grant did not clear the comp.';
     END IF;
+
+    UPDATE public.studio_subscriptions
+       SET comped = true
+     WHERE studio_id = v_studio;
+
+    SELECT public.clear_studio_comp_for_billing_event(
+        v_studio,
+        9223372036854775807
+    )
+      INTO v_cleared;
+
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_studio;
+
+    IF v_cleared OR NOT v_row.comped THEN
+        RAISE EXCEPTION 'An out-of-range event timestamp did not preserve the comp.';
+    END IF;
 END $$;
 
 -- Exercise provenance shapes against PostgreSQL itself. These timestamp casts

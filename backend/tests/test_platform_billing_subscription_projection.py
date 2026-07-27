@@ -662,6 +662,52 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertFalse(rows[0]["comped"])
         self.assertEqual(rows[0]["metadata"]["comp"], ["legacy"])
 
+    def test_postgres_incompatible_grant_offset_preserves_comp_in_fake(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "canceled",
+            "comped": True,
+            "metadata": {
+                "comp": {
+                    "state": "granted",
+                    "at": "2026-07-27T00:00:00+16:00",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        service.project_subscription_event(
+            self.subscription_event(created=1785153600),
+            hydrate_subscription=True,
+        )
+
+        self.assertTrue(rows[0]["comped"])
+
+    def test_out_of_range_event_timestamp_preserves_comp_in_fake(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "canceled",
+            "comped": True,
+            "metadata": {
+                "comp": {
+                    "state": "granted",
+                    "at": "2026-07-27T00:00:00+00:00",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        service.project_subscription_event(
+            self.subscription_event(created=9223372036854775807),
+            hydrate_subscription=True,
+        )
+
+        self.assertTrue(rows[0]["comped"])
+
     def test_only_a_strictly_older_event_loses_to_a_concurrent_grant(self):
         events = {
             "checkout before": (self.checkout_event(created=99), False, True),

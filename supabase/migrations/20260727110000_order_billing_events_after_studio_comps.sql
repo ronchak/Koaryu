@@ -22,6 +22,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_existing public.studio_subscriptions%ROWTYPE;
+    v_event_created_at TIMESTAMPTZ;
     v_granted_at TIMESTAMPTZ;
     v_granted_at_text TEXT;
 BEGIN
@@ -38,6 +39,18 @@ BEGIN
 
     IF NOT v_existing.comped THEN
         RETURN false;
+    END IF;
+
+    IF p_event_created IS NOT NULL THEN
+        BEGIN
+            v_event_created_at := to_timestamp(p_event_created);
+        EXCEPTION
+            -- Keep only the provider timestamp conversion in this handler.
+            -- An unusable event cannot safely authorize clearing the comp, but
+            -- unrelated RPC failures must still reach the webhook retry path.
+            WHEN OTHERS THEN
+                RETURN false;
+        END;
     END IF;
 
     IF v_existing.metadata->'comp'->>'state' = 'granted' THEN
@@ -63,7 +76,7 @@ BEGIN
         -- race. A strictly older event loses. On equality, clearing a grant is
         -- visible in drift and recoverable; preserving a free comp alongside a
         -- live paid subscription can be silent, permanent, and costly.
-        IF to_timestamp(p_event_created) < date_trunc('second', v_granted_at) THEN
+        IF v_event_created_at < date_trunc('second', v_granted_at) THEN
             RETURN false;
         END IF;
     END IF;

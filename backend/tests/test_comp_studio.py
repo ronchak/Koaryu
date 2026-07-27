@@ -1101,6 +1101,38 @@ class CompStudioCliTests(unittest.TestCase):
             ["comped is true while a live Stripe subscription is present"],
         )
 
+    def test_drift_reports_comped_customer_without_live_local_subscription_for_stripe_confirmation(self):
+        supabase = CompSupabase(
+            studios=[{
+                "id": "unconfirmed-customer",
+                "name": "Unconfirmed Customer",
+                "slug": "unconfirmed-customer",
+            }],
+            subscriptions=[{
+                "studio_id": "unconfirmed-customer",
+                "status": "incomplete",
+                "comped": True,
+                "stripe_customer_id": "cus_maybe_paying",
+                "stripe_subscription_id": None,
+                "metadata": {"comp": {
+                    "state": "granted",
+                    "at": "2026-07-27T12:00:01+00:00",
+                }},
+            }],
+        )
+
+        exit_code, stdout, stderr = run_cli(supabase, ["drift"])
+
+        self.assertEqual(exit_code, 0, stderr)
+        reported = json.loads(stdout)
+        self.assertEqual(
+            reported[0]["drift_reasons"],
+            [
+                "comped is true with a Stripe customer but no live local "
+                "subscription; needs confirmation against Stripe"
+            ],
+        )
+
     def test_list_paginates_until_short_page(self):
         studios = []
         subscriptions = []

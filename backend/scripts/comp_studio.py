@@ -264,8 +264,10 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
     # revocation defect leaves state='granted' with the flag false, and a manual
     # flag write leaves state='revoked' with the flag true. Filtering on the flag
     # can only ever surface the first. Active grants also need to surface when
-    # their timestamp cannot safely order a billing event, or when a live Stripe
-    # subscription coexists with the comp regardless of timestamp ordering.
+    # their timestamp cannot safely order a billing event, when a live Stripe
+    # subscription coexists with the comp regardless of timestamp ordering, or
+    # when a Stripe customer exists but the local projection cannot confirm a
+    # live subscription.
     subscriptions = _paginate(
         lambda: (
             supabase.table("studio_subscriptions")
@@ -293,11 +295,19 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
         live_subscription_with_comp = (
             comped and _has_live_stripe_subscription(subscription)
         )
+        stripe_customer_needs_confirmation = (
+            comped
+            and _has_stripe_subscription_id(
+                subscription.get("stripe_customer_id")
+            )
+            and not _has_live_stripe_subscription(subscription)
+        )
         if not (
             provenance_disagrees
             or legacy_status_entitled
             or unusable_grant_timestamp
             or live_subscription_with_comp
+            or stripe_customer_needs_confirmation
         ):
             continue
         display = _display_row(
@@ -328,6 +338,11 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
                 (
                     live_subscription_with_comp,
                     "comped is true while a live Stripe subscription is present",
+                ),
+                (
+                    stripe_customer_needs_confirmation,
+                    "comped is true with a Stripe customer but no live local "
+                    "subscription; needs confirmation against Stripe",
                 ),
             )
             if applies
