@@ -30,7 +30,27 @@ Use these targets according to their safety boundary:
 
 Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
 
-Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database.
+Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database. The Supabase target guard below turns that same mismatch into a refusal for Python service-role clients, but it cannot reach the Supabase CLI, so resolving the hostname yourself remains the rule.
+
+## Supabase target guard
+
+Python service-role clients created through `app.db.supabase` refuse a hosted
+`SUPABASE_URL` when `ENVIRONMENT` is `development` or `test`. Localhost,
+`127.0.0.1`, and placeholder targets remain available without an override. This
+protects the API plus `comp_studio.py`,
+`backfill_connected_account_branding.py`, `process_account_deletions.py`, and
+`verify-connect-webhook-smoke.py` at client construction time.
+
+For deliberate owner development against a hosted project, set
+`SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true` only for that command or
+private shell after confirming the hostname. Leave it false otherwise. The
+refusal names the effective environment, target hostname, and exact override;
+the override does not replace each tool's narrower confirmations, including
+`comp_studio.py --expect-project`.
+
+Supabase CLI operations bypass backend `Settings` and this guard. Commands
+using `--linked`, helpers using `SUPABASE_DB_URL`, and direct CLI database or
+Storage operations must keep their existing target-specific confirmations.
 
 ## Studio platform comp access
 

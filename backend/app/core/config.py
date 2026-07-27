@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     SUPABASE_URL: str = "https://placeholder.supabase.co"
+    SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT: bool = False
     SUPABASE_SERVICE_ROLE_KEY: str = "placeholder-key"
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
     SUPABASE_ALLOW_LEGACY_HS256: bool = False
@@ -92,9 +93,36 @@ class Settings(BaseSettings):
         "extra": "ignore"
     }
 
+    def validate_supabase_target(self) -> None:
+        """Refuse accidental hosted access from a permissive environment."""
+        environment = self.ENVIRONMENT.strip().lower()
+        if (
+            environment not in PERMISSIVE_ENVIRONMENTS
+            or self.SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT
+            or is_placeholder_value(self.SUPABASE_URL)
+        ):
+            return
+
+        try:
+            hostname = urlparse(self.SUPABASE_URL).hostname
+        except ValueError:
+            hostname = None
+        if hostname in {"localhost", "127.0.0.1"}:
+            return
+
+        target = hostname or "<missing>"
+        raise RuntimeError(
+            "Refusing unsafe Supabase target: "
+            f"ENVIRONMENT={environment} is permissive but SUPABASE_URL host "
+            f"{target} is non-local. Set "
+            "SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true only when "
+            "this hosted target is deliberate."
+        )
+
     def validate_runtime_configuration(self) -> None:
         """Fail closed when a hosted environment has incomplete or unsafe config."""
         environment = self.ENVIRONMENT.strip().lower()
+        self.validate_supabase_target()
         if environment in PERMISSIVE_ENVIRONMENTS:
             return
         if environment not in STRICT_ENVIRONMENTS:

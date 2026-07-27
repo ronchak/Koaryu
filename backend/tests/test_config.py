@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from app.core.config import Settings
@@ -40,6 +41,12 @@ VALID_STAGING_SETTINGS = {
 
 
 class HostedConfigValidationTest(unittest.TestCase):
+    def test_test_process_uses_placeholder_supabase_url(self):
+        self.assertEqual(
+            os.environ["SUPABASE_URL"],
+            "https://placeholder.supabase.co",
+        )
+
     def test_development_allows_placeholder_defaults(self):
         Settings(ENVIRONMENT="development").validate_runtime_configuration()
 
@@ -282,6 +289,66 @@ class HostedConfigValidationTest(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "SUPABASE_ALLOW_LEGACY_HS256 must be false in staging"):
             settings.validate_runtime_configuration()
+
+
+class SupabaseTargetValidationTest(unittest.TestCase):
+    def test_runtime_validation_rejects_permissive_hosted_supabase_target(self):
+        settings = Settings(
+            ENVIRONMENT="development",
+            SUPABASE_URL="https://hosted-project.supabase.co",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            (
+                "ENVIRONMENT=development.*hosted-project\\.supabase\\.co.*"
+                "SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true"
+            ),
+        ):
+            settings.validate_runtime_configuration()
+
+    def test_permissive_environment_allows_deliberate_hosted_supabase_target(self):
+        settings = Settings(
+            ENVIRONMENT="test",
+            SUPABASE_URL="https://hosted-project.supabase.co",
+            SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=True,
+        )
+
+        settings.validate_supabase_target()
+
+    def test_permissive_environment_allows_localhost_supabase_target(self):
+        settings = Settings(
+            ENVIRONMENT="development",
+            SUPABASE_URL="http://localhost:54321",
+        )
+
+        settings.validate_supabase_target()
+
+    def test_permissive_environment_allows_loopback_supabase_target(self):
+        settings = Settings(
+            ENVIRONMENT="test",
+            SUPABASE_URL="http://127.0.0.1:54321",
+        )
+
+        settings.validate_supabase_target()
+
+    def test_permissive_environment_allows_placeholder_supabase_target(self):
+        settings = Settings(
+            ENVIRONMENT="development",
+            SUPABASE_URL="https://your-project.supabase.co",
+        )
+
+        settings.validate_supabase_target()
+
+    def test_strict_environments_are_ignored_by_supabase_target_guard(self):
+        for environment in ("production", "staging"):
+            with self.subTest(environment=environment):
+                settings = Settings(
+                    ENVIRONMENT=environment,
+                    SUPABASE_URL="https://hosted-project.supabase.co",
+                )
+
+                settings.validate_supabase_target()
 
 
 if __name__ == "__main__":

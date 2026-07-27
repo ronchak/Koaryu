@@ -8,6 +8,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from app.core.config import Settings
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -91,6 +95,30 @@ def test_connect_smoke_signs_with_first_configured_secret(monkeypatch):
     monkeypatch.setenv("STRIPE_CONNECT_WEBHOOK_SECRET", " whsec_first ,\n whsec_second ")
 
     assert module._connect_webhook_secret() == "whsec_first"
+
+
+def test_connect_smoke_rejects_permissive_hosted_supabase_target(monkeypatch):
+    module = _load_connect_smoke_module()
+    settings = Settings(
+        ENVIRONMENT="development",
+        SUPABASE_URL="https://hosted-project.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="fixture-service-role-key",
+    )
+    monkeypatch.setenv("SUPABASE_URL", settings.SUPABASE_URL)
+    monkeypatch.setenv(
+        "SUPABASE_SERVICE_ROLE_KEY",
+        settings.SUPABASE_SERVICE_ROLE_KEY,
+    )
+    monkeypatch.setattr("app.db.supabase.get_settings", lambda: settings)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "ENVIRONMENT=development.*hosted-project\\.supabase\\.co.*"
+            "SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true"
+        ),
+    ):
+        module._supabase_client()
 
 
 def test_support_triage_digest_fails_when_supabase_cli_is_missing(tmp_path):

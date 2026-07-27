@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import re
 import sys
 import warnings
@@ -56,6 +57,8 @@ def literal(value: Any) -> str:
 
 
 def load_openapi() -> dict[str, Any]:
+    # Contract generation must not inherit a developer's stateful database target.
+    os.environ["SUPABASE_URL"] = "https://placeholder.supabase.co"
     sys.path.insert(0, str(BACKEND_DIR))
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="Duplicate Operation ID.*")

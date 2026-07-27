@@ -43,6 +43,7 @@ BILLING_PLATFORM_FEE_BPS=50
 STRIPE_MODE=live
 LIVE_BILLING_ENABLED=false
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
+SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=false
 SUPABASE_ALLOW_LEGACY_HS256=false
 ```
 
@@ -68,6 +69,16 @@ Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_liv
 
 ### Hosted Runtime Guard
 
+Before the hosted-only validation below, the backend checks the Supabase target.
+`ENVIRONMENT=development` and `ENVIRONMENT=test` may use localhost,
+`127.0.0.1`, or a placeholder URL by default, but refuse a hosted target unless
+`SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true` is set deliberately.
+The same check runs before every shared service-role client is constructed, so
+standalone Python operator tools are covered even when FastAPI is not imported.
+Production and staging do not use this opt-in; Render pins it to `false`.
+Supabase CLI operations using `--linked` or `SUPABASE_DB_URL` bypass backend
+settings and remain governed by their command-specific target checks.
+
 When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critical service configuration during import. The service refuses to boot if any of the following are blank, placeholder-shaped, too short for a hosted secret, or invalid for that environment:
 
 - `SUPABASE_URL`
@@ -82,7 +93,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critic
 
 `SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
 
-Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures. An unknown or misspelled `ENVIRONMENT` fails closed.
+Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures, while the separate target guard prevents them from silently using a hosted database. An unknown or misspelled `ENVIRONMENT` fails closed.
 
 Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
 

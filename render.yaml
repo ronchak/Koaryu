@@ -28,6 +28,8 @@ services:
         value: "false"
       - key: SUPABASE_URL
         value: https://mimguepumzsgmcaycdsh.supabase.co
+      - key: SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT
+        value: "false"
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_JWT_SECRET
