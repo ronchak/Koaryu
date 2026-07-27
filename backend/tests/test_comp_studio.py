@@ -920,7 +920,11 @@ class CompStudioCliTests(unittest.TestCase):
                  "stripe_subscription_id": None, "metadata": {"comp": {"state": "revoked"}}},
                 # Agreeing; must not be reported.
                 {"studio_id": "studio-consistent", "status": "incomplete", "comped": True,
-                 "stripe_subscription_id": None, "metadata": {"comp": {"state": "granted"}}},
+                 "stripe_subscription_id": None,
+                 "metadata": {"comp": {
+                     "state": "granted",
+                     "at": "2026-07-27T00:00:00+00:00",
+                 }}},
             ],
         )
 
@@ -929,6 +933,59 @@ class CompStudioCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0, stderr)
         reported = {row["studio"]["id"] for row in json.loads(stdout)}
         self.assertEqual(reported, {"studio-erased", "studio-resurrected"})
+
+    def test_drift_reports_active_grants_with_unusable_timestamps(self):
+        unusable_timestamp_reason = (
+            "metadata.comp.state is granted but metadata.comp.at is "
+            "absent, unparseable, or non-finite"
+        )
+        cases = {
+            "absent": {},
+            "unparseable": {"at": "not-a-timestamp"},
+            "infinity": {"at": "infinity"},
+            "negative-infinity": {"at": "-infinity"},
+            "timezone-overflow": {"at": "2026-07-27T00:00:00+25:00"},
+        }
+        studios = [
+            {"id": studio_id, "name": studio_id, "slug": studio_id}
+            for studio_id in [*cases, "valid"]
+        ]
+        subscriptions = [
+            {
+                "studio_id": studio_id,
+                "status": "incomplete",
+                "comped": True,
+                "stripe_subscription_id": None,
+                "metadata": {"comp": {"state": "granted", **timestamp}},
+            }
+            for studio_id, timestamp in cases.items()
+        ]
+        subscriptions.append({
+            "studio_id": "valid",
+            "status": "incomplete",
+            "comped": True,
+            "stripe_subscription_id": None,
+            "metadata": {"comp": {
+                "state": "granted",
+                "at": "2026-07-27T00:00:00+00:00",
+            }},
+        })
+        supabase = CompSupabase(studios=studios, subscriptions=subscriptions)
+
+        exit_code, stdout, stderr = run_cli(supabase, ["drift"])
+
+        self.assertEqual(exit_code, 0, stderr)
+        reported = {
+            row["studio"]["id"]: row["drift_reasons"]
+            for row in json.loads(stdout)
+        }
+        self.assertEqual(
+            reported,
+            {
+                studio_id: [unusable_timestamp_reason]
+                for studio_id in cases
+            },
+        )
 
     def test_list_paginates_until_short_page(self):
         studios = []

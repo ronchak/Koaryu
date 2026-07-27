@@ -44,9 +44,15 @@ BEGIN
         BEGIN
             v_granted_at := v_granted_at_text::TIMESTAMPTZ;
         EXCEPTION
-            WHEN invalid_datetime_format OR datetime_field_overflow THEN
+            -- The block contains only the cast so an unexpected cast failure
+            -- preserves the operator decision without hiding later RPC faults.
+            WHEN OTHERS THEN
                 RETURN false;
         END;
+
+        IF NOT isfinite(v_granted_at) THEN
+            RETURN false;
+        END IF;
 
         -- Stripe timestamps have second precision. Equality is therefore an
         -- ambiguous overlap, and the explicit operator decision wins.

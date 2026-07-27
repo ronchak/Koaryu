@@ -115,6 +115,118 @@ BEGIN
     END IF;
 END $$;
 
+-- Exercise provenance shapes against PostgreSQL itself. These timestamp casts
+-- and JSON operators have diverged from the backend fake before, so a Python
+-- test alone is not an adequate contract for this boundary.
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_studio UUID;
+    v_case RECORD;
+    v_cleared BOOLEAN;
+    v_row public.studio_subscriptions%ROWTYPE;
+BEGIN
+    INSERT INTO auth.users (
+        id,
+        aud,
+        role,
+        email,
+        raw_app_meta_data,
+        raw_user_meta_data,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        v_owner,
+        'authenticated',
+        'authenticated',
+        'comp-invalid-provenance-' || replace(v_owner::TEXT, '-', '') || '@example.invalid',
+        '{}'::JSONB,
+        '{}'::JSONB,
+        now(),
+        now()
+    );
+
+    FOR v_case IN
+        SELECT *
+          FROM (
+              VALUES
+                  (
+                      'absent-at',
+                      '{"comp":{"state":"granted"}}'::JSONB,
+                      false
+                  ),
+                  (
+                      'unparseable-at',
+                      '{"comp":{"state":"granted","at":"not-a-timestamp"}}'::JSONB,
+                      false
+                  ),
+                  (
+                      'infinite-at',
+                      '{"comp":{"state":"granted","at":"infinity"}}'::JSONB,
+                      false
+                  ),
+                  (
+                      'negative-infinite-at',
+                      '{"comp":{"state":"granted","at":"-infinity"}}'::JSONB,
+                      false
+                  ),
+                  (
+                      'timezone-overflow-at',
+                      '{"comp":{"state":"granted","at":"2026-07-27T00:00:00+25:00"}}'::JSONB,
+                      false
+                  ),
+                  (
+                      'non-object-comp',
+                      '{"comp":["legacy"]}'::JSONB,
+                      true
+                  )
+          ) AS provenance_cases(case_name, metadata, should_clear)
+    LOOP
+        v_studio := gen_random_uuid();
+
+        INSERT INTO public.studios (id, name, slug, owner_id)
+        VALUES (
+            v_studio,
+            'Comp Invalid Provenance ' || v_case.case_name,
+            'comp-invalid-' || v_case.case_name || '-'
+                || replace(v_studio::TEXT, '-', ''),
+            v_owner
+        );
+
+        INSERT INTO public.studio_subscriptions (
+            studio_id,
+            status,
+            comped,
+            metadata
+        )
+        VALUES (
+            v_studio,
+            'incomplete',
+            true,
+            v_case.metadata
+        );
+
+        SELECT public.clear_studio_comp_for_billing_event(
+            v_studio,
+            1785153600
+        )
+          INTO v_cleared;
+
+        SELECT *
+          INTO v_row
+          FROM public.studio_subscriptions
+         WHERE studio_id = v_studio;
+
+        IF v_cleared IS DISTINCT FROM v_case.should_clear
+           OR v_row.comped IS DISTINCT FROM NOT v_case.should_clear THEN
+            RAISE EXCEPTION
+                'Unexpected comp clear result for provenance case %.',
+                v_case.case_name;
+        END IF;
+    END LOOP;
+END $$;
+
 DO $$
 DECLARE
     v_owner UUID := gen_random_uuid();

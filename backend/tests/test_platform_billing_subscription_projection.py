@@ -643,6 +643,25 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                     ),
                 )
 
+    def test_non_object_comp_provenance_is_absent_and_does_not_wedge_clear(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "canceled",
+            "comped": True,
+            "metadata": {"comp": ["legacy"]},
+        }]
+        service = self.service(rows)
+
+        service.project_subscription_event(
+            self.subscription_event(created=101),
+            hydrate_subscription=True,
+        )
+
+        self.assertFalse(rows[0]["comped"])
+        self.assertEqual(rows[0]["metadata"]["comp"], ["legacy"])
+
     def test_older_or_same_second_event_cannot_erase_a_concurrent_grant(self):
         events = {
             "checkout before": (self.checkout_event(created=99), False),

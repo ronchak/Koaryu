@@ -48,7 +48,9 @@ class FakeSupabase(RpcBackedSupabase):
         if not row.get("comped", False):
             return False
 
-        comp = (row.get("metadata") or {}).get("comp") or {}
+        metadata = row.get("metadata")
+        comp_value = metadata.get("comp") if isinstance(metadata, dict) else None
+        comp = comp_value if isinstance(comp_value, dict) else {}
         if comp.get("state") == "granted":
             event_created = params.get("p_event_created")
             granted_at = comp.get("at")
