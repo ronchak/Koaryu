@@ -798,8 +798,28 @@ class PlatformBillingService:
         if status_value not in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
             return True
         if status_value == "trialing":
-            trial_end = self._timestamp_epoch(row.get("trial_end"))
-            return trial_end is not None and trial_end <= datetime.now(timezone.utc).timestamp()
+            trial_end_value = row.get("trial_end")
+            trial_end = self._timestamp_epoch(trial_end_value)
+            if trial_end is None:
+                # A trial_end that is present but unreadable used to land here
+                # as "not expired, nothing to repair", while the access
+                # evaluator's `_trial_has_ended` fails closed on a parse error
+                # and reads the same value as "trial is over". The two
+                # disagreed about one field, so the studio was denied 402 on
+                # every request and no repair ever ran to correct the row —
+                # a permanent denial with no path out of it, since webhook
+                # projection and the Admin refresh are the only other writers.
+                #
+                # Repair it instead. The evaluator stays pessimistic, which is
+                # the fail-closed behaviour the billing boundary asks for; what
+                # changes is that the pessimism is no longer permanent.
+                #
+                # An absent or empty trial_end is deliberately not this case:
+                # the evaluator ignores a falsy trial_end and admits the row,
+                # and _should_repair_subscription_periods already treats a
+                # trialing row without a trial_end as repairable.
+                return bool(trial_end_value)
+            return trial_end <= datetime.now(timezone.utc).timestamp()
         return False
 
     def _project_subscription(self, subscription: Any) -> dict[str, Any]:
