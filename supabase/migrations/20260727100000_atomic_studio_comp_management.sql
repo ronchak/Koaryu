@@ -71,6 +71,11 @@ DECLARE
     v_flag_needs_change BOOLEAN := false;
     v_status_normalized BOOLEAN := false;
     v_provider_status_preserved BOOLEAN := false;
+    -- One-argument BTRIM strips spaces only, so a tab or newline would
+    -- survive and make a blank identifier look present here while Python's
+    -- str.strip() treats it as absent. Match Python's whitespace set, or the
+    -- CLI and the database disagree about whether a subscription exists.
+    WHITESPACE CONSTANT TEXT := E' \t\n\r\f\v';
     -- Keep this set aligned with
     -- platform_billing_service.LIVE_STRIPE_SUBSCRIPTION_STATUSES.
     v_live_subscription_statuses CONSTANT TEXT[] := ARRAY[
@@ -117,7 +122,7 @@ BEGIN
     -- and cannot race an unapproved comp grant.
     IF p_comped
        AND NOT COALESCE(p_allow_live_subscription, false)
-       AND NULLIF(BTRIM(v_existing.stripe_subscription_id), '') IS NOT NULL
+       AND NULLIF(BTRIM(v_existing.stripe_subscription_id, WHITESPACE), '') IS NOT NULL
        AND v_existing.status = ANY(v_live_subscription_statuses) THEN
         RAISE EXCEPTION 'Live Stripe subscription requires explicit override.'
             USING ERRCODE = 'P0C01';
@@ -127,12 +132,12 @@ BEGIN
     v_status_normalized := (
         NOT p_comped
         AND v_existing.status = 'comped'
-        AND NULLIF(BTRIM(v_existing.stripe_subscription_id), '') IS NULL
+        AND NULLIF(BTRIM(v_existing.stripe_subscription_id, WHITESPACE), '') IS NULL
     );
     v_provider_status_preserved := (
         NOT p_comped
         AND v_existing.status = 'comped'
-        AND NULLIF(BTRIM(v_existing.stripe_subscription_id), '') IS NOT NULL
+        AND NULLIF(BTRIM(v_existing.stripe_subscription_id, WHITESPACE), '') IS NOT NULL
     );
 
     IF NOT v_flag_needs_change AND NOT v_status_normalized THEN

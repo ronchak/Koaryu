@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import json
 from io import StringIO
 from pathlib import Path
 import re
@@ -855,6 +856,79 @@ class CompStudioCliTests(unittest.TestCase):
         )
         self.assertNotIn("Access is NOT removed", stdout)
 
+    def test_a_dry_run_does_not_promise_writes_a_true_no_op_would_not_make(self):
+        """The plan has to predict the execute path, not a generic change.
+
+        A grant on an already-comped row is a no-op: the RPC returns no_change
+        and writes neither provenance nor an audit row. A plan that still showed
+        a metadata.comp block and an audit action would be describing writes
+        that never happen.
+        """
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "incomplete",
+            "comped": True,
+            "stripe_subscription_id": None,
+            "metadata": {},
+        }])
+
+        exit_code, stdout, stderr = run_cli(
+            supabase,
+            ["grant", "--studio-id", STUDIO_ID, "--reason", "again", "--actor", ACTOR_ID],
+        )
+
+        self.assertEqual(exit_code, 0, stderr)
+        plan = json.loads(stdout[:stdout.rindex("}") + 1])
+        self.assertEqual(plan["requested"].get("outcome"), "no_change")
+        self.assertIsNone(plan["audit_action"])
+        self.assertNotIn("metadata.comp", plan["requested"])
+        self.assertEqual(supabase.tables["audit_logs"], [])
+
+    def test_a_dry_run_warns_when_the_revoke_would_not_remove_access(self):
+        """A dry run that looks clean, followed by an execute that warns, is a trap."""
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "comped",
+            "comped": True,
+            "stripe_subscription_id": "sub_live",
+            "metadata": {},
+        }])
+
+        exit_code, stdout, stderr = run_cli(
+            supabase,
+            ["revoke", "--studio-id", STUDIO_ID, "--reason", "stop", "--actor", ACTOR_ID],
+        )
+
+        self.assertEqual(exit_code, 0, stderr)
+        self.assertIn("Access is NOT removed", stdout)
+
+    def test_drift_reports_provenance_disagreement_in_both_directions(self):
+        """Filtering on the flag can only ever surface half the drift."""
+        supabase = CompSupabase(
+            studios=[
+                {"id": "studio-erased", "name": "Erased", "slug": "erased"},
+                {"id": "studio-resurrected", "name": "Resurrected", "slug": "resurrected"},
+                {"id": "studio-consistent", "name": "Consistent", "slug": "consistent"},
+            ],
+            subscriptions=[
+                # A grant the revocation defect erased.
+                {"studio_id": "studio-erased", "status": "incomplete", "comped": False,
+                 "stripe_subscription_id": None, "metadata": {"comp": {"state": "granted"}}},
+                # A flag switched back on by hand after a recorded revoke.
+                {"studio_id": "studio-resurrected", "status": "incomplete", "comped": True,
+                 "stripe_subscription_id": None, "metadata": {"comp": {"state": "revoked"}}},
+                # Agreeing; must not be reported.
+                {"studio_id": "studio-consistent", "status": "incomplete", "comped": True,
+                 "stripe_subscription_id": None, "metadata": {"comp": {"state": "granted"}}},
+            ],
+        )
+
+        exit_code, stdout, stderr = run_cli(supabase, ["drift"])
+
+        self.assertEqual(exit_code, 0, stderr)
+        reported = {row["studio"]["id"] for row in json.loads(stdout)}
+        self.assertEqual(reported, {"studio-erased", "studio-resurrected"})
+
     def test_list_paginates_until_short_page(self):
         studios = []
         subscriptions = []
@@ -985,8 +1059,21 @@ class CompStudioCliTests(unittest.TestCase):
             comp_studio.LIVE_STRIPE_SUBSCRIPTION_STATUSES,
         )
         self.assertIn(
-            "nullif(btrim(v_existing.stripe_subscription_id), '') is not null",
+            "nullif(btrim(v_existing.stripe_subscription_id, whitespace), '') is not null",
             normalized,
+        )
+        # The second BTRIM argument is the whole point: one-argument BTRIM strips
+        # spaces only, so a tab-only identifier read as present in SQL while
+        # Python's str.strip() read it as absent, and the two disagreed about
+        # whether a subscription existed.
+        whitespace = re.search(r"whitespace constant text := e'([^']*)';", normalized)
+        self.assertIsNotNone(whitespace)
+        declared = whitespace.group(1).encode().decode("unicode_escape")
+        self.assertEqual(set(declared), set(" \t\n\r\f\v"))
+        self.assertEqual(
+            {character for character in declared if not character.strip()},
+            set(declared),
+            "every declared character must be whitespace to Python as well",
         )
         self.assertIn("using errcode = 'p0c01'", normalized)
 

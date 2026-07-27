@@ -10,7 +10,7 @@ This inventory records owner-run tools that can inspect or change Koaryu outside
 
 A comp changes Koaryu access only. It does not cancel, pause, discount, or otherwise modify a Stripe subscription. The tool treats billing as live only when `stripe_subscription_id` is nonblank and the projected status is `active`, `trialing`, `past_due`, `unpaid`, or `paused`. It refuses a comp grant in that state unless `--override-live-subscription` is present and prints a continued-billing warning when the override is used. The database function repeats this check under its row lock, so an unlocked preflight read is not the enforcement boundary.
 
-The open platform-subscription revocation defect can silently erase a comp granted today. This tool does not fix that defect, and a grant should not be treated as durable until the separate P0 repair lands. Use `drift`, not `list`, to find rows where CLI provenance still says `granted` but `comped` is false, or where legacy `status='comped'` still grants access while `comped` is false. `drift` cannot detect a manual grant made before this tool existed because that row has no `metadata.comp` provenance.
+The open platform-subscription revocation defect can silently erase a comp granted today. This tool does not fix that defect, and a grant should not be treated as durable until the separate P0 repair lands. Use `drift`, not `list`, to find rows where the record and the flag disagree in either direction: provenance says `granted` while `comped` is false (a grant the defect erased), provenance says `revoked` while `comped` is true (a flag switched back on outside this tool), or legacy `status='comped'` still grants access while `comped` is false. `drift` cannot detect a manual grant made before this tool existed because that row has no `metadata.comp` provenance.
 
 ### Exact commands
 
@@ -79,7 +79,7 @@ The `set_studio_comp_atomic` database function locks the existing `studio_subscr
 
 - `comped`
 - `metadata.comp`, patched with `jsonb_set` so current unrelated metadata is retained
-- `status`, only when revoking a legacy `status='comped'` row whose `stripe_subscription_id` is null, empty, or whitespace-only; that row becomes `incomplete`, even if `comped` was already false
+- `status`, only when revoking a legacy `status='comped'` row whose `stripe_subscription_id` is null, empty, or whitespace-only (spaces, tabs, and newlines alike, matched identically in SQL and Python); that row becomes `incomplete`, even if `comped` was already false
 
 The existing subscription update trigger also advances `updated_at`. A legacy `status='comped'` row with a nonblank Stripe subscription ID keeps its status because provider projection owns it; the tool prints a warning.
 
@@ -102,5 +102,7 @@ The actor must resolve to a real Supabase Auth user. `audit_logs.actor_id` has n
 ### Audit trail
 
 Applied changes insert one `audit_logs` row in the same transaction as the subscription update. The action is `platform_comp.granted` or `platform_comp.revoked`, the entity is the studio subscription, and the metadata records the reason, actor email, previous and current flag values, source, status transition, and whether legacy status was normalized or left to Stripe.
+
+A dry run predicts the execute path exactly: a request that would be a true `no_change` shows no provenance block and no audit action, and a revoke that would leave an entitling status prints the same access warning the execute path does.
 
 Dry runs and `no_change` outcomes write no audit row. `list`, `status`, and `drift` are paginated, strictly read-only commands.

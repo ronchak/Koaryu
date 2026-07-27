@@ -226,11 +226,15 @@ def _show_status(supabase: Any, args: argparse.Namespace, stdout: TextIO) -> Non
 
 
 def _show_drift(supabase: Any, stdout: TextIO) -> None:
+    # Scanned unfiltered rather than filtered to `comped = false`. Provenance can
+    # disagree with the flag in either direction: a grant erased by the
+    # revocation defect leaves state='granted' with the flag false, and a manual
+    # flag write leaves state='revoked' with the flag true. Filtering on the flag
+    # can only ever surface the first.
     subscriptions = _paginate(
         lambda: (
             supabase.table("studio_subscriptions")
             .select(SUBSCRIPTION_COLUMNS)
-            .eq("comped", False)
             .order("studio_id")
         )
     )
@@ -238,9 +242,17 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
     rows = []
     for subscription in subscriptions:
         provenance = _comp_provenance(subscription)
-        provenance_granted = bool(provenance and provenance.get("state") == "granted")
-        legacy_status_entitled = subscription.get("status") == "comped"
-        if not (provenance_granted or legacy_status_entitled):
+        comped = bool(subscription.get("comped"))
+        recorded_state = provenance.get("state") if provenance else None
+        provenance_disagrees = (
+            recorded_state == "granted" and not comped
+        ) or (
+            recorded_state == "revoked" and comped
+        )
+        legacy_status_entitled = (
+            subscription.get("status") == "comped" and not comped
+        )
+        if not (provenance_disagrees or legacy_status_entitled):
             continue
         display = _display_row(
             studios.get(subscription["studio_id"], {
@@ -253,7 +265,14 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
         display["drift_reasons"] = [
             reason
             for applies, reason in (
-                (provenance_granted, "metadata.comp.state is granted while comped is false"),
+                (
+                    recorded_state == "granted" and not comped,
+                    "metadata.comp.state is granted while comped is false",
+                ),
+                (
+                    recorded_state == "revoked" and comped,
+                    "metadata.comp.state is revoked while comped is true",
+                ),
                 (legacy_status_entitled, "status is comped while comped is false"),
             )
             if applies
@@ -359,6 +378,18 @@ def _planned_change(
     requested_comped = command == "grant"
     status_after = subscription.get("status")
     status_note = "unchanged"
+    # Mirrors the RPC's no_change test, which is deliberately not "the flag
+    # already matches": a legacy status still pending normalization is work to
+    # do even when the flag is right. A dry run that promised provenance and an
+    # audit row for a true no-op would describe writes that never happen, which
+    # is the same dishonesty this tool exists to remove from revoke.
+    flag_needs_change = bool(subscription.get("comped")) != requested_comped
+    normalizes_legacy_status = (
+        not requested_comped
+        and subscription.get("status") == "comped"
+        and not _has_stripe_subscription_id(subscription.get("stripe_subscription_id"))
+    )
+    changes_anything = flag_needs_change or normalizes_legacy_status
     if (
         not requested_comped
         and subscription.get("status") == "comped"
@@ -401,9 +432,15 @@ def _planned_change(
                 "source": "comp_studio_cli",
                 "previous": bool(subscription.get("comped")),
             },
+        } if changes_anything else {
+            "outcome": "no_change",
+            "status": status_after,
+            "status_note": status_note,
         },
         "audit_action": (
-            "platform_comp.granted" if requested_comped else "platform_comp.revoked"
+            ("platform_comp.granted" if requested_comped else "platform_comp.revoked")
+            if changes_anything
+            else None
         ),
     }
 
@@ -459,6 +496,10 @@ def _change_comp(
 
     if not args.execute:
         print("Dry run only. Re-run with --execute to apply this change.", file=stdout)
+        # The dry run has to reach the same verdict as the execute path, or an
+        # operator can be told the revoke is fine and only discover otherwise
+        # after the write.
+        _warn_if_still_entitled(args.command, plan["requested"]["status"], stdout)
         return 0
 
     _confirm_execute(args, settings, stdin, stdout)
