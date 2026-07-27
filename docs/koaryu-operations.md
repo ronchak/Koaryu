@@ -1,6 +1,6 @@
 # Koaryu Operations
 
-This guide is the operating contract for the single-studio Koaryu product. It describes currently supported behavior, not the longer-term roadmap. The detailed billing boundary is in [Billing Boundary](billing-boundary.md).
+This guide is the operating contract for the single-studio Koaryu product. It describes currently supported behavior, not the longer-term roadmap. The detailed billing boundary is in [Billing Boundary](billing-boundary.md), and owner-run scripts are cataloged in [Operator Tooling Inventory](operator-tooling.md).
 
 ## Supported studio model
 
