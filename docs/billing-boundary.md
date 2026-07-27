@@ -35,6 +35,32 @@ Readiness terms used below:
 
 Every staff route resolves authoritative `staff_roles` membership before service construction. Unexpected multi-membership fails closed. Instructor denial occurs before client billing code or sensitive billing fetches.
 
+## Platform-subscription enforcement on routine requests
+
+Routine tenant requests resolve Koaryu Core entitlement before the request proceeds. A studio whose local subscription row is already entitled and self-consistent is admitted without contacting Stripe.
+
+When the local row is not self-consistent, the resolver may attempt one bounded Stripe repair so a studio whose projection is stale-negative is not denied in error. That retry is throttled per studio, because the repair writes the same status back for a genuinely lapsed studio and would otherwise repeat on every request. Webhook projection and the Admin-only `GET /platform-billing/status` refresh are not throttled.
+
+The throttle is keyed on what the repair did, because the outcomes carry opposite risk. A repair that failed against an **unreachable** Stripe backs off for 60s: that is the case that ties up the single worker with provider timeouts, and retrying sooner cannot help, since Stripe confirms no payments while it is unreachable. A repair that failed against a **reachable** Stripe — a 5xx, a rate limit, a stale subscription id — is retried after 5s instead: it returned fast, so it never tied up the worker, and a payment can land through checkout while a retrieve is erroring. A repair that **succeeded** and left the studio unentitled is also rechecked after 5s: it is the only thing that notices a payment whose webhook was lost.
+
+A failure in Koaryu's own code — a persistence write, the subscription projector, Supabase — is not a provider fault. It opens no window and is never answered from local state: it fails closed with `503`. Reporting `402 SUBSCRIPTION_REQUIRED` in that situation presented a Koaryu outage as the studio's billing problem, in a response that looks routine.
+
+Operational consequence: if webhook delivery fails, a studio that has just paid stays denied for at most five seconds before a request re-consults Stripe — after a successful repair or a fast provider error. While Stripe is genuinely unreachable the bound is 60 seconds, during which no payment could have been confirmed in any case. The normal path does not depend on either — webhook projection updates the row within seconds — and an Admin can force reconciliation immediately from the billing page.
+
+**Suppressing a throttled repair replays the authorization outcome recorded when the window opened, onto the row it was recorded for, and never a different one.** A recorded outcome is a statement about one row state rather than about a studio: the row is re-read on every request, and webhook projection or an Admin refresh can rewrite it mid-window, so a window whose row has changed is void and the new state is resolved on its own merits. A fault replays as that fault; a row a successful repair verified replays as that row. This is what makes throttling safe to do at all, and it is deliberately not stated as a claim about which rows reach the throttle: the repair guards inspect Stripe identifiers and period integrity while the access evaluator inspects only status, `comped` and `trial_end`, and those sets overlap without either containing the other. An earlier revision reasoned that suppression "can only leave the local row in place, which is the deny-side answer" and consequently admitted unverified `active` rows for the length of every window.
+
+Provider faults never grant access. Local state is consulted on a fault only to deny:
+
+| Local subscription state | Stripe reachable | Result |
+| --- | --- | --- |
+| Entitled and self-consistent | not contacted | Request proceeds |
+| Not entitled | either | `402 SUBSCRIPTION_REQUIRED` |
+| Entitled but unverifiable | no | `503 BILLING_STATUS_UNAVAILABLE`, fail-closed |
+| Entitled, verified by Stripe under 5s ago | no | Request proceeds, until the window expires |
+| Any state, Koaryu's own fault | n/a | `503 BILLING_STATUS_UNAVAILABLE`, fail-closed |
+
+An entitled-looking local row is deliberately not trusted while it cannot be verified, on the first request and on every request answered from a throttle window — with one bounded exception. When a repair *succeeded* and Stripe itself confirmed the row moments earlier, that verdict is replayed for the remaining few seconds of the recheck window even if Stripe then becomes unreachable. It is a verdict Stripe gave, not a local row being trusted, and it expires within `ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS`. Serving it during a provider outage was considered and rejected: it would trade a bounded outage for unbounded unpaid access.
+
 ## Visible control inventory
 
 | Surface or control | Handler or endpoint | Role | Side effects | Product disposition |
