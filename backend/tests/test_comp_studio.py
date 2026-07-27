@@ -4,16 +4,25 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
+import re
 import threading
 import unittest
 from contextlib import redirect_stderr
 
 from gotrue.types import User, UserResponse
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.studio_scope import _platform_subscription_access_from_row
 from scripts import comp_studio
 from tests.fakes.supabase import RpcBackedSupabase
 
+
+COMP_MIGRATION = (
+    Path(__file__).resolve().parents[2]
+    / "supabase"
+    / "migrations"
+    / "20260727100000_atomic_studio_comp_management.sql"
+)
 
 STUDIO_ID = "11111111-1111-4111-8111-111111111111"
 ACTOR_ID = "22222222-2222-4222-8222-222222222222"
@@ -87,6 +96,7 @@ class CompSupabase(RpcBackedSupabase):
         self.transaction_lock = threading.RLock()
         self.fail_audit_insert = False
         self.after_comp_update = None
+        self.before_comp_lock = None
 
     def replace_subscription_metadata(self, replacement: dict) -> None:
         with self.transaction_lock:
@@ -99,6 +109,10 @@ class CompSupabase(RpcBackedSupabase):
 
     def _rpc_set_studio_comp_atomic(self, params: dict) -> list[dict]:
         with self.transaction_lock:
+            if self.before_comp_lock is not None:
+                before_comp_lock = self.before_comp_lock
+                self.before_comp_lock = None
+                before_comp_lock()
             subscriptions_before = deepcopy(self.tables["studio_subscriptions"])
             audits_before = deepcopy(self.tables["audit_logs"])
             try:
@@ -114,7 +128,34 @@ class CompSupabase(RpcBackedSupabase):
                     raise RuntimeError("Studio subscription not found.")
 
                 requested = params["p_comped"]
-                if bool(row["comped"]) == requested:
+                has_subscription_id = (
+                    isinstance(row.get("stripe_subscription_id"), str)
+                    and bool(row["stripe_subscription_id"].strip())
+                )
+                has_live_subscription = (
+                    has_subscription_id
+                    and (row.get("status") or "")
+                    in comp_studio.LIVE_STRIPE_SUBSCRIPTION_STATUSES
+                )
+                if (
+                    requested
+                    and has_live_subscription
+                    and not params.get("p_allow_live_subscription", False)
+                ):
+                    raise PostgrestAPIError({
+                        "code": comp_studio.LIVE_SUBSCRIPTION_REFUSAL_SQLSTATE,
+                        "message": "Live Stripe subscription requires explicit override.",
+                        "details": "",
+                        "hint": "",
+                    })
+
+                flag_needs_change = bool(row["comped"]) != requested
+                status_normalized = bool(
+                    not requested
+                    and row["status"] == "comped"
+                    and not has_subscription_id
+                )
+                if not flag_needs_change and not status_normalized:
                     return [{
                         "outcome": "no_change",
                         "subscription_status": row["status"],
@@ -129,12 +170,7 @@ class CompSupabase(RpcBackedSupabase):
                 provider_status_preserved = bool(
                     not requested
                     and row["status"] == "comped"
-                    and row.get("stripe_subscription_id")
-                )
-                status_normalized = bool(
-                    not requested
-                    and row["status"] == "comped"
-                    and not row.get("stripe_subscription_id")
+                    and has_subscription_id
                 )
                 metadata = deepcopy(row.get("metadata") or {})
                 metadata["comp"] = {
@@ -255,6 +291,55 @@ class CompStudioCliTests(unittest.TestCase):
         self.assertTrue(access["subscription_required"])
         self.assertEqual(access["status"], "incomplete")
         self.assertFalse(access["comped"])
+
+    def test_revoke_normalizes_legacy_status_when_flag_is_already_false(self):
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "comped",
+            "comped": False,
+            "stripe_subscription_id": None,
+            "metadata": {"comp": {"state": "granted"}},
+        }])
+
+        exit_code, stdout, stderr = run_cli(
+            supabase,
+            execute_args("revoke"),
+            stdin=TTYInput("project-ref.supabase.co\n"),
+        )
+
+        self.assertEqual(exit_code, 0, stderr)
+        self.assertIn("Applied revoke", stdout)
+        persisted = supabase.tables["studio_subscriptions"][0]
+        self.assertEqual(persisted["status"], "incomplete")
+        self.assertFalse(persisted["comped"])
+        self.assertEqual(persisted["metadata"]["comp"]["state"], "revoked")
+        self.assertEqual(len(supabase.tables["audit_logs"]), 1)
+        self.assertTrue(
+            _platform_subscription_access_from_row(persisted)["subscription_required"]
+        )
+
+    def test_revoke_treats_empty_or_whitespace_subscription_id_as_absent(self):
+        for subscription_id in ("", " \t "):
+            with self.subTest(subscription_id=repr(subscription_id)):
+                supabase = CompSupabase(subscriptions=[{
+                    "studio_id": STUDIO_ID,
+                    "status": "comped",
+                    "comped": True,
+                    "stripe_subscription_id": subscription_id,
+                    "metadata": {},
+                }])
+
+                exit_code, stdout, stderr = run_cli(
+                    supabase,
+                    execute_args("revoke"),
+                    stdin=TTYInput("project-ref.supabase.co\n"),
+                )
+
+                self.assertEqual(exit_code, 0, stderr)
+                self.assertNotIn("left to the Stripe provider", stdout)
+                persisted = supabase.tables["studio_subscriptions"][0]
+                self.assertEqual(persisted["status"], "incomplete")
+                self.assertFalse(persisted["comped"])
 
     def test_failed_audit_insert_rolls_back_subscription_update(self):
         supabase = CompSupabase()
@@ -645,6 +730,54 @@ class CompStudioCliTests(unittest.TestCase):
             "sub_live",
         )
 
+    def test_grant_allows_canceled_subscription_id_without_override_or_warning(self):
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "canceled",
+            "comped": False,
+            "stripe_subscription_id": "sub_canceled",
+            "metadata": {},
+        }])
+
+        exit_code, stdout, stderr = run_cli(
+            supabase,
+            execute_args("grant"),
+            stdin=TTYInput("project-ref.supabase.co\n"),
+        )
+
+        self.assertEqual(exit_code, 0, stderr)
+        self.assertNotIn("provider billing continues", stdout)
+        self.assertTrue(supabase.tables["studio_subscriptions"][0]["comped"])
+
+    def test_locked_rpc_refuses_live_subscription_that_appears_after_preflight(self):
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "canceled",
+            "comped": False,
+            "stripe_subscription_id": "sub_previous",
+            "metadata": {},
+        }])
+
+        def project_live_subscription() -> None:
+            row = supabase.tables["studio_subscriptions"][0]
+            row["status"] = "active"
+            row["stripe_subscription_id"] = "sub_now_live"
+
+        supabase.before_comp_lock = project_live_subscription
+        exit_code, _stdout, stderr = run_cli(
+            supabase,
+            execute_args("grant"),
+            stdin=TTYInput("project-ref.supabase.co\n"),
+        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("provider billing continues", stderr)
+        persisted = supabase.tables["studio_subscriptions"][0]
+        self.assertEqual(persisted["status"], "active")
+        self.assertEqual(persisted["stripe_subscription_id"], "sub_now_live")
+        self.assertFalse(persisted["comped"])
+        self.assertEqual(supabase.tables["audit_logs"], [])
+
     def test_revoke_with_provider_preserves_legacy_status_and_warns(self):
         supabase = CompSupabase(subscriptions=[{
             "studio_id": STUDIO_ID,
@@ -658,8 +791,9 @@ class CompStudioCliTests(unittest.TestCase):
             execute_args("revoke"),
             stdin=TTYInput("project-ref.supabase.co\n"),
         )
-        self.assertEqual(exit_code, 0, stderr)
+        self.assertEqual(exit_code, 3, stderr)
         self.assertIn("left to the Stripe provider", stdout)
+        self.assertIn("Access is NOT removed", stdout)
         self.assertEqual(
             supabase.tables["studio_subscriptions"][0]["status"],
             "comped",
@@ -687,7 +821,7 @@ class CompStudioCliTests(unittest.TestCase):
             stdin=TTYInput("project-ref.supabase.co\n"),
         )
 
-        self.assertEqual(exit_code, 0, stderr)
+        self.assertEqual(exit_code, 3, stderr)
         persisted = supabase.tables["studio_subscriptions"][0]
         self.assertTrue(
             persisted["comped"] is False and persisted["status"] in comp_studio.ENTITLING_STATUSES,
@@ -825,13 +959,7 @@ class CompStudioCliTests(unittest.TestCase):
         Keep this only as a cheap guard against someone deleting the lock or
         reordering the audit insert without noticing.
         """
-        migration = (
-            Path(__file__).resolve().parents[2]
-            / "supabase"
-            / "migrations"
-            / "20260727100000_atomic_studio_comp_management.sql"
-        ).read_text()
-        normalized = " ".join(migration.split()).lower()
+        normalized = " ".join(COMP_MIGRATION.read_text().split()).lower()
         self.assertIn("security invoker", normalized)
         self.assertIn("for update", normalized)
         self.assertIn("metadata = jsonb_set(", normalized)
@@ -841,6 +969,26 @@ class CompStudioCliTests(unittest.TestCase):
             normalized.index("update public.studio_subscriptions"),
             normalized.index("insert into public.audit_logs"),
         )
+
+    def test_sql_live_subscription_statuses_match_billing_service_constant(self):
+        migration = COMP_MIGRATION.read_text()
+        normalized = " ".join(migration.split()).lower()
+        declaration = re.search(
+            r"v_live_subscription_statuses constant text\[\] := "
+            r"array\[(.*?)\]::text\[\];",
+            normalized,
+        )
+        self.assertIsNotNone(declaration)
+        sql_statuses = set(re.findall(r"'([^']+)'", declaration.group(1)))
+        self.assertEqual(
+            sql_statuses,
+            comp_studio.LIVE_STRIPE_SUBSCRIPTION_STATUSES,
+        )
+        self.assertIn(
+            "nullif(btrim(v_existing.stripe_subscription_id), '') is not null",
+            normalized,
+        )
+        self.assertIn("using errcode = 'p0c01'", normalized)
 
 
 if __name__ == "__main__":

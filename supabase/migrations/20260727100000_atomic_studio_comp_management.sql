@@ -47,7 +47,8 @@ CREATE OR REPLACE FUNCTION public.set_studio_comp_atomic(
     p_comped BOOLEAN,
     p_reason TEXT,
     p_actor_id UUID,
-    p_actor_email TEXT DEFAULT NULL
+    p_actor_email TEXT DEFAULT NULL,
+    p_allow_live_subscription BOOLEAN DEFAULT false
 )
 RETURNS TABLE(
     outcome TEXT,
@@ -67,8 +68,18 @@ DECLARE
     v_updated public.studio_subscriptions%ROWTYPE;
     v_reason TEXT := BTRIM(COALESCE(p_reason, ''));
     v_changed_at TIMESTAMPTZ := now();
+    v_flag_needs_change BOOLEAN := false;
     v_status_normalized BOOLEAN := false;
     v_provider_status_preserved BOOLEAN := false;
+    -- Keep this set aligned with
+    -- platform_billing_service.LIVE_STRIPE_SUBSCRIPTION_STATUSES.
+    v_live_subscription_statuses CONSTANT TEXT[] := ARRAY[
+        'active',
+        'trialing',
+        'past_due',
+        'unpaid',
+        'paused'
+    ]::TEXT[];
 BEGIN
     IF p_comped IS NULL THEN
         RAISE EXCEPTION 'Requested comp state is required.'
@@ -101,7 +112,30 @@ BEGIN
             USING ERRCODE = 'P0002';
     END IF;
 
-    IF v_existing.comped = p_comped THEN
+    -- This repeats the CLI preflight under the subscription row lock. A
+    -- provider projection committed before this lock is therefore authoritative
+    -- and cannot race an unapproved comp grant.
+    IF p_comped
+       AND NOT COALESCE(p_allow_live_subscription, false)
+       AND NULLIF(BTRIM(v_existing.stripe_subscription_id), '') IS NOT NULL
+       AND v_existing.status = ANY(v_live_subscription_statuses) THEN
+        RAISE EXCEPTION 'Live Stripe subscription requires explicit override.'
+            USING ERRCODE = 'P0C01';
+    END IF;
+
+    v_flag_needs_change := v_existing.comped IS DISTINCT FROM p_comped;
+    v_status_normalized := (
+        NOT p_comped
+        AND v_existing.status = 'comped'
+        AND NULLIF(BTRIM(v_existing.stripe_subscription_id), '') IS NULL
+    );
+    v_provider_status_preserved := (
+        NOT p_comped
+        AND v_existing.status = 'comped'
+        AND NULLIF(BTRIM(v_existing.stripe_subscription_id), '') IS NOT NULL
+    );
+
+    IF NOT v_flag_needs_change AND NOT v_status_normalized THEN
         RETURN QUERY
         SELECT
             'no_change'::TEXT,
@@ -113,17 +147,6 @@ BEGIN
             false;
         RETURN;
     END IF;
-
-    v_status_normalized := (
-        NOT p_comped
-        AND v_existing.status = 'comped'
-        AND v_existing.stripe_subscription_id IS NULL
-    );
-    v_provider_status_preserved := (
-        NOT p_comped
-        AND v_existing.status = 'comped'
-        AND v_existing.stripe_subscription_id IS NOT NULL
-    );
 
     -- The metadata trigger rejects stale service snapshots that carry either
     -- no comp block or an older one. Only this locked transaction may replace
@@ -194,7 +217,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.set_studio_comp_atomic(UUID, BOOLEAN, TEXT, UUID, TEXT)
-    FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.set_studio_comp_atomic(UUID, BOOLEAN, TEXT, UUID, TEXT)
-    TO service_role;
+REVOKE ALL ON FUNCTION public.set_studio_comp_atomic(
+    UUID, BOOLEAN, TEXT, UUID, TEXT, BOOLEAN
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_studio_comp_atomic(
+    UUID, BOOLEAN, TEXT, UUID, TEXT, BOOLEAN
+) TO service_role;

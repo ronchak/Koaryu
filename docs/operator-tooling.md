@@ -8,7 +8,7 @@ This inventory records owner-run tools that can inspect or change Koaryu outside
 
 `scripts/comp_studio.py` lists current platform comps, shows one studio's subscription state, reports known comp drift, and grants or revokes a studio's platform access override. It is an owner-only service-role tool, not a customer or studio-admin surface.
 
-A comp changes Koaryu access only. It does not cancel, pause, discount, or otherwise modify a Stripe subscription. A studio with an active Stripe subscription continues to be billed after a comp grant. The tool refuses that grant unless `--override-live-subscription` is present and still prints a warning when the override is used.
+A comp changes Koaryu access only. It does not cancel, pause, discount, or otherwise modify a Stripe subscription. The tool treats billing as live only when `stripe_subscription_id` is nonblank and the projected status is `active`, `trialing`, `past_due`, `unpaid`, or `paused`. It refuses a comp grant in that state unless `--override-live-subscription` is present and prints a continued-billing warning when the override is used. The database function repeats this check under its row lock, so an unlocked preflight read is not the enforcement boundary.
 
 The open platform-subscription revocation defect can silently erase a comp granted today. This tool does not fix that defect, and a grant should not be treated as durable until the separate P0 repair lands. Use `drift`, not `list`, to find rows where CLI provenance still says `granted` but `comped` is false, or where legacy `status='comped'` still grants access while `comped` is false. `drift` cannot detect a manual grant made before this tool existed because that row has no `metadata.comp` provenance.
 
@@ -66,19 +66,26 @@ venv/bin/python scripts/comp_studio.py grant \
 
 The execute path refuses an unknown environment, a placeholder or mismatched Supabase project, and non-interactive stdin. `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ENVIRONMENT` come from the backend settings used by the application.
 
+Exit codes are:
+
+- `0`: the read, dry run, applied mutation, or true `no_change` outcome completed
+- `1`: a validation, project-safety, lookup, or database error prevented completion
+- `2`: command-line parsing or usage error
+- `3`: a revoke transaction completed, but an entitling status still leaves the studio with access
+
 ### What it writes
 
 The `set_studio_comp_atomic` database function locks the existing `studio_subscriptions` row and performs the entitlement update, provenance patch, and audit insert in one transaction. The only explicitly assigned business columns are:
 
 - `comped`
 - `metadata.comp`, patched with `jsonb_set` so current unrelated metadata is retained
-- `status`, only when revoking a legacy `status='comped'` row that has no `stripe_subscription_id`; that row becomes `incomplete`
+- `status`, only when revoking a legacy `status='comped'` row whose `stripe_subscription_id` is null, empty, or whitespace-only; that row becomes `incomplete`, even if `comped` was already false
 
-The existing subscription update trigger also advances `updated_at`. A legacy `status='comped'` row with a Stripe subscription keeps its status because provider projection owns it; the tool prints a warning.
+The existing subscription update trigger also advances `updated_at`. A legacy `status='comped'` row with a nonblank Stripe subscription ID keeps its status because provider projection owns it; the tool prints a warning.
 
-Read that warning literally: **clearing `comped` is only half of the entitlement.** The access evaluator allows a studio when the flag *or* the status grants it, so a revoke that leaves an entitling status (`active`, `trialing`, `comped`) behind reports `applied` while the studio keeps working. The tool says so explicitly in that case, but the revoke is not finished until `status` shows the studio actually denied.
+Read that warning literally: **clearing `comped` is only half of the entitlement.** The access evaluator allows a studio when the flag *or* the status grants it, so a revoke that leaves an entitling status (`active`, `trialing`, `comped`) behind can complete its database transaction while the studio keeps working. The tool retains the explicit warning and exits `3`, rather than returning success; the revoke is not finished until `status` shows the studio actually denied.
 
-The provenance block records the requested state, reason, actor UUID, actor email or `null`, database timestamp, `comp_studio_cli` source, and previous flag value. A database trigger preserves an existing `metadata.comp` block if a billing writer later replaces metadata from a snapshot taken before the comp transaction; this keeps both commit orders detectable by `drift`. Idempotence is decided after the row lock. An already-matching flag returns `no_change` without updating provenance or inserting an audit row.
+The provenance block records the requested state, reason, actor UUID, actor email or `null`, database timestamp, `comp_studio_cli` source, and previous flag value. A database trigger preserves an existing `metadata.comp` block if a billing writer later replaces metadata from a snapshot taken before the comp transaction; this keeps both commit orders detectable by `drift`. Idempotence is decided after the row lock. `no_change` is returned without provenance or audit writes only when neither the flag nor legacy-status normalization needs a change.
 
 ### What it deliberately does not do
 

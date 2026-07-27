@@ -15,6 +15,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.core.config import get_settings, is_placeholder_value
 from app.db.supabase import create_supabase_client
+from app.services.platform_billing_service import LIVE_STRIPE_SUBSCRIPTION_STATUSES
 
 
 PAGE_SIZE = 200
@@ -25,6 +26,11 @@ RECOGNIZED_ENVIRONMENTS = {"development", "test", "staging", "production"}
 # `comped` flag, but any of these statuses entitles the studio on its own, so a
 # cleared flag is not the same thing as removed access.
 ENTITLING_STATUSES = {"active", "trialing", "comped"}
+LIVE_SUBSCRIPTION_REFUSAL_SQLSTATE = "P0C01"
+LIVE_SUBSCRIPTION_WARNING = (
+    "WARNING: This studio has a live Stripe subscription. A comp is only an "
+    "access override; provider billing continues."
+)
 SUBSCRIPTION_COLUMNS = (
     "studio_id,status,comped,stripe_customer_id,stripe_subscription_id,"
     "trial_start,trial_end,current_period_start,current_period_end,"
@@ -34,6 +40,17 @@ SUBSCRIPTION_COLUMNS = (
 
 class CompStudioError(RuntimeError):
     pass
+
+
+def _has_stripe_subscription_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _has_live_stripe_subscription(subscription: dict[str, Any]) -> bool:
+    return (
+        _has_stripe_subscription_id(subscription.get("stripe_subscription_id"))
+        and (subscription.get("status") or "") in LIVE_STRIPE_SUBSCRIPTION_STATUSES
+    )
 
 
 def _reason(value: str) -> str:
@@ -345,14 +362,14 @@ def _planned_change(
     if (
         not requested_comped
         and subscription.get("status") == "comped"
-        and not subscription.get("stripe_subscription_id")
+        and not _has_stripe_subscription_id(subscription.get("stripe_subscription_id"))
     ):
         status_after = "incomplete"
         status_note = "legacy provider-less comp status will be normalized"
     elif (
         not requested_comped
         and subscription.get("status") == "comped"
-        and subscription.get("stripe_subscription_id")
+        and _has_stripe_subscription_id(subscription.get("stripe_subscription_id"))
     ):
         status_note = "legacy comp status remains provider-owned"
 
@@ -403,26 +420,23 @@ def _change_comp(
     args: argparse.Namespace,
     stdin: TextIO,
     stdout: TextIO,
-) -> None:
+) -> int:
     studio = _resolve_studio(supabase, slug=args.slug, studio_id=args.studio_id)
     subscription = _subscription_for_studio(supabase, studio["id"])
     actor_id, actor_email = _resolve_actor(supabase, args.actor)
 
-    if args.command == "grant" and subscription.get("stripe_subscription_id"):
-        warning = (
-            "WARNING: This studio has a live Stripe subscription. A comp is only an "
-            "access override; provider billing continues."
-        )
+    if args.command == "grant" and _has_live_stripe_subscription(subscription):
         if not args.override_live_subscription:
             raise CompStudioError(
-                f"{warning} Re-run with --override-live-subscription only if continued billing is intended."
+                f"{LIVE_SUBSCRIPTION_WARNING} Re-run with "
+                "--override-live-subscription only if continued billing is intended."
             )
-        print(warning, file=stdout)
+        print(LIVE_SUBSCRIPTION_WARNING, file=stdout)
 
     if (
         args.command == "revoke"
         and subscription.get("status") == "comped"
-        and subscription.get("stripe_subscription_id")
+        and _has_stripe_subscription_id(subscription.get("stripe_subscription_id"))
     ):
         print(
             "WARNING: Legacy status 'comped' will be left unchanged because a Stripe "
@@ -445,7 +459,7 @@ def _change_comp(
 
     if not args.execute:
         print("Dry run only. Re-run with --execute to apply this change.", file=stdout)
-        return
+        return 0
 
     _confirm_execute(args, settings, stdin, stdout)
     try:
@@ -457,9 +471,17 @@ def _change_comp(
                 "p_reason": args.reason,
                 "p_actor_id": actor_id,
                 "p_actor_email": actor_email,
+                "p_allow_live_subscription": bool(
+                    args.command == "grant" and args.override_live_subscription
+                ),
             },
         ).execute()
     except Exception as exc:
+        if getattr(exc, "code", None) == LIVE_SUBSCRIPTION_REFUSAL_SQLSTATE:
+            raise CompStudioError(
+                f"{LIVE_SUBSCRIPTION_WARNING} Re-run with "
+                "--override-live-subscription only if continued billing is intended."
+            ) from exc
         raise CompStudioError(f"Atomic comp change failed: {exc}") from exc
 
     row = _first_rpc_row(result.data)
@@ -467,9 +489,17 @@ def _change_comp(
         raise CompStudioError("Atomic comp change returned no outcome.")
     outcome = row.get("outcome")
     if outcome == "no_change":
-        print("No change: the requested comp state is already set.", file=stdout)
-        _warn_if_still_entitled(args.command, row.get("subscription_status"), stdout)
-        return
+        print(
+            "No change: the requested comp state and legacy status already match.",
+            file=stdout,
+        )
+        return (
+            3
+            if _warn_if_still_entitled(
+                args.command, row.get("subscription_status"), stdout
+            )
+            else 0
+        )
     if outcome != "applied":
         raise CompStudioError(f"Atomic comp change returned unknown outcome {outcome!r}.")
 
@@ -482,10 +512,16 @@ def _change_comp(
         f"Applied {args.command} for studio {studio['id']}; audit log written.",
         file=stdout,
     )
-    _warn_if_still_entitled(args.command, row.get("subscription_status"), stdout)
+    return (
+        3
+        if _warn_if_still_entitled(
+            args.command, row.get("subscription_status"), stdout
+        )
+        else 0
+    )
 
 
-def _warn_if_still_entitled(command: str, status: Any, stdout: TextIO) -> None:
+def _warn_if_still_entitled(command: str, status: Any, stdout: TextIO) -> bool:
     """Say plainly when a revoke did not actually remove access.
 
     Clearing `comped` is only half of the entitlement. `_platform_subscription_
@@ -496,13 +532,14 @@ def _warn_if_still_entitled(command: str, status: Any, stdout: TextIO) -> None:
     rather than left for the operator to infer.
     """
     if command != "revoke" or status not in ENTITLING_STATUSES:
-        return
+        return False
     print(
         f"WARNING: Access is NOT removed. Status is still {status!r}, which entitles "
         "the studio on its own. Verify with `status` before telling anyone the comp "
         "is gone.",
         file=stdout,
     )
+    return True
 
 
 def main(
@@ -528,7 +565,7 @@ def main(
         elif args.command == "drift":
             _show_drift(client, stdout)
         else:
-            _change_comp(
+            return _change_comp(
                 client,
                 settings if settings is not None else get_settings(),
                 args,

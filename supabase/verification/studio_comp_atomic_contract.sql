@@ -2,10 +2,10 @@ BEGIN;
 
 DO $$
 DECLARE
-    v_rpc REGPROCEDURE := 'public.set_studio_comp_atomic(uuid, boolean, text, uuid, text)'::REGPROCEDURE;
+    v_rpc REGPROCEDURE := 'public.set_studio_comp_atomic(uuid, boolean, text, uuid, text, boolean)'::REGPROCEDURE;
 BEGIN
-    IF to_regprocedure('public.set_studio_comp_atomic(uuid, boolean, text, uuid, text)') IS NULL THEN
-        RAISE EXCEPTION 'Missing public.set_studio_comp_atomic(uuid, boolean, text, uuid, text).';
+    IF to_regprocedure('public.set_studio_comp_atomic(uuid, boolean, text, uuid, text, boolean)') IS NULL THEN
+        RAISE EXCEPTION 'Missing repaired public.set_studio_comp_atomic RPC.';
     END IF;
 
     IF NOT has_function_privilege('service_role', v_rpc, 'EXECUTE') THEN
@@ -74,7 +74,8 @@ BEGIN
         true,
         'Metadata verification',
         v_owner,
-        'owner@example.invalid'
+        'owner@example.invalid',
+        false
     );
 
     SELECT *
@@ -102,6 +103,233 @@ BEGIN
     IF v_row.metadata->>'core_subscription_event_created' <> '456'
        OR v_row.metadata->'comp'->>'state' <> 'granted' THEN
         RAISE EXCEPTION 'Stale billing metadata replacement erased comp provenance.';
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_flag_false_studio UUID := gen_random_uuid();
+    v_blank_id_studio UUID := gen_random_uuid();
+    v_provider_studio UUID := gen_random_uuid();
+    v_live_studio UUID := gen_random_uuid();
+    v_canceled_studio UUID := gen_random_uuid();
+    v_result RECORD;
+    v_row public.studio_subscriptions%ROWTYPE;
+    v_refused BOOLEAN := false;
+    v_audit_count INTEGER;
+BEGIN
+    INSERT INTO auth.users (
+        id,
+        aud,
+        role,
+        email,
+        raw_app_meta_data,
+        raw_user_meta_data,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        v_owner,
+        'authenticated',
+        'authenticated',
+        'comp-revoke-' || replace(v_owner::TEXT, '-', '') || '@example.invalid',
+        '{}'::JSONB,
+        '{}'::JSONB,
+        now(),
+        now()
+    );
+
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES
+        (
+            v_flag_false_studio,
+            'Comp Flag False Revoke Smoke',
+            'comp-flag-false-' || replace(v_flag_false_studio::TEXT, '-', ''),
+            v_owner
+        ),
+        (
+            v_blank_id_studio,
+            'Comp Blank Id Revoke Smoke',
+            'comp-blank-id-' || replace(v_blank_id_studio::TEXT, '-', ''),
+            v_owner
+        ),
+        (
+            v_provider_studio,
+            'Comp Provider Revoke Smoke',
+            'comp-provider-' || replace(v_provider_studio::TEXT, '-', ''),
+            v_owner
+        ),
+        (
+            v_live_studio,
+            'Comp Live Grant Smoke',
+            'comp-live-' || replace(v_live_studio::TEXT, '-', ''),
+            v_owner
+        ),
+        (
+            v_canceled_studio,
+            'Comp Canceled Grant Smoke',
+            'comp-canceled-' || replace(v_canceled_studio::TEXT, '-', ''),
+            v_owner
+        );
+
+    INSERT INTO public.studio_subscriptions (
+        studio_id,
+        status,
+        comped,
+        stripe_subscription_id,
+        metadata
+    )
+    VALUES
+        (v_flag_false_studio, 'comped', false, NULL, '{"case":"flag_false"}'::JSONB),
+        (v_blank_id_studio, 'comped', true, '   ', '{"case":"blank_id"}'::JSONB),
+        (v_provider_studio, 'comped', true, 'sub_legacy', '{"case":"provider"}'::JSONB),
+        (v_live_studio, 'active', false, 'sub_live', '{"case":"live"}'::JSONB),
+        (v_canceled_studio, 'canceled', false, 'sub_canceled', '{"case":"canceled"}'::JSONB);
+
+    SELECT *
+      INTO v_result
+      FROM public.set_studio_comp_atomic(
+          v_flag_false_studio,
+          false,
+          'Normalize already-cleared flag',
+          v_owner,
+          'owner@example.invalid',
+          false
+      );
+
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_flag_false_studio;
+
+    IF v_result.outcome <> 'applied'
+       OR NOT v_result.status_normalized
+       OR v_row.comped
+       OR v_row.status <> 'incomplete'
+       OR v_row.metadata->'comp'->>'state' <> 'revoked' THEN
+        RAISE EXCEPTION 'Revoke did not normalize status when comped was already false.';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO v_audit_count
+      FROM public.audit_logs
+     WHERE studio_id = v_flag_false_studio
+       AND action = 'platform_comp.revoked';
+
+    IF v_audit_count <> 1 THEN
+        RAISE EXCEPTION 'Status-only legacy normalization did not write one revoke audit.';
+    END IF;
+
+    SELECT *
+      INTO v_result
+      FROM public.set_studio_comp_atomic(
+          v_blank_id_studio,
+          false,
+          'Normalize blank provider id',
+          v_owner,
+          'owner@example.invalid',
+          false
+      );
+
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_blank_id_studio;
+
+    IF v_result.outcome <> 'applied'
+       OR NOT v_result.status_normalized
+       OR v_result.provider_status_preserved
+       OR v_row.comped
+       OR v_row.status <> 'incomplete' THEN
+        RAISE EXCEPTION 'Whitespace-only subscription id was not treated as absent.';
+    END IF;
+
+    SELECT *
+      INTO v_result
+      FROM public.set_studio_comp_atomic(
+          v_provider_studio,
+          false,
+          'Preserve provider-owned status',
+          v_owner,
+          'owner@example.invalid',
+          false
+      );
+
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_provider_studio;
+
+    IF v_result.outcome <> 'applied'
+       OR v_result.status_normalized
+       OR NOT v_result.provider_status_preserved
+       OR v_row.comped
+       OR v_row.status <> 'comped' THEN
+        RAISE EXCEPTION 'Provider-linked legacy revoke did not preserve provider status.';
+    END IF;
+
+    BEGIN
+        PERFORM public.set_studio_comp_atomic(
+            v_live_studio,
+            true,
+            'Must refuse live billing',
+            v_owner,
+            'owner@example.invalid',
+            false
+        );
+    EXCEPTION
+        WHEN SQLSTATE 'P0C01' THEN
+            v_refused := true;
+    END;
+
+    IF NOT v_refused THEN
+        RAISE EXCEPTION 'Locked RPC did not refuse a live subscription without override.';
+    END IF;
+
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_live_studio;
+
+    SELECT COUNT(*)
+      INTO v_audit_count
+      FROM public.audit_logs
+     WHERE studio_id = v_live_studio
+       AND action = 'platform_comp.granted';
+
+    IF v_row.comped OR v_audit_count <> 0 THEN
+        RAISE EXCEPTION 'Refused live-subscription grant changed state or wrote an audit.';
+    END IF;
+
+    SELECT *
+      INTO v_result
+      FROM public.set_studio_comp_atomic(
+          v_live_studio,
+          true,
+          'Explicitly allow live billing',
+          v_owner,
+          'owner@example.invalid',
+          true
+      );
+
+    IF v_result.outcome <> 'applied' OR NOT v_result.comped THEN
+        RAISE EXCEPTION 'Explicit live-subscription override did not allow the grant.';
+    END IF;
+
+    SELECT *
+      INTO v_result
+      FROM public.set_studio_comp_atomic(
+          v_canceled_studio,
+          true,
+          'Canceled subscription id is not live',
+          v_owner,
+          'owner@example.invalid',
+          false
+      );
+
+    IF v_result.outcome <> 'applied' OR NOT v_result.comped THEN
+        RAISE EXCEPTION 'Canceled subscription id was incorrectly treated as live billing.';
     END IF;
 END $$;
 
@@ -179,7 +407,8 @@ BEGIN
             true,
             'Rollback verification',
             v_owner,
-            'owner@example.invalid'
+            'owner@example.invalid',
+            false
         );
     EXCEPTION
         WHEN OTHERS THEN
