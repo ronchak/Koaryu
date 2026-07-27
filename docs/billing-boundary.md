@@ -61,6 +61,8 @@ Provider faults never grant access. Local state is consulted on a fault only to 
 
 An entitled-looking local row is deliberately not trusted while it cannot be verified, on the first request and on every request answered from a throttle window — with one bounded exception. When a repair *succeeded* and Stripe itself confirmed the row moments earlier, that verdict is replayed for the remaining few seconds of the recheck window even if Stripe then becomes unreachable. It is a verdict Stripe gave, not a local row being trusted, and it expires within `ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS`. Serving it during a provider outage was considered and rejected: it would trade a bounded outage for unbounded unpaid access.
 
+A field the resolver cannot read is treated as a denial, and every denial must be recoverable. `_trial_has_ended` reads an unparseable `trial_end` as an ended trial, which is the fail-closed behaviour above. That is only safe while a repair can still correct the row: the repair guards therefore treat a present-but-unreadable `trial_end` as repairable, so the studio is re-checked against Stripe rather than denied on a value nothing will ever revisit. Pessimism about a malformed field is the intended behaviour; permanence is not.
+
 ## Visible control inventory
 
 | Surface or control | Handler or endpoint | Role | Side effects | Product disposition |
