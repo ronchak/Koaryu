@@ -2,6 +2,24 @@ BEGIN;
 
 DO $$
 DECLARE
+    v_rpc REGPROCEDURE := 'public.clear_studio_comp_for_billing_event(uuid, bigint)'::REGPROCEDURE;
+BEGIN
+    IF to_regprocedure('public.clear_studio_comp_for_billing_event(uuid, bigint)') IS NULL THEN
+        RAISE EXCEPTION 'Missing billing-event comp ordering RPC.';
+    END IF;
+
+    IF NOT has_function_privilege('service_role', v_rpc, 'EXECUTE') THEN
+        RAISE EXCEPTION 'service_role must execute the billing-event comp ordering RPC.';
+    END IF;
+
+    IF has_function_privilege('anon', v_rpc, 'EXECUTE')
+       OR has_function_privilege('authenticated', v_rpc, 'EXECUTE') THEN
+        RAISE EXCEPTION 'Browser-facing roles must not clear comps from billing events.';
+    END IF;
+END $$;
+
+DO $$
+DECLARE
     v_rpc REGPROCEDURE := 'public.set_studio_comp_atomic(uuid, boolean, text, uuid, text, boolean)'::REGPROCEDURE;
 BEGIN
     IF to_regprocedure('public.set_studio_comp_atomic(uuid, boolean, text, uuid, text, boolean)') IS NULL THEN
@@ -15,6 +33,85 @@ BEGIN
     IF has_function_privilege('anon', v_rpc, 'EXECUTE')
        OR has_function_privilege('authenticated', v_rpc, 'EXECUTE') THEN
         RAISE EXCEPTION 'Browser-facing roles must not execute public.set_studio_comp_atomic.';
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_granted_at TIMESTAMPTZ := date_trunc('second', now());
+    v_cleared BOOLEAN;
+    v_row public.studio_subscriptions%ROWTYPE;
+BEGIN
+    INSERT INTO auth.users (
+        id,
+        aud,
+        role,
+        email,
+        raw_app_meta_data,
+        raw_user_meta_data,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        v_owner,
+        'authenticated',
+        'authenticated',
+        'comp-event-order-' || replace(v_owner::TEXT, '-', '') || '@example.invalid',
+        '{}'::JSONB,
+        '{}'::JSONB,
+        now(),
+        now()
+    );
+
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES (
+        v_studio,
+        'Comp Event Ordering Smoke',
+        'comp-event-order-' || replace(v_studio::TEXT, '-', ''),
+        v_owner
+    );
+
+    INSERT INTO public.studio_subscriptions (
+        studio_id,
+        status,
+        comped,
+        metadata
+    )
+    VALUES (
+        v_studio,
+        'incomplete',
+        true,
+        jsonb_build_object(
+            'comp',
+            jsonb_build_object('state', 'granted', 'at', v_granted_at)
+        )
+    );
+
+    SELECT public.clear_studio_comp_for_billing_event(
+        v_studio,
+        extract(epoch FROM v_granted_at)::BIGINT
+    )
+      INTO v_cleared;
+
+    IF v_cleared THEN
+        RAISE EXCEPTION 'An event concurrent with the grant cleared the comp.';
+    END IF;
+
+    SELECT public.clear_studio_comp_for_billing_event(
+        v_studio,
+        extract(epoch FROM v_granted_at + interval '1 second')::BIGINT
+    )
+      INTO v_cleared;
+
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_studio;
+
+    IF NOT v_cleared OR v_row.comped THEN
+        RAISE EXCEPTION 'An event newer than the grant did not clear the comp.';
     END IF;
 END $$;
 

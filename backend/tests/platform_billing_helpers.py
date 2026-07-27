@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ class FakeSupabase(RpcBackedSupabase):
             "studios": [{"id": "studio_1", "name": "Koaryu Test Studio"}],
             "audit_logs": [],
         })
+        self.on_update_query = self._apply_studio_subscription_update
 
     @staticmethod
     def _parse_timestamp(value: str):
@@ -31,6 +33,57 @@ class FakeSupabase(RpcBackedSupabase):
             if row.get("studio_id") == params["p_studio_id"]
             and period_start <= self._parse_timestamp(row.get("sent_at")) < period_end
         )
+
+    def _rpc_clear_studio_comp_for_billing_event(self, params: dict) -> bool:
+        row = next(
+            (
+                item
+                for item in self.tables["studio_subscriptions"]
+                if item.get("studio_id") == params["p_studio_id"]
+            ),
+            None,
+        )
+        if row is None:
+            raise RuntimeError("Studio subscription not found.")
+        if not row.get("comped", False):
+            return False
+
+        comp = (row.get("metadata") or {}).get("comp") or {}
+        if comp.get("state") == "granted":
+            event_created = params.get("p_event_created")
+            granted_at = comp.get("at")
+            if event_created is None or not granted_at:
+                return False
+            try:
+                grant_epoch = self._parse_timestamp(granted_at).timestamp()
+            except (TypeError, ValueError):
+                return False
+            if float(event_created) <= grant_epoch:
+                return False
+
+        row["comped"] = False
+        return True
+
+    def _apply_studio_subscription_update(self, query, rows):
+        if query.name != "studio_subscriptions":
+            return None
+
+        before_update = self.before_update
+        if before_update:
+            self.before_update = None
+            before_update(rows)
+
+        matched = query._matched_rows(rows)
+        for row in matched:
+            update = deepcopy(query.update_payload)
+            previous_comp = (row.get("metadata") or {}).get("comp")
+            if "metadata" in update and previous_comp is not None:
+                metadata = deepcopy(update.get("metadata") or {})
+                if metadata.get("comp") != previous_comp:
+                    metadata["comp"] = deepcopy(previous_comp)
+                update["metadata"] = metadata
+            row.update(update)
+        return [dict(row) for row in matched]
 
 
 class FakeSettings:

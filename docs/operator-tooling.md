@@ -10,7 +10,13 @@ This inventory records owner-run tools that can inspect or change Koaryu outside
 
 A comp changes Koaryu access only. It does not cancel, pause, discount, or otherwise modify a Stripe subscription. The tool treats billing as live only when `stripe_subscription_id` is nonblank and the projected status is `active`, `trialing`, `past_due`, `unpaid`, or `paused`. It refuses a comp grant in that state unless `--override-live-subscription` is present and prints a continued-billing warning when the override is used. The database function repeats this check under its row lock, so an unlocked preflight read is not the enforcement boundary.
 
-The open platform-subscription revocation defect can silently erase a comp granted today. This tool does not fix that defect, and a grant should not be treated as durable until the separate P0 repair lands. Use `drift`, not `list`, to find rows where the record and the flag disagree in either direction: provenance says `granted` while `comped` is false (a grant the defect erased), provenance says `revoked` while `comped` is true (a flag switched back on outside this tool), or legacy `status='comped'` still grants access while `comped` is false. `drift` cannot detect a manual grant made before this tool existed because that row has no `metadata.comp` provenance.
+Routine reconciliation, Admin status refresh, checkout repair, and Stripe-customer creation preserve a comp. Starting checkout records intent to pay and is not enough to end the override; an abandoned checkout must not remove access. Accepted `checkout.session.completed` and `customer.subscription.*` events remain authorized to clear it, subject to the ordering rule below.
+
+Use `drift`, not `list`, to find rows where the record and the flag disagree in either direction: provenance says `granted` while `comped` is false (either a newer accepted billing event ended the comp or an unexpected writer erased it), provenance says `revoked` while `comped` is true (a flag switched back on outside this tool), or legacy `status='comped'` still grants access while `comped` is false. `drift` cannot distinguish an authorized event clear from an unexpected write, so inspect the Stripe event history and the comp timestamp before treating the row as a defect. It also cannot detect a manual grant made before this tool existed because that row has no `metadata.comp` provenance.
+
+The comp timestamp orders operator decisions against Stripe events. An event strictly newer than `metadata.comp.at` may clear the flag. An older event cannot; a same-second event is an ambiguous overlap and the operator grant wins. If a granted comp has a missing or malformed timestamp, the event preserves it because the backend cannot prove the provider event is newer. The database decides this under the subscription row lock, so a webhook that read before a grant but waited behind its transaction cannot erase the grant from a stale snapshot.
+
+While a comp is active, reconciliation deliberately does not refresh provider-owned status, Stripe identity, period, trial, or cancellation fields. Admin status can therefore be stale, a locally live status can continue to block checkout after Stripe has canceled it, and a lost webhook is not repaired incidentally until the comp is revoked. The comp is the authoritative access override during that interval. It does not override the separately owned expired-trial evaluator rule: a row with `status='trialing'` and an expired `trial_end` is still denied even when `comped` is true.
 
 ### Exact commands
 
@@ -93,7 +99,6 @@ The tool does not:
 
 - create a missing studio or subscription row
 - cancel or change provider billing or Stripe identifiers
-- fix the open comp revocation defect
 - change the platform access evaluator or remove the legacy `comped` status
 - support bulk changes, expirations, schedules, an HTTP endpoint, or an admin UI
 

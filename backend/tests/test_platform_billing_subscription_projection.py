@@ -6,6 +6,36 @@ from tests.platform_billing_helpers import PlatformBillingServiceTestCase
 
 
 class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
+    @staticmethod
+    def subscription_event(*, created):
+        return {
+            "created": created,
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_123",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {"studio_id": "studio_1"},
+                },
+            },
+        }
+
+    @staticmethod
+    def checkout_event(*, created):
+        return {
+            "created": created,
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "customer": "cus_123",
+                    "subscription": "sub_123",
+                    "payment_status": "paid",
+                    "metadata": {"studio_id": "studio_1"},
+                },
+            },
+        }
+
     def test_checkout_hydration_failure_logs_only_safe_diagnostics(self):
         rows = [{"studio_id": "studio_sensitive", "status": "incomplete"}]
         service = self.service(rows)
@@ -573,3 +603,95 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_123")
         self.assertNotIn("current_period_start", rows[0])
+
+    def test_both_subscription_event_families_can_clear_an_older_comp(self):
+        events = {
+            "checkout": (self.checkout_event(created=101), False),
+            "subscription": (self.subscription_event(created=101), True),
+        }
+        for label, (event, hydrate_subscription) in events.items():
+            with self.subTest(label):
+                rows = [{
+                    "studio_id": "studio_1",
+                    "stripe_subscription_id": "sub_123",
+                    "stripe_customer_id": "cus_123",
+                    "status": "canceled",
+                    "comped": True,
+                    "metadata": {
+                        "comp": {
+                            "state": "granted",
+                            "at": "1970-01-01T00:01:40+00:00",
+                        },
+                    },
+                }]
+                service = self.service(rows)
+
+                service.project_subscription_event(
+                    event,
+                    hydrate_subscription=hydrate_subscription,
+                )
+
+                self.assertFalse(rows[0]["comped"])
+                self.assertEqual(
+                    service.supabase.rpc_calls[-1],
+                    (
+                        "clear_studio_comp_for_billing_event",
+                        {
+                            "p_studio_id": "studio_1",
+                            "p_event_created": 101,
+                        },
+                    ),
+                )
+
+    def test_older_or_same_second_event_cannot_erase_a_concurrent_grant(self):
+        events = {
+            "checkout before": (self.checkout_event(created=99), False),
+            "checkout overlap": (self.checkout_event(created=100), False),
+            "subscription before": (
+                self.subscription_event(created=99),
+                True,
+            ),
+            "subscription overlap": (
+                self.subscription_event(created=100),
+                True,
+            ),
+        }
+        for label, (event, hydrate_subscription) in events.items():
+            with self.subTest(label):
+                rows = [{
+                    "studio_id": "studio_1",
+                    "stripe_subscription_id": "sub_123",
+                    "stripe_customer_id": "cus_123",
+                    "status": "canceled",
+                    "comped": False,
+                    "metadata": {},
+                }]
+                service = self.service(rows)
+
+                def grant_after_webhook_read(_rows):
+                    rows[0]["comped"] = True
+                    rows[0]["metadata"] = {
+                        "comp": {
+                            "state": "granted",
+                            "at": "1970-01-01T00:01:40+00:00",
+                        },
+                    }
+
+                service.supabase.before_update = grant_after_webhook_read
+                service.project_subscription_event(
+                    event,
+                    hydrate_subscription=hydrate_subscription,
+                )
+
+                self.assertTrue(rows[0]["comped"])
+                self.assertEqual(
+                    rows[0]["metadata"]["comp"]["state"],
+                    "granted",
+                )
+                event_update = next(
+                    entry["update"]
+                    for entry in service.supabase.query_log
+                    if entry["table"] == "studio_subscriptions"
+                    and entry["update"] is not None
+                )
+                self.assertNotIn("comped", event_update)

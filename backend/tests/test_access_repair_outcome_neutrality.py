@@ -19,6 +19,8 @@ Committed here with the second-request dimension it was missing.
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
+from itertools import product
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -207,6 +209,54 @@ STRIPE_REACHABILITY = {
     "stripe unreachable": UnreachableStripeService,
 }
 
+PERIOD_SHAPES = {
+    "valid periods": (100, 200),
+    "missing periods": (None, None),
+    "inverted periods": (300, 200),
+    "unparseable periods": ("not-a-period", "still-not-a-period"),
+}
+TRIAL_END_SHAPES = {
+    "future trial end": FUTURE,
+    "missing trial end": None,
+    "expired trial end": PAST,
+    "unparseable trial end": "not-a-date",
+}
+DIMENSION_STATUSES = (
+    "active",
+    "trialing",
+    "past_due",
+    "unpaid",
+    "paused",
+    "canceled",
+    "incomplete",
+)
+
+
+def reconciliation_dimension_rows(*, comped: bool):
+    for (
+        has_subscription_id,
+        status_value,
+        (period_label, periods),
+        (trial_label, trial_end),
+    ) in product(
+        (False, True),
+        DIMENSION_STATUSES,
+        PERIOD_SHAPES.items(),
+        TRIAL_END_SHAPES.items(),
+    ):
+        label = (
+            f"comped={comped} / subscription_id={has_subscription_id} / "
+            f"status={status_value} / {period_label} / {trial_label}"
+        )
+        yield label, row(
+            comped=comped,
+            stripe_subscription_id="sub_123" if has_subscription_id else None,
+            status=status_value,
+            current_period_start=periods[0],
+            current_period_end=periods[1],
+            trial_end=trial_end,
+        )
+
 
 class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
     def setUp(self):
@@ -347,8 +397,10 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
         id, letting the sweep swap between customers rather than only clearing
         one.
 
-        `comped` and the two period fields survive, and that is a fact about the
-        code rather than a gap here; see `_row_fingerprint`.
+        The two period fields survive, and that is a fact about the code rather
+        than a gap here; see `_row_fingerprint`. `comped` no longer survives:
+        all three guards now treat a grant as a reconciliation stop, so changing
+        it alone can invalidate the recorded pending state.
         """
         fields = (
             "status",
@@ -428,6 +480,439 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
                     1,
                     f"{label} kept calling Stripe inside the backoff window",
                 )
+
+    def _record_cell(self, subscription_row, stripe_cls, *, legacy_projection):
+        platform_billing_service._access_repair_retry_after.clear()
+        stripe_cls.calls = 0
+        supabase = FakeSupabase([deepcopy(subscription_row)])
+        original_projection = (
+            platform_billing_service.PlatformBillingService._project_subscription
+        )
+
+        def project_like_d12f5b8(service, subscription, *, clear_comp=False):
+            update = original_projection(
+                service,
+                subscription,
+                clear_comp=clear_comp,
+            )
+            update["comped"] = False
+            return update
+
+        projection = (
+            patch.object(
+                platform_billing_service.PlatformBillingService,
+                "_project_subscription",
+                project_like_d12f5b8,
+            )
+            if legacy_projection
+            else patch.object(
+                platform_billing_service.PlatformBillingService,
+                "_project_subscription",
+                original_projection,
+            )
+        )
+        with projection:
+            outcomes = (
+                self.attempt(supabase, stripe_cls, 0.0),
+                self.attempt(supabase, stripe_cls, 1.0),
+            )
+
+        window = platform_billing_service._access_repair_retry_after.get("studio_1")
+        throttle = None if window is None else (
+            window.retry_after,
+            window.replay_fault,
+            window.row_fingerprint,
+        )
+        return {
+            "outcomes": outcomes,
+            "persisted_row": deepcopy(
+                supabase.tables["studio_subscriptions"][0]
+            ),
+            "provider_calls": stripe_cls.calls,
+            "throttle": throttle,
+        }
+
+    def test_non_comped_dimension_cells_are_exactly_neutral_to_d12f5b8(self):
+        """The projection payload changed; non-comped behaviour did not.
+
+        The reference run restores the old projector's unconditional
+        `comped=False` seed. Every cell then compares outcome class, persisted
+        row, provider call count, and the complete recorded throttle state.
+        """
+        recorded_rows = list(reconciliation_dimension_rows(comped=False))
+        recorded_rows.extend(
+            (f"curated / {label}", subscription_row)
+            for label, subscription_row in ROW_SHAPES.items()
+            if subscription_row.get("comped") is False
+        )
+        for label, subscription_row in recorded_rows:
+            for reachability, stripe_cls in STRIPE_REACHABILITY.items():
+                with self.subTest(f"{label} / {reachability}"):
+                    expected = self._record_cell(
+                        subscription_row,
+                        stripe_cls,
+                        legacy_projection=True,
+                    )
+                    actual = self._record_cell(
+                        subscription_row,
+                        stripe_cls,
+                        legacy_projection=False,
+                    )
+                    self.assertEqual(actual, expected)
+
+
+class CompedRepairPreservationTest(unittest.TestCase):
+    def setUp(self):
+        platform_billing_service._access_repair_retry_after.clear()
+        ReachableStripeService.calls = 0
+        UnreachableStripeService.calls = 0
+
+    def tearDown(self):
+        platform_billing_service._access_repair_retry_after.clear()
+
+    @staticmethod
+    def service(subscription_row):
+        with patch(
+            "app.services.platform_billing_service.get_settings",
+            return_value=ProductionSettings(),
+        ):
+            return platform_billing_service.PlatformBillingService(
+                FakeSupabase([subscription_row])
+            )
+
+    def attempt(self, subscription_row, stripe_cls, *, legacy_period_repair=False):
+        supabase = FakeSupabase([deepcopy(subscription_row)])
+
+        def guard_without_comp(service, candidate):
+            candidate = {**candidate, "comped": False}
+            return original_guard(service, candidate)
+
+        def legacy_projection(service, subscription, *, clear_comp=False):
+            update = original_projection(
+                service,
+                subscription,
+                clear_comp=clear_comp,
+            )
+            update["comped"] = False
+            return update
+
+        original_guard = (
+            platform_billing_service.PlatformBillingService
+            ._should_repair_subscription_periods
+        )
+        original_projection = (
+            platform_billing_service.PlatformBillingService._project_subscription
+        )
+        guard_patch = patch.object(
+            platform_billing_service.PlatformBillingService,
+            "_should_repair_subscription_periods",
+            guard_without_comp if legacy_period_repair else original_guard,
+        )
+        projection_patch = patch.object(
+            platform_billing_service.PlatformBillingService,
+            "_project_subscription",
+            legacy_projection if legacy_period_repair else original_projection,
+        )
+        with (
+            guard_patch,
+            projection_patch,
+            patch("app.services.platform_billing_service.StripeService", stripe_cls),
+            patch(
+                "app.services.platform_billing_service.get_settings",
+                return_value=ProductionSettings(),
+            ),
+            patch("app.services.studio_scope.get_settings", return_value=ProductionSettings()),
+        ):
+            try:
+                access = studio_scope.get_platform_subscription_access(
+                    supabase,
+                    "studio_1",
+                )
+            except HTTPException as exc:
+                return str(exc.status_code), supabase
+            outcome = "allowed" if not access["subscription_required"] else "402"
+            return outcome, supabase
+
+    def test_period_guard_skips_every_comped_period_shape_without_a_provider_call(self):
+        service = self.service(row(comped=True))
+        cases = {
+            "no subscription id": (
+                row(comped=True, stripe_subscription_id=None),
+                False,
+            ),
+            "active valid": (row(comped=True), False),
+            "active missing": (
+                row(
+                    comped=True,
+                    current_period_start=None,
+                    current_period_end=None,
+                ),
+                False,
+            ),
+            "active inverted": (
+                row(
+                    comped=True,
+                    current_period_start=300,
+                    current_period_end=200,
+                ),
+                False,
+            ),
+            "active unparseable": (
+                row(
+                    comped=True,
+                    current_period_start="bad-start",
+                    current_period_end="bad-end",
+                ),
+                False,
+            ),
+            "trialing missing trial end": (
+                row(comped=True, status="trialing", trial_end=None),
+                False,
+            ),
+            "canceled": (row(comped=True, status="canceled"), False),
+        }
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            UnreachableStripeService,
+        ):
+            for label, (candidate, expected) in cases.items():
+                with self.subTest(label):
+                    self.assertEqual(
+                        service._should_repair_subscription_periods(candidate),
+                        expected,
+                    )
+                    self.assertIs(
+                        service._repair_subscription_periods(candidate),
+                        candidate,
+                    )
+
+        self.assertEqual(UnreachableStripeService.calls, 0)
+
+    def test_every_reconciliation_repair_omits_comped_during_a_concurrent_grant(self):
+        cases = (
+            (
+                "missing subscription",
+                row(
+                    stripe_subscription_id=None,
+                    status="incomplete",
+                ),
+                "_repair_missing_subscription",
+                "list_customer_subscriptions",
+            ),
+            (
+                "stale subscription state",
+                row(status="canceled"),
+                "_repair_stale_subscription_state",
+                "retrieve_subscription",
+            ),
+            (
+                "subscription periods",
+                row(current_period_start=None, current_period_end=None),
+                "_repair_subscription_periods",
+                "retrieve_subscription",
+            ),
+        )
+
+        for (
+            label,
+            subscription_row,
+            repair_name,
+            provider_method,
+        ), strict_repairs in product(cases, (False, True)):
+            with self.subTest(f"{label} / strict={strict_repairs}"):
+                subscription_row = deepcopy(subscription_row)
+                service = self.service(subscription_row)
+
+                def grant_comp():
+                    persisted = service.supabase.tables["studio_subscriptions"][0]
+                    persisted["comped"] = True
+                    persisted["metadata"] = {
+                        "comp": {
+                            "state": "granted",
+                            "at": "2026-07-27T00:00:00+00:00",
+                        },
+                    }
+
+                class GrantsDuringProviderCall:
+                    def retrieve_subscription(self, subscription_id):
+                        grant_comp()
+                        return {
+                            "id": subscription_id or "sub_123",
+                            "customer": "cus_123",
+                            "status": "active",
+                            "metadata": {"studio_id": "studio_1"},
+                            "items": {
+                                "data": [{
+                                    "current_period_start": 100,
+                                    "current_period_end": 200,
+                                }]
+                            },
+                        }
+
+                    def list_customer_subscriptions(self, customer_id):
+                        grant_comp()
+                        return {
+                            "data": [{
+                                "id": "sub_123",
+                                "customer": customer_id,
+                                "status": "active",
+                                "metadata": {"studio_id": "studio_1"},
+                                "items": {
+                                    "data": [{
+                                        "current_period_start": 100,
+                                        "current_period_end": 200,
+                                    }]
+                                },
+                            }]
+                        }
+
+                self.assertTrue(
+                    hasattr(GrantsDuringProviderCall, provider_method)
+                )
+                with patch(
+                    "app.services.platform_billing_service.StripeService",
+                    GrantsDuringProviderCall,
+                ):
+                    repaired = getattr(service, repair_name)(
+                        subscription_row,
+                        strict_repairs=strict_repairs,
+                    )
+
+                updates = [
+                    entry["update"]
+                    for entry in service.supabase.query_log
+                    if entry["table"] == "studio_subscriptions"
+                    and entry["update"] is not None
+                ]
+                self.assertEqual(len(updates), 1)
+                self.assertNotIn("comped", updates[0])
+                self.assertTrue(repaired["comped"])
+                self.assertTrue(
+                    service.supabase.tables["studio_subscriptions"][0]["comped"]
+                )
+
+    def test_repair_does_not_restore_a_comp_cleared_while_stripe_is_in_flight(self):
+        subscription_row = row(
+            comped=True,
+            current_period_start=None,
+            current_period_end=None,
+        )
+        service = self.service(subscription_row)
+
+        class WebhookClearsDuringProviderCall:
+            def retrieve_subscription(self, subscription_id):
+                persisted = service.supabase.tables["studio_subscriptions"][0]
+                persisted["comped"] = False
+                persisted["metadata"] = {
+                    "comp": {
+                        "state": "granted",
+                        "at": "2026-07-27T00:00:00+00:00",
+                    },
+                }
+                return {
+                    "id": subscription_id,
+                    "customer": "cus_123",
+                    "status": "active",
+                    "items": {
+                        "data": [{
+                            "current_period_start": 100,
+                            "current_period_end": 200,
+                        }]
+                    },
+                }
+
+        with (
+            patch.object(
+                service,
+                "_should_repair_subscription_periods",
+                return_value=True,
+            ),
+            patch(
+                "app.services.platform_billing_service.StripeService",
+                WebhookClearsDuringProviderCall,
+            ),
+        ):
+            repaired = service._repair_subscription_periods(subscription_row)
+
+        update = next(
+            entry["update"]
+            for entry in service.supabase.query_log
+            if entry["table"] == "studio_subscriptions"
+            and entry["update"] is not None
+        )
+        self.assertNotIn("comped", update)
+        self.assertFalse(repaired["comped"])
+        self.assertFalse(
+            service.supabase.tables["studio_subscriptions"][0]["comped"]
+        )
+
+    def test_comped_rows_remain_comped_across_the_full_reconciliation_sweep(self):
+        for label, subscription_row in reconciliation_dimension_rows(comped=True):
+            for strict_repairs in (False, True):
+                with self.subTest(f"{label} / strict={strict_repairs}"):
+                    ReachableStripeService.calls = 0
+                    service = self.service(deepcopy(subscription_row))
+                    with patch(
+                        "app.services.platform_billing_service.StripeService",
+                        ReachableStripeService,
+                    ):
+                        persisted = service.get_access_status_row(
+                            "studio_1",
+                            strict_repairs=strict_repairs,
+                        )
+
+                    self.assertTrue(persisted["comped"])
+                    self.assertTrue(
+                        service.supabase.tables["studio_subscriptions"][0]["comped"]
+                    )
+                    self.assertEqual(ReachableStripeService.calls, 0)
+
+    def test_comped_outcome_changes_are_explicit_and_expired_trial_stays_denied(self):
+        broken_active = row(
+            comped=True,
+            status="active",
+            current_period_start=None,
+            current_period_end=None,
+        )
+
+        current, _ = self.attempt(broken_active, UnreachableStripeService)
+        legacy, _ = self.attempt(
+            broken_active,
+            UnreachableStripeService,
+            legacy_period_repair=True,
+        )
+        self.assertEqual((legacy, current), ("503", "allowed"))
+
+        for provider_status in ("past_due", "unpaid", "paused"):
+            with self.subTest(provider_status):
+                stripe_cls = confirming(provider_status, periods=True)
+                current, current_db = self.attempt(broken_active, stripe_cls)
+                legacy, legacy_db = self.attempt(
+                    broken_active,
+                    stripe_cls,
+                    legacy_period_repair=True,
+                )
+                self.assertEqual((legacy, current), ("402", "allowed"))
+                self.assertFalse(
+                    legacy_db.tables["studio_subscriptions"][0]["comped"]
+                )
+                self.assertTrue(
+                    current_db.tables["studio_subscriptions"][0]["comped"]
+                )
+
+        expired_trial = row(
+            comped=True,
+            status="trialing",
+            trial_end=PAST,
+        )
+        outcome, expired_db = self.attempt(
+            expired_trial,
+            ReachableStripeService,
+        )
+        self.assertEqual(outcome, "402")
+        self.assertTrue(expired_db.tables["studio_subscriptions"][0]["comped"])
+        self.assertEqual(ReachableStripeService.calls, 0)
 
 
 if __name__ == "__main__":
