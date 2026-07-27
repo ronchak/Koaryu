@@ -444,4 +444,45 @@ BEGIN
     END IF;
 END $$;
 
+-- `metadata` is JSONB NOT NULL, but the JSON scalar `null` satisfies NOT NULL
+-- and is not SQL NULL. COALESCE therefore does not catch it, and an unguarded
+-- jsonb_set raises 'cannot set path in scalar', aborting the comp entirely for
+-- that studio. Only a real database can show this; the Python fake coerces
+-- falsey metadata to an object and cannot reproduce it.
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_row public.studio_subscriptions%ROWTYPE;
+BEGIN
+    INSERT INTO auth.users (
+        id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    )
+    VALUES (
+        v_owner, 'authenticated', 'authenticated',
+        'comp-jsonnull-' || replace(v_owner::TEXT, '-', '') || '@example.invalid',
+        '{}'::JSONB, '{}'::JSONB, now(), now()
+    );
+
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES (v_studio, 'Comp JSON Null', 'comp-json-null-' || replace(v_studio::TEXT, '-', ''), v_owner);
+
+    INSERT INTO public.studio_subscriptions (studio_id, status, comped, metadata)
+    VALUES (v_studio, 'incomplete', false, 'null'::JSONB);
+
+    PERFORM public.set_studio_comp_atomic(
+        v_studio, true, 'json null metadata', v_owner, NULL
+    );
+
+    SELECT * INTO v_row FROM public.studio_subscriptions WHERE studio_id = v_studio;
+
+    IF NOT v_row.comped THEN
+        RAISE EXCEPTION 'A comp on JSON-null metadata did not apply.';
+    END IF;
+
+    IF v_row.metadata->'comp'->>'state' IS DISTINCT FROM 'granted' THEN
+        RAISE EXCEPTION 'A comp on JSON-null metadata recorded no provenance, so drift could not detect it later.';
+    END IF;
+END $$;
+
 ROLLBACK;

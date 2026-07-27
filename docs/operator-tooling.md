@@ -79,7 +79,7 @@ The `set_studio_comp_atomic` database function locks the existing `studio_subscr
 
 - `comped`
 - `metadata.comp`, patched with `jsonb_set` so current unrelated metadata is retained
-- `status`, only when revoking a legacy `status='comped'` row whose `stripe_subscription_id` is null, empty, or whitespace-only (spaces, tabs, and newlines alike, matched identically in SQL and Python); that row becomes `incomplete`, even if `comped` was already false
+- `status`, only when revoking a legacy `status='comped'` row whose `stripe_subscription_id` is null, empty, or whitespace-only (the ASCII whitespace set, declared once in SQL and mirrored by the CLI so both agree; Unicode whitespace such as U+00A0 counts as a present identifier, which preserves the status and exits `3` rather than reporting a removal that did not happen); that row becomes `incomplete`, even if `comped` was already false
 
 The existing subscription update trigger also advances `updated_at`. A legacy `status='comped'` row with a nonblank Stripe subscription ID keeps its status because provider projection owns it; the tool prints a warning.
 
@@ -97,7 +97,7 @@ The tool does not:
 - change the platform access evaluator or remove the legacy `comped` status
 - support bulk changes, expirations, schedules, an HTTP endpoint, or an admin UI
 
-The actor must resolve to a real Supabase Auth user. `audit_logs.actor_id` has no foreign key to `auth.users`, so this validation is enforced by the CLI. `--actor` is self-asserted by whoever holds the service-role key: it provides attribution, not authentication, and can name any real Auth user.
+The actor must resolve to a real Supabase Auth user, and an empty `--actor` is rejected rather than matched against users without an email address. `audit_logs.actor_id` has no foreign key to `auth.users`, so this validation is enforced by the CLI. `--actor` is self-asserted by whoever holds the service-role key: it provides attribution, not authentication, and can name any real Auth user.
 
 ### Audit trail
 

@@ -42,8 +42,17 @@ class CompStudioError(RuntimeError):
     pass
 
 
+# The exact set the RPC's BTRIM uses. `str.strip()` cannot be used here: it also
+# strips Unicode whitespace such as U+00A0, which BTRIM leaves in place, so the
+# two would disagree about whether a subscription exists and the dry run would
+# predict a normalization the database refuses to perform. Erring towards
+# "present" is the safe direction — the status is preserved and the revoke exits
+# nonzero, rather than silently reporting an access removal that did not happen.
+BLANK_ID_WHITESPACE = " \t\n\v\f\r"
+
+
 def _has_stripe_subscription_id(value: Any) -> bool:
-    return isinstance(value, str) and bool(value.strip())
+    return isinstance(value, str) and bool(value.strip(BLANK_ID_WHITESPACE))
 
 
 def _has_live_stripe_subscription(subscription: dict[str, Any]) -> bool:
@@ -294,6 +303,12 @@ def _auth_user_by_uuid(supabase: Any, actor_id: str) -> Any:
 
 def _resolve_actor(supabase: Any, actor: str) -> tuple[str, Optional[str]]:
     normalized = actor.strip()
+    if not normalized:
+        # An unset shell variable arrives as an empty string, and the email
+        # comparison below coalesces a missing email to "" — so a blank actor
+        # would silently match any Auth user without an email address and
+        # attribute the change to them.
+        raise CompStudioError("--actor must not be empty.")
     try:
         actor_id = str(UUID(normalized))
     except (TypeError, ValueError):

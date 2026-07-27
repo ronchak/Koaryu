@@ -15,14 +15,18 @@ BEGIN
     -- Existing billing paths replace metadata from a client-side snapshot.
     -- Preserve operator provenance when one of those snapshots predates the
     -- comp transaction so drift remains detectable after either commit order.
-    IF OLD.metadata ? 'comp'
+    IF jsonb_typeof(OLD.metadata) = 'object'
+       AND OLD.metadata ? 'comp'
        AND COALESCE(
            current_setting('koaryu.comp_provenance_write', true),
            ''
        ) <> 'allowed'
        AND NEW.metadata->'comp' IS DISTINCT FROM OLD.metadata->'comp' THEN
         NEW.metadata := jsonb_set(
-            COALESCE(NEW.metadata, '{}'::JSONB),
+            CASE
+                WHEN jsonb_typeof(NEW.metadata) = 'object' THEN NEW.metadata
+                ELSE '{}'::JSONB
+            END,
             '{comp}',
             OLD.metadata->'comp',
             true
@@ -165,7 +169,15 @@ BEGIN
                ELSE subscription.status
            END,
            metadata = jsonb_set(
-               COALESCE(subscription.metadata, '{}'::JSONB),
+               -- `metadata` is JSONB NOT NULL, but the JSON scalar `null`
+               -- satisfies NOT NULL and is not SQL NULL, so COALESCE does not
+               -- catch it and jsonb_set raises 'cannot set path in scalar',
+               -- aborting the whole comp for that studio.
+               CASE
+                   WHEN jsonb_typeof(subscription.metadata) = 'object'
+                       THEN subscription.metadata
+                   ELSE '{}'::JSONB
+               END,
                '{comp}',
                jsonb_build_object(
                    'state', CASE WHEN p_comped THEN 'granted' ELSE 'revoked' END,

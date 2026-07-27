@@ -1069,13 +1069,41 @@ class CompStudioCliTests(unittest.TestCase):
         whitespace = re.search(r"whitespace constant text := e'([^']*)';", normalized)
         self.assertIsNotNone(whitespace)
         declared = whitespace.group(1).encode().decode("unicode_escape")
-        self.assertEqual(set(declared), set(" \t\n\r\f\v"))
-        self.assertEqual(
-            {character for character in declared if not character.strip()},
-            set(declared),
-            "every declared character must be whitespace to Python as well",
-        )
+        # The CLI must strip exactly this set and no more. `str.strip()` with no
+        # argument also removes Unicode whitespace such as U+00A0, which BTRIM
+        # leaves in place; the two would then disagree about whether a
+        # subscription exists and the dry run would predict a normalization the
+        # database refuses to perform.
+        self.assertEqual(set(declared), set(comp_studio.BLANK_ID_WHITESPACE))
         self.assertIn("using errcode = 'p0c01'", normalized)
+
+    def test_a_blank_id_means_the_same_thing_to_the_cli_and_the_database(self):
+        """Unicode whitespace is blank to str.strip() but not to BTRIM.
+
+        Erring towards "present" is the safe direction: the legacy status is
+        preserved and the revoke exits nonzero, rather than the CLI silently
+        reporting an access removal the database did not perform.
+        """
+        self.assertFalse(comp_studio._has_stripe_subscription_id(" \t\n\v\f\r"))
+        for exotic in ("\u00a0", "\u2003", "\u202f"):
+            with self.subTest(repr(exotic)):
+                self.assertTrue(
+                    comp_studio._has_stripe_subscription_id(exotic),
+                    "BTRIM leaves this in place, so the CLI must treat it as present",
+                )
+
+    def test_a_blank_actor_is_rejected_rather_than_matched_to_a_user(self):
+        """An unset shell variable arrives as "", and "" == (user.email or "")."""
+        supabase = CompSupabase(users=[auth_user(ACTOR_ID, None)])
+
+        exit_code, _stdout, stderr = run_cli(
+            supabase,
+            ["grant", "--studio-id", STUDIO_ID, "--reason", "oops", "--actor", "   "],
+        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("--actor must not be empty", stderr)
+        self.assertEqual(supabase.tables["audit_logs"], [])
 
 
 if __name__ == "__main__":
