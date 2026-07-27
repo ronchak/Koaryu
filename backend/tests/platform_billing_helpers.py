@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
+from math import floor
 from unittest.mock import patch
 
 from app.services.platform_billing_service import PlatformBillingService
@@ -60,7 +61,7 @@ class FakeSupabase(RpcBackedSupabase):
                 grant_epoch = self._parse_timestamp(granted_at).timestamp()
             except (TypeError, ValueError):
                 return False
-            if float(event_created) <= grant_epoch:
+            if float(event_created) < floor(grant_epoch):
                 return False
 
         row["comped"] = False

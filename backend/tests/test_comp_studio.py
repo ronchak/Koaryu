@@ -129,9 +129,8 @@ class CompSupabase(RpcBackedSupabase):
                     raise RuntimeError("Studio subscription not found.")
 
                 requested = params["p_comped"]
-                has_subscription_id = (
-                    isinstance(row.get("stripe_subscription_id"), str)
-                    and bool(row["stripe_subscription_id"].strip())
+                has_subscription_id = comp_studio._has_stripe_subscription_id(
+                    row.get("stripe_subscription_id")
                 )
                 has_live_subscription = (
                     has_subscription_id
@@ -173,7 +172,11 @@ class CompSupabase(RpcBackedSupabase):
                     and row["status"] == "comped"
                     and has_subscription_id
                 )
-                metadata = deepcopy(row.get("metadata") or {})
+                metadata = (
+                    deepcopy(row["metadata"])
+                    if isinstance(row.get("metadata"), dict)
+                    else {}
+                )
                 metadata["comp"] = {
                     "state": "granted" if requested else "revoked",
                     "reason": params["p_reason"],
@@ -341,6 +344,52 @@ class CompStudioCliTests(unittest.TestCase):
                 persisted = supabase.tables["studio_subscriptions"][0]
                 self.assertEqual(persisted["status"], "incomplete")
                 self.assertFalse(persisted["comped"])
+
+    def test_revoke_treats_unicode_whitespace_subscription_id_as_present(self):
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "comped",
+            "comped": True,
+            "stripe_subscription_id": "\u00a0",
+            "metadata": {},
+        }])
+
+        exit_code, stdout, stderr = run_cli(
+            supabase,
+            execute_args("revoke"),
+            stdin=TTYInput("project-ref.supabase.co\n"),
+        )
+
+        self.assertEqual(exit_code, 3, stderr)
+        self.assertIn("left to the Stripe provider", stdout)
+        persisted = supabase.tables["studio_subscriptions"][0]
+        self.assertEqual(persisted["status"], "comped")
+        self.assertFalse(persisted["comped"])
+
+    def test_non_object_metadata_is_normalized_when_applying_comp(self):
+        for metadata in (["legacy"], "legacy"):
+            with self.subTest(metadata=metadata):
+                supabase = CompSupabase(subscriptions=[{
+                    "studio_id": STUDIO_ID,
+                    "status": "incomplete",
+                    "comped": False,
+                    "stripe_subscription_id": None,
+                    "metadata": metadata,
+                }])
+
+                exit_code, _stdout, stderr = run_cli(
+                    supabase,
+                    execute_args("grant"),
+                    stdin=TTYInput("project-ref.supabase.co\n"),
+                )
+
+                self.assertEqual(exit_code, 0, stderr)
+                persisted = supabase.tables["studio_subscriptions"][0]
+                self.assertIsInstance(persisted["metadata"], dict)
+                self.assertEqual(
+                    persisted["metadata"]["comp"]["state"],
+                    "granted",
+                )
 
     def test_failed_audit_insert_rolls_back_subscription_update(self):
         supabase = CompSupabase()
@@ -937,18 +986,19 @@ class CompStudioCliTests(unittest.TestCase):
     def test_drift_reports_active_grants_with_unusable_timestamps(self):
         unusable_timestamp_reason = (
             "metadata.comp.state is granted but metadata.comp.at is "
-            "absent, unparseable, or non-finite"
+            "absent, unparseable, PostgreSQL-incompatible, or non-finite"
         )
         cases = {
             "absent": {},
             "unparseable": {"at": "not-a-timestamp"},
             "infinity": {"at": "infinity"},
             "negative-infinity": {"at": "-infinity"},
+            "postgres-timezone-overflow": {"at": "2026-07-27T00:00:00+16:00"},
             "timezone-overflow": {"at": "2026-07-27T00:00:00+25:00"},
         }
         studios = [
             {"id": studio_id, "name": studio_id, "slug": studio_id}
-            for studio_id in [*cases, "valid"]
+            for studio_id in [*cases, "valid", "valid-offset-boundary"]
         ]
         subscriptions = [
             {
@@ -970,6 +1020,16 @@ class CompStudioCliTests(unittest.TestCase):
                 "at": "2026-07-27T00:00:00+00:00",
             }},
         })
+        subscriptions.append({
+            "studio_id": "valid-offset-boundary",
+            "status": "incomplete",
+            "comped": True,
+            "stripe_subscription_id": None,
+            "metadata": {"comp": {
+                "state": "granted",
+                "at": "2026-07-27T00:00:00+15:59:59",
+            }},
+        })
         supabase = CompSupabase(studios=studios, subscriptions=subscriptions)
 
         exit_code, stdout, stderr = run_cli(supabase, ["drift"])
@@ -985,6 +1045,60 @@ class CompStudioCliTests(unittest.TestCase):
                 studio_id: [unusable_timestamp_reason]
                 for studio_id in cases
             },
+        )
+
+    def test_drift_reports_comped_row_with_live_stripe_subscription(self):
+        supabase = CompSupabase(
+            studios=[
+                {"id": "live-comp", "name": "Live Comp", "slug": "live-comp"},
+                {"id": "canceled-comp", "name": "Canceled", "slug": "canceled"},
+                {"id": "blank-id", "name": "Blank", "slug": "blank"},
+            ],
+            subscriptions=[
+                {
+                    "studio_id": "live-comp",
+                    "status": "active",
+                    "comped": True,
+                    "stripe_subscription_id": "sub_paid",
+                    "metadata": {"comp": {
+                        "state": "granted",
+                        "at": "2026-07-27T12:00:01+00:00",
+                    }},
+                },
+                {
+                    "studio_id": "canceled-comp",
+                    "status": "canceled",
+                    "comped": True,
+                    "stripe_subscription_id": "sub_old",
+                    "metadata": {"comp": {
+                        "state": "granted",
+                        "at": "2026-07-27T12:00:01+00:00",
+                    }},
+                },
+                {
+                    "studio_id": "blank-id",
+                    "status": "active",
+                    "comped": True,
+                    "stripe_subscription_id": " \t\n",
+                    "metadata": {"comp": {
+                        "state": "granted",
+                        "at": "2026-07-27T12:00:01+00:00",
+                    }},
+                },
+            ],
+        )
+
+        exit_code, stdout, stderr = run_cli(supabase, ["drift"])
+
+        self.assertEqual(exit_code, 0, stderr)
+        reported = json.loads(stdout)
+        self.assertEqual(
+            [row["studio"]["id"] for row in reported],
+            ["live-comp"],
+        )
+        self.assertEqual(
+            reported[0]["drift_reasons"],
+            ["comped is true while a live Stripe subscription is present"],
         )
 
     def test_list_paginates_until_short_page(self):

@@ -40,7 +40,9 @@ DO $$
 DECLARE
     v_owner UUID := gen_random_uuid();
     v_studio UUID := gen_random_uuid();
-    v_granted_at TIMESTAMPTZ := date_trunc('second', now());
+    -- Keep a fractional database timestamp so the contract proves that a Stripe
+    -- timestamp at the start of the same second still wins the overlap.
+    v_granted_at TIMESTAMPTZ := date_trunc('second', now()) + interval '0.9 seconds';
     v_cleared BOOLEAN;
     v_row public.studio_subscriptions%ROWTYPE;
 BEGIN
@@ -91,17 +93,41 @@ BEGIN
 
     SELECT public.clear_studio_comp_for_billing_event(
         v_studio,
-        extract(epoch FROM v_granted_at)::BIGINT
+        floor(extract(epoch FROM v_granted_at))::BIGINT - 1
     )
       INTO v_cleared;
 
-    IF v_cleared THEN
-        RAISE EXCEPTION 'An event concurrent with the grant cleared the comp.';
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_studio;
+
+    IF v_cleared OR NOT v_row.comped THEN
+        RAISE EXCEPTION 'An event strictly older than the grant cleared the comp.';
     END IF;
 
     SELECT public.clear_studio_comp_for_billing_event(
         v_studio,
-        extract(epoch FROM v_granted_at + interval '1 second')::BIGINT
+        floor(extract(epoch FROM v_granted_at))::BIGINT
+    )
+      INTO v_cleared;
+
+    SELECT *
+      INTO v_row
+      FROM public.studio_subscriptions
+     WHERE studio_id = v_studio;
+
+    IF NOT v_cleared OR v_row.comped THEN
+        RAISE EXCEPTION 'A same-second event did not clear the comp.';
+    END IF;
+
+    UPDATE public.studio_subscriptions
+       SET comped = true
+     WHERE studio_id = v_studio;
+
+    SELECT public.clear_studio_comp_for_billing_event(
+        v_studio,
+        floor(extract(epoch FROM v_granted_at))::BIGINT + 1
     )
       INTO v_cleared;
 
@@ -174,6 +200,11 @@ BEGIN
                   (
                       'timezone-overflow-at',
                       '{"comp":{"state":"granted","at":"2026-07-27T00:00:00+25:00"}}'::JSONB,
+                      false
+                  ),
+                  (
+                      'postgres-timezone-boundary-overflow-at',
+                      '{"comp":{"state":"granted","at":"2026-07-27T00:00:00+16:00"}}'::JSONB,
                       false
                   ),
                   (

@@ -5,6 +5,11 @@
 -- Stripe watermarks order provider events against each other. Operator comp
 -- provenance supplies the separate clock needed to stop an older provider
 -- event from overriding a newer operator decision.
+--
+-- Two independent clocks can only bound that race, never settle it, so the
+-- tie goes to the provider event: wrongly clearing a near-simultaneous grant
+-- shows up in comp drift and is re-grantable, while letting a paying
+-- subscription keep a free comp is silent, permanent, and costly.
 
 CREATE OR REPLACE FUNCTION public.clear_studio_comp_for_billing_event(
     p_studio_id UUID,
@@ -54,9 +59,11 @@ BEGIN
             RETURN false;
         END IF;
 
-        -- Stripe timestamps have second precision. Equality is therefore an
-        -- ambiguous overlap, and the explicit operator decision wins.
-        IF to_timestamp(p_event_created) <= v_granted_at THEN
+        -- These timestamps come from independent clocks and only bound the
+        -- race. A strictly older event loses. On equality, clearing a grant is
+        -- visible in drift and recoverable; preserving a free comp alongside a
+        -- live paid subscription can be silent, permanent, and costly.
+        IF to_timestamp(p_event_created) < date_trunc('second', v_granted_at) THEN
             RETURN false;
         END IF;
     END IF;

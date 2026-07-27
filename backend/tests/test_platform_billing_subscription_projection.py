@@ -662,20 +662,22 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertFalse(rows[0]["comped"])
         self.assertEqual(rows[0]["metadata"]["comp"], ["legacy"])
 
-    def test_older_or_same_second_event_cannot_erase_a_concurrent_grant(self):
+    def test_only_a_strictly_older_event_loses_to_a_concurrent_grant(self):
         events = {
-            "checkout before": (self.checkout_event(created=99), False),
-            "checkout overlap": (self.checkout_event(created=100), False),
+            "checkout before": (self.checkout_event(created=99), False, True),
+            "checkout overlap": (self.checkout_event(created=100), False, False),
             "subscription before": (
                 self.subscription_event(created=99),
+                True,
                 True,
             ),
             "subscription overlap": (
                 self.subscription_event(created=100),
                 True,
+                False,
             ),
         }
-        for label, (event, hydrate_subscription) in events.items():
+        for label, (event, hydrate_subscription, expected_comped) in events.items():
             with self.subTest(label):
                 rows = [{
                     "studio_id": "studio_1",
@@ -692,7 +694,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                     rows[0]["metadata"] = {
                         "comp": {
                             "state": "granted",
-                            "at": "1970-01-01T00:01:40+00:00",
+                            "at": "1970-01-01T00:01:40.900000+00:00",
                         },
                     }
 
@@ -702,7 +704,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                     hydrate_subscription=hydrate_subscription,
                 )
 
-                self.assertTrue(rows[0]["comped"])
+                self.assertIs(rows[0]["comped"], expected_comped)
                 self.assertEqual(
                     rows[0]["metadata"]["comp"]["state"],
                     "granted",
@@ -714,3 +716,36 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                     and entry["update"] is not None
                 )
                 self.assertNotIn("comped", event_update)
+
+    def test_comp_clear_rpc_failure_propagates_after_projection_for_webhook_retry(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": "canceled",
+            "comped": True,
+            "metadata": {
+                "comp": {
+                    "state": "granted",
+                    "at": "1970-01-01T00:01:40+00:00",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        def fail_comp_clear(_params):
+            raise RuntimeError("forced ordered comp clear failure")
+
+        service.supabase._rpc_clear_studio_comp_for_billing_event = fail_comp_clear
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "forced ordered comp clear failure",
+        ):
+            service.project_subscription_event(
+                self.subscription_event(created=101),
+                hydrate_subscription=True,
+            )
+
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertTrue(rows[0]["comped"])

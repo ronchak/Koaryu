@@ -672,6 +672,9 @@ class PlatformBillingService:
         if not result.data:
             raise HTTPException(status_code=404, detail="Koaryu Core billing record not found.")
         if comp_clear_event_created is not NO_COMP_CLEAR_EVENT:
+            # This RPC is mandatory even after the projection write. If it
+            # fails, the webhook must remain failed and retryable so an ordered
+            # comp clear is not silently skipped.
             execute_required_rpc(
                 self.supabase,
                 "clear_studio_comp_for_billing_event",
