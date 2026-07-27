@@ -46,6 +46,7 @@ EMAIL_INCLUDED_PER_MONTH = 500
 EMAIL_OVERAGE_RATE_CENTS = 0.2
 LIVE_STRIPE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid", "paused"}
 MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environment."
+NO_COMP_CLEAR_EVENT = object()
 
 # A studio whose local subscription row is already non-entitled re-attempts a
 # Stripe repair on every authenticated request: the repair writes the same
@@ -279,21 +280,22 @@ class PlatformBillingService:
         answer differently for the same studio, so moving an id can change the
         status a repair arrives at rather than merely whether one runs.
 
-        The remaining three are defensive, for reasons that are contingent:
+        The remaining two are defensive, for reasons that are contingent:
 
         - the period fields are read by the guards but not by
           `_platform_subscription_access_from_row`, and they only ever switch
           the periods guard on and off — which consults the same endpoint with
           the same id, so the repair reaches the same status either way;
-        - `comped` *is* read by the evaluator, but no repair writes it, and
-          setting it disables the two guards that could reach a different
-          endpoint.
 
-        Both of those stop being true the moment a repair learns to write
-        `comped`, or the evaluator learns to read a period field. Narrowing this
-        tuple to what is provably load-bearing today would make that future
-        change silently reintroduce the widening this window exists to prevent,
-        so it stays the full union.
+        `comped` is load-bearing: the evaluator reads it, and every repair guard
+        treats it as an override. Reconciliation projections structurally omit
+        the column, but a concurrent operator grant still has to void a window
+        recorded for the pre-grant row.
+
+        The defensive period fields become load-bearing the moment the evaluator
+        learns to read one. Narrowing this tuple to what is provably
+        load-bearing today would make that future change silently reintroduce
+        the widening this window exists to prevent, so it stays the full union.
         """
         return (
             row.get("status"),
@@ -505,7 +507,7 @@ class PlatformBillingService:
                 if subscription_id and hydrate_subscription:
                     try:
                         subscription = StripeService().retrieve_subscription(subscription_id)
-                        update.update(self._project_subscription(subscription))
+                        update.update(self._project_subscription(subscription, clear_comp=True))
                     except Exception as exc:
                         logger.error(
                             "Stripe checkout completion subscription hydration failed; "
@@ -517,7 +519,13 @@ class PlatformBillingService:
                 else:
                     update["status"] = "incomplete"
                 self._mark_subscription_event_created(update, row, event_created)
-            self._update_subscription_row(studio_id, {k: v for k, v in update.items() if v is not None})
+            self._update_subscription_row(
+                studio_id,
+                {k: v for k, v in update.items() if v is not None},
+                comp_clear_event_created=(
+                    event_created if not stale_for_subscription_state else NO_COMP_CLEAR_EVENT
+                ),
+            )
             return
 
         if event_type.startswith("customer.subscription."):
@@ -531,9 +539,13 @@ class PlatformBillingService:
             row = self._ensure_subscription_row(studio_id)
             if self._is_stale_subscription_event(row, event_created):
                 return
-            update = self._project_subscription(data_object)
+            update = self._project_subscription(data_object, clear_comp=True)
             self._mark_subscription_event_created(update, row, event_created)
-            self._update_subscription_row(studio_id, update)
+            self._update_subscription_row(
+                studio_id,
+                update,
+                comp_clear_event_created=event_created,
+            )
             return
 
         if event_type in {"invoice.paid", "invoice.payment_failed"}:
@@ -575,7 +587,7 @@ class PlatformBillingService:
         customer_id = customer["id"] if isinstance(customer, dict) else customer.id
         self._update_subscription_row(
             studio_id,
-            {"stripe_customer_id": customer_id, "comped": False, "status": "incomplete"},
+            {"stripe_customer_id": customer_id, "status": "incomplete"},
         )
         return customer_id
 
@@ -637,15 +649,40 @@ class PlatformBillingService:
                 raise
             raise _provider_failure(exc) from exc
 
-    def _update_subscription_row(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
+    def _update_subscription_row(
+        self,
+        studio_id: str,
+        update: dict[str, Any],
+        *,
+        comp_clear_event_created: Any = NO_COMP_CLEAR_EVENT,
+    ) -> dict[str, Any]:
+        persisted_update = dict(update)
+        if comp_clear_event_created is not NO_COMP_CLEAR_EVENT:
+            # Provider projection and operator grants are ordered in the
+            # database. Sending `comped=False` in this snapshot update would
+            # let a webhook that read before a grant erase it after waiting for
+            # the grant's row lock.
+            persisted_update.pop("comped", None)
         result = (
             self.supabase.table("studio_subscriptions")
-            .update(update)
+            .update(persisted_update)
             .eq("studio_id", studio_id)
             .execute()
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Koaryu Core billing record not found.")
+        if comp_clear_event_created is not NO_COMP_CLEAR_EVENT:
+            # This RPC is mandatory even after the projection write. If it
+            # fails, the webhook must remain failed and retryable so an ordered
+            # comp clear is not silently skipped.
+            execute_required_rpc(
+                self.supabase,
+                "clear_studio_comp_for_billing_event",
+                {
+                    "p_studio_id": studio_id,
+                    "p_event_created": comp_clear_event_created,
+                },
+            )
         return result.data[0]
 
     def _is_stale_subscription_event(self, row: dict[str, Any], event_created: Optional[int]) -> bool:
@@ -777,6 +814,17 @@ class PlatformBillingService:
         )
 
     def _should_repair_subscription_periods(self, row: dict[str, Any]) -> bool:
+        """Whether provider period reconciliation is safe and necessary.
+
+        A comp is an access override, so every reconciliation path leaves its
+        provider snapshot untouched until the comp is revoked. That means Admin
+        status can remain stale, checkout can remain blocked by a locally live
+        status that Stripe has canceled, and lost webhooks are not repaired
+        incidentally. Those display and recovery costs are preferable to a
+        routine request overriding a newer operator decision.
+        """
+        if bool(row.get("comped", False)):
+            return False
         if not row.get("stripe_subscription_id"):
             return False
         if (row.get("status") or "") not in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
@@ -822,8 +870,16 @@ class PlatformBillingService:
             return trial_end <= datetime.now(timezone.utc).timestamp()
         return False
 
-    def _project_subscription(self, subscription: Any) -> dict[str, Any]:
-        return self._subscription_projector().project_subscription(subscription)
+    def _project_subscription(
+        self,
+        subscription: Any,
+        *,
+        clear_comp: bool = False,
+    ) -> dict[str, Any]:
+        return self._subscription_projector().project_subscription(
+            subscription,
+            clear_comp=clear_comp,
+        )
 
     def _get_studio(self, studio_id: str) -> dict[str, Any]:
         result = self.supabase.table("studios").select("id, name").eq("id", studio_id).single().execute()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import sys
@@ -46,6 +47,7 @@ class CompStudioError(RuntimeError):
 # "present" is the safe direction — the status is preserved and the revoke exits
 # nonzero, rather than silently reporting an access removal that did not happen.
 BLANK_ID_WHITESPACE = " \t\n\v\f\r"
+POSTGRES_MAX_UTC_OFFSET = timedelta(hours=15, minutes=59, seconds=59)
 
 
 def _has_stripe_subscription_id(value: Any) -> bool:
@@ -108,7 +110,10 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = commands.add_parser("status", help="Show one studio's subscription and comp provenance.")
     _add_selector(status_parser)
 
-    commands.add_parser("drift", help="List comp provenance or legacy status that disagrees with the flag.")
+    commands.add_parser(
+        "drift",
+        help="List comp provenance, flag, timestamp, or legacy-status drift.",
+    )
 
     grant_parser = commands.add_parser("grant", help="Grant a platform access override.")
     _add_write_arguments(grant_parser)
@@ -185,6 +190,28 @@ def _comp_provenance(row: dict[str, Any]) -> Optional[dict[str, Any]]:
     return provenance if isinstance(provenance, dict) else None
 
 
+def _has_unusable_grant_timestamp(provenance: Optional[dict[str, Any]]) -> bool:
+    if not provenance or provenance.get("state") != "granted":
+        return False
+    value = provenance.get("at")
+    if not isinstance(value, str) or not value.strip():
+        return True
+    normalized = value.strip()
+    if normalized.casefold() in {"infinity", "+infinity", "-infinity"}:
+        return True
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return True
+    utc_offset = parsed.utcoffset()
+    if utc_offset is not None and abs(utc_offset) > POSTGRES_MAX_UTC_OFFSET:
+        # Python accepts offsets through (but not including) 24 hours, while
+        # PostgreSQL rejects magnitudes above 15:59:59. Mirror the database
+        # boundary so drift catches provenance that wedges the real RPC cast.
+        return True
+    return False
+
+
 def _display_row(studio: dict[str, Any], subscription: dict[str, Any]) -> dict[str, Any]:
     return {
         "studio": {
@@ -236,7 +263,11 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
     # disagree with the flag in either direction: a grant erased by the
     # revocation defect leaves state='granted' with the flag false, and a manual
     # flag write leaves state='revoked' with the flag true. Filtering on the flag
-    # can only ever surface the first.
+    # can only ever surface the first. Active grants also need to surface when
+    # their timestamp cannot safely order a billing event, when a live Stripe
+    # subscription coexists with the comp regardless of timestamp ordering, or
+    # when a Stripe customer exists but the local projection cannot confirm a
+    # live subscription.
     subscriptions = _paginate(
         lambda: (
             supabase.table("studio_subscriptions")
@@ -258,7 +289,26 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
         legacy_status_entitled = (
             subscription.get("status") == "comped" and not comped
         )
-        if not (provenance_disagrees or legacy_status_entitled):
+        unusable_grant_timestamp = (
+            comped and _has_unusable_grant_timestamp(provenance)
+        )
+        live_subscription_with_comp = (
+            comped and _has_live_stripe_subscription(subscription)
+        )
+        stripe_customer_needs_confirmation = (
+            comped
+            and _has_stripe_subscription_id(
+                subscription.get("stripe_customer_id")
+            )
+            and not _has_live_stripe_subscription(subscription)
+        )
+        if not (
+            provenance_disagrees
+            or legacy_status_entitled
+            or unusable_grant_timestamp
+            or live_subscription_with_comp
+            or stripe_customer_needs_confirmation
+        ):
             continue
         display = _display_row(
             studios.get(subscription["studio_id"], {
@@ -280,6 +330,20 @@ def _show_drift(supabase: Any, stdout: TextIO) -> None:
                     "metadata.comp.state is revoked while comped is true",
                 ),
                 (legacy_status_entitled, "status is comped while comped is false"),
+                (
+                    unusable_grant_timestamp,
+                    "metadata.comp.state is granted but metadata.comp.at is "
+                    "absent, unparseable, PostgreSQL-incompatible, or non-finite",
+                ),
+                (
+                    live_subscription_with_comp,
+                    "comped is true while a live Stripe subscription is present",
+                ),
+                (
+                    stripe_customer_needs_confirmation,
+                    "comped is true with a Stripe customer but no live local "
+                    "subscription; needs confirmation against Stripe",
+                ),
             )
             if applies
         ]
