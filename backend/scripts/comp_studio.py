@@ -15,6 +15,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.core.config import get_settings, is_placeholder_value
 from app.db.supabase import create_supabase_client
+from app.services.studio_scope import _platform_subscription_access_from_row
 from app.services.platform_billing_service import LIVE_STRIPE_SUBSCRIPTION_STATUSES
 
 
@@ -22,10 +23,6 @@ PAGE_SIZE = 200
 AUTH_PAGE_SIZE = 100
 MAX_REASON_LENGTH = 500
 RECOGNIZED_ENVIRONMENTS = {"development", "test", "staging", "production"}
-# Mirrors studio_scope.ACTIVE_PLATFORM_SUBSCRIPTION_STATUSES. A revoke clears the
-# `comped` flag, but any of these statuses entitles the studio on its own, so a
-# cleared flag is not the same thing as removed access.
-ENTITLING_STATUSES = {"active", "trialing", "comped"}
 LIVE_SUBSCRIPTION_REFUSAL_SQLSTATE = "P0C01"
 LIVE_SUBSCRIPTION_WARNING = (
     "WARNING: This studio has a live Stripe subscription. A comp is only an "
@@ -514,7 +511,12 @@ def _change_comp(
         # The dry run has to reach the same verdict as the execute path, or an
         # operator can be told the revoke is fine and only discover otherwise
         # after the write.
-        _warn_if_still_entitled(args.command, plan["requested"]["status"], stdout)
+        _warn_if_still_entitled(
+            args.command,
+            plan["requested"]["status"],
+            stdout,
+            trial_end=subscription.get("trial_end"),
+        )
         return 0
 
     _confirm_execute(args, settings, stdin, stdout)
@@ -552,7 +554,10 @@ def _change_comp(
         return (
             3
             if _warn_if_still_entitled(
-                args.command, row.get("subscription_status"), stdout
+                args.command,
+                row.get("subscription_status"),
+                stdout,
+                trial_end=subscription.get("trial_end"),
             )
             else 0
         )
@@ -571,31 +576,53 @@ def _change_comp(
     return (
         3
         if _warn_if_still_entitled(
-            args.command, row.get("subscription_status"), stdout
+            args.command,
+            row.get("subscription_status"),
+            stdout,
+            trial_end=subscription.get("trial_end"),
         )
         else 0
     )
 
 
-def _warn_if_still_entitled(command: str, status: Any, stdout: TextIO) -> bool:
+def _warn_if_still_entitled(
+    command: str,
+    status: Any,
+    stdout: TextIO,
+    *,
+    trial_end: Any = None,
+) -> bool:
     """Say plainly when a revoke did not actually remove access.
 
-    Clearing `comped` is only half of the entitlement. `_platform_subscription_
-    access_from_row` allows the row if the flag OR the status grants it, so a
-    revoke that leaves an entitling status behind still reports "applied" while
-    the studio keeps working. Reporting a successful revocation that did not
-    revoke is the defect class this tool exists to make visible, so it is stated
-    rather than left for the operator to infer.
+    Clearing `comped` is only half of the entitlement. The evaluator allows the
+    row if the flag OR the status grants it, so a revoke that leaves an
+    entitling status behind still reports "applied" while the studio keeps
+    working. Reporting a successful revocation that did not revoke is the defect
+    class this tool exists to make visible.
+
+    The question is put to the real evaluator rather than to a mirrored status
+    set. A mirrored set gets the trial case wrong in the opposite direction: a
+    `trialing` row whose `trial_end` has passed is denied, so warning on status
+    alone would tell the operator a completed revoke was unfinished. A false
+    alarm here is not harmless -- an operator who learns the warning cries wolf
+    will not read it on the day it is true.
     """
-    if command != "revoke" or status not in ENTITLING_STATUSES:
+    if command != "revoke":
         return False
-    print(
-        f"WARNING: Access is NOT removed. Status is still {status!r}, which entitles "
-        "the studio on its own. Verify with `status` before telling anyone the comp "
-        "is gone.",
-        file=stdout,
-    )
-    return True
+    access = _platform_subscription_access_from_row({
+        "status": status,
+        "comped": False,
+        "trial_end": trial_end,
+    })
+    if not access["subscription_required"]:
+        print(
+            f"WARNING: Access is NOT removed. Status is still {status!r}, which entitles "
+            "the studio on its own. Verify with `status` before telling anyone the comp "
+            "is gone.",
+            file=stdout,
+        )
+        return True
+    return False
 
 
 def main(

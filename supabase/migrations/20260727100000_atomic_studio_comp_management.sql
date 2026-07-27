@@ -79,7 +79,11 @@ DECLARE
     -- survive and make a blank identifier look present here while Python's
     -- str.strip() treats it as absent. Match Python's whitespace set, or the
     -- CLI and the database disagree about whether a subscription exists.
-    WHITESPACE CONSTANT TEXT := E' \t\n\r\f\v';
+    -- Built from explicit codepoints rather than an escape string. Two
+    -- reviewers read E'\v' as an unrecognised escape yielding a literal 'v';
+    -- PostgreSQL 17 in fact encodes it as 0x0b, so the claim was wrong, but a
+    -- constant nobody has to litigate is worth more than being right about it.
+    WHITESPACE CONSTANT TEXT := ' ' || chr(9) || chr(10) || chr(11) || chr(12) || chr(13);
     -- Keep this set aligned with
     -- platform_billing_service.LIVE_STRIPE_SUBSCRIPTION_STATUSES.
     v_live_subscription_statuses CONSTANT TEXT[] := ARRAY[

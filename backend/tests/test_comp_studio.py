@@ -825,7 +825,8 @@ class CompStudioCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 3, stderr)
         persisted = supabase.tables["studio_subscriptions"][0]
         self.assertTrue(
-            persisted["comped"] is False and persisted["status"] in comp_studio.ENTITLING_STATUSES,
+            persisted["comped"] is False
+            and not _platform_subscription_access_from_row(persisted)["subscription_required"],
             "precondition: the row must still be entitled after the revoke",
         )
         self.assertFalse(
@@ -1066,9 +1067,14 @@ class CompStudioCliTests(unittest.TestCase):
         # spaces only, so a tab-only identifier read as present in SQL while
         # Python's str.strip() read it as absent, and the two disagreed about
         # whether a subscription existed.
-        whitespace = re.search(r"whitespace constant text := e'([^']*)';", normalized)
+        whitespace = re.search(r"whitespace constant text := ([^;]+);", normalized)
         self.assertIsNotNone(whitespace)
-        declared = whitespace.group(1).encode().decode("unicode_escape")
+        # Built from chr() codepoints rather than an escape string, so the
+        # declared set is unambiguous regardless of how a reader or a server
+        # version treats backslash escapes.
+        declared = "".join(
+            chr(int(code)) for code in re.findall(r"chr\((\d+)\)", whitespace.group(1))
+        ) + (" " if "' '" in whitespace.group(1) else "")
         # The CLI must strip exactly this set and no more. `str.strip()` with no
         # argument also removes Unicode whitespace such as U+00A0, which BTRIM
         # leaves in place; the two would then disagree about whether a
@@ -1076,6 +1082,57 @@ class CompStudioCliTests(unittest.TestCase):
         # database refuses to perform.
         self.assertEqual(set(declared), set(comp_studio.BLANK_ID_WHITESPACE))
         self.assertIn("using errcode = 'p0c01'", normalized)
+
+    def test_a_completed_revoke_on_an_expired_trial_does_not_cry_wolf(self):
+        """`trialing` is only entitling while the trial is still running.
+
+        Warning on the status alone would tell the operator a finished revoke
+        was unfinished. A warning that fires when nothing is wrong is not a
+        harmless extra: an operator who learns it cries wolf will not read it on
+        the day it is true.
+        """
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "trialing",
+            "trial_end": "2000-01-01T00:00:00+00:00",
+            "comped": True,
+            "stripe_subscription_id": None,
+            "metadata": {},
+        }])
+
+        exit_code, stdout, stderr = run_cli(
+            supabase,
+            execute_args("revoke"),
+            stdin=TTYInput("project-ref.supabase.co\n"),
+        )
+
+        persisted = supabase.tables["studio_subscriptions"][0]
+        self.assertTrue(
+            _platform_subscription_access_from_row(persisted)["subscription_required"],
+            "precondition: the expired trial must actually be denied",
+        )
+        self.assertNotIn("Access is NOT removed", stdout)
+        self.assertEqual(exit_code, 0, stderr)
+
+    def test_a_revoke_on_a_running_trial_still_warns(self):
+        """The discriminating half: a live trial does keep the studio in."""
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "trialing",
+            "trial_end": "2099-01-01T00:00:00+00:00",
+            "comped": True,
+            "stripe_subscription_id": None,
+            "metadata": {},
+        }])
+
+        exit_code, stdout, stderr = run_cli(
+            supabase,
+            execute_args("revoke"),
+            stdin=TTYInput("project-ref.supabase.co\n"),
+        )
+
+        self.assertEqual(exit_code, 3, stderr)
+        self.assertIn("Access is NOT removed", stdout)
 
     def test_a_blank_id_means_the_same_thing_to_the_cli_and_the_database(self):
         """Unicode whitespace is blank to str.strip() but not to BTRIM.
