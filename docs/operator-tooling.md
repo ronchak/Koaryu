@@ -2,6 +2,28 @@
 
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
 
+## Database contract verification
+
+Use the repository-local PostgreSQL 17 harness by default when developing or reviewing migration and contract SQL:
+
+```bash
+npm run check:supabase-contracts-local
+```
+
+The harness needs local PostgreSQL 17 server and client binaries (`initdb`, `pg_ctl`, and `psql`). It needs no Docker daemon, Supabase CLI login, cloud project, network access, secrets, or `.env` file. It creates a private-socket cluster under a short `/tmp` path, applies every migration in its own transaction, records the local migration history, and then runs every file in `supabase/verification/`. It stops and removes the cluster on success, failure, or interrupt.
+
+Use these targets according to their safety boundary:
+
+| Target | Use |
+| --- | --- |
+| local ephemeral cluster | Default for developing and reviewing contract SQL. |
+| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters; this project is currently inactive. |
+| production (`mimguepumzsgmcaycdsh`) | **Read-only inspection only. Never run contract or migration SQL against it.** |
+
+Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
+
+Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database.
+
 ## Studio platform comp access
 
 ### What it does

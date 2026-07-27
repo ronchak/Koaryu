@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import runpy
 import subprocess
@@ -9,6 +10,45 @@ from pathlib import Path
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+
+
+def test_local_supabase_contract_verifier_static_harness_contract():
+    script_path = ROOT_DIR / "scripts" / "verify-supabase-contracts-local.sh"
+    script = script_path.read_text(encoding="utf-8")
+    syntax = subprocess.run(
+        ["/bin/bash", "-n", str(script_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert syntax.returncode == 0, syntax.stderr
+    for required_text in (
+        "set -euo pipefail",
+        "export LC_ALL=C",
+        "mktemp -d /tmp/koaryu-pg.XXXXXX",
+        "trap cleanup EXIT",
+        "trap 'on_interrupt INT' INT",
+        "trap 'on_interrupt TERM' TERM",
+        'migration_files=("$MIGRATION_DIR"/*.sql)',
+        'verification_files=("$VERIFICATION_DIR"/*.sql)',
+        "--single-transaction",
+        "CREATE TABLE auth.users",
+        "CREATE FUNCTION auth.uid()",
+        "CREATE FUNCTION auth.role()",
+        "CREATE FUNCTION auth.email()",
+        "CREATE TABLE storage.buckets",
+        "CREATE TABLE supabase_migrations.schema_migrations",
+        "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public",
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES",
+    ):
+        assert required_text in script
+
+    assert ".env" not in script
+    assert "docker" not in script.lower()
+    package = json.loads((ROOT_DIR / "package.json").read_text(encoding="utf-8"))
+    assert package["scripts"]["check:supabase-contracts-local"] == (
+        "bash scripts/verify-supabase-contracts-local.sh"
+    )
 
 
 def _load_connect_smoke_module():
