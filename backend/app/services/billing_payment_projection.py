@@ -247,6 +247,7 @@ class BillingPaymentEventProjector:
         studio_id = payment.get("studio_id")
         if not charge_id or not payment_id or not studio_id:
             return payment
+
         refund_query = (
             self.supabase.table("billing_refunds")
             .select("id")

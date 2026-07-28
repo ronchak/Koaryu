@@ -1043,6 +1043,47 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
                 self.assertIn(detail, context.exception.detail)
                 self.assertEqual(service.supabase.tables["billing_invoices"], [])
 
+    def test_late_payment_intent_links_existing_refund_and_reconciles_totals(self):
+        service = self.service()
+        tables = _settled_payment_tables()
+        tables["billing_refunds"] = [{
+            "id": "refund_1",
+            "studio_id": "studio_1",
+            "stripe_account_id": "acct_1",
+            "stripe_charge_id": "ch_1",
+            "stripe_payment_intent_id": None,
+            "payment_id": None,
+            "amount_cents": 50,
+            "status": "succeeded",
+        }]
+        service.supabase = _FakeSupabase(tables)
+
+        service._project_payment_intent({
+            "id": "pi_1",
+            "status": "succeeded",
+            "amount": 200,
+            "amount_received": 200,
+            "application_fee_amount": 1,
+            "currency": "usd",
+            "customer": "cus_1",
+            "invoice": "in_1",
+            "latest_charge": "ch_1",
+            "payment_method_types": ["card"],
+            "metadata": {},
+        }, "acct_1", "payment_intent.succeeded")
+
+        refund = service.supabase.tables["billing_refunds"][0]
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(refund["payment_id"], "payment_1")
+        self.assertEqual(refund["stripe_payment_intent_id"], "pi_1")
+        self.assertEqual(payment["refunded_amount_cents"], 50)
+        self.assertEqual(invoice["status"], "partially_refunded")
+        self.assertEqual(invoice["amount_paid_cents"], 150)
+        self.assertEqual(invoice["amount_remaining_cents"], 50)
+        self.assertEqual(payer["balance_cents"], 50)
+
     def test_late_payment_intent_links_existing_dispute_and_marks_payment_disputed(self):
         service = self.service()
         service.supabase = _FakeSupabase({
