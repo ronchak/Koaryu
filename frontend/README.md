@@ -62,8 +62,9 @@ npm run test:e2e:required-smoke
 
 This command starts the production server itself, selects only the tagged
 preview login/navigation and browser-local attendance transition, uses one
-worker with a two-minute suite limit, and writes traces and screenshots only
-when a test fails.
+worker with a two-minute suite limit, pins browser navigation to that local
+server even if the shell has another E2E URL, and writes traces and screenshots
+only when a test fails.
 
 The broader Playwright checks remain opt-in because they need a running
 frontend and some of them touch state. The full e2e command is:
