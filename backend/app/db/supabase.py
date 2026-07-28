@@ -3,6 +3,7 @@ import time
 from typing import Optional
 
 from supabase import AsyncClient, Client, acreate_client, create_client
+from supabase.client import ClientOptions
 from supabase.lib.client_options import AsyncClientOptions
 from app.core.config import get_settings
 
@@ -77,6 +78,20 @@ def create_operational_alert_supabase_client(
         settings.SUPABASE_URL,
         settings.SUPABASE_SERVICE_ROLE_KEY,
         postgrest_client_timeout=postgrest_client_timeout,
+    )
+
+
+def create_supabase_readiness_client(*, timeout_seconds: float) -> Client:
+    """Create an isolated admin client with a bounded PostgREST timeout."""
+    settings = get_settings()
+    return create_client(
+        settings.SUPABASE_URL,
+        settings.SUPABASE_SERVICE_ROLE_KEY,
+        options=ClientOptions(
+            auto_refresh_token=False,
+            persist_session=False,
+            postgrest_client_timeout=timeout_seconds,
+        ),
     )
 
 

@@ -190,6 +190,10 @@ Local PostgreSQL does not prove hosted PostgREST exposed schemas or actual schem
 ACLs; authenticated operator readback must separately prove `private` is not
 exposed and the hosted schema ACL state matches the approved release gate.
 
+In every environment, readiness also performs one bounded, read-only Supabase Data API query: `SELECT id FROM public.studios LIMIT 1`. The synchronous client runs in a worker thread with a 1.5-second PostgREST timeout and a 2.0-second outer readiness deadline. It does not call Stripe or optional integrations; any required dependency failure returns a generic `503` while liveness remains successful. See [the runtime readiness contract](audit-notes/readiness-probes.md) for the exact guarantees and exclusions.
+
+Keep Render's provider health check on `/health` until the revised readiness behavior has been validated in staging and Render's routing behavior during dependency failure and recovery is understood. Treat a possible switch to `/health/ready` as a separate operational change.
+
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 
 ## Connect Vercel
