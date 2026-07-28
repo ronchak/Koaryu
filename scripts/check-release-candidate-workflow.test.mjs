@@ -38,6 +38,15 @@ test("release-candidate workflow rejects a missing required suite", () => {
   );
 });
 
+test("release-candidate controls permit immutable action pin updates", () => {
+  const updated = workflow.replace(
+    /(uses: [^@\n]+@)[0-9a-f]{40}/g,
+    `$1${"a".repeat(40)}`,
+  );
+
+  assert.deepEqual(validateReleaseCandidateWorkflow(updated), []);
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 

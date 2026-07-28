@@ -31,6 +31,12 @@ Run the static workflow guard locally with:
 npm run check:release-workflow
 ```
 
+That guard also scans every workflow `uses:` reference. Remote actions and
+reusable workflows must use full commit SHAs with same-line version comments.
+Weekly GitHub Actions updates come through Dependabot as reviewable PRs and are
+never auto-merged. The inventory, resolution evidence, and maintenance steps
+are recorded in `docs/audit-notes/action-version-pinning.md`.
+
 ## Provider Promotion Controls
 
 Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'`. The bootstrap change keeps Render's process health check on the backward-compatible `/health`; switch the provider to `/health/live` only after the approved artifact containing that endpoint is already live.
