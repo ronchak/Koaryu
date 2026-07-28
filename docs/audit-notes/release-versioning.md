@@ -1,67 +1,63 @@
-# Release versioning investigation brief
+# Release identity model
 
-> Planning-only draft. This note does not change any version number or release designation. It records a current consistency issue observed on `main` at `0dbf7c0`. The future implementing agent should first determine which identifiers Koaryu actually intends to make authoritative.
+This note records the implemented identity contract. It does not announce a new
+release: the current product release remains `0.1.2`, matching the latest dated
+changelog entry.
 
-## Executive summary
+## Authoritative identities
 
-Koaryu currently exposes several different product versions:
+- `backend/release.json` is the only machine-readable source for the current
+  Koaryu product release. It lives under `backend/` because Render's configured
+  root directory cannot access repository files outside that directory.
+- `commit_sha` is the immutable deployed-artifact identity. Vercel supplies
+  `VERCEL_GIT_COMMIT_SHA`; Render supplies `RENDER_GIT_COMMIT`. Both public
+  endpoints validate a full lowercase 40-character SHA and return `null` for
+  missing or malformed provider metadata.
+- `API_SCHEMA_VERSION` is the FastAPI/OpenAPI compatibility identity. It remains
+  `1.0.0` and is intentionally separate from the product release. This change
+  does not claim a new API compatibility level.
 
-- the backend application and health response report `1.0.0`
-- the frontend package reports `0.1.0`
-- the changelog’s latest release is `0.1.2`
-- deployment evidence primarily relies on the Git commit SHA
+The product release is a human support and release-notes label. The commit SHA
+is the deploy, rollback, and exact-head evidence. One never substitutes for the
+other.
 
-The suspected defect is the absence of one explicit source of truth. This does not break core product behavior, but it weakens release traceability and can mislead operators, support, clients, and future agents about what is deployed.
+## Surface and consumer inventory
 
-## What the bug is
+| Surface | Identity and consumer |
+| --- | --- |
+| `backend/release.json` | Read once by the backend at startup and statically imported into the frontend version route. |
+| FastAPI `info.version` | Uses `API_SCHEMA_VERSION`; generated OpenAPI and API-contract tooling retain their compatibility identity. |
+| Backend `/` | Exposes explicit `product_version` and `api_schema_version`; legacy `version` remains the API schema alias. |
+| Backend health/live/readiness aliases | Expose product release, API schema compatibility, normalized environment, and validated Render commit SHA. |
+| Frontend `/api/version` | Exposes product release, frontend service/environment, and validated Vercel commit SHA. |
+| `frontend/CHANGELOG.md` | Human release history; its first dated entry must match the product release source. |
+| `frontend/package.json` | Private application workspace, not a published product package; it intentionally has no version field. |
+| Release ledger and provider checks | Continue to require full exact SHAs for candidate, deployment, and rollback evidence. |
 
-The values are hardcoded or maintained independently in different files. A release can update the changelog without changing package metadata or backend output. The health response can therefore claim a semantic version that does not correspond to the repository’s release notes.
+Stripe API dates, dependency versions, migration identities, billing plan
+versions, and historical copy such as the v0.1.1 rollout notes are scoped
+protocol or historical identifiers. They are not product release sources.
 
-The commit SHA remains the strongest immutable deployment identifier, but it does not explain the user-facing release line or compatibility expectations by itself.
+## Change semantics
 
-## Why this matters
+Routine feature, fix, documentation, and internal maintenance PRs do not bump
+the product release. An explicit release-preparation change updates
+`backend/release.json` and adds the matching dated changelog entry together.
+Historical changelog entries remain unchanged.
 
-Consistent version identity supports:
+`npm run check:release-identity` fails when the current changelog entry drifts,
+the release source is malformed, or a private frontend package version is
+reintroduced. The exact-head release-candidate workflow runs this guard in
+addition to frontend and backend behavior tests.
 
-- incident correlation across frontend and backend
-- support conversations about reported behavior
-- rollback and release-ledger accuracy
-- API compatibility decisions
-- automated verification that both providers run the intended release
-- human understanding of whether `1.0.0` is a product milestone, API schema version, or placeholder
+## Deployment boundary
 
-Version drift also makes future migrations harder because an agent may “correct” one value without knowing the intended policy.
+The frontend Vercel project uses `frontend/` as its root and statically imports
+the release source from `backend/`; its project setting that includes source
+files outside the Root Directory must remain enabled. The backend has no
+outside-root dependency, so Render can read the source in both build and runtime
+environments.
 
-## Current impact
-
-The mismatch is current and directly reproducible. No customer-facing failure was identified. The present impact is ambiguous operational and release metadata. Existing SHA-based provider checks reduce the practical severity, which is why this should remain a small, focused PR.
-
-## Root cause hypothesis
-
-Different version values were introduced for different purposes. FastAPI’s application metadata used a conventional `1.0.0`, the frontend package retained its initial scaffold version, and the changelog evolved independently as releases shipped. No build or release step was assigned ownership of synchronizing them.
-
-## Suggested reproducibility and verification
-
-Inspect the backend root and health payloads, frontend package metadata, changelog, generated API documentation, and frontend version endpoint if applicable. Verify which values are visible to users and which are internal only.
-
-Review deployment and rollback scripts to determine whether they consume semantic versions or only commit SHAs. Search for tests or documentation that assume a specific version value.
-
-## Suggested plan of action
-
-The direction below is suggested rather than mandatory.
-
-Define the identity model. Koaryu may want one product semantic version plus an immutable commit SHA, or it may decide that only release labels and SHAs are authoritative. Generate runtime metadata from one controlled source rather than duplicating literals.
-
-Keep API schema versioning separate if it has distinct compatibility meaning. Update documentation and tests to state what each exposed field means. Avoid manually bumping unrelated files in every small internal PR unless that is part of an explicit release process.
-
-## Scope guard
-
-Do not declare a new major product release, change API compatibility, publish packages, or redesign the changelog in this work. Keep the change to version ownership, generation, and truthful exposure.
-
-## Evidence expected before merge
-
-The eventual PR should show one authoritative source, consistent runtime outputs, unchanged exact-SHA deployment evidence, and tests that fail when version surfaces drift. The release ledger and changelog guidance should remain clear.
-
-## Future-work note
-
-This branch contains only this investigation note. No version value has been changed.
+Neither runtime derives a commit from a product release. Provider readback,
+application-reported SHA, exact-head CI, and the release ledger remain the
+required immutable evidence chain.

@@ -4,6 +4,7 @@ import re
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.core.config import get_settings
+from app.core.release_identity import API_SCHEMA_VERSION, PRODUCT_RELEASE_VERSION
 
 router = APIRouter()
 COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -27,7 +28,9 @@ def _set_health_headers(response: Response) -> None:
 def _health_payload(state: str) -> dict[str, str | None]:
     return {
         "status": state,
-        "version": "1.0.0",
+        "version": API_SCHEMA_VERSION,
+        "product_version": PRODUCT_RELEASE_VERSION,
+        "api_schema_version": API_SCHEMA_VERSION,
         "service": "koaryu-api",
         **_safe_deployment_metadata(),
     }

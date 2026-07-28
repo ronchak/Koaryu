@@ -115,6 +115,13 @@ When `NEXT_PUBLIC_USE_API_PROXY=true`, browser API requests go through `/api/pro
 
 The frontend Vercel project should use this `frontend/` directory as the app root and define these Production environment variables:
 
+The safe `/api/version` response combines Vercel's validated deployment commit
+with the product release from `backend/release.json`. Because that source is
+outside the frontend project root, Vercel's **Include source files outside of
+the Root Directory in the Build Step** setting must remain enabled. The source
+is statically imported into the route; do not duplicate its value in a frontend
+environment variable or package version.
+
 ```bash
 vercel env add NEXT_PUBLIC_SUPABASE_URL production
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production

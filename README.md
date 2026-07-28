@@ -12,7 +12,12 @@ Current public positioning uses a flat `$27/month` Koaryu Core studio subscripti
 
 ## Changelog
 
-Release notes are tracked in [CHANGELOG.md](CHANGELOG.md). Keep that file as the source of truth for released changes and avoid duplicating unreleased notes here.
+Release notes are tracked in the [frontend changelog](frontend/CHANGELOG.md). The
+current product release identifier is owned by
+[`backend/release.json`](backend/release.json); the latest dated changelog entry
+must match it. Routine PRs do not bump either value. Update both only when
+preparing an explicit product release, and avoid duplicating unreleased notes
+here.
 
 Koaryu operators should start with [Koaryu Operations](docs/koaryu-operations.md). The exact supported billing surface and its live-mutation interlock are documented in [Billing Boundary](docs/billing-boundary.md).
 

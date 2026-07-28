@@ -1,6 +1,11 @@
 # Changelog
 
-All notable Koaryu release changes are tracked here.
+All notable Koaryu release changes are tracked here. `backend/release.json` owns
+the current product release identifier, and the first dated entry below must
+match it. Unreleased work does not require a version bump; update the release
+source and add a dated entry together only when intentionally preparing a
+product release. Existing dated entries are historical records and must not be
+rewritten to match later releases.
 
 ## 0.1.2 - 2026-07-12
 

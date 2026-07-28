@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.core.release_identity import API_SCHEMA_VERSION, PRODUCT_RELEASE_VERSION
 from app.main import app
 
 
@@ -28,6 +29,15 @@ class HealthEndpointTest(unittest.TestCase):
                 expected_status = "ready" if path.endswith("/ready") else "ok"
                 self.assertEqual(response.json()["status"], expected_status)
                 self.assertEqual(response.json()["environment"], "development")
+                self.assertEqual(
+                    response.json()["product_version"],
+                    PRODUCT_RELEASE_VERSION,
+                )
+                self.assertEqual(
+                    response.json()["api_schema_version"],
+                    API_SCHEMA_VERSION,
+                )
+                self.assertEqual(response.json()["version"], API_SCHEMA_VERSION)
                 self.assertIsNone(response.json()["commit_sha"])
                 self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
 
