@@ -1,6 +1,7 @@
 from typing import Any, Optional
 from supabase import Client
 from fastapi import UploadFile
+from starlette.concurrency import run_in_threadpool
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     GuardianResponse,
@@ -120,6 +121,29 @@ class StudentService:
     # ---- CRUD ----
 
     async def list_students(
+        self,
+        studio_id: str,
+        search: Optional[str] = None,
+        status_filter: Optional[StudentStatus] = None,
+        program_id: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
+        sort_by: StudentListSortKey = "name",
+        sort_dir: StudentListSortDir = "asc",
+    ) -> StudentListResponse:
+        return await run_in_threadpool(
+            self._list_students_sync,
+            studio_id,
+            search,
+            status_filter,
+            program_id,
+            page,
+            page_size,
+            sort_by,
+            sort_dir,
+        )
+
+    def _list_students_sync(
         self,
         studio_id: str,
         search: Optional[str] = None,
