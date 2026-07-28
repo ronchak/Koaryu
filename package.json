@@ -14,6 +14,8 @@
     "check:release-workflow": "node --test scripts/check-release-candidate-workflow.test.mjs scripts/merge-release-pr.test.mjs && node scripts/check-release-candidate-workflow.mjs",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs",
     "audit:support-privacy": "python3 scripts/audit-support-privacy.py",
+    "profile:request-bodies": "backend/venv/bin/python backend/scripts/profile_request_body_buffering.py && npm --prefix frontend run profile:request-bodies",
+    "profile:request-bodies:quick": "backend/venv/bin/python backend/scripts/profile_request_body_buffering.py --quick && npm --prefix frontend run profile:request-bodies -- --quick",
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
     "check:api-types": "backend/venv/bin/python scripts/generate-api-types.py --check",
     "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py"
