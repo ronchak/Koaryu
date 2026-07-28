@@ -4,7 +4,10 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, status
 
-from app.services.platform_billing_service import PlatformBillingService
+from app.services.platform_billing_service import (
+    AccessRepairProviderError,
+    PlatformBillingService,
+)
 from app.services.studio_scope import (
     MISSING_STRIPE_CONFIGURATION_DETAIL,
     ensure_platform_subscription_access,
@@ -50,7 +53,35 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
-            side_effect=RuntimeError("Stripe unavailable"),
+            side_effect=AccessRepairProviderError(RuntimeError("Stripe unavailable"), reachable=False),
+        ):
+            with self.assertRaises(HTTPException) as context:
+                get_platform_subscription_access(supabase, "studio_1")
+
+        self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
+        # The local row is now consulted on a provider fault, but only ever to
+        # deny. An entitled-looking local row must not grant access while it
+        # cannot be verified, so this still fails closed.
+        self.assertEqual(len(supabase.query_log), 1)
+
+    def test_internal_failures_are_not_answered_from_local_state(self):
+        """A fault in our own code is no evidence about a studio's entitlement.
+
+        `_update_subscription_row`, the projector and Supabase all raise through
+        the same path Stripe does. Treating those as "Stripe is unavailable"
+        told a lapsed studio SUBSCRIPTION_REQUIRED — an answer that looks
+        routine and actionable — when the truth was that Koaryu had broken.
+        """
+        supabase = fake_supabase({
+            "status": "incomplete",  # locally lapsed: the tempting case to answer locally
+            "comped": False,
+            "trial_end": None,
+        })
+
+        with patch(
+            "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
+            side_effect=HTTPException(status_code=404, detail="Koaryu Core billing record not found."),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_platform_subscription_access(supabase, "studio_1")
@@ -101,6 +132,8 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
+        # A missing Stripe configuration is a deployment fault, not a provider
+        # one, so outside development it is not answered from local state at all.
         self.assertEqual(supabase.query_log, [])
 
     def test_access_does_not_use_no_stripe_fallback_in_staging(self):
@@ -125,6 +158,8 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(context.exception.detail["code"], "BILLING_STATUS_UNAVAILABLE")
+        # A missing Stripe configuration is a deployment fault, not a provider
+        # one, so outside development it is not answered from local state at all.
         self.assertEqual(supabase.query_log, [])
 
     def test_platform_repair_degradation_is_development_only(self):
@@ -161,7 +196,14 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
         ):
             ensure_platform_subscription_access(supabase, "studio_1")
 
-    def test_ensure_platform_subscription_access_reports_unavailable_when_service_fails(self):
+    def test_ensure_platform_subscription_access_denies_locally_lapsed_studio_when_service_fails(self):
+        """A studio the local row already shows as lapsed does not need Stripe.
+
+        The answer is the same whether or not the provider is reachable, so the
+        studio is told its subscription needs attention instead of being handed
+        a generic service error it cannot act on. This holds only for a *provider*
+        fault; see test_internal_failures_are_not_answered_from_local_state.
+        """
         supabase = fake_supabase({
             "status": "incomplete",
             "comped": False,
@@ -170,7 +212,32 @@ class StudioScopePlatformAccessTest(unittest.TestCase):
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
-            side_effect=RuntimeError("Stripe unavailable"),
+            side_effect=AccessRepairProviderError(RuntimeError("Stripe unavailable"), reachable=False),
+        ):
+            with self.assertRaises(HTTPException) as context:
+                ensure_platform_subscription_access(supabase, "studio_1")
+
+        self.assertEqual(context.exception.status_code, status.HTTP_402_PAYMENT_REQUIRED)
+        self.assertEqual(context.exception.detail["code"], "SUBSCRIPTION_REQUIRED")
+        self.assertEqual(context.exception.detail["status"], "incomplete")
+        self.assertTrue(context.exception.detail["subscription_required"])
+
+    def test_locally_entitled_studio_still_fails_closed_when_service_fails(self):
+        """The provider fault path must never upgrade a studio.
+
+        Local state is consulted only to deny. An entitled-looking local row that
+        cannot be verified continues to return BILLING_STATUS_UNAVAILABLE rather
+        than granting access.
+        """
+        supabase = fake_supabase({
+            "status": "active",
+            "comped": False,
+            "trial_end": None,
+        })
+
+        with patch(
+            "app.services.platform_billing_service.PlatformBillingService.get_access_status_row",
+            side_effect=AccessRepairProviderError(RuntimeError("Stripe unavailable"), reachable=False),
         ):
             with self.assertRaises(HTTPException) as context:
                 ensure_platform_subscription_access(supabase, "studio_1")

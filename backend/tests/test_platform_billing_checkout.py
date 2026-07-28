@@ -139,3 +139,77 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("already active", context.exception.detail)
+
+    def test_starting_checkout_does_not_end_an_operator_comp(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": None,
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": True,
+            "metadata": {
+                "comp": {
+                    "state": "granted",
+                    "at": "2026-07-27T00:00:00+00:00",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def create_customer(self, **_payload):
+                return {"id": "cus_new"}
+
+            def create_core_checkout_session(self, **_payload):
+                return {"url": "https://checkout.stripe.test/comped"}
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            FakeStripeService,
+        ):
+            response = asyncio.run(
+                service.create_checkout_link("studio_1", "user_1")
+            )
+
+        self.assertEqual(response.url, "https://checkout.stripe.test/comped")
+        self.assertEqual(rows[0]["stripe_customer_id"], "cus_new")
+        self.assertTrue(rows[0]["comped"])
+        customer_update = next(
+            entry["update"]
+            for entry in service.supabase.query_log
+            if entry["table"] == "studio_subscriptions"
+            and entry["update"]
+            and entry["update"].get("stripe_customer_id") == "cus_new"
+        )
+        self.assertNotIn("comped", customer_update)
+
+    def test_comped_local_live_status_can_still_block_checkout(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": "sub_123",
+            "status": "active",
+            "comped": True,
+            "current_period_start": None,
+            "current_period_end": None,
+        }]
+        service = self.service(rows)
+
+        class ProviderMustNotBeConsulted:
+            def retrieve_subscription(self, subscription_id):
+                raise AssertionError(
+                    "checkout must not reconcile a comped provider snapshot"
+                )
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            ProviderMustNotBeConsulted,
+        ):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(
+                    service.create_checkout_link("studio_1", "user_1")
+                )
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("already active", context.exception.detail)
+        self.assertTrue(rows[0]["comped"])
