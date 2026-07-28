@@ -56,3 +56,41 @@ class PlatformBillingPortalTest(PlatformBillingServiceTestCase):
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_new")
         self.assertIsNone(rows[0]["stripe_subscription_id"])
         self.assertNotIn("core_checkout_session", rows[0]["metadata"])
+
+    def test_stale_portal_customer_repair_does_not_end_an_operator_comp(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_deleted",
+            "stripe_subscription_id": "sub_deleted",
+            "status": "canceled",
+            "comped": True,
+            "metadata": {
+                "comp": {
+                    "state": "granted",
+                    "at": "2026-07-27T00:00:00+00:00",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        class NoSuchCustomerError(Exception):
+            __module__ = "stripe.error"
+
+        class FakeStripeService:
+            def create_customer_portal_session(self, **_payload):
+                raise NoSuchCustomerError("No such customer: cus_deleted")
+
+            def create_customer(self, **_payload):
+                return {"id": "cus_new"}
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            FakeStripeService,
+        ):
+            with self.assertRaises(HTTPException):
+                asyncio.run(
+                    service.create_portal_link("studio_1", "user_1")
+                )
+
+        self.assertEqual(rows[0]["stripe_customer_id"], "cus_new")
+        self.assertTrue(rows[0]["comped"])
