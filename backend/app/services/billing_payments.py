@@ -403,9 +403,16 @@ class BillingPaymentManager:
             ),
         )
         row = self._project_refund(refund, payment["stripe_account_id"])
-        self._audit(studio_id, actor_id, "billing.payment_refunded", payment_id, {
+        refund_status = str(row.get("status") or "pending")
+        audit_action = (
+            "billing.payment_refunded"
+            if refund_status == "succeeded"
+            else "billing.payment_refund_requested"
+        )
+        self._audit(studio_id, actor_id, audit_action, payment_id, {
             "amount_cents": amount,
             "stripe_refund_id": row.get("stripe_refund_id"),
+            "status": refund_status,
         })
         return BillingRefundResponse(**row)
 

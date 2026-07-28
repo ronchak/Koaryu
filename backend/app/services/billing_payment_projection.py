@@ -14,6 +14,22 @@ from app.services.stripe_service import StripeService
 
 
 PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES = {"partially_refunded", "refunded", "void"}
+REFUND_EFFECTIVE_STATUSES = {"succeeded"}
+REFUND_STATUS_ORDER = {
+    "pending": 0,
+    "requires_action": 0,
+    "failed": 1,
+    "canceled": 1,
+    "succeeded": 2,
+}
+DISPUTE_TERMINAL_STATUSES = {"lost", "prevented", "warning_closed", "won"}
+DISPUTE_NON_REVERSING_STATUSES = {
+    "prevented",
+    "warning_closed",
+    "warning_needs_response",
+    "warning_under_review",
+    "won",
+}
 
 
 class BillingPaymentEventProjector:
@@ -249,13 +265,7 @@ class BillingPaymentEventProjector:
         if dispute_ids:
             self.supabase.table("billing_disputes").update(dispute_update).in_("id", dispute_ids).execute()
 
-        if payment.get("status") == "disputed":
-            self._refresh_invoice_and_payer_from_payment_events(payment)
-            return payment
-        result = self.supabase.table("billing_payments").update({"status": "disputed"}).eq("id", payment_id).execute()
-        updated_payment = result.data[0] if result.data else {**payment, "status": "disputed"}
-        self._refresh_invoice_and_payer_from_payment_events(updated_payment)
-        return updated_payment
+        return self._reconcile_payment_adjustments(payment, account_id)
 
     def _project_charge_refund(self, charge: dict[str, Any], account_id: Optional[str]) -> None:
         refunds = ((charge.get("refunds") or {}).get("data") or [])
@@ -295,20 +305,22 @@ class BillingPaymentEventProjector:
             .execute()
         )
         if existing.data:
-            delta = row["amount_cents"] - int(existing.data[0].get("amount_cents") or 0)
-            result = self.supabase.table("billing_refunds").update(row).eq("id", existing.data[0]["id"]).execute()
+            current_refund = existing.data[0]
+            current_status = str(current_refund.get("status") or "")
+            incoming_status = str(row.get("status") or "")
+            if REFUND_STATUS_ORDER.get(current_status, -1) > REFUND_STATUS_ORDER.get(incoming_status, -1):
+                row["status"] = current_status
+            result = (
+                self.supabase.table("billing_refunds")
+                .update(row)
+                .eq("id", current_refund["id"])
+                .eq("studio_id", studio_id)
+                .execute()
+            )
         else:
-            delta = row["amount_cents"]
             result = self.supabase.table("billing_refunds").insert(row).execute()
-        if payment and delta:
-            refunded = max(0, int(payment.get("refunded_amount_cents") or 0) + delta)
-            payment_update = {
-                "status": "refunded" if refunded >= int(payment.get("amount_cents") or 0) else payment.get("status"),
-                "refunded_amount_cents": refunded,
-            }
-            payment_result = self.supabase.table("billing_payments").update(payment_update).eq("id", payment["id"]).execute()
-            updated_payment = payment_result.data[0] if payment_result.data else {**payment, **payment_update}
-            self._refresh_invoice_and_payer_from_payment_events(updated_payment)
+        if payment:
+            self._reconcile_payment_adjustments(payment, account_id)
         return result.data[0] if result.data else row
 
     def _project_dispute(self, dispute: dict[str, Any], account_id: Optional[str]) -> None:
@@ -344,13 +356,85 @@ class BillingPaymentEventProjector:
             .execute()
         )
         if existing.data:
-            self.supabase.table("billing_disputes").update(row).eq("id", existing.data[0]["id"]).execute()
+            current_dispute = existing.data[0]
+            current_status = str(current_dispute.get("status") or "")
+            incoming_status = str(row.get("status") or "")
+            if current_status in DISPUTE_TERMINAL_STATUSES and incoming_status not in DISPUTE_TERMINAL_STATUSES:
+                row["status"] = current_status
+            self.supabase.table("billing_disputes").update(row).eq("id", current_dispute["id"]).eq(
+                "studio_id",
+                studio_id,
+            ).execute()
         else:
             self.supabase.table("billing_disputes").insert(row).execute()
         if payment:
-            payment_result = self.supabase.table("billing_payments").update({"status": "disputed"}).eq("id", payment["id"]).execute()
-            updated_payment = payment_result.data[0] if payment_result.data else {**payment, "status": "disputed"}
-            self._refresh_invoice_and_payer_from_payment_events(updated_payment)
+            self._reconcile_payment_adjustments(payment, account_id)
+
+    def _reconcile_payment_adjustments(
+        self,
+        payment: dict[str, Any],
+        account_id: Optional[str],
+    ) -> dict[str, Any]:
+        payment_id = payment.get("id")
+        studio_id = payment.get("studio_id")
+        if not payment_id or not studio_id:
+            return payment
+
+        refunds = (
+            self.supabase.table("billing_refunds")
+            .select("amount_cents, status")
+            .eq("studio_id", studio_id)
+            .eq("payment_id", payment_id)
+            .execute()
+        )
+        refunded_amount = sum(
+            max(0, int(row.get("amount_cents") or 0))
+            for row in refunds.data or []
+            if row.get("status") in REFUND_EFFECTIVE_STATUSES
+        )
+        payment_amount = max(0, int(payment.get("amount_cents") or 0))
+        refunded_amount = min(payment_amount, refunded_amount)
+
+        dispute_query = (
+            self.supabase.table("billing_disputes")
+            .select("status")
+            .eq("studio_id", studio_id)
+            .eq("payment_id", payment_id)
+        )
+        dispute_query = (
+            dispute_query.eq("stripe_account_id", account_id)
+            if account_id
+            else dispute_query.is_("stripe_account_id", "null")
+        )
+        disputes = dispute_query.execute()
+        has_balance_reversing_dispute = any(
+            str(row.get("status") or "") not in DISPUTE_NON_REVERSING_STATUSES
+            for row in disputes.data or []
+        )
+
+        if has_balance_reversing_dispute:
+            payment_status = "disputed"
+        elif payment_amount > 0 and refunded_amount >= payment_amount:
+            payment_status = "refunded"
+        elif payment.get("status") in {"disputed", "refunded", "succeeded"}:
+            payment_status = "succeeded"
+        else:
+            payment_status = payment.get("status")
+
+        payment_update = {
+            "status": payment_status,
+            "refunded_amount_cents": refunded_amount,
+        }
+        payment_result = (
+            self.supabase.table("billing_payments")
+            .update(payment_update)
+            .eq("id", payment_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+        updated_payment = payment_result.data[0] if payment_result.data else {**payment, **payment_update}
+        self._refresh_invoice_and_payer_from_payment_events(updated_payment)
+        return updated_payment
 
     def _refresh_invoice_and_payer_from_payment_events(self, payment: dict[str, Any]) -> None:
         studio_id = payment.get("studio_id")

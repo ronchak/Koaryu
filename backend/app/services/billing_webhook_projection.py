@@ -137,6 +137,14 @@ class BillingWebhookProjector:
         if event_type == "charge.refunded":
             self._project_charge_refund(data_object, account_id)
             return
+        if event_type in {
+            "charge.refund.updated",
+            "refund.created",
+            "refund.failed",
+            "refund.updated",
+        }:
+            self._project_refund(data_object, account_id)
+            return
         if event_type.startswith("charge.dispute."):
             self._project_dispute(data_object, account_id)
             return
@@ -150,6 +158,7 @@ class BillingWebhookProjector:
             event_type == "checkout.session.completed"
             or event_type.startswith("invoice.")
             or event_type.startswith("payment_intent.")
+            or event_type.startswith("refund.")
             or event_type.startswith("charge.")
             or event_type.startswith("customer.subscription.")
         )

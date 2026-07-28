@@ -39,6 +39,52 @@ def _unique_conflict() -> PostgrestAPIError:
         "hint": "",
     })
 
+
+def _settled_payment_tables() -> dict[str, list[dict]]:
+    return {
+        "billing_refunds": [],
+        "billing_disputes": [],
+        "billing_payments": [{
+            "id": "payment_1",
+            "studio_id": "studio_1",
+            "payer_id": "payer_1",
+            "invoice_id": "invoice_1",
+            "stripe_account_id": "acct_1",
+            "stripe_charge_id": "ch_1",
+            "stripe_payment_intent_id": "pi_1",
+            "status": "succeeded",
+            "amount_cents": 200,
+            "refunded_amount_cents": 0,
+        }],
+        "billing_invoices": [{
+            "id": "invoice_1",
+            "studio_id": "studio_1",
+            "payer_id": "payer_1",
+            "stripe_invoice_id": "in_1",
+            "stripe_account_id": "acct_1",
+            "stripe_payment_intent_id": "pi_1",
+            "status": "paid",
+            "amount_due_cents": 200,
+            "amount_paid_cents": 200,
+            "amount_remaining_cents": 0,
+            "currency": "usd",
+            "paid_at": "2026-05-18T00:00:00Z",
+            "application_fee_amount_cents": 0,
+            "external": False,
+        }],
+        "billing_payers": [{
+            "id": "payer_1",
+            "studio_id": "studio_1",
+            "billing_status": "current",
+            "balance_cents": 0,
+        }],
+        "studio_payment_accounts": [{
+            "studio_id": "studio_1",
+            "stripe_connected_account_id": "acct_1",
+        }],
+    }
+
+
 class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
     def test_interval_mapping_for_stripe_prices(self):
         service = self.service()
@@ -1180,6 +1226,121 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(payer["balance_cents"], 50)
         self.assertEqual(payer["billing_status"], "past_due")
 
+    def test_pending_failed_canceled_and_delayed_refunds_do_not_change_reconciled_totals(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+
+        pending_refund = {
+            "id": "re_1",
+            "charge": "ch_1",
+            "payment_intent": "pi_1",
+            "amount": 50,
+            "status": "pending",
+            "metadata": {"studio_id": "studio_1"},
+        }
+        service.project_connect_event({
+            "type": "refund.created",
+            "account": "acct_1",
+            "data": {"object": pending_refund},
+        })
+
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payment["status"], "succeeded")
+        self.assertEqual(payment["refunded_amount_cents"], 0)
+        self.assertEqual(invoice["status"], "paid")
+        self.assertEqual(invoice["amount_remaining_cents"], 0)
+        self.assertEqual(payer["balance_cents"], 0)
+
+        service.project_connect_event({
+            "type": "refund.failed",
+            "account": "acct_1",
+            "data": {"object": {**pending_refund, "status": "failed"}},
+        })
+        self.assertEqual(service.supabase.tables["billing_refunds"][0]["status"], "failed")
+        service.project_connect_event({
+            "type": "refund.updated",
+            "account": "acct_1",
+            "data": {"object": {**pending_refund, "status": "canceled"}},
+        })
+        service.project_connect_event({
+            "type": "refund.updated",
+            "account": "acct_1",
+            "data": {"object": pending_refund},
+        })
+
+        refund = service.supabase.tables["billing_refunds"][0]
+        self.assertEqual(refund["status"], "canceled")
+        self.assertEqual(payment["refunded_amount_cents"], 0)
+        self.assertEqual(invoice["status"], "paid")
+        self.assertEqual(payer["balance_cents"], 0)
+
+    def test_connect_refund_event_without_account_is_not_projected_from_metadata(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+
+        service.project_connect_event({
+            "type": "refund.updated",
+            "data": {
+                "object": {
+                    "id": "re_untrusted",
+                    "charge": "ch_1",
+                    "payment_intent": "pi_1",
+                    "amount": 50,
+                    "status": "succeeded",
+                    "metadata": {"studio_id": "studio_1"},
+                },
+            },
+        })
+
+        self.assertEqual(service.supabase.tables["billing_refunds"], [])
+        self.assertEqual(
+            service.supabase.tables["billing_payments"][0]["refunded_amount_cents"],
+            0,
+        )
+
+    def test_succeeded_refund_is_idempotent_and_does_not_regress_on_delayed_pending_event(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+        refund = {
+            "id": "re_1",
+            "charge": "ch_1",
+            "payment_intent": "pi_1",
+            "amount": 50,
+            "status": "succeeded",
+            "metadata": {"studio_id": "studio_1"},
+        }
+
+        service.project_connect_event({
+            "type": "refund.updated",
+            "account": "acct_1",
+            "data": {"object": refund},
+        })
+        service.project_connect_event({
+            "type": "refund.updated",
+            "account": "acct_1",
+            "data": {"object": refund},
+        })
+        service.project_connect_event({
+            "type": "refund.created",
+            "account": "acct_1",
+            "data": {"object": {**refund, "status": "pending"}},
+        })
+
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(len(service.supabase.tables["billing_refunds"]), 1)
+        self.assertEqual(service.supabase.tables["billing_refunds"][0]["status"], "succeeded")
+        self.assertEqual(payment["status"], "succeeded")
+        self.assertEqual(payment["refunded_amount_cents"], 50)
+        self.assertEqual(invoice["status"], "partially_refunded")
+        self.assertEqual(invoice["amount_paid_cents"], 150)
+        self.assertEqual(invoice["amount_remaining_cents"], 50)
+        self.assertEqual(payer["balance_cents"], 50)
+        self.assertEqual(payer["billing_status"], "past_due")
+
     def test_full_refund_projection_closes_invoice_without_reopened_balance(self):
         service = self.service()
         service.supabase = _FakeSupabase({
@@ -1288,6 +1449,91 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(invoice["amount_paid_cents"], 0)
         self.assertEqual(invoice["amount_remaining_cents"], 200)
         self.assertIsNone(invoice["paid_at"])
+        self.assertEqual(payer["balance_cents"], 200)
+        self.assertEqual(payer["billing_status"], "past_due")
+
+    def test_dispute_warning_and_won_outcome_do_not_reverse_payment_or_regress_when_delayed(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+        warning = {
+            "id": "dp_1",
+            "charge": "ch_1",
+            "amount": 200,
+            "status": "warning_needs_response",
+            "reason": "fraudulent",
+            "metadata": {"studio_id": "studio_1"},
+        }
+
+        service.project_connect_event({
+            "type": "charge.dispute.created",
+            "account": "acct_1",
+            "data": {"object": warning},
+        })
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payment["status"], "succeeded")
+        self.assertEqual(invoice["status"], "paid")
+        self.assertEqual(payer["balance_cents"], 0)
+
+        service.project_connect_event({
+            "type": "charge.dispute.updated",
+            "account": "acct_1",
+            "data": {"object": {**warning, "status": "needs_response"}},
+        })
+        self.assertEqual(payment["status"], "disputed")
+        self.assertEqual(invoice["status"], "open")
+        self.assertEqual(payer["balance_cents"], 200)
+
+        service.project_connect_event({
+            "type": "charge.dispute.closed",
+            "account": "acct_1",
+            "data": {"object": {**warning, "status": "won"}},
+        })
+        service.project_connect_event({
+            "type": "charge.dispute.updated",
+            "account": "acct_1",
+            "data": {"object": {**warning, "status": "under_review"}},
+        })
+
+        dispute = service.supabase.tables["billing_disputes"][0]
+        self.assertEqual(len(service.supabase.tables["billing_disputes"]), 1)
+        self.assertEqual(dispute["status"], "won")
+        self.assertEqual(payment["status"], "succeeded")
+        self.assertEqual(invoice["status"], "paid")
+        self.assertEqual(invoice["amount_paid_cents"], 200)
+        self.assertEqual(invoice["amount_remaining_cents"], 0)
+        self.assertEqual(payer["balance_cents"], 0)
+        self.assertEqual(payer["billing_status"], "current")
+
+    def test_any_lost_dispute_keeps_payment_reversed_when_another_dispute_is_won(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+        base_dispute = {
+            "charge": "ch_1",
+            "amount": 200,
+            "reason": "fraudulent",
+            "metadata": {"studio_id": "studio_1"},
+        }
+
+        service.project_connect_event({
+            "type": "charge.dispute.closed",
+            "account": "acct_1",
+            "data": {"object": {**base_dispute, "id": "dp_lost", "status": "lost"}},
+        })
+        service.project_connect_event({
+            "type": "charge.dispute.closed",
+            "account": "acct_1",
+            "data": {"object": {**base_dispute, "id": "dp_won", "status": "won"}},
+        })
+
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(len(service.supabase.tables["billing_disputes"]), 2)
+        self.assertEqual(payment["status"], "disputed")
+        self.assertEqual(invoice["status"], "open")
+        self.assertEqual(invoice["amount_remaining_cents"], 200)
         self.assertEqual(payer["balance_cents"], 200)
         self.assertEqual(payer["billing_status"], "past_due")
 

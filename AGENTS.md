@@ -36,6 +36,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Check generated frontend API contract types: `npm run check:api-types`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
+- Run the fake-only tuition lifecycle proof: `npm run verify:tuition-lifecycle`
 
 ## Monorepo Rules
 
