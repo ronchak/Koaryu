@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from math import floor
 from unittest.mock import patch
 
 from app.services.platform_billing_service import PlatformBillingService
 from tests.fakes.supabase import RpcBackedSupabase
 
 
+# This fake must mirror clear_studio_comp_for_billing_event in SQL. Easy-to-miss
+# boundaries include PostgreSQL's +/-15:59:59 UTC-offset limit, its finite event
+# epoch range, and the same-second provider-wins ordering rule.
 class FakeSupabase(RpcBackedSupabase):
+    POSTGRES_MAX_UTC_OFFSET = timedelta(hours=15, minutes=59, seconds=59)
+    POSTGRES_MIN_EVENT_EPOCH = -210866803200
+    POSTGRES_END_EVENT_EPOCH = 9224318016000
+
     def __init__(self, rows: list[dict]):
         super().__init__({
             "studio_subscriptions": rows,
@@ -16,6 +25,7 @@ class FakeSupabase(RpcBackedSupabase):
             "studios": [{"id": "studio_1", "name": "Koaryu Test Studio"}],
             "audit_logs": [],
         })
+        self.on_update_query = self._apply_studio_subscription_update
 
     @staticmethod
     def _parse_timestamp(value: str):
@@ -31,6 +41,76 @@ class FakeSupabase(RpcBackedSupabase):
             if row.get("studio_id") == params["p_studio_id"]
             and period_start <= self._parse_timestamp(row.get("sent_at")) < period_end
         )
+
+    def _rpc_clear_studio_comp_for_billing_event(self, params: dict) -> bool:
+        row = next(
+            (
+                item
+                for item in self.tables["studio_subscriptions"]
+                if item.get("studio_id") == params["p_studio_id"]
+            ),
+            None,
+        )
+        if row is None:
+            raise RuntimeError("Studio subscription not found.")
+        if not row.get("comped", False):
+            return False
+
+        event_created = params.get("p_event_created")
+        if (
+            event_created is not None
+            and not (
+                self.POSTGRES_MIN_EVENT_EPOCH
+                <= event_created
+                < self.POSTGRES_END_EVENT_EPOCH
+            )
+        ):
+            return False
+
+        metadata = row.get("metadata")
+        comp_value = metadata.get("comp") if isinstance(metadata, dict) else None
+        comp = comp_value if isinstance(comp_value, dict) else {}
+        if comp.get("state") == "granted":
+            granted_at = comp.get("at")
+            if event_created is None or not granted_at:
+                return False
+            try:
+                granted_at_timestamp = self._parse_timestamp(granted_at)
+                utc_offset = granted_at_timestamp.utcoffset()
+                if (
+                    utc_offset is not None
+                    and abs(utc_offset) > self.POSTGRES_MAX_UTC_OFFSET
+                ):
+                    return False
+                grant_epoch = granted_at_timestamp.timestamp()
+            except (OSError, OverflowError, TypeError, ValueError):
+                return False
+            if float(event_created) < floor(grant_epoch):
+                return False
+
+        row["comped"] = False
+        return True
+
+    def _apply_studio_subscription_update(self, query, rows):
+        if query.name != "studio_subscriptions":
+            return None
+
+        before_update = self.before_update
+        if before_update:
+            self.before_update = None
+            before_update(rows)
+
+        matched = query._matched_rows(rows)
+        for row in matched:
+            update = deepcopy(query.update_payload)
+            previous_comp = (row.get("metadata") or {}).get("comp")
+            if "metadata" in update and previous_comp is not None:
+                metadata = deepcopy(update.get("metadata") or {})
+                if metadata.get("comp") != previous_comp:
+                    metadata["comp"] = deepcopy(previous_comp)
+                update["metadata"] = metadata
+            row.update(update)
+        return [dict(row) for row in matched]
 
 
 class FakeSettings:
