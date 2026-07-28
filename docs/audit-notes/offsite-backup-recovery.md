@@ -1,6 +1,9 @@
 # Off-site encrypted backup recovery investigation brief
 
-> Planning-only draft. This note does not upload, move, decrypt, restore, rotate, or delete any backup. It refines the operational gap tracked by issue #22 using repository evidence available on `main` at `0dbf7c0`. Every provider, cost, key-custody, or production-data action remains subject to its existing approval boundary.
+> Historical investigation note from repository state `0dbf7c0`. Repository-only
+> controls now live in [the off-site backup recovery runbook](../offsite-backup-recovery.md).
+> No provider, production-data, upload, paid-service, or key-custody action was
+> authorized by that implementation.
 
 ## Executive summary
 
@@ -52,4 +55,8 @@ The future PR should document the approved provider or storage boundary, artifac
 
 ## Future-work note
 
-This branch contains only the investigation note. No backup or provider state has changed.
+The repository can now exercise encrypted generation, hash verification,
+retrieval, wrong-key rejection, clean-machine artifact restore, and non-deleting
+rotation using synthetic fixtures. Provider approval, a named secondary
+custodian, production upload, provider-origin retrieval, and a full
+application-level restore remain open.
