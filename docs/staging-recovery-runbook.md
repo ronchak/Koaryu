@@ -329,6 +329,12 @@ fails closed if object rows are already present before that upload.
 
 ## Off-site copy gate
 
+Use [Off-site Encrypted Backup Recovery](offsite-backup-recovery.md) for the
+trust boundary, ownership, retention, key-custody, repository automation,
+evidence checklist, and exact approval packet. The commands there can validate
+only repository-controlled and already-downloaded artifacts; they do not
+authorize or perform a provider upload.
+
 On 2026-07-12, all five July 10 encrypted artifacts were verified on a separate second machine with identical filenames, sizes, mode `0600`, and the SHA-256 hashes recorded in the release ledger. That is valid second-machine copy evidence, but it is not proof of geographic separation or an approved provider-independent off-site destination. A second local machine, a synced-folder path without provider-side confirmation, or the ordinary staging project does not close the off-site gate.
 
 Before copying, record the approved provider and folder/bucket, Ronak as data owner, the minimum named operator group, encryption-at-rest posture, retention window, rotation cadence, monitoring owner, deletion owner, and whether the destination adds ongoing cost. Keep the existing Koaryu AEAD artifacts encrypted; do not upload plaintext dumps or the Keychain recovery secret. A paid storage upgrade or materially higher operational burden requires the approval boundary in the release ledger.

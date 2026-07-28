@@ -49,6 +49,9 @@ jobs:
       - name: Verify support privacy controls
         run: npm run audit:support-privacy
 
+      - name: Verify encrypted backup recovery tooling
+        run: npm run test:backup-recovery
+
   frontend:
     name: Frontend tests, lint, build, and audit
     runs-on: ubuntu-latest

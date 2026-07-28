@@ -15,6 +15,7 @@
     "verify:deployed-release": "node scripts/verify-deployed-release.mjs",
     "capture:dashboard-performance": "node frontend/scripts/capture-dashboard-performance.mjs",
     "check:supabase-contracts-local": "bash scripts/verify-supabase-contracts-local.sh",
+    "test:backup-recovery": "node scripts/backup-recovery.mjs doctor && node --test scripts/backup-recovery.test.mjs",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs",
     "audit:support-privacy": "python3 scripts/audit-support-privacy.py",
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
