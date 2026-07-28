@@ -46,6 +46,12 @@ jobs:
       - name: Verify environment examples
         run: npm run check:env-examples
 
+      - name: Verify authenticated restore evidence contract
+        run: |
+          npm run test:authenticated-restore
+          npm run verify:authenticated-restore -- \
+            --evidence "$PWD/scripts/fixtures/authenticated-restore/synthetic-evidence.json"
+
       - name: Verify support privacy controls
         run: npm run audit:support-privacy
 

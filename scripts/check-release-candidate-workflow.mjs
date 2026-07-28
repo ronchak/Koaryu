@@ -26,6 +26,8 @@ const requiredSnippets = [
   "gitleaks dir . --redact --verbose --exit-code 1",
   "github/codeql-action/analyze@v4",
   "npm run check:env-examples",
+  "npm run test:authenticated-restore",
+  "--evidence \"$PWD/scripts/fixtures/authenticated-restore/synthetic-evidence.json\"",
   "npm run audit:support-privacy",
   "node --test scripts/verify-deployed-release.test.mjs",
 ];
