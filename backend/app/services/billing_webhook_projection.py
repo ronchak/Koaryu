@@ -272,8 +272,8 @@ class BillingWebhookProjector:
     ) -> None:
         self._payment_events()._project_payment_intent(intent, account_id, event_type, event_created)
 
-    def _link_disputes_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
-        return self._payment_events()._link_disputes_to_payment(payment, account_id)
+    def _link_adjustments_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
+        return self._payment_events()._link_adjustments_to_payment(payment, account_id)
 
     def _project_charge_refund(self, charge: dict[str, Any], account_id: Optional[str]) -> None:
         self._payment_events()._project_charge_refund(charge, account_id)

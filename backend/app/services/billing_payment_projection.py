@@ -180,7 +180,7 @@ class BillingPaymentEventProjector:
         else:
             result = self.supabase.table("billing_payments").insert(row).execute()
         payment = result.data[0] if result.data else row
-        payment = self._link_disputes_to_payment(payment, account_id)
+        payment = self._link_adjustments_to_payment(payment, account_id)
         payment_status = payment.get("status")
         invoice_recomputed = False
         if local_invoice and payment_status in {"succeeded", "failed"}:
@@ -241,29 +241,50 @@ class BillingPaymentEventProjector:
         invoice_result = invoice_query.execute()
         return event_created is None or bool(invoice_result.data)
 
-    def _link_disputes_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
+    def _link_adjustments_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
         charge_id = payment.get("stripe_charge_id")
         payment_id = payment.get("id")
         studio_id = payment.get("studio_id")
         if not charge_id or not payment_id or not studio_id:
             return payment
-        query = (
+
+        refund_query = (
+            self.supabase.table("billing_refunds")
+            .select("id")
+            .eq("studio_id", studio_id)
+            .eq("stripe_charge_id", charge_id)
+        )
+        refund_query = (
+            refund_query.eq("stripe_account_id", account_id)
+            if account_id
+            else refund_query.is_("stripe_account_id", "null")
+        )
+        refunds = refund_query.execute()
+        refund_ids = [row["id"] for row in refunds.data or [] if row.get("id")]
+
+        dispute_query = (
             self.supabase.table("billing_disputes")
             .select("id, status")
             .eq("studio_id", studio_id)
             .eq("stripe_charge_id", charge_id)
         )
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
-        disputes = query.execute()
-        if not disputes.data:
+        dispute_query = (
+            dispute_query.eq("stripe_account_id", account_id)
+            if account_id
+            else dispute_query.is_("stripe_account_id", "null")
+        )
+        disputes = dispute_query.execute()
+        dispute_ids = [row["id"] for row in disputes.data or [] if row.get("id")]
+        if not refund_ids and not dispute_ids:
             return payment
 
-        dispute_ids = [row["id"] for row in disputes.data if row.get("id")]
-        dispute_update = {"payment_id": payment_id}
+        adjustment_update = {"payment_id": payment_id}
         if payment.get("stripe_payment_intent_id"):
-            dispute_update["stripe_payment_intent_id"] = payment["stripe_payment_intent_id"]
+            adjustment_update["stripe_payment_intent_id"] = payment["stripe_payment_intent_id"]
+        if refund_ids:
+            self.supabase.table("billing_refunds").update(adjustment_update).in_("id", refund_ids).execute()
         if dispute_ids:
-            self.supabase.table("billing_disputes").update(dispute_update).in_("id", dispute_ids).execute()
+            self.supabase.table("billing_disputes").update(adjustment_update).in_("id", dispute_ids).execute()
 
         return self._reconcile_payment_adjustments(payment, account_id)
 
