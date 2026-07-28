@@ -32,7 +32,8 @@ retries, video, or a reusable external server to the required configuration.
 - CI sources only placeholder values from `frontend/.env.example`, then forces
   `NEXT_PUBLIC_PREVIEW_MODE=true` before `next build`.
 - Playwright launches that exact build with `next start`; it cannot silently
-  reuse a development or external server.
+  reuse a development or external server. The required command also pins
+  `KOARYU_E2E_FRONTEND_URL=http://127.0.0.1:4000`, overriding any ambient URL.
 - Chromium runs with one worker, no retries, a 15-second per-test timeout, a
   two-minute global timeout, and a three-minute workflow-step timeout.
 - Each test receives an isolated browser context. The sole state mutation is

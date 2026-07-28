@@ -61,6 +61,7 @@ describe("stateful Playwright e2e safety", () => {
     const packageJson = JSON.parse(packageJsonSource);
     const requiredSmokeScript = packageJson.scripts["test:e2e:required-smoke"];
 
+    assert.match(requiredSmokeScript, /KOARYU_E2E_FRONTEND_URL=http:\/\/127\.0\.0\.1:4000/);
     assert.match(requiredSmokeScript, /KOARYU_PREVIEW_SMOKE_E2E=true/);
     assert.match(requiredSmokeScript, /KOARYU_PREVIEW_E2E=true/);
     assert.match(requiredSmokeScript, /playwright\.required-smoke\.config\.ts/);
