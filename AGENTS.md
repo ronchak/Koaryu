@@ -40,6 +40,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Capture privacy-safe dashboard timing evidence only after exact-SHA verification: `npm run capture:dashboard-performance -- <same release args> --storage-state <absolute-private-path>`
 - Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
+- Run the fake-only tuition lifecycle proof: `npm run verify:tuition-lifecycle`
 
 ## Monorepo Rules
 
