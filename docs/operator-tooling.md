@@ -10,7 +10,13 @@ Use the repository-local PostgreSQL 17 harness by default when developing or rev
 npm run check:supabase-contracts-local
 ```
 
-The harness needs local PostgreSQL 17 server and client binaries (`initdb`, `pg_ctl`, and `psql`). It needs no Docker daemon, Supabase CLI login, cloud project, network access, secrets, or `.env` file. It creates a private-socket cluster under a short `/tmp` path, applies every migration in its own transaction, records the local migration history, and then runs every file in `supabase/verification/`. It stops and removes the cluster on success, failure, or interrupt.
+The harness needs a complete local PostgreSQL 17 toolchain (`initdb`, `pg_ctl`, and `psql`) with the `pgcrypto` extension files, which some Linux distributions package as PostgreSQL contrib. Run it as an unprivileged operating-system user; PostgreSQL refuses to initialize or run a cluster as root. The harness prefers a working PostgreSQL 17 toolchain on `PATH`, then checks common package locations. Set `KOARYU_PG_BIN_DIR` to an explicit PostgreSQL 17 `bin` directory when multiple versions are installed.
+
+It needs no Docker daemon, Supabase CLI login, cloud project, network access, secrets, or `.env` file. It creates a private-socket cluster under a short `/tmp` path, applies every migration in its own transaction, records the local migration history, and then runs every file in `supabase/verification/`. Concurrent runs use different private socket directories, even though their socket filenames share port number `5432`. It forwards `INT` and `TERM` to an active PostgreSQL command, then stops and removes the cluster on success, failure, or interrupt.
+
+The compatibility shim supplies only the PostgreSQL roles, schemas, tables, auth claim helpers, and extension needed by this repository's current migrations and SQL contracts. Use staging when verification depends on the behavior of a full Supabase service rather than PostgreSQL alone.
+
+The current migration chain is transaction-compatible. The Supabase CLI can run a small class of commands such as `CREATE INDEX CONCURRENTLY` outside its per-file transaction; this harness deliberately fails instead because `psql --single-transaction` cannot reproduce that exception safely. Use the Supabase CLI and the appropriate non-production target if a future migration requires one of those commands.
 
 Use these targets according to their safety boundary:
 

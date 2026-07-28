@@ -2,6 +2,8 @@
 set -euo pipefail
 
 export LC_ALL=C
+unset PGDATABASE PGHOST PGHOSTADDR PGPASSFILE PGPASSWORD PGPORT
+unset PGSERVICE PGSERVICEFILE PGUSER PGOPTIONS
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATION_DIR="$ROOT_DIR/supabase/migrations"
@@ -10,14 +12,19 @@ TEMP_DIR=""
 DATA_DIR=""
 SOCKET_DIR=""
 POSTMASTER_LOG=""
+ACTIVE_CHILD_PID=""
+PG_BIN_DIR=""
+INITDB=""
 PG_CTL=""
+PSQL=""
 PG_PORT=5432
 
 cleanup() {
   local original_status=$?
   local cleanup_failed=0
 
-  trap - EXIT INT TERM
+  trap - EXIT
+  trap '' INT TERM
   set +e
 
   if [[ -n "$PG_CTL" && -n "$DATA_DIR" && -s "$DATA_DIR/postmaster.pid" ]]; then
@@ -58,7 +65,17 @@ cleanup() {
 
 on_interrupt() {
   local signal="$1"
+  local child_pid="$ACTIVE_CHILD_PID"
+
+  trap - INT TERM
   echo "Interrupted by $signal; cleaning up the ephemeral PostgreSQL cluster." >&2
+
+  if [[ -n "$child_pid" ]]; then
+    kill -s "$signal" "$child_pid" >/dev/null 2>&1 || true
+    wait "$child_pid" >/dev/null 2>&1 || true
+    ACTIVE_CHILD_PID=""
+  fi
+
   if [[ "$signal" == "INT" ]]; then
     exit 130
   fi
@@ -69,41 +86,102 @@ trap cleanup EXIT
 trap 'on_interrupt INT' INT
 trap 'on_interrupt TERM' TERM
 
-resolve_pg_binary() {
-  local binary="$1"
-  local pg_bindir="${2:-}"
+run_interruptible() {
+  local status=0
 
-  if [[ -n "$pg_bindir" && -x "$pg_bindir/$binary" ]]; then
-    printf '%s\n' "$pg_bindir/$binary"
-    return
+  (
+    trap - INT TERM
+    exec "$@"
+  ) <&0 &
+  ACTIVE_CHILD_PID=$!
+  if wait "$ACTIVE_CHILD_PID"; then
+    status=0
+  else
+    status=$?
   fi
-
-  if command -v "$binary" >/dev/null 2>&1; then
-    command -v "$binary"
-    return
-  fi
-
-  echo "ERROR: PostgreSQL 17 binary '$binary' is required but was not found." >&2
-  exit 127
+  ACTIVE_CHILD_PID=""
+  return "$status"
 }
 
-pg_bindir=""
-if command -v pg_config >/dev/null 2>&1; then
-  pg_bindir="$(pg_config --bindir 2>/dev/null || true)"
-fi
+is_postgres_17_binary() {
+  local binary_path="$1"
+  local version_output=""
 
-INITDB="$(resolve_pg_binary initdb "$pg_bindir")"
-PG_CTL="$(resolve_pg_binary pg_ctl "$pg_bindir")"
-PSQL="$(resolve_pg_binary psql "$pg_bindir")"
+  if [[ ! -x "$binary_path" ]]; then
+    return 1
+  fi
+  version_output="$("$binary_path" --version 2>/dev/null)" || return 1
+  [[ "$version_output" =~ (^|[^0-9])17\.[0-9] ]]
+}
 
-pg_version="$("$INITDB" --version)"
-# `initdb --version` prints "initdb (PostgreSQL) 17.10 (Homebrew)" -- the closing
-# paren sits between the product name and the number, so anchoring on
-# "PostgreSQL 17." rejects every standard install.
-if [[ ! "$pg_version" =~ (^|[^0-9])17\.[0-9] ]]; then
-  echo "ERROR: PostgreSQL 17 is required; found: $pg_version" >&2
+is_postgres_17_bindir() {
+  local bindir="$1"
+  local binary=""
+
+  for binary in initdb pg_ctl psql; do
+    if ! is_postgres_17_binary "$bindir/$binary"; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+append_candidate_bindir() {
+  local candidate="$1"
+  local existing=""
+
+  if [[ -z "$candidate" ]]; then
+    return
+  fi
+  for existing in "${candidate_bindirs[@]-}"; do
+    if [[ "$existing" == "$candidate" ]]; then
+      return
+    fi
+  done
+  candidate_bindirs+=("$candidate")
+}
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "ERROR: PostgreSQL refuses to initialize or run a cluster as root." >&2
+  echo "Run this verifier as an unprivileged operating-system user." >&2
   exit 1
 fi
+
+candidate_bindirs=()
+if [[ -n "${KOARYU_PG_BIN_DIR:-}" ]]; then
+  append_candidate_bindir "$KOARYU_PG_BIN_DIR"
+else
+  if command -v initdb >/dev/null 2>&1; then
+    append_candidate_bindir "$(dirname "$(command -v initdb)")"
+  fi
+  if command -v pg_config >/dev/null 2>&1; then
+    append_candidate_bindir "$(pg_config --bindir 2>/dev/null || true)"
+  fi
+  append_candidate_bindir "/opt/homebrew/opt/postgresql@17/bin"
+  append_candidate_bindir "/usr/local/opt/postgresql@17/bin"
+  append_candidate_bindir "/usr/lib/postgresql/17/bin"
+fi
+
+for candidate_bindir in "${candidate_bindirs[@]-}"; do
+  if is_postgres_17_bindir "$candidate_bindir"; then
+    PG_BIN_DIR="$candidate_bindir"
+    break
+  fi
+done
+
+if [[ -z "$PG_BIN_DIR" ]]; then
+  echo "ERROR: A complete PostgreSQL 17 toolchain (initdb, pg_ctl, and psql) was not found." >&2
+  if [[ -n "${KOARYU_PG_BIN_DIR:-}" ]]; then
+    echo "KOARYU_PG_BIN_DIR does not contain three working PostgreSQL 17 binaries: $KOARYU_PG_BIN_DIR" >&2
+  else
+    echo "Put PostgreSQL 17 first on PATH or set KOARYU_PG_BIN_DIR to its bin directory." >&2
+  fi
+  exit 127
+fi
+
+INITDB="$PG_BIN_DIR/initdb"
+PG_CTL="$PG_BIN_DIR/pg_ctl"
+PSQL="$PG_BIN_DIR/psql"
 
 shopt -s nullglob
 migration_files=("$MIGRATION_DIR"/*.sql)
@@ -129,7 +207,7 @@ POSTMASTER_LOG="$TEMP_DIR/postmaster.log"
 mkdir -p "$SOCKET_DIR"
 
 echo "Initializing ephemeral PostgreSQL 17 cluster..."
-if ! "$INITDB" \
+if ! run_interruptible "$INITDB" \
   -D "$DATA_DIR" \
   --username=postgres \
   --encoding=UTF8 \
@@ -142,7 +220,7 @@ if ! "$INITDB" \
 fi
 
 echo "Starting PostgreSQL on private socket $SOCKET_DIR..."
-if ! "$PG_CTL" \
+if ! run_interruptible "$PG_CTL" \
   -D "$DATA_DIR" \
   -l "$POSTMASTER_LOG" \
   -o "-F -c listen_addresses= -c unix_socket_directories=$SOCKET_DIR -c port=$PG_PORT" \
@@ -169,8 +247,31 @@ psql_args=(
   --quiet
 )
 
+echo "[bootstrap] CHECK pgcrypto availability"
+if run_interruptible "$PSQL" "${psql_args[@]}" <<'SQL'
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_available_extensions
+    WHERE name = 'pgcrypto'
+  ) THEN
+    RAISE EXCEPTION 'PostgreSQL 17 pgcrypto extension files are unavailable';
+  END IF;
+END
+$$;
+SQL
+then
+  echo "[bootstrap] PASS pgcrypto availability"
+else
+  status=$?
+  echo "[bootstrap] FAIL pgcrypto availability (psql exit $status)" >&2
+  echo "ERROR: Install the PostgreSQL 17 contrib/pgcrypto package for this toolchain." >&2
+  exit "$status"
+fi
+
 echo "[bootstrap] RUN Supabase compatibility shim"
-if "${PSQL}" "${psql_args[@]}" <<'SQL'
+if run_interruptible "$PSQL" "${psql_args[@]}" <<'SQL'
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
@@ -183,10 +284,10 @@ BEGIN
     CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator') THEN
-    CREATE ROLE authenticator LOGIN NOINHERIT;
+    CREATE ROLE authenticator NOLOGIN NOINHERIT;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
-    CREATE ROLE supabase_admin NOLOGIN NOINHERIT CREATEROLE CREATEDB REPLICATION BYPASSRLS;
+    CREATE ROLE supabase_admin NOLOGIN NOINHERIT;
   END IF;
 END
 $$;
@@ -291,7 +392,7 @@ for migration_file in "${migration_files[@]}"; do
   migration_name="${BASH_REMATCH[2]}"
 
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
-  if "$PSQL" "${psql_args[@]}" \
+  if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
     --file="$migration_file" \
     --command="INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('$migration_version', '$migration_name');"; then
@@ -310,7 +411,7 @@ for verification_file in "${verification_files[@]}"; do
   verification_filename="$(basename "$verification_file")"
 
   echo "[contract $verification_index/$verification_total] RUN $verification_filename"
-  if "$PSQL" "${psql_args[@]}" --file="$verification_file"; then
+  if run_interruptible "$PSQL" "${psql_args[@]}" --file="$verification_file"; then
     echo "[contract $verification_index/$verification_total] PASS $verification_filename"
   else
     status=$?

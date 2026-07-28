@@ -25,13 +25,19 @@ def test_local_supabase_contract_verifier_static_harness_contract():
     for required_text in (
         "set -euo pipefail",
         "export LC_ALL=C",
+        "unset PGDATABASE PGHOST",
         "mktemp -d /tmp/koaryu-pg.XXXXXX",
         "trap cleanup EXIT",
         "trap 'on_interrupt INT' INT",
         "trap 'on_interrupt TERM' TERM",
+        'kill -s "$signal" "$child_pid"',
+        'if [[ "$(id -u)" -eq 0 ]]',
+        "KOARYU_PG_BIN_DIR",
+        "is_postgres_17_bindir",
         'migration_files=("$MIGRATION_DIR"/*.sql)',
         'verification_files=("$VERIFICATION_DIR"/*.sql)',
         "--single-transaction",
+        "pg_available_extensions",
         "CREATE TABLE auth.users",
         "CREATE FUNCTION auth.uid()",
         "CREATE FUNCTION auth.role()",
@@ -49,6 +55,26 @@ def test_local_supabase_contract_verifier_static_harness_contract():
     assert package["scripts"]["check:supabase-contracts-local"] == (
         "bash scripts/verify-supabase-contracts-local.sh"
     )
+    supabase_guide = (ROOT_DIR / "supabase" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "npm run check:supabase-contracts-local" in supabase_guide
+
+
+def test_local_supabase_contract_verifier_rejects_an_invalid_explicit_toolchain(tmp_path):
+    script_path = ROOT_DIR / "scripts" / "verify-supabase-contracts-local.sh"
+    result = subprocess.run(
+        ["/bin/bash", str(script_path)],
+        capture_output=True,
+        env={**os.environ, "KOARYU_PG_BIN_DIR": str(tmp_path)},
+        text=True,
+    )
+
+    if os.geteuid() == 0:
+        assert result.returncode == 1
+        assert "refuses to initialize or run a cluster as root" in result.stderr
+    else:
+        assert result.returncode == 127
+        assert "complete PostgreSQL 17 toolchain" in result.stderr
+        assert str(tmp_path) in result.stderr
 
 
 def _load_connect_smoke_module():
