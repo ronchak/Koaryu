@@ -366,3 +366,9 @@ Supported `object_type` values are `connect_account`, `payer`, `invoice`, `subsc
 Ronak Chakraborty is the current alert owner and recipient; email is the preferred channel. Provider-native Render, Vercel, Supabase, and Stripe alerts are primary. A scheduled or Codex-generated digest is supplemental and must not be the only real-time signal.
 
 After every staging or production application deployment, check once that the expected provider email notification path reaches the owner and record pass, failure, or unverified status in the release evidence. Also inspect immediate provider health/log signals once. Do not claim alert coverage for a provider or event class that has not been read back and exercised.
+
+The application-derived counts-only catalog and its deliberately inactive
+delivery scaffold are documented in [Operational Alerts](operational-alerts.md).
+Do not schedule or connect that evaluator until the backup owner, exact
+destinations, durable state/audit store, cost, and staging rehearsal in its
+approval packet are approved.

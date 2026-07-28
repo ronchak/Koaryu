@@ -30,6 +30,7 @@ Use this file for work under `backend/`. Fall back to the repo root `AGENTS.md` 
 - Start local API: `cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
 - Run all tests: `cd backend && venv/bin/python -m pytest tests`
 - Run targeted tests: `cd backend && venv/bin/python -m pytest tests/test_health_endpoints.py`
+- Rehearse the record-only operational alert lifecycle: `cd backend && venv/bin/python scripts/operational_alerts.py synthetic`
 
 The local backend runs on `http://127.0.0.1:8001`.
 
@@ -72,3 +73,4 @@ The local backend runs on `http://127.0.0.1:8001`.
 - Repo overview: `README.md`
 - Render deployment runbook: `docs/render-backend-deployment.md`
 - Support triage runbook: `docs/support-triage.md`
+- Operational alert catalog and runbooks: `docs/operational-alerts.md`
