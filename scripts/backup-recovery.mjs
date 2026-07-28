@@ -13,6 +13,7 @@ import {
   rm,
   stat,
 } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import {
   basename,
@@ -153,16 +154,17 @@ async function assertPrivateFile(path, label) {
 }
 
 async function fileSha256(path) {
-  const handle = await open(path, "r");
-  const hash = createHash("sha256");
-  try {
-    for await (const chunk of handle.readableWebStream()) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(path);
+    stream.on("data", (chunk) => {
       hash.update(chunk);
-    }
-  } finally {
-    await handle.close();
-  }
-  return hash.digest("hex");
+    });
+    stream.on("error", rejectPromise);
+    stream.on("end", () => {
+      resolvePromise(hash.digest("hex"));
+    });
+  });
 }
 
 async function readPassphrase() {
