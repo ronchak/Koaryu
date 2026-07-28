@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import json
+import logging
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -10,6 +13,14 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.utils import is_body_allowed_for_status_code
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+logger = logging.getLogger(__name__)
+
+
+ERROR_REFERENCE_HEADER = "X-Koaryu-Error-Reference"
+UNHANDLED_EXCEPTION_EVENT = "backend.uncaught_exception"
+SAFE_HTTP_METHODS = frozenset({"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"})
 
 
 class ErrorMeta(BaseModel):
@@ -87,11 +98,58 @@ def _unhandled_error_cors_headers(request: Request) -> dict[str, str]:
     return {
         "Access-Control-Allow-Origin": origin,
         "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Expose-Headers": ERROR_REFERENCE_HEADER,
         "Vary": "Origin",
     }
 
 
-async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
+def _safe_route_template(request: Request) -> str:
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    if (
+        not isinstance(route_path, str)
+        or not route_path.startswith("/")
+        or "?" in route_path
+        or "#" in route_path
+        or len(route_path) > 256
+    ):
+        return "<unmatched>"
+    return route_path
+
+
+def _safe_http_method(request: Request) -> str:
+    method = request.method.upper()
+    return method if method in SAFE_HTTP_METHODS else "OTHER"
+
+
+def _emit_unhandled_exception_event(
+    request: Request,
+    exc: Exception,
+    *,
+    error_reference: str,
+) -> None:
+    event = {
+        "error_reference": error_reference,
+        "event": UNHANDLED_EXCEPTION_EVENT,
+        "exception_type": type(exc).__name__,
+        "http_method": _safe_http_method(request),
+        "route_template": _safe_route_template(request),
+    }
+    logger.error(
+        json.dumps(event, separators=(",", ":"), sort_keys=True),
+        extra=event,
+    )
+
+
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    error_reference = f"err_{uuid4().hex}"
+    _emit_unhandled_exception_event(
+        request,
+        exc,
+        error_reference=error_reference,
+    )
+    headers = _unhandled_error_cors_headers(request)
+    headers[ERROR_REFERENCE_HEADER] = error_reference
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response_payload(
@@ -99,7 +157,7 @@ async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSON
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="internal_server_error",
         ),
-        headers=_unhandled_error_cors_headers(request),
+        headers=headers,
     )
 
 
