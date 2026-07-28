@@ -8,6 +8,7 @@ Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted
 - If a command cannot run locally, record the blocker and avoid substituting a weaker check as proof.
 - Run `git diff --check` before publishing any PR.
 - Run `npm run check:release-workflow` for workflow, merge-control, or release-process changes.
+- Keep every non-local workflow `uses:` reference on a full commit SHA with a same-line version comment; the release-workflow check enforces this contract.
 - Every release-candidate PR must receive the unfiltered, exact-head `Release candidate gate`; targeted local checks do not replace it.
 - Run API-contract checks whenever backend response schemas, endpoints, or generated frontend types might change.
 - Use `supabase migration up --local` for migrations not yet applied locally. If a changed migration may already be recorded in local history, first confirm the database is disposable and run `supabase db reset --local` so checks exercise the current file contents rather than a stale applied definition.
