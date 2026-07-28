@@ -28,9 +28,11 @@ Starlette's bounded worker threadpool so provider latency does not block the
 single process's event loop. This is thread isolation, not additional Uvicorn
 workers. Subscription access-repair locks and retry windows are process-local;
 if the process count changes, expect up to one repair per studio per process and
-revisit cross-process coordination. Cancelling an awaiting request does not stop
-synchronous code already running in a worker, so provider timeouts and mutation
-idempotency remain required.
+revisit cross-process coordination. Repair followers fail closed instead of
+occupying worker threads while the leader runs. Cancelling an awaiting request
+does not stop synchronous code already running in a worker, so provider timeouts
+and mutation idempotency remain required; platform checkout retains its
+per-studio serialization until an in-flight synchronous mutation finishes.
 
 `render.yaml` intentionally sets `autoDeployTrigger: 'off'`. A merge to `main` must not release the backend before the fixed candidate has passed staging. Trigger the production deploy with the exact approved commit SHA, then read the deployed SHA back from Render before recording the release. Do not re-enable commit auto-deploy as a shortcut.
 

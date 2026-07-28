@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import threading
+import weakref
 from datetime import datetime, timezone
 from time import monotonic
 from typing import Any, Optional
@@ -113,11 +115,12 @@ def _provider_failure(exc: Exception) -> AccessRepairProviderError:
 
 
 class AccessRepairDeferred(Exception):
-    """A repair was suppressed by the throttle and its recorded outcome was a fault.
+    """A strict repair was suppressed while its result could not be trusted.
 
-    Raised so the caller reproduces the answer the failed repair produced rather
-    than evaluating an unverified row. It carries no provider information and is
-    deliberately not a provider error: nothing was contacted.
+    Raised when a recorded repair fault is replayed or another request already
+    owns the same studio's repair. The caller must fail closed instead of
+    evaluating an unverified row. It carries no provider information and is
+    deliberately not a provider error: this request contacted nothing.
     """
 
     def __init__(self, studio_id: str):
@@ -165,13 +168,21 @@ class _AccessRepairWindow:
 #
 # CONCURRENCY — authorization now reaches this synchronous path through
 # Starlette's threadpool. The per-studio lock below keeps the strict repair
-# check/provider call/outcome record single-flight inside one process, preserving
-# the throttle's original semantics without serialising unrelated tenants.
+# check/provider call/outcome record single-flight inside one process. Followers
+# never wait on the lock inside a bounded worker thread; they fail closed and
+# retry after the leader records its outcome.
 # A future multi-worker deployment would still have one lock and one retry
 # window per worker; cross-process coordination is intentionally out of scope.
 _access_repair_retry_after: dict[str, _AccessRepairWindow] = {}
-_access_repair_locks: dict[str, Any] = {}
+_access_repair_locks: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
 _access_repair_locks_guard = threading.Lock()
+
+# Checkout must preserve the pending-session check/create/persist sequence
+# across requests. These locks are keyed by event loop because asyncio locks are
+# loop-bound under contention. Both loop keys and idle lock values are weak so
+# closed test loops and inactive studios do not accumulate.
+_checkout_locks_by_loop: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_checkout_locks_guard = threading.Lock()
 
 
 class PlatformBillingService:
@@ -199,8 +210,13 @@ class PlatformBillingService:
         if not strict_repairs:
             return self._get_access_status_row(studio_id, strict_repairs=False)
 
-        with self._access_repair_lock(studio_id):
+        repair_lock = self._access_repair_lock(studio_id)
+        if not repair_lock.acquire(blocking=False):
+            raise AccessRepairDeferred(studio_id)
+        try:
             return self._get_access_status_row(studio_id, strict_repairs=True)
+        finally:
+            repair_lock.release()
 
     @staticmethod
     def _access_repair_lock(studio_id: str):
@@ -381,14 +397,52 @@ class PlatformBillingService:
         cancel_url: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> BillingLinkResponse:
-        return await run_in_threadpool(
-            self.create_checkout_link_sync,
-            studio_id,
-            actor_id,
-            success_url,
-            cancel_url,
-            idempotency_key,
-        )
+        async with self._checkout_lock(studio_id):
+            worker = asyncio.create_task(
+                run_in_threadpool(
+                    self.create_checkout_link_sync,
+                    studio_id,
+                    actor_id,
+                    success_url,
+                    cancel_url,
+                    idempotency_key,
+                )
+            )
+            try:
+                return await asyncio.shield(worker)
+            except asyncio.CancelledError as cancelled:
+                # The synchronous sequence may still create and persist a
+                # Stripe session after its requester is cancelled. Keep the
+                # per-studio lock until that work really ends so a follower
+                # cannot overlap it and create a second session.
+                while not worker.done():
+                    try:
+                        await asyncio.shield(worker)
+                    except asyncio.CancelledError:
+                        # Repeated caller cancellation still cannot release the
+                        # lock while the worker is mutating provider/local state.
+                        continue
+                    except Exception:
+                        break
+                if worker.done() and not worker.cancelled():
+                    # Retrieve any worker exception so asyncio does not report
+                    # it as unobserved; the caller's cancellation remains the
+                    # externally visible outcome.
+                    try:
+                        worker.result()
+                    except Exception:
+                        pass
+                raise cancelled
+
+    @staticmethod
+    def _checkout_lock(studio_id: str) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        with _checkout_locks_guard:
+            locks = _checkout_locks_by_loop.setdefault(
+                loop,
+                weakref.WeakValueDictionary(),
+            )
+            return locks.setdefault(studio_id, asyncio.Lock())
 
     def create_checkout_link_sync(
         self,
