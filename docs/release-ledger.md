@@ -125,6 +125,41 @@ Operator: `Codex release orchestrator`
 - The restore drill still lacks an authenticated tenant-safe application read. The current Supabase Free plan has no proven native daily-backup or PITR entitlement, so the provisional RPO of 24 hours and RTO of 4 hours remain unproven planning targets.
 - The backup key remains in macOS Keychain. Copying it to a physically controlled recovery flash drive remains a human-only action; no key material belongs in this repository or release evidence.
 
+## Repository-only Off-site Recovery Controls — 2026-07-27
+
+- Scope: PR #71 adds no provider integration and performs no production-data
+  access, production artifact upload, key export, paid-service activation,
+  linked restore, or generation deletion.
+- Existing evidence reviewed: the July 10 AEAD generation retains five recorded
+  ciphertext hashes; later evidence proves local verification, wrong-key
+  rejection, and a matching second-machine copy. It still does not prove
+  geographic/provider separation, provider-origin retrieval, a current
+  24-hour RPO, the provisional 4-hour RTO, or an authenticated application
+  read after restore.
+- Repository control: `scripts/backup-recovery.mjs` creates an atomic
+  five-artifact AES-256/OCB generation, produces a non-secret ciphertext
+  manifest and independent digest, verifies exact files/sizes/hashes, copies an
+  already-downloaded generation into a locked recovery directory, decrypts
+  fail-closed into an atomic restore directory, and quarantines surplus
+  generations without deleting them.
+- Synthetic evidence: `npm run test:backup-recovery` uses real GnuPG artifacts
+  and disposable fixture data to prove generation, manifest and ciphertext hash
+  verification, tamper detection, retrieval, wrong-key rejection without
+  plaintext publication, correct-key restore under a fresh GnuPG home, and
+  three-generation rotation with two active generations plus one recoverable
+  quarantine entry.
+- Governance: [Off-site Encrypted Backup Recovery](offsite-backup-recovery.md)
+  defines the source/workstation/provider/key/recovery trust boundaries,
+  seven-daily/four-weekly/three-monthly proposed retention, two-generation
+  safety floor, non-deleting automation, Ronak's current owner/operator roles,
+  the unassigned secondary recovery custodian, annual/event-driven key
+  rotation, evidence checklist, and exact approval packet.
+- Gate status: issue #22 remains open. The PR must stay draft until a provider,
+  account/region/destination, cost ceiling, access identities, secondary
+  custodian, retention/versioning controls, synthetic provider drill,
+  production-generation upload, provider-origin retrieval, and full disposable
+  application restore receive their required approvals and evidence.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.

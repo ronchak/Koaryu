@@ -18,6 +18,7 @@ Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted
 | Changed Area | Minimum Check | Add When Relevant |
 | --- | --- | --- |
 | Root scripts or repo commands | `git diff --check` and the script's syntax check when available | Exercise the script against a disposable/local target |
+| Backup/recovery tooling or runbooks | `npm run test:backup-recovery` and `git diff --check` | Use only synthetic fixtures unless production access and the exact external destination are separately approved |
 | `frontend/src/app/**` route/page | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run build` for routing, auth, middleware, proxy, or env-sensitive changes |
 | `frontend/src/components/**` UI | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run test` when changing state models or shared behavior |
 | `frontend/src/lib/**` helper/store | `cd frontend && npm run lint -- <paths>` plus `cd frontend && npm run test` or a focused Node test | Add/update `frontend/tests/*.test.mjs` for non-trivial data shaping |
