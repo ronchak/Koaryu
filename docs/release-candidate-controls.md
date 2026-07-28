@@ -10,7 +10,8 @@ workflow, script, and documentation changes cannot produce a zero-check PR.
 `.github/workflows/release-candidate.yml` checks out the pull-request head SHA
 directly and verifies it before running:
 
-- repository workflow, environment-example, and support-privacy controls;
+- repository workflow, environment-example, Supabase Auth/backup inventory, and
+  support-privacy controls;
 - frontend tests, lint, production build, and high-severity runtime audit;
 - backend dependency consistency, hash-lock drift, vulnerability audit, tests,
   and generated API contract verification;
@@ -30,6 +31,10 @@ Run the static workflow guard locally with:
 ```bash
 npm run check:release-workflow
 ```
+
+The repository-controls job also runs `npm run check:supabase-controls`. This
+is an offline completeness/freshness check; it does not use a CI provider token
+or treat recorded evidence as a live provider readback.
 
 ## Provider Promotion Controls
 

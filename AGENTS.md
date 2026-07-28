@@ -30,6 +30,9 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Stop both apps: `npm run dev:down`
 - Basic local health check: `npm run dev:health`
 - Check example environment files: `npm run check:env-examples`
+- Check the recorded Supabase Auth/backup control inventory: `npm run check:supabase-controls`
+- Compare safe live Supabase control fields with the recorded baseline: `npm run check:supabase-controls:live`
+- Run the bounded synthetic staging Auth revocation exercise: `npm run verify:supabase-auth-revocation`
 - Verify a fully assembled staging environment is isolated: `npm run verify:staging-isolation`
 - Audit support triage privacy docs/scripts: `npm run audit:support-privacy`
 - Regenerate frontend API contract types: `npm run generate:api-types`

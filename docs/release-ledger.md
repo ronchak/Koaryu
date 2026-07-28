@@ -125,6 +125,19 @@ Operator: `Codex release orchestrator`
 - The restore drill still lacks an authenticated tenant-safe application read. The current Supabase Free plan has no proven native daily-backup or PITR entitlement, so the provisional RPO of 24 hours and RTO of 4 hours remain unproven planning targets.
 - The backup key remains in macOS Keychain. Copying it to a physically controlled recovery flash drive remains a human-only action; no key material belongs in this repository or release evidence.
 
+## Supabase Authentication and Backup Control Inventory — 2026-07-28
+
+- Scope: read-only/provider-safe production and staging project, organization-plan, backup, public Auth, and controlled synthetic staging evidence. No production Auth record, session, backup content, or credential was read, and no provider configuration was changed.
+- Ownership: Ronak Chakraborty is the named control owner, evidence custodian, approval owner, incident recipient, and current restore operator. A second recoverable owner path is unverified and remains approval-gated.
+- Provider baseline: both pinned projects reported `ACTIVE_HEALTHY` on PostgreSQL 17. The organization reported the Free plan. Production and staging each returned zero listed backups, `pitr_enabled=false`, and `walg_enabled=true`; WAL-G plumbing is not treated as a restore entitlement or point.
+- Public staging Auth baseline: email/password is the only exposed provider, sign-up is enabled, email confirmation is required, and phone, anonymous, social, SAML, and passkeys are disabled. Production public Auth settings and both projects' protected Auth configuration remain unverified.
+- Synthetic staging evidence: a disposable identity established two independent sessions with one-hour JWTs and `session_id`; global sign-out rejected both refresh tokens and the Auth user endpoint rejected the issued access token before expiry. The user was hard-deleted and absence was confirmed. No identifier, email, password, token, or response body was printed or recorded.
+- Revocation caveat: Koaryu production validates JWTs locally and does not check active `auth.sessions` state on each request. Do not infer immediate production backend revocation from the staging Auth endpoint result. Production JWT lifetime, refresh rotation/reuse, session limits, password policy, MFA, CAPTCHA/attack protection, rate limits, audit access, and restore roles remain approval-gated evidence gaps.
+- Recovery posture: the July 10 encrypted logical artifact set remains outside the provisional 24-hour RPO, lacks approved provider-independent off-site evidence, and the restore drill still lacks an authenticated tenant-safe application read. The provisional four-hour RTO is not proven.
+- Repository controls: `npm run check:supabase-controls` validates the 17-control-per-environment inventory, owner/evidence fields, review freshness, gap approvals, safe Auth allowlisting, and synthetic-test safety. The exact-head release-candidate workflow runs it without provider credentials.
+- Approval packet: [authentication and backup control inventory](audit-notes/authentication-backup-controls.md#approval-packet). Paid plan/PITR, session-policy changes, active-session checks, restore access, off-site retention, and recovery-key custody remain unapproved.
+- Provider mutation: none. The only provider write was the bounded create/sign-out/delete lifecycle of one disposable staging identity; cleanup was confirmed.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
