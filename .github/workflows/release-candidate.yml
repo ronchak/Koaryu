@@ -90,6 +90,61 @@ jobs:
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
 
+  browser-smoke:
+    name: Required production browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact candidate head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build controlled preview production frontend
+        run: |
+          set -a
+          source .env.example
+          set +a
+          export NEXT_PUBLIC_PREVIEW_MODE=true
+          npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run required browser smoke
+        timeout-minutes: 3
+        run: npm run test:e2e:required-smoke
+
+      - name: Preserve browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: required-browser-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/required-browser-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
+
   backend:
     name: Backend tests, contracts, and audit
     runs-on: ubuntu-latest
@@ -237,6 +292,7 @@ jobs:
     needs:
       - repository-controls
       - frontend
+      - browser-smoke
       - backend
       - database
       - static-analysis
@@ -246,12 +302,14 @@ jobs:
         env:
           REPOSITORY_RESULT: ${{ needs.repository-controls.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
+          BROWSER_SMOKE_RESULT: ${{ needs.browser-smoke.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
           DATABASE_RESULT: ${{ needs.database.result }}
           STATIC_ANALYSIS_RESULT: ${{ needs.static-analysis.result }}
         run: |
           test "$REPOSITORY_RESULT" = success
           test "$FRONTEND_RESULT" = success
+          test "$BROWSER_SMOKE_RESULT" = success
           test "$BACKEND_RESULT" = success
           test "$DATABASE_RESULT" = success
           test "$STATIC_ANALYSIS_RESULT" = success

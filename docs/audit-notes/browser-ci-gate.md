@@ -1,68 +1,74 @@
-# Required browser CI investigation brief
+# Required browser CI gate
 
-> Planning-only draft. This note does not change CI. It describes a current workflow gap observed on `main` at `0dbf7c0`. The future implementing agent should determine the smallest deterministic browser coverage that materially improves release confidence rather than copying the suggestions mechanically.
+## Outcome
 
-## Executive summary
+The release-candidate workflow now includes a required, secret-free Chromium
+smoke against a production Next.js build in controlled preview mode. The
+aggregate `Release candidate gate` fails closed unless that browser job
+succeeds.
 
-Koaryu has Playwright suites and has recorded browser evidence on important release PRs, but the required `Release candidate` workflow does not run Playwright. The required frontend gate currently runs Node tests, ESLint, a production Next.js build, and `npm audit`.
+The required subset is intentionally small. It exercises real production
+output, preview login and route navigation, a schedule modal, and a
+browser-local attendance state transition without contacting a live backend or
+mutating shared data.
 
-The suspected weakness is that browser correctness depends on manual or PR-specific execution rather than a stable required check. A regression involving middleware, route transitions, hydration, actual DOM behavior, or production output can pass the required gate if unit and source-contract tests do not cover it.
+## Playwright inventory
 
-## What the gap is
+| Spec | Environment and state | Required CI coverage |
+| --- | --- | --- |
+| `e2e/preview-smoke.spec.ts` | Checked-in preview identity and data; read-only navigation, reload, responsive, and marketing checks | Desktop preview login and dashboard-to-students navigation only |
+| `e2e/schedule-attendance-counters.spec.ts` | Preview data; mutations are confined to a fresh browser context's `localStorage` | One schedule-modal attendance toggle and counter transition |
+| `e2e/student-import-idempotency-key.spec.ts` | Preview mode and checked-in demo CSV; exercises an import review flow | Opt-in only |
+| `e2e/atomic-belt-ladder.spec.ts` | Live credentials and mutations in a disposable studio | Opt-in only; never part of required CI |
 
-`frontend/package.json` defines:
+The `@required-browser-smoke` tag selects the two approved tests, and
+`playwright.required-smoke.config.ts` limits discovery to the two approved
+preview specs. The package command enables only preview test flags. Contract
+tests reject adding the live suite, credential variables, parallel workers,
+retries, video, or a reusable external server to the required configuration.
 
-- `test:e2e`
-- preview smoke and import suites
-- an opt-in live stateful belt-ladder suite
+## Determinism and data boundaries
 
-`.github/workflows/release-candidate.yml` does not invoke any of them. Historical PRs include useful browser verification, but that evidence is not automatically reproduced for each relevant candidate.
+- CI sources only placeholder values from `frontend/.env.example`, then forces
+  `NEXT_PUBLIC_PREVIEW_MODE=true` before `next build`.
+- Playwright launches that exact build with `next start`; it cannot silently
+  reuse a development or external server.
+- Chromium runs with one worker, no retries, a 15-second per-test timeout, a
+  two-minute global timeout, and a three-minute workflow-step timeout.
+- Each test receives an isolated browser context. The sole state mutation is
+  preview attendance data in that context's `localStorage`.
+- Traces and screenshots are retained only on failure, video is disabled, and
+  the workflow uploads only preview-data artifacts for seven days.
 
-This is not a claim that every Playwright suite should run on every commit. Some current suites require credentials or deliberately mutate state and should remain opt-in.
+## Fail-closed controls
 
-## Why this matters
+`scripts/check-release-candidate-workflow.mjs` requires the unfiltered browser
+job, its bounded runtime, its unconditional smoke step, failure artifact
+handling, and the aggregate dependency and success assertion. The associated
+contract tests deliberately remove or condition those controls and verify that
+validation fails.
 
-Koaryu’s highest-risk frontend behavior crosses several layers that unit tests cannot fully model:
+## Deliberate failure proof
 
-- Supabase session cookies and middleware redirects
-- Next.js route and proxy behavior
-- loading and error state transitions
-- responsive navigation and modal interactions
-- attendance and schedule flows that depend on real browser event ordering
-- production-build behavior that differs from source-level imports
+Local proof on 2026-07-27 used the same production preview build and command as
+CI:
 
-A small deterministic browser gate can catch failures that otherwise appear only in staging or production promotion.
+- `npm run build` completed successfully with preview mode forced on.
+- `npm run test:e2e:required-smoke -- --list` discovered exactly two tests in
+  the two approved specs.
+- The unchanged smoke passed both tests with one worker.
+- A temporary, uncommitted change expected the attendance counter to advance
+  by two instead of one. The smoke exited non-zero with one pass and one
+  failure, and produced a screenshot, error context, and trace under the
+  configured failure directory.
+- The expectation was restored and both tests passed again. The successful run
+  left no screenshot or trace in the configured result directory.
 
-## Current impact
+The temporary failure is not part of the branch.
 
-The current release gate can pass without executing a browser. No unaddressed production regression was attributed to this gap during the review. The practical impact is uneven evidence. Some high-risk PRs receive strong manual browser verification, while routine candidates rely on maintainers remembering to run the right suite.
+## Explicitly uncovered risks
 
-## Root cause hypothesis
-
-Koaryu’s Playwright coverage grew around specific incidents and staging workflows. Stateful tests were correctly protected from accidental execution. The required CI workflow was then designed to be deterministic and secret-free, so browser suites were left outside it. The missing step is a clearly separated safe browser subset.
-
-## Suggested reproducibility and verification
-
-Confirm the exact release workflow graph and run a normal candidate to verify that no Playwright job executes. Inventory every existing E2E spec by required environment, mutation behavior, runtime length, and determinism.
-
-As a proof of value, identify one realistic browser regression that existing Node tests and `next build` would not catch, then show that a safe Playwright smoke would catch it. Do not manufacture a permanent code defect solely to satisfy this exercise.
-
-## Suggested plan of action
-
-This is guidance rather than a required design.
-
-Define a required, secret-free browser smoke against a production build or controlled preview mode. Keep it small and focused on route boot, basic navigation, one modal/form interaction, and one representative state transition. Preserve live and stateful suites behind explicit environment flags or separate manually approved jobs.
-
-Consider whether the browser job belongs on every PR or only when frontend/runtime paths change. Be cautious with path filtering because broad release candidates should not accidentally skip the aggregate gate. Record artifacts such as traces or screenshots only on failure and ensure they cannot contain production data.
-
-## Scope guard
-
-Do not make live credentials, production tenants, real Stripe resources, or destructive test data part of required CI. Do not add the entire historical E2E suite without first establishing determinism and cleanup.
-
-## Evidence expected before merge
-
-The eventual implementation should demonstrate a green deterministic run, a deliberate failing probe, bounded runtime, failure artifacts, and preservation of the existing aggregate release gate. The implementing agent should document which browser risks remain outside required CI.
-
-## Future-work note
-
-This branch contains only this planning note. Browser workflow changes will be implemented later.
+Required CI does not authenticate against Supabase, call a deployed backend,
+exercise Stripe, import rows, mutate a live tenant, or run the full responsive
+and reload matrix. Those suites remain targeted or manually approved checks;
+the required gate is not evidence for live integration correctness.

@@ -60,4 +60,5 @@ yarn-error.log*
 .koaryu-dev/
 tmp_import_tests/
 frontend/test-results/
+frontend/playwright-report/
 tmp_qa_screenshots/
