@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import socket
+import threading
 from datetime import datetime, timezone
 from time import monotonic
 from typing import Any, Optional
@@ -13,6 +14,7 @@ except ImportError:  # pragma: no cover
     stripe_error = None
 
 from fastapi import HTTPException, status
+from starlette.concurrency import run_in_threadpool
 from supabase import Client
 
 from app.core.config import get_settings
@@ -161,22 +163,15 @@ class _AccessRepairWindow:
 # replays as that row. Access-neutrality is then structural rather than argued,
 # and holds for every row shape in both directions.
 #
-# CONCURRENCY — read this before moving the authorization path off the event
-# loop. Checking the window and recording it are not atomic. That is safe today
-# only because no `await` separates them: every caller of this path reaches it
-# through a synchronous call inside an async dependency, so requests for one
-# studio serialise on the event-loop thread and the first records its window
-# before the second checks it.
-#
-# The invariant is the absence of an await boundary, not the word "synchronous".
-# A plain `def` path operation or dependency puts this code in FastAPI's
-# threadpool today, with no other refactor required, and a burst of requests for
-# one studio would then all call Stripe. Anything that introduces such a
-# boundary — the threadpool move in #61 above all — must first make
-# check-and-record atomic or single-flight, or accept and document a bounded
-# herd of one burst per window. Running uvicorn with --workers > 1 is a separate
-# and milder matter: the throttle simply becomes per-worker.
+# CONCURRENCY — authorization now reaches this synchronous path through
+# Starlette's threadpool. The per-studio lock below keeps the strict repair
+# check/provider call/outcome record single-flight inside one process, preserving
+# the throttle's original semantics without serialising unrelated tenants.
+# A future multi-worker deployment would still have one lock and one retry
+# window per worker; cross-process coordination is intentionally out of scope.
 _access_repair_retry_after: dict[str, _AccessRepairWindow] = {}
+_access_repair_locks: dict[str, Any] = {}
+_access_repair_locks_guard = threading.Lock()
 
 
 class PlatformBillingService:
@@ -188,7 +183,7 @@ class PlatformBillingService:
         return PlatformSubscriptionProjector()
 
     async def get_status(self, studio_id: str) -> PlatformBillingStatusResponse:
-        return self.get_status_sync(studio_id)
+        return await run_in_threadpool(self.get_status_sync, studio_id)
 
     def get_status_sync(self, studio_id: str) -> PlatformBillingStatusResponse:
         row = self.get_access_status_row(studio_id)
@@ -201,6 +196,18 @@ class PlatformBillingService:
         )
 
     def get_access_status_row(self, studio_id: str, *, strict_repairs: bool = False) -> dict[str, Any]:
+        if not strict_repairs:
+            return self._get_access_status_row(studio_id, strict_repairs=False)
+
+        with self._access_repair_lock(studio_id):
+            return self._get_access_status_row(studio_id, strict_repairs=True)
+
+    @staticmethod
+    def _access_repair_lock(studio_id: str):
+        with _access_repair_locks_guard:
+            return _access_repair_locks.setdefault(studio_id, threading.Lock())
+
+    def _get_access_status_row(self, studio_id: str, *, strict_repairs: bool) -> dict[str, Any]:
         row = self._ensure_subscription_row(studio_id)
         # strict_repairs marks the authorization path. Only that path is
         # throttled; explicit billing reads still reconcile on every call.
@@ -364,9 +371,26 @@ class PlatformBillingService:
         return any(guard(self, row) for guard, _repair in ACCESS_REPAIR_STEPS)
 
     async def get_email_usage(self, studio_id: str) -> EmailUsageResponse:
-        return self._email_usage(studio_id)
+        return await run_in_threadpool(self._email_usage, studio_id)
 
     async def create_checkout_link(
+        self,
+        studio_id: str,
+        actor_id: str,
+        success_url: Optional[str] = None,
+        cancel_url: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> BillingLinkResponse:
+        return await run_in_threadpool(
+            self.create_checkout_link_sync,
+            studio_id,
+            actor_id,
+            success_url,
+            cancel_url,
+            idempotency_key,
+        )
+
+    def create_checkout_link_sync(
         self,
         studio_id: str,
         actor_id: str,
@@ -587,6 +611,19 @@ class PlatformBillingService:
         return rejections if isinstance(rejections, dict) else {}
 
     async def create_portal_link(
+        self,
+        studio_id: str,
+        actor_id: str,
+        return_url: Optional[str] = None,
+    ) -> BillingLinkResponse:
+        return await run_in_threadpool(
+            self.create_portal_link_sync,
+            studio_id,
+            actor_id,
+            return_url,
+        )
+
+    def create_portal_link_sync(
         self,
         studio_id: str,
         actor_id: str,
