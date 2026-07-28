@@ -23,6 +23,7 @@ Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted
 | `frontend/src/lib/**` helper/store | `cd frontend && npm run lint -- <paths>` plus `cd frontend && npm run test` or a focused Node test | Add/update `frontend/tests/*.test.mjs` for non-trivial data shaping |
 | `frontend/src/app/api/**` proxy/route handler | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run build`; review server-only secret handling |
 | Dashboard, billing, settings, import, or auth flows | Focused frontend tests plus lint on every touched frontend file | `cd frontend && npm run build` for auth, routing, proxy, runtime, or environment-sensitive changes; add a browser smoke or Playwright flow for user-visible navigation/workflow changes |
+| Required browser smoke or Playwright CI config | `cd frontend && npm run test`, a preview-mode production build, `cd frontend && npm run test:e2e:required-smoke`, and `npm run check:release-workflow` | Run a temporary deliberate-failure probe without committing it; inspect failure-only traces/screenshots for preview data only |
 | `backend/app/api/v1/endpoints/**` | `cd backend && venv/bin/python -m pytest <nearby endpoint tests>` | `npm run check:api-types` when response/request contracts may change |
 | `backend/app/services/**` | `cd backend && venv/bin/python -m pytest <nearby service tests>` | Broader backend suite for shared service dependencies |
 | `backend/app/schemas/**` | Focused schema tests | `npm run check:api-types`; regenerate with `npm run generate:api-types` when needed |

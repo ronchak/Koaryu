@@ -23,31 +23,37 @@ for (const viewport of [
   { name: "desktop", width: 1280, height: 900 },
   { name: "mobile", width: 390, height: 844 },
 ] as const) {
-  previewSmokeTest(`preview dashboard navigation works on ${viewport.name}`, async ({ page }) => {
-    const pageErrors: string[] = [];
-    page.on("pageerror", (error) => pageErrors.push(error.message));
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+  previewSmokeTest(
+    `preview dashboard navigation works on ${viewport.name}`,
+    {
+      tag: viewport.name === "desktop" ? "@required-browser-smoke" : [],
+    },
+    async ({ page }) => {
+      const pageErrors: string[] = [];
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
-    await signInToPreview(page);
+      await signInToPreview(page);
 
-    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
-    if (viewport.name === "mobile") {
-      await expect(page.locator("aside")).toBeHidden();
-    } else {
-      await expect(page.locator("aside")).toBeVisible();
-    }
+      await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+      if (viewport.name === "mobile") {
+        await expect(page.locator("aside")).toBeHidden();
+      } else {
+        await expect(page.locator("aside")).toBeVisible();
+      }
 
-    const studentsLink = page
-      .getByRole("link", { name: "Students", exact: true })
-      .filter({ visible: true });
-    await expect(studentsLink).toHaveCount(1);
-    await Promise.all([
-      page.waitForURL("**/students"),
-      studentsLink.click(),
-    ]);
-    await expect(page.getByRole("heading", { name: "Students", exact: true })).toBeVisible();
-    expectNoPageErrors(pageErrors);
-  });
+      const studentsLink = page
+        .getByRole("link", { name: "Students", exact: true })
+        .filter({ visible: true });
+      await expect(studentsLink).toHaveCount(1);
+      await Promise.all([
+        page.waitForURL("**/students"),
+        studentsLink.click(),
+      ]);
+      await expect(page.getByRole("heading", { name: "Students", exact: true })).toBeVisible();
+      expectNoPageErrors(pageErrors);
+    },
+  );
 }
 
 previewSmokeTest("dataset-specific dashboard pages settle after reload and Connect return", async ({ page }) => {

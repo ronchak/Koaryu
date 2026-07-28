@@ -28,6 +28,7 @@ Use this file for work under `frontend/`. Fall back to the repo root `AGENTS.md`
 - Lint: `cd frontend && npm run lint`
 - Lint specific files: `cd frontend && npm run lint -- src/path/to/file.tsx`
 - Test: `cd frontend && npm run test`
+- Required production-build browser smoke: build with preview mode, then run `cd frontend && npm run test:e2e:required-smoke`
 - Preview smoke e2e: `cd frontend && npm run test:e2e:preview-smoke` against a running preview-mode frontend
 - Build: `cd frontend && npm run build`
 - Analyze bundle: `cd frontend && npm run analyze`
@@ -71,6 +72,7 @@ If `npm run build` fails with missing Supabase URL or anon key errors, check the
 - Lint the touched frontend files at minimum.
 - Run tests for touched utilities/helpers when applicable.
 - Run a full build for routing, auth, proxy, or environment-sensitive changes.
+- For required-browser workflow changes, run the production build in preview mode and `npm run test:e2e:required-smoke`.
 - Keep `frontend/README.md` or related runbooks in sync if the workflow materially changed.
 
 ## Important References

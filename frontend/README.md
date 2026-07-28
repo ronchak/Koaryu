@@ -52,8 +52,21 @@ If the build fails with `@supabase/ssr: Your project's URL and API key are requi
 
 ## E2E Checks
 
-Playwright checks are opt-in because they need a running frontend and some of
-them touch state. The full e2e command is:
+The release-candidate workflow runs a required, secret-free Chromium smoke
+against a production build compiled with `NEXT_PUBLIC_PREVIEW_MODE=true`. After
+building that way, the same two-test subset can be run locally with:
+
+```bash
+npm run test:e2e:required-smoke
+```
+
+This command starts the production server itself, selects only the tagged
+preview login/navigation and browser-local attendance transition, uses one
+worker with a two-minute suite limit, and writes traces and screenshots only
+when a test fails.
+
+The broader Playwright checks remain opt-in because they need a running
+frontend and some of them touch state. The full e2e command is:
 
 ```bash
 npm run test:e2e
