@@ -21,7 +21,7 @@ const requiredSnippets = [
   "GITLEAKS_VERSION: 8.27.2",
   'gitleaks git --redact --verbose --exit-code 1 --log-opts="--all"',
   "gitleaks dir . --redact --verbose --exit-code 1",
-  "github/codeql-action/analyze@v4",
+  "github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81",
   "npm run check:env-examples",
   "npm run audit:support-privacy",
 ];
