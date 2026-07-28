@@ -400,7 +400,12 @@ function normalizeSnapshot(snapshot) {
   assertPattern(snapshot.backup_set_ref, OPAQUE_REF_PATTERNS.backup, "input snapshot backup_set_ref");
   assertPattern(snapshot.source_project_ref, OPAQUE_REF_PATTERNS.project, "input snapshot source_project_ref");
   assertPattern(snapshot.captured_at, CAPTURED_AT_PATTERN, "input snapshot captured_at");
-  if (Number.isNaN(Date.parse(snapshot.captured_at))) {
+  const capturedAt = new Date(snapshot.captured_at);
+  const expectedIsoTimestamp = snapshot.captured_at.replace(/Z$/, ".000Z");
+  if (
+    Number.isNaN(capturedAt.getTime())
+    || capturedAt.toISOString() !== expectedIsoTimestamp
+  ) {
     throw new Error("input snapshot captured_at is invalid");
   }
   assertPattern(snapshot.application_sha, COMMIT_SHA_PATTERN, "input snapshot application_sha");

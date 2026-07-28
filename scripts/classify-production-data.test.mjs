@@ -171,6 +171,17 @@ describe("production data classification", () => {
     assert.throws(() => classifyDocument(wrongScheme), /unsupported/);
   });
 
+  it("rejects timestamps that JavaScript would normalize to a different instant", () => {
+    for (const capturedAt of [
+      "2026-02-31T12:00:00Z",
+      "2026-07-27T24:00:00Z",
+    ]) {
+      const input = fixture();
+      input.snapshot.captured_at = capturedAt;
+      assert.throws(() => classifyDocument(input), /captured_at is invalid/);
+    }
+  });
+
   it("verifies only exact deterministic manifests and rejects tampering", () => {
     const input = fixture();
     const manifest = classifyDocument(input);
