@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
+from app.core.release_identity import API_SCHEMA_VERSION, PRODUCT_RELEASE_VERSION
 from app.services.release_schema_readiness import assert_hosted_release_schema_ready
 from app.services.stripe_mutation_policy import configured_stripe_mode
 
@@ -32,7 +33,9 @@ def _health_payload(
 ) -> dict[str, str | None]:
     payload = {
         "status": state,
-        "version": "1.0.0",
+        "version": API_SCHEMA_VERSION,
+        "product_version": PRODUCT_RELEASE_VERSION,
+        "api_schema_version": API_SCHEMA_VERSION,
         "service": "koaryu-api",
         **_safe_deployment_metadata(),
     }

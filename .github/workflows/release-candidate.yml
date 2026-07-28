@@ -43,6 +43,9 @@ jobs:
       - name: Test exact-SHA deployed-release verifier
         run: node --test scripts/verify-deployed-release.test.mjs
 
+      - name: Verify product release identity
+        run: npm run check:release-identity
+
       - name: Verify environment examples
         run: npm run check:env-examples
 

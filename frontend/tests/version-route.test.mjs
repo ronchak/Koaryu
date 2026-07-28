@@ -3,6 +3,7 @@ import { afterEach, describe, it } from "node:test";
 
 import { GET } from "../src/app/api/version/route.ts";
 import { getDeploymentMetadata } from "../src/lib/deployment-metadata.ts";
+import { PRODUCT_RELEASE_VERSION } from "../src/lib/release-identity.ts";
 
 const ORIGINAL_ENV = {
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
@@ -35,6 +36,7 @@ describe("deployment version route", () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
     assert.deepEqual(await response.json(), {
+      product_version: PRODUCT_RELEASE_VERSION,
       service: "koaryu-frontend",
       environment: "staging",
       commit_sha: "a".repeat(40),

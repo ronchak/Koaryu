@@ -2,6 +2,12 @@
 
 This ledger ties every environment change to an exact commit, database migration head, operator, verification record, and rollback target. Update it in the same PR as release-affecting work; never include secrets or production PII.
 
+`backend/release.json` owns the human product release identifier. That label is
+useful for support and release notes, but it is not an immutable deployment
+identity and never replaces the full application commit SHA. Existing
+historical entries are not retroactively assigned a product version when the
+evidence did not record one.
+
 ## Wave 0 Evidence — 2026-07-10
 
 Operator: `Ronak Chakraborty / Codex session`
@@ -297,6 +303,7 @@ Copy this section for each staging or production release. Use ISO 8601 UTC times
 ### <release name> — <YYYY-MM-DD>
 
 - Environment: <staging|production and provider/service identifiers>
+- Product release: <semantic version from backend/release.json>
 - Application commit: <full 40-character SHA>
 - Repository migration head: <timestamp_name.sql>
 - Applied migration head: <remote timestamp and name>
