@@ -129,6 +129,14 @@ function pathIsWithin(parent, child) {
   );
 }
 
+function pathsOverlap(first, second) {
+  return (
+    first === second ||
+    pathIsWithin(first, second) ||
+    pathIsWithin(second, first)
+  );
+}
+
 async function assertPrivateDirectory(path, label, { create = false } = {}) {
   if (create) {
     await mkdir(path, { recursive: true, mode: 0o700 });
@@ -382,16 +390,23 @@ async function createGeneration({
     );
   }
 
-  const absoluteGenerationsDir = resolve(generationsDir);
-  await assertPrivateDirectory(absoluteGenerationsDir, "Generations root", {
+  const requestedGenerationsDir = resolve(generationsDir);
+  const generationsParent = dirname(requestedGenerationsDir);
+  await assertPrivateDirectory(generationsParent, "Generations parent");
+  const prospectiveGenerationsDir = join(
+    await realpath(generationsParent),
+    basename(requestedGenerationsDir),
+  );
+  if (pathsOverlap(absoluteSourceDir, prospectiveGenerationsDir)) {
+    throw new Error(
+      "Plaintext source and encrypted generations must be separate directories",
+    );
+  }
+  await assertPrivateDirectory(prospectiveGenerationsDir, "Generations root", {
     create: true,
   });
-  const realGenerationsDir = await realpath(absoluteGenerationsDir);
-  if (
-    pathIsWithin(absoluteSourceDir, realGenerationsDir) ||
-    pathIsWithin(realGenerationsDir, absoluteSourceDir) ||
-    absoluteSourceDir === realGenerationsDir
-  ) {
+  const realGenerationsDir = await realpath(prospectiveGenerationsDir);
+  if (pathsOverlap(absoluteSourceDir, realGenerationsDir)) {
     throw new Error(
       "Plaintext source and encrypted generations must be separate directories",
     );
@@ -464,22 +479,26 @@ async function retrieveGeneration({
   const verifiedSource = await verifyGeneration(sourceGenerationDir, {
     expectedManifestSha256,
   });
-  const absoluteDestinationRoot = resolve(destinationRoot);
+  const requestedDestinationRoot = resolve(destinationRoot);
+  const destinationParent = dirname(requestedDestinationRoot);
+  await assertPrivateDirectory(destinationParent, "Retrieval destination parent");
+  const prospectiveDestinationRoot = join(
+    await realpath(destinationParent),
+    basename(requestedDestinationRoot),
+  );
   if (
-    absoluteDestinationRoot === verifiedSource.generationDir ||
-    pathIsWithin(verifiedSource.generationDir, absoluteDestinationRoot) ||
-    pathIsWithin(absoluteDestinationRoot, verifiedSource.generationDir)
+    pathsOverlap(verifiedSource.generationDir, prospectiveDestinationRoot)
   ) {
     throw new Error(
       "Retrieval source and destination roots must be separate directories",
     );
   }
   await assertPrivateDirectory(
-    absoluteDestinationRoot,
+    prospectiveDestinationRoot,
     "Retrieval destination root",
     { create: true },
   );
-  const realDestinationRoot = await realpath(absoluteDestinationRoot);
+  const realDestinationRoot = await realpath(prospectiveDestinationRoot);
   const destination = join(
     realDestinationRoot,
     verifiedSource.generationId,
@@ -538,23 +557,17 @@ async function restoreGeneration({
   });
   const requestedRestoreDir = resolve(restoreDir);
   const requestedRestoreParent = dirname(requestedRestoreDir);
-  if (
-    requestedRestoreDir === verified.generationDir ||
-    pathIsWithin(verified.generationDir, requestedRestoreDir) ||
-    pathIsWithin(requestedRestoreDir, verified.generationDir)
-  ) {
-    throw new Error(
-      "Encrypted generation and plaintext restore roots must be separate",
-    );
-  }
-  await assertPrivateDirectory(requestedRestoreParent, "Restore parent", {
-    create: true,
-  });
+  await assertPrivateDirectory(requestedRestoreParent, "Restore parent");
   const restoreParent = await realpath(requestedRestoreParent);
   const absoluteRestoreDir = join(
     restoreParent,
     basename(requestedRestoreDir),
   );
+  if (pathsOverlap(verified.generationDir, absoluteRestoreDir)) {
+    throw new Error(
+      "Encrypted generation and plaintext restore roots must be separate",
+    );
+  }
   try {
     await lstat(absoluteRestoreDir);
     throw new Error("Restore destination already exists");

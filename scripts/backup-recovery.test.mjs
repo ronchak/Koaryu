@@ -10,6 +10,7 @@ import {
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -107,6 +108,31 @@ test(
       );
       assert.equal(createOne.action, "created");
       assert.match(createOne.manifest_sha256, /^[a-f0-9]{64}$/);
+
+      const rootAlias = join(root, "root-alias");
+      await symlink(root, rootAlias, "dir");
+      const overlappingRestore = await runCli(
+        [
+          "restore",
+          "--generation-dir",
+          createOne.generation_dir,
+          "--restore-dir",
+          join(
+            rootAlias,
+            "generations",
+            "synthetic-20260727T000001Z",
+            "plaintext-inside-ciphertext",
+          ),
+          "--expected-manifest-sha256",
+          createOne.manifest_sha256,
+        ],
+        { input: passphrase },
+      );
+      assert.notEqual(overlappingRestore.code, 0);
+      assert.match(
+        overlappingRestore.stderr,
+        /plaintext restore roots must be separate/,
+      );
 
       const extraSource = join(root, "plaintext-with-extra-file");
       await makeFixture(extraSource, "extra");
