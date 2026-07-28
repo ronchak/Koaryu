@@ -23,6 +23,8 @@ Render should use Python `3.11`. The backend includes both `backend/runtime.txt`
 
 The configured `starter` Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
+The request-boundary middleware admits at most four CSV-import requests per process at once. Additional imports wait before the application reads their bodies, allowing Uvicorn's receive-side flow control to apply backpressure instead of retaining another maximum-size request. Declared overflows are still rejected before admission. Re-run `npm run profile:request-bodies` before raising this capacity, adding Uvicorn workers, changing the 512 MB `starter` plan, or increasing CSV request limits.
+
 `render.yaml` intentionally sets `autoDeployTrigger: 'off'`. A merge to `main` must not release the backend before the fixed candidate has passed staging. Trigger the production deploy with the exact approved commit SHA, then read the deployed SHA back from Render before recording the release. Do not re-enable commit auto-deploy as a shortcut.
 
 For a live dojo-floor demo, use the configured starter service only after it is warm, or use a larger always-on backend. Cold starts on small Render instances can still make the first authenticated or billing click feel broken even when the service is healthy.
@@ -199,9 +201,12 @@ After Render is live, update the Vercel frontend production env var:
 ```env
 NEXT_PUBLIC_API_URL=https://koaryu.onrender.com/api/v1
 BACKEND_API_URL=https://koaryu.onrender.com/api/v1
+NEXT_PUBLIC_USE_API_PROXY=false
 ```
 
 Then redeploy the Vercel frontend so Next.js bakes the public URL into the production build and its server routes pick up the backend URL.
+
+Keep `NEXT_PUBLIC_USE_API_PROXY=false` when full-size CSV imports must work. Vercel Functions reject request bodies above 4.5 MB before the Next proxy route executes, while Koaryu accepts CSV files up to 10 MB plus multipart metadata. Small `/api/proxy` routes such as the landing-page health warmup remain available independently.
 
 The public landing page warms the backend by calling `/api/proxy/health` after the page hydrates. That proxy route forwards to `BACKEND_API_URL` with `NEXT_PUBLIC_API_URL` as a fallback, so verify both Vercel production values include the `/api/v1` suffix and reach the same Render service used by authenticated app routes.
 

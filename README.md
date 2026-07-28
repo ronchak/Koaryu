@@ -40,7 +40,7 @@ Frontend environment variables:
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key used by frontend billing flows
 - `CRON_SECRET`: server-only Vercel Cron secret used to authenticate scheduled internal maintenance routes
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only Vercel value that must match the backend worker secret so the scheduled account-deletion route can call the protected backend processor
-- `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls must route through the Next.js proxy instead of calling `NEXT_PUBLIC_API_URL` directly
+- `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls must route through the Next.js proxy instead of calling `NEXT_PUBLIC_API_URL` directly; Vercel Functions reject bodies above 4.5 MB, so keep this `false` when the deployment must accept full-size CSV imports
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): when `true`, bypasses live auth/data bootstrapping and serves preview/demo data only
 - `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER` (optional): defaults to `true`; set to `false` as a rollback switch for the backend-paginated Students roster
 - `NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG` (optional): set to `true` temporarily to log Koaryu performance marks and Web Vitals in production
