@@ -38,9 +38,16 @@ the existing synchronous domain functions and HTTP behavior.
 Moving strict subscription repair into the worker pool makes requests for one
 studio concurrent. The process-local repair throttle previously relied on
 event-loop serialization, so strict repair now also takes a per-studio
-process-local lock across the read, provider repair, and outcome record. That
-keeps one provider repair in flight per studio without serializing unrelated
-tenants.
+process-local lock across the read, provider repair, and outcome record. A
+follower never waits for that lock from inside the bounded worker pool; it fails
+closed while the leader runs. That keeps one provider repair in flight per
+studio without letting one tenant occupy the threadpool with lock waiters.
+
+Platform checkout has a separate per-studio event-loop lock around its
+check/create/persist sequence. Concurrent followers wait without consuming a
+worker, then reuse the pending session persisted by the leader. If the leader is
+cancelled, its lock is retained until the synchronous worker actually finishes,
+because cancellation cannot stop an in-flight Stripe mutation.
 
 ## Failure and cancellation semantics
 
@@ -48,12 +55,15 @@ Exceptions raised by Supabase, Stripe, or the synchronous domain code propagate
 through `run_in_threadpool` unchanged. Existing FastAPI exception handling
 therefore keeps the same response behavior.
 
-Cancellation stops the awaiting coroutine but cannot stop Python code already
-running in a worker thread. A provider call or persistence sequence may finish
-after its requester disconnects or is cancelled. The regression pins that
-behavior so later changes do not mistake task cancellation for provider
-cancellation. Blocking calls must retain bounded client timeouts, and mutations
-must retain their existing idempotency and replay protections.
+Cancellation generally stops the awaiting coroutine but cannot stop Python code
+already running in a worker thread. A provider call or persistence sequence may
+finish after its requester disconnects or is cancelled. Platform checkout is
+stricter: it delays completion of cancellation until its synchronous
+check/create/persist sequence finishes, preserving the per-studio lock for the
+whole mutation. The regression pins both behaviors so later changes do not
+mistake task cancellation for provider cancellation. Blocking calls must retain
+bounded client timeouts, and mutations must retain their existing idempotency
+and replay protections.
 
 ## Production worker assumptions
 

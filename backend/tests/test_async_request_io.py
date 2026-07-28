@@ -6,7 +6,10 @@ import unittest
 from unittest.mock import patch
 
 from app.core.deps import get_current_studio_id
-from app.services.platform_billing_service import PlatformBillingService
+from app.services.platform_billing_service import (
+    AccessRepairDeferred,
+    PlatformBillingService,
+)
 from app.services.student_list_query import StudentListQuery
 from app.services.student_service import StudentService
 from tests.platform_billing_helpers import FakeSettings, FakeSupabase
@@ -215,12 +218,179 @@ class AsyncRequestIOConcurrencyTest(unittest.IsolatedAsyncioTestCase):
                     strict_repairs=True,
                 )
             )
-            await asyncio.sleep(0.02)
-            release.set()
-            rows = await asyncio.gather(first, second)
+            with self.assertRaises(AccessRepairDeferred):
+                await asyncio.wait_for(second, timeout=0.2)
 
-        self.assertEqual([row["status"] for row in rows], ["canceled", "canceled"])
+            self.assertFalse(first.done())
+            self.assertEqual(provider_calls, ["sub_123"])
+            release.set()
+            first_row = await first
+            replayed_row = await asyncio.to_thread(
+                service.get_access_status_row,
+                "studio_1",
+                strict_repairs=True,
+            )
+
+        self.assertEqual(first_row["status"], "canceled")
+        self.assertEqual(replayed_row["status"], "canceled")
         self.assertEqual(provider_calls, ["sub_123"])
+
+    async def test_concurrent_checkouts_reuse_one_stripe_session(self):
+        checkout_started = threading.Event()
+        release_checkout = threading.Event()
+        checkout_calls = []
+
+        class BlockingCheckoutStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **payload):
+                checkout_calls.append(payload)
+                checkout_started.set()
+                release_checkout.wait(timeout=1)
+                return {
+                    "id": "cs_123",
+                    "url": "https://checkout.stripe.test/session",
+                    "expires_at": 9999999999,
+                }
+
+        with patch(
+            "app.services.platform_billing_service.get_settings",
+            return_value=FakeSettings(),
+        ):
+            service = PlatformBillingService(
+                FakeSupabase(
+                    [
+                        {
+                            "studio_id": "studio_1",
+                            "stripe_customer_id": "cus_123",
+                            "stripe_subscription_id": None,
+                            "status": "incomplete",
+                            "comped": False,
+                        }
+                    ]
+                )
+            )
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            BlockingCheckoutStripeService,
+        ):
+            first = asyncio.create_task(
+                service.create_checkout_link(
+                    "studio_1",
+                    "user_1",
+                    idempotency_key="tab-one",
+                )
+            )
+            for _ in range(100):
+                if checkout_started.is_set():
+                    break
+                await asyncio.sleep(0.005)
+            self.assertTrue(checkout_started.is_set())
+
+            second = asyncio.create_task(
+                service.create_checkout_link(
+                    "studio_1",
+                    "user_1",
+                    idempotency_key="tab-two",
+                )
+            )
+            await asyncio.sleep(0.02)
+            self.assertEqual(len(checkout_calls), 1)
+
+            release_checkout.set()
+            responses = await asyncio.gather(first, second)
+
+        self.assertEqual(
+            [response.url for response in responses],
+            [
+                "https://checkout.stripe.test/session",
+                "https://checkout.stripe.test/session",
+            ],
+        )
+        self.assertEqual(len(checkout_calls), 1)
+
+    async def test_checkout_cancellation_keeps_serialization_until_worker_finishes(self):
+        checkout_started = threading.Event()
+        release_checkout = threading.Event()
+        checkout_calls = []
+
+        class BlockingCheckoutStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **payload):
+                checkout_calls.append(payload)
+                checkout_started.set()
+                release_checkout.wait(timeout=1)
+                return {
+                    "id": "cs_123",
+                    "url": "https://checkout.stripe.test/session",
+                    "expires_at": 9999999999,
+                }
+
+        with patch(
+            "app.services.platform_billing_service.get_settings",
+            return_value=FakeSettings(),
+        ):
+            service = PlatformBillingService(
+                FakeSupabase(
+                    [
+                        {
+                            "studio_id": "studio_1",
+                            "stripe_customer_id": "cus_123",
+                            "stripe_subscription_id": None,
+                            "status": "incomplete",
+                            "comped": False,
+                        }
+                    ]
+                )
+            )
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            BlockingCheckoutStripeService,
+        ):
+            cancelled_leader = asyncio.create_task(
+                service.create_checkout_link(
+                    "studio_1",
+                    "user_1",
+                    idempotency_key="tab-one",
+                )
+            )
+            for _ in range(100):
+                if checkout_started.is_set():
+                    break
+                await asyncio.sleep(0.005)
+            self.assertTrue(checkout_started.is_set())
+
+            cancelled_leader.cancel()
+            follower = asyncio.create_task(
+                service.create_checkout_link(
+                    "studio_1",
+                    "user_1",
+                    idempotency_key="tab-two",
+                )
+            )
+            await asyncio.sleep(0.02)
+            cancelled_leader.cancel()
+            await asyncio.sleep(0.01)
+
+            self.assertFalse(cancelled_leader.done())
+            self.assertFalse(follower.done())
+            self.assertEqual(len(checkout_calls), 1)
+
+            release_checkout.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await cancelled_leader
+            follower_response = await follower
+
+        self.assertEqual(
+            follower_response.url,
+            "https://checkout.stripe.test/session",
+        )
+        self.assertEqual(len(checkout_calls), 1)
 
 
 if __name__ == "__main__":

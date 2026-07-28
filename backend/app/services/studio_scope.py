@@ -112,9 +112,9 @@ def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
         # Koaryu was broken. A locally entitled row is still not trusted while
         # it cannot be verified, so it continues to fail closed below.
         #
-        # AccessRepairDeferred arrives here for the same reason: it is a repair
-        # that failed earlier in the window, replayed, and it must produce the
-        # answer that failure produced.
+        # AccessRepairDeferred arrives here when a failed repair is replayed or
+        # another request already owns this studio's repair. In either case this
+        # request has no verified provider result and must fail closed.
         local_access = _get_local_platform_subscription_access(supabase, studio_id)
         if local_access["subscription_required"]:
             return local_access
