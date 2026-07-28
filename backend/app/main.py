@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.core.error_handlers import register_error_handlers
+from app.core.error_handlers import ERROR_REFERENCE_HEADER, register_error_handlers
 from app.core.request_body_limits import RequestBodyLimitMiddleware
 from app.api.v1.endpoints.health import health_live, health_ready
 from app.api.v1.router import router as v1_router
@@ -43,7 +43,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Server-Timing", "Cache-Control", "Vary", "Content-Disposition"],
+    expose_headers=[
+        "Server-Timing",
+        "Cache-Control",
+        "Vary",
+        "Content-Disposition",
+        ERROR_REFERENCE_HEADER,
+    ],
 )
 
 # Include API v1 routes

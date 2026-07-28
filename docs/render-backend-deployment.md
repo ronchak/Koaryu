@@ -192,6 +192,14 @@ exposed and the hosted schema ACL state matches the approved release gate.
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 
+### Uncaught exception correlation
+
+An unexpected backend exception returns the existing generic `500` JSON body plus an opaque `X-Koaryu-Error-Reference` response header. Approved frontend origins may read that header through CORS. Ask support for the exact `err_...` reference and approximate time, then search Render runtime logs for that reference.
+
+The matching log line is a JSON event named `backend.uncaught_exception`. Its complete application-defined field set is `event`, `error_reference`, `exception_type`, `http_method`, and `route_template`. The route is the code-defined template such as `/students/{student_id}`, not the requested path. If a safe template is unavailable, the value is `<unmatched>`.
+
+This broad event intentionally has no traceback or exception message. Do not add request bodies, authorization headers, cookies, requested paths, full query strings, raw provider errors, PII, or tenant, studio, student, payer, invoice, subscription, or other billing identifiers. If the safe event is insufficient, reproduce the failure in a controlled environment or add separately reviewed evidence at the narrow service boundary; do not widen the global event.
+
 ## Connect Vercel
 
 After Render is live, update the Vercel frontend production env var:

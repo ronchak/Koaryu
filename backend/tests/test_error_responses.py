@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,8 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.error_handlers import (
+    ERROR_REFERENCE_HEADER,
+    UNHANDLED_EXCEPTION_EVENT,
     error_code_for_status,
     http_exception_handler,
     register_error_handlers,
@@ -92,7 +95,7 @@ class ErrorResponseTest(unittest.TestCase):
         self.assertIsInstance(response.json()["detail"], list)
         self.assertEqual(response.json()["error"], {"code": "validation_error", "status_code": 422})
 
-    def test_unhandled_errors_return_user_safe_message(self):
+    def test_unhandled_errors_return_user_safe_message_and_correlatable_event(self):
         test_app = FastAPI()
         register_error_handlers(test_app)
 
@@ -100,7 +103,8 @@ class ErrorResponseTest(unittest.TestCase):
         async def boom():
             raise RuntimeError("provider leaked sk_live_secret")
 
-        response = TestClient(test_app, raise_server_exceptions=False).get("/boom")
+        with self.assertLogs("app.core.error_handlers", level="ERROR") as captured_logs:
+            response = TestClient(test_app, raise_server_exceptions=False).get("/boom")
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json(), {
@@ -108,6 +112,72 @@ class ErrorResponseTest(unittest.TestCase):
             "error": {"code": "internal_server_error", "status_code": 500},
         })
         self.assertNotIn("sk_live_secret", response.text)
+        self.assertRegex(response.headers[ERROR_REFERENCE_HEADER], r"^err_[0-9a-f]{32}$")
+
+        self.assertEqual(len(captured_logs.records), 1)
+        log_record = captured_logs.records[0]
+        event = json.loads(log_record.getMessage())
+        self.assertEqual(event, {
+            "error_reference": response.headers[ERROR_REFERENCE_HEADER],
+            "event": UNHANDLED_EXCEPTION_EVENT,
+            "exception_type": "RuntimeError",
+            "http_method": "GET",
+            "route_template": "/boom",
+        })
+        self.assertIsNone(log_record.exc_info)
+        self.assertEqual(log_record.error_reference, response.headers[ERROR_REFERENCE_HEADER])
+        self.assertNotIn("sk_live_secret", repr(log_record.__dict__))
+
+    def test_unhandled_event_excludes_sensitive_request_context(self):
+        test_app = FastAPI()
+        register_error_handlers(test_app)
+
+        @test_app.post("/studios/{studio_id}/students/{student_id}/billing")
+        async def boom(studio_id: str, student_id: str):
+            raise RuntimeError(
+                f"raw-provider-error tenant={studio_id} student={student_id} invoice=inv_private"
+            )
+
+        with self.assertLogs("app.core.error_handlers", level="ERROR") as captured_logs:
+            response = TestClient(test_app, raise_server_exceptions=False).post(
+                "/studios/studio_private/students/student_private/billing",
+                params={"payer": "payer_private"},
+                headers={
+                    "Authorization": "Bearer auth_private",
+                    "Cookie": "session=cookie_private",
+                },
+                json={"cardholder": "body_private"},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        event = json.loads(captured_logs.records[0].getMessage())
+        self.assertEqual(set(event), {
+            "error_reference",
+            "event",
+            "exception_type",
+            "http_method",
+            "route_template",
+        })
+        self.assertEqual(event["route_template"], "/studios/{studio_id}/students/{student_id}/billing")
+        self.assertEqual(event["http_method"], "POST")
+        self.assertEqual(event["exception_type"], "RuntimeError")
+        self.assertEqual(event["error_reference"], response.headers[ERROR_REFERENCE_HEADER])
+
+        emitted_context = repr(captured_logs.records[0].__dict__)
+        response_context = repr((response.text, dict(response.headers)))
+        for sensitive_value in (
+            "raw-provider-error",
+            "studio_private",
+            "student_private",
+            "inv_private",
+            "payer_private",
+            "auth_private",
+            "cookie_private",
+            "body_private",
+        ):
+            with self.subTest(sensitive_value=sensitive_value):
+                self.assertNotIn(sensitive_value, emitted_context)
+                self.assertNotIn(sensitive_value, response_context)
 
     def test_unhandled_errors_preserve_cors_for_allowed_browser_origin(self):
         allowed_origin = "https://app.koaryu.test"
@@ -133,6 +203,10 @@ class ErrorResponseTest(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.headers["Access-Control-Allow-Origin"], allowed_origin)
         self.assertEqual(response.headers["Access-Control-Allow-Credentials"], "true")
+        self.assertIn(
+            ERROR_REFERENCE_HEADER.lower(),
+            response.headers["Access-Control-Expose-Headers"].lower(),
+        )
         self.assertIn("Origin", response.headers["Vary"])
 
     def test_openapi_documents_normalized_error_metadata(self):
