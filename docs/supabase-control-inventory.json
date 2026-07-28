@@ -1,0 +1,655 @@
+{
+  "schema_version": 1,
+  "inventory_id": "koaryu-supabase-auth-backup-controls",
+  "owner": "Ronak Chakraborty",
+  "reviewed_at": "2026-07-28T03:00:56Z",
+  "approval_packet": "docs/audit-notes/authentication-backup-controls.md#approval-packet",
+  "environments": {
+    "production": {
+      "project_ref": "mimguepumzsgmcaycdsh",
+      "live_baseline": {
+        "project_status": "ACTIVE_HEALTHY",
+        "region": "us-west-2",
+        "pitr_enabled": false,
+        "backup_count": 0,
+        "walg_enabled": true
+      },
+      "controls": {
+        "project_health": {
+          "status": "verified",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly and before a release or recovery action",
+          "evidence": [
+            "Connected Supabase project inventory returned ACTIVE_HEALTHY in us-west-2 on PostgreSQL 17.6.1.105."
+          ],
+          "current_state": "The pinned production project is active and healthy.",
+          "target_state": "The pinned production project remains active, healthy, and distinct from staging.",
+          "compensating_controls": [
+            "Application startup and staging-isolation guards pin environment-specific project identities."
+          ],
+          "next_action": "Repeat the provider readback weekly and before a release or recovery action.",
+          "approval_required": false
+        },
+        "auth_public_sign_in": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly configuration readback",
+          "evidence": [
+            "The connected provider surfaces exposed project metadata but not the production public Auth settings or Management API Auth configuration.",
+            "No production Auth user records or credentials were accessed."
+          ],
+          "current_state": "Production sign-up, email confirmation, phone, anonymous, social, SAML, and passkey settings were not read back.",
+          "target_state": "Only approved sign-in methods are enabled, email confirmation is required, and anonymous sign-in is disabled.",
+          "compensating_controls": [
+            "The backend requires a valid authenticated Supabase JWT and fails closed in production."
+          ],
+          "next_action": "Run the allowlisted Management API read or complete the read-only dashboard worksheet, then update this inventory.",
+          "approval_required": true,
+          "blocker": "No reusable Management API token or authenticated dashboard session was available."
+        },
+        "auth_password_security": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Monthly and after an Auth configuration change",
+          "evidence": [
+            "Password minimum length, character policy, reauthentication, and leaked-password protection were not exposed by the available read-only provider surfaces."
+          ],
+          "current_state": "Provider password-security settings are unverified.",
+          "target_state": "A documented minimum password policy and reauthentication posture are enforced; leaked-password protection is either enabled or explicitly approval-gated by plan.",
+          "compensating_controls": [
+            "Application authorization does not depend on user-editable metadata.",
+            "Hosted authentication rejects invalid, expired, wrong-role, wrong-issuer, and unsupported-algorithm tokens."
+          ],
+          "next_action": "Capture the allowlisted settings without SMTP or user data and decide any plan-dependent control separately.",
+          "approval_required": true,
+          "blocker": "Authenticated Auth configuration readback was unavailable."
+        },
+        "auth_session_tokens": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly and after a signing-key or session change",
+          "evidence": [
+            "Repository tests prove issuer, audience, expiry, issued-at, signature, role, algorithm, and JWKS-key validation.",
+            "Production JWT expiry, refresh rotation, and refresh-token reuse interval were not read back."
+          ],
+          "current_state": "Application token validation is verified; provider token lifetime and refresh settings are not.",
+          "target_state": "JWT expiry is no more than 3600 seconds, refresh-token rotation is enabled, and any reuse interval is documented.",
+          "compensating_controls": [
+            "Production validation uses asymmetric JWKS and disables the legacy HS256 path.",
+            "JWKS failures fail closed and are bounded by cache and refresh throttles."
+          ],
+          "next_action": "Read the allowlisted provider values and compare them with the one-hour maximum target.",
+          "approval_required": true,
+          "blocker": "Authenticated Auth configuration readback was unavailable."
+        },
+        "auth_session_limits": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Monthly and after a plan or Auth session change",
+          "evidence": [
+            "Time-box, inactivity timeout, and single-session settings were not exposed by the available provider surfaces.",
+            "Current Supabase documentation marks these controls as Pro-plan-and-up features."
+          ],
+          "current_state": "Provider session lifetime limits are unverified and may be unavailable on the Free plan.",
+          "target_state": "The business chooses and documents time-box, inactivity, and concurrent-session policy, or accepts the absence with an explicit compensating-control decision.",
+          "compensating_controls": [
+            "Access tokens have an expiry claim that the backend enforces.",
+            "Sensitive production mutations remain separately permission- and feature-gated."
+          ],
+          "next_action": "Complete the settings readback and submit any paid-plan/session change through the approval packet.",
+          "approval_required": true,
+          "blocker": "Authenticated settings and paid entitlement were unavailable for verification."
+        },
+        "auth_revocation": {
+          "status": "gap",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly synthetic staging exercise; production is read-only",
+          "evidence": [
+            "Supabase documentation states that sign-out revokes refresh tokens while issued access tokens remain valid until expiry.",
+            "Koaryu production authentication validates JWTs locally and does not check session_id against auth.sessions on every request."
+          ],
+          "current_state": "Immediate production access-token revocation is not guaranteed; the residual window equals the configured JWT lifetime, which is not yet read back.",
+          "target_state": "The residual revocation window is explicitly accepted and bounded, or sensitive operations add an approved active-session check.",
+          "compensating_controls": [
+            "JWT expiry is enforced locally.",
+            "The application fails closed on invalid signatures, claims, and unavailable signing keys."
+          ],
+          "next_action": "Approve either a bounded JWT-only revocation posture or a separately reviewed active-session check for sensitive routes.",
+          "approval_required": true
+        },
+        "auth_mfa": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly and after an Auth method change",
+          "evidence": [
+            "Application MFA enrollment/enforcement and provider TOTP/phone settings were not verified.",
+            "No user-level factor data was accessed."
+          ],
+          "current_state": "End-user MFA availability and enforcement are unverified.",
+          "target_state": "Admin MFA policy is explicitly chosen, implemented end to end, and tested with synthetic staging identities before enforcement.",
+          "compensating_controls": [
+            "Least-privilege staff roles and backend permission checks constrain authenticated users."
+          ],
+          "next_action": "Treat MFA enablement as a product and recovery decision, not a dashboard-only toggle.",
+          "approval_required": true,
+          "blocker": "Provider setting and application enrollment coverage were unavailable."
+        },
+        "auth_attack_protection": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly and after a public-auth traffic change",
+          "evidence": [
+            "CAPTCHA and attack-protection settings were not read back."
+          ],
+          "current_state": "CAPTCHA and related Auth abuse controls are unverified.",
+          "target_state": "The owner documents whether CAPTCHA is enabled and what compensates when it is disabled.",
+          "compensating_controls": [
+            "Supabase applies provider rate limits even when custom settings are unchanged."
+          ],
+          "next_action": "Capture the allowlisted settings and approve any user-visible CAPTCHA change separately.",
+          "approval_required": true,
+          "blocker": "Authenticated Auth configuration readback was unavailable."
+        },
+        "auth_rate_limits": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly and before a public launch",
+          "evidence": [
+            "Custom Auth rate_limit_* values were not read back.",
+            "Official documentation identifies the read-only GET /v1/projects/{ref}/config/auth endpoint."
+          ],
+          "current_state": "Provider defaults or custom values are unverified.",
+          "target_state": "Email, OTP, verification, token-refresh, MFA, and anonymous-sign-in limits are captured and reviewed against expected traffic.",
+          "compensating_controls": [
+            "The application does not expose a production bypass around Supabase Auth."
+          ],
+          "next_action": "Run the allowlisted live check with a current Management API token before public launch.",
+          "approval_required": true,
+          "blocker": "Authenticated Auth configuration readback was unavailable."
+        },
+        "auth_audit_access": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 90,
+          "operation_cadence": "Quarterly access review and after team membership changes",
+          "evidence": [
+            "Organization team membership, dashboard MFA enforcement, and Auth audit-log access were not exposed by the available provider inventory."
+          ],
+          "current_state": "Restore/Auth administrative access and independent owner coverage are unverified.",
+          "target_state": "Named least-privilege operators, owner recovery, organization MFA posture, and audit access are documented.",
+          "compensating_controls": [
+            "Ronak remains the named incident and provider-alert owner in the operations runbook."
+          ],
+          "next_action": "Complete a read-only organization team and access review without copying identities into public evidence.",
+          "approval_required": true,
+          "blocker": "Authenticated organization access-control readback was unavailable."
+        },
+        "backup_entitlement": {
+          "status": "verified",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly and before recovery planning",
+          "evidence": [
+            "Connected Supabase organization metadata reported the Koaryu CRM organization on the Free plan."
+          ],
+          "current_state": "The organization is on the Free plan.",
+          "target_state": "The selected entitlement matches an approved RPO/RTO and cost decision.",
+          "compensating_controls": [
+            "Koaryu has encrypted logical database, Auth, classification, and Storage artifacts."
+          ],
+          "next_action": "Keep plan changes approval-gated and reprice paid options at decision time.",
+          "approval_required": false
+        },
+        "backup_inventory": {
+          "status": "verified",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Daily until native or automated evidence closes the RPO gap",
+          "evidence": [
+            "supabase backups list returned backup_count=0, pitr_enabled=false, walg_enabled=true for production."
+          ],
+          "current_state": "No provider-restorable backup was listed. WAL-G plumbing being enabled is not treated as an entitlement or restore point.",
+          "target_state": "A current restorable copy exists inside the approved RPO and is evidenced without backup contents.",
+          "compensating_controls": [
+            "A five-artifact encrypted logical backup exists and was checksum-verified on a second machine."
+          ],
+          "next_action": "Establish a daily encrypted capture and approved off-site copy, or approve native backup entitlement.",
+          "approval_required": false
+        },
+        "backup_retention": {
+          "status": "gap",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly inventory review",
+          "evidence": [
+            "The provider listed no backups, so no native retention window was evidenced.",
+            "The logical-copy retention and deletion policy is not yet approved."
+          ],
+          "current_state": "Neither native nor off-site logical retention meets a documented approved window.",
+          "target_state": "Retention, rotation, monitoring, and deletion ownership are approved and evidenced.",
+          "compensating_controls": [
+            "Existing encrypted artifacts are integrity-protected and kept separate from the recovery key."
+          ],
+          "next_action": "Approve a retention window and destination in the recovery approval packet.",
+          "approval_required": true
+        },
+        "backup_pitr": {
+          "status": "gap",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly readback",
+          "evidence": [
+            "supabase backups list returned pitr_enabled=false.",
+            "Current documentation identifies PITR as a paid add-on with compute and retention costs."
+          ],
+          "current_state": "PITR is disabled and was not enabled by this work.",
+          "target_state": "PITR is either explicitly approved with a chosen retention window or explicitly declined with a tested logical-backup control.",
+          "compensating_controls": [
+            "Forward-only migrations and application rollback avoid using restore as routine rollback."
+          ],
+          "next_action": "Choose the paid PITR or logical-backup path through the approval packet.",
+          "approval_required": true
+        },
+        "backup_restore_access": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 90,
+          "operation_cadence": "Quarterly and after organization membership changes",
+          "evidence": [
+            "Organization plan and project metadata were readable, but team roles and restore permissions were not inventoried."
+          ],
+          "current_state": "Named restore operators, secondary owner coverage, and least-privilege restore access are unverified.",
+          "target_state": "At least two recoverable owner paths exist, restore authority is minimal, and every restore requires target reconfirmation.",
+          "compensating_controls": [
+            "The restore runbook rejects production, ordinary staging, and prior drill targets."
+          ],
+          "next_action": "Complete a read-only organization access review and record only role-level evidence.",
+          "approval_required": true,
+          "blocker": "Authenticated organization team/access readback was unavailable."
+        },
+        "backup_restore_test": {
+          "status": "gap",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 90,
+          "operation_cadence": "Quarterly and after a material backup-format change",
+          "evidence": [
+            "The July 10 hosted drill restored database/Auth structure and aggregate counts to a disposable target.",
+            "The drill did not complete an authenticated tenant-safe application read."
+          ],
+          "current_state": "Structural restore is evidenced; full application recovery and the four-hour RTO are unproven.",
+          "target_state": "A disposable restore completes checksum, schema/data/Storage, authenticated tenant-safe read, cleanup, and measured RTO evidence.",
+          "compensating_controls": [
+            "The runbook uses a separate disposable workdir and refuses durable targets."
+          ],
+          "next_action": "Approve and schedule a fresh disposable hosted restore exercise.",
+          "approval_required": true
+        },
+        "backup_logical_copy": {
+          "status": "gap",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Daily capture target; quarterly recovery-key exercise",
+          "evidence": [
+            "Five July 10 encrypted artifacts were checksum-verified on a second machine.",
+            "No approved provider-independent off-site destination or current daily capture was evidenced."
+          ],
+          "current_state": "The existing copy is stale relative to the provisional 24-hour RPO and is not proven off-site.",
+          "target_state": "Daily encrypted captures, approved off-site retention, monitored failures, and separate recovery-key custody meet the accepted RPO.",
+          "compensating_controls": [
+            "AES-256 OCB artifacts reject tampering and a wrong recovery key.",
+            "No plaintext dump or recovery key is committed or uploaded with the artifacts."
+          ],
+          "next_action": "Approve the destination, retention, cadence, monitoring owner, deletion owner, and physical key-recovery step.",
+          "approval_required": true
+        }
+      }
+    },
+    "staging": {
+      "project_ref": "nxgsektqsgrtyfhawxbc",
+      "live_baseline": {
+        "project_status": "ACTIVE_HEALTHY",
+        "region": "us-west-1",
+        "pitr_enabled": false,
+        "backup_count": 0,
+        "walg_enabled": true
+      },
+      "public_auth_snapshot": {
+        "disable_signup": false,
+        "mailer_autoconfirm": false,
+        "phone_autoconfirm": false,
+        "passkeys_enabled": false,
+        "saml_enabled": false,
+        "external_email": true,
+        "external_phone": false,
+        "external_anonymous_users": false
+      },
+      "controls": {
+        "project_health": {
+          "status": "verified",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly and before a synthetic or release test",
+          "evidence": [
+            "Connected Supabase project inventory returned ACTIVE_HEALTHY in us-west-1 on PostgreSQL 17.6.1.141."
+          ],
+          "current_state": "The pinned staging project is active, healthy, and distinct from production.",
+          "target_state": "Staging remains isolated, synthetic-only, healthy, and pinned.",
+          "compensating_controls": [
+            "The staging-isolation guard rejects the production ref and production destinations."
+          ],
+          "next_action": "Repeat before every provider-backed synthetic test.",
+          "approval_required": false
+        },
+        "auth_public_sign_in": {
+          "status": "verified",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly and after an Auth provider change",
+          "evidence": [
+            "The public staging Auth settings endpoint reported sign-up enabled, email enabled, email confirmation required, phone and anonymous sign-in disabled, and no enabled social provider."
+          ],
+          "current_state": "Email/password is the only exposed sign-in method; email is not auto-confirmed.",
+          "target_state": "Staging mirrors the approved production sign-in methods without enabling anonymous or unreviewed providers.",
+          "compensating_controls": [
+            "Synthetic users are admin-confirmed and deleted by the bounded test rather than sending email."
+          ],
+          "next_action": "Review any public-settings drift before treating staging as representative.",
+          "approval_required": false
+        },
+        "auth_password_security": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Monthly and after an Auth configuration change",
+          "evidence": [
+            "Public settings do not expose password minimum, required characters, reauthentication, or leaked-password controls."
+          ],
+          "current_state": "Staging password-security settings are unverified.",
+          "target_state": "Staging exercises the approved production password policy before production change.",
+          "compensating_controls": [
+            "The synthetic test uses a generated high-entropy password and never prints it."
+          ],
+          "next_action": "Use the allowlisted Management API read when a current token is available.",
+          "approval_required": true,
+          "blocker": "Authenticated Auth configuration readback was unavailable."
+        },
+        "auth_session_tokens": {
+          "status": "tested",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:05:29Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly synthetic staging exercise",
+          "evidence": [
+            "A disposable staging identity established two independent sessions with a 3600-second JWT lifetime and a session_id claim.",
+            "The test printed no token, credential, email, user ID, or provider response body and confirmed deletion cleanup."
+          ],
+          "current_state": "Staging issues one-hour JWTs with session_id and supports the bounded two-session exercise.",
+          "target_state": "A synthetic test records lifetime and refresh-rotation behavior without token or user data.",
+          "compensating_controls": [
+            "Repository JWT validation tests cover claim and signature enforcement."
+          ],
+          "next_action": "Repeat monthly and after any Auth token/session configuration change.",
+          "approval_required": false
+        },
+        "auth_session_limits": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly and after a plan or Auth session change",
+          "evidence": [
+            "Time-box, inactivity, and single-session settings are absent from the public settings response."
+          ],
+          "current_state": "Staging session limits are unverified and may be unavailable on the Free plan.",
+          "target_state": "Staging mirrors any approved production session-limit policy.",
+          "compensating_controls": [
+            "The synthetic revocation test validates refresh-token invalidation independently of time-box settings."
+          ],
+          "next_action": "Complete an authenticated settings read before a production session-policy decision.",
+          "approval_required": true,
+          "blocker": "Authenticated settings and paid entitlement were unavailable."
+        },
+        "auth_revocation": {
+          "status": "tested",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:05:29Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly synthetic staging exercise",
+          "evidence": [
+            "Global sign-out rejected both synthetic refresh tokens.",
+            "The staging Auth user endpoint rejected the already-issued access token before its one-hour expiry, and hard-delete cleanup was confirmed."
+          ],
+          "current_state": "Staging Auth global sign-out revoked both refresh paths and rejected the tested access token at the Auth user endpoint.",
+          "target_state": "Global sign-out rejects both synthetic refresh tokens, records access-token residual behavior, and confirms cleanup.",
+          "compensating_controls": [
+            "The test refuses production and prints no token, email, password, user ID, or response body."
+          ],
+          "next_action": "Repeat monthly; do not generalize the Auth user endpoint result to Koaryu's local production JWT validator.",
+          "approval_required": false
+        },
+        "auth_mfa": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly and after an MFA product change",
+          "evidence": [
+            "Public settings showed passkeys and SAML disabled but did not expose TOTP or phone MFA settings.",
+            "No synthetic factor was enrolled."
+          ],
+          "current_state": "End-user MFA remains unverified.",
+          "target_state": "Any chosen MFA policy is implemented and proven in staging before production enforcement.",
+          "compensating_controls": [
+            "No MFA setting was changed by this work."
+          ],
+          "next_action": "Scope an application-level MFA flow before enabling provider enforcement.",
+          "approval_required": true,
+          "blocker": "Provider setting and application enrollment coverage were unavailable."
+        },
+        "auth_attack_protection": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly and before public traffic testing",
+          "evidence": [
+            "CAPTCHA and attack-protection settings are not present in the public settings response."
+          ],
+          "current_state": "Staging attack-protection settings are unverified.",
+          "target_state": "Staging represents the approved production abuse-control posture.",
+          "compensating_controls": [
+            "The synthetic test performs only a fixed small number of Auth requests."
+          ],
+          "next_action": "Use the allowlisted Management API read; do not load-test Auth through this control check.",
+          "approval_required": true,
+          "blocker": "Authenticated Auth configuration readback was unavailable."
+        },
+        "auth_rate_limits": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly and before a load test",
+          "evidence": [
+            "Custom rate_limit_* values are not present in the public settings response."
+          ],
+          "current_state": "Staging Auth rate-limit values are unverified.",
+          "target_state": "Rate limits are recorded and synthetic checks remain far below them.",
+          "compensating_controls": [
+            "The revocation exercise is bounded to user creation, two sign-ins, one sign-out, two refresh attempts, and cleanup."
+          ],
+          "next_action": "Run the allowlisted live read with a Management API token.",
+          "approval_required": true,
+          "blocker": "Authenticated Auth configuration readback was unavailable."
+        },
+        "auth_audit_access": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 90,
+          "operation_cadence": "Quarterly and after organization membership changes",
+          "evidence": [
+            "Organization roles and Auth audit-log access were not exposed by the available provider inventory."
+          ],
+          "current_state": "Staging administrative/audit access is unverified.",
+          "target_state": "Named operators have the minimum access needed for a synthetic test and cleanup.",
+          "compensating_controls": [
+            "Staging contains only sanitized fixtures and disposable test identities."
+          ],
+          "next_action": "Complete the same role-level access worksheet as production.",
+          "approval_required": true,
+          "blocker": "Authenticated organization team/access readback was unavailable."
+        },
+        "backup_entitlement": {
+          "status": "verified",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly",
+          "evidence": [
+            "Staging belongs to the same Free-plan Koaryu CRM organization."
+          ],
+          "current_state": "No paid staging backup entitlement is assumed.",
+          "target_state": "Staging cost remains minimal unless a separately approved recovery exercise requires a disposable resource.",
+          "compensating_controls": [
+            "Staging is recreated from repository migrations and sanitized fixtures."
+          ],
+          "next_action": "Keep staging backup upgrades out of scope unless a concrete recovery need is approved.",
+          "approval_required": false
+        },
+        "backup_inventory": {
+          "status": "verified",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 7,
+          "operation_cadence": "Weekly",
+          "evidence": [
+            "supabase backups list returned backup_count=0, pitr_enabled=false, walg_enabled=true for staging."
+          ],
+          "current_state": "No staging provider backup is listed.",
+          "target_state": "Staging remains reproducible from repository migrations and sanitized fixtures.",
+          "compensating_controls": [
+            "Repository migration replay and contract checks are the staging rebuild source."
+          ],
+          "next_action": "Continue verifying rebuildability rather than treating staging as a recovery copy.",
+          "approval_required": false
+        },
+        "backup_retention": {
+          "status": "not_applicable",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly scope review",
+          "evidence": [
+            "Staging is synthetic-only and intentionally rebuilt rather than retained as recovery evidence."
+          ],
+          "current_state": "No staging backup retention target is declared.",
+          "target_state": "Sanitized fixtures and migrations remain reproducible; production data is never restored into ordinary staging.",
+          "compensating_controls": [
+            "The staging-isolation guard rejects production-derived targets and destinations."
+          ],
+          "next_action": "Revisit only if staging begins holding irreplaceable approved test data.",
+          "approval_required": false
+        },
+        "backup_pitr": {
+          "status": "not_applicable",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly scope review",
+          "evidence": [
+            "Provider readback returned pitr_enabled=false and no staging recovery requirement justifies the paid add-on."
+          ],
+          "current_state": "PITR is disabled for staging.",
+          "target_state": "Staging remains disposable unless a separately approved test requires temporary capability.",
+          "compensating_controls": [
+            "Staging state is rebuilt from migrations and reviewed fixtures."
+          ],
+          "next_action": "Do not enable PITR for staging without a new cost and recovery decision.",
+          "approval_required": false
+        },
+        "backup_restore_access": {
+          "status": "blocked",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 90,
+          "operation_cadence": "Quarterly and before a hosted restore drill",
+          "evidence": [
+            "Organization restore roles were not inventoried."
+          ],
+          "current_state": "Restore authority is unverified.",
+          "target_state": "Only named operators can create a disposable target or initiate a restore after explicit target checks.",
+          "compensating_controls": [
+            "Ordinary staging is prohibited as a restore target."
+          ],
+          "next_action": "Complete the role-level access worksheet before the next hosted restore drill.",
+          "approval_required": true,
+          "blocker": "Authenticated organization team/access readback was unavailable."
+        },
+        "backup_restore_test": {
+          "status": "tested",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 90,
+          "operation_cadence": "Quarterly on a separate disposable project",
+          "evidence": [
+            "The July 10 drill used a separate temporary project, not ordinary staging, and verified aggregate structure/counts before deletion."
+          ],
+          "current_state": "The environment-separation portion of the restore contract is proven; full application recovery remains a production control gap.",
+          "target_state": "Every drill uses a new disposable target and ordinary staging remains production-data-free.",
+          "compensating_controls": [
+            "The restore runbook rejects production, staging, and the retired drill target."
+          ],
+          "next_action": "Use a new disposable target for the next authenticated application recovery test.",
+          "approval_required": false
+        },
+        "backup_logical_copy": {
+          "status": "not_applicable",
+          "owner": "Ronak Chakraborty",
+          "reviewed_at": "2026-07-28T03:00:56Z",
+          "review_cadence_days": 30,
+          "operation_cadence": "Monthly scope review",
+          "evidence": [
+            "Staging has no production-derived rows and is not a production backup destination."
+          ],
+          "current_state": "No staging logical backup is required.",
+          "target_state": "Repository migrations and sanitized fixtures remain sufficient to rebuild staging.",
+          "compensating_controls": [
+            "Production backup artifacts are kept outside ordinary staging."
+          ],
+          "next_action": "Do not copy production backup artifacts into staging.",
+          "approval_required": false
+        }
+      }
+    }
+  }
+}
