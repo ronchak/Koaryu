@@ -176,9 +176,14 @@ Authentication:
 - unauthenticated direct and proxy `/auth/me`: `401`;
 - `admin_a` sign-in: `200`;
 - authenticated direct, proxy, and frontend profile paths: `200`;
-- a source-project access token against the target: `401`;
-- a source-project refresh token against the target: `400`;
+- a throwaway token minted only by a separate synthetic wrong-project issuer:
+  `401`;
+- a deliberately invalid synthetic refresh token: `400`;
 - the revoked disposable identity attempting sign-in: `400`.
+
+No active production access token, refresh token, or session is obtained or
+replayed. Source/target issuer and key separation is compared from secret-safe
+provider semantics; the negative HTTP probes use synthetic material only.
 
 Tenant behavior:
 
@@ -317,8 +322,10 @@ ordinary-staging mutation.
    Supabase target. Do not run migration repair or `db push`.
 7. Compare the immutable restored integrity manifest, Auth-session counts,
    Storage inventory/bytes, and security semantics. Stop on any mismatch.
-8. Clear restored source sessions before application exposure. Prove source
-   access and refresh tokens fail against the target without retaining them.
+8. Clear restored source-session copies before application exposure. Compare
+   target-specific issuer/key semantics, then run only the synthetic
+   wrong-project access-token and invalid-refresh-token denials. Do not obtain
+   or replay an active production token or session.
 9. Create only the controlled synthetic aliases and probes.
 10. Deploy the exact candidate SHA to both protected target applications and
     verify provider plus application-reported SHAs.

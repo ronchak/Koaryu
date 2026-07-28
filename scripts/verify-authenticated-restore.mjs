@@ -144,14 +144,14 @@ const APPLICATION_CHECK_CONTRACT = new Map(
       mutation: "unchanged",
       auditDelta: 0,
     },
-    "auth.source_access_token.rejected": {
+    "auth.synthetic_wrong_project_access_token.rejected": {
       actor: null,
       status: 401,
       outcome: "deny",
       mutation: "unchanged",
       auditDelta: 0,
     },
-    "auth.source_refresh_token.rejected": {
+    "auth.synthetic_invalid_refresh_token.rejected": {
       actor: null,
       status: 400,
       outcome: "deny",

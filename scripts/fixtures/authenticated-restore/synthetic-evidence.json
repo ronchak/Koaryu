@@ -339,7 +339,7 @@
       "audit_rows_after": 0
     },
     {
-      "id": "auth.source_access_token.rejected",
+      "id": "auth.synthetic_wrong_project_access_token.rejected",
       "actor_alias": null,
       "expected_status": 401,
       "actual_status": 401,
@@ -354,7 +354,7 @@
       "audit_rows_after": 0
     },
     {
-      "id": "auth.source_refresh_token.rejected",
+      "id": "auth.synthetic_invalid_refresh_token.rejected",
       "actor_alias": null,
       "expected_status": 400,
       "actual_status": 400,
