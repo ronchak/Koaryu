@@ -38,6 +38,18 @@ test("release-candidate workflow rejects a missing required suite", () => {
   );
 });
 
+test("release-candidate workflow requires the authenticated restore fixture contract", () => {
+  const weakened = workflow.replace(
+    "npm run test:authenticated-restore",
+    "node -e 'console.log(\"restore check omitted\")'",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /npm run test:authenticated-restore/,
+  );
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 

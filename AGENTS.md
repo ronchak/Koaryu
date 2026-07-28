@@ -35,6 +35,8 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
+- Test the authenticated restore evidence contract with synthetic fixtures: `npm run test:authenticated-restore`
+- Verify a sanitized authenticated restore record: `npm run verify:authenticated-restore -- --evidence /absolute/path/evidence.json`; live acceptance must also pass `--require-production-derived`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 
 ## Monorepo Rules
