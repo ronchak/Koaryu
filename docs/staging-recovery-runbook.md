@@ -342,9 +342,10 @@ The recovery key remains in macOS Keychain. Copying the key to a physically cont
 ## Current recovery readiness
 
 - Provisional planning targets are RPO of no more than 24 hours and RTO of no more than 4 hours. They are not verified promises.
-- The Supabase organization was read back on the Free plan during Friendly Pilot Phase 0. Native daily backups and PITR are not proven entitlements at that plan, and the latest encrypted capture was approximately 72 hours old at the audit. The 24-hour RPO is therefore not currently met by evidence.
+- The Supabase organization was read back on the Free plan again on 2026-07-28. The production and staging backup-list endpoints each returned zero listed backups, `pitr_enabled=false`, and `walg_enabled=true`. WAL-G plumbing is not a restore entitlement or restore point. The latest encrypted capture remains the July 10 artifact set, so the 24-hour RPO is not currently met by evidence.
 - The restore drill recovered database/Auth structure and validated aggregate counts, but it did not complete an authenticated tenant-safe application read. The 4-hour RTO and full application recovery remain unproven.
 - The five-artifact second-machine copy improves recoverability but does not replace an approved off-site destination, a current capture cadence, or a full application restore drill.
+- The owned, cadence-bound control inventory and approval packet are in [the authentication and backup control inventory](audit-notes/authentication-backup-controls.md).
 
 ## Restore Drill
 
