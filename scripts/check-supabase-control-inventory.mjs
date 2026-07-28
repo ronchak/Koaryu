@@ -57,11 +57,19 @@ const SAFE_AUTH_FIELDS = new Set([
   "password_hibp_enabled",
   "password_min_length",
   "password_required_characters",
+  "rate_limit_anonymous_users",
+  "rate_limit_email_sent",
+  "rate_limit_otp",
+  "rate_limit_sms_sent",
+  "rate_limit_token_refresh",
+  "rate_limit_verify",
+  "rate_limit_web3",
   "security_captcha_enabled",
   "security_captcha_provider",
   "security_manual_linking_enabled",
   "security_refresh_token_reuse_interval",
   "security_refresh_token_rotation_enabled",
+  "security_sb_forwarded_for_enabled",
   "security_update_password_require_reauthentication",
   "sessions_inactivity_timeout",
   "sessions_single_per_user",
@@ -225,7 +233,7 @@ export function validateInventory(inventory, { now = new Date() } = {}) {
 export function sanitizeAuthConfig(config) {
   const sanitized = {};
   for (const [key, value] of Object.entries(config ?? {})) {
-    if (SAFE_AUTH_FIELDS.has(key) || key.startsWith("rate_limit_")) {
+    if (SAFE_AUTH_FIELDS.has(key)) {
       if (
         value === null
         || ["string", "number", "boolean"].includes(typeof value)

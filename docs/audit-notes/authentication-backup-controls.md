@@ -105,10 +105,10 @@ The live path calls only:
 
 It compares pinned project status, region, backup count, PITR, and WAL-G
 plumbing state with the recorded baseline. Auth output is restricted to a fixed
-safe allowlist plus `rate_limit_*`; SMTP, hook secrets, keys, URLs, and unknown
-fields are dropped. Any drift fails closed and requires an inventory update or
-incident decision. Do not pass `--debug`, shell tracing, or a response-dump
-option.
+safe allowlist that includes the documented rate-limit fields; SMTP, hook
+secrets, keys, URLs, future unknown fields, and future unknown rate-limit fields
+are dropped. Any drift fails closed and requires an inventory update or incident
+decision. Do not pass `--debug`, shell tracing, or a response-dump option.
 
 The CLI backup read is also provider-safe:
 

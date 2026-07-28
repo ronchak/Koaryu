@@ -71,6 +71,7 @@ describe("Supabase control inventory", () => {
         disable_signup: false,
         jwt_exp: 3600,
         rate_limit_token_refresh: 1800,
+        rate_limit_future_secret: "must-not-escape",
         smtp_pass: "must-not-escape",
         smtp_user: "must-not-escape",
         hook_secret: "must-not-escape",
