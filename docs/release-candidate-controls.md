@@ -10,7 +10,8 @@ workflow, script, and documentation changes cannot produce a zero-check PR.
 `.github/workflows/release-candidate.yml` checks out the pull-request head SHA
 directly and verifies it before running:
 
-- repository workflow, environment-example, and support-privacy controls;
+- repository workflow, environment-example, support-privacy, and synthetic-only
+  production-data-classification controls;
 - frontend tests, lint, production build, and high-severity runtime audit;
 - backend dependency consistency, hash-lock drift, vulnerability audit, tests,
   and generated API contract verification;

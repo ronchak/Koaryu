@@ -49,6 +49,9 @@ jobs:
       - name: Verify support privacy controls
         run: npm run audit:support-privacy
 
+      - name: Verify production-data classification controls
+        run: npm run audit:production-classification
+
   frontend:
     name: Frontend tests, lint, build, and audit
     runs-on: ubuntu-latest
