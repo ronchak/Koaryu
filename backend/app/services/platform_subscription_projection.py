@@ -8,8 +8,15 @@ MISSING = object()
 
 
 class PlatformSubscriptionProjector:
-    def project_subscription(self, subscription: Any) -> dict[str, Any]:
-        update: dict[str, Any] = {"comped": False}
+    def project_subscription(
+        self,
+        subscription: Any,
+        *,
+        clear_comp: bool = False,
+    ) -> dict[str, Any]:
+        update: dict[str, Any] = {}
+        if clear_comp:
+            update["comped"] = False
 
         if self.object_has(subscription, "customer"):
             update["stripe_customer_id"] = self.stripe_id(self.object_get(subscription, "customer"))
