@@ -38,6 +38,18 @@ test("release-candidate workflow rejects a missing required suite", () => {
   );
 });
 
+test("release-candidate workflow rejects a missing release identity check", () => {
+  const weakened = workflow.replace(
+    "npm run check:release-identity",
+    "npm run omitted-release-identity-check",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /npm run check:release-identity/,
+  );
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 

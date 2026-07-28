@@ -141,7 +141,15 @@ curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. Readiness rechecks runtime configuration but does not yet probe Supabase or Stripe network availability.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose
+the product release from `backend/release.json`, the separate FastAPI/OpenAPI
+schema compatibility version, the normalized environment, and a validated
+40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is
+returned as `null`. The legacy `version` field remains an alias for
+`api_schema_version` so existing health consumers do not silently acquire new
+semantics. `product_version` is the release label, while `commit_sha` is the
+immutable deployment evidence. Readiness rechecks runtime configuration but
+does not yet probe Supabase or Stripe network availability.
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 
