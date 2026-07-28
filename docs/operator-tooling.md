@@ -2,6 +2,64 @@
 
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
 
+## Operational alert rehearsal and aggregate snapshot
+
+### What it does
+
+`scripts/operational_alerts.py synthetic` exercises the four-rule catalog through
+trigger, deduplication, backup escalation, acknowledgment, and resolution using
+an in-memory destination and audit trail. It does not load provider configuration
+or make a network request.
+
+`snapshot` is an explicit service-role read of exact aggregate counts. It uses
+header-only queries that return no record rows, and prints counts for old live
+webhook failure/claim state, overdue scheduled deletion work, old open urgent
+support work, and stale billing reconciliation. It validates the hosted
+environment and exact Supabase project ref before connecting.
+
+See [Operational Alerts](operational-alerts.md) for the catalog, privacy boundary,
+runbooks, current inventory, and live-activation approval packet.
+
+### Exact commands
+
+Start in the repository root and use the backend's pinned interpreter:
+
+```bash
+cd backend
+venv/bin/python scripts/operational_alerts.py synthetic
+```
+
+For an authorized read-only hosted snapshot, load the backend's existing
+environment configuration and name the exact target:
+
+```bash
+cd backend
+venv/bin/python scripts/operational_alerts.py snapshot \
+  --environment <staging-or-production> \
+  --expect-project <exact-20-character-supabase-project-ref>
+```
+
+Exit codes are:
+
+- `0`: the synthetic rehearsal passed, or the snapshot completed with no firing rule
+- `1`: validation, configuration, collection, or rehearsal invariants failed
+- `2`: the snapshot completed and at least one rule is firing (also used by
+  `argparse` for invalid command syntax)
+
+### What it writes
+
+Neither command writes application or provider state. `synthetic` records only
+in process memory. `snapshot` does not construct a destination or audit adapter,
+and prints no record IDs or raw fields. The optional JSONL audit adapter in the
+service module is local rehearsal scaffolding only and is not used by either
+command.
+
+### What it deliberately does not do
+
+The tool does not schedule collection, deliver email/Slack/SMS/webhook messages,
+persist open-alert state, acknowledge a live incident, configure provider alerts,
+buy a service, expose support details, or replay Stripe/account-deletion work.
+
 ## Studio platform comp access
 
 ### What it does

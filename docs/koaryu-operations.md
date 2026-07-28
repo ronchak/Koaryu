@@ -59,6 +59,10 @@ Signed-in users should use `/help/contact`; if the application route is unavaila
 
 The owner is the current incident and provider-alert recipient; email is preferred. Provider-native Vercel, Render, Supabase, and Stripe alerts are the primary signal. Any Codex or scheduled digest is supplemental and is not the sole real-time monitor. After every deployment, confirm the expected provider email alert path once and record the result.
 
+Use [Operational Alerts](operational-alerts.md) for the counts-only application
+catalog, acknowledgment and escalation contract, response runbooks, current
+coverage gaps, and the approvals required before live delivery is activated.
+
 ## Recovery posture
 
 - Provisional planning targets are RPO of no more than 24 hours and RTO of no more than 4 hours. Neither target is a verified promise today.
