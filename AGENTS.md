@@ -85,5 +85,6 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Backend app guidance: `backend/AGENTS.md`
 - Database guidance: `supabase/AGENTS.md`
 - Render deployment runbook: `docs/render-backend-deployment.md`
+- Owner-run operator tools: `docs/operator-tooling.md`
 - Support triage/privacy runbook: `docs/support-triage.md`
 - PR verification matrix: `docs/pr-verification-matrix.md`
