@@ -56,11 +56,6 @@ class DemoBillingSeeder:
         student_ids: dict[str, str],
     ) -> None:
         now = self._timestamp()
-        period_start = self._today().replace(day=1).isoformat()
-        if self._today().month == 12:
-            period_end = date(self._today().year + 1, 1, 1).isoformat()
-        else:
-            period_end = date(self._today().year, self._today().month + 1, 1).isoformat()
 
         self._insert_optional(
             "email_usage_events",
