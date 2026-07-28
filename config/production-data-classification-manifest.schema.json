@@ -1,0 +1,618 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koaryu.example/schemas/production-data-classification-manifest-v1.json",
+  "title": "Koaryu production data classification manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "policy_version",
+    "classifier_version",
+    "classifier_source_digest",
+    "policy_digest",
+    "input_digest",
+    "snapshot",
+    "read_only",
+    "taxonomy",
+    "evidence_hierarchy",
+    "governance",
+    "summary",
+    "records",
+    "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "policy_version": {
+      "const": "koaryu-production-data-classification/v1"
+    },
+    "classifier_version": {
+      "const": "1.0.0"
+    },
+    "classifier_source_digest": {
+      "$ref": "#/$defs/sha256Digest"
+    },
+    "policy_digest": {
+      "$ref": "#/$defs/sha256Digest"
+    },
+    "input_digest": {
+      "$ref": "#/$defs/sha256Digest"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/snapshot"
+    },
+    "read_only": {
+      "const": true
+    },
+    "taxonomy": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/taxonomyCurrentCustomer"
+        },
+        {
+          "$ref": "#/$defs/taxonomyHistoricalCustomer"
+        },
+        {
+          "$ref": "#/$defs/taxonomyControlledSynthetic"
+        },
+        {
+          "$ref": "#/$defs/taxonomyRequiredSystem"
+        },
+        {
+          "$ref": "#/$defs/taxonomyHistoricalSetup"
+        },
+        {
+          "$ref": "#/$defs/taxonomyUnknown"
+        }
+      ]
+    },
+    "evidence_hierarchy": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/evidenceHierarchyEntry"
+      }
+    },
+    "governance": {
+      "$ref": "#/$defs/governance"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/record"
+      }
+    },
+    "manifest_digest": {
+      "$ref": "#/$defs/sha256Digest"
+    }
+  },
+  "$defs": {
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000
+    },
+    "recordType": {
+      "enum": [
+        "auth_user",
+        "studio",
+        "studio_subscription",
+        "studio_payment_account",
+        "stripe_event"
+      ]
+    },
+    "classification": {
+      "enum": [
+        "current_customer",
+        "historical_customer",
+        "controlled_synthetic",
+        "required_system",
+        "historical_setup",
+        "unknown"
+      ]
+    },
+    "evidenceKind": {
+      "enum": [
+        "live_customer_relationship",
+        "historical_customer_relationship",
+        "registered_system_dependency",
+        "registered_synthetic_marker",
+        "owner_approved_setup_attestation",
+        "application_relationship",
+        "recent_activity"
+      ]
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backup_set_ref",
+        "source_project_ref",
+        "captured_at",
+        "application_sha",
+        "repository_migration_head",
+        "remote_migration_history_digest",
+        "backup_data_ciphertext_digest",
+        "artifact_encryption_key_ref",
+        "retention_location_ref",
+        "opaque_ref_scheme",
+        "opaque_ref_key_version",
+        "extractor_version",
+        "creation_role"
+      ],
+      "properties": {
+        "backup_set_ref": {
+          "type": "string",
+          "pattern": "^backup_[0-9a-f]{64}$"
+        },
+        "source_project_ref": {
+          "type": "string",
+          "pattern": "^project_[0-9a-f]{64}$"
+        },
+        "captured_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "application_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "repository_migration_head": {
+          "type": "string",
+          "pattern": "^[0-9]{14}$"
+        },
+        "remote_migration_history_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "backup_data_ciphertext_digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "artifact_encryption_key_ref": {
+          "type": "string",
+          "pattern": "^keyver_[0-9a-f]{64}$"
+        },
+        "retention_location_ref": {
+          "type": "string",
+          "pattern": "^retention_[0-9a-f]{64}$"
+        },
+        "opaque_ref_scheme": {
+          "const": "hmac-sha256-v1"
+        },
+        "opaque_ref_key_version": {
+          "type": "string",
+          "pattern": "^keyver_[0-9a-f]{64}$"
+        },
+        "extractor_version": {
+          "const": "aggregate-extractor/v1"
+        },
+        "creation_role": {
+          "const": "codex_release_orchestrator"
+        }
+      }
+    },
+    "taxonomyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classification",
+        "description"
+      ],
+      "properties": {
+        "classification": {
+          "$ref": "#/$defs/classification"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "taxonomyCurrentCustomer": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/taxonomyEntry"
+        },
+        {
+          "properties": {
+            "classification": {
+              "const": "current_customer"
+            }
+          }
+        }
+      ]
+    },
+    "taxonomyHistoricalCustomer": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/taxonomyEntry"
+        },
+        {
+          "properties": {
+            "classification": {
+              "const": "historical_customer"
+            }
+          }
+        }
+      ]
+    },
+    "taxonomyControlledSynthetic": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/taxonomyEntry"
+        },
+        {
+          "properties": {
+            "classification": {
+              "const": "controlled_synthetic"
+            }
+          }
+        }
+      ]
+    },
+    "taxonomyRequiredSystem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/taxonomyEntry"
+        },
+        {
+          "properties": {
+            "classification": {
+              "const": "required_system"
+            }
+          }
+        }
+      ]
+    },
+    "taxonomyHistoricalSetup": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/taxonomyEntry"
+        },
+        {
+          "properties": {
+            "classification": {
+              "const": "historical_setup"
+            }
+          }
+        }
+      ]
+    },
+    "taxonomyUnknown": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/taxonomyEntry"
+        },
+        {
+          "properties": {
+            "classification": {
+              "const": "unknown"
+            }
+          }
+        }
+      ]
+    },
+    "evidenceHierarchyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rank",
+        "evidence_kinds",
+        "description"
+      ],
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "evidence_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/evidenceKind"
+          }
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data_owner",
+        "technical_operator",
+        "classification_approver",
+        "classification_approval_status",
+        "classification_approval_scope",
+        "retention_location",
+        "retention_period",
+        "policy_review_cadence",
+        "mutation_authority",
+        "mutation_requires_separate_package"
+      ],
+      "properties": {
+        "data_owner": {
+          "const": "Ronak Chakraborty"
+        },
+        "technical_operator": {
+          "const": "Codex release orchestrator"
+        },
+        "classification_approver": {
+          "const": "Ronak Chakraborty"
+        },
+        "classification_approval_status": {
+          "const": "not_recorded"
+        },
+        "classification_approval_scope": {
+          "const": "this exact read-only classification manifest only"
+        },
+        "retention_location": {
+          "const": "approved encrypted Koaryu backup destination"
+        },
+        "retention_period": {
+          "const": "24 months after the manifest is superseded"
+        },
+        "policy_review_cadence": {
+          "const": "at least annually and whenever evidence rules or scope change"
+        },
+        "mutation_authority": {
+          "const": "none"
+        },
+        "mutation_requires_separate_package": {
+          "const": true
+        }
+      }
+    },
+    "sourceCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "auth_user",
+        "studio",
+        "studio_subscription",
+        "studio_payment_account",
+        "stripe_event"
+      ],
+      "properties": {
+        "auth_user": {
+          "$ref": "#/$defs/count"
+        },
+        "studio": {
+          "$ref": "#/$defs/count"
+        },
+        "studio_subscription": {
+          "$ref": "#/$defs/count"
+        },
+        "studio_payment_account": {
+          "$ref": "#/$defs/count"
+        },
+        "stripe_event": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "classificationCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current_customer",
+        "historical_customer",
+        "controlled_synthetic",
+        "required_system",
+        "historical_setup",
+        "unknown"
+      ],
+      "properties": {
+        "current_customer": {
+          "$ref": "#/$defs/count"
+        },
+        "historical_customer": {
+          "$ref": "#/$defs/count"
+        },
+        "controlled_synthetic": {
+          "$ref": "#/$defs/count"
+        },
+        "required_system": {
+          "$ref": "#/$defs/count"
+        },
+        "historical_setup": {
+          "$ref": "#/$defs/count"
+        },
+        "unknown": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "partitionCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_type",
+        "source_count",
+        "manifest_identifier_count",
+        "distinct_manifest_identifier_count",
+        "classified_count",
+        "missing_count",
+        "unexpected_count",
+        "passed"
+      ],
+      "properties": {
+        "record_type": {
+          "$ref": "#/$defs/recordType"
+        },
+        "source_count": {
+          "$ref": "#/$defs/count"
+        },
+        "manifest_identifier_count": {
+          "$ref": "#/$defs/count"
+        },
+        "distinct_manifest_identifier_count": {
+          "$ref": "#/$defs/count"
+        },
+        "classified_count": {
+          "$ref": "#/$defs/count"
+        },
+        "missing_count": {
+          "const": 0
+        },
+        "unexpected_count": {
+          "const": 0
+        },
+        "passed": {
+          "const": true
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_source_count",
+        "total_manifest_count",
+        "source_counts",
+        "manifest_counts",
+        "classification_counts",
+        "unknown_counts",
+        "partition_checks",
+        "all_partition_checks_passed"
+      ],
+      "properties": {
+        "total_source_count": {
+          "$ref": "#/$defs/count"
+        },
+        "total_manifest_count": {
+          "$ref": "#/$defs/count"
+        },
+        "source_counts": {
+          "$ref": "#/$defs/sourceCounts"
+        },
+        "manifest_counts": {
+          "$ref": "#/$defs/sourceCounts"
+        },
+        "classification_counts": {
+          "$ref": "#/$defs/classificationCounts"
+        },
+        "unknown_counts": {
+          "$ref": "#/$defs/sourceCounts"
+        },
+        "partition_checks": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/partitionCheck"
+          }
+        },
+        "all_partition_checks_passed": {
+          "const": true
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opaque_ref",
+        "record_type",
+        "classification",
+        "confidence",
+        "rule_id",
+        "reason_codes",
+        "evidence_fingerprint",
+        "evidence"
+      ],
+      "properties": {
+        "opaque_ref": {
+          "type": "string",
+          "pattern": "^entity_[0-9a-f]{64}$"
+        },
+        "record_type": {
+          "$ref": "#/$defs/recordType"
+        },
+        "classification": {
+          "$ref": "#/$defs/classification"
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "rule_id": {
+          "enum": [
+            "customer-live-v1",
+            "customer-historical-v1",
+            "system-registry-v1",
+            "synthetic-registry-v1",
+            "setup-owner-attestation-v1",
+            "unknown-conflict-v1",
+            "unknown-insufficient-v1"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "live_customer_relationship_present",
+              "historical_customer_relationship_present",
+              "registered_system_dependency_present",
+              "registered_synthetic_marker_present",
+              "owner_approved_setup_attestation_present",
+              "application_relationship_is_context_only",
+              "recent_activity_is_context_only",
+              "conflicting_conclusive_evidence",
+              "insufficient_admissible_evidence"
+            ]
+          }
+        },
+        "evidence_fingerprint": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "count",
+        "source_ref"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/evidenceKind"
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "source_ref": {
+          "type": "string",
+          "pattern": "^evidence_[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

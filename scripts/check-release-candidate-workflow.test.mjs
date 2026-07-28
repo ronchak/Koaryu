@@ -38,6 +38,18 @@ test("release-candidate workflow rejects a missing required suite", () => {
   );
 });
 
+test("release-candidate workflow requires the production classification audit", () => {
+  const weakened = workflow.replace(
+    "npm run audit:production-classification",
+    "npm run omitted-production-classification-audit",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /npm run audit:production-classification/,
+  );
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 
