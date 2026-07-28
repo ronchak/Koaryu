@@ -220,3 +220,36 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
 
         self.assertEqual(FakeStripeService.calls, 0)
         self.assertEqual(response.status, "comped")
+
+    def test_admin_status_leaves_broken_comped_provider_snapshot_untouched(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_local",
+            "stripe_subscription_id": "sub_local",
+            "status": "active",
+            "comped": True,
+            "trial_end": None,
+            "current_period_start": None,
+            "current_period_end": None,
+            "cancel_at_period_end": False,
+        }]
+        service = self.service(rows)
+
+        class ProviderMustNotBeConsulted:
+            def retrieve_subscription(self, subscription_id):
+                raise AssertionError(
+                    "Admin refresh must not reconcile a comped provider snapshot"
+                )
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            ProviderMustNotBeConsulted,
+        ):
+            response = asyncio.run(service.get_status("studio_1"))
+
+        self.assertEqual(response.status, "active")
+        self.assertEqual(response.stripe_customer_id, "cus_local")
+        self.assertEqual(response.stripe_subscription_id, "sub_local")
+        self.assertIsNone(response.current_period_start)
+        self.assertIsNone(response.current_period_end)
+        self.assertTrue(rows[0]["comped"])
