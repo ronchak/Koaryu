@@ -14,7 +14,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.core.config import get_settings, is_placeholder_value
+from app.core.config import SupabaseTargetError, get_settings, is_placeholder_value
 from app.db.supabase import create_supabase_client
 from app.services.studio_scope import _platform_subscription_access_from_row
 from app.services.platform_billing_service import LIVE_STRIPE_SUBSCRIPTION_STATUSES
@@ -719,7 +719,7 @@ def main(
                 stdin,
                 stdout,
             )
-    except CompStudioError as exc:
+    except (CompStudioError, SupabaseTargetError) as exc:
         print(f"Error: {exc}", file=stderr)
         return 1
     return 0

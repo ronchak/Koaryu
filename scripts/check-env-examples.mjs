@@ -21,7 +21,7 @@ const backendSecretKeys = [
 
 const backendPublicKeys = [
   "SUPABASE_URL",
-  "SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT",
+  "SUPABASE_ALLOWED_HOSTED_HOST",
   "SUPABASE_ALLOW_LEGACY_HS256",
   "FRONTEND_URL",
   "ENVIRONMENT",
@@ -35,6 +35,7 @@ const backendPublicKeys = [
 
 const backendOptionalBlankKeys = [
   "DEMO_RESET_STUDIO_IDS",
+  "SUPABASE_ALLOWED_HOSTED_HOST",
   "STRIPE_RESTRICTED_KEY",
 ];
 
@@ -64,7 +65,7 @@ const renderCriticalValues = new Map([
   ["ENVIRONMENT", "production"],
   ["DEMO_RESET_ENABLED", "false"],
   ["DEMO_RESET_STUDIO_IDS", ""],
-  ["SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT", "false"],
+  ["SUPABASE_ALLOWED_HOSTED_HOST", ""],
   ["SUPABASE_ALLOW_LEGACY_HS256", "false"],
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "false"],

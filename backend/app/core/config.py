@@ -1,8 +1,10 @@
-from pydantic_settings import BaseSettings
+import ipaddress
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
+
+from pydantic_settings import BaseSettings
 
 
 KOARYU_STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
@@ -61,11 +63,38 @@ def has_minimum_secret_length(value: str, minimum: int = 32) -> bool:
     return len(value.strip()) >= minimum
 
 
+def is_placeholder_supabase_hostname(hostname: str) -> bool:
+    normalized = hostname.removesuffix(".")
+    labels = normalized.split(".")
+    if (
+        len(labels) == 3
+        and labels[1:] == ["supabase", "co"]
+        and len(labels[0]) == 20
+        and labels[0].isalnum()
+    ):
+        return False
+    return is_placeholder_value(normalized)
+
+
+def is_local_hostname(hostname: str) -> bool:
+    normalized = hostname.removesuffix(".")
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+class SupabaseTargetError(RuntimeError):
+    """Raised when a service-role client would use an unsafe Supabase target."""
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     SUPABASE_URL: str = "https://placeholder.supabase.co"
-    SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT: bool = False
+    SUPABASE_ALLOWED_HOSTED_HOST: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = "placeholder-key"
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
     SUPABASE_ALLOW_LEGACY_HS256: bool = False
@@ -94,29 +123,38 @@ class Settings(BaseSettings):
     }
 
     def validate_supabase_target(self) -> None:
-        """Refuse accidental hosted access from a permissive environment."""
+        """Refuse accidental hosted access outside strict runtime environments."""
         environment = self.ENVIRONMENT.strip().lower()
-        if (
-            environment not in PERMISSIVE_ENVIRONMENTS
-            or self.SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT
-            or is_placeholder_value(self.SUPABASE_URL)
-        ):
+        if environment in STRICT_ENVIRONMENTS:
             return
 
         try:
             hostname = urlparse(self.SUPABASE_URL).hostname
         except ValueError:
             hostname = None
-        if hostname in {"localhost", "127.0.0.1"}:
-            return
+        if hostname is not None:
+            hostname = hostname.lower()
 
         target = hostname or "<missing>"
-        raise RuntimeError(
+        environment_label = environment or "<empty>"
+        if hostname is None:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"ENVIRONMENT={environment_label} and SUPABASE_URL host {target} "
+                "cannot be validated. SUPABASE_ALLOWED_HOSTED_HOST cannot permit "
+                "a URL without a parseable hostname."
+            )
+        if is_placeholder_supabase_hostname(hostname) or is_local_hostname(hostname):
+            return
+        if self.SUPABASE_ALLOWED_HOSTED_HOST.strip().lower() == hostname:
+            return
+
+        raise SupabaseTargetError(
             "Refusing unsafe Supabase target: "
-            f"ENVIRONMENT={environment} is permissive but SUPABASE_URL host "
-            f"{target} is non-local. Set "
-            "SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true only when "
-            "this hosted target is deliberate."
+            f"ENVIRONMENT={environment_label} and SUPABASE_URL host {target} "
+            "require an exact hosted-target pin. Set "
+            f"SUPABASE_ALLOWED_HOSTED_HOST={target} only when this exact hosted "
+            "target is deliberate."
         )
 
     def validate_runtime_configuration(self) -> None:

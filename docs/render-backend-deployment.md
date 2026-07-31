@@ -43,7 +43,7 @@ BILLING_PLATFORM_FEE_BPS=50
 STRIPE_MODE=live
 LIVE_BILLING_ENABLED=false
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
-SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=false
+SUPABASE_ALLOWED_HOSTED_HOST=
 SUPABASE_ALLOW_LEGACY_HS256=false
 ```
 
@@ -70,12 +70,13 @@ Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_liv
 ### Hosted Runtime Guard
 
 Before the hosted-only validation below, the backend checks the Supabase target.
-`ENVIRONMENT=development` and `ENVIRONMENT=test` may use localhost,
-`127.0.0.1`, or a placeholder URL by default, but refuse a hosted target unless
-`SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true` is set deliberately.
+Every environment outside `production` and `staging`, including unknown or
+empty labels, may use loopback, `.localhost`, or a placeholder URL by default,
+but refuses a hosted target unless `SUPABASE_ALLOWED_HOSTED_HOST` exactly
+matches the parsed target hostname.
 The same check runs before every shared service-role client is constructed, so
 standalone Python operator tools are covered even when FastAPI is not imported.
-Production and staging do not use this opt-in; Render pins it to `false`.
+Production and staging do not use this pin; Render pins it to an empty value.
 Supabase CLI operations using `--linked` or `SUPABASE_DB_URL` bypass backend
 settings and remain governed by their command-specific target checks.
 

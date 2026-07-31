@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
-# App imports during collection must not inherit a developer's hosted target.
-os.environ["SUPABASE_URL"] = "https://placeholder.supabase.co"
+from tests import environment as _test_environment  # noqa: F401
 
 from app.services import platform_billing_service
 

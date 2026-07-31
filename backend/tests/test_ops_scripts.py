@@ -102,6 +102,7 @@ def test_connect_smoke_rejects_permissive_hosted_supabase_target(monkeypatch):
     settings = Settings(
         ENVIRONMENT="development",
         SUPABASE_URL="https://hosted-project.supabase.co",
+        SUPABASE_ALLOWED_HOSTED_HOST="",
         SUPABASE_SERVICE_ROLE_KEY="fixture-service-role-key",
     )
     monkeypatch.setenv("SUPABASE_URL", settings.SUPABASE_URL)
@@ -115,7 +116,7 @@ def test_connect_smoke_rejects_permissive_hosted_supabase_target(monkeypatch):
         RuntimeError,
         match=(
             "ENVIRONMENT=development.*hosted-project\\.supabase\\.co.*"
-            "SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true"
+            "SUPABASE_ALLOWED_HOSTED_HOST=hosted-project\\.supabase\\.co"
         ),
     ):
         module._supabase_client()

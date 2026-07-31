@@ -35,18 +35,18 @@ Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` 
 ## Supabase target guard
 
 Python service-role clients created through `app.db.supabase` refuse a hosted
-`SUPABASE_URL` when `ENVIRONMENT` is `development` or `test`. Localhost,
-`127.0.0.1`, and placeholder targets remain available without an override. This
+`SUPABASE_URL` unless `ENVIRONMENT` is `production` or `staging`. Loopback,
+`.localhost`, and placeholder targets remain available without a pin. This
 protects the API plus `comp_studio.py`,
 `backfill_connected_account_branding.py`, `process_account_deletions.py`, and
 `verify-connect-webhook-smoke.py` at client construction time.
 
 For deliberate owner development against a hosted project, set
-`SUPABASE_ALLOW_HOSTED_IN_PERMISSIVE_ENVIRONMENT=true` only for that command or
-private shell after confirming the hostname. Leave it false otherwise. The
-refusal names the effective environment, target hostname, and exact override;
-the override does not replace each tool's narrower confirmations, including
-`comp_studio.py --expect-project`.
+`SUPABASE_ALLOWED_HOSTED_HOST` to the exact `SUPABASE_URL` hostname only for
+that command or private shell after confirming the target. Changing
+`SUPABASE_URL` invalidates the pin automatically. The refusal names the
+effective environment, target hostname, and exact pin; the pin does not replace
+each tool's narrower confirmations, including `comp_studio.py --expect-project`.
 
 Supabase CLI operations bypass backend `Settings` and this guard. Commands
 using `--linked`, helpers using `SUPABASE_DB_URL`, and direct CLI database or
