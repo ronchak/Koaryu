@@ -14,6 +14,7 @@
     "check:release-workflow": "node --test scripts/check-release-candidate-workflow.test.mjs scripts/merge-release-pr.test.mjs && node scripts/check-release-candidate-workflow.mjs",
     "check:supabase-contracts-local": "bash scripts/verify-supabase-contracts-local.sh",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs",
+    "verify:tuition-lifecycle": "bash scripts/verify-tuition-lifecycle.sh",
     "audit:support-privacy": "python3 scripts/audit-support-privacy.py",
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
     "check:api-types": "backend/venv/bin/python scripts/generate-api-types.py --check",

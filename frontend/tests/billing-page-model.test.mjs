@@ -86,6 +86,7 @@ function invoice(id, status, amountDue, amountPaid = 0) {
     status,
     amount_due_cents: amountDue,
     amount_paid_cents: amountPaid,
+    amount_remaining_cents: Math.max(amountDue - amountPaid, 0),
     currency: "usd",
     due_date: "2026-05-24",
     created_at: "2026-05-24T00:00:00.000Z",
@@ -254,6 +255,28 @@ describe("billing page model", () => {
       paymentCount: 3,
       stripePaymentTotal: 7500,
     });
+  });
+
+  it("uses authoritative remaining amounts for every balance-bearing invoice state", () => {
+    const model = buildBillingPageModel({
+      ...DEFAULT_INPUT,
+      billingInvoices: [
+        {
+          ...invoice("partial-refund", "partially_refunded", 10000, 9000),
+          amount_remaining_cents: 2500,
+        },
+        {
+          ...invoice("uncollectible", "uncollectible", 5000, 0),
+          amount_remaining_cents: 4000,
+        },
+        {
+          ...invoice("paid", "paid", 10000, 10000),
+          amount_remaining_cents: 8000,
+        },
+      ],
+    });
+
+    assert.equal(model.openInvoiceTotal, 6500);
   });
 
   it("falls back to created_at and excludes invalid or missing payment timestamps", () => {

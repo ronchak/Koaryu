@@ -147,8 +147,8 @@ class BillingPrivateFacadeMixin:
         event_created: Optional[int] = None,
     ) -> None:
         self._webhook_projector()._project_payment_intent(intent, account_id, event_type, event_created)
-    def _link_disputes_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
-        return self._webhook_projector()._link_disputes_to_payment(payment, account_id)
+    def _link_adjustments_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
+        return self._webhook_projector()._link_adjustments_to_payment(payment, account_id)
     def _project_charge_refund(self, charge: dict[str, Any], account_id: Optional[str]) -> None:
         self._webhook_projector()._project_charge_refund(charge, account_id)
     def _project_refund(self, refund: Any, account_id: Optional[str], *, charge: Optional[dict[str, Any]] = None) -> dict[str, Any]:
