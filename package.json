@@ -15,6 +15,7 @@
     "check:supabase-contracts-local": "bash scripts/verify-supabase-contracts-local.sh",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs",
     "audit:support-privacy": "python3 scripts/audit-support-privacy.py",
+    "audit:production-classification": "node --test scripts/classify-production-data.test.mjs",
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
     "check:api-types": "backend/venv/bin/python scripts/generate-api-types.py --check",
     "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py"
