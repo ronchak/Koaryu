@@ -47,6 +47,51 @@ test("release-candidate workflow rejects a missing aggregate dependency", () => 
   );
 });
 
+test("release-candidate workflow rejects a missing browser-smoke dependency", () => {
+  const weakened = workflow.replace("      - browser-smoke\n", "");
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /depend on every required candidate job/,
+  );
+});
+
+test("release-candidate workflow rejects a conditional required browser smoke", () => {
+  const weakened = workflow.replace(
+    "      - name: Run required browser smoke\n",
+    "      - name: Run required browser smoke\n        if: false\n",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /browser-smoke step must not be conditional/,
+  );
+});
+
+test("release-candidate workflow rejects an unbounded browser-smoke job", () => {
+  const weakened = workflow.replace(
+    "  browser-smoke:\n    name: Required production browser smoke\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n",
+    "  browser-smoke:\n    name: Required production browser smoke\n    runs-on: ubuntu-latest\n",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /timeout of at most 15 minutes/,
+  );
+});
+
+test("release-candidate workflow rejects always-uploaded browser artifacts", () => {
+  const weakened = workflow.replace(
+    "      - name: Preserve browser failure artifacts\n        if: failure()\n",
+    "      - name: Preserve browser failure artifacts\n        if: always()\n",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /retain only bounded failure artifacts/,
+  );
+});
+
 test("release-candidate workflow rejects removed aggregate assertions", () => {
   const weakened = workflow.replace(
     /          test \"\$[A-Z_]+_RESULT\" = success\n/g,
