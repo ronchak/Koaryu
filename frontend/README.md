@@ -24,7 +24,7 @@ Required variables:
 - `BACKEND_API_URL`: server-only backend API base URL for Next.js API proxy and cron routes; defaults to the public API URL only when this is not set
 - `CRON_SECRET`: server-only Vercel Cron secret for scheduled internal maintenance routes
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only secret used by the Vercel Cron route when it calls the protected Render account-deletion worker
-- `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls should go through the Next.js proxy route instead of directly using `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls should go through the Next.js proxy route instead of directly using `NEXT_PUBLIC_API_URL`; Vercel rejects proxy bodies above 4.5 MB, so full-size CSV import environments require `false`
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): set to `true` for static preview/demo data instead of live auth and backend bootstrapping
 - `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER` (optional): defaults to `true`; set to `false` as a rollback switch for the backend-paginated Students roster
 - `NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG` (optional): set to `true` temporarily to log Koaryu performance marks and Web Vitals in production
@@ -110,6 +110,8 @@ Keep `/login`, `/signup`, `/onboarding`, `/subscription-required`, and dashboard
 Studio identity is always derived from the authenticated backend user before data access. Koaryu supports one authoritative `staff_roles` membership. An unexpected historical multi-membership is rejected before any legacy `X-Studio-Id` selector can influence resolution; the rows are preserved for bounded support remediation. For a valid single membership, `X-Studio-Id` is only a matching selector and never grants access by itself.
 
 When `NEXT_PUBLIC_USE_API_PROXY=true`, browser API requests go through `/api/proxy`. In that mode the browser API wrapper does not send `X-Studio-Id`, and the proxy ignores any caller-supplied studio header. The proxy forwards `X-Studio-Id` upstream only from the `koaryu-active-studio` cookie observed by the Next.js server. Direct browser-to-backend mode still attaches the active-studio header because there is no Next.js server boundary to derive it, but the shared browser API helper strips any caller-supplied studio header before it adds the active selector.
+
+Vercel Functions impose a 4.5 MB request-body limit before the Next.js route runs. Keep `NEXT_PUBLIC_USE_API_PROXY=false` in any deployed environment that must accept Koaryu's full 10 MB CSV files; those browser uploads must go directly to `NEXT_PUBLIC_API_URL`. The proxy remains suitable for ordinary JSON requests, health warmup, and smaller uploads. See `docs/audit-notes/request-body-buffering.md` for the measured direct/proxy memory profile.
 
 ## Vercel
 
