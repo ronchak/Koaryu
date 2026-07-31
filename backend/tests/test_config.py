@@ -3,7 +3,11 @@ import unittest
 
 from tests import environment as _test_environment  # noqa: F401
 
-from app.core.config import Settings, SupabaseTargetError
+from app.core.config import (
+    KOARYU_STAGING_SUPABASE_URL,
+    Settings,
+    SupabaseTargetError,
+)
 
 
 def _synthetic_stripe_key(prefix: str, mode: str = "live") -> str:
@@ -62,7 +66,7 @@ class HostedConfigValidationTest(unittest.TestCase):
     def test_production_rejects_missing_live_settings(self):
         settings = Settings(
             ENVIRONMENT="production",
-            SUPABASE_URL="https://placeholder.supabase.co",
+            SUPABASE_URL="https://project.supabase.co",
             SUPABASE_SERVICE_ROLE_KEY="placeholder-key",
             SUPABASE_JWT_SECRET="placeholder-secret",
             FRONTEND_URL="https://koaryu.app",
@@ -124,7 +128,10 @@ class HostedConfigValidationTest(unittest.TestCase):
             },
         )
 
-        with self.assertRaisesRegex(RuntimeError, "SUPABASE_URL must be a public HTTPS URL"):
+        with self.assertRaisesRegex(
+            SupabaseTargetError,
+            "production requires a non-placeholder hosted SUPABASE_URL",
+        ):
             settings.validate_production_configuration()
 
     def test_production_rejects_short_internal_secrets(self):
@@ -361,9 +368,9 @@ class SupabaseTargetValidationTest(unittest.TestCase):
         with self.assertRaises(SupabaseTargetError):
             settings.validate_supabase_target()
 
-    def test_placeholder_hostnames_are_allowed(self):
+    def test_only_shipped_placeholder_hostnames_are_allowed(self):
         urls = (
-            "https://your-project.supabase.co",
+            "https://YOUR-PROJECT.SUPABASE.CO.",
             "https://placeholder.supabase.co",
         )
         for url in urls:
@@ -376,7 +383,7 @@ class SupabaseTargetValidationTest(unittest.TestCase):
 
                 settings.validate_supabase_target()
 
-    def test_placeholder_userinfo_cannot_exempt_real_hostname(self):
+    def test_embedded_credentials_are_refused(self):
         settings = Settings(
             ENVIRONMENT="development",
             SUPABASE_URL=(
@@ -387,19 +394,25 @@ class SupabaseTargetValidationTest(unittest.TestCase):
 
         with self.assertRaisesRegex(
             SupabaseTargetError,
-            "mimguepumzsgmcaycdsh\\.supabase\\.co",
+            "embedded credentials",
         ):
             settings.validate_supabase_target()
 
-    def test_marker_inside_real_project_ref_is_not_a_placeholder(self):
-        settings = Settings(
-            ENVIRONMENT="development",
-            SUPABASE_URL="https://todoabcdefghijklmnop.supabase.co",
-            SUPABASE_ALLOWED_HOSTED_HOST="",
-        )
+    def test_unshipped_marker_hostnames_are_not_placeholders(self):
+        for url in (
+            "https://api.example.com",
+            "https://prod-placeholder.example.net",
+            "https://todoabcdefghijklmnop.supabase.co",
+        ):
+            with self.subTest(url=url):
+                settings = Settings(
+                    ENVIRONMENT="development",
+                    SUPABASE_URL=url,
+                    SUPABASE_ALLOWED_HOSTED_HOST="",
+                )
 
-        with self.assertRaises(SupabaseTargetError):
-            settings.validate_supabase_target()
+                with self.assertRaises(SupabaseTargetError):
+                    settings.validate_supabase_target()
 
     def test_url_without_parseable_hostname_is_refused(self):
         settings = Settings(
@@ -411,16 +424,45 @@ class SupabaseTargetValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(SupabaseTargetError, "host <missing>"):
             settings.validate_supabase_target()
 
-    def test_strict_environments_are_ignored_by_supabase_target_guard(self):
-        for environment in ("production", "staging"):
-            with self.subTest(environment=environment):
-                settings = Settings(
-                    ENVIRONMENT=environment,
-                    SUPABASE_URL="https://hosted-project.supabase.co",
-                    SUPABASE_ALLOWED_HOSTED_HOST="",
-                )
+    def test_staging_requires_the_pinned_project_hostname(self):
+        Settings(
+            ENVIRONMENT="staging",
+            SUPABASE_URL=KOARYU_STAGING_SUPABASE_URL,
+        ).validate_supabase_target()
 
-                settings.validate_supabase_target()
+        for allowed_host in ("", "mimguepumzsgmcaycdsh.supabase.co"):
+            with self.subTest(allowed_host=allowed_host):
+                settings = Settings(
+                    ENVIRONMENT="staging",
+                    SUPABASE_URL=(
+                        "https://mimguepumzsgmcaycdsh.supabase.co"
+                    ),
+                    SUPABASE_ALLOWED_HOSTED_HOST=allowed_host,
+                )
+                with self.assertRaisesRegex(
+                    SupabaseTargetError,
+                    "SUPABASE_ALLOWED_HOSTED_HOST cannot override staging identity",
+                ):
+                    settings.validate_supabase_target()
+
+    def test_production_allows_an_ordinary_safe_hosted_target(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://api.example.com",
+            SUPABASE_ALLOWED_HOSTED_HOST="",
+        )
+
+        settings.validate_supabase_target()
+
+    def test_production_refuses_unsafe_transport(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            SUPABASE_URL="http://api.example.com:8080",
+            SUPABASE_ALLOWED_HOSTED_HOST="",
+        )
+
+        with self.assertRaisesRegex(SupabaseTargetError, "plaintext"):
+            settings.validate_supabase_target()
 
 
 if __name__ == "__main__":

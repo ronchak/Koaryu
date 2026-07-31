@@ -35,18 +35,37 @@ Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` 
 ## Supabase target guard
 
 Python service-role clients created through `app.db.supabase` refuse a hosted
-`SUPABASE_URL` unless `ENVIRONMENT` is `production` or `staging`. Loopback,
-`.localhost`, and placeholder targets remain available without a pin. This
-protects the API plus `comp_studio.py`,
+`SUPABASE_URL` unless the target is valid for the effective environment:
+
+- `staging` requires the parsed hostname from
+  `KOARYU_STAGING_SUPABASE_URL`. A hosted-target pin cannot override that
+  identity.
+- `production` permits a non-local, non-placeholder hosted target without a
+  project-specific pin.
+- Development, test, unknown, and empty labels permit loopback or `.localhost`
+  targets, the two exact placeholder hostnames shipped by the backend defaults
+  and `backend/.env.example`, or a hosted hostname with an exact pin.
+
+Every non-local URL must use HTTPS, must omit embedded credentials, and must
+omit the port or use `443`. Local loopback targets may continue to use HTTP on
+arbitrary ports. These checks protect the API plus `comp_studio.py`,
 `backfill_connected_account_branding.py`, `process_account_deletions.py`, and
 `verify-connect-webhook-smoke.py` at client construction time.
 
 For deliberate owner development against a hosted project, set
 `SUPABASE_ALLOWED_HOSTED_HOST` to the exact `SUPABASE_URL` hostname only for
-that command or private shell after confirming the target. Changing
-`SUPABASE_URL` invalidates the pin automatically. The refusal names the
-effective environment, target hostname, and exact pin; the pin does not replace
-each tool's narrower confirmations, including `comp_studio.py --expect-project`.
+that command or private shell after confirming the target. Changing the
+hostname invalidates the pin; changing only the scheme, port, path, or userinfo
+does not change the hostname, so the separate transport checks enforce the
+safe URL shape before the pin is considered. The pin does not replace each
+tool's narrower confirmations, including `comp_studio.py --expect-project`.
+
+Pytest is the supported backend test runner and the CI path. Its `conftest.py`
+loads `backend/tests/environment.py` so collection uses the shipped placeholder
+target; `test_config.py` also imports that bootstrap explicitly. Direct
+`unittest` execution of other test modules does not generally load it and is
+not covered by that bootstrap. The client-construction guard remains active in
+those processes rather than granting a general test-runner exemption.
 
 Supabase CLI operations bypass backend `Settings` and this guard. Commands
 using `--linked`, helpers using `SUPABASE_DB_URL`, and direct CLI database or

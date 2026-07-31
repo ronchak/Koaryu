@@ -11,6 +11,13 @@ KOARYU_STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
 KOARYU_STAGING_FRONTEND_URL = (
     "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
 )
+DEFAULT_SUPABASE_URL = "https://placeholder.supabase.co"
+SHIPPED_PLACEHOLDER_SUPABASE_HOSTNAMES = frozenset(
+    {
+        "placeholder.supabase.co",
+        "your-project.supabase.co",
+    }
+)
 PERMISSIVE_ENVIRONMENTS = {"development", "test"}
 STRICT_ENVIRONMENTS = {"production", "staging"}
 
@@ -63,19 +70,6 @@ def has_minimum_secret_length(value: str, minimum: int = 32) -> bool:
     return len(value.strip()) >= minimum
 
 
-def is_placeholder_supabase_hostname(hostname: str) -> bool:
-    normalized = hostname.removesuffix(".")
-    labels = normalized.split(".")
-    if (
-        len(labels) == 3
-        and labels[1:] == ["supabase", "co"]
-        and len(labels[0]) == 20
-        and labels[0].isalnum()
-    ):
-        return False
-    return is_placeholder_value(normalized)
-
-
 def is_local_hostname(hostname: str) -> bool:
     normalized = hostname.removesuffix(".")
     if normalized == "localhost" or normalized.endswith(".localhost"):
@@ -93,7 +87,7 @@ class SupabaseTargetError(RuntimeError):
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    SUPABASE_URL: str = "https://placeholder.supabase.co"
+    SUPABASE_URL: str = DEFAULT_SUPABASE_URL
     SUPABASE_ALLOWED_HOSTED_HOST: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = "placeholder-key"
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
@@ -123,15 +117,20 @@ class Settings(BaseSettings):
     }
 
     def validate_supabase_target(self) -> None:
-        """Refuse accidental hosted access outside strict runtime environments."""
+        """Refuse service-role access to a Supabase target unsafe for its environment."""
         environment = self.ENVIRONMENT.strip().lower()
-        if environment in STRICT_ENVIRONMENTS:
-            return
 
         try:
-            hostname = urlparse(self.SUPABASE_URL).hostname
+            supabase_url = urlparse(self.SUPABASE_URL)
+            hostname = supabase_url.hostname
+            username = supabase_url.username
+            password = supabase_url.password
+            port = supabase_url.port
         except ValueError:
             hostname = None
+            username = None
+            password = None
+            port = None
         if hostname is not None:
             hostname = hostname.lower()
 
@@ -144,11 +143,72 @@ class Settings(BaseSettings):
                 "cannot be validated. SUPABASE_ALLOWED_HOSTED_HOST cannot permit "
                 "a URL without a parseable hostname."
             )
-        if is_placeholder_supabase_hostname(hostname) or is_local_hostname(hostname):
+
+        is_local = is_local_hostname(hostname)
+        is_shipped_placeholder = (
+            hostname.removesuffix(".") in SHIPPED_PLACEHOLDER_SUPABASE_HOSTNAMES
+        )
+        if is_local:
+            if environment == "staging":
+                staging_hostname = urlparse(KOARYU_STAGING_SUPABASE_URL).hostname
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    "ENVIRONMENT=staging: SUPABASE_URL must match Koaryu's pinned "
+                    f"staging project host {staging_hostname}; local host {target} "
+                    "is not allowed, "
+                    "and SUPABASE_ALLOWED_HOSTED_HOST cannot override staging identity."
+                )
+            if environment == "production":
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    f"ENVIRONMENT=production requires a non-placeholder hosted "
+                    f"SUPABASE_URL; local host {target} is not allowed."
+                )
+            return
+
+        if username is not None or password is not None:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} contains embedded credentials; remove "
+                "username and password from the URL."
+            )
+        if supabase_url.scheme.lower() != "https":
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} would send service-role credentials over "
+                "plaintext; non-local targets must use https."
+            )
+        if port not in (None, 443):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} uses unexpected port {port}; non-local "
+                "targets must omit the port or use 443."
+            )
+
+        if environment == "staging":
+            staging_hostname = urlparse(KOARYU_STAGING_SUPABASE_URL).hostname
+            if hostname == staging_hostname:
+                return
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                "ENVIRONMENT=staging: SUPABASE_URL must match Koaryu's pinned staging "
+                f"project host {staging_hostname}; host {target} is not allowed, and "
+                "SUPABASE_ALLOWED_HOSTED_HOST cannot override staging identity."
+            )
+
+        if environment == "production":
+            if is_shipped_placeholder:
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    "ENVIRONMENT=production requires a non-placeholder hosted "
+                    f"SUPABASE_URL; placeholder host {target} is not allowed."
+                )
+            return
+
+        if is_shipped_placeholder:
             return
         if self.SUPABASE_ALLOWED_HOSTED_HOST.strip().lower() == hostname:
             return
-
         raise SupabaseTargetError(
             "Refusing unsafe Supabase target: "
             f"ENVIRONMENT={environment_label} and SUPABASE_URL host {target} "
