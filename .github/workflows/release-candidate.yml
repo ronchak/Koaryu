@@ -91,7 +91,7 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
   backend:
-    name: Backend tests, contracts, and audit
+    name: Backend quality, tests, contracts, and audit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -132,6 +132,9 @@ jobs:
 
       - name: Audit backend dependencies
         run: python -m pip_audit -r requirements.txt
+
+      - name: Lint backend Python
+        run: python -m ruff check app tests scripts
 
       - name: Run backend tests
         run: python -m pytest tests
