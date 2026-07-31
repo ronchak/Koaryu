@@ -55,7 +55,7 @@ Routine billing currently means only viewing existing billing state, attaching a
 
 ## Support and incident handling
 
-Signed-in users should use `/help/contact`; if the application route is unavailable, email `support@koaryu.app`. Include the studio name, affected page, approximate time, staff role, steps taken, expected result, and a non-sensitive screenshot when useful. For billing issues, include the payer name and visible invoice identifier, but never send passwords, card data, API keys, webhook secrets, or raw production exports.
+Signed-in users should use `/help/contact`; if the application route is unavailable, email `support@koaryu.app`. Include the studio name, affected page, approximate time, staff role, steps taken, expected result, and a non-sensitive screenshot when useful. If the failed request exposes an `X-Koaryu-Error-Reference`, include that opaque `err_...` value so the owner can correlate it with the restricted backend event. For billing issues, include the payer name and visible invoice identifier, but never send passwords, card data, API keys, webhook secrets, or raw production exports.
 
 The owner is the current incident and provider-alert recipient; email is preferred. Provider-native Vercel, Render, Supabase, and Stripe alerts are the primary signal. Any Codex or scheduled digest is supplemental and is not the sole real-time monitor. After every deployment, confirm the expected provider email alert path once and record the result.
 
