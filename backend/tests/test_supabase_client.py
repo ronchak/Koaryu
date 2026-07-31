@@ -272,6 +272,10 @@ def test_service_role_client_allows_shipped_placeholder_hostnames(supabase_url):
             "unexpected path",
         ),
         (
+            "https://hosted-project.supabase.co/",
+            "unexpected path",
+        ),
+        (
             "https://hosted-project.supabase.co?unexpected=query",
             "unexpected query",
         ),
@@ -303,14 +307,15 @@ def test_service_role_client_rejects_unsafe_url_despite_correct_pin(
 
 
 @pytest.mark.parametrize(
-    "supabase_url",
+    ("supabase_url", "reason"),
     [
-        "https://api.example.com:",
-        "https://api.example.com?",
-        "https://api.example.com#",
+        ("https://hosted-project.supabase.co:/", "empty port"),
+        ("https://hosted-project.supabase.co:", "empty port"),
+        ("https://hosted-project.supabase.co?", "empty URL delimiter"),
+        ("https://hosted-project.supabase.co#", "empty URL delimiter"),
     ],
 )
-def test_service_role_client_rejects_empty_trailing_url_delimiter(supabase_url):
+def test_service_role_client_rejects_empty_url_component(supabase_url, reason):
     settings = Settings(
         ENVIRONMENT="production",
         SUPABASE_URL=supabase_url,
@@ -321,21 +326,15 @@ def test_service_role_client_rejects_empty_trailing_url_delimiter(supabase_url):
     with (
         patch("app.db.supabase.get_settings", return_value=settings),
         patch("app.db.supabase.create_client") as sdk_create_client,
-        pytest.raises(SupabaseTargetError, match="empty URL delimiter"),
+        pytest.raises(SupabaseTargetError, match=reason),
     ):
         create_supabase_client()
 
     sdk_create_client.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "supabase_url",
-    [
-        "https://hosted-project.supabase.co",
-        "https://hosted-project.supabase.co/",
-    ],
-)
-def test_service_role_client_allows_exact_host_pin(supabase_url):
+def test_service_role_client_allows_exact_host_pin():
+    supabase_url = "https://hosted-project.supabase.co"
     settings = Settings(
         ENVIRONMENT="development",
         SUPABASE_URL=supabase_url,

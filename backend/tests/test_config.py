@@ -1,5 +1,7 @@
+import importlib
 import os
 import unittest
+from unittest.mock import patch
 
 from tests import environment as _test_environment  # noqa: F401
 
@@ -47,11 +49,21 @@ VALID_STAGING_SETTINGS = {
 
 
 class HostedConfigValidationTest(unittest.TestCase):
-    def test_test_process_uses_placeholder_supabase_url(self):
-        self.assertEqual(
-            os.environ["SUPABASE_URL"],
-            "https://placeholder.supabase.co",
-        )
+    def test_test_bootstrap_overrides_ambient_hosted_production_target(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ENVIRONMENT": "production",
+                "SUPABASE_URL": "https://mimguepumzsgmcaycdsh.supabase.co",
+            },
+        ):
+            importlib.reload(_test_environment)
+
+            self.assertEqual(os.environ["ENVIRONMENT"], "development")
+            self.assertEqual(
+                os.environ["SUPABASE_URL"],
+                "https://placeholder.supabase.co",
+            )
 
     def test_development_allows_placeholder_defaults(self):
         Settings(ENVIRONMENT="development").validate_runtime_configuration()
@@ -454,6 +466,43 @@ class SupabaseTargetValidationTest(unittest.TestCase):
 
         settings.validate_supabase_target()
 
+    def test_production_refuses_hosted_path_and_empty_port(self):
+        for url, reason in (
+            ("https://project.supabase.co:/", "empty port"),
+            ("https://project.supabase.co:", "empty port"),
+            ("https://project.supabase.co/", "unexpected path"),
+        ):
+            with self.subTest(url=url):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    SUPABASE_URL=url,
+                    SUPABASE_ALLOWED_HOSTED_HOST="",
+                )
+
+                with self.assertRaisesRegex(SupabaseTargetError, reason):
+                    settings.validate_supabase_target()
+
+    def test_production_refuses_invalid_project_dns_label(self):
+        for url in (
+            "https:// hosted-project.supabase.co",
+            "https://-hosted-project.supabase.co",
+            "https://hosted-project-.supabase.co",
+            "https://hosted_project.supabase.co",
+            f"https://{'a' * 64}.supabase.co",
+        ):
+            with self.subTest(url=url):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    SUPABASE_URL=url,
+                    SUPABASE_ALLOWED_HOSTED_HOST="",
+                )
+
+                with self.assertRaisesRegex(
+                    SupabaseTargetError,
+                    "not a supported hosted target",
+                ):
+                    settings.validate_supabase_target()
+
     def test_production_refuses_unsafe_transport(self):
         settings = Settings(
             ENVIRONMENT="production",
@@ -479,7 +528,6 @@ class SupabaseTargetValidationTest(unittest.TestCase):
 
     def test_empty_trailing_url_delimiters_are_refused(self):
         for url in (
-            "https://api.example.com:",
             "https://api.example.com?",
             "https://api.example.com#",
         ):

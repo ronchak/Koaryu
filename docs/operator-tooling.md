@@ -46,14 +46,17 @@ Python service-role clients created through `app.db.supabase` refuse a hosted
   targets, the two exact placeholder hostnames shipped by the backend defaults
   and `backend/.env.example`, or a Supabase-hosted hostname with an exact pin.
 
-Every non-local URL hostname must be pure ASCII and have exactly one non-empty
+Every non-local URL hostname must be pure ASCII and have exactly one valid DNS
 label followed by the literal `.supabase.co`; one trailing dot is tolerated.
+That first label is at most 63 ASCII alphanumeric or internal-hyphen characters
+and cannot begin or end with a hyphen.
 This excludes IP literals in every notation, unspecified addresses, IDNs, and
 all other hosted domains. Koaryu does not use a Supabase custom domain;
 adopting one requires a deliberate change to this guard and these runbooks.
 Non-local URLs must use HTTPS, omit embedded credentials, and omit the port or
-use `443`. Their path must be empty or a bare `/`, and they must omit the query
-and fragment. Any URL ending in an empty `:`, `?`, or `#` delimiter is refused.
+use `443`. Their path must be empty, and they must omit the query and fragment.
+An empty port is refused even when a path follows it, as are URLs ending in an
+empty `?` or `#` delimiter.
 Local loopback targets may continue to use HTTP on arbitrary ports.
 These checks protect the API plus `comp_studio.py`,
 `backfill_connected_account_branding.py`, `process_account_deletions.py`, and
@@ -69,11 +72,18 @@ considered.
 The pin does not replace each tool's narrower confirmations, including
 `comp_studio.py --expect-project`.
 
+The guard validates the URL passed to the SDK constructor. In supabase-py
+2.9.0, the Realtime URL is derived by replacing `http` with `ws` across that
+whole URL, so a project label containing `http` would produce a different
+Realtime hostname. Koaryu's backend does not open Realtime connections; this
+is a known upstream quirk that the target guard deliberately does not
+compensate for.
+
 Pytest is the supported backend test runner and the CI path. Its `conftest.py`
 loads `backend/tests/environment.py` so collection uses the shipped placeholder
-target; `test_config.py` also imports that bootstrap explicitly. Direct
-`unittest` execution of an individual test module is not supported: it does
-not load that bootstrap and will refuse at service-role client construction.
+target; `test_config.py` also imports that bootstrap explicitly. Running test
+modules directly under `unittest` is unsupported because pytest's `conftest.py`
+loads the bootstrap and `get_settings()` caches the environment on first use.
 
 Supabase CLI operations bypass backend `Settings` and this guard. Commands
 using `--linked`, helpers using `SUPABASE_DB_URL`, and direct CLI database or

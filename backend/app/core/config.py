@@ -83,10 +83,14 @@ def is_local_hostname(hostname: str) -> bool:
 def is_supabase_hosted_hostname(hostname: str) -> bool:
     normalized = hostname.removesuffix(".")
     labels = normalized.split(".")
+    project_ref = labels[0] if labels else ""
     return (
         hostname.isascii()
         and len(labels) == 3
-        and bool(labels[0])
+        and 1 <= len(project_ref) <= 63
+        and project_ref[0].isalnum()
+        and project_ref[-1].isalnum()
+        and all(character.isalnum() or character == "-" for character in project_ref)
         and labels[1:] == ["supabase", "co"]
     )
 
@@ -137,11 +141,14 @@ class Settings(BaseSettings):
             username = supabase_url.username
             password = supabase_url.password
             port = supabase_url.port
+            hostname_and_port = supabase_url.netloc.rsplit("@", 1)[-1]
+            has_empty_port = hostname_and_port.endswith(":")
         except ValueError:
             hostname = None
             username = None
             password = None
             port = None
+            has_empty_port = False
         if hostname is not None:
             hostname = hostname.lower()
 
@@ -155,11 +162,18 @@ class Settings(BaseSettings):
                 "a URL without a parseable hostname."
             )
 
-        if self.SUPABASE_URL.endswith((":", "?", "#")):
+        if has_empty_port:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an empty port; remove the ':' "
+                "after the hostname."
+            )
+
+        if self.SUPABASE_URL.endswith(("?", "#")):
             raise SupabaseTargetError(
                 "Refusing unsafe Supabase target: "
                 f"SUPABASE_URL host {target} ends with an empty URL delimiter; "
-                "remove the trailing ':', '?', or '#'."
+                "remove the trailing '?' or '#'."
             )
 
         is_local = is_local_hostname(hostname)
@@ -210,11 +224,11 @@ class Settings(BaseSettings):
                 f"SUPABASE_URL host {target} uses unexpected port {port}; non-local "
                 "targets must omit the port or use 443."
             )
-        if supabase_url.path not in ("", "/"):
+        if supabase_url.path:
             raise SupabaseTargetError(
                 "Refusing unsafe Supabase target: "
                 f"SUPABASE_URL host {target} has an unexpected path; non-local "
-                "targets must omit the path or use a bare /."
+                "targets must omit the path."
             )
         if supabase_url.query:
             raise SupabaseTargetError(
