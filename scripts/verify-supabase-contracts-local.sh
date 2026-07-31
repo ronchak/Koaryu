@@ -305,6 +305,12 @@ GRANT USAGE ON SCHEMA extensions TO anon, authenticated, service_role;
 -- and contracts, which is where digest() is actually resolved.
 ALTER DATABASE postgres SET search_path TO "$user", public, extensions;
 
+-- This ACL profile deliberately matches no Supabase project exactly. Older
+-- projects grant ALL on tables, functions and sequences; newly provisioned
+-- ones can have automatic Data API grants switched off altogether. CRUD is
+-- the middle ground that lets this repository's contracts run, which means
+-- privilege assertions are the one class of contract this harness cannot
+-- settle -- in either direction. See docs/operator-tooling.md.
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES
