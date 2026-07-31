@@ -141,7 +141,9 @@ curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. Readiness rechecks runtime configuration but does not yet probe Supabase or Stripe network availability.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. Readiness rechecks runtime configuration and performs one bounded, read-only Supabase Data API query: `SELECT id FROM public.studios LIMIT 1`. The synchronous client runs in a worker thread with a 1.5-second PostgREST timeout and a 2.0-second outer readiness deadline. It does not call Stripe or optional integrations; failures return a generic `503` while liveness remains successful. See [the runtime readiness contract](audit-notes/readiness-probes.md) for the exact guarantees and exclusions.
+
+Keep Render's provider health check on `/health` until the revised readiness behavior has been validated in staging and Render's routing behavior during dependency failure and recovery is understood. Treat a possible switch to `/health/ready` as a separate operational change.
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 
