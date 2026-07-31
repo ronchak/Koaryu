@@ -8,8 +8,25 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from app.core.config import Settings
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize("environment", ["production", "staging"])
+def test_api_type_generator_is_independent_of_ambient_environment(environment):
+    script_path = ROOT_DIR / "scripts" / "generate-api-types.py"
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--check"],
+        capture_output=True,
+        env={**os.environ, "ENVIRONMENT": environment},
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_local_supabase_contract_verifier_static_harness_contract():
@@ -91,6 +108,31 @@ def test_connect_smoke_signs_with_first_configured_secret(monkeypatch):
     monkeypatch.setenv("STRIPE_CONNECT_WEBHOOK_SECRET", " whsec_first ,\n whsec_second ")
 
     assert module._connect_webhook_secret() == "whsec_first"
+
+
+def test_connect_smoke_rejects_permissive_hosted_supabase_target(monkeypatch):
+    module = _load_connect_smoke_module()
+    settings = Settings(
+        ENVIRONMENT="development",
+        SUPABASE_URL="https://hosted-project.supabase.co",
+        SUPABASE_ALLOWED_HOSTED_HOST="",
+        SUPABASE_SERVICE_ROLE_KEY="fixture-service-role-key",
+    )
+    monkeypatch.setenv("SUPABASE_URL", settings.SUPABASE_URL)
+    monkeypatch.setenv(
+        "SUPABASE_SERVICE_ROLE_KEY",
+        settings.SUPABASE_SERVICE_ROLE_KEY,
+    )
+    monkeypatch.setattr("app.db.supabase.get_settings", lambda: settings)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "ENVIRONMENT=development.*hosted-project\\.supabase\\.co.*"
+            "SUPABASE_ALLOWED_HOSTED_HOST=hosted-project\\.supabase\\.co"
+        ),
+    ):
+        module._supabase_client()
 
 
 def test_support_triage_digest_fails_when_supabase_cli_is_missing(tmp_path):

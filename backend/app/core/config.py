@@ -1,13 +1,22 @@
-from pydantic_settings import BaseSettings
+import ipaddress
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
+from pydantic_settings import BaseSettings
+
 
 KOARYU_STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
 KOARYU_STAGING_FRONTEND_URL = (
     "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
+)
+DEFAULT_SUPABASE_URL = "https://placeholder.supabase.co"
+SHIPPED_PLACEHOLDER_SUPABASE_HOSTNAMES = frozenset(
+    {
+        "placeholder.supabase.co",
+        "your-project.supabase.co",
+    }
 )
 PERMISSIVE_ENVIRONMENTS = {"development", "test"}
 STRICT_ENVIRONMENTS = {"production", "staging"}
@@ -61,10 +70,41 @@ def has_minimum_secret_length(value: str, minimum: int = 32) -> bool:
     return len(value.strip()) >= minimum
 
 
+def is_local_hostname(hostname: str) -> bool:
+    normalized = hostname.removesuffix(".")
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def is_supabase_hosted_hostname(hostname: str) -> bool:
+    # A trailing dot is a legal DNS name that httpx passes through to TLS, where
+    # a *.supabase.co certificate no longer verifies against it.
+    labels = hostname.split(".")
+    project_ref = labels[0] if labels else ""
+    return (
+        hostname.isascii()
+        and len(labels) == 3
+        and 1 <= len(project_ref) <= 63
+        and project_ref[0].isalnum()
+        and project_ref[-1].isalnum()
+        and all(character.isalnum() or character == "-" for character in project_ref)
+        and labels[1:] == ["supabase", "co"]
+    )
+
+
+class SupabaseTargetError(RuntimeError):
+    """Raised when a service-role client would use an unsafe Supabase target."""
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    SUPABASE_URL: str = "https://placeholder.supabase.co"
+    SUPABASE_URL: str = DEFAULT_SUPABASE_URL
+    SUPABASE_ALLOWED_HOSTED_HOST: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = "placeholder-key"
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
     SUPABASE_ALLOW_LEGACY_HS256: bool = False
@@ -92,9 +132,177 @@ class Settings(BaseSettings):
         "extra": "ignore"
     }
 
+    def validate_supabase_target(self) -> None:
+        """Refuse service-role access to a Supabase target unsafe for its environment."""
+        environment = self.ENVIRONMENT.strip().lower()
+
+        try:
+            supabase_url = urlparse(self.SUPABASE_URL)
+            hostname = supabase_url.hostname
+            username = supabase_url.username
+            password = supabase_url.password
+            port = supabase_url.port
+            hostname_and_port = supabase_url.netloc.rsplit("@", 1)[-1]
+            has_empty_port = hostname_and_port.endswith(":")
+        except ValueError:
+            hostname = None
+            username = None
+            password = None
+            port = None
+            has_empty_port = False
+        if hostname is not None:
+            hostname = hostname.lower()
+
+        target = hostname or "<missing>"
+        environment_label = environment or "<empty>"
+        if hostname is None:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"ENVIRONMENT={environment_label} and SUPABASE_URL host {target} "
+                "cannot be validated. SUPABASE_ALLOWED_HOSTED_HOST cannot permit "
+                "a URL without a parseable hostname."
+            )
+
+        if has_empty_port:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an empty port; remove the ':' "
+                "after the hostname."
+            )
+
+        if self.SUPABASE_URL.endswith(("?", "#")):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} ends with an empty URL delimiter; "
+                "remove the trailing '?' or '#'."
+            )
+
+        # supabase-py concatenates rather than joins, so any component after the
+        # host lands inside the derived /rest/v1 route for local targets too.
+        if username is not None or password is not None:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} contains embedded credentials; remove "
+                "username and password from the URL."
+            )
+        if supabase_url.path:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected path; SUPABASE_URL "
+                "must end at the host."
+            )
+        if supabase_url.query:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected query; SUPABASE_URL "
+                "must end at the host."
+            )
+        if supabase_url.fragment:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected fragment; "
+                "SUPABASE_URL must end at the host."
+            )
+
+        is_local = is_local_hostname(hostname)
+        normalized_hostname = hostname.removesuffix(".")
+        is_shipped_placeholder = (
+            normalized_hostname in SHIPPED_PLACEHOLDER_SUPABASE_HOSTNAMES
+        )
+        if is_local:
+            # urlparse lowercases the scheme and tolerates leading whitespace;
+            # supabase-py matches the raw string against a case-sensitive pattern
+            # and would reject at construction what this guard had approved.
+            if not self.SUPABASE_URL.startswith(("http://", "https://")):
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    f"SUPABASE_URL host {target} is not written as a plain "
+                    "lowercase http:// or https:// URL; the Supabase client "
+                    "rejects any other spelling."
+                )
+            if environment == "staging":
+                staging_hostname = urlparse(KOARYU_STAGING_SUPABASE_URL).hostname
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    "ENVIRONMENT=staging: SUPABASE_URL must match Koaryu's pinned "
+                    f"staging project host {staging_hostname}; local host {target} "
+                    "is not allowed, "
+                    "and SUPABASE_ALLOWED_HOSTED_HOST cannot override staging identity."
+                )
+            if environment == "production":
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    f"ENVIRONMENT=production requires a non-placeholder hosted "
+                    f"SUPABASE_URL; local host {target} is not allowed."
+                )
+            return
+
+        if not is_supabase_hosted_hostname(hostname):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} is not a supported hosted target; "
+                "non-local targets must use exactly one non-empty ASCII label "
+                "followed by .supabase.co, with no trailing dot."
+            )
+        if supabase_url.scheme.lower() != "https":
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} would send service-role credentials over "
+                "plaintext; non-local targets must use https."
+            )
+        if not self.SUPABASE_URL.startswith("https://"):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} is not written as a plain lowercase "
+                "https:// URL; the Supabase client rejects any other spelling, so "
+                "the service would boot and then fail to build a client."
+            )
+        if port not in (None, 443):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} uses unexpected port {port}; non-local "
+                "targets must omit the port or use 443."
+            )
+
+        if environment == "staging":
+            staging_hostname = urlparse(KOARYU_STAGING_SUPABASE_URL).hostname
+            if normalized_hostname == staging_hostname:
+                return
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                "ENVIRONMENT=staging: SUPABASE_URL must match Koaryu's pinned staging "
+                f"project host {staging_hostname}; host {target} is not allowed, and "
+                "SUPABASE_ALLOWED_HOSTED_HOST cannot override staging identity."
+            )
+
+        if environment == "production":
+            if is_shipped_placeholder:
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    "ENVIRONMENT=production requires a non-placeholder hosted "
+                    f"SUPABASE_URL; placeholder host {target} is not allowed."
+                )
+            return
+
+        if is_shipped_placeholder:
+            return
+        allowed_hostname = (
+            self.SUPABASE_ALLOWED_HOSTED_HOST.strip().lower().removesuffix(".")
+        )
+        if allowed_hostname == normalized_hostname:
+            return
+        raise SupabaseTargetError(
+            "Refusing unsafe Supabase target: "
+            f"ENVIRONMENT={environment_label} and SUPABASE_URL host {target} "
+            "require an exact hosted-target pin. Set "
+            f"SUPABASE_ALLOWED_HOSTED_HOST={target} only when this exact hosted "
+            "target is deliberate."
+        )
+
     def validate_runtime_configuration(self) -> None:
         """Fail closed when a hosted environment has incomplete or unsafe config."""
         environment = self.ENVIRONMENT.strip().lower()
+        self.validate_supabase_target()
         if environment in PERMISSIVE_ENVIRONMENTS:
             return
         if environment not in STRICT_ENVIRONMENTS:

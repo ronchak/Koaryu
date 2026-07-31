@@ -30,7 +30,70 @@ Use these targets according to their safety boundary:
 
 Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
 
-Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database.
+Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database. The Supabase target guard below turns that same mismatch into a refusal for Python service-role clients, but it cannot reach the Supabase CLI, so resolving the hostname yourself remains the rule.
+
+## Supabase target guard
+
+Python service-role clients created through `app.db.supabase` refuse a hosted
+`SUPABASE_URL` unless the target is valid for the effective environment:
+
+- `staging` requires the parsed hostname from
+  `KOARYU_STAGING_SUPABASE_URL`. A hosted-target pin cannot override that
+  identity.
+- `production` permits a non-placeholder Supabase-hosted target without a
+  project-specific pin.
+- Development, test, unknown, and empty labels permit loopback or `.localhost`
+  targets, the two exact placeholder hostnames shipped by the backend defaults
+  and `backend/.env.example`, or a Supabase-hosted hostname with an exact pin.
+
+Every non-local URL hostname must resolve to a pure ASCII name with exactly one
+valid DNS label followed by the literal `.supabase.co`. A trailing dot is
+refused: it is a legal DNS name that httpx passes straight through to TLS, where
+a `*.supabase.co` certificate no longer verifies against it.
+That first label is at most 63 ASCII alphanumeric or internal-hyphen characters
+and cannot begin or end with a hyphen.
+The URL must also be written as a plain lowercase `https://` string with no
+leading whitespace, because supabase-py matches the raw value against a
+case-sensitive pattern and would reject at client construction what this guard
+had approved — leaving the service booted and reporting ready while every
+client build fails. This excludes IP literals in every notation, unspecified addresses, and
+all other hosted domains. Koaryu does not use a Supabase custom domain;
+adopting one requires a deliberate change to this guard and these runbooks.
+Non-local URLs must use HTTPS, omit embedded credentials, and omit the port or
+use `443`. Their path must be empty, and they must omit the query and fragment.
+An empty port is refused even when a path follows it, as are URLs ending in an
+empty `?` or `#` delimiter.
+Local loopback targets may continue to use HTTP on arbitrary ports.
+These checks protect the API plus `comp_studio.py`,
+`backfill_connected_account_branding.py`, `process_account_deletions.py`, and
+`verify-connect-webhook-smoke.py` at client construction time.
+
+For deliberate owner development against a hosted project, set
+`SUPABASE_ALLOWED_HOSTED_HOST` to the same `SUPABASE_URL` hostname only for that
+command or private shell after confirming the target. The comparison ignores
+case; any other hostname change invalidates the
+pin. The guard separately validates the hosted suffix, scheme, userinfo, port,
+path, query, fragment, and empty trailing delimiters before the pin is
+considered.
+The pin does not replace each tool's narrower confirmations, including
+`comp_studio.py --expect-project`.
+
+The guard validates the URL passed to the SDK constructor. In supabase-py
+2.9.0, the Realtime URL is derived by replacing `http` with `ws` across that
+whole URL, so a project label containing `http` would produce a different
+Realtime hostname. Koaryu's backend does not open Realtime connections; this
+is a known upstream quirk that the target guard deliberately does not
+compensate for.
+
+Pytest is the supported backend test runner and the CI path. Its `conftest.py`
+loads `backend/tests/environment.py` so collection uses the shipped placeholder
+target; `test_config.py` also imports that bootstrap explicitly. Running test
+modules directly under `unittest` is unsupported because pytest's `conftest.py`
+loads the bootstrap and `get_settings()` caches the environment on first use.
+
+Supabase CLI operations bypass backend `Settings` and this guard. Commands
+using `--linked`, helpers using `SUPABASE_DB_URL`, and direct CLI database or
+Storage operations must keep their existing target-specific confirmations.
 
 ## Studio platform comp access
 

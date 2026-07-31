@@ -9,6 +9,7 @@ import re
 import threading
 import unittest
 from contextlib import redirect_stderr
+from unittest.mock import patch
 
 from gotrue.types import User, UserResponse
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -273,6 +274,33 @@ def execute_args(command: str, *, actor: str = ACTOR_ID) -> list[str]:
 
 
 class CompStudioCliTests(unittest.TestCase):
+    def test_supabase_target_refusal_uses_cli_error_convention(self):
+        stderr = StringIO()
+        settings = comp_studio.get_settings().model_copy(
+            update={
+                "ENVIRONMENT": "development",
+                "SUPABASE_URL": "https://hosted-project.supabase.co",
+                "SUPABASE_ALLOWED_HOSTED_HOST": "",
+            }
+        )
+
+        with patch("app.db.supabase.get_settings", return_value=settings):
+            exit_code = comp_studio.main(
+                ["list"],
+                stdout=StringIO(),
+                stderr=stderr,
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertRegex(
+            stderr.getvalue(),
+            (
+                "^Error: Refusing unsafe Supabase target: "
+                "ENVIRONMENT=development.*hosted-project\\.supabase\\.co"
+            ),
+        )
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_revoke_legacy_comp_denies_access_through_real_evaluator(self):
         supabase = CompSupabase(subscriptions=[{
             "studio_id": STUDIO_ID,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests import environment as _test_environment  # noqa: F401
+
 from app.services import platform_billing_service
 
 
