@@ -129,7 +129,7 @@ def test_service_role_client_rejects_unsafe_production_transport():
     "supabase_url",
     [
         "https://hosted-project.supabase.co",
-        "https://HOSTED-PROJECT.SUPABASE.CO.",
+        "https://HOSTED-PROJECT.SUPABASE.CO",
     ],
 )
 def test_service_role_client_allows_safe_production_hosted_target(supabase_url):
@@ -233,7 +233,7 @@ def test_service_role_client_rejects_custom_domain_despite_matching_pin():
     "supabase_url",
     [
         "https://placeholder.supabase.co",
-        "https://YOUR-PROJECT.SUPABASE.CO.",
+        "https://YOUR-PROJECT.SUPABASE.CO",
     ],
 )
 def test_service_role_client_allows_shipped_placeholder_hostnames(supabase_url):

@@ -382,7 +382,7 @@ class SupabaseTargetValidationTest(unittest.TestCase):
 
     def test_only_shipped_placeholder_hostnames_are_allowed(self):
         urls = (
-            "https://YOUR-PROJECT.SUPABASE.CO.",
+            "https://YOUR-PROJECT.SUPABASE.CO",
             "https://placeholder.supabase.co",
         )
         for url in urls:
@@ -394,6 +394,53 @@ class SupabaseTargetValidationTest(unittest.TestCase):
                 )
 
                 settings.validate_supabase_target()
+
+    def test_hosted_target_requires_a_plain_lowercase_https_url(self):
+        # supabase-py matches the raw string case-sensitively, so a spelling this
+        # guard normalized away would boot the service and fail every client build.
+        for url in (
+            "HTTPS://hosted-project.supabase.co",
+            " https://hosted-project.supabase.co",
+        ):
+            with self.subTest(url=url):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    SUPABASE_URL=url,
+                    SUPABASE_ALLOWED_HOSTED_HOST="",
+                )
+
+                with self.assertRaisesRegex(
+                    SupabaseTargetError, "plain lowercase https:// URL"
+                ):
+                    settings.validate_supabase_target()
+
+    def test_hosted_target_rejects_a_trailing_dot(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            SUPABASE_URL="https://hosted-project.supabase.co.",
+            SUPABASE_ALLOWED_HOSTED_HOST="",
+        )
+
+        with self.assertRaisesRegex(SupabaseTargetError, "no trailing dot"):
+            settings.validate_supabase_target()
+
+    def test_local_targets_are_held_to_the_url_shape_rules(self):
+        for url, reason in (
+            ("ftp://localhost:54321", "lowercase http:// or https:// URL"),
+            ("http://localhost:54321/sub", "unexpected path"),
+            ("http://localhost:54321\u003fx=y", "unexpected query"),
+            ("http://localhost:54321#f", "unexpected fragment"),
+            ("http://user:pw@localhost:54321", "embedded credentials"),
+        ):
+            with self.subTest(url=url):
+                settings = Settings(
+                    ENVIRONMENT="development",
+                    SUPABASE_URL=url,
+                    SUPABASE_ALLOWED_HOSTED_HOST="",
+                )
+
+                with self.assertRaisesRegex(SupabaseTargetError, reason):
+                    settings.validate_supabase_target()
 
     def test_embedded_credentials_are_refused(self):
         settings = Settings(

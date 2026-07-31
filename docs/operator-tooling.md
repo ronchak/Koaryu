@@ -46,11 +46,17 @@ Python service-role clients created through `app.db.supabase` refuse a hosted
   targets, the two exact placeholder hostnames shipped by the backend defaults
   and `backend/.env.example`, or a Supabase-hosted hostname with an exact pin.
 
-Every non-local URL hostname must be pure ASCII and have exactly one valid DNS
-label followed by the literal `.supabase.co`; one trailing dot is tolerated.
+Every non-local URL hostname must resolve to a pure ASCII name with exactly one
+valid DNS label followed by the literal `.supabase.co`. A trailing dot is
+refused: it is a legal DNS name that httpx passes straight through to TLS, where
+a `*.supabase.co` certificate no longer verifies against it.
 That first label is at most 63 ASCII alphanumeric or internal-hyphen characters
 and cannot begin or end with a hyphen.
-This excludes IP literals in every notation, unspecified addresses, IDNs, and
+The URL must also be written as a plain lowercase `https://` string with no
+leading whitespace, because supabase-py matches the raw value against a
+case-sensitive pattern and would reject at client construction what this guard
+had approved — leaving the service booted and reporting ready while every
+client build fails. This excludes IP literals in every notation, unspecified addresses, and
 all other hosted domains. Koaryu does not use a Supabase custom domain;
 adopting one requires a deliberate change to this guard and these runbooks.
 Non-local URLs must use HTTPS, omit embedded credentials, and omit the port or
@@ -65,7 +71,7 @@ These checks protect the API plus `comp_studio.py`,
 For deliberate owner development against a hosted project, set
 `SUPABASE_ALLOWED_HOSTED_HOST` to the same `SUPABASE_URL` hostname only for that
 command or private shell after confirming the target. The comparison ignores
-case and one optional trailing dot; any other hostname change invalidates the
+case; any other hostname change invalidates the
 pin. The guard separately validates the hosted suffix, scheme, userinfo, port,
 path, query, fragment, and empty trailing delimiters before the pin is
 considered.

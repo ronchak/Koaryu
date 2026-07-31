@@ -72,11 +72,17 @@ Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_liv
 Before the hosted-only validation below, the backend checks the Supabase target.
 The same check runs before every shared service-role client is constructed, so
 standalone Python operator tools are covered even when FastAPI is not imported.
-Every non-local URL hostname must be pure ASCII and have exactly one valid DNS
-label followed by the literal `.supabase.co`; one trailing dot is tolerated.
+Every non-local URL hostname must resolve to a pure ASCII name with exactly one
+valid DNS label followed by the literal `.supabase.co`. A trailing dot is
+refused: it is a legal DNS name that httpx passes straight through to TLS, where
+a `*.supabase.co` certificate no longer verifies against it.
 That first label is at most 63 ASCII alphanumeric or internal-hyphen characters
 and cannot begin or end with a hyphen.
-This excludes IP literals in every notation, unspecified addresses, IDNs, and
+The URL must also be written as a plain lowercase `https://` string with no
+leading whitespace, because supabase-py matches the raw value against a
+case-sensitive pattern and would reject at client construction what this guard
+had approved — leaving the service booted and reporting ready while every
+client build fails. This excludes IP literals in every notation, unspecified addresses, and
 all other hosted domains. Koaryu does not use a Supabase custom domain;
 adopting one requires a deliberate change to this guard and these runbooks.
 Non-local URLs must use HTTPS, omit embedded credentials, and omit the port or
@@ -103,7 +109,7 @@ but does not hard-code or pin one production project. Development, test,
 unknown, and empty labels allow local targets, either exact placeholder
 hostname shipped in the backend defaults and `backend/.env.example`, or a
 Supabase-hosted target whose hostname matches `SUPABASE_ALLOWED_HOSTED_HOST`.
-The comparison ignores case and one optional trailing dot; any other hostname
+The comparison ignores case; any other hostname
 change invalidates that pin. Changing another URL component is handled by the
 URL-shape checks instead. Render pins the setting to an empty value.
 
@@ -122,7 +128,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critic
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
-`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. The Supabase target guard also rejects local and shipped-placeholder hosts in production; all non-ASCII hosts, IP literals, IDNs, custom domains, and other hosts outside the exact one-label `.supabase.co` suffix rule; embedded credentials; non-default or empty ports; paths; queries; fragments; and empty query or fragment delimiters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized configuration error and fix the named config vars before redeploying.
+`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. The Supabase target guard also rejects local and shipped-placeholder hosts in production; hosts whose effective name is not exactly one ASCII DNS label followed by `.supabase.co`, which excludes IP literals in every notation, unspecified addresses, trailing dots, and custom domains; URLs not written as a plain lowercase `https://` string; embedded credentials; non-default or empty ports; and any path, query, or fragment, including empty delimiters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized configuration error and fix the named config vars before redeploying.
 
 Staging is production-shaped but test-only. The client-construction guard requires the staging Supabase hostname even in standalone scripts; FastAPI startup additionally requires the exact `KOARYU_STAGING_SUPABASE_URL`. Staging also requires the pinned protected frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures, while the separate target guard prevents them from silently using an unpinned hosted database. An unknown or misspelled `ENVIRONMENT` fails closed during runtime validation.
 

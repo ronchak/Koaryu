@@ -81,8 +81,9 @@ def is_local_hostname(hostname: str) -> bool:
 
 
 def is_supabase_hosted_hostname(hostname: str) -> bool:
-    normalized = hostname.removesuffix(".")
-    labels = normalized.split(".")
+    # A trailing dot is a legal DNS name that httpx passes through to TLS, where
+    # a *.supabase.co certificate no longer verifies against it.
+    labels = hostname.split(".")
     project_ref = labels[0] if labels else ""
     return (
         hostname.isascii()
@@ -176,12 +177,49 @@ class Settings(BaseSettings):
                 "remove the trailing '?' or '#'."
             )
 
+        # supabase-py concatenates rather than joins, so any component after the
+        # host lands inside the derived /rest/v1 route for local targets too.
+        if username is not None or password is not None:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} contains embedded credentials; remove "
+                "username and password from the URL."
+            )
+        if supabase_url.path:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected path; SUPABASE_URL "
+                "must end at the host."
+            )
+        if supabase_url.query:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected query; SUPABASE_URL "
+                "must end at the host."
+            )
+        if supabase_url.fragment:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected fragment; "
+                "SUPABASE_URL must end at the host."
+            )
+
         is_local = is_local_hostname(hostname)
         normalized_hostname = hostname.removesuffix(".")
         is_shipped_placeholder = (
             normalized_hostname in SHIPPED_PLACEHOLDER_SUPABASE_HOSTNAMES
         )
         if is_local:
+            # urlparse lowercases the scheme and tolerates leading whitespace;
+            # supabase-py matches the raw string against a case-sensitive pattern
+            # and would reject at construction what this guard had approved.
+            if not self.SUPABASE_URL.startswith(("http://", "https://")):
+                raise SupabaseTargetError(
+                    "Refusing unsafe Supabase target: "
+                    f"SUPABASE_URL host {target} is not written as a plain "
+                    "lowercase http:// or https:// URL; the Supabase client "
+                    "rejects any other spelling."
+                )
             if environment == "staging":
                 staging_hostname = urlparse(KOARYU_STAGING_SUPABASE_URL).hostname
                 raise SupabaseTargetError(
@@ -204,13 +242,7 @@ class Settings(BaseSettings):
                 "Refusing unsafe Supabase target: "
                 f"SUPABASE_URL host {target} is not a supported hosted target; "
                 "non-local targets must use exactly one non-empty ASCII label "
-                "followed by .supabase.co."
-            )
-        if username is not None or password is not None:
-            raise SupabaseTargetError(
-                "Refusing unsafe Supabase target: "
-                f"SUPABASE_URL host {target} contains embedded credentials; remove "
-                "username and password from the URL."
+                "followed by .supabase.co, with no trailing dot."
             )
         if supabase_url.scheme.lower() != "https":
             raise SupabaseTargetError(
@@ -218,29 +250,18 @@ class Settings(BaseSettings):
                 f"SUPABASE_URL host {target} would send service-role credentials over "
                 "plaintext; non-local targets must use https."
             )
+        if not self.SUPABASE_URL.startswith("https://"):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} is not written as a plain lowercase "
+                "https:// URL; the Supabase client rejects any other spelling, so "
+                "the service would boot and then fail to build a client."
+            )
         if port not in (None, 443):
             raise SupabaseTargetError(
                 "Refusing unsafe Supabase target: "
                 f"SUPABASE_URL host {target} uses unexpected port {port}; non-local "
                 "targets must omit the port or use 443."
-            )
-        if supabase_url.path:
-            raise SupabaseTargetError(
-                "Refusing unsafe Supabase target: "
-                f"SUPABASE_URL host {target} has an unexpected path; non-local "
-                "targets must omit the path."
-            )
-        if supabase_url.query:
-            raise SupabaseTargetError(
-                "Refusing unsafe Supabase target: "
-                f"SUPABASE_URL host {target} has an unexpected query; non-local "
-                "targets must omit the query."
-            )
-        if supabase_url.fragment:
-            raise SupabaseTargetError(
-                "Refusing unsafe Supabase target: "
-                f"SUPABASE_URL host {target} has an unexpected fragment; non-local "
-                "targets must omit the fragment."
             )
 
         if environment == "staging":
