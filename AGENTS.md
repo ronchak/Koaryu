@@ -35,6 +35,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
+- Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 
 ## Monorepo Rules
@@ -60,10 +61,21 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 
 - For frontend-only changes, prefer `cd frontend && npm run lint -- <paths>` and other narrow checks before full builds.
 - For backend-only changes, prefer `cd backend && venv/bin/python -m pytest <tests>`.
+- For developing and reviewing contract SQL, default to `npm run check:supabase-contracts-local`. It applies the complete migration chain and every file under `supabase/verification/` to an ephemeral PostgreSQL 17 cluster without Docker, network access, a cloud project, or `.env` files.
 - For database changes, apply files not yet in local history with `supabase migration up --local`. If a changed migration may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then run `supabase db lint --local --fail-on error` and force local helpers with `SUPABASE_DB_TARGET=local`. Use linked checks only for an explicitly intended release inspection after the linked project has the migrations.
 - For release-shaped or cross-cutting changes, combine the relevant frontend, backend, and Supabase checks.
 - Every release-candidate PR must also receive the exact-head `Release candidate gate`; use `scripts/merge-release-pr.sh` with recorded head and base SHAs after the strict `main` ruleset is active.
 - For backend schema or response-contract changes, run `npm run check:api-types` and regenerate with `npm run generate:api-types` if needed.
+
+Database verification targets are:
+
+| Target | Use |
+| --- | --- |
+| local ephemeral cluster | Default for developing and reviewing contract SQL. |
+| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters; this project is currently inactive. |
+| production (`mimguepumzsgmcaycdsh`) | Read-only inspection only. Never run contract or migration SQL against it. |
+
+Contract files can create functions and triggers on real tables inside a transaction. A later `ROLLBACK` does not make production an acceptable target: never point contract or migration execution at production.
 
 ## Safety Boundaries
 

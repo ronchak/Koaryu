@@ -2,6 +2,36 @@
 
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
 
+## Database contract verification
+
+Use the repository-local PostgreSQL 17 harness by default when developing or reviewing migration and contract SQL:
+
+```bash
+npm run check:supabase-contracts-local
+```
+
+The harness needs a complete local PostgreSQL 17 toolchain (`initdb`, `pg_ctl`, and `psql`) with the `pgcrypto` extension files, which some Linux distributions package as PostgreSQL contrib. Run it as an unprivileged operating-system user; PostgreSQL refuses to initialize or run a cluster as root. The harness prefers a working PostgreSQL 17 toolchain on `PATH`, then checks common package locations. Set `KOARYU_PG_BIN_DIR` to an explicit PostgreSQL 17 `bin` directory when multiple versions are installed.
+
+It needs no Docker daemon, Supabase CLI login, cloud project, network access, secrets, or `.env` file. It creates a private-socket cluster under a short `/tmp` path, applies every migration in its own transaction, records the local migration history, and then runs every file in `supabase/verification/`. Concurrent runs use different private socket directories, even though their socket filenames share port number `5432`. It forwards `INT` and `TERM` to an active `initdb`, `pg_ctl`, or `psql` — the long-running commands — then stops and removes the cluster on success, failure, or interrupt. Short probes such as `--version`, `pg_config`, and `mktemp` are not wrapped, so a signal arriving while one of those is running is handled only once it returns. `SIGKILL` is untrappable and can leave a cluster behind.
+
+The compatibility shim supplies only the PostgreSQL roles, schemas, tables, auth claim helpers, and extension needed by this repository's current migrations and SQL contracts. Use staging when verification depends on the behavior of a full Supabase service rather than PostgreSQL alone.
+
+One divergence is worth naming because it can mislead in **both** directions. The shim's default privileges grant the API roles table CRUD and sequence `USAGE, SELECT`. That matches no Supabase project exactly: older projects grant `ALL` on tables, functions, and sequences, while newly provisioned projects can have automatic Data API grants disabled entirely. So a migration that creates a table without explicit `GRANT` statements can pass here and fail on a new project with `permission denied`, and a contract asserting the API roles *lack* a privilege such as `TRUNCATE` can pass here and fail on an older one. Privilege assertions are the one class of contract this harness cannot settle; verify those against the project era you actually deploy to.
+
+The current migration chain is transaction-compatible. The Supabase CLI can run a small class of commands such as `CREATE INDEX CONCURRENTLY` outside its per-file transaction; this harness deliberately fails instead because `psql --single-transaction` cannot reproduce that exception safely. Use the Supabase CLI and the appropriate non-production target if a future migration requires one of those commands.
+
+Use these targets according to their safety boundary:
+
+| Target | Use |
+| --- | --- |
+| local ephemeral cluster | Default for developing and reviewing contract SQL. |
+| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters; this project is currently inactive. |
+| production (`mimguepumzsgmcaycdsh`) | **Read-only inspection only. Never run contract or migration SQL against it.** |
+
+Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
+
+Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database.
+
 ## Studio platform comp access
 
 ### What it does
