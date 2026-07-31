@@ -46,26 +46,27 @@ Python service-role clients created through `app.db.supabase` refuse a hosted
   targets, the two exact placeholder hostnames shipped by the backend defaults
   and `backend/.env.example`, or a hosted hostname with an exact pin.
 
-Every non-local URL must use HTTPS, must omit embedded credentials, and must
-omit the port or use `443`. Local loopback targets may continue to use HTTP on
-arbitrary ports. These checks protect the API plus `comp_studio.py`,
+Every non-local URL must use a syntactically valid ASCII DNS hostname rather
+than an IP literal, use HTTPS, omit embedded credentials, and omit the port or
+use `443`. Its path must be empty or a bare `/`, and it must omit the query and
+fragment. Local loopback targets may continue to use HTTP on arbitrary ports.
+These checks protect the API plus `comp_studio.py`,
 `backfill_connected_account_branding.py`, `process_account_deletions.py`, and
 `verify-connect-webhook-smoke.py` at client construction time.
 
 For deliberate owner development against a hosted project, set
 `SUPABASE_ALLOWED_HOSTED_HOST` to the exact `SUPABASE_URL` hostname only for
 that command or private shell after confirming the target. Changing the
-hostname invalidates the pin; changing only the scheme, port, path, or userinfo
-does not change the hostname, so the separate transport checks enforce the
-safe URL shape before the pin is considered. The pin does not replace each
-tool's narrower confirmations, including `comp_studio.py --expect-project`.
+hostname invalidates the pin. The guard separately validates the hostname,
+scheme, userinfo, port, path, query, and fragment before the pin is considered.
+The pin does not replace each tool's narrower confirmations, including
+`comp_studio.py --expect-project`.
 
 Pytest is the supported backend test runner and the CI path. Its `conftest.py`
 loads `backend/tests/environment.py` so collection uses the shipped placeholder
 target; `test_config.py` also imports that bootstrap explicitly. Direct
-`unittest` execution of other test modules does not generally load it and is
-not covered by that bootstrap. The client-construction guard remains active in
-those processes rather than granting a general test-runner exemption.
+`unittest` execution of an individual test module is not supported: it does
+not load that bootstrap and will refuse at service-role client construction.
 
 Supabase CLI operations bypass backend `Settings` and this guard. Commands
 using `--linked`, helpers using `SUPABASE_DB_URL`, and direct CLI database or

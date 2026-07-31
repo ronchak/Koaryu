@@ -80,6 +80,23 @@ def is_local_hostname(hostname: str) -> bool:
         return False
 
 
+def is_ascii_dns_hostname(hostname: str) -> bool:
+    normalized = hostname.removesuffix(".")
+    labels = normalized.split(".")
+    return (
+        len(normalized) <= 253
+        and len(labels) >= 2
+        and all(
+            label
+            and len(label) <= 63
+            and label[0].isalnum()
+            and label[-1].isalnum()
+            and all(character.isalnum() or character == "-" for character in label)
+            for label in labels
+        )
+    )
+
+
 class SupabaseTargetError(RuntimeError):
     """Raised when a service-role client would use an unsafe Supabase target."""
 
@@ -166,6 +183,31 @@ class Settings(BaseSettings):
                 )
             return
 
+        if not hostname.isascii():
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} is non-ASCII; non-local targets must "
+                "use an ASCII DNS hostname."
+            )
+        normalized_hostname = hostname.removesuffix(".")
+        try:
+            ipaddress.ip_address(normalized_hostname)
+            is_ip_literal = True
+        except ValueError:
+            is_ip_literal = all(
+                label.isdecimal() for label in normalized_hostname.split(".")
+            )
+        if is_ip_literal:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} is an IP literal; non-local targets "
+                "must use an ASCII DNS hostname."
+            )
+        if not is_ascii_dns_hostname(hostname):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} is not a valid ASCII DNS hostname."
+            )
         if username is not None or password is not None:
             raise SupabaseTargetError(
                 "Refusing unsafe Supabase target: "
@@ -183,6 +225,24 @@ class Settings(BaseSettings):
                 "Refusing unsafe Supabase target: "
                 f"SUPABASE_URL host {target} uses unexpected port {port}; non-local "
                 "targets must omit the port or use 443."
+            )
+        if supabase_url.path not in ("", "/"):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected path; non-local "
+                "targets must omit the path or use a bare /."
+            )
+        if supabase_url.query:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected query; non-local "
+                "targets must omit the query."
+            )
+        if supabase_url.fragment:
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} has an unexpected fragment; non-local "
+                "targets must omit the fragment."
             )
 
         if environment == "staging":
