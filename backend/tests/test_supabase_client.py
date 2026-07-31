@@ -110,7 +110,7 @@ def test_service_role_client_allows_pinned_staging_target():
 def test_service_role_client_rejects_unsafe_production_transport():
     settings = Settings(
         ENVIRONMENT="production",
-        SUPABASE_URL="http://api.example.com:8080",
+        SUPABASE_URL="http://hosted-project.supabase.co:8080",
         SUPABASE_ALLOWED_HOSTED_HOST="",
         SUPABASE_SERVICE_ROLE_KEY="fixture-service-role-key",
     )
@@ -125,10 +125,17 @@ def test_service_role_client_rejects_unsafe_production_transport():
     sdk_create_client.assert_not_called()
 
 
-def test_service_role_client_allows_safe_production_hosted_target():
+@pytest.mark.parametrize(
+    "supabase_url",
+    [
+        "https://hosted-project.supabase.co",
+        "https://HOSTED-PROJECT.SUPABASE.CO.",
+    ],
+)
+def test_service_role_client_allows_safe_production_hosted_target(supabase_url):
     settings = Settings(
         ENVIRONMENT="production",
-        SUPABASE_URL="https://api.example.com",
+        SUPABASE_URL=supabase_url,
         SUPABASE_ALLOWED_HOSTED_HOST="",
         SUPABASE_SERVICE_ROLE_KEY="fixture-service-role-key",
     )
@@ -148,18 +155,18 @@ def test_service_role_client_allows_safe_production_hosted_target():
 
 
 @pytest.mark.parametrize(
-    ("supabase_url", "reason"),
+    "supabase_url",
     [
-        ("https://127。0。0。1", "non-ASCII"),
-        ("https://0.0.0.0", "IP literal"),
-        ("https://[::]", "IP literal"),
-        ("https://0", "IP literal"),
+        "https://0x7f.0.0.1",
+        "https://127.0.0x0.1",
+        "https://0x8.0x8.0x8.0x8",
+        "https://0.0.0.0",
+        "https://[::]",
+        "https://0",
+        "https://127。0。0。1",
     ],
 )
-def test_service_role_client_rejects_non_dns_production_target(
-    supabase_url,
-    reason,
-):
+def test_service_role_client_rejects_non_supabase_production_target(supabase_url):
     settings = Settings(
         ENVIRONMENT="production",
         SUPABASE_URL=supabase_url,
@@ -170,7 +177,7 @@ def test_service_role_client_rejects_non_dns_production_target(
     with (
         patch("app.db.supabase.get_settings", return_value=settings),
         patch("app.db.supabase.create_client") as sdk_create_client,
-        pytest.raises(SupabaseTargetError, match=reason),
+        pytest.raises(SupabaseTargetError, match="not a supported hosted target"),
     ):
         create_supabase_client()
 
@@ -180,8 +187,8 @@ def test_service_role_client_rejects_non_dns_production_target(
 @pytest.mark.parametrize(
     "supabase_url",
     [
-        "https://api.example.com",
-        "https://prod-placeholder.example.net",
+        "https://example-project.supabase.co",
+        "https://prod-placeholder.supabase.co",
     ],
 )
 def test_service_role_client_rejects_unshipped_placeholder_like_hostnames(
@@ -198,6 +205,24 @@ def test_service_role_client_rejects_unshipped_placeholder_like_hostnames(
         patch("app.db.supabase.get_settings", return_value=settings),
         patch("app.db.supabase.create_client") as sdk_create_client,
         pytest.raises(SupabaseTargetError, match="exact hosted-target pin"),
+    ):
+        create_supabase_client()
+
+    sdk_create_client.assert_not_called()
+
+
+def test_service_role_client_rejects_custom_domain_despite_matching_pin():
+    settings = Settings(
+        ENVIRONMENT="development",
+        SUPABASE_URL="https://api.example.com",
+        SUPABASE_ALLOWED_HOSTED_HOST="api.example.com",
+        SUPABASE_SERVICE_ROLE_KEY="fixture-service-role-key",
+    )
+
+    with (
+        patch("app.db.supabase.get_settings", return_value=settings),
+        patch("app.db.supabase.create_client") as sdk_create_client,
+        pytest.raises(SupabaseTargetError, match="not a supported hosted target"),
     ):
         create_supabase_client()
 
@@ -271,6 +296,32 @@ def test_service_role_client_rejects_unsafe_url_despite_correct_pin(
         patch("app.db.supabase.get_settings", return_value=settings),
         patch("app.db.supabase.create_client") as sdk_create_client,
         pytest.raises(SupabaseTargetError, match=reason),
+    ):
+        create_supabase_client()
+
+    sdk_create_client.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "supabase_url",
+    [
+        "https://api.example.com:",
+        "https://api.example.com?",
+        "https://api.example.com#",
+    ],
+)
+def test_service_role_client_rejects_empty_trailing_url_delimiter(supabase_url):
+    settings = Settings(
+        ENVIRONMENT="production",
+        SUPABASE_URL=supabase_url,
+        SUPABASE_ALLOWED_HOSTED_HOST="",
+        SUPABASE_SERVICE_ROLE_KEY="fixture-service-role-key",
+    )
+
+    with (
+        patch("app.db.supabase.get_settings", return_value=settings),
+        patch("app.db.supabase.create_client") as sdk_create_client,
+        pytest.raises(SupabaseTargetError, match="empty URL delimiter"),
     ):
         create_supabase_client()
 

@@ -40,25 +40,32 @@ Python service-role clients created through `app.db.supabase` refuse a hosted
 - `staging` requires the parsed hostname from
   `KOARYU_STAGING_SUPABASE_URL`. A hosted-target pin cannot override that
   identity.
-- `production` permits a non-local, non-placeholder hosted target without a
+- `production` permits a non-placeholder Supabase-hosted target without a
   project-specific pin.
 - Development, test, unknown, and empty labels permit loopback or `.localhost`
   targets, the two exact placeholder hostnames shipped by the backend defaults
-  and `backend/.env.example`, or a hosted hostname with an exact pin.
+  and `backend/.env.example`, or a Supabase-hosted hostname with an exact pin.
 
-Every non-local URL must use a syntactically valid ASCII DNS hostname rather
-than an IP literal, use HTTPS, omit embedded credentials, and omit the port or
-use `443`. Its path must be empty or a bare `/`, and it must omit the query and
-fragment. Local loopback targets may continue to use HTTP on arbitrary ports.
+Every non-local URL hostname must be pure ASCII and have exactly one non-empty
+label followed by the literal `.supabase.co`; one trailing dot is tolerated.
+This excludes IP literals in every notation, unspecified addresses, IDNs, and
+all other hosted domains. Koaryu does not use a Supabase custom domain;
+adopting one requires a deliberate change to this guard and these runbooks.
+Non-local URLs must use HTTPS, omit embedded credentials, and omit the port or
+use `443`. Their path must be empty or a bare `/`, and they must omit the query
+and fragment. Any URL ending in an empty `:`, `?`, or `#` delimiter is refused.
+Local loopback targets may continue to use HTTP on arbitrary ports.
 These checks protect the API plus `comp_studio.py`,
 `backfill_connected_account_branding.py`, `process_account_deletions.py`, and
 `verify-connect-webhook-smoke.py` at client construction time.
 
 For deliberate owner development against a hosted project, set
-`SUPABASE_ALLOWED_HOSTED_HOST` to the exact `SUPABASE_URL` hostname only for
-that command or private shell after confirming the target. Changing the
-hostname invalidates the pin. The guard separately validates the hostname,
-scheme, userinfo, port, path, query, and fragment before the pin is considered.
+`SUPABASE_ALLOWED_HOSTED_HOST` to the same `SUPABASE_URL` hostname only for that
+command or private shell after confirming the target. The comparison ignores
+case and one optional trailing dot; any other hostname change invalidates the
+pin. The guard separately validates the hosted suffix, scheme, userinfo, port,
+path, query, fragment, and empty trailing delimiters before the pin is
+considered.
 The pin does not replace each tool's narrower confirmations, including
 `comp_studio.py --expect-project`.
 

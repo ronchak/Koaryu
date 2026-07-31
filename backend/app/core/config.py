@@ -80,20 +80,14 @@ def is_local_hostname(hostname: str) -> bool:
         return False
 
 
-def is_ascii_dns_hostname(hostname: str) -> bool:
+def is_supabase_hosted_hostname(hostname: str) -> bool:
     normalized = hostname.removesuffix(".")
     labels = normalized.split(".")
     return (
-        len(normalized) <= 253
-        and len(labels) >= 2
-        and all(
-            label
-            and len(label) <= 63
-            and label[0].isalnum()
-            and label[-1].isalnum()
-            and all(character.isalnum() or character == "-" for character in label)
-            for label in labels
-        )
+        hostname.isascii()
+        and len(labels) == 3
+        and bool(labels[0])
+        and labels[1:] == ["supabase", "co"]
     )
 
 
@@ -161,9 +155,17 @@ class Settings(BaseSettings):
                 "a URL without a parseable hostname."
             )
 
+        if self.SUPABASE_URL.endswith((":", "?", "#")):
+            raise SupabaseTargetError(
+                "Refusing unsafe Supabase target: "
+                f"SUPABASE_URL host {target} ends with an empty URL delimiter; "
+                "remove the trailing ':', '?', or '#'."
+            )
+
         is_local = is_local_hostname(hostname)
+        normalized_hostname = hostname.removesuffix(".")
         is_shipped_placeholder = (
-            hostname.removesuffix(".") in SHIPPED_PLACEHOLDER_SUPABASE_HOSTNAMES
+            normalized_hostname in SHIPPED_PLACEHOLDER_SUPABASE_HOSTNAMES
         )
         if is_local:
             if environment == "staging":
@@ -183,30 +185,12 @@ class Settings(BaseSettings):
                 )
             return
 
-        if not hostname.isascii():
+        if not is_supabase_hosted_hostname(hostname):
             raise SupabaseTargetError(
                 "Refusing unsafe Supabase target: "
-                f"SUPABASE_URL host {target} is non-ASCII; non-local targets must "
-                "use an ASCII DNS hostname."
-            )
-        normalized_hostname = hostname.removesuffix(".")
-        try:
-            ipaddress.ip_address(normalized_hostname)
-            is_ip_literal = True
-        except ValueError:
-            is_ip_literal = all(
-                label.isdecimal() for label in normalized_hostname.split(".")
-            )
-        if is_ip_literal:
-            raise SupabaseTargetError(
-                "Refusing unsafe Supabase target: "
-                f"SUPABASE_URL host {target} is an IP literal; non-local targets "
-                "must use an ASCII DNS hostname."
-            )
-        if not is_ascii_dns_hostname(hostname):
-            raise SupabaseTargetError(
-                "Refusing unsafe Supabase target: "
-                f"SUPABASE_URL host {target} is not a valid ASCII DNS hostname."
+                f"SUPABASE_URL host {target} is not a supported hosted target; "
+                "non-local targets must use exactly one non-empty ASCII label "
+                "followed by .supabase.co."
             )
         if username is not None or password is not None:
             raise SupabaseTargetError(
@@ -247,7 +231,7 @@ class Settings(BaseSettings):
 
         if environment == "staging":
             staging_hostname = urlparse(KOARYU_STAGING_SUPABASE_URL).hostname
-            if hostname == staging_hostname:
+            if normalized_hostname == staging_hostname:
                 return
             raise SupabaseTargetError(
                 "Refusing unsafe Supabase target: "
@@ -267,7 +251,10 @@ class Settings(BaseSettings):
 
         if is_shipped_placeholder:
             return
-        if self.SUPABASE_ALLOWED_HOSTED_HOST.strip().lower() == hostname:
+        allowed_hostname = (
+            self.SUPABASE_ALLOWED_HOSTED_HOST.strip().lower().removesuffix(".")
+        )
+        if allowed_hostname == normalized_hostname:
             return
         raise SupabaseTargetError(
             "Refusing unsafe Supabase target: "

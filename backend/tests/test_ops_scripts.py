@@ -16,6 +16,19 @@ from app.core.config import Settings
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("environment", ["production", "staging"])
+def test_api_type_generator_is_independent_of_ambient_environment(environment):
+    script_path = ROOT_DIR / "scripts" / "generate-api-types.py"
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--check"],
+        capture_output=True,
+        env={**os.environ, "ENVIRONMENT": environment},
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_local_supabase_contract_verifier_static_harness_contract():
     script_path = ROOT_DIR / "scripts" / "verify-supabase-contracts-local.sh"
     script = script_path.read_text(encoding="utf-8")

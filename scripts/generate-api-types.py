@@ -57,7 +57,9 @@ def literal(value: Any) -> str:
 
 
 def load_openapi() -> dict[str, Any]:
-    # Contract generation must not inherit a developer's stateful database target.
+    # A self-consistent fixture keeps ambient hosted configuration from
+    # changing the schema.
+    os.environ["ENVIRONMENT"] = "development"
     os.environ["SUPABASE_URL"] = "https://placeholder.supabase.co"
     sys.path.insert(0, str(BACKEND_DIR))
     with warnings.catch_warnings():

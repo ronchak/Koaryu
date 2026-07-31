@@ -448,7 +448,7 @@ class SupabaseTargetValidationTest(unittest.TestCase):
     def test_production_allows_an_ordinary_safe_hosted_target(self):
         settings = Settings(
             ENVIRONMENT="production",
-            SUPABASE_URL="https://api.example.com",
+            SUPABASE_URL="https://project.supabase.co",
             SUPABASE_ALLOWED_HOSTED_HOST="",
         )
 
@@ -457,12 +457,44 @@ class SupabaseTargetValidationTest(unittest.TestCase):
     def test_production_refuses_unsafe_transport(self):
         settings = Settings(
             ENVIRONMENT="production",
-            SUPABASE_URL="http://api.example.com:8080",
+            SUPABASE_URL="http://project.supabase.co:8080",
             SUPABASE_ALLOWED_HOSTED_HOST="",
         )
 
         with self.assertRaisesRegex(SupabaseTargetError, "plaintext"):
             settings.validate_supabase_target()
+
+    def test_matching_pin_cannot_allow_a_custom_domain(self):
+        settings = Settings(
+            ENVIRONMENT="development",
+            SUPABASE_URL="https://api.example.com",
+            SUPABASE_ALLOWED_HOSTED_HOST="api.example.com",
+        )
+
+        with self.assertRaisesRegex(
+            SupabaseTargetError,
+            "not a supported hosted target",
+        ):
+            settings.validate_supabase_target()
+
+    def test_empty_trailing_url_delimiters_are_refused(self):
+        for url in (
+            "https://api.example.com:",
+            "https://api.example.com?",
+            "https://api.example.com#",
+        ):
+            with self.subTest(url=url):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    SUPABASE_URL=url,
+                    SUPABASE_ALLOWED_HOSTED_HOST="",
+                )
+
+                with self.assertRaisesRegex(
+                    SupabaseTargetError,
+                    "empty URL delimiter",
+                ):
+                    settings.validate_supabase_target()
 
 
 if __name__ == "__main__":
