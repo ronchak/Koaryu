@@ -54,6 +54,21 @@ outside this Python boundary, so continue resolving their target explicitly.
 `backend/scripts/comp_studio.py` additionally requires `--expect-project` for
 writes.
 
+## Studio-comp migration rollout
+
+Use [the specialized rollout packet](studio-comp-migration-rollout.md) to
+generate and inspect the exact production-baseline-to-candidate migration set.
+The runner defaults to read-only inspection, derives an `84 -> N` packet from an
+immutable candidate, and refuses partial history/object states or ambient proxy
+or TLS trust override variables before credentialed work. It names refused
+variables without printing values and does not treat Supabase version/name
+history as proof of source-file identity.
+
+Agents may not run its production apply mode. Staging inspection must precede a
+dry-run or application, and production application requires a named human,
+durable approval, confirmed restore window, restore decision authority, and the
+approved staging provider fingerprint.
+
 ## Studio platform comp access
 
 ### What it does

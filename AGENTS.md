@@ -35,6 +35,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
+- Generate or verify the guarded studio-comp database rollout packet: `node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>`
 - Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 

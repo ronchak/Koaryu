@@ -125,6 +125,20 @@ Operator: `Codex release orchestrator`
 - The restore drill still lacks an authenticated tenant-safe application read. The current Supabase Free plan has no proven native daily-backup or PITR entitlement, so the provisional RPO of 24 hours and RTO of 4 hours remain unproven planning targets.
 - The backup key remains in macOS Keychain. Copying it to a physically controlled recovery flash drive remains a human-only action; no key material belongs in this repository or release evidence.
 
+## Studio-Comp Migration Rollout Packet — 2026-07-31
+
+- Phase: A tooling and documentation only; provider mutation remains locked.
+- Inspected source baseline: `da2e02c250643d9d39be0bb0c76764ad4ba48605` with 86 migrations and 29 local SQL contracts.
+- Fixed production pre-state: 84 ordered migration identities, digest `57ae4269ef4d75c249d59ef297661a3a`, through `20260713173000_fail_closed_ambiguous_staff_rls`.
+- Provisional source packet: `84 -> 86`; pending pair `20260727100000_atomic_studio_comp_management.sql`, `20260727110000_order_billing_events_after_studio_comps.sql`; manifest SHA-256 `ab6dfd24935124f825fe578d063789f2db40900afa52d7f49240b49d3d390fe0`.
+- Identity limitation: Supabase migration history has `version`, `name`, and parsed `statements`, but no intrinsic content hash; the packet does not claim that remote version rows prove source-file identity. Final proof requires exact version sequence plus staging/production function, trigger, ownership, security, search-path, and ACL equality.
+- Regeneration rule: after Owner 3/4 migrations integrate, regenerate the exact `84 -> N` packet from the immutable final candidate. Do not reuse the provisional 86-migration post-state.
+- Compatibility boundary: both July files are transaction-compatible additive/replacement DDL, but the pair is not atomic across files. It is schema-compatible with reported production application `6596cc5`; the comp feature is not operationally compatible because that application still clears `comped` directly and never calls the new ordering RPC.
+- Staging state: provider health was read-only confirmed separately; the latest migration-list attempt returned `INVALID_ARGUMENT`, and a prior direct SQL attempt reportedly timed out. Staging inspection must succeed once before any dry-run or application. No retry loop, provider write, contract execution, or Auth fixture occurred in Phase A.
+- Production gate: agents never execute production migration or contract SQL. Human application remains blocked on staging rehearsal/fingerprint, exact final candidate and pending set, explicit approval, confirmed PITR/restore window, and a named restore decision authority.
+- Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
+- Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
