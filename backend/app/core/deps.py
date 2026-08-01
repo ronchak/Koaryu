@@ -4,7 +4,11 @@ from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
 from app.core.security import get_user_id_from_token
-from app.db.supabase import create_supabase_client
+from app.db.supabase import (
+    DeadlineBoundSupabaseClient,
+    create_operational_alert_supabase_client,
+    create_supabase_client,
+)
 from app.services.studio_scope import (
     resolve_belt_configuration_admin_staff_role_for_user,
     resolve_lead_conversion_manager_staff_role_for_user,
@@ -19,6 +23,7 @@ from supabase import Client
 security = HTTPBearer(auto_error=False)
 ACTIVE_STUDIO_COOKIE = "koaryu-active-studio"
 AUTHENTICATION_REQUIRED_DETAIL = "Invalid authentication token"
+OPERATIONAL_ALERT_POSTGREST_TIMEOUT_SECONDS = 1.5
 
 
 def _authentication_exception() -> HTTPException:
@@ -51,6 +56,13 @@ async def get_current_user_id(
 async def get_supabase() -> Client:
     """FastAPI dependency that provides an isolated Supabase admin client."""
     return create_supabase_client()
+
+
+async def get_operational_alert_supabase() -> DeadlineBoundSupabaseClient:
+    """Provide an isolated client whose RPC timeout fits the evaluator budget."""
+    return create_operational_alert_supabase_client(
+        postgrest_client_timeout=OPERATIONAL_ALERT_POSTGREST_TIMEOUT_SECONDS,
+    )
 
 
 async def get_requested_studio_id(

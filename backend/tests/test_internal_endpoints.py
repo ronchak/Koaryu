@@ -1,12 +1,16 @@
 import hashlib
+import asyncio
+import threading
+import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException, Response
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import internal
 from app.core.config import get_settings
-from app.core.deps import get_supabase
+from app.core.deps import get_operational_alert_supabase, get_supabase
 from app.main import app
 from app.schemas.account import AccountDeletionProcessFailure, AccountDeletionProcessResponse
 from app.schemas.support import SupportTicketResponse
@@ -49,6 +53,7 @@ class InternalEndpointTest(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         app.dependency_overrides[get_supabase] = lambda: object()
+        app.dependency_overrides[get_operational_alert_supabase] = lambda: object()
         internal.get_settings.cache_clear()
         internal.get_settings = get_settings
 
@@ -254,6 +259,165 @@ class InternalEndpointTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["mode"], "https")
         alert_service_class.return_value.evaluate.assert_called_once()
+
+    def test_operational_alert_worker_owns_lock_until_sync_evaluation_exits(self):
+        started = threading.Event()
+        release = threading.Event()
+        completed = threading.Event()
+        result = {
+            "environment": "staging",
+            "mode": "https",
+            "metrics": {},
+            "lifecycle_events": {},
+            "deliveries_claimed": 0,
+            "deliveries_delivered": 0,
+            "deliveries_failed": 0,
+            "heartbeat_recorded": True,
+            "heartbeat_sequence": 1,
+        }
+
+        def blocking_evaluate(**_kwargs):
+            started.set()
+            release.wait(timeout=1)
+            completed.set()
+            return result
+
+        with (
+            patch("app.api.v1.endpoints.internal.HttpsAlertDestination.from_settings"),
+            patch("app.api.v1.endpoints.internal.OperationalAlertService") as service_class,
+        ):
+            service_class.return_value.evaluate.side_effect = blocking_evaluate
+            worker = threading.Thread(
+                target=internal._run_operational_alert_evaluation,
+                kwargs={
+                    "supabase": object(),
+                    "settings": EnabledAlertSettings(),
+                    "environment": "staging",
+                    "commit_sha": None,
+                    "deadline_monotonic": time.monotonic() + 1,
+                },
+            )
+            worker.start()
+            try:
+                self.assertTrue(started.wait(timeout=1))
+
+                with self.assertRaises(internal._OperationalAlertEvaluationBusy):
+                    internal._run_operational_alert_evaluation(
+                        supabase=object(),
+                        settings=EnabledAlertSettings(),
+                        environment="staging",
+                        commit_sha=None,
+                        deadline_monotonic=time.monotonic() + 1,
+                    )
+
+                self.assertFalse(completed.is_set())
+                self.assertTrue(worker.is_alive())
+            finally:
+                release.set()
+                worker.join(timeout=1)
+
+        self.assertTrue(completed.is_set())
+        self.assertFalse(worker.is_alive())
+
+    def test_expired_queued_evaluation_performs_no_destination_or_rpc_work(self):
+        with (
+            patch(
+                "app.api.v1.endpoints.internal.HttpsAlertDestination.from_settings"
+            ) as destination_factory,
+            patch(
+                "app.api.v1.endpoints.internal.OperationalAlertService"
+            ) as service_class,
+            self.assertRaisesRegex(
+                internal.OperationalAlertDeadlineExceeded,
+                "deadline exceeded",
+            ),
+        ):
+            internal._run_operational_alert_evaluation(
+                supabase=object(),
+                settings=EnabledAlertSettings(),
+                environment="staging",
+                commit_sha=None,
+                deadline_monotonic=time.monotonic() - 1,
+            )
+
+        destination_factory.assert_not_called()
+        service_class.assert_not_called()
+
+    def test_operational_alert_evaluator_stays_off_loop_and_overlap_is_truthful(self):
+        async def exercise():
+            started = threading.Event()
+            release = threading.Event()
+            completed = threading.Event()
+            result = {
+                "environment": "staging",
+                "mode": "https",
+                "metrics": {
+                    "stripe-live-webhook-failure": 0,
+                    "account-deletion-worker-overdue": 0,
+                    "support-urgent-untriaged": 0,
+                    "billing-reconciliation-stale": 0,
+                },
+                "lifecycle_events": {},
+                "deliveries_claimed": 0,
+                "deliveries_delivered": 0,
+                "deliveries_failed": 0,
+                "heartbeat_recorded": True,
+                "heartbeat_sequence": 1,
+            }
+
+            evaluation_calls = 0
+
+            def blocking_evaluate(**_kwargs):
+                nonlocal evaluation_calls
+                evaluation_calls += 1
+                if evaluation_calls == 1:
+                    started.set()
+                    release.wait(timeout=1)
+                    completed.set()
+                return result
+
+            with (
+                patch("app.api.v1.endpoints.internal.get_settings", return_value=EnabledAlertSettings()),
+                patch("app.api.v1.endpoints.internal.HttpsAlertDestination.from_settings"),
+                patch("app.api.v1.endpoints.internal.OperationalAlertService") as service_class,
+            ):
+                service_class.return_value.evaluate.side_effect = blocking_evaluate
+                first = asyncio.create_task(internal.evaluate_operational_alerts(
+                    internal_secret=EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET,
+                    supabase=object(),
+                ))
+                try:
+                    self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                    first.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await first
+
+                    from app.api.v1.endpoints.health import health_live
+
+                    health_payload = await health_live(Response())
+                    self.assertEqual(health_payload["status"], "ok")
+
+                    with self.assertRaises(HTTPException) as overlap:
+                        await internal.evaluate_operational_alerts(
+                            internal_secret=EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET,
+                            supabase=object(),
+                        )
+                    self.assertEqual(overlap.exception.status_code, 409)
+                    self.assertEqual(
+                        overlap.exception.detail,
+                        "Operational alert evaluation is already in progress.",
+                    )
+                    self.assertFalse(completed.is_set())
+                finally:
+                    release.set()
+                self.assertTrue(await asyncio.to_thread(completed.wait, 1))
+                resumed = await internal.evaluate_operational_alerts(
+                    internal_secret=EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET,
+                    supabase=object(),
+                )
+                self.assertEqual(resumed["heartbeat_sequence"], 1)
+
+        asyncio.run(exercise())
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=EnabledAlertSettings())
     @patch("app.api.v1.endpoints.internal.OperationalAlertService")

@@ -1,11 +1,14 @@
 import logging
 import os
 import secrets
+import threading
+import time
 from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from starlette.concurrency import run_in_threadpool
 from supabase import Client
 
 from app.core.config import (
@@ -14,7 +17,7 @@ from app.core.config import (
     get_settings,
     validate_raw_header_value,
 )
-from app.core.deps import get_supabase
+from app.core.deps import get_operational_alert_supabase, get_supabase
 from app.schemas.account import AccountDeletionProcessResponse
 from app.schemas.operational_alerts import (
     OperationalAlertAcknowledgementResponse,
@@ -29,11 +32,21 @@ from app.schemas.support import (
     SupportTriageFilters,
 )
 from app.services.account_service import AccountService
-from app.services.operational_alerts import HttpsAlertDestination, OperationalAlertService
+from app.services.operational_alerts import (
+    EVALUATION_BATCH_TIMEOUT_SECONDS,
+    HttpsAlertDestination,
+    OperationalAlertDeadlineExceeded,
+    OperationalAlertService,
+)
 from app.services.support_service import SupportService
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 logger = logging.getLogger(__name__)
+_OPERATIONAL_ALERT_EVALUATION_LOCK = threading.Lock()
+
+
+class _OperationalAlertEvaluationBusy(RuntimeError):
+    pass
 
 
 def _verify_secret(provided: Optional[str], expected: str, purpose: str) -> None:
@@ -78,6 +91,32 @@ def _verify_operational_alert_target(environment: str, supabase_url: str) -> str
     )
 
 
+def _run_operational_alert_evaluation(
+    *,
+    supabase: Client,
+    settings,
+    environment: str,
+    commit_sha: str | None,
+    deadline_monotonic: float,
+):
+    """Own the overlap lock for the full lifetime of the synchronous worker."""
+    if not _OPERATIONAL_ALERT_EVALUATION_LOCK.acquire(blocking=False):
+        raise _OperationalAlertEvaluationBusy
+    try:
+        if time.monotonic() >= deadline_monotonic:
+            raise OperationalAlertDeadlineExceeded(
+                "operational alert evaluation deadline exceeded"
+            )
+        destination = HttpsAlertDestination.from_settings(settings)
+        return OperationalAlertService(supabase, destination=destination).evaluate(
+            environment=environment,
+            commit_sha=commit_sha,
+            deadline_monotonic=deadline_monotonic,
+        )
+    finally:
+        _OPERATIONAL_ALERT_EVALUATION_LOCK.release()
+
+
 @router.post("/account-deletions/process-due", response_model=AccountDeletionProcessResponse)
 async def process_due_account_deletions(
     response: Response,
@@ -118,7 +157,7 @@ async def process_due_account_deletions(
 )
 async def evaluate_operational_alerts(
     internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
-    supabase: Client = Depends(get_supabase),
+    supabase: Client = Depends(get_operational_alert_supabase),
 ):
     settings = get_settings()
     if not settings.OPERATIONAL_ALERTS_ENABLED:
@@ -135,11 +174,28 @@ async def evaluate_operational_alerts(
         settings.OPERATIONAL_ALERT_WORKER_SECRET,
         "Operational alert evaluator",
     )
-    destination = HttpsAlertDestination.from_settings(settings)
-    return OperationalAlertService(supabase, destination=destination).evaluate(
-        environment=environment,
-        commit_sha=os.environ.get("RENDER_GIT_COMMIT"),
-    )
+    deadline_monotonic = time.monotonic() + EVALUATION_BATCH_TIMEOUT_SECONDS
+    try:
+        return await run_in_threadpool(
+            _run_operational_alert_evaluation,
+            supabase=supabase,
+            settings=settings,
+            environment=environment,
+            commit_sha=os.environ.get("RENDER_GIT_COMMIT"),
+            deadline_monotonic=deadline_monotonic,
+        )
+    except _OperationalAlertEvaluationBusy:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Operational alert evaluation is already in progress.",
+            headers={"Retry-After": "30"},
+        ) from None
+    except OperationalAlertDeadlineExceeded:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Operational alert evaluation exceeded its safe deadline.",
+            headers={"Retry-After": "30"},
+        ) from None
 
 
 @router.post(

@@ -50,6 +50,10 @@ class HttpsConnection(Protocol):
 
     def getresponse(self) -> http.client.HTTPResponse: ...
 
+    def set_timeout(self, timeout: float) -> None: ...
+
+    def abort(self) -> None: ...
+
     def close(self) -> None: ...
 
 
@@ -75,6 +79,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def connect(self) -> None:
         raw_socket = socket.socket(self._pinned_address.family, socket.SOCK_STREAM)
         raw_socket.settimeout(self.timeout)
+        self.sock = raw_socket
         try:
             raw_socket.connect(self._pinned_address.socket_address)
             # self.host remains the original DNS hostname, preserving both SNI
@@ -82,8 +87,23 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             # prevalidated numeric address.
             self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
         except Exception:
+            self.sock = None
             raw_socket.close()
             raise
+
+    def set_timeout(self, timeout: float) -> None:
+        self.timeout = timeout
+        if self.sock is not None:
+            self.sock.settimeout(timeout)
+
+    def abort(self) -> None:
+        active_socket = self.sock
+        if active_socket is not None:
+            try:
+                active_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        self.close()
 
 
 def _default_connection_factory(
@@ -105,18 +125,30 @@ class PinnedHttpsTransport:
         connection_factory: ConnectionFactory = _default_connection_factory,
         timeout_seconds: float = 10.0,
         max_response_bytes: int = 4096,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._resolver = resolver
         self._connection_factory = connection_factory
         self._timeout_seconds = timeout_seconds
         self._max_response_bytes = max_response_bytes
+        self._clock = clock
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         if max_response_bytes < 1:
             raise ValueError("max_response_bytes must be positive")
 
-    def pin(self, url: str, expected_hostname: str) -> PinnedHttpsTarget:
-        deadline = time.monotonic() + self._timeout_seconds
+    def pin(
+        self,
+        url: str,
+        expected_hostname: str,
+        *,
+        deadline_monotonic: float | None = None,
+    ) -> PinnedHttpsTarget:
+        deadline = (
+            deadline_monotonic
+            if deadline_monotonic is not None
+            else self._clock() + self._timeout_seconds
+        )
         parsed = urlsplit(url)
         if (
             parsed.scheme != "https"
@@ -188,7 +220,7 @@ class PinnedHttpsTransport:
                 outcome.put_nowait((False, exc))
 
         threading.Thread(target=resolve_once, daemon=True).start()
-        remaining = deadline - time.monotonic()
+        remaining = deadline - self._clock()
         if remaining <= 0:
             raise PinnedHttpsError("destination_timeout")
         try:
@@ -210,21 +242,24 @@ class PinnedHttpsTransport:
         body: bytes,
     ) -> PinnedHttpsResponse:
         address = target.addresses[address_index % len(target.addresses)]
-        remaining = target.deadline_monotonic - time.monotonic()
-        if remaining <= 0:
-            raise PinnedHttpsError("destination_timeout")
+        remaining = self._remaining(target.deadline_monotonic)
         connection = self._connection_factory(
             target.hostname,
             target.port,
             address,
             remaining,
         )
+        deadline_watchdog = threading.Timer(remaining, connection.abort)
+        deadline_watchdog.daemon = True
+        deadline_watchdog.start()
         try:
+            connection.set_timeout(self._remaining(target.deadline_monotonic))
             connection.request(method, target.request_target, body=body, headers=headers)
+            connection.set_timeout(self._remaining(target.deadline_monotonic))
             response = connection.getresponse()
+            connection.set_timeout(self._remaining(target.deadline_monotonic))
             payload = response.read(self._max_response_bytes + 1)
-            if time.monotonic() > target.deadline_monotonic:
-                raise PinnedHttpsError("destination_timeout")
+            self._remaining(target.deadline_monotonic)
             if len(payload) > self._max_response_bytes:
                 raise PinnedHttpsError("destination_response_too_large")
             response_headers = {
@@ -232,6 +267,15 @@ class PinnedHttpsTransport:
             }
             return PinnedHttpsResponse(response.status, response_headers, payload)
         except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+            if self._clock() >= target.deadline_monotonic:
+                raise PinnedHttpsError("destination_timeout") from exc
             raise PinnedHttpsError("destination_transport_failure") from exc
         finally:
+            deadline_watchdog.cancel()
             connection.close()
+
+    def _remaining(self, deadline_monotonic: float) -> float:
+        remaining = deadline_monotonic - self._clock()
+        if remaining <= 0:
+            raise PinnedHttpsError("destination_timeout")
+        return remaining

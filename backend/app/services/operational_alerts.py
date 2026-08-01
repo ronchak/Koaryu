@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
+import time
 from typing import Any, Mapping, Protocol
 from uuid import UUID, uuid4
 
@@ -19,9 +20,17 @@ from app.services.supabase_rpc import execute_required_rpc, first_rpc_row, rpc_r
 
 COUNTS_ONLY_REDACTION_POLICY = "counts-only-v1"
 MAX_DELIVERIES_PER_EVALUATION = 32
+EVALUATION_BATCH_TIMEOUT_SECONDS = 16.0
+EVALUATION_CLEANUP_RESERVE_SECONDS = 3.5
+EVALUATION_RPC_START_RESERVE_SECONDS = 1.75
+DELIVERY_LEASE_SECONDS = 30
 
 
 class OperationalAlertError(RuntimeError):
+    pass
+
+
+class OperationalAlertDeadlineExceeded(OperationalAlertError):
     pass
 
 
@@ -99,7 +108,12 @@ RULES_BY_ID = {rule.rule_id: rule for rule in APPLICATION_ALERT_RULES}
 class AlertDestination(Protocol):
     mode: str
 
-    def deliver(self, envelope: Mapping[str, Any]) -> str: ...
+    def deliver(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        deadline_monotonic: float,
+    ) -> str: ...
 
 
 class RecordingAlertDestination:
@@ -111,7 +125,12 @@ class RecordingAlertDestination:
         self.deliveries: list[dict[str, Any]] = []
         self._receipts_by_attempt: dict[str, str] = {}
 
-    def deliver(self, envelope: Mapping[str, Any]) -> str:
+    def deliver(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        deadline_monotonic: float,
+    ) -> str:
         if envelope.get("mode") != self.mode:
             raise OperationalAlertError("recording adapter requires recording-only mode")
         attempt_key = str(envelope.get("attempt_key") or "")
@@ -211,7 +230,12 @@ class HttpsAlertDestination:
             ),
         })
 
-    def deliver(self, envelope: Mapping[str, Any]) -> str:
+    def deliver(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        deadline_monotonic: float,
+    ) -> str:
         if envelope.get("mode") != self.mode:
             raise AlertDeliveryError("invalid_envelope_mode")
         role = str(envelope.get("destination_role") or "")
@@ -232,7 +256,11 @@ class HttpsAlertDestination:
             "X-Koaryu-Destination-Fingerprint": destination.url_fingerprint,
         }
         try:
-            target = self.transport.pin(destination.url, destination.hostname)
+            target = self.transport.pin(
+                destination.url,
+                destination.hostname,
+                deadline_monotonic=deadline_monotonic,
+            )
         except PinnedHttpsError as exc:
             raise AlertDeliveryError(str(exc)) from None
 
@@ -266,21 +294,41 @@ class HttpsAlertDestination:
 
 
 class OperationalAlertService:
-    def __init__(self, supabase: Client, *, destination: AlertDestination | None = None):
+    def __init__(
+        self,
+        supabase: Client,
+        *,
+        destination: AlertDestination | None = None,
+        clock=time.monotonic,
+    ):
         self.supabase = supabase
         self.destination = destination or RecordingAlertDestination()
+        self._clock = clock
 
-    def evaluate(self, *, environment: str, commit_sha: str | None) -> dict[str, Any]:
+    def evaluate(
+        self,
+        *,
+        environment: str,
+        commit_sha: str | None,
+        deadline_monotonic: float | None = None,
+    ) -> dict[str, Any]:
+        hard_deadline = (
+            deadline_monotonic
+            if deadline_monotonic is not None
+            else self._clock() + EVALUATION_BATCH_TIMEOUT_SECONDS
+        )
+        work_deadline = hard_deadline - EVALUATION_CLEANUP_RESERVE_SECONDS
+        self._require_rpc_window(work_deadline)
         normalized_environment = _safe_environment(environment)
         normalized_commit = _safe_commit_sha(commit_sha)
-        metrics = self._metric_counts()
+        metrics = self._metric_counts(work_deadline)
         lifecycle_events: dict[str, str] = {}
 
         for rule in APPLICATION_ALERT_RULES:
             observed_count = metrics.get(rule.metric)
             if observed_count is None:
                 raise OperationalAlertError(f"missing aggregate metric: {rule.metric}")
-            result = execute_required_rpc(self.supabase, "evaluate_operational_alert", {
+            result = self._execute_rpc_once("evaluate_operational_alert", {
                 "p_environment": normalized_environment,
                 "p_rule_id": rule.rule_id,
                 "p_observed_count": observed_count,
@@ -292,17 +340,22 @@ class OperationalAlertService:
                 "p_severity": rule.severity,
                 "p_commit_sha": normalized_commit,
                 "p_actor_ref": "scheduled-evaluator",
-            })
+            }, deadline_monotonic=work_deadline)
             row = first_rpc_row(result)
             if not row or not isinstance(row.get("lifecycle_event"), str):
                 raise OperationalAlertError(f"evaluation result unavailable for {rule.rule_id}")
             lifecycle_events[rule.rule_id] = row["lifecycle_event"]
 
-        delivery_summary = self._drain_outbox(normalized_environment)
+        delivery_summary = self._drain_outbox(
+            normalized_environment,
+            work_deadline=work_deadline,
+            hard_deadline=hard_deadline,
+        )
         heartbeat_sequence = self.record_heartbeat(
             environment=normalized_environment,
             worker_id="evaluator",
             commit_sha=normalized_commit,
+            deadline_monotonic=hard_deadline,
         )
         return {
             "environment": normalized_environment,
@@ -320,12 +373,26 @@ class OperationalAlertService:
         environment: str,
         worker_id: str,
         commit_sha: str | None,
+        deadline_monotonic: float | None = None,
     ) -> int:
-        result = execute_required_rpc(self.supabase, "record_operational_alert_heartbeat", {
+        params = {
             "p_environment": _safe_environment(environment),
             "p_worker_id": worker_id,
             "p_commit_sha": _safe_commit_sha(commit_sha),
-        })
+        }
+        result = (
+            self._execute_rpc_once(
+                "record_operational_alert_heartbeat",
+                params,
+                deadline_monotonic=deadline_monotonic,
+            )
+            if deadline_monotonic is not None
+            else execute_required_rpc(
+                self.supabase,
+                "record_operational_alert_heartbeat",
+                params,
+            )
+        )
         row = first_rpc_row(result)
         sequence = row.get("sequence") if row else None
         if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 1:
@@ -365,11 +432,11 @@ class OperationalAlertService:
             "acknowledged_by_role": acknowledged_role,
         }
 
-    def _metric_counts(self) -> dict[str, int]:
-        rows = rpc_rows(execute_required_rpc(
-            self.supabase,
+    def _metric_counts(self, deadline_monotonic: float) -> dict[str, int]:
+        rows = rpc_rows(self._execute_rpc_once(
             "operational_alert_metric_counts",
             {},
+            deadline_monotonic=deadline_monotonic,
         ))
         metrics: dict[str, int] = {}
         for row in rows:
@@ -389,13 +456,21 @@ class OperationalAlertService:
             raise OperationalAlertError("aggregate snapshot is incomplete")
         return metrics
 
-    def _drain_outbox(self, environment: str) -> dict[str, int]:
+    def _drain_outbox(
+        self,
+        environment: str,
+        *,
+        work_deadline: float,
+        hard_deadline: float,
+    ) -> dict[str, int]:
         claimed = 0
         delivered = 0
         failed = 0
         lease_token = _new_lease_token()
         proven_empty = False
         for _ in range(MAX_DELIVERIES_PER_EVALUATION):
+            if not self._has_rpc_window(work_deadline):
+                break
             attempt_key = _new_attempt_key()
             row = first_rpc_row(self._execute_delivery_rpc(
                 "claim_operational_alert_delivery",
@@ -403,8 +478,9 @@ class OperationalAlertService:
                     "p_environment": environment,
                     "p_lease_token": lease_token,
                     "p_attempt_key": attempt_key,
-                    "p_lease_seconds": 300,
+                    "p_lease_seconds": DELIVERY_LEASE_SECONDS,
                 },
+                deadline_monotonic=work_deadline,
             ))
             if not row:
                 proven_empty = True
@@ -417,7 +493,10 @@ class OperationalAlertService:
                     environment=environment,
                     mode=self.destination.mode,
                 )
-                receipt = self.destination.deliver(envelope)
+                receipt = self.destination.deliver(
+                    envelope,
+                    deadline_monotonic=work_deadline,
+                )
                 completed = self._execute_delivery_rpc(
                     "complete_operational_alert_delivery",
                     {
@@ -425,6 +504,7 @@ class OperationalAlertService:
                         "p_lease_token": lease_token,
                         "p_receipt": receipt,
                     },
+                    deadline_monotonic=work_deadline,
                 )
                 if getattr(completed, "data", None) is not True:
                     raise OperationalAlertError("delivery receipt was not durably accepted")
@@ -437,12 +517,16 @@ class OperationalAlertService:
                         if isinstance(exc, AlertDeliveryError)
                         else "alert_delivery_failed"
                     )
-                    self._execute_delivery_rpc("fail_operational_alert_delivery", {
-                        "p_attempt_id": attempt_id,
-                        "p_lease_token": lease_token,
-                        "p_error_code": error_code,
-                        "p_retry_after_seconds": _retry_after_seconds(row.get("attempt_number")),
-                    })
+                    self._execute_delivery_rpc(
+                        "fail_operational_alert_delivery",
+                        {
+                            "p_attempt_id": attempt_id,
+                            "p_lease_token": lease_token,
+                            "p_error_code": error_code,
+                            "p_retry_after_seconds": _retry_after_seconds(row.get("attempt_number")),
+                        },
+                        deadline_monotonic=hard_deadline,
+                    )
         if not proven_empty or failed > 0 or claimed != delivered:
             raise OperationalAlertError("operational alert outbox did not drain safely")
         return {
@@ -451,12 +535,71 @@ class OperationalAlertService:
             "deliveries_failed": failed,
         }
 
-    def _execute_delivery_rpc(self, name: str, params: dict[str, Any]) -> Any:
+    def _execute_rpc_once(
+        self,
+        name: str,
+        params: dict[str, Any],
+        *,
+        deadline_monotonic: float,
+    ) -> Any:
+        self._require_rpc_window(deadline_monotonic)
+        execute_with_deadline = getattr(
+            self.supabase,
+            "execute_rpc_with_deadline",
+            None,
+        )
+        try:
+            result = (
+                execute_with_deadline(name, params, deadline_monotonic)
+                if callable(execute_with_deadline)
+                else execute_required_rpc(self.supabase, name, params)
+            )
+        except TimeoutError as exc:
+            raise OperationalAlertDeadlineExceeded(
+                "operational alert evaluation deadline exceeded"
+            ) from exc
+        except Exception as exc:
+            if self._clock() >= deadline_monotonic:
+                raise OperationalAlertDeadlineExceeded(
+                    "operational alert evaluation deadline exceeded"
+                ) from exc
+            raise
+        if self._clock() >= deadline_monotonic:
+            raise OperationalAlertDeadlineExceeded(
+                "operational alert evaluation deadline exceeded"
+            )
+        return result
+
+    def _has_rpc_window(self, deadline_monotonic: float) -> bool:
+        return (
+            deadline_monotonic - self._clock()
+            >= EVALUATION_RPC_START_RESERVE_SECONDS
+        )
+
+    def _require_rpc_window(self, deadline_monotonic: float) -> None:
+        if not self._has_rpc_window(deadline_monotonic):
+            raise OperationalAlertDeadlineExceeded(
+                "operational alert evaluation deadline exceeded"
+            )
+
+    def _execute_delivery_rpc(
+        self,
+        name: str,
+        params: dict[str, Any],
+        *,
+        deadline_monotonic: float,
+    ) -> Any:
         """Retry once with the same lease/attempt identity after an ambiguous RPC error."""
         first_error: Exception | None = None
         for _ in range(2):
             try:
-                return execute_required_rpc(self.supabase, name, params)
+                return self._execute_rpc_once(
+                    name,
+                    params,
+                    deadline_monotonic=deadline_monotonic,
+                )
+            except OperationalAlertDeadlineExceeded:
+                raise
             except Exception as exc:
                 if first_error is not None:
                     raise exc from first_error

@@ -1,4 +1,7 @@
 import hashlib
+import asyncio
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -14,6 +17,7 @@ from app.services.operational_alerts import (
     OperationalAlertService,
     RecordingAlertDestination,
 )
+from app.db.supabase import DeadlineBoundSupabaseClient
 from app.services.pinned_https import PinnedHttpsResponse
 
 
@@ -100,7 +104,7 @@ class OrderedDestination:
         self.events = events
         self.fail = fail
 
-    def deliver(self, envelope):
+    def deliver(self, envelope, *, deadline_monotonic):
         self.events.append(("destination.deliver", dict(envelope)))
         if self.fail:
             raise RuntimeError("synthetic recording failure")
@@ -128,6 +132,8 @@ class OperationalAlertServiceTest(unittest.TestCase):
         self.assertEqual(result["deliveries_failed"], 0)
         completion = database.events[completion_index][1]
         self.assertTrue(completion["p_receipt"].startswith("recorded:"))
+        claim = database.events[claim_index][1]
+        self.assertEqual(claim["p_lease_seconds"], 30)
 
     def test_delivery_failure_is_recorded_without_sent_completion(self):
         database = FakeAlertDatabase(claim_count=2)
@@ -162,6 +168,146 @@ class OperationalAlertServiceTest(unittest.TestCase):
         self.assertIn("complete_operational_alert_delivery", names)
         self.assertNotIn("record_operational_alert_heartbeat", names)
 
+    def test_batch_deadline_stops_backlog_without_false_heartbeat(self):
+        class Clock:
+            now = 100.0
+
+            def __call__(self):
+                return self.now
+
+        class AdvancingDestination(OrderedDestination):
+            def deliver(self, envelope, *, deadline_monotonic):
+                receipt = super().deliver(
+                    envelope,
+                    deadline_monotonic=deadline_monotonic,
+                )
+                clock.now = 110.0
+                return receipt
+
+        class ClockDatabase(FakeAlertDatabase):
+            def rpc(self, name, params):
+                result = super().rpc(name, params)
+                if name == "complete_operational_alert_delivery":
+                    clock.now = 111.0
+                return result
+
+        clock = Clock()
+        database = ClockDatabase(claim_count=2)
+        destination = AdvancingDestination(database.events)
+
+        with self.assertRaisesRegex(OperationalAlertError, "did not drain safely"):
+            OperationalAlertService(
+                database,
+                destination=destination,
+                clock=clock,
+            ).evaluate(
+                environment="staging",
+                commit_sha=COMMIT_SHA,
+                deadline_monotonic=116.0,
+            )
+
+        names = [event[0] for event in database.events]
+        self.assertEqual(names.count("claim_operational_alert_delivery"), 1)
+        self.assertEqual(names.count("complete_operational_alert_delivery"), 1)
+        self.assertNotIn("record_operational_alert_heartbeat", names)
+
+    def test_delivery_deadline_failure_is_persisted_before_heartbeat_is_suppressed(self):
+        class Clock:
+            now = 100.0
+
+            def __call__(self):
+                return self.now
+
+        class TimingOutDestination(OrderedDestination):
+            def deliver(self, envelope, *, deadline_monotonic):
+                clock.now = deadline_monotonic
+                raise AlertDeliveryError("destination_timeout")
+
+        clock = Clock()
+        database = FakeAlertDatabase(claim_count=1)
+
+        with self.assertRaisesRegex(OperationalAlertError, "did not drain safely"):
+            OperationalAlertService(
+                database,
+                destination=TimingOutDestination(database.events),
+                clock=clock,
+            ).evaluate(
+                environment="staging",
+                commit_sha=COMMIT_SHA,
+                deadline_monotonic=116.0,
+            )
+
+        names = [event[0] for event in database.events]
+        self.assertIn("fail_operational_alert_delivery", names)
+        self.assertNotIn("complete_operational_alert_delivery", names)
+        self.assertNotIn("record_operational_alert_heartbeat", names)
+        failure = next(
+            params for name, params in database.events
+            if name == "fail_operational_alert_delivery"
+        )
+        self.assertEqual(failure["p_error_code"], "destination_timeout")
+
+    def test_slow_rpc_is_aborted_at_absolute_deadline_without_heartbeat(self):
+        cancelled = threading.Event()
+        closed = threading.Event()
+        rpc_names = []
+
+        class BlockingQuery:
+            async def execute(self):
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+
+        class AsyncClient:
+            def rpc(self, name, params):
+                rpc_names.append(name)
+                return BlockingQuery()
+
+            @property
+            def postgrest(self):
+                return self
+
+            async def aclose(self):
+                closed.set()
+
+        async def client_factory(*_args, **_kwargs):
+            return AsyncClient()
+
+        database = DeadlineBoundSupabaseClient(
+            "https://example.supabase.co",
+            "header.payload.signature",
+            postgrest_client_timeout=120,
+            async_client_factory=client_factory,
+        )
+        started = time.monotonic()
+        with (
+            patch(
+                "app.services.operational_alerts.EVALUATION_CLEANUP_RESERVE_SECONDS",
+                0.01,
+            ),
+            patch(
+                "app.services.operational_alerts.EVALUATION_RPC_START_RESERVE_SECONDS",
+                0.01,
+            ),
+            self.assertRaisesRegex(
+                OperationalAlertError,
+                "deadline exceeded",
+            ),
+        ):
+            OperationalAlertService(database).evaluate(
+                environment="staging",
+                commit_sha=COMMIT_SHA,
+                deadline_monotonic=time.monotonic() + 0.04,
+            )
+
+        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertTrue(cancelled.is_set())
+        self.assertTrue(closed.is_set())
+        self.assertEqual(rpc_names, ["operational_alert_metric_counts"])
+        self.assertNotIn("record_operational_alert_heartbeat", rpc_names)
+
     def test_ambiguous_claim_retries_with_the_same_lease_and_attempt_key(self):
         database = FakeAlertDatabase(fail_execute_once="claim_operational_alert_delivery")
 
@@ -185,8 +331,9 @@ class OperationalAlertServiceTest(unittest.TestCase):
             "attempt_key": "11111111-1111-4111-8111-111111111111",
         }
 
-        first = adapter.deliver(envelope)
-        second = adapter.deliver(envelope)
+        deadline = time.monotonic() + 1
+        first = adapter.deliver(envelope, deadline_monotonic=deadline)
+        second = adapter.deliver(envelope, deadline_monotonic=deadline)
 
         self.assertEqual(first, second)
         self.assertEqual(len(adapter.deliveries), 1)
@@ -235,9 +382,14 @@ class HttpsAlertDestinationTest(unittest.TestCase):
             self.handler = handler
             self.url = None
 
-        def pin(self, url, expected_hostname):
+        def pin(self, url, expected_hostname, *, deadline_monotonic):
             self.url = url
-            return SimpleNamespace(url=url, hostname=expected_hostname, addresses=("pinned",))
+            return SimpleNamespace(
+                url=url,
+                hostname=expected_hostname,
+                addresses=("pinned",),
+                deadline_monotonic=deadline_monotonic,
+            )
 
         def request(self, target, *, address_index, method, headers, body):
             request = httpx.Request(method, self.url, headers=headers, content=body)
@@ -317,7 +469,10 @@ class HttpsAlertDestinationTest(unittest.TestCase):
             requests.append(request)
             return httpx.Response(200, json={"receipt_id": "receipt-1"})
 
-        receipt = self._destination(handler).deliver(self._envelope())
+        receipt = self._destination(handler).deliver(
+            self._envelope(),
+            deadline_monotonic=time.monotonic() + 1,
+        )
 
         self.assertEqual(receipt, "receipt-1")
         self.assertEqual(requests[0].headers["idempotency-key"], self._envelope()["attempt_key"])
@@ -332,7 +487,10 @@ class HttpsAlertDestinationTest(unittest.TestCase):
                 return httpx.Response(503, json={"receipt_id": "ignored"})
             return httpx.Response(200, json={"receipt_id": "receipt-2"})
 
-        receipt = self._destination(handler).deliver(self._envelope())
+        receipt = self._destination(handler).deliver(
+            self._envelope(),
+            deadline_monotonic=time.monotonic() + 1,
+        )
 
         self.assertEqual(receipt, "receipt-2")
         self.assertEqual(keys, [self._envelope()["attempt_key"]] * 2)
@@ -341,11 +499,17 @@ class HttpsAlertDestinationTest(unittest.TestCase):
         with self.assertRaisesRegex(AlertDeliveryError, "redirect_refused"):
             self._destination(
                 lambda request: httpx.Response(302, headers={"location": "https://other.example/"}),
-            ).deliver(self._envelope())
+            ).deliver(
+                self._envelope(),
+                deadline_monotonic=time.monotonic() + 1,
+            )
         with self.assertRaisesRegex(AlertDeliveryError, "receipt_shape_invalid"):
             self._destination(
                 lambda request: httpx.Response(200, json={"receipt_id": "ok", "extra": True}),
-            ).deliver(self._envelope())
+            ).deliver(
+                self._envelope(),
+                deadline_monotonic=time.monotonic() + 1,
+            )
 
 
 if __name__ == "__main__":

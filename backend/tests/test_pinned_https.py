@@ -31,12 +31,19 @@ class _Connection:
         self.response = response or _Response()
         self.requests = []
         self.closed = False
+        self.timeouts = []
 
     def request(self, method, url, body=None, headers=None):
         self.requests.append((method, url, body, headers))
 
     def getresponse(self):
         return self.response
+
+    def set_timeout(self, timeout):
+        self.timeouts.append(timeout)
+
+    def abort(self):
+        self.close()
 
     def close(self):
         self.closed = True
@@ -165,6 +172,41 @@ class PinnedHttpsTransportTest(unittest.TestCase):
 
         with self.assertRaisesRegex(PinnedHttpsError, "too_large"):
             transport.request(target, address_index=0, method="POST", headers={}, body=b"{}")
+
+    def test_absolute_deadline_interrupts_a_blocked_body_read(self):
+        closed = threading.Event()
+
+        class BlockingResponse(_Response):
+            def read(self, amount):
+                closed.wait()
+                raise OSError("synthetic closed socket")
+
+        class BlockingConnection(_Connection):
+            def close(self):
+                self.closed = True
+                closed.set()
+
+        connection = BlockingConnection(BlockingResponse())
+        transport = PinnedHttpsTransport(
+            resolver=lambda *_args, **_kwargs: [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("8.8.8.8", 443)),
+            ],
+            connection_factory=lambda *_args: connection,
+        )
+        deadline = time.monotonic() + 0.03
+        target = transport.pin(
+            "https://alerts.example.net/check",
+            "alerts.example.net",
+            deadline_monotonic=deadline,
+        )
+        started = time.monotonic()
+
+        with self.assertRaisesRegex(PinnedHttpsError, "destination_timeout"):
+            transport.request(target, address_index=0, method="POST", headers={}, body=b"{}")
+
+        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertTrue(connection.closed)
+        self.assertGreaterEqual(len(connection.timeouts), 3)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,11 @@ from app.core.config import (
     Settings,
     SupabaseSafetyError,
 )
-from app.db.supabase import create_supabase_client
+from app.db.supabase import (
+    DeadlineBoundSupabaseClient,
+    create_operational_alert_supabase_client,
+    create_supabase_client,
+)
 
 
 def _clear_proxy_environment(monkeypatch):
@@ -75,6 +79,27 @@ def test_factory_rejects_malformed_service_role_key_before_sdk_construction(
 
     assert service_role_key not in str(error.value)
     sdk_constructor.assert_not_called()
+
+
+def test_operational_alert_client_uses_bounded_postgrest_timeout():
+    settings = Settings(
+        ENVIRONMENT="development",
+        SUPABASE_URL=LOCAL_SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY="header.payload.signature",
+    )
+
+    with (
+        patch("app.core.config.getproxies", return_value={}),
+        patch("app.db.supabase.get_settings", return_value=settings),
+        patch("app.db.supabase.create_client") as sync_sdk_constructor,
+    ):
+        bounded_client = create_operational_alert_supabase_client(
+            postgrest_client_timeout=1.5,
+        )
+
+    assert isinstance(bounded_client, DeadlineBoundSupabaseClient)
+    assert bounded_client._postgrest_client_timeout == 1.5
+    sync_sdk_constructor.assert_not_called()
 
 
 @pytest.mark.parametrize(
