@@ -566,6 +566,8 @@ class WebhookServiceTest(unittest.TestCase):
         invalid_values = (
             " whsec_first",
             "whsec_first ",
+            ",whsec_first",
+            "whsec_first,",
             "whsec_first, whsec_second",
             "whsec_first\tvalue",
             "whsec_first\rvalue",

@@ -372,7 +372,7 @@ class Settings(BaseSettings):
         environment = self.ENVIRONMENT.strip().lower()
         for name in HEADER_BOUND_CREDENTIAL_FIELDS:
             validate_raw_header_value(name, getattr(self, name, ""))
-        validate_raw_header_value(
+        platform_webhook_secrets = parse_stripe_webhook_secrets(
             "STRIPE_PLATFORM_WEBHOOK_SECRET",
             self.STRIPE_PLATFORM_WEBHOOK_SECRET,
         )
@@ -479,11 +479,11 @@ class Settings(BaseSettings):
                     "RENDER_GIT_COMMIT must contain the exact deployed candidate when live billing is enabled"
                 )
 
-        platform_webhook_secret = self.STRIPE_PLATFORM_WEBHOOK_SECRET
-        if (
-            is_placeholder_value(platform_webhook_secret)
-            or not platform_webhook_secret.startswith("whsec_")
-            or not has_minimum_secret_length(platform_webhook_secret, 20)
+        if not platform_webhook_secrets or any(
+            is_placeholder_value(secret)
+            or not secret.startswith("whsec_")
+            or not has_minimum_secret_length(secret, 20)
+            for secret in platform_webhook_secrets
         ):
             missing.append("STRIPE_PLATFORM_WEBHOOK_SECRET must be a Stripe webhook secret")
 

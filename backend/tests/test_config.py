@@ -127,16 +127,13 @@ class HostedConfigValidationTest(unittest.TestCase):
                 self.assertNotIn(url, rendered_error)
 
     def test_readiness_rejects_malformed_webhook_secrets_before_permissive_return(self):
-        malformed_platform_values = (
-            " whsec_platform_fixture",
-            "whsec_platform_fixture ",
-            "whsec_platform\tfixture",
-            "whsec_platform\rfixture",
-            "whsec_platform\nfixture",
-        )
         first = _synthetic_webhook_secret("connect_first")
         second = _synthetic_webhook_secret("connect_second")
-        malformed_connect_values = (
+        malformed_values = (
+            f" {first}",
+            f"{first} ",
+            f",{first}",
+            f"{first},",
             f"{first}, {second}",
             f"{first} ,{second}",
             f"{first}\t,{second}",
@@ -145,31 +142,39 @@ class HostedConfigValidationTest(unittest.TestCase):
             f"{first},,{second}",
         )
 
-        for name, values in (
-            ("STRIPE_PLATFORM_WEBHOOK_SECRET", malformed_platform_values),
-            ("STRIPE_CONNECT_WEBHOOK_SECRET", malformed_connect_values),
+        for name in (
+            "STRIPE_PLATFORM_WEBHOOK_SECRET",
+            "STRIPE_CONNECT_WEBHOOK_SECRET",
         ):
-            for value in values:
+            for value in malformed_values:
                 with self.subTest(name=name, value_kind=repr(value)):
                     settings = Settings(
-                        ENVIRONMENT="development",
-                        **{name: value},
+                        ENVIRONMENT="production",
+                        **{**VALID_PRODUCTION_SETTINGS, name: value},
                     )
                     with self.assertRaisesRegex(RuntimeError, name) as error:
                         settings.validate_runtime_configuration()
 
                     self.assertNotIn(value, str(error.exception))
 
-    def test_readiness_preserves_canonical_connect_rotation_list(self):
-        first = _synthetic_webhook_secret("connect_first")
-        second = _synthetic_webhook_secret("connect_second")
-        settings = Settings(
-            ENVIRONMENT="development",
-            STRIPE_CONNECT_WEBHOOK_SECRET=f"{first},{second}",
-        )
+    def test_readiness_preserves_canonical_platform_and_connect_rotation_lists(self):
+        first = _synthetic_webhook_secret("rotation_first")
+        second = _synthetic_webhook_secret("rotation_second")
 
-        with patch("app.core.config.validate_no_ambient_supabase_transport"):
-            settings.validate_runtime_configuration()
+        for name in (
+            "STRIPE_PLATFORM_WEBHOOK_SECRET",
+            "STRIPE_CONNECT_WEBHOOK_SECRET",
+        ):
+            with self.subTest(name=name):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    **{
+                        **VALID_PRODUCTION_SETTINGS,
+                        name: f"{first},{second}",
+                    },
+                )
+                with patch("app.core.config.validate_no_ambient_supabase_transport"):
+                    settings.validate_runtime_configuration()
 
     def test_readiness_rejects_malformed_header_bound_credentials(self):
         header_bound_fields = (
