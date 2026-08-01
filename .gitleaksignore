@@ -6,3 +6,6 @@
 d4428a548e1bfeaa9fc4b50264f772fa7a0c4b4c:scripts/check-env-examples.test.mjs:stripe-access-token:22
 d77b7d55a458096765428aa3377229dd043fb553:scripts/check-env-examples.test.mjs:stripe-access-token:16
 d77b7d55a458096765428aa3377229dd043fb553:scripts/check-env-examples.test.mjs:stripe-access-token:24
+
+# Deterministic UUID used only to prove alert-delivery concurrency serialization.
+9107d842c8300fd11c78446640d15fe904cb0086:scripts/verify-operational-alert-clear-complete-race.sh:generic-api-key:14

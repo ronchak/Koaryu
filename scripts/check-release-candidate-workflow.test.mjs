@@ -50,6 +50,15 @@ test("release-candidate workflow requires the exact-SHA verifier tests", () => {
   );
 });
 
+test("release-candidate repository controls require complete history", () => {
+  const weakened = workflow.replace("          fetch-depth: 0\n", "");
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /fetch complete history/,
+  );
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 
