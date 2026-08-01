@@ -49,6 +49,35 @@ def test_factory_rejects_raw_url_controls_before_sdk_construction(control):
 
 
 @pytest.mark.parametrize(
+    "service_role_key",
+    [
+        " leading-whitespace",
+        "trailing-whitespace ",
+        "embedded\tcontrol",
+        "embedded\rcontrol",
+        "embedded\ncontrol",
+    ],
+)
+def test_factory_rejects_malformed_service_role_key_before_sdk_construction(
+    service_role_key,
+):
+    settings = Settings(
+        ENVIRONMENT="development",
+        SUPABASE_SERVICE_ROLE_KEY=service_role_key,
+    )
+
+    with (
+        patch("app.db.supabase.get_settings", return_value=settings),
+        patch("app.db.supabase.create_client") as sdk_constructor,
+        pytest.raises(RuntimeError, match="SUPABASE_SERVICE_ROLE_KEY") as error,
+    ):
+        create_supabase_client()
+
+    assert service_role_key not in str(error.value)
+    sdk_constructor.assert_not_called()
+
+
+@pytest.mark.parametrize(
     ("environment", "url", "development_ref"),
     [
         ("production", KOARYU_PRODUCTION_SUPABASE_URL, ""),

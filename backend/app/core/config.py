@@ -51,6 +51,14 @@ AMBIENT_TRANSPORT_ENVIRONMENT_KEYS = (
     PROXY_ENVIRONMENT_KEYS + CA_BUNDLE_ENVIRONMENT_KEYS
 )
 COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+HEADER_BOUND_CREDENTIAL_FIELDS = (
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_RESTRICTED_KEY",
+    "ACCOUNT_DELETION_WORKER_SECRET",
+    "OPERATIONAL_ALERT_WORKER_SECRET",
+    "SUPPORT_TRIAGE_SECRET",
+)
 
 
 PLACEHOLDER_MARKERS = (
@@ -100,6 +108,19 @@ def is_placeholder_value(value: str) -> bool:
 
 def has_minimum_secret_length(value: str, minimum: int = 32) -> bool:
     return len(value.strip()) >= minimum
+
+
+def validate_raw_header_value(name: str, value: str) -> None:
+    """Reject header values that HTTP clients cannot safely transmit unchanged."""
+    has_control = any(
+        ord(character) < 32 or ord(character) == 127 for character in value
+    )
+    if value != value.strip() or has_control:
+        raise RuntimeError(
+            "Runtime configuration is incomplete or unsafe: "
+            f"{name} must not contain surrounding whitespace or ASCII control "
+            "characters"
+        )
 
 
 class SupabaseSafetyError(RuntimeError):
@@ -231,12 +252,17 @@ class Settings(BaseSettings):
             )
 
     def validate_supabase_service_role_configuration(self) -> None:
+        validate_raw_header_value(
+            "SUPABASE_SERVICE_ROLE_KEY", self.SUPABASE_SERVICE_ROLE_KEY
+        )
         self.validate_supabase_target()
         validate_no_ambient_supabase_transport()
 
     def validate_runtime_configuration(self) -> None:
         """Fail closed when a hosted environment has incomplete or unsafe config."""
         environment = self.ENVIRONMENT.strip().lower()
+        for name in HEADER_BOUND_CREDENTIAL_FIELDS:
+            validate_raw_header_value(name, getattr(self, name, ""))
         self.validate_supabase_service_role_configuration()
         if environment in PERMISSIVE_ENVIRONMENTS:
             return

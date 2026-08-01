@@ -40,12 +40,48 @@ VALID_STAGING_SETTINGS = {
 }
 
 
+class CandidateSettings(Settings):
+    """Include the candidate-only alert credential without copying its feature."""
+
+    OPERATIONAL_ALERT_WORKER_SECRET: str = ""
+
+
 class HostedConfigValidationTest(unittest.TestCase):
     def test_development_allows_placeholder_defaults(self):
         Settings(ENVIRONMENT="development").validate_runtime_configuration()
 
     def test_test_environment_allows_placeholder_defaults(self):
         Settings(ENVIRONMENT="test").validate_runtime_configuration()
+
+    def test_readiness_rejects_malformed_header_bound_credentials(self):
+        header_bound_fields = (
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "STRIPE_SECRET_KEY",
+            "STRIPE_RESTRICTED_KEY",
+            "ACCOUNT_DELETION_WORKER_SECRET",
+            "OPERATIONAL_ALERT_WORKER_SECRET",
+            "SUPPORT_TRIAGE_SECRET",
+        )
+        malformed_values = (
+            " leading-whitespace",
+            "trailing-whitespace ",
+            "embedded\tcontrol",
+            "embedded\rcontrol",
+            "embedded\ncontrol",
+        )
+
+        for name in header_bound_fields:
+            for value in malformed_values:
+                with self.subTest(name=name, value_kind=repr(value)):
+                    with patch.dict("os.environ", {}, clear=True):
+                        settings = CandidateSettings(
+                            ENVIRONMENT="development",
+                            **{name: value},
+                        )
+                        with self.assertRaisesRegex(RuntimeError, name) as error:
+                            settings.validate_runtime_configuration()
+
+                    self.assertNotIn(value, str(error.exception))
 
     def test_unknown_environment_fails_closed(self):
         with self.assertRaisesRegex(RuntimeError, "ENVIRONMENT must be"):
