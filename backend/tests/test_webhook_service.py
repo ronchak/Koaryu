@@ -557,10 +557,35 @@ class WebhookServiceTest(unittest.TestCase):
             event = service.construct_webhook_event(
                 payload=b"{}",
                 signature="sig",
-                secret="whsec_first, whsec_second",
+                secret="whsec_first,whsec_second",
             )
 
         self.assertEqual(event["id"], "evt_1")
+
+    def test_construct_webhook_event_rejects_noncanonical_secrets_before_sdk(self):
+        invalid_values = (
+            " whsec_first",
+            "whsec_first ",
+            "whsec_first, whsec_second",
+            "whsec_first\tvalue",
+            "whsec_first\rvalue",
+            "whsec_first\nwhsec_second",
+            "whsec_first,,whsec_second",
+        )
+        service = StripeService()
+
+        for secret in invalid_values:
+            with self.subTest(value_kind=repr(secret)):
+                with patch.object(service, "_stripe") as stripe_module:
+                    with self.assertRaisesRegex(RuntimeError, "webhook secret") as error:
+                        service.construct_webhook_event(
+                            payload=b"{}",
+                            signature="sig",
+                            secret=secret,
+                        )
+
+                self.assertNotIn(secret, str(error.exception))
+                stripe_module.assert_not_called()
 
     def test_construct_webhook_event_accepts_real_stripe_sdk_signature(self):
         payload = b'{"id":"evt_real_sdk","object":"event"}'
@@ -609,7 +634,7 @@ class WebhookServiceTest(unittest.TestCase):
                 service.construct_webhook_event(
                     payload=b"{}",
                     signature="sig",
-                    secret="whsec_first\nwhsec_third",
+                    secret="whsec_first,whsec_third",
                 )
 
         self.assertEqual(raised.exception.status_code, 400)

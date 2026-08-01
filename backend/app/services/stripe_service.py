@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import HTTPException, status
 
-from app.core.config import get_settings
+from app.core.config import get_settings, parse_stripe_webhook_secrets
 from app.services.stripe_connect_gateway import (
     STRIPE_ACCOUNTS_V2_VERSION,
     StripeConnectGateway,
@@ -945,9 +945,4 @@ class StripeService:
 
     @staticmethod
     def _webhook_secrets(secret: str) -> list[str]:
-        secrets: list[str] = []
-        for chunk in secret.replace("\n", ",").split(","):
-            value = chunk.strip()
-            if value:
-                secrets.append(value)
-        return secrets
+        return parse_stripe_webhook_secrets("Stripe webhook secret", secret)

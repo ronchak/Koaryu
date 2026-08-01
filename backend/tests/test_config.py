@@ -1,4 +1,5 @@
 import hashlib
+import traceback
 import unittest
 from unittest.mock import patch
 
@@ -72,6 +73,103 @@ class HostedConfigValidationTest(unittest.TestCase):
 
     def test_test_environment_allows_placeholder_defaults(self):
         Settings(ENVIRONMENT="test").validate_runtime_configuration()
+
+    def test_frontend_origin_preserves_canonical_local_and_staging_forms(self):
+        for environment, url in (
+            ("development", "http://localhost:4000"),
+            ("test", "http://127.0.0.1:4000"),
+            (
+                "staging",
+                "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app",
+            ),
+        ):
+            with self.subTest(environment=environment, url=url):
+                self.assertEqual(
+                    Settings(
+                        ENVIRONMENT=environment,
+                        FRONTEND_URL=url,
+                    ).validated_frontend_origin(),
+                    url,
+                )
+
+    def test_production_readiness_requires_exact_canonical_frontend_origin(self):
+        unsafe_origins = (
+            " https://koaryu.app",
+            "https://koaryu.app ",
+            "https://koaryu.app\t",
+            "https://koaryu.app\r",
+            "https://koaryu.app\n",
+            "https://koaryu.app/",
+            "https://koaryu.app/auth/callback",
+            "https://koaryu.app?",
+            "https://koaryu.app?next=/billing",
+            "https://koaryu.app#",
+            "https://koaryu.app#fragment",
+            "https://user@koaryu.app",
+            "https://koaryu.app@evil.example",
+            "https://koaryu.app:443",
+            "https://koaryu.app:unsafe-port",
+            "https://evil.example",
+        )
+
+        for url in unsafe_origins:
+            with self.subTest(url_kind=repr(url)):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    **{**VALID_PRODUCTION_SETTINGS, "FRONTEND_URL": url},
+                )
+                with self.assertRaisesRegex(RuntimeError, "FRONTEND_URL") as error:
+                    settings.validate_runtime_configuration()
+
+                rendered_error = "".join(
+                    traceback.format_exception(error.exception)
+                )
+                self.assertNotIn(url, rendered_error)
+
+    def test_readiness_rejects_malformed_webhook_secrets_before_permissive_return(self):
+        malformed_platform_values = (
+            " whsec_platform_fixture",
+            "whsec_platform_fixture ",
+            "whsec_platform\tfixture",
+            "whsec_platform\rfixture",
+            "whsec_platform\nfixture",
+        )
+        first = _synthetic_webhook_secret("connect_first")
+        second = _synthetic_webhook_secret("connect_second")
+        malformed_connect_values = (
+            f"{first}, {second}",
+            f"{first} ,{second}",
+            f"{first}\t,{second}",
+            f"{first}\r,{second}",
+            f"{first}\n{second}",
+            f"{first},,{second}",
+        )
+
+        for name, values in (
+            ("STRIPE_PLATFORM_WEBHOOK_SECRET", malformed_platform_values),
+            ("STRIPE_CONNECT_WEBHOOK_SECRET", malformed_connect_values),
+        ):
+            for value in values:
+                with self.subTest(name=name, value_kind=repr(value)):
+                    settings = Settings(
+                        ENVIRONMENT="development",
+                        **{name: value},
+                    )
+                    with self.assertRaisesRegex(RuntimeError, name) as error:
+                        settings.validate_runtime_configuration()
+
+                    self.assertNotIn(value, str(error.exception))
+
+    def test_readiness_preserves_canonical_connect_rotation_list(self):
+        first = _synthetic_webhook_secret("connect_first")
+        second = _synthetic_webhook_secret("connect_second")
+        settings = Settings(
+            ENVIRONMENT="development",
+            STRIPE_CONNECT_WEBHOOK_SECRET=f"{first},{second}",
+        )
+
+        with patch("app.core.config.validate_no_ambient_supabase_transport"):
+            settings.validate_runtime_configuration()
 
     def test_readiness_rejects_malformed_header_bound_credentials(self):
         header_bound_fields = (

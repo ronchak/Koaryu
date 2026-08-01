@@ -59,6 +59,7 @@ class StaffService:
         studio_id: str,
         actor_id: str,
     ) -> StaffMemberResponse:
+        frontend_origin = get_settings().validated_frontend_origin()
         try:
             pending_result = self._insert_staff_role_with_metadata(
                 {
@@ -84,11 +85,10 @@ class StaffService:
             )
 
         pending_role = pending_result.data[0]
-        settings = get_settings()
         try:
             invite_response = self.supabase.auth.admin.invite_user_by_email(
                 data.email,
-                {"redirect_to": f"{settings.FRONTEND_URL}/auth/callback"},
+                {"redirect_to": f"{frontend_origin}/auth/callback"},
             )
         except AuthApiError as exc:
             self._delete_pending_staff_role(pending_role["id"], studio_id)

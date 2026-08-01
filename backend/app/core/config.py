@@ -21,6 +21,7 @@ KOARYU_STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
 KOARYU_STAGING_FRONTEND_URL = (
     "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
 )
+KOARYU_PRODUCTION_FRONTEND_URL = "https://koaryu.app"
 PERMISSIVE_ENVIRONMENTS = {"development", "test"}
 STRICT_ENVIRONMENTS = {"production", "staging"}
 LOCAL_SUPABASE_URL = "http://127.0.0.1:54321"
@@ -128,6 +129,94 @@ def validate_raw_header_value(name: str, value: str) -> None:
             f"{name} must not contain surrounding whitespace or ASCII control "
             "characters"
         )
+
+
+def validate_frontend_origin(url: str, environment: str) -> str:
+    """Return one canonical frontend origin or fail without reflecting its value."""
+    normalized_environment = environment.strip().lower()
+    has_control = any(
+        ord(character) < 32 or ord(character) == 127 for character in url
+    )
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        raise RuntimeError(
+            "Runtime configuration is incomplete or unsafe: FRONTEND_URL must be "
+            "a canonical frontend origin"
+        ) from None
+
+    hostname = parsed.hostname or ""
+    authority = hostname if port is None else f"{hostname}:{port}"
+    canonical_origin = f"{parsed.scheme}://{authority}"
+    invalid_structure = (
+        not url
+        or url != url.strip()
+        or has_control
+        or parsed.scheme not in {"http", "https"}
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.netloc != authority
+        or url != canonical_origin
+        or bool(parsed.path)
+        or bool(parsed.params)
+        or bool(parsed.query)
+        or bool(parsed.fragment)
+    )
+    if invalid_structure:
+        raise RuntimeError(
+            "Runtime configuration is incomplete or unsafe: FRONTEND_URL must be "
+            "a canonical frontend origin"
+        )
+
+    if normalized_environment == "production":
+        if url != KOARYU_PRODUCTION_FRONTEND_URL:
+            raise RuntimeError(
+                "Production configuration is incomplete or unsafe: FRONTEND_URL "
+                "must match Koaryu's pinned production frontend"
+            )
+        return url
+    if normalized_environment == "staging":
+        if url != KOARYU_STAGING_FRONTEND_URL:
+            raise RuntimeError(
+                "Staging configuration is incomplete or unsafe: FRONTEND_URL "
+                "must match Koaryu's pinned staging frontend"
+            )
+        return url
+    if normalized_environment not in PERMISSIVE_ENVIRONMENTS:
+        raise RuntimeError(
+            "Runtime configuration is incomplete or unsafe: ENVIRONMENT must be "
+            "development, test, staging, or production"
+        )
+
+    if parsed.scheme == "http":
+        if hostname not in {"localhost", "127.0.0.1"} or port is None:
+            raise RuntimeError(
+                "Runtime configuration is incomplete or unsafe: FRONTEND_URL must "
+                "use loopback HTTP or a canonical HTTPS origin"
+            )
+    elif port is not None:
+        raise RuntimeError(
+            "Runtime configuration is incomplete or unsafe: FRONTEND_URL must not "
+            "use an explicit HTTPS port"
+        )
+    return url
+
+
+def parse_stripe_webhook_secrets(name: str, value: str) -> list[str]:
+    """Parse the canonical comma-separated webhook secret rotation format."""
+    if not value:
+        return []
+    candidates = value.split(",")
+    if any(not candidate for candidate in candidates):
+        raise RuntimeError(
+            f"Runtime configuration is incomplete or unsafe: {name} must contain "
+            "nonempty comma-separated candidates"
+        )
+    for candidate in candidates:
+        validate_raw_header_value(name, candidate)
+    return candidates
 
 
 class SupabaseSafetyError(RuntimeError):
@@ -275,11 +364,23 @@ class Settings(BaseSettings):
         self.validate_supabase_target()
         validate_no_ambient_supabase_transport()
 
+    def validated_frontend_origin(self) -> str:
+        return validate_frontend_origin(self.FRONTEND_URL, self.ENVIRONMENT)
+
     def validate_runtime_configuration(self) -> None:
         """Fail closed when a hosted environment has incomplete or unsafe config."""
         environment = self.ENVIRONMENT.strip().lower()
         for name in HEADER_BOUND_CREDENTIAL_FIELDS:
             validate_raw_header_value(name, getattr(self, name, ""))
+        validate_raw_header_value(
+            "STRIPE_PLATFORM_WEBHOOK_SECRET",
+            self.STRIPE_PLATFORM_WEBHOOK_SECRET,
+        )
+        connect_webhook_secrets = parse_stripe_webhook_secrets(
+            "STRIPE_CONNECT_WEBHOOK_SECRET",
+            self.STRIPE_CONNECT_WEBHOOK_SECRET,
+        )
+        self.validated_frontend_origin()
         self.validate_supabase_service_role_configuration()
         if environment in PERMISSIVE_ENVIRONMENTS:
             return
@@ -325,10 +426,6 @@ class Settings(BaseSettings):
         supabase = urlparse(self.SUPABASE_URL)
         if supabase.scheme != "https" or not supabase.netloc or supabase.hostname in {"localhost", "127.0.0.1"}:
             missing.append("SUPABASE_URL must be a public HTTPS URL")
-
-        frontend = urlparse(self.FRONTEND_URL)
-        if frontend.scheme != "https" or not frontend.netloc or frontend.hostname in {"localhost", "127.0.0.1"}:
-            missing.append("FRONTEND_URL must be a public HTTPS URL")
 
         if not has_minimum_secret_length(self.SUPABASE_SERVICE_ROLE_KEY):
             missing.append("SUPABASE_SERVICE_ROLE_KEY must be a real secret value")
@@ -382,7 +479,7 @@ class Settings(BaseSettings):
                     "RENDER_GIT_COMMIT must contain the exact deployed candidate when live billing is enabled"
                 )
 
-        platform_webhook_secret = self.STRIPE_PLATFORM_WEBHOOK_SECRET.strip()
+        platform_webhook_secret = self.STRIPE_PLATFORM_WEBHOOK_SECRET
         if (
             is_placeholder_value(platform_webhook_secret)
             or not platform_webhook_secret.startswith("whsec_")
@@ -390,9 +487,6 @@ class Settings(BaseSettings):
         ):
             missing.append("STRIPE_PLATFORM_WEBHOOK_SECRET must be a Stripe webhook secret")
 
-        connect_webhook_secrets = [
-            secret.strip() for secret in self.STRIPE_CONNECT_WEBHOOK_SECRET.split(",") if secret.strip()
-        ]
         if not connect_webhook_secrets or any(
             is_placeholder_value(secret)
             or not secret.startswith("whsec_")
@@ -469,8 +563,6 @@ class Settings(BaseSettings):
         if environment == "staging":
             if self.SUPABASE_URL != KOARYU_STAGING_SUPABASE_URL:
                 missing.append("SUPABASE_URL must match Koaryu's pinned staging project")
-            if self.FRONTEND_URL != KOARYU_STAGING_FRONTEND_URL:
-                missing.append("FRONTEND_URL must match Koaryu's pinned staging frontend")
 
         if missing:
             detail = ", ".join(dict.fromkeys(missing))
