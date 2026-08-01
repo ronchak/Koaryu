@@ -176,6 +176,10 @@ DECLARE
     v_attempt_key UUID := gen_random_uuid();
     v_second_attempt_id UUID;
     v_second_attempt_key UUID := gen_random_uuid();
+    v_expired_episode_id UUID;
+    v_expired_outbox_id UUID;
+    v_expired_attempt_id UUID;
+    v_replacement_attempt_id UUID;
     v_ok BOOLEAN;
     v_audit_count INTEGER;
     v_sequence BIGINT;
@@ -343,6 +347,65 @@ BEGIN
       FROM public.record_operational_alert_heartbeat('contract', 'evaluator', v_sha);
     IF v_sequence <> 2 OR (SELECT COUNT(*) FROM public.operational_alert_heartbeats('contract')) <> 1 THEN
         RAISE EXCEPTION 'Heartbeat must upsert by environment+worker and increment sequence.';
+    END IF;
+
+    -- Exercise the expired-lease path after a competing outcome writer has
+    -- already won. The claim must use the named attempt-id UNIQUE constraint,
+    -- preserve the existing immutable outcome, and advance the lease once.
+    SELECT episode_id, outbox_id
+      INTO v_expired_episode_id, v_expired_outbox_id
+      FROM public.evaluate_operational_alert(
+          'expired-lease-contract', 'stripe-live-webhook-failure', 1, 1, 10,
+          'recording-primary', 'critical', v_sha, 'contract-evaluator'
+      );
+    SELECT attempt_id
+      INTO v_expired_attempt_id
+      FROM public.claim_operational_alert_delivery(
+          'expired-lease-contract', 'expired-lease-one', gen_random_uuid(), 30
+      );
+    INSERT INTO public.operational_alert_delivery_outcomes (
+        attempt_id, outcome, error_code
+    ) VALUES (
+        v_expired_attempt_id, 'failed', 'preexisting_race_winner'
+    );
+    UPDATE public.operational_alert_outbox
+       SET lease_expires_at = clock_timestamp() - INTERVAL '1 second',
+           available_at = '-infinity'::TIMESTAMPTZ
+     WHERE id = v_expired_outbox_id;
+    SELECT attempt_id
+      INTO v_replacement_attempt_id
+      FROM public.claim_operational_alert_delivery(
+          'expired-lease-contract', 'expired-lease-two', gen_random_uuid(), 30
+      );
+    IF v_replacement_attempt_id IS NULL
+       OR v_replacement_attempt_id = v_expired_attempt_id
+       OR (SELECT COUNT(*) FROM public.operational_alert_delivery_outcomes
+            WHERE attempt_id = v_expired_attempt_id) <> 1
+       OR NOT EXISTS (
+           SELECT 1 FROM public.operational_alert_delivery_outcomes
+            WHERE attempt_id = v_expired_attempt_id
+              AND outcome = 'failed'
+              AND error_code = 'preexisting_race_winner'
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM public.operational_alert_delivery_attempts
+            WHERE id = v_replacement_attempt_id AND attempt_number = 2
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM public.operational_alert_outbox
+            WHERE id = v_expired_outbox_id
+              AND status = 'leased'
+              AND active_attempt_id = v_replacement_attempt_id
+              AND lease_token = 'expired-lease-two'
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM public.operational_alert_audit_events
+            WHERE episode_id = v_expired_episode_id
+              AND attempt_id = v_expired_attempt_id
+              AND event_type = 'delivery_failed'
+              AND error_code = 'lease_expired'
+       ) THEN
+        RAISE EXCEPTION 'Expired-lease conflict recovery did not preserve the winning outcome and advance once.';
     END IF;
 
     BEGIN

@@ -17,7 +17,7 @@ export const ROLLOUT = Object.freeze({
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
   preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 98,
+  finalMigrationCount: 99,
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -33,6 +33,7 @@ export const ROLLOUT = Object.freeze({
     "20260801105313",
     "20260801112153",
     "20260801115044",
+    "20260801123112",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -40,6 +41,7 @@ export const ROLLOUT = Object.freeze({
     "0294fdbd2eecc72a8204222c244b7874fe35ada4",
     "accbb1f9c1bc87fa511f3c2bcafb9aeebafa33e2",
     "d0c5159dd4ce7bf3ca9a126fa39577959e7ba15a",
+    "8fc0cdd74466cd0e4292c0e94a84d682c8748010",
   ]),
   migrations: Object.freeze([
     Object.freeze({
@@ -54,18 +56,18 @@ export const ROLLOUT = Object.freeze({
 });
 
 export const EXPECTED_OPERATIONAL_MANIFEST =
-  "7f3329d8adc0bebbdf63f23da1e40df88984c177917cc613df664eeb4ffc478e";
+  "22aacba34bb9608d0926fa4749e74a3ccd994b075d8d5bff4fc7aa05e6cfaa8d";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|98|20260801115044|" +
+  "true|99|20260801123112|" +
   ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v5";
+  "|0||release-db-attestation-v6";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:a49de1a02cd80ca92017bde8b6c0a2ed8aa218d7ed56a383b73ae429158fd028:0;" +
-  "functions=45:bea0cfb4bfc1c993791d0dc81ed92d03921636ce109eb67d938416dfcf8674ae:0;" +
+  "functions=46:ed7019c0926a86a61a31e067a5d8c8a82f7df7bc567d65183e421382a9f0d389:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:f20b3f6d65c722b669ec0ef60d430a886ec64a225f8953f34231fd2f68ee70e2:0;" +
@@ -84,7 +86,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V5 operational readiness did not match the exact release state.");
+    throw new RolloutError("V6 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -542,6 +544,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v4()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v5()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v6()', 'search_path=pg_catalog', false, false),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -1213,7 +1216,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 98-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 99-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1566,7 +1569,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 98-migration candidate through 115044.",
+        "Provider inspection requires the exact final 99-migration candidate through 123112.",
       );
     }
     runCommand(

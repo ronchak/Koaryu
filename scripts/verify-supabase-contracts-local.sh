@@ -415,7 +415,7 @@ done
 echo "[operational manifest] RUN database-observable semantic and ACL signal"
 operational_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_operational_manifest_v5();
+SELECT private.koaryu_release_operational_manifest_v6();
 "
 )"
 if (
@@ -506,6 +506,10 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "V5 helper self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v5()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V6 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v6()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \
