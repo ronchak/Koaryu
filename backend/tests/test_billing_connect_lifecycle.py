@@ -31,10 +31,70 @@ class _BootstrapLifecycleSupabase(_FakeSupabase):
     def __init__(self, tables):
         super().__init__(tables)
         self.bootstrap_id = "bootstrap_1"
+        self.bootstrap = None
         self.bootstrap_create = None
         self.bootstrap_link = None
+        self.fail_bind_once = False
+        self.force_support_required = False
 
-    def _rpc_authorize_connect_onboarding_bootstrap_account_create(self, params):
+    def _recovery_row(self):
+        if self.bootstrap is None:
+            return []
+        return [{
+            "bootstrap_id": self.bootstrap_id,
+            "studio_id": self.bootstrap["p_studio_id"],
+            "connect_account_generation": self.bootstrap["p_connect_account_generation"],
+            "recovery_context": self.bootstrap["p_recovery_context"],
+            "account_create_idempotency_key": self.bootstrap["p_account_create_idempotency_key"],
+            "initial_link_idempotency_key": self.bootstrap["p_initial_link_idempotency_key"],
+            "stripe_connected_account_id": self.bootstrap.get("stripe_connected_account_id"),
+            "phase": "initial_link_retry" if self.bootstrap.get("stripe_connected_account_id") else "account_create",
+        }]
+
+    def _rpc_load_connect_onboarding_bootstrap_recovery_context(self, params):
+        if self.bootstrap is None or params["p_candidate_sha"] != self.bootstrap["p_candidate_sha"]:
+            return []
+        return self._recovery_row()
+
+    def _rpc_preflight_connect_onboarding_bootstrap_resume(self, params):
+        if self.force_support_required:
+            return [{
+                "eligible": False,
+                "studio_id": params["p_studio_id"],
+                "connect_account_generation": 1,
+                "phase": "support_required",
+            }]
+        if self.bootstrap is None:
+            return [{
+                "eligible": False,
+                "studio_id": params["p_studio_id"],
+                "connect_account_generation": 1,
+                "phase": "none",
+            }]
+        return [{
+            "eligible": params["p_candidate_sha"] == self.bootstrap["p_candidate_sha"],
+            "studio_id": params["p_studio_id"],
+            "connect_account_generation": self.bootstrap["p_connect_account_generation"],
+            "phase": "initial_link_retry" if self.bootstrap.get("stripe_connected_account_id") else "account_create",
+        }]
+
+    def _rpc_prepare_connect_onboarding_bootstrap_atomic(self, params):
+        if self.bootstrap is None:
+            self.bootstrap = dict(params)
+        elif any(self.bootstrap.get(key) != value for key, value in params.items()):
+            return []
+        return self._recovery_row()
+
+    def _rpc_authorize_connect_onboarding_bootstrap_account_create_v2(self, params):
+        if self.bootstrap is None or params != {
+            "p_bootstrap_id": self.bootstrap_id,
+            "p_studio_id": self.bootstrap["p_studio_id"],
+            "p_candidate_sha": self.bootstrap["p_candidate_sha"],
+            "p_connect_account_generation": self.bootstrap["p_connect_account_generation"],
+            "p_account_create_payload_sha256": self.bootstrap["p_account_create_payload_sha256"],
+            "p_account_create_idempotency_key": self.bootstrap["p_account_create_idempotency_key"],
+        }:
+            return []
         if self.bootstrap_create is None:
             self.bootstrap_create = dict(params)
         elif self.bootstrap_create != params:
@@ -46,8 +106,17 @@ class _BootstrapLifecycleSupabase(_FakeSupabase):
             "bootstrap_id": self.bootstrap_id,
         }]
 
-    def _rpc_bind_connect_onboarding_bootstrap_account(self, params):
-        if not self.bootstrap_create or params["p_bootstrap_token"] != self.bootstrap_create["p_bootstrap_token"]:
+    def _rpc_bind_connect_onboarding_bootstrap_account_v2(self, params):
+        if self.fail_bind_once:
+            self.fail_bind_once = False
+            raise RuntimeError("simulated bind interruption")
+        if (
+            not self.bootstrap_create
+            or params["p_bootstrap_id"] != self.bootstrap_id
+            or params["p_studio_id"] != self.bootstrap["p_studio_id"]
+            or params["p_candidate_sha"] != self.bootstrap["p_candidate_sha"]
+            or params["p_connect_account_generation"] != self.bootstrap["p_connect_account_generation"]
+        ):
             return []
         row = next(
             row for row in self.tables["studio_payment_accounts"]
@@ -62,10 +131,17 @@ class _BootstrapLifecycleSupabase(_FakeSupabase):
                 "connect_account_generation": params["p_connect_account_generation"],
             },
         })
+        self.bootstrap["stripe_connected_account_id"] = params["p_stripe_connected_account_id"]
         return [dict(row)]
 
-    def _rpc_authorize_connect_onboarding_bootstrap_initial_link(self, params):
-        if not self.bootstrap_create or params["p_bootstrap_token"] != self.bootstrap_create["p_bootstrap_token"]:
+    def _rpc_authorize_connect_onboarding_bootstrap_initial_link_v2(self, params):
+        if (
+            not self.bootstrap_create
+            or params["p_bootstrap_id"] != self.bootstrap_id
+            or params["p_stripe_connected_account_id"] != self.bootstrap.get("stripe_connected_account_id")
+            or params["p_initial_link_context_sha256"] != self.bootstrap["p_initial_link_context_sha256"]
+            or params["p_initial_link_idempotency_key"] != self.bootstrap["p_initial_link_idempotency_key"]
+        ):
             return []
         if self.bootstrap_link is None:
             self.bootstrap_link = dict(params)
@@ -125,18 +201,201 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         self.assertEqual(link.url, "https://connect.stripe.test/bootstrap")
         self.assertEqual([name for name, _params in supabase.rpc_calls], [
-            "authorize_connect_onboarding_bootstrap_account_create",
-            "bind_connect_onboarding_bootstrap_account",
-            "authorize_connect_onboarding_bootstrap_initial_link",
+            "preflight_connect_onboarding_bootstrap_resume",
+            "prepare_connect_onboarding_bootstrap_atomic",
+            "authorize_connect_onboarding_bootstrap_account_create_v2",
+            "bind_connect_onboarding_bootstrap_account_v2",
+            "authorize_connect_onboarding_bootstrap_initial_link_v2",
         ])
         self.assertEqual(supabase.tables["studio_payment_accounts"][0]["stripe_connected_account_id"], "acct_BootstrapPolicy1")
         self.assertEqual(len(provider_calls), 2)
         self.assertEqual(provider_calls[0][3], supabase.bootstrap_create["p_account_create_idempotency_key"])
         self.assertEqual(provider_calls[1][3], supabase.bootstrap_link["p_initial_link_idempotency_key"])
         self.assertEqual(
-            supabase.bootstrap_create["p_initial_link_idempotency_key"],
+            supabase.bootstrap["p_initial_link_idempotency_key"],
             supabase.bootstrap_link["p_initial_link_idempotency_key"],
         )
+
+    def test_live_onboarding_recovers_each_interrupted_phase_with_one_row_and_same_keys(self):
+        studio_id = "11111111-1111-4111-8111-111111111111"
+        settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+            "STRIPE_MODE": "live",
+            "STRIPE_SECRET_KEY": "sk_live_contract",
+            "LIVE_BILLING_ENABLED": True,
+        })()
+
+        for interrupted_phase in ("account_create", "bind", "initial_link"):
+            with self.subTest(interrupted_phase=interrupted_phase):
+                supabase = _BootstrapLifecycleSupabase({
+                    "studio_payment_accounts": [{
+                        "studio_id": studio_id,
+                        "stripe_connected_account_id": None,
+                        "status": "not_connected",
+                        "charges_enabled": False,
+                        "payouts_enabled": False,
+                        "details_submitted": False,
+                        "requirements_due": [],
+                        "platform_fee_bps": 50,
+                        "metadata": {"connect_account_generation": 1},
+                    }],
+                    "studios": [{"id": studio_id, "name": "Recovery Studio", "owner_id": "owner_1"}],
+                })
+                provider_calls = []
+                failed_once = False
+                supabase.fail_bind_once = interrupted_phase == "bind"
+
+                def provider_transport(_settings, method, path, payload, *, idempotency_key=None):
+                    nonlocal failed_once
+                    provider_calls.append((method, path, payload, idempotency_key))
+                    path_should_fail = (
+                        (interrupted_phase == "account_create" and path == "/v2/core/accounts")
+                        or (interrupted_phase == "initial_link" and path == "/v2/core/account_links")
+                    )
+                    if path_should_fail and not failed_once:
+                        failed_once = True
+                        raise _StripeV2RequestError(code=None, message="response outcome unknown")
+                    if path == "/v2/core/accounts":
+                        return {"id": "acct_Recovered1"}
+                    return {"url": "https://connect.stripe.test/recovered"}
+
+                with patch("app.services.billing_service.get_settings", return_value=settings), patch(
+                    "app.services.stripe_service.get_settings", return_value=settings
+                ), patch("app.services.stripe_service.stripe_v2_request", side_effect=provider_transport), patch.dict(
+                    "os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False
+                ):
+                    service = BillingService(supabase)
+                    with self.assertRaises(HTTPException):
+                        asyncio.run(service.create_connect_onboarding_link(
+                            studio_id,
+                            "actor_1",
+                            business_entity_type="individual",
+                        ))
+                    link = asyncio.run(service.create_connect_onboarding_link(
+                        studio_id,
+                        "actor_1",
+                        business_entity_type="individual",
+                    ))
+
+                self.assertEqual(link.url, "https://connect.stripe.test/recovered")
+                prepare_calls = [params for name, params in supabase.rpc_calls if name == "prepare_connect_onboarding_bootstrap_atomic"]
+                self.assertEqual(len(prepare_calls), 1)
+                account_calls = [call for call in provider_calls if call[1] == "/v2/core/accounts"]
+                link_calls = [call for call in provider_calls if call[1] == "/v2/core/account_links"]
+                self.assertTrue(account_calls)
+                self.assertTrue(link_calls)
+                self.assertEqual({call[3] for call in account_calls}, {supabase.bootstrap["p_account_create_idempotency_key"]})
+                self.assertEqual({call[3] for call in link_calls}, {supabase.bootstrap["p_initial_link_idempotency_key"]})
+                self.assertEqual(len(account_calls), 2 if interrupted_phase in {"account_create", "bind"} else 1)
+                self.assertEqual(len(link_calls), 2 if interrupted_phase == "initial_link" else 1)
+                self.assertEqual(supabase.bootstrap["stripe_connected_account_id"], "acct_Recovered1")
+
+    def test_live_onboarding_recovery_rejects_cross_context_without_provider_call(self):
+        studio_id = "11111111-1111-4111-8111-111111111111"
+        settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+            "STRIPE_MODE": "live",
+            "STRIPE_SECRET_KEY": "sk_live_contract",
+            "LIVE_BILLING_ENABLED": True,
+        })()
+        supabase = _BootstrapLifecycleSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": studio_id,
+                "stripe_connected_account_id": None,
+                "status": "not_connected",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {"connect_account_generation": 1},
+            }],
+            "studios": [{"id": studio_id, "name": "Recovery Studio", "owner_id": "owner_1"}],
+        })
+        provider_calls = []
+
+        def provider_transport(_settings, method, path, payload, *, idempotency_key=None):
+            provider_calls.append((method, path, payload, idempotency_key))
+            raise _StripeV2RequestError(code=None, message="response outcome unknown")
+
+        with patch("app.services.billing_service.get_settings", return_value=settings), patch(
+            "app.services.stripe_service.get_settings", return_value=settings
+        ), patch("app.services.stripe_service.stripe_v2_request", side_effect=provider_transport), patch.dict(
+            "os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False
+        ):
+            service = BillingService(supabase)
+            with self.assertRaises(HTTPException):
+                asyncio.run(service.create_connect_onboarding_link(
+                    studio_id,
+                    "actor_1",
+                    business_entity_type="individual",
+                ))
+            calls_before = len(provider_calls)
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(service.create_connect_onboarding_link(
+                    studio_id,
+                    "actor_1",
+                    return_url="https://app.koaryu.test/billing?connect=different",
+                    business_entity_type="individual",
+                ))
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(len(provider_calls), calls_before)
+
+    def test_live_onboarding_expired_recovery_is_support_required_without_second_provider_call(self):
+        studio_id = "11111111-1111-4111-8111-111111111111"
+        settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+            "STRIPE_MODE": "live",
+            "STRIPE_SECRET_KEY": "sk_live_contract",
+            "LIVE_BILLING_ENABLED": True,
+        })()
+        supabase = _BootstrapLifecycleSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": studio_id,
+                "stripe_connected_account_id": None,
+                "status": "not_connected",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {"connect_account_generation": 1},
+            }],
+            "studios": [{"id": studio_id, "name": "Recovery Studio", "owner_id": "owner_1"}],
+        })
+        provider_calls = []
+
+        def provider_transport(_settings, method, path, payload, *, idempotency_key=None):
+            provider_calls.append((method, path, payload, idempotency_key))
+            raise _StripeV2RequestError(code=None, message="response outcome unknown")
+
+        with patch("app.services.billing_service.get_settings", return_value=settings), patch(
+            "app.services.stripe_service.get_settings", return_value=settings
+        ), patch("app.services.stripe_service.stripe_v2_request", side_effect=provider_transport), patch.dict(
+            "os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False
+        ):
+            service = BillingService(supabase)
+            with self.assertRaises(HTTPException):
+                asyncio.run(service.create_connect_onboarding_link(
+                    studio_id,
+                    "actor_1",
+                    business_entity_type="individual",
+                ))
+            supabase.force_support_required = True
+            calls_before = len(provider_calls)
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(service.create_connect_onboarding_link(
+                    studio_id,
+                    "actor_1",
+                    business_entity_type="individual",
+                ))
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(len(provider_calls), calls_before)
 
     def test_standard_connect_account_uses_account_holder_dashboard_url(self):
         _FakeStripe.reset()

@@ -387,7 +387,6 @@ class StripeMutationPolicyTest(unittest.TestCase):
         service = StripeService()
         service.settings = _settings(mode="test")
         context = ConnectOnboardingBootstrapContext(
-            token="t" * 43,
             account_generation=1,
             initial_link_context_sha256="b" * 64,
             account_create_idempotency_key="koaryu-connect-account-studio_1-g1",
@@ -426,7 +425,6 @@ class StripeMutationPolicyTest(unittest.TestCase):
         service.settings = _settings(mode="test")
         link_key = "koaryu-connect-onboarding-studio_1-g1-" + "c" * 24
         context = ConnectOnboardingBootstrapContext(
-            token="t" * 43,
             account_generation=1,
             initial_link_context_sha256=connect_initial_link_context_sha256(
                 studio_id="studio_1",

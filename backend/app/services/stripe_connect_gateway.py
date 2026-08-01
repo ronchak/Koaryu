@@ -26,6 +26,70 @@ StripeV2Request = Callable[..., dict[str, Any]]
 MutationAuthorizer = Callable[..., Any]
 
 
+def build_connect_onboarding_link_v2_payload(
+    *,
+    account_id: str,
+    refresh_url: str,
+    return_url: str,
+) -> dict[str, Any]:
+    return {
+        "account": account_id,
+        "use_case": {
+            "type": "account_onboarding",
+            "account_onboarding": {
+                "configurations": ["merchant"],
+                "collection_options": {"fields": "eventually_due"},
+                "refresh_url": refresh_url,
+                "return_url": return_url,
+            },
+        },
+    }
+
+
+def build_connect_account_v2_payload(
+    *,
+    studio_id: str,
+    business_name: str,
+    contact_email: Optional[str],
+    business_entity_type: str,
+) -> dict[str, Any]:
+    identity: dict[str, Any] = {
+        "country": "us",
+        "entity_type": business_entity_type,
+    }
+    if business_entity_type == "company":
+        identity["business_details"] = {"registered_name": business_name}
+    payload: dict[str, Any] = {
+        "display_name": business_name,
+        "dashboard": "full",
+        "identity": identity,
+        "configuration": {
+            "merchant": {"capabilities": {"card_payments": {"requested": True}}},
+        },
+        "defaults": {
+            "currency": "usd",
+            "responsibilities": {
+                "fees_collector": "stripe",
+                "losses_collector": "stripe",
+            },
+            "profile": {
+                "doing_business_as": business_name,
+                "product_description": "Martial arts tuition and membership payments",
+            },
+            "locales": ["en-US"],
+        },
+        "metadata": {
+            "studio_id": studio_id,
+            "product": "koaryu_payments",
+            "business_entity_type": business_entity_type,
+        },
+        "include": ["configuration.merchant", "identity", "defaults", "requirements"],
+    }
+    if contact_email:
+        payload["contact_email"] = contact_email
+    return payload
+
+
 def stripe_v2_request(
     settings: Any,
     method: str,
@@ -207,18 +271,11 @@ class StripeConnectGateway:
         try:
             return self._stripe_v2_post(
                 "/v2/core/account_links",
-                {
-                    "account": account_id,
-                    "use_case": {
-                        "type": "account_onboarding",
-                        "account_onboarding": {
-                            "configurations": ["merchant"],
-                            "collection_options": {"fields": "eventually_due"},
-                            "refresh_url": refresh_url,
-                            "return_url": return_url,
-                        },
-                    },
-                },
+                build_connect_onboarding_link_v2_payload(
+                    account_id=account_id,
+                    refresh_url=refresh_url,
+                    return_url=return_url,
+                ),
                 operation="connect_onboarding_link.create",
                 studio_id=studio_id,
                 account_id=account_id,
@@ -318,45 +375,12 @@ class StripeConnectGateway:
         account_generation: int = 1,
         bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> dict[str, Any]:
-        identity: dict[str, Any] = {
-            "country": "us",
-            "entity_type": business_entity_type,
-        }
-        if business_entity_type == "company":
-            identity["business_details"] = {"registered_name": business_name}
-
-        payload: dict[str, Any] = {
-            "display_name": business_name,
-            "dashboard": "full",
-            "identity": identity,
-            "configuration": {
-                "merchant": {
-                    "capabilities": {
-                        "card_payments": {"requested": True},
-                    },
-                },
-            },
-            "defaults": {
-                "currency": "usd",
-                "responsibilities": {
-                    "fees_collector": "stripe",
-                    "losses_collector": "stripe",
-                },
-                "profile": {
-                    "doing_business_as": business_name,
-                    "product_description": "Martial arts tuition and membership payments",
-                },
-                "locales": ["en-US"],
-            },
-            "metadata": {
-                "studio_id": studio_id,
-                "product": "koaryu_payments",
-                "business_entity_type": business_entity_type,
-            },
-            "include": ["configuration.merchant", "identity", "defaults", "requirements"],
-        }
-        if contact_email:
-            payload["contact_email"] = contact_email
+        payload = build_connect_account_v2_payload(
+            studio_id=studio_id,
+            business_name=business_name,
+            contact_email=contact_email,
+            business_entity_type=business_entity_type,
+        )
         return self._stripe_v2_post(
             "/v2/core/accounts",
             payload,

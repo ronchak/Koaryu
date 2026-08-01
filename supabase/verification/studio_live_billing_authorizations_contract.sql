@@ -67,15 +67,31 @@ BEGIN
             'EXECUTE'
         ) OR has_function_privilege(
             v_role,
-            'public.authorize_connect_onboarding_bootstrap_account_create(uuid,text,integer,text,text,text,text,text)',
+            'public.preflight_connect_onboarding_bootstrap_begin(uuid,text)',
             'EXECUTE'
         ) OR has_function_privilege(
             v_role,
-            'public.bind_connect_onboarding_bootstrap_account(uuid,text,integer,text,text,text)',
+            'public.preflight_connect_onboarding_bootstrap_resume(uuid,text)',
             'EXECUTE'
         ) OR has_function_privilege(
             v_role,
-            'public.authorize_connect_onboarding_bootstrap_initial_link(uuid,text,integer,text,text,text,text,text)',
+            'public.prepare_connect_onboarding_bootstrap_atomic(uuid,text,integer,jsonb,text,text,text,text)',
+            'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.load_connect_onboarding_bootstrap_recovery_context(uuid,text)',
+            'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid,uuid,text,integer,text,text)',
+            'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.bind_connect_onboarding_bootstrap_account_v2(uuid,uuid,text,integer,text,text)',
+            'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.authorize_connect_onboarding_bootstrap_initial_link_v2(uuid,uuid,text,integer,text,text,text,text)',
             'EXECUTE'
         ) THEN
             RAISE EXCEPTION '% can call a service-only live-billing RPC.', v_role;
@@ -96,18 +112,50 @@ BEGIN
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'service_role',
-        'public.authorize_connect_onboarding_bootstrap_account_create(uuid,text,integer,text,text,text,text,text)',
+        'public.preflight_connect_onboarding_bootstrap_begin(uuid,text)',
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'service_role',
-        'public.bind_connect_onboarding_bootstrap_account(uuid,text,integer,text,text,text)',
+        'public.preflight_connect_onboarding_bootstrap_resume(uuid,text)',
         'EXECUTE'
     ) OR NOT has_function_privilege(
+        'service_role',
+        'public.prepare_connect_onboarding_bootstrap_atomic(uuid,text,integer,jsonb,text,text,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.load_connect_onboarding_bootstrap_recovery_context(uuid,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid,uuid,text,integer,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.bind_connect_onboarding_bootstrap_account_v2(uuid,uuid,text,integer,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.authorize_connect_onboarding_bootstrap_initial_link_v2(uuid,uuid,text,integer,text,text,text,text)',
+        'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'service_role cannot call the required live-billing RPCs.';
+    END IF;
+
+    IF has_function_privilege(
+        'service_role',
+        'public.authorize_connect_onboarding_bootstrap_account_create(uuid,text,integer,text,text,text,text,text)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'service_role',
+        'public.bind_connect_onboarding_bootstrap_account(uuid,text,integer,text,text,text)',
+        'EXECUTE'
+    ) OR has_function_privilege(
         'service_role',
         'public.authorize_connect_onboarding_bootstrap_initial_link(uuid,text,integer,text,text,text,text,text)',
         'EXECUTE'
     ) THEN
-        RAISE EXCEPTION 'service_role cannot call the required live-billing RPCs.';
+        RAISE EXCEPTION 'Legacy raw-token bootstrap RPC remains callable.';
     END IF;
 
     SELECT pg_get_functiondef(
@@ -216,10 +264,11 @@ DECLARE
     v_preflight RECORD;
     v_audit_count INTEGER;
     v_bootstrap RECORD;
-    v_bootstrap_token TEXT := repeat('T', 43);
     v_link_key TEXT;
     v_processing_event UUID;
     v_status TEXT;
+    v_recovery_context JSONB;
+    v_bootstrap_updated_at TIMESTAMPTZ;
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -390,21 +439,112 @@ BEGIN
         RAISE EXCEPTION 'Semantic accountless Connect create was denied.';
     END IF;
 
+    SELECT * INTO v_result
+      FROM public.preflight_connect_onboarding_bootstrap_begin(
+          v_blank_studio, repeat('a', 40)
+      );
+    IF NOT FOUND OR NOT v_result.eligible OR v_result.connect_account_generation <> 1 THEN
+        RAISE EXCEPTION 'Read-only begin preflight denied an eligible accountless bootstrap.';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM public.stripe_connect_onboarding_bootstraps
+         WHERE studio_id = v_blank_studio
+    ) THEN
+        RAISE EXCEPTION 'Begin preflight mutated bootstrap state.';
+    END IF;
+    SELECT * INTO v_result
+      FROM public.preflight_connect_onboarding_bootstrap_resume(
+          v_blank_studio, repeat('a', 40)
+      );
+    IF NOT FOUND OR v_result.eligible OR v_result.phase <> 'none' THEN
+        RAISE EXCEPTION 'Resume preflight did not distinguish a missing bootstrap.';
+    END IF;
+
     v_link_key := 'koaryu-connect-onboarding-' || v_blank_studio::TEXT || '-g1-' || repeat('b', 24);
+    v_recovery_context := jsonb_build_object(
+        'business_name', 'Accountless Connect Contract',
+        'contact_email', 'owner@example.invalid',
+        'business_entity_type', 'individual',
+        'refresh_url', 'https://app.koaryu.test/billing/connect/refresh',
+        'return_url', 'https://app.koaryu.test/billing?connect=return'
+    );
     SELECT * INTO v_bootstrap
-      FROM public.authorize_connect_onboarding_bootstrap_account_create(
-          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+      FROM public.prepare_connect_onboarding_bootstrap_atomic(
+          v_blank_studio, repeat('a', 40), 1, v_recovery_context,
           repeat('1', 64), repeat('2', 64),
           'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1',
           v_link_key
       );
-    IF NOT FOUND OR NOT v_bootstrap.authorized OR v_bootstrap.bootstrap_id IS NULL THEN
-        RAISE EXCEPTION 'Account creation did not issue an exact bootstrap permit.';
+    IF NOT FOUND OR v_bootstrap.bootstrap_id IS NULL
+       OR v_bootstrap.recovery_context IS DISTINCT FROM v_recovery_context THEN
+        RAISE EXCEPTION 'Bootstrap preparation did not persist one exact recovery context.';
+    END IF;
+
+    SELECT updated_at INTO v_bootstrap_updated_at
+      FROM public.stripe_connect_onboarding_bootstraps
+     WHERE id = v_bootstrap.bootstrap_id;
+    SELECT * INTO v_result
+      FROM public.preflight_connect_onboarding_bootstrap_resume(
+          v_blank_studio, repeat('a', 40)
+      );
+    IF NOT FOUND OR NOT v_result.eligible OR v_result.phase <> 'account_create' THEN
+        RAISE EXCEPTION 'Read-only resume preflight denied the stored account-create phase.';
+    END IF;
+    IF (SELECT updated_at FROM public.stripe_connect_onboarding_bootstraps
+         WHERE id = v_bootstrap.bootstrap_id) <> v_bootstrap_updated_at THEN
+        RAISE EXCEPTION 'Resume preflight mutated bootstrap state.';
+    END IF;
+    SELECT * INTO v_result
+      FROM public.preflight_connect_onboarding_bootstrap_begin(
+          v_blank_studio, repeat('a', 40)
+      );
+    IF NOT FOUND OR v_result.eligible THEN
+        RAISE EXCEPTION 'Begin preflight offered a second permit after preparation.';
+    END IF;
+
+    -- Exact same-context preparation recovers the same row; any context drift
+    -- is support-required and must never mint another permit.
+    SELECT * INTO v_result
+      FROM public.prepare_connect_onboarding_bootstrap_atomic(
+          v_blank_studio, repeat('a', 40), 1, v_recovery_context,
+          repeat('1', 64), repeat('2', 64),
+          'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1', v_link_key
+      );
+    IF NOT FOUND OR v_result.bootstrap_id <> v_bootstrap.bootstrap_id THEN
+        RAISE EXCEPTION 'Exact preparation retry did not recover the original row.';
+    END IF;
+    PERFORM public.prepare_connect_onboarding_bootstrap_atomic(
+        v_blank_studio, repeat('a', 40), 1,
+        v_recovery_context || jsonb_build_object('return_url', 'https://app.koaryu.test/changed'),
+        repeat('1', 64), repeat('2', 64),
+        'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1', v_link_key
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'Cross-context preparation reused the original permit.';
     END IF;
 
     SELECT * INTO v_result
-      FROM public.bind_connect_onboarding_bootstrap_account(
-          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+      FROM public.authorize_connect_onboarding_bootstrap_account_create_v2(
+          v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+          repeat('1', 64), 'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1'
+      );
+    IF NOT FOUND OR NOT v_result.authorized OR v_result.bootstrap_id <> v_bootstrap.bootstrap_id THEN
+        RAISE EXCEPTION 'Account creation did not use the prepared bootstrap permit.';
+    END IF;
+
+    BEGIN
+        PERFORM public.bind_connect_onboarding_bootstrap_account_v2(
+            v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+            'acct_BootstrapCreated1', 'company'
+        );
+        RAISE EXCEPTION 'Bind accepted an entity type outside the stored recovery context.';
+    EXCEPTION WHEN SQLSTATE 'P0B21' THEN
+        NULL;
+    END;
+
+    SELECT * INTO v_result
+      FROM public.bind_connect_onboarding_bootstrap_account_v2(
+          v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
           'acct_BootstrapCreated1', 'individual'
       );
     IF v_result.stripe_connected_account_id <> 'acct_BootstrapCreated1'
@@ -413,8 +553,8 @@ BEGIN
     END IF;
 
     SELECT * INTO v_result
-      FROM public.authorize_connect_onboarding_bootstrap_initial_link(
-          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+      FROM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+          v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
           'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
       );
     IF NOT FOUND OR NOT v_result.authorized
@@ -425,23 +565,23 @@ BEGIN
     -- An uncertain provider call may reauthorize only the same permit, payload,
     -- account, generation, candidate, and stored idempotency key.
     SELECT * INTO v_result
-      FROM public.authorize_connect_onboarding_bootstrap_initial_link(
-          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+      FROM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+          v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
           'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
       );
     IF NOT FOUND OR v_result.bootstrap_id <> v_bootstrap.bootstrap_id THEN
         RAISE EXCEPTION 'Exact idempotent retry minted or lost the original permit.';
     END IF;
 
-    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
-        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+        v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
         'acct_BootstrapCreated1', repeat('2', 64), repeat('4', 64), v_link_key
     );
     IF FOUND THEN
         RAISE EXCEPTION 'Changed initial-link payload replayed a claimed bootstrap.';
     END IF;
-    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
-        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+        v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
         'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64),
         'koaryu-connect-onboarding-' || v_blank_studio::TEXT || '-g1-' || repeat('c', 24)
     );
@@ -465,8 +605,8 @@ BEGIN
         v_other_studio, 'acct_PreexistingGap1', 'onboarding_incomplete', false,
         false, false, ARRAY[]::TEXT[], jsonb_build_object('connect_account_generation', 1)
     );
-    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
-        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+        v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
         'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
     );
     IF FOUND THEN
@@ -488,8 +628,8 @@ BEGIN
                processed_at = NULL,
                error = CASE WHEN v_status = 'failed' THEN 'bootstrap_processing_gate' ELSE NULL END
          WHERE id = v_processing_event;
-        PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
-            v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+        PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+            v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
             'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
         );
         IF FOUND THEN
@@ -510,8 +650,8 @@ BEGIN
         'evt_bootstrap_excluded_ignored', 'acct_ExcludedBootstrap1', true,
         'account.updated', '{}'::JSONB, 'ignored', now()
     );
-    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
-        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+        v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
         'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
     );
     IF NOT FOUND THEN
@@ -535,16 +675,23 @@ BEGIN
            initial_link_last_retry_at = NULL,
            authorized_at = now() - INTERVAL '10 minutes',
            expires_at = now() - INTERVAL '5 minutes',
+           recovery_expires_at = now() - INTERVAL '1 minute',
            aborted_at = NULL
      WHERE id = v_bootstrap.bootstrap_id;
-    PERFORM public.authorize_connect_onboarding_bootstrap_account_create(
-        v_blank_studio, repeat('a', 40), 1, repeat('u', 43),
+    PERFORM public.prepare_connect_onboarding_bootstrap_atomic(
+        v_blank_studio, repeat('a', 40), 1, v_recovery_context,
         repeat('1', 64), repeat('2', 64),
-        'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1',
-        'koaryu-connect-onboarding-' || v_blank_studio::TEXT || '-g1-' || repeat('d', 24)
+        'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1', v_link_key
     );
     IF FOUND THEN
         RAISE EXCEPTION 'Expired uncertain create minted a second generation permit.';
+    END IF;
+    SELECT * INTO v_result
+      FROM public.preflight_connect_onboarding_bootstrap_resume(
+          v_blank_studio, repeat('a', 40)
+      );
+    IF NOT FOUND OR v_result.eligible OR v_result.phase <> 'support_required' THEN
+        RAISE EXCEPTION 'Expired bootstrap did not become support-required.';
     END IF;
     UPDATE public.stripe_connect_onboarding_bootstraps
        SET aborted_at = now()

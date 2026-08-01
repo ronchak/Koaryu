@@ -134,16 +134,39 @@ class BillingSystemStatusReporter:
             self.settings,
             authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
         )
-        mutation_capabilities = BillingMutationCapabilitiesResponse(
-            core_subscription=self._mutation_authorized(
-                mutation_policy, "core_checkout_session.create", studio_id, None,
-            ),
-            connect_onboarding=self._mutation_authorized(
+        onboarding_authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
+        live_billing_enabled = getattr(self.settings, "LIVE_BILLING_ENABLED", False) is True
+        onboarding_preflight_state = (
+            onboarding_authorization_store.connect_onboarding_preflight_state(
+                studio_id=studio_id,
+            )
+            if stripe_mode == "live" and live_billing_enabled
+            else None
+        )
+        connect_onboarding_authorized = (
+            onboarding_preflight_state == "eligible"
+            if onboarding_preflight_state is not None
+            else self._mutation_authorized(
                 mutation_policy,
                 "connect_onboarding_link.create" if account_id else "connect_account.create",
                 studio_id,
                 account_id,
+            )
+        )
+        if stripe_mode == "live" and not live_billing_enabled:
+            connect_onboarding_authorized = False
+        if stripe_mode == "live" and account_id and onboarding_preflight_state == "none":
+            connect_onboarding_authorized = self._mutation_authorized(
+                mutation_policy,
+                "connect_onboarding_link.create",
+                studio_id,
+                account_id,
+            )
+        mutation_capabilities = BillingMutationCapabilitiesResponse(
+            core_subscription=self._mutation_authorized(
+                mutation_policy, "core_checkout_session.create", studio_id, None,
             ),
+            connect_onboarding=connect_onboarding_authorized,
             connect_payments=self._mutation_authorized(
                 mutation_policy, "connected_invoice.create", studio_id, account_id,
             ),

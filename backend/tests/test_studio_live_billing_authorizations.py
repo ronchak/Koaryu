@@ -17,30 +17,54 @@ CANDIDATE_SHA = "a" * 40
 
 
 class _AuthorizationSupabase(RpcBackedSupabase):
-    def __init__(self, response=None, *, failure: Exception | None = None):
+    def __init__(self, response=None, *, responses=None, failure: Exception | None = None):
         super().__init__()
         self.response = response
+        self.responses = responses or {}
         self.failure = failure
+
+    def _response(self, rpc_name):
+        return self.responses.get(rpc_name, self.response)
 
     def _rpc_authorize_studio_live_billing_mutation_atomic(self, _params):
         if self.failure:
             raise self.failure
-        return self.response
+        return self._response("authorize_studio_live_billing_mutation_atomic")
 
-    def _rpc_authorize_connect_onboarding_bootstrap_account_create(self, _params):
+    def _rpc_authorize_connect_onboarding_bootstrap_account_create_v2(self, _params):
         if self.failure:
             raise self.failure
-        return self.response
+        return self._response("authorize_connect_onboarding_bootstrap_account_create_v2")
 
-    def _rpc_authorize_connect_onboarding_bootstrap_initial_link(self, _params):
+    def _rpc_authorize_connect_onboarding_bootstrap_initial_link_v2(self, _params):
         if self.failure:
             raise self.failure
-        return self.response
+        return self._response("authorize_connect_onboarding_bootstrap_initial_link_v2")
 
-    def _rpc_bind_connect_onboarding_bootstrap_account(self, _params):
+    def _rpc_bind_connect_onboarding_bootstrap_account_v2(self, _params):
         if self.failure:
             raise self.failure
-        return self.response
+        return self._response("bind_connect_onboarding_bootstrap_account_v2")
+
+    def _rpc_prepare_connect_onboarding_bootstrap_atomic(self, _params):
+        if self.failure:
+            raise self.failure
+        return self._response("prepare_connect_onboarding_bootstrap_atomic")
+
+    def _rpc_load_connect_onboarding_bootstrap_recovery_context(self, _params):
+        if self.failure:
+            raise self.failure
+        return self._response("load_connect_onboarding_bootstrap_recovery_context")
+
+    def _rpc_preflight_connect_onboarding_bootstrap_begin(self, _params):
+        if self.failure:
+            raise self.failure
+        return self._response("preflight_connect_onboarding_bootstrap_begin")
+
+    def _rpc_preflight_connect_onboarding_bootstrap_resume(self, _params):
+        if self.failure:
+            raise self.failure
+        return self._response("preflight_connect_onboarding_bootstrap_resume")
 
 
 class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
@@ -84,7 +108,7 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
         }])
 
         context = ConnectOnboardingBootstrapContext(
-            token="t" * 43,
+            bootstrap_id="11111111-1111-4111-8111-111111111111",
             account_generation=1,
             initial_link_context_sha256="b" * 64,
             account_create_idempotency_key="koaryu-connect-account-studio_1-g1",
@@ -105,8 +129,9 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
             ),
             "studio_1",
         )
-        self.assertEqual(supabase.rpc_calls[0][0], "authorize_connect_onboarding_bootstrap_account_create")
-        self.assertEqual(supabase.rpc_calls[0][1]["p_bootstrap_token"], context.token)
+        self.assertEqual(supabase.rpc_calls[0][0], "authorize_connect_onboarding_bootstrap_account_create_v2")
+        self.assertEqual(supabase.rpc_calls[0][1]["p_bootstrap_id"], context.bootstrap_id)
+        self.assertNotIn("p_bootstrap_token", supabase.rpc_calls[0][1])
         self.assertEqual(supabase.rpc_calls[0][1]["p_account_create_payload_sha256"], "d" * 64)
 
     def test_rpc_denials_fail_closed_for_revocation_drift_or_stale_checkpoint(self):
@@ -131,7 +156,7 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
 
     def test_initial_link_and_mapping_bind_use_exact_bootstrap_context(self):
         context = ConnectOnboardingBootstrapContext(
-            token="t" * 43,
+            bootstrap_id="11111111-1111-4111-8111-111111111111",
             account_generation=2,
             initial_link_context_sha256="b" * 64,
             account_create_idempotency_key="koaryu-connect-account-studio_1-g2",
@@ -155,12 +180,12 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
             bootstrap_context=context,
         ), "studio_1")
         self.assertEqual(supabase.rpc_calls[-1], (
-            "authorize_connect_onboarding_bootstrap_initial_link",
+            "authorize_connect_onboarding_bootstrap_initial_link_v2",
             {
+                "p_bootstrap_id": context.bootstrap_id,
                 "p_studio_id": "studio_1",
                 "p_candidate_sha": CANDIDATE_SHA,
                 "p_connect_account_generation": 2,
-                "p_bootstrap_token": context.token,
                 "p_stripe_connected_account_id": "acct_1",
                 "p_initial_link_context_sha256": "b" * 64,
                 "p_initial_link_payload_sha256": "d" * 64,
@@ -176,7 +201,149 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
             bootstrap_context=context,
         )
         self.assertEqual(row["stripe_connected_account_id"], "acct_1")
-        self.assertEqual(supabase.rpc_calls[-1][0], "bind_connect_onboarding_bootstrap_account")
+        self.assertEqual(supabase.rpc_calls[-1][0], "bind_connect_onboarding_bootstrap_account_v2")
+
+    def test_prepare_and_load_recovery_keep_stable_context_service_side(self):
+        row = {
+            "bootstrap_id": "11111111-1111-4111-8111-111111111111",
+            "studio_id": "studio_1",
+            "connect_account_generation": 3,
+            "recovery_context": {
+                "business_name": "Recovery Studio",
+                "contact_email": "owner@example.test",
+                "business_entity_type": "company",
+                "refresh_url": "https://app.koaryu.test/billing/connect/refresh",
+                "return_url": "https://app.koaryu.test/billing?connect=return",
+            },
+            "account_create_idempotency_key": "koaryu-connect-account-studio_1-g3",
+            "initial_link_idempotency_key": "koaryu-connect-onboarding-studio_1-g3-" + "c" * 24,
+            "stripe_connected_account_id": None,
+            "phase": "account_create",
+        }
+        supabase = _AuthorizationSupabase(responses={
+            "prepare_connect_onboarding_bootstrap_atomic": [row],
+            "preflight_connect_onboarding_bootstrap_resume": [{
+                "eligible": True,
+                "studio_id": "studio_1",
+                "phase": "account_create",
+            }],
+            "load_connect_onboarding_bootstrap_recovery_context": [row],
+        })
+        store = StudioLiveBillingAuthorizationStore(supabase, expected_candidate_sha=CANDIDATE_SHA)
+        provisional = ConnectOnboardingBootstrapContext(
+            account_generation=3,
+            initial_link_context_sha256="b" * 64,
+            account_create_idempotency_key=row["account_create_idempotency_key"],
+            initial_link_idempotency_key=row["initial_link_idempotency_key"],
+            recovery_context=row["recovery_context"],
+        )
+
+        prepared = store.prepare_connect_onboarding_bootstrap(
+            studio_id="studio_1",
+            recovery_context=row["recovery_context"],
+            account_create_payload_sha256="d" * 64,
+            bootstrap_context=provisional,
+        )
+        loaded = store.load_connect_onboarding_bootstrap_recovery(studio_id="studio_1")
+
+        self.assertEqual(prepared.bootstrap_id, row["bootstrap_id"])
+        self.assertEqual(loaded, prepared)
+        self.assertEqual([name for name, _params in supabase.rpc_calls], [
+            "prepare_connect_onboarding_bootstrap_atomic",
+            "preflight_connect_onboarding_bootstrap_resume",
+            "load_connect_onboarding_bootstrap_recovery_context",
+        ])
+        self.assertNotIn("token", supabase.rpc_calls[0][1])
+
+    def test_read_only_preflight_is_fail_closed_and_never_queries_or_mutates_tables(self):
+        for response, expected, expected_calls in (
+            ([{"eligible": True, "studio_id": "studio_1"}], True, 1),
+            ([{"eligible": False, "studio_id": "studio_1"}], False, 2),
+            ([{"eligible": True, "studio_id": "studio_2"}], False, 1),
+            ([], False, 1),
+        ):
+            with self.subTest(response=response):
+                supabase = _AuthorizationSupabase(response)
+                allowed = StudioLiveBillingAuthorizationStore(
+                    supabase,
+                    expected_candidate_sha=CANDIDATE_SHA,
+                ).can_begin_or_resume_connect_onboarding(studio_id="studio_1")
+                self.assertEqual(allowed, expected)
+                self.assertEqual(len(supabase.rpc_calls), expected_calls)
+                self.assertEqual(supabase.query_log, [])
+
+    def test_support_required_recovery_never_loads_context_or_falls_back(self):
+        supabase = _AuthorizationSupabase(responses={
+            "preflight_connect_onboarding_bootstrap_resume": [{
+                "eligible": False,
+                "studio_id": "studio_1",
+                "phase": "support_required",
+            }],
+        })
+        store = StudioLiveBillingAuthorizationStore(supabase, expected_candidate_sha=CANDIDATE_SHA)
+
+        with self.assertRaises(HTTPException) as raised:
+            store.load_connect_onboarding_bootstrap_recovery(studio_id="studio_1")
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(
+            [name for name, _params in supabase.rpc_calls],
+            ["preflight_connect_onboarding_bootstrap_resume"],
+        )
+
+    def test_recovery_preflight_unavailability_fails_closed_before_load(self):
+        store = StudioLiveBillingAuthorizationStore(
+            _AuthorizationSupabase(failure=RuntimeError("database unavailable")),
+            expected_candidate_sha=CANDIDATE_SHA,
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            store.load_connect_onboarding_bootstrap_recovery(studio_id="studio_1")
+
+        self.assertEqual(raised.exception.detail, LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+
+    def test_preflight_distinguishes_no_bootstrap_from_support_required(self):
+        for phase, expected in (("none", "none"), ("support_required", "support_required")):
+            with self.subTest(phase=phase):
+                supabase = _AuthorizationSupabase(responses={
+                    "preflight_connect_onboarding_bootstrap_begin": [{
+                        "eligible": False,
+                        "studio_id": "studio_1",
+                    }],
+                    "preflight_connect_onboarding_bootstrap_resume": [{
+                        "eligible": False,
+                        "studio_id": "studio_1",
+                        "phase": phase,
+                    }],
+                })
+                state = StudioLiveBillingAuthorizationStore(
+                    supabase,
+                    expected_candidate_sha=CANDIDATE_SHA,
+                ).connect_onboarding_preflight_state(studio_id="studio_1")
+                self.assertEqual(state, expected)
+
+    def test_missing_bootstrap_handle_denies_before_rpc(self):
+        context = ConnectOnboardingBootstrapContext(
+            account_generation=1,
+            initial_link_context_sha256="b" * 64,
+            account_create_idempotency_key="koaryu-connect-account-studio_1-g1",
+            initial_link_idempotency_key="koaryu-connect-onboarding-studio_1-g1-" + "c" * 24,
+        )
+        supabase = _AuthorizationSupabase([])
+        with self.assertRaises(HTTPException):
+            StudioLiveBillingAuthorizationStore(
+                supabase,
+                expected_candidate_sha=CANDIDATE_SHA,
+            ).authorize(
+                operation="connect_account.create",
+                scope="connect_onboarding",
+                studio_id="studio_1",
+                account_id=None,
+                expected_livemode=True,
+                payload_sha256="d" * 64,
+                bootstrap_context=context,
+            )
+        self.assertEqual(supabase.rpc_calls, [])
 
     def test_missing_studio_candidate_or_live_mode_never_calls_rpc(self):
         cases = (
