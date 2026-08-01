@@ -93,6 +93,14 @@ def test_connect_smoke_signs_with_first_configured_secret(monkeypatch):
     assert module._connect_webhook_secret() == "whsec_first"
 
 
+def test_connect_smoke_uses_shared_service_role_factory(monkeypatch):
+    module = _load_connect_smoke_module()
+    expected_client = object()
+    monkeypatch.setattr(module, "create_supabase_client", lambda: expected_client)
+
+    assert module._supabase_client() is expected_client
+
+
 def test_support_triage_digest_fails_when_supabase_cli_is_missing(tmp_path):
     script_path = ROOT_DIR / "scripts" / "support-triage-digest.sh"
     result = subprocess.run(

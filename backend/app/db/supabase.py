@@ -8,6 +8,7 @@ _client: Optional[Client] = None
 def create_supabase_client() -> Client:
     """Create an isolated Supabase admin client."""
     settings = get_settings()
+    settings.validate_supabase_service_role_configuration()
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
 

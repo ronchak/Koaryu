@@ -21,6 +21,7 @@ const backendSecretKeys = [
 
 const backendPublicKeys = [
   "SUPABASE_URL",
+  "SUPABASE_DEVELOPMENT_PROJECT_REF",
   "SUPABASE_ALLOW_LEGACY_HS256",
   "FRONTEND_URL",
   "ENVIRONMENT",
@@ -34,6 +35,7 @@ const backendPublicKeys = [
 
 const backendOptionalBlankKeys = [
   "DEMO_RESET_STUDIO_IDS",
+  "SUPABASE_DEVELOPMENT_PROJECT_REF",
   "STRIPE_RESTRICTED_KEY",
 ];
 
@@ -64,6 +66,7 @@ const renderCriticalValues = new Map([
   ["DEMO_RESET_ENABLED", "false"],
   ["DEMO_RESET_STUDIO_IDS", ""],
   ["SUPABASE_ALLOW_LEGACY_HS256", "false"],
+  ["SUPABASE_DEVELOPMENT_PROJECT_REF", ""],
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],

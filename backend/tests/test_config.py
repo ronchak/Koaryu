@@ -12,7 +12,7 @@ def _synthetic_webhook_secret(scope: str) -> str:
 
 
 VALID_PRODUCTION_SETTINGS = {
-    "SUPABASE_URL": "https://project.supabase.co",
+    "SUPABASE_URL": "https://mimguepumzsgmcaycdsh.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_1234567890abcdefghijklmnopqrstuvwxyz",
     "SUPABASE_JWT_SECRET": "jwt-secret-1234567890abcdefghijklmnopqrstuvwxyz",
     "FRONTEND_URL": "https://koaryu.app",
@@ -53,7 +53,7 @@ class HostedConfigValidationTest(unittest.TestCase):
     def test_production_rejects_missing_live_settings(self):
         settings = Settings(
             ENVIRONMENT="production",
-            SUPABASE_URL="https://placeholder.supabase.co",
+            SUPABASE_URL="https://mimguepumzsgmcaycdsh.supabase.co",
             SUPABASE_SERVICE_ROLE_KEY="placeholder-key",
             SUPABASE_JWT_SECRET="placeholder-secret",
             FRONTEND_URL="https://koaryu.app",
@@ -115,7 +115,7 @@ class HostedConfigValidationTest(unittest.TestCase):
             },
         )
 
-        with self.assertRaisesRegex(RuntimeError, "SUPABASE_URL must be a public HTTPS URL"):
+        with self.assertRaisesRegex(RuntimeError, "cannot use the local Supabase project"):
             settings.validate_production_configuration()
 
     def test_production_rejects_short_internal_secrets(self):
@@ -243,7 +243,12 @@ class HostedConfigValidationTest(unittest.TestCase):
                         name: value,
                     },
                 )
-                with self.assertRaisesRegex(RuntimeError, f"{name} must match Koaryu's pinned staging"):
+                expected = (
+                    "pinned staging Supabase project"
+                    if name == "SUPABASE_URL"
+                    else "FRONTEND_URL must match Koaryu's pinned staging"
+                )
+                with self.assertRaisesRegex(RuntimeError, expected):
                     settings.validate_runtime_configuration()
 
     def test_staging_rejects_live_stripe_keys(self):

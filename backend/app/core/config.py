@@ -1,16 +1,55 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+import os
 from pathlib import Path
+import re
 from typing import Literal
 from urllib.parse import urlparse
+from urllib.request import getproxies
+
+from pydantic_settings import BaseSettings
 
 
+KOARYU_PRODUCTION_SUPABASE_REF = "mimguepumzsgmcaycdsh"
+KOARYU_PRODUCTION_SUPABASE_URL = (
+    f"https://{KOARYU_PRODUCTION_SUPABASE_REF}.supabase.co"
+)
+KOARYU_STAGING_SUPABASE_REF = "nxgsektqsgrtyfhawxbc"
 KOARYU_STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
 KOARYU_STAGING_FRONTEND_URL = (
     "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"
 )
 PERMISSIVE_ENVIRONMENTS = {"development", "test"}
 STRICT_ENVIRONMENTS = {"production", "staging"}
+LOCAL_SUPABASE_URL = "http://127.0.0.1:54321"
+SHIPPED_PLACEHOLDER_SUPABASE_URLS = {
+    "https://placeholder.supabase.co",
+    "https://your-project.supabase.co",
+}
+HOSTED_SUPABASE_URL_PATTERN = re.compile(
+    r"https://(?P<project_ref>[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.supabase\.co",
+    re.ASCII,
+)
+PROXY_ENVIRONMENT_KEYS = (
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+)
+CA_BUNDLE_ENVIRONMENT_KEYS = (
+    "REQUESTS_CA_BUNDLE",
+    "requests_ca_bundle",
+    "CURL_CA_BUNDLE",
+    "curl_ca_bundle",
+    "SSL_CERT_FILE",
+    "ssl_cert_file",
+    "SSL_CERT_DIR",
+    "ssl_cert_dir",
+)
+AMBIENT_TRANSPORT_ENVIRONMENT_KEYS = (
+    PROXY_ENVIRONMENT_KEYS + CA_BUNDLE_ENVIRONMENT_KEYS
+)
 
 
 PLACEHOLDER_MARKERS = (
@@ -61,10 +100,35 @@ def has_minimum_secret_length(value: str, minimum: int = 32) -> bool:
     return len(value.strip()) >= minimum
 
 
+class SupabaseSafetyError(RuntimeError):
+    """Raised before a service-role client can use an unsafe target or transport."""
+
+
+def validate_no_ambient_supabase_transport() -> None:
+    """Refuse ambient proxy and CA overrides the pinned SDK cannot disable."""
+    configured_keys = {
+        key.upper()
+        for key in AMBIENT_TRANSPORT_ENVIRONMENT_KEYS
+        if os.environ.get(key, "").strip()
+    }
+    discovered_proxies = getproxies()
+    if configured_keys or any(
+        str(discovered_proxies.get(scheme, "")).strip()
+        for scheme in ("http", "https", "all")
+    ):
+        names = ", ".join(sorted(configured_keys)) or "system HTTP proxy settings"
+        raise SupabaseSafetyError(
+            "Refusing unsafe Supabase service-role transport: ambient proxy or CA "
+            f"configuration is active ({names}). Remove it for this process; "
+            "NO_PROXY is not accepted as an exception."
+        )
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     SUPABASE_URL: str = "https://placeholder.supabase.co"
+    SUPABASE_DEVELOPMENT_PROJECT_REF: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = "placeholder-key"
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
     SUPABASE_ALLOW_LEGACY_HS256: bool = False
@@ -92,9 +156,84 @@ class Settings(BaseSettings):
         "extra": "ignore"
     }
 
+    def validate_supabase_target(self) -> None:
+        """Require an exact environment-to-project mapping before privileged use."""
+        raw_url = self.SUPABASE_URL
+        environment = self.ENVIRONMENT.strip().lower()
+        environment_label = environment or "<empty>"
+
+        if any(ord(character) < 32 or ord(character) == 127 for character in raw_url):
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: SUPABASE_URL contains an ASCII "
+                "control character."
+            )
+        if environment not in PERMISSIVE_ENVIRONMENTS | STRICT_ENVIRONMENTS:
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: ENVIRONMENT must be development, "
+                f"test, staging, or production; received {environment_label}."
+            )
+
+        if raw_url == LOCAL_SUPABASE_URL:
+            if environment in PERMISSIVE_ENVIRONMENTS:
+                return
+            raise SupabaseSafetyError(
+                f"Refusing unsafe Supabase target: ENVIRONMENT={environment} cannot "
+                "use the local Supabase project."
+            )
+
+        hosted_match = HOSTED_SUPABASE_URL_PATTERN.fullmatch(raw_url)
+        if hosted_match is None:
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: SUPABASE_URL must be the canonical "
+                "https://<project-ref>.supabase.co URL with no credentials, port, "
+                "path, query, fragment, whitespace, or trailing slash."
+            )
+
+        project_ref = hosted_match.group("project_ref")
+        if environment == "production":
+            if raw_url == KOARYU_PRODUCTION_SUPABASE_URL:
+                return
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: ENVIRONMENT=production requires "
+                "Koaryu's pinned production Supabase project."
+            )
+        if environment == "staging":
+            if raw_url == KOARYU_STAGING_SUPABASE_URL:
+                return
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: ENVIRONMENT=staging requires "
+                "Koaryu's pinned staging Supabase project."
+            )
+        if raw_url in SHIPPED_PLACEHOLDER_SUPABASE_URLS:
+            return
+        if environment == "test":
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: ENVIRONMENT=test cannot use a real "
+                "hosted Supabase project."
+            )
+        if project_ref in {
+            KOARYU_PRODUCTION_SUPABASE_REF,
+            KOARYU_STAGING_SUPABASE_REF,
+        }:
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: ENVIRONMENT=development cannot use "
+                "Koaryu's production or staging Supabase project."
+            )
+        expected_ref = self.SUPABASE_DEVELOPMENT_PROJECT_REF
+        if project_ref != expected_ref:
+            raise SupabaseSafetyError(
+                "Refusing unsafe Supabase target: hosted development requires "
+                "SUPABASE_DEVELOPMENT_PROJECT_REF to exactly match SUPABASE_URL."
+            )
+
+    def validate_supabase_service_role_configuration(self) -> None:
+        self.validate_supabase_target()
+        validate_no_ambient_supabase_transport()
+
     def validate_runtime_configuration(self) -> None:
         """Fail closed when a hosted environment has incomplete or unsafe config."""
         environment = self.ENVIRONMENT.strip().lower()
+        self.validate_supabase_service_role_configuration()
         if environment in PERMISSIVE_ENVIRONMENTS:
             return
         if environment not in STRICT_ENVIRONMENTS:

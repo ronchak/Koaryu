@@ -23,12 +23,15 @@ from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
-from supabase import create_client
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = ROOT_DIR / "backend"
 BACKEND_ENV = ROOT_DIR / "backend" / ".env"
 DEFAULT_ENDPOINT = "http://127.0.0.1:8001/api/v1/webhooks/stripe/connect"
+
+sys.path.insert(0, str(BACKEND_DIR))
+from app.db.supabase import create_supabase_client  # noqa: E402
 
 
 def _load_environment() -> None:
@@ -87,9 +90,7 @@ def _require_safety_confirmation(args: argparse.Namespace) -> None:
 
 
 def _supabase_client():
-    url = _require_env("SUPABASE_URL")
-    key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
-    return create_client(url, key)
+    return create_supabase_client()
 
 
 def _first_connect_account(account_id: str | None) -> dict[str, Any]:

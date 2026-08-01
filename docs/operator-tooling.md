@@ -30,7 +30,29 @@ Use these targets according to their safety boundary:
 
 Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
 
-Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database.
+Python service-role clients validate both the environment label and the exact
+Supabase target before construction. Production and staging accept only their
+pinned Koaryu project URLs. Test accepts only the canonical local URL
+`http://127.0.0.1:54321` or a shipped placeholder. Development accepts those
+same safe forms or one hosted non-production project whose ref exactly matches
+`SUPABASE_DEVELOPMENT_PROJECT_REF`; neither Koaryu production nor staging can be
+authorized by that setting. Unknown environment labels and non-canonical URLs
+fail closed.
+
+The same boundary refuses active `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`
+configuration, including lowercase variants and operating-system proxy
+settings. It also refuses `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`,
+`SSL_CERT_FILE`, and `SSL_CERT_DIR` overrides, including lowercase variants.
+`NO_PROXY` is not an exception. The pinned Supabase client creates separate
+Auth, PostgREST, Storage, and Functions HTTPX clients and exposes no common
+`trust_env=False` option, so rejecting ambient transport configuration is the
+smallest maintainable policy until that dependency boundary changes.
+
+These checks cover the API, shared backend scripts, and the Connect smoke
+helper. Supabase CLI, direct `SUPABASE_DB_URL`, and `psql` operations remain
+outside this Python boundary, so continue resolving their target explicitly.
+`backend/scripts/comp_studio.py` additionally requires `--expect-project` for
+writes.
 
 ## Studio platform comp access
 

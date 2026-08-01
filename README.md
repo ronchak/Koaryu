@@ -48,6 +48,7 @@ Frontend environment variables:
 Backend environment variables:
 
 - `SUPABASE_URL`: same Supabase project URL used by the frontend
+- `SUPABASE_DEVELOPMENT_PROJECT_REF`: exact non-production project ref required when `development` deliberately uses a hosted Supabase project; leave blank for local, test, staging, and production
 - `SUPABASE_SERVICE_ROLE_KEY`: required for backend access to studio-scoped CRUD, onboarding, and verification scripts
 - `SUPABASE_JWT_SECRET`: legacy HS256 validation secret; ignored unless `SUPABASE_ALLOW_LEGACY_HS256=true`
 - `SUPABASE_ALLOW_LEGACY_HS256`: defaults to `false`; enable only for a time-bounded legacy-token migration (the local Supabase stack still uses `true`)
@@ -66,6 +67,8 @@ Backend environment variables:
 - `BILLING_PLATFORM_FEE_BPS`: Koaryu platform fee in basis points for student billing; defaults to `50`
 - `ACCOUNT_DELETION_WORKER_SECRET`: long random secret required by the internal due-account-deletion processor
 - `SUPPORT_TRIAGE_SECRET`: long random secret required by the internal support ticket triage endpoint
+
+The backend validates the Supabase target before readiness and before every shared service-role client is constructed. Production and staging are pinned to their exact Koaryu projects. Test permits only the canonical local URL or shipped placeholders. Development additionally permits an explicitly pinned hosted project that is neither Koaryu production nor staging. The pinned Supabase client cannot disable environment trust across all of its component transports, so service-role clients fail closed when any HTTP proxy or CA-bundle override is active. `NO_PROXY` does not override that refusal.
 
 When `ENVIRONMENT=production`, the backend requires `STRIPE_MODE=live` with matching `sk_live_` and optional `rk_live_` keys, and fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. This prevents test Stripe identifiers from being written into production tenant records. `LIVE_BILLING_ENABLED=true` is rejected until Koaryu has durable scoped authorization for live mutations. A live-mode deployment with the switch off still verifies and reconciles matching live webhooks; outbound Stripe writes remain closed.
 
@@ -116,7 +119,8 @@ npm run dev
 ```bash
 cd backend
 cp .env.example .env
-# Fill in SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET,
+# Fill in SUPABASE_URL, SUPABASE_DEVELOPMENT_PROJECT_REF when hosted,
+# SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET,
 # FRONTEND_URL, and Stripe billing values if you are testing billing locally
 python -m venv venv
 source venv/bin/activate

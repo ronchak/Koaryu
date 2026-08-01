@@ -43,6 +43,7 @@ BILLING_PLATFORM_FEE_BPS=50
 STRIPE_MODE=live
 LIVE_BILLING_ENABLED=false
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
+SUPABASE_DEVELOPMENT_PROJECT_REF=
 SUPABASE_ALLOW_LEGACY_HS256=false
 ```
 
@@ -68,7 +69,31 @@ Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_liv
 
 ### Hosted Runtime Guard
 
-When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critical service configuration during import. The service refuses to boot if any of the following are blank, placeholder-shaped, too short for a hosted secret, or invalid for that environment:
+FastAPI validates the Supabase service-role target and ambient proxy state in
+every environment during import and readiness checks. The shared client factory
+repeats the validation immediately before calling the SDK, so standalone Python
+operator tools cannot bypass startup. Production accepts only
+`https://mimguepumzsgmcaycdsh.supabase.co`; staging accepts only
+`https://nxgsektqsgrtyfhawxbc.supabase.co`. Development may use the canonical
+local URL, a shipped placeholder, or an explicitly pinned non-production hosted
+project. Test may use only the local URL or placeholders.
+
+Raw ASCII controls, including TAB, CR, and LF, are rejected before URL parsing.
+Hosted URLs must be the canonical lowercase
+`https://<project-ref>.supabase.co` form with no credentials, port, path, query,
+fragment, whitespace, or trailing slash. Local use is deliberately restricted
+to `http://127.0.0.1:54321`.
+
+Service-role use also refuses active `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`
+configuration, including lowercase variants and operating-system proxy
+settings. `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `SSL_CERT_FILE`, and
+`SSL_CERT_DIR` overrides (including lowercase variants) are refused as well;
+`NO_PROXY` is not an exception. Supabase-py 2.9.0 constructs separate Auth,
+PostgREST, Storage, and Functions HTTPX clients and has no common option for
+setting `trust_env=False`, so this release fails closed instead of patching SDK
+internals.
+
+When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, the service also refuses to boot if any of the following are blank, placeholder-shaped, too short for a hosted secret, or invalid for that environment:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -80,9 +105,9 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critic
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
-`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
+`FRONTEND_URL` must be a public HTTPS URL in production. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized configuration error and fix the named config vars before redeploying.
 
-Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures. An unknown or misspelled `ENVIRONMENT` fails closed.
+Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
 
 Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
 
