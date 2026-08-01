@@ -4,20 +4,34 @@ import {
   validateDeadManCheckInConfiguration,
 } from "../../../../../lib/dead-man-check-in.ts";
 import { configuredBackendApiBase } from "../../../../../lib/backend-api-target.ts";
+import { isSafeHeaderSecret } from "../../../../../lib/header-secret.ts";
+import {
+  parsePinnedJson,
+  pinnedHttpsRequest,
+} from "../../../../../lib/pinned-https.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function isAuthorized(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET ?? "";
-  if (!cronSecret) {
+  if (!isSafeHeaderSecret(cronSecret)) {
     return false;
   }
 
   return request.headers.get("authorization") === `Bearer ${cronSecret}`;
 }
 
-export async function GET(request: NextRequest) {
+export async function handleAccountDeletionCron(
+  request: NextRequest,
+  {
+    httpsRequest = pinnedHttpsRequest,
+    deadManSender = sendDeadManCheckIn,
+  }: {
+    httpsRequest?: typeof pinnedHttpsRequest;
+    deadManSender?: typeof sendDeadManCheckIn;
+  } = {},
+) {
   if (!isAuthorized(request)) {
     return Response.json({ detail: "Unauthorized cron request." }, { status: 401 });
   }
@@ -37,7 +51,7 @@ export async function GET(request: NextRequest) {
   // Do not read or forward this credential until the deployment environment
   // is bound to one exact Koaryu backend target.
   const workerSecret = process.env.ACCOUNT_DELETION_WORKER_SECRET ?? "";
-  if (!workerSecret) {
+  if (!isSafeHeaderSecret(workerSecret, 32)) {
     return Response.json({ detail: "Account deletion worker secret is not configured." }, { status: 500 });
   }
 
@@ -59,20 +73,20 @@ export async function GET(request: NextRequest) {
   const target = `${backendApiBase}/internal/account-deletions/process-due`;
 
   try {
-    const upstream = await fetch(target, {
+    const upstream = await httpsRequest({
+      url: target,
       method: "POST",
       headers: {
         "x-internal-secret": workerSecret,
       },
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(20_000),
+      timeoutMs: 20_000,
+      maxResponseBytes: 64 * 1024,
     });
 
-    const body = await upstream.json().catch(() => null);
+    const body = parsePinnedJson(upstream);
 
-    if (upstream.ok && process.env.OPERATIONAL_ALERTS_ENABLED === "true") {
-      const sequence = Number(upstream.headers.get("x-koaryu-heartbeat-sequence"));
+    if (upstream.status >= 200 && upstream.status < 300 && process.env.OPERATIONAL_ALERTS_ENABLED === "true") {
+      const sequence = Number(upstream.headers["x-koaryu-heartbeat-sequence"]);
       if (
         !environment
         || !["development", "test", "staging", "production"].includes(environment)
@@ -84,7 +98,7 @@ export async function GET(request: NextRequest) {
           { status: 502 },
         );
       }
-      await sendDeadManCheckIn({
+      await deadManSender({
         workerId: "deletion-worker",
         environment: environment as "development" | "test" | "staging" | "production",
         commitSha,
@@ -98,4 +112,8 @@ export async function GET(request: NextRequest) {
   } catch {
     return Response.json({ detail: "Could not reach account deletion worker." }, { status: 502 });
   }
+}
+
+export async function GET(request: NextRequest) {
+  return handleAccountDeletionCron(request);
 }

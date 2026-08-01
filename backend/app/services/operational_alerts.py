@@ -6,10 +6,14 @@ import re
 from typing import Any, Mapping, Protocol
 from uuid import UUID, uuid4
 
-import httpx
 from supabase import Client
 
-from app.core.config import Settings, validate_operational_alert_destination
+from app.core.config import (
+    Settings,
+    validate_operational_alert_destination,
+    validate_raw_header_value,
+)
+from app.services.pinned_https import PinnedHttpsError, PinnedHttpsTransport
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row, rpc_rows
 
 
@@ -143,7 +147,7 @@ class HttpsAlertDestination:
         self,
         destinations: Mapping[str, HttpsDestinationConfig],
         *,
-        client: httpx.Client | None = None,
+        transport: PinnedHttpsTransport | None = None,
     ) -> None:
         if set(destinations) != {"primary", "backup"}:
             raise OperationalAlertError("exactly primary and backup destinations are required")
@@ -159,7 +163,14 @@ class HttpsAlertDestination:
                 )
             except ValueError:
                 raise OperationalAlertError("alert destination fingerprint is invalid") from None
-            if len(destination.bearer_secret) < 32 or destination.bearer_secret != destination.bearer_secret.strip():
+            try:
+                validate_raw_header_value(
+                    f"OPERATIONAL_ALERT_{role.upper()}_BEARER_SECRET",
+                    destination.bearer_secret,
+                )
+            except RuntimeError:
+                raise OperationalAlertError("alert destination credential is invalid") from None
+            if len(destination.bearer_secret) < 32:
                 raise OperationalAlertError("alert destination credential is invalid")
         if (
             self.destinations["primary"].url == self.destinations["backup"].url
@@ -169,7 +180,7 @@ class HttpsAlertDestination:
             == self.destinations["backup"].bearer_secret
         ):
             raise OperationalAlertError("primary and backup destinations must be distinct")
-        self.client = client
+        self.transport = transport or PinnedHttpsTransport()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "HttpsAlertDestination":
@@ -220,40 +231,38 @@ class HttpsAlertDestination:
             "Idempotency-Key": attempt_key,
             "X-Koaryu-Destination-Fingerprint": destination.url_fingerprint,
         }
-        client = self.client or httpx.Client(
-            follow_redirects=False,
-            timeout=httpx.Timeout(10.0, connect=5.0),
-            trust_env=False,
-        )
-        owns_client = self.client is None
         try:
-            for send_number in range(2):
-                try:
-                    with client.stream(
-                        "POST",
-                        destination.url,
-                        content=body,
-                        headers=headers,
-                    ) as response:
-                        if response.is_redirect:
-                            raise AlertDeliveryError("redirect_refused")
-                        payload = _bounded_response_bytes(response)
-                        if response.status_code < 200 or response.status_code >= 300:
-                            if send_number == 0 and (
-                                response.status_code in {408, 425, 429}
-                                or 500 <= response.status_code < 600
-                            ):
-                                continue
-                            raise AlertDeliveryError("destination_http_failure")
-                        return _strict_receipt(response.headers.get("content-type"), payload)
-                except httpx.TransportError:
-                    if send_number == 0:
+            target = self.transport.pin(destination.url, destination.hostname)
+        except PinnedHttpsError as exc:
+            raise AlertDeliveryError(str(exc)) from None
+
+        for send_number in range(2):
+            try:
+                response = self.transport.request(
+                    target,
+                    address_index=send_number,
+                    method="POST",
+                    headers=headers,
+                    body=body,
+                )
+                if 300 <= response.status_code < 400:
+                    raise AlertDeliveryError("redirect_refused")
+                if response.status_code < 200 or response.status_code >= 300:
+                    if send_number == 0 and (
+                        response.status_code in {408, 425, 429}
+                        or 500 <= response.status_code < 600
+                    ):
                         continue
-                    raise AlertDeliveryError("destination_transport_failure") from None
-            raise AlertDeliveryError("destination_delivery_failed")
-        finally:
-            if owns_client:
-                client.close()
+                    raise AlertDeliveryError("destination_http_failure")
+                return _strict_receipt(
+                    response.headers.get("content-type"),
+                    response.body,
+                )
+            except PinnedHttpsError:
+                if send_number == 0:
+                    continue
+                raise AlertDeliveryError("destination_transport_failure") from None
+        raise AlertDeliveryError("destination_delivery_failed")
 
 
 class OperationalAlertService:
@@ -385,6 +394,7 @@ class OperationalAlertService:
         delivered = 0
         failed = 0
         lease_token = _new_lease_token()
+        proven_empty = False
         for _ in range(MAX_DELIVERIES_PER_EVALUATION):
             attempt_key = _new_attempt_key()
             row = first_rpc_row(self._execute_delivery_rpc(
@@ -397,6 +407,7 @@ class OperationalAlertService:
                 },
             ))
             if not row:
+                proven_empty = True
                 break
             claimed += 1
             attempt_id = str(row.get("attempt_id") or "")
@@ -432,6 +443,8 @@ class OperationalAlertService:
                         "p_error_code": error_code,
                         "p_retry_after_seconds": _retry_after_seconds(row.get("attempt_number")),
                     })
+        if not proven_empty or failed > 0 or claimed != delivered:
+            raise OperationalAlertError("operational alert outbox did not drain safely")
         return {
             "deliveries_claimed": claimed,
             "deliveries_delivered": delivered,
@@ -527,15 +540,6 @@ def _safe_commit_sha(value: str | None) -> str | None:
     if len(normalized) != 40 or any(character not in "0123456789abcdef" for character in normalized):
         raise OperationalAlertError("commit SHA must be a full lowercase hexadecimal value")
     return normalized
-
-
-def _bounded_response_bytes(response: httpx.Response) -> bytes:
-    payload = bytearray()
-    for chunk in response.iter_bytes():
-        payload.extend(chunk)
-        if len(payload) > 4096:
-            raise AlertDeliveryError("receipt_too_large")
-    return bytes(payload)
 
 
 def _strict_receipt(content_type: str | None, payload: bytes) -> str:

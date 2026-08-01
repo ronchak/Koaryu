@@ -12,6 +12,7 @@ from app.core.config import (
     KOARYU_PRODUCTION_SUPABASE_URL,
     KOARYU_STAGING_SUPABASE_URL,
     get_settings,
+    validate_raw_header_value,
 )
 from app.core.deps import get_supabase
 from app.schemas.account import AccountDeletionProcessResponse
@@ -36,6 +37,13 @@ logger = logging.getLogger(__name__)
 
 
 def _verify_secret(provided: Optional[str], expected: str, purpose: str) -> None:
+    try:
+        validate_raw_header_value(f"{purpose} secret", expected)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{purpose} secret is not safely configured.",
+        ) from None
     if not expected:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -155,6 +163,17 @@ async def acknowledge_operational_alert(
     )
     actor_role: str | None = None
     actor_ref: str | None = None
+    for name, configured_secret in (
+        ("Operational alert primary acknowledgement", settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET),
+        ("Operational alert backup acknowledgement", settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET),
+    ):
+        try:
+            validate_raw_header_value(name, configured_secret)
+        except RuntimeError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Operational alert acknowledgement secret is not safely configured.",
+            ) from None
     if internal_secret and settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET and secrets.compare_digest(
         internal_secret,
         settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET,

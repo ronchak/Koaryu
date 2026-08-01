@@ -33,10 +33,15 @@ const SAFE_SERVER_TIMING_NAMES = new Set([
 export function sanitizeServerTiming(value) {
   if (!value) return [];
   return value.split(",").map((entry) => entry.trim()).flatMap((entry) => {
-    const match = /^([a-z0-9_.-]+)(?:;dur=(\d+(?:\.\d+)?))?$/i.exec(entry);
+    const match = /^([a-z0-9_.-]+);dur=(\d+(?:\.\d+)?)$/i.exec(entry);
     const name = match?.[1].toLowerCase();
-    if (!name || !SAFE_SERVER_TIMING_NAMES.has(name)) return [];
-    return [{ name, duration_ms: match[2] ? Number(match[2]) : null }];
+    const duration = match?.[2] ? Number(match[2]) : null;
+    if (
+      !name
+      || !SAFE_SERVER_TIMING_NAMES.has(name)
+      || !finiteNonnegative(duration)
+    ) return [];
+    return [{ name, duration_ms: duration }];
   });
 }
 
@@ -76,11 +81,20 @@ export function validateCapturedEvidence(evidence) {
     throw new Error("dashboard evidence contains blocked writes or unknown origins.");
   }
   const responseResources = new Set();
+  const serverTimingResources = new Set();
   for (const entry of evidence.server_timing) {
     if (!REQUIRED_RESOURCES.has(entry.resource) || entry.status < 200 || entry.status >= 300) {
       throw new Error("dashboard bootstrap and summary must return successful responses.");
     }
     responseResources.add(entry.resource);
+    if (
+      entry.server_timing.some((timing) => (
+        SAFE_SERVER_TIMING_NAMES.has(timing.name)
+        && finiteNonnegative(timing.duration_ms)
+      ))
+    ) {
+      serverTimingResources.add(entry.resource);
+    }
   }
   const timingResources = new Set();
   for (const entry of evidence.resources) {
@@ -95,7 +109,11 @@ export function validateCapturedEvidence(evidence) {
     timingResources.add(entry.resource);
   }
   for (const resource of REQUIRED_RESOURCES) {
-    if (!responseResources.has(resource) || !timingResources.has(resource)) {
+    if (
+      !responseResources.has(resource)
+      || !timingResources.has(resource)
+      || !serverTimingResources.has(resource)
+    ) {
       throw new Error(`required successful resource evidence is missing for ${resource}.`);
     }
   }
@@ -123,6 +141,16 @@ export async function verifyPostCaptureRelease(options, initialVerification, ver
     throw new Error("deployed release identity changed during performance capture.");
   }
   return verification;
+}
+
+export async function measureDashboardReady(page, startedAt, now = Date.now) {
+  await page.locator('[data-koaryu-dashboard-ready="true"]').waitFor({
+    state: "attached",
+    timeout: 20_000,
+  });
+  const dashboardReadyMs = now() - startedAt;
+  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+  return dashboardReadyMs;
 }
 
 function parseArgs(argv) {
@@ -200,12 +228,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-    await page.locator('[data-koaryu-dashboard-ready="true"]').waitFor({
-      state: "attached",
-      timeout: 20_000,
-    });
-    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-    const dashboardReadyMs = Date.now() - startedAt;
+    const dashboardReadyMs = await measureDashboardReady(page, startedAt);
     if (new URL(page.url()).pathname !== "/dashboard") {
       throw new Error("authenticated storage state did not reach /dashboard.");
     }

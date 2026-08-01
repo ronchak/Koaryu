@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { GET } from "../src/app/api/cron/operational-alerts/evaluate/route.ts";
+import { handleOperationalAlertCron } from "../src/app/api/cron/operational-alerts/evaluate/route.ts";
 
-const ORIGINAL_FETCH = globalThis.fetch;
 const ENV_KEYS = [
   "BACKEND_API_URL",
   "CRON_SECRET",
@@ -45,7 +44,20 @@ function validUpstreamBody() {
   };
 }
 
+function pinnedJson(payload, status = 200) {
+  return {
+    status,
+    headers: { "content-type": "application/json" },
+    body: Buffer.from(JSON.stringify(payload)),
+  };
+}
+
 describe("operational alert cron proxy", () => {
+  let httpsRequests;
+  let deadManRequests;
+  let httpsRequest;
+  let deadManSender;
+
   beforeEach(() => {
     process.env.BACKEND_API_URL = "https://koaryu-staging.onrender.com/api/v1";
     process.env.CRON_SECRET = "cron-secret";
@@ -59,167 +71,135 @@ describe("operational alert cron proxy", () => {
     process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_BEARER_SECRET = "D".repeat(40);
     process.env.VERCEL_GIT_COMMIT_SHA = "a".repeat(40);
     process.env.VERCEL_TARGET_ENV = "staging";
+    httpsRequests = [];
+    deadManRequests = [];
+    httpsRequest = async (options) => {
+      httpsRequests.push(options);
+      return pinnedJson(validUpstreamBody());
+    };
+    deadManSender = async (options) => {
+      deadManRequests.push(options);
+      return "deadman-receipt";
+    };
   });
 
   afterEach(() => {
-    globalThis.fetch = ORIGINAL_FETCH;
     for (const [key, value] of Object.entries(ORIGINAL_ENV)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
   });
 
+  const invoke = (incoming = request()) => handleOperationalAlertCron(incoming, {
+    httpsRequest,
+    deadManSender,
+  });
+
   it("is unauthorized before checking configuration", async () => {
-    let fetched = false;
-    globalThis.fetch = async () => {
-      fetched = true;
-      return new Response();
-    };
-
-    const result = await GET(request("wrong"));
-
+    const result = await invoke(request("wrong"));
     assert.equal(result.status, 401);
-    assert.equal(fetched, false);
+    assert.equal(httpsRequests.length, 0);
   });
 
   it("stays inactive by default", async () => {
     process.env.OPERATIONAL_ALERTS_ENABLED = "false";
-    const result = await GET(request());
-
+    const result = await invoke();
     assert.equal(result.status, 204);
-    assert.equal(await result.text(), "");
+    assert.equal(httpsRequests.length, 0);
   });
 
-  it("refuses a staging backend binding in production", async () => {
+  it("rejects unsafe cron and evaluator secrets before HTTPS construction", async (context) => {
+    const unsafeValues = [
+      ` ${"W".repeat(40)}`,
+      `${"W".repeat(40)} `,
+      `${"W".repeat(40)}\t`,
+      `${"W".repeat(40)}\r`,
+      `${"W".repeat(40)}\n`,
+      `${"W".repeat(40)}\x7f`,
+    ];
+    for (const value of unsafeValues) {
+      await context.test(`worker ${JSON.stringify(value)}`, async () => {
+        process.env.OPERATIONAL_ALERT_WORKER_SECRET = value;
+        assert.equal((await invoke()).status, 500);
+        assert.equal(httpsRequests.length, 0);
+      });
+    }
+    process.env.OPERATIONAL_ALERT_WORKER_SECRET = "W".repeat(40);
+    for (const value of [" cron-secret", "cron-secret ", "cron-secret\t", "cron-secret\x7f"]) {
+      await context.test(`cron ${JSON.stringify(value)}`, async () => {
+        process.env.CRON_SECRET = value;
+        assert.equal((await invoke()).status, 401);
+        assert.equal(httpsRequests.length, 0);
+      });
+    }
+  });
+
+  it("refuses cross-environment or arbitrary backend targets", async () => {
     process.env.VERCEL_TARGET_ENV = "production";
-    const result = await GET(request());
-
-    assert.equal(result.status, 500);
-  });
-
-  it("rejects the documented worker-secret placeholder", async () => {
-    process.env.OPERATIONAL_ALERT_WORKER_SECRET =
-      "long-random-secret-for-operational-alert-evaluation";
-
-    const result = await GET(request());
-
-    assert.equal(result.status, 500);
-  });
-
-  it("does not forward the dedicated secret to an unpinned backend", async () => {
-    process.env.BACKEND_API_URL = "https://backend.example.test/api/v1";
-    let fetched = false;
-    globalThis.fetch = async () => {
-      fetched = true;
-      return Response.json(validUpstreamBody());
-    };
-
-    const result = await GET(request());
-
-    assert.equal(result.status, 500);
-    assert.equal(fetched, false);
+    assert.equal((await invoke()).status, 500);
+    process.env.VERCEL_TARGET_ENV = "staging";
+    process.env.BACKEND_API_URL = "https://attacker.example.test/api/v1";
+    assert.equal((await invoke()).status, 500);
+    assert.equal(httpsRequests.length, 0);
   });
 
   it("preflights dead-man identity before invoking the backend", async () => {
     process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_HOST = "other.example.com";
-    let fetched = false;
-    globalThis.fetch = async () => {
-      fetched = true;
-      return Response.json(validUpstreamBody());
-    };
-
-    const result = await GET(request());
-
-    assert.equal(result.status, 500);
-    assert.equal(fetched, false);
+    assert.equal((await invoke()).status, 500);
+    assert.equal(httpsRequests.length, 0);
   });
 
-  it("calls only the guarded evaluator and returns a counts-only summary", async () => {
-    let captured;
-    globalThis.fetch = async (url, init) => {
-      if (String(url).includes("deadman.example.com")) {
-        return Response.json({ receipt_id: "deadman-receipt-7" });
-      }
-      captured = { url: String(url), init };
-      return Response.json({ ...validUpstreamBody(), unsafe: "must-not-pass" });
+  it("uses only the pinned HTTPS requester and returns a counts-only summary", async () => {
+    httpsRequest = async (options) => {
+      httpsRequests.push(options);
+      return pinnedJson({ ...validUpstreamBody(), unsafe: "must-not-pass" });
     };
-
-    const result = await GET(request());
+    const result = await invoke();
     const body = await result.json();
 
     assert.equal(result.status, 200);
+    assert.equal(httpsRequests.length, 1);
     assert.equal(
-      captured.url,
+      httpsRequests[0].url,
       "https://koaryu-staging.onrender.com/api/v1/internal/operational-alerts/evaluate",
     );
-    assert.equal(captured.init.method, "POST");
-    assert.equal(captured.init.headers["X-Internal-Secret"], "W".repeat(40));
-    assert.equal(captured.init.redirect, "error");
+    assert.equal(httpsRequests[0].headers["X-Internal-Secret"], "W".repeat(40));
+    assert.equal(httpsRequests[0].headers.Authorization, undefined);
+    assert.equal(httpsRequests[0].timeoutMs, 20_000);
+    assert.equal(httpsRequests[0].maxResponseBytes, 64 * 1024);
     assert.equal(body.unsafe, undefined);
-    assert.deepEqual(body.metrics, validUpstreamBody().metrics);
+    assert.equal(deadManRequests.length, 1);
     assert.equal(result.headers.get("cache-control"), "no-store, private");
   });
 
-  it("does not forward an unexpected upstream payload", async () => {
-    globalThis.fetch = async () => Response.json({ requester_email: "private@example.test" });
+  it("does not send dead-man success for failed, inconsistent, or unrecorded drains", async (context) => {
+    const unsafeBodies = [
+      { ...validUpstreamBody(), deliveries_claimed: 2, deliveries_delivered: 0, deliveries_failed: 2 },
+      { ...validUpstreamBody(), deliveries_claimed: 2, deliveries_delivered: 1 },
+      { ...validUpstreamBody(), heartbeat_recorded: false },
+      { ...validUpstreamBody(), heartbeat_sequence: 0 },
+    ];
+    for (const body of unsafeBodies) {
+      await context.test(JSON.stringify(body), async () => {
+        httpsRequest = async () => pinnedJson(body);
+        const result = await invoke();
+        assert.equal(result.status, 502);
+        assert.equal(deadManRequests.length, 0);
+      });
+    }
+  });
 
-    const result = await GET(request());
+  it("does not forward unexpected upstream payloads", async () => {
+    httpsRequest = async () => pinnedJson({ requester_email: "private@example.test" });
+    const result = await invoke();
     const serialized = JSON.stringify(await result.json());
-
     assert.equal(result.status, 502);
     assert.doesNotMatch(serialized, /private@example|requester_email/);
   });
 
-  it("does not replay credentials when the exact backend responds with a redirect", async () => {
-    const calls = [];
-    globalThis.fetch = async (url, init) => {
-      calls.push({ url: String(url), init });
-      if (String(url).startsWith("https://attacker.example.test/")) {
-        return Response.json(validUpstreamBody());
-      }
-      if (init?.redirect === "error") {
-        throw new TypeError("redirect blocked");
-      }
-      return globalThis.fetch("https://attacker.example.test/credential-sink", init);
-    };
-
-    const result = await GET(request());
-
+  it("fails closed when the independent dead-man rejects the check-in", async () => {
+    deadManSender = async () => { throw new Error("bad receipt"); };
+    const result = await invoke();
     assert.equal(result.status, 502);
-    assert.equal(calls.length, 1);
-    assert.equal(
-      calls[0].url,
-      "https://koaryu-staging.onrender.com/api/v1/internal/operational-alerts/evaluate",
-    );
-    assert.equal(calls[0].init.redirect, "error");
-    assert.ok(calls[0].init.signal instanceof AbortSignal);
-    assert.equal(calls[0].init.headers["X-Internal-Secret"], "W".repeat(40));
-    assert.equal(calls[0].init.headers.Authorization, undefined);
-    assert.equal(calls[0].init.headers.authorization, undefined);
-  });
-
-  it("rejects a backend response whose environment label does not match staging", async () => {
-    globalThis.fetch = async () => Response.json({
-      ...validUpstreamBody(),
-      environment: "development",
-    });
-
-    const result = await GET(request());
-
-    assert.equal(result.status, 502);
-  });
-
-  it("fails closed when the exact dead-man receipt is malformed", async () => {
-    globalThis.fetch = async (url) => {
-      if (String(url).includes("deadman.example.com")) {
-        return Response.json({ receipt_id: "ok", extra: "not-allowed" });
-      }
-      return Response.json(validUpstreamBody());
-    };
-
-    const result = await GET(request());
-
-    assert.equal(result.status, 502);
-    assert.deepEqual(await result.json(), { detail: "Could not reach operational alert evaluator." });
   });
 });

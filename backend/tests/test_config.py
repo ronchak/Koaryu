@@ -80,6 +80,10 @@ class HostedConfigValidationTest(unittest.TestCase):
             "STRIPE_RESTRICTED_KEY",
             "ACCOUNT_DELETION_WORKER_SECRET",
             "OPERATIONAL_ALERT_WORKER_SECRET",
+            "OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET",
+            "OPERATIONAL_ALERT_PRIMARY_ACK_SECRET",
+            "OPERATIONAL_ALERT_BACKUP_BEARER_SECRET",
+            "OPERATIONAL_ALERT_BACKUP_ACK_SECRET",
             "SUPPORT_TRIAGE_SECRET",
         )
         malformed_values = (
@@ -88,6 +92,7 @@ class HostedConfigValidationTest(unittest.TestCase):
             "embedded\tcontrol",
             "embedded\rcontrol",
             "embedded\ncontrol",
+            "embedded\x7fcontrol",
         )
 
         for name in header_bound_fields:

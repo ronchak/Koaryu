@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
 
+import { isSafeHeaderSecret } from "./header-secret.ts";
+import {
+  parsePinnedJson,
+  pinnedHttpsRequest,
+  type PinnedHttpsResponse,
+} from "./pinned-https.ts";
+
 type WorkerId = "evaluator" | "deletion-worker";
 
 const WORKER_CONFIG = {
@@ -50,7 +57,7 @@ function configuredDestination(workerId: WorkerId) {
   }
   const actual = createHash("sha256").update(raw, "utf8").digest("hex");
   if (!FINGERPRINT_PATTERN.test(fingerprint) || actual !== fingerprint) return null;
-  if (bearer.length < 32 || bearer !== bearer.trim()) return null;
+  if (!isSafeHeaderSecret(bearer, 32)) return null;
   return { url: raw, fingerprint, bearer };
 }
 
@@ -71,42 +78,18 @@ export function validateDeadManCheckInConfiguration({
   }
 }
 
-async function boundedBody(response: Response) {
-  if (!response.body) return new Uint8Array();
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    length += value.length;
-    if (length > 4096) {
-      await reader.cancel();
-      throw new Error("dead-man receipt exceeded the safe limit");
-    }
-    chunks.push(value);
-  }
-  const result = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return result;
-}
-
 export async function sendDeadManCheckIn({
   workerId,
   environment,
   commitSha,
   sequence,
-  fetchImpl = globalThis.fetch,
+  requestImpl = pinnedHttpsRequest,
 }: {
   workerId: WorkerId;
   environment: "development" | "test" | "staging" | "production";
   commitSha: string;
   sequence: number;
-  fetchImpl?: typeof globalThis.fetch;
+  requestImpl?: typeof pinnedHttpsRequest;
 }) {
   const destination = configuredDestination(workerId);
   validateDeadManCheckInConfiguration({ workerId, environment, commitSha });
@@ -114,7 +97,8 @@ export async function sendDeadManCheckIn({
     throw new Error("dead-man identity is invalid");
   }
   const idempotencyKey = `koaryu:${environment}:${workerId}:${sequence}`;
-  const response = await fetchImpl(destination.url, {
+  const response: PinnedHttpsResponse = await requestImpl({
+    url: destination.url,
     method: "POST",
     headers: {
       Authorization: `Bearer ${destination.bearer}`,
@@ -129,19 +113,17 @@ export async function sendDeadManCheckIn({
       commit_sha: commitSha,
       heartbeat_sequence: sequence,
     }),
-    cache: "no-store",
-    redirect: "error",
-    signal: AbortSignal.timeout(10_000),
+    timeoutMs: 10_000,
+    maxResponseBytes: 4096,
   });
-  const payload = await boundedBody(response);
-  if (!response.ok) throw new Error("dead-man destination rejected the check-in");
-  if ((response.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error("dead-man destination rejected the check-in");
+  }
+  if ((response.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase() !== "application/json") {
     throw new Error("dead-man receipt content type is invalid");
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload));
-  } catch {
+  const parsed = parsePinnedJson(response);
+  if (parsed === null) {
     throw new Error("dead-man receipt is invalid");
   }
   if (

@@ -180,6 +180,26 @@ class InternalEndpointTest(unittest.TestCase):
         alert_service_class.assert_not_called()
 
     @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_evaluator_rejects_unsafe_configured_secret_before_client(
+        self,
+        alert_service_class,
+    ):
+        class UnsafeSettings(EnabledAlertSettings):
+            OPERATIONAL_ALERT_WORKER_SECRET = f"{'w' * 40}\x7f"
+
+        with patch(
+            "app.api.v1.endpoints.internal.get_settings",
+            return_value=UnsafeSettings(),
+        ):
+            response = self.client.post(
+                "/api/v1/internal/operational-alerts/evaluate",
+                headers={"X-Internal-Secret": "w" * 40},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        alert_service_class.assert_not_called()
+
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
     def test_operational_alert_evaluator_rejects_dev_label_on_hosted_target(
         self,
         alert_service_class,
@@ -272,6 +292,26 @@ class InternalEndpointTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+        alert_service_class.return_value.acknowledge.assert_not_called()
+
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_ack_rejects_unsafe_configured_secret_before_rpc(
+        self,
+        alert_service_class,
+    ):
+        class UnsafeSettings(EnabledAlertSettings):
+            OPERATIONAL_ALERT_PRIMARY_ACK_SECRET = f"{'a' * 40}\n"
+
+        with patch(
+            "app.api.v1.endpoints.internal.get_settings",
+            return_value=UnsafeSettings(),
+        ):
+            response = self.client.post(
+                "/api/v1/internal/operational-alerts/11111111-1111-4111-8111-111111111111/acknowledge",
+                headers={"X-Internal-Secret": "a" * 40},
+            )
+
+        self.assertEqual(response.status_code, 503)
         alert_service_class.return_value.acknowledge.assert_not_called()
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())

@@ -52,6 +52,8 @@ npm run verify:deployed-release -- \
 
 The verifier performs GET-only probes against pinned Koaryu targets, rejects redirects, and requires the frontend plus both Render readiness paths to report the same full SHA. A mismatch invalidates subsequent performance evidence.
 
+The dashboard-ready measurement is timestamped immediately when the stable readiness marker appears; the optional network-idle wait happens afterward and is not included. Evidence is rejected unless both `/dashboard/bootstrap` and `/dashboard/summary` return successfully and each supplies at least one allowlisted finite, nonnegative `Server-Timing` duration.
+
 For a privacy-safe authenticated dashboard capture, create a Playwright storage-state file through the existing approved sign-in workflow, then run:
 
 ```bash

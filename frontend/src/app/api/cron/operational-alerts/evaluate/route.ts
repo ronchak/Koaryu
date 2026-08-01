@@ -3,6 +3,11 @@ import {
   validateDeadManCheckInConfiguration,
 } from "../../../../../lib/dead-man-check-in.ts";
 import { configuredBackendApiBase } from "../../../../../lib/backend-api-target.ts";
+import { isSafeHeaderSecret } from "../../../../../lib/header-secret.ts";
+import {
+  parsePinnedJson,
+  pinnedHttpsRequest,
+} from "../../../../../lib/pinned-https.ts";
 
 const ALLOWED_RULE_IDS = new Set([
   "stripe-live-webhook-failure",
@@ -60,6 +65,10 @@ function safeUpstreamSummary(value: unknown, expectedEnvironment: string) {
     || deliveriesDelivered === null
     || deliveriesFailed === null
     || heartbeatSequence === null
+    || deliveriesFailed !== 0
+    || deliveriesClaimed !== deliveriesDelivered
+    || body.heartbeat_recorded !== true
+    || heartbeatSequence < 1
   ) {
     return null;
   }
@@ -75,9 +84,18 @@ function safeUpstreamSummary(value: unknown, expectedEnvironment: string) {
   };
 }
 
-export async function GET(request: Request) {
+export async function handleOperationalAlertCron(
+  request: Request,
+  {
+    httpsRequest = pinnedHttpsRequest,
+    deadManSender = sendDeadManCheckIn,
+  }: {
+    httpsRequest?: typeof pinnedHttpsRequest;
+    deadManSender?: typeof sendDeadManCheckIn;
+  } = {},
+) {
   const cronSecret = process.env.CRON_SECRET ?? "";
-  if (!cronSecret || request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
+  if (!isSafeHeaderSecret(cronSecret) || request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
     return response({ detail: "Unauthorized cron request." }, 401);
   }
 
@@ -109,8 +127,7 @@ export async function GET(request: Request) {
 
   const workerSecret = process.env.OPERATIONAL_ALERT_WORKER_SECRET ?? "";
   if (
-    workerSecret.length < 32
-    || workerSecret !== workerSecret.trim()
+    !isSafeHeaderSecret(workerSecret, 32)
     || workerSecret === "long-random-secret-for-operational-alert-evaluation"
   ) {
     return response({ detail: "Operational alert worker secret is not configured." }, 500);
@@ -121,24 +138,24 @@ export async function GET(request: Request) {
   }
 
   try {
-    const upstream = await fetch(`${backendBase}/internal/operational-alerts/evaluate`, {
+    const upstream = await httpsRequest({
+      url: `${backendBase}/internal/operational-alerts/evaluate`,
       method: "POST",
       headers: { "X-Internal-Secret": workerSecret },
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(20_000),
+      timeoutMs: 20_000,
+      maxResponseBytes: 64 * 1024,
     });
     const summary = safeUpstreamSummary(
-      await upstream.json().catch(() => null),
+      parsePinnedJson(upstream),
       deploymentEnvironment,
     );
-    if (!upstream.ok || !summary) {
+    if (upstream.status < 200 || upstream.status >= 300 || !summary) {
       return response(
         { detail: "Operational alert evaluator did not return a safe successful result." },
-        upstream.ok ? 502 : upstream.status,
+        upstream.status >= 200 && upstream.status < 300 ? 502 : upstream.status,
       );
     }
-    await sendDeadManCheckIn({
+    await deadManSender({
       workerId: "evaluator",
       environment: deploymentEnvironment as "development" | "test" | "staging" | "production",
       commitSha,
@@ -148,4 +165,8 @@ export async function GET(request: Request) {
   } catch {
     return response({ detail: "Could not reach operational alert evaluator." }, 502);
   }
+}
+
+export async function GET(request: Request) {
+  return handleOperationalAlertCron(request);
 }

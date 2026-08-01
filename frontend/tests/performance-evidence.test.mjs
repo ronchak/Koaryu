@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   classifyResource,
+  measureDashboardReady,
   openVerifiedBrowser,
   sanitizeServerTiming,
   validateCapturedEvidence,
@@ -65,8 +66,16 @@ describe("privacy-safe performance evidence", () => {
         { resource: "dashboard-summary", duration_ms: 3, response_start_ms: 2, transfer_bytes: 0 },
       ],
       server_timing: [
-        { resource: "dashboard-bootstrap", status: 200, server_timing: [] },
-        { resource: "dashboard-summary", status: 204, server_timing: [] },
+        {
+          resource: "dashboard-bootstrap",
+          status: 200,
+          server_timing: [{ name: "koaryu_total", duration_ms: 1.5 }],
+        },
+        {
+          resource: "dashboard-summary",
+          status: 204,
+          server_timing: [{ name: "koaryu_summary_total", duration_ms: 2.5 }],
+        },
       ],
     };
 
@@ -101,6 +110,44 @@ describe("privacy-safe performance evidence", () => {
       }),
       /successful responses/,
     );
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        server_timing: evidence.server_timing.map((entry) => (
+          entry.resource === "dashboard-bootstrap" ? { ...entry, server_timing: [] } : entry
+        )),
+      }),
+      /missing for dashboard-bootstrap/,
+    );
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        server_timing: evidence.server_timing.map((entry) => (
+          entry.resource === "dashboard-summary"
+            ? { ...entry, server_timing: [{ name: "koaryu_summary_total", duration_ms: Infinity }] }
+            : entry
+        )),
+      }),
+      /missing for dashboard-summary/,
+    );
+  });
+
+  it("timestamps readiness before the optional network-idle wait", async () => {
+    const events = [];
+    const page = {
+      locator: () => ({
+        waitFor: async () => { events.push("ready"); },
+      }),
+      waitForLoadState: async () => { events.push("networkidle"); },
+    };
+
+    const readyMs = await measureDashboardReady(page, 100, () => {
+      events.push("timestamp");
+      return 125;
+    });
+
+    assert.equal(readyMs, 25);
+    assert.deepEqual(events, ["ready", "timestamp", "networkidle"]);
   });
 
   it("rejects an alias race when the post-capture release identity changes", async () => {
