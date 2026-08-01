@@ -265,6 +265,7 @@ with required_tables(schema_name, table_name, rls_enabled, service_privileges) a
     ('public', 'studio_live_billing_authorizations', true, 'SELECT'),
     ('public', 'stripe_live_billing_reconciliation_checkpoints', true, 'SELECT'),
     ('public', 'stripe_connect_account_dispositions', true, 'SELECT'),
+    ('public', 'stripe_live_billing_reconciliation_account_evidence', true, 'SELECT'),
     ('public', 'operational_alert_episodes', true, 'INSERT,SELECT,UPDATE'),
     ('public', 'operational_alert_outbox', true, 'INSERT,SELECT,UPDATE'),
     ('public', 'operational_alert_delivery_attempts', true, 'INSERT,SELECT'),
@@ -317,6 +318,8 @@ required_policies(table_name, policy_name, permissive, command_name, role_names,
     ('stripe_live_billing_reconciliation_checkpoints', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('stripe_connect_account_dispositions', 'stripe_connect_account_dispositions_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
     ('stripe_connect_account_dispositions', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'stripe_live_billing_account_evidence_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('operational_alert_episodes', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('operational_alert_outbox', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('operational_alert_delivery_attempts', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
@@ -371,14 +374,20 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.preserve_studio_comp_provenance()', 'search_path=pg_catalog', false, false),
     ('public.set_studio_comp_atomic(uuid, boolean, text, uuid, text, boolean)', 'search_path=public, pg_temp', false, true),
     ('public.clear_studio_comp_for_billing_event(uuid, bigint)', 'search_path=public, pg_temp', false, true),
-    ('public.record_stripe_live_billing_reconciliation_checkpoint(text, integer, integer, integer, integer, integer, integer, timestamp with time zone, timestamp with time zone, integer, integer, boolean, boolean, timestamp with time zone, text, text, uuid, text)', 'search_path=public, pg_temp', true, true),
+    ('public.record_stripe_live_billing_reconciliation_checkpoint(text, integer, integer, integer, integer, integer, integer, timestamp with time zone, timestamp with time zone, integer, integer, boolean, boolean, timestamp with time zone, text, text, uuid, text)', 'search_path=public, pg_temp', true, false),
+    ('public.record_stripe_live_billing_reconciliation_checkpoint_v2(jsonb, timestamp with time zone, text, text, uuid, text)', 'search_path=""', true, true),
+    ('public.authorize_studio_live_billing_mutation_atomic(uuid, text, text, text, text)', 'search_path=""', true, true),
+    ('private.current_connect_account_generation(jsonb)', 'search_path=""', false, true),
+    ('private.bind_live_billing_authorization_checkpoint()', 'search_path=""', true, false),
     ('public.set_studio_live_billing_authorization_atomic(uuid, text, boolean, timestamp with time zone, text, uuid, text, text)', 'search_path=public, pg_temp', true, true),
     ('public.set_stripe_connect_account_exclusion_atomic(text, boolean, text, uuid, text)', 'search_path=public, pg_temp', true, true),
     ('public.finish_stripe_event_processing_v2(uuid, text, text, text, text)', 'search_path=public, pg_temp', false, true),
     ('public.prevent_operational_alert_append_only_mutation()', 'search_path=""', false, false),
     ('public.enforce_operational_alert_sent_receipt()', 'search_path=""', false, false),
     ('public.operational_alert_metric_counts()', 'search_path=public, pg_temp', false, true),
-    ('public.evaluate_operational_alert(text, text, bigint, integer, integer, text, text, text, text)', 'search_path=public, pg_temp', false, true),
+    ('public.evaluate_operational_alert(text, text, bigint, integer, integer, text, text, text, text)', 'search_path=public, pg_temp', false, false),
+    ('public.evaluate_operational_alert(text, text, bigint, integer, integer, text, text, integer, text, text, text)', 'search_path=public, pg_temp', false, true),
+    ('public.acknowledge_operational_alert(text, uuid, text, text)', 'search_path=public, pg_temp', false, true),
     ('public.claim_operational_alert_delivery(text, text, uuid, integer)', 'search_path=public, pg_temp', false, true),
     ('public.complete_operational_alert_delivery(uuid, text, text)', 'search_path=public, pg_temp', false, true),
     ('public.fail_operational_alert_delivery(uuid, text, text, integer)', 'search_path=public, pg_temp', false, true),
@@ -418,6 +427,7 @@ required_triggers(table_name, trigger_name, function_schema, function_name, trig
     ('studio_subscriptions', 'preserve_studio_comp_provenance_on_metadata_update', 'public', 'preserve_studio_comp_provenance', 19),
     ('studio_live_billing_authorizations', 'set_studio_live_billing_authorizations_updated_at', 'public', 'update_updated_at_column', 19),
     ('stripe_connect_account_dispositions', 'set_stripe_connect_account_dispositions_updated_at', 'public', 'update_updated_at_column', 19),
+    ('studio_live_billing_authorizations', 'bind_live_billing_authorization_checkpoint', 'private', 'bind_live_billing_authorization_checkpoint', 23),
     ('operational_alert_delivery_attempts', 'prevent_operational_alert_attempt_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
     ('operational_alert_delivery_outcomes', 'prevent_operational_alert_outcome_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
     ('operational_alert_audit_events', 'prevent_operational_alert_audit_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
@@ -451,6 +461,7 @@ required_indexes(index_name, table_name, unique_index, partial_index) as (
     ('idx_studio_live_billing_authorizations_enabled', 'studio_live_billing_authorizations', false, true),
     ('idx_stripe_live_billing_reconciliation_checkpoints_latest', 'stripe_live_billing_reconciliation_checkpoints', false, false),
     ('idx_stripe_events_error_reference', 'stripe_events', true, true),
+    ('idx_stripe_events_live_billing_ingest_sequence', 'stripe_events', true, false),
     ('operational_alert_episodes_one_unresolved', 'operational_alert_episodes', true, true),
     ('operational_alert_episodes_recent', 'operational_alert_episodes', false, false),
     ('operational_alert_outbox_claim', 'operational_alert_outbox', false, true),
@@ -476,10 +487,11 @@ index_compared as (
     from required_indexes required
     left join index_actual actual using (index_name)
 ),
-required_sequences(table_name, column_name, service_usage, service_select) as (
+required_sequences(table_name, column_name, service_usage, service_select, service_update) as (
   values
-    ('stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence', true, true),
-    ('operational_alert_audit_events', 'id', true, true)
+    ('stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence', true, true, false),
+    ('stripe_events', 'live_billing_ingest_sequence', true, true, false),
+    ('operational_alert_audit_events', 'id', true, true, false)
 ),
 sequence_actual as (
   select table_relation.relname as table_name, attribute.attname as column_name,
@@ -488,7 +500,8 @@ sequence_actual as (
          has_sequence_privilege('anon', sequence.oid, 'USAGE,SELECT,UPDATE') as anon_access,
          has_sequence_privilege('authenticated', sequence.oid, 'USAGE,SELECT,UPDATE') as authenticated_access,
          has_sequence_privilege('service_role', sequence.oid, 'USAGE') as service_usage,
-         has_sequence_privilege('service_role', sequence.oid, 'SELECT') as service_select
+         has_sequence_privilege('service_role', sequence.oid, 'SELECT') as service_select,
+         has_sequence_privilege('service_role', sequence.oid, 'UPDATE') as service_update
     from pg_class sequence
     join pg_depend dependency on dependency.objid = sequence.oid and dependency.deptype in ('a', 'i')
     join pg_class table_relation on table_relation.oid = dependency.refobjid
@@ -502,9 +515,98 @@ sequence_compared as (
   select required.*, actual.owner_name, actual.public_access,
          actual.anon_access, actual.authenticated_access,
          actual.service_usage as actual_service_usage,
-         actual.service_select as actual_service_select
+         actual.service_select as actual_service_select,
+         actual.service_update as actual_service_update
     from required_sequences required
     left join sequence_actual actual using (table_name, column_name)
+),
+required_columns(table_name, column_name, data_type, nullable, identity_column) as (
+  values
+    ('stripe_events', 'error_reference', 'text', true, false),
+    ('stripe_events', 'live_billing_ingest_sequence', 'bigint', false, true),
+    ('stripe_live_billing_reconciliation_checkpoints', 'evidence_source', 'text', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_url', 'text', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_sha', 'text', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_verified_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'event_window_started_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'event_window_ended_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'local_event_ingest_watermark', 'bigint', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'bounded_provider_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'bounded_local_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'provider_only_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'local_only_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'platform_provider_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'platform_local_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'platform_delivery_verified_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'unexpected_enabled_endpoint_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'account_evidence_count', 'integer', true, false),
+    ('studio_live_billing_authorizations', 'reconciliation_checkpoint_id', 'uuid', true, false),
+    ('studio_live_billing_authorizations', 'local_event_ingest_watermark', 'bigint', true, false),
+    ('operational_alert_episodes', 'backup_destination_id', 'text', false, false),
+    ('operational_alert_episodes', 'escalation_after_minutes', 'integer', false, false),
+    ('operational_alert_episodes', 'acknowledged_at', 'timestamp with time zone', true, false),
+    ('operational_alert_episodes', 'acknowledged_by_role', 'text', true, false),
+    ('operational_alert_episodes', 'acknowledged_actor_ref', 'text', true, false),
+    ('operational_alert_outbox', 'event_kind', 'text', false, false),
+    ('operational_alert_outbox', 'destination_role', 'text', false, false)
+),
+column_compared as (
+  select required.*,
+         actual.data_type as actual_data_type,
+         actual.is_nullable = 'YES' as actual_nullable,
+         actual.is_identity = 'YES' as actual_identity_column
+    from required_columns required
+    left join information_schema.columns actual
+      on actual.table_schema = 'public'
+     and actual.table_name = required.table_name
+     and actual.column_name = required.column_name
+),
+required_constraints(table_name, constraint_identity, constraint_type) as (
+  values
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_source_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_ready_url_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_ready_sha_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_window_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_watermark_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_gap_contract', 'c'),
+    ('studio_live_billing_authorizations', 'studio_live_billing_checkpoint_binding', 'c'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'primary:checkpoint_id,stripe_connected_account_id', 'p'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'unique:checkpoint_id,studio_id', 'u'),
+    ('operational_alert_episodes', 'operational_alert_episode_ack_complete', 'c'),
+    ('operational_alert_outbox', 'operational_alert_outbox_episode_event_role_key', 'u'),
+    ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c')
+),
+constraint_actual as (
+  select relation.relname as table_name,
+         case
+           when relation.relname = 'stripe_live_billing_reconciliation_account_evidence'
+            and constraint_state.contype = 'p'
+             then 'primary:' || columns.column_names
+           when relation.relname = 'stripe_live_billing_reconciliation_account_evidence'
+            and constraint_state.contype = 'u'
+             then 'unique:' || columns.column_names
+           else constraint_state.conname
+         end as constraint_identity,
+         constraint_state.contype::text as constraint_type,
+         constraint_state.convalidated
+    from pg_constraint constraint_state
+    join pg_class relation on relation.oid = constraint_state.conrelid
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    left join lateral (
+      select string_agg(attribute.attname, ',' order by key_position.ordinality) as column_names
+        from unnest(constraint_state.conkey) with ordinality key_position(attnum, ordinality)
+        join pg_attribute attribute
+          on attribute.attrelid = constraint_state.conrelid
+         and attribute.attnum = key_position.attnum
+    ) columns on true
+   where namespace.nspname = 'public'
+),
+constraint_compared as (
+  select required.*,
+         actual.constraint_type as actual_constraint_type,
+         actual.convalidated
+    from required_constraints required
+    left join constraint_actual actual using (table_name, constraint_identity)
 ),
 states as (
   select 'tables' as category, count(*)::integer as object_count,
@@ -533,13 +635,19 @@ states as (
     from index_compared
   union all
   select 'sequences', count(*)::integer,
-         md5(string_agg(table_name || '.' || column_name || ':' || coalesce(owner_name, '') || ':' || coalesce(actual_service_usage::text, '') || ':' || coalesce(actual_service_select::text, ''), '|' order by table_name, column_name)),
-         count(*) filter (where owner_name is null or owner_name <> 'postgres' or public_access or anon_access or authenticated_access or actual_service_usage is distinct from service_usage or actual_service_select is distinct from service_select)::integer
+         md5(string_agg(table_name || '.' || column_name || ':' || coalesce(owner_name, '') || ':' || coalesce(actual_service_usage::text, '') || ':' || coalesce(actual_service_select::text, '') || ':' || coalesce(actual_service_update::text, ''), '|' order by table_name, column_name)),
+         count(*) filter (where owner_name is null or owner_name <> 'postgres' or public_access or anon_access or authenticated_access or actual_service_usage is distinct from service_usage or actual_service_select is distinct from service_select or actual_service_update is distinct from service_update)::integer
     from sequence_compared
   union all
-  select 'columns', 1,
-         md5(coalesce((select data_type || ':' || is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'stripe_events' and column_name = 'error_reference'), 'missing')),
-         case when exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'stripe_events' and column_name = 'error_reference' and data_type = 'text') then 0 else 1 end
+  select 'columns', count(*)::integer,
+         md5(string_agg(table_name || '.' || column_name || ':' || coalesce(actual_data_type, '') || ':' || coalesce(actual_nullable::text, '') || ':' || coalesce(actual_identity_column::text, ''), '|' order by table_name, column_name)),
+         count(*) filter (where actual_data_type is distinct from data_type or actual_nullable is distinct from nullable or actual_identity_column is distinct from identity_column)::integer
+    from column_compared
+  union all
+  select 'constraints', count(*)::integer,
+         md5(string_agg(table_name || ':' || constraint_identity || ':' || coalesce(actual_constraint_type, '') || ':' || coalesce(convalidated::text, ''), '|' order by table_name, constraint_identity)),
+         count(*) filter (where actual_constraint_type is distinct from constraint_type or convalidated is distinct from true)::integer
+    from constraint_compared
 )
 select string_agg(category || '=' || object_count::text || ':' || state_digest || ':' || failures::text, ';' order by category) as catalog_state
 from states
@@ -866,13 +974,14 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
 
 export function validateCatalogState(catalogState) {
   const expectedCatalogCounts = new Map([
-    ["columns", 1],
-    ["functions", 19],
-    ["indexes", 8],
-    ["policies", 12],
-    ["sequences", 2],
-    ["tables", 10],
-    ["triggers", 9],
+    ["columns", 27],
+    ["constraints", 12],
+    ["functions", 25],
+    ["indexes", 9],
+    ["policies", 14],
+    ["sequences", 3],
+    ["tables", 11],
+    ["triggers", 10],
   ]);
   const catalogParts = (catalogState ?? "").split(";");
   if (catalogParts.length !== expectedCatalogCounts.size) {

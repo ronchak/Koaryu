@@ -8,6 +8,7 @@ DO $$
 DECLARE
     v_checkpoint_sequence REGCLASS;
     v_audit_sequence REGCLASS;
+    v_event_sequence REGCLASS;
 BEGIN
     v_checkpoint_sequence := pg_get_serial_sequence(
         'public.stripe_live_billing_reconciliation_checkpoints',
@@ -17,20 +18,37 @@ BEGIN
         'public.operational_alert_audit_events',
         'id'
     )::REGCLASS;
-    IF v_checkpoint_sequence IS NULL OR v_audit_sequence IS NULL THEN
+    v_event_sequence := pg_get_serial_sequence(
+        'public.stripe_events',
+        'live_billing_ingest_sequence'
+    )::REGCLASS;
+    IF v_checkpoint_sequence IS NULL OR v_audit_sequence IS NULL
+       OR v_event_sequence IS NULL THEN
         RAISE EXCEPTION 'Required release identity sequence dependency is missing.';
     END IF;
     EXECUTE format(
-        'REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated',
+        'REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated, service_role',
         v_checkpoint_sequence
     );
     EXECUTE format(
-        'REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated',
+        'REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated, service_role',
         v_audit_sequence
+    );
+    EXECUTE format(
+        'REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated, service_role',
+        v_event_sequence
     );
     EXECUTE format(
         'GRANT USAGE, SELECT ON SEQUENCE %s TO service_role',
         v_audit_sequence
+    );
+    EXECUTE format(
+        'GRANT USAGE, SELECT ON SEQUENCE %s TO service_role',
+        v_checkpoint_sequence
+    );
+    EXECUTE format(
+        'GRANT USAGE, SELECT ON SEQUENCE %s TO service_role',
+        v_event_sequence
     );
 END;
 $$;
@@ -215,6 +233,7 @@ DECLARE
         'operational_alert_heartbeats',
         'operational_alert_outbox',
         'stripe_connect_account_dispositions',
+        'stripe_live_billing_reconciliation_account_evidence',
         'stripe_live_billing_reconciliation_checkpoints',
         'studio_live_billing_authorizations'
     ];
@@ -224,6 +243,7 @@ DECLARE
         'public.complete_operational_alert_delivery(uuid,text,text)',
         'public.enforce_operational_alert_sent_receipt()',
         'public.evaluate_operational_alert(text,text,bigint,integer,integer,text,text,text,text)',
+        'public.evaluate_operational_alert(text,text,bigint,integer,integer,text,text,integer,text,text,text)',
         'public.fail_operational_alert_delivery(uuid,text,text,integer)',
         'public.finish_stripe_event_processing_v2(uuid,text,text,text,text)',
         'public.koaryu_release_schema_preflight()',
@@ -233,6 +253,11 @@ DECLARE
         'public.prevent_operational_alert_append_only_mutation()',
         'public.record_operational_alert_heartbeat(text,text,text)',
         'public.record_stripe_live_billing_reconciliation_checkpoint(text,integer,integer,integer,integer,integer,integer,timestamp with time zone,timestamp with time zone,integer,integer,boolean,boolean,timestamp with time zone,text,text,uuid,text)',
+        'public.record_stripe_live_billing_reconciliation_checkpoint_v2(jsonb,timestamp with time zone,text,text,uuid,text)',
+        'public.authorize_studio_live_billing_mutation_atomic(uuid,text,text,text,text)',
+        'public.acknowledge_operational_alert(text,uuid,text,text)',
+        'private.current_connect_account_generation(jsonb)',
+        'private.bind_live_billing_authorization_checkpoint()',
         'public.set_stripe_connect_account_exclusion_atomic(text,boolean,text,uuid,text)',
         'public.set_studio_comp_atomic(uuid,boolean,text,uuid,text,boolean)',
         'public.set_studio_live_billing_authorization_atomic(uuid,text,boolean,timestamp with time zone,text,uuid,text,text)'
@@ -303,6 +328,8 @@ BEGIN
               ('stripe_live_billing_reconciliation_checkpoints', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
               ('stripe_connect_account_dispositions', 'stripe_connect_account_dispositions_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
               ('stripe_connect_account_dispositions', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+              ('stripe_live_billing_reconciliation_account_evidence', 'stripe_live_billing_account_evidence_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+              ('stripe_live_billing_reconciliation_account_evidence', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
               ('operational_alert_episodes', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
               ('operational_alert_outbox', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
               ('operational_alert_delivery_attempts', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
@@ -390,10 +417,22 @@ BEGIN
 
     IF pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence') IS NULL
        OR pg_get_serial_sequence('public.operational_alert_audit_events', 'id') IS NULL
+       OR pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence') IS NULL
        OR has_sequence_privilege('anon', pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence'), 'USAGE,SELECT,UPDATE')
        OR has_sequence_privilege('authenticated', pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence'), 'USAGE,SELECT,UPDATE')
        OR has_sequence_privilege('anon', pg_get_serial_sequence('public.operational_alert_audit_events', 'id'), 'USAGE,SELECT,UPDATE')
        OR has_sequence_privilege('authenticated', pg_get_serial_sequence('public.operational_alert_audit_events', 'id'), 'USAGE,SELECT,UPDATE')
+       OR has_sequence_privilege('anon', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence'), 'USAGE,SELECT,UPDATE')
+       OR has_sequence_privilege('authenticated', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence'), 'USAGE,SELECT,UPDATE')
+       OR NOT has_sequence_privilege('service_role', pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence'), 'USAGE')
+       OR NOT has_sequence_privilege('service_role', pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence'), 'SELECT')
+       OR has_sequence_privilege('service_role', pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence'), 'UPDATE')
+       OR NOT has_sequence_privilege('service_role', pg_get_serial_sequence('public.operational_alert_audit_events', 'id'), 'USAGE')
+       OR NOT has_sequence_privilege('service_role', pg_get_serial_sequence('public.operational_alert_audit_events', 'id'), 'SELECT')
+       OR has_sequence_privilege('service_role', pg_get_serial_sequence('public.operational_alert_audit_events', 'id'), 'UPDATE')
+       OR NOT has_sequence_privilege('service_role', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence'), 'USAGE')
+       OR NOT has_sequence_privilege('service_role', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence'), 'SELECT')
+       OR has_sequence_privilege('service_role', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence'), 'UPDATE')
        OR EXISTS (
            SELECT 1
              FROM pg_class sequence
@@ -405,7 +444,8 @@ BEGIN
             WHERE namespace.nspname = 'public'
               AND sequence.oid IN (
                   to_regclass(pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence')),
-                  to_regclass(pg_get_serial_sequence('public.operational_alert_audit_events', 'id'))
+                  to_regclass(pg_get_serial_sequence('public.operational_alert_audit_events', 'id')),
+                  to_regclass(pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence'))
               )
               AND acl.grantee = 0
        ) THEN
@@ -434,12 +474,140 @@ BEGIN
         END IF;
     END LOOP;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = 'stripe_events'
-           AND column_name = 'error_reference' AND data_type = 'text'
+    IF NOT has_table_privilege('service_role', 'public.stripe_live_billing_reconciliation_account_evidence', 'SELECT')
+       OR has_table_privilege('service_role', 'public.stripe_live_billing_reconciliation_account_evidence', 'INSERT,UPDATE,DELETE') THEN
+        v_failures := array_append(v_failures, 'billing_account_evidence_acl');
+    END IF;
+
+    IF EXISTS (
+        WITH expected(signature, search_path_config, security_definer, service_execute) AS (
+            VALUES
+              ('public.record_stripe_live_billing_reconciliation_checkpoint(text, integer, integer, integer, integer, integer, integer, timestamp with time zone, timestamp with time zone, integer, integer, boolean, boolean, timestamp with time zone, text, text, uuid, text)', 'search_path=public, pg_temp', true, false),
+              ('public.record_stripe_live_billing_reconciliation_checkpoint_v2(jsonb, timestamp with time zone, text, text, uuid, text)', 'search_path=""', true, true),
+              ('public.authorize_studio_live_billing_mutation_atomic(uuid, text, text, text, text)', 'search_path=""', true, true),
+              ('private.current_connect_account_generation(jsonb)', 'search_path=""', false, true),
+              ('private.bind_live_billing_authorization_checkpoint()', 'search_path=""', true, false),
+              ('public.evaluate_operational_alert(text, text, bigint, integer, integer, text, text, text, text)', 'search_path=public, pg_temp', false, false),
+              ('public.evaluate_operational_alert(text, text, bigint, integer, integer, text, text, integer, text, text, text)', 'search_path=public, pg_temp', false, true),
+              ('public.acknowledge_operational_alert(text, uuid, text, text)', 'search_path=public, pg_temp', false, true),
+              ('public.claim_operational_alert_delivery(text, text, uuid, integer)', 'search_path=public, pg_temp', false, true),
+              ('public.complete_operational_alert_delivery(uuid, text, text)', 'search_path=public, pg_temp', false, true),
+              ('public.fail_operational_alert_delivery(uuid, text, text, integer)', 'search_path=public, pg_temp', false, true)
+        ), actual AS (
+            SELECT format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes)) AS signature,
+                   owner.rolname AS owner_name,
+                   language.lanname AS language_name,
+                   function.prosecdef AS security_definer,
+                   coalesce(array_to_string(function.proconfig, ','), '') AS search_path_config,
+                   has_function_privilege('service_role', function.oid, 'EXECUTE') AS service_execute
+              FROM pg_proc function
+              JOIN pg_namespace namespace ON namespace.oid = function.pronamespace
+              JOIN pg_roles owner ON owner.oid = function.proowner
+              JOIN pg_language language ON language.oid = function.prolang
+        )
+        SELECT 1 FROM expected
+        LEFT JOIN actual USING (signature)
+        WHERE actual.signature IS NULL
+           OR actual.owner_name <> 'postgres'
+           OR actual.language_name <> 'plpgsql'
+           OR actual.security_definer IS DISTINCT FROM expected.security_definer
+           OR actual.search_path_config IS DISTINCT FROM expected.search_path_config
+           OR actual.service_execute IS DISTINCT FROM expected.service_execute
     ) THEN
-        v_failures := array_append(v_failures, 'column:stripe_events.error_reference');
+        v_failures := array_append(v_failures, 'billing_alert_function_manifest');
+    END IF;
+
+    IF EXISTS (
+        WITH expected(table_name, column_name, data_type, nullable, identity_column) AS (
+            VALUES
+              ('stripe_events', 'error_reference', 'text', true, false),
+              ('stripe_events', 'live_billing_ingest_sequence', 'bigint', false, true),
+              ('stripe_live_billing_reconciliation_checkpoints', 'evidence_source', 'text', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_url', 'text', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_sha', 'text', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_verified_at', 'timestamp with time zone', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'event_window_started_at', 'timestamp with time zone', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'event_window_ended_at', 'timestamp with time zone', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'local_event_ingest_watermark', 'bigint', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'bounded_provider_event_count', 'integer', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'bounded_local_event_count', 'integer', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'provider_only_event_count', 'integer', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'local_only_event_count', 'integer', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'platform_provider_event_count', 'integer', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'platform_local_event_count', 'integer', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'platform_delivery_verified_at', 'timestamp with time zone', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'unexpected_enabled_endpoint_count', 'integer', true, false),
+              ('stripe_live_billing_reconciliation_checkpoints', 'account_evidence_count', 'integer', true, false),
+              ('studio_live_billing_authorizations', 'reconciliation_checkpoint_id', 'uuid', true, false),
+              ('studio_live_billing_authorizations', 'local_event_ingest_watermark', 'bigint', true, false),
+              ('operational_alert_episodes', 'backup_destination_id', 'text', false, false),
+              ('operational_alert_episodes', 'escalation_after_minutes', 'integer', false, false),
+              ('operational_alert_episodes', 'acknowledged_at', 'timestamp with time zone', true, false),
+              ('operational_alert_episodes', 'acknowledged_by_role', 'text', true, false),
+              ('operational_alert_episodes', 'acknowledged_actor_ref', 'text', true, false),
+              ('operational_alert_outbox', 'event_kind', 'text', false, false),
+              ('operational_alert_outbox', 'destination_role', 'text', false, false)
+        )
+        SELECT 1 FROM expected
+        LEFT JOIN information_schema.columns actual
+          ON actual.table_schema = 'public'
+         AND actual.table_name = expected.table_name
+         AND actual.column_name = expected.column_name
+        WHERE actual.column_name IS NULL
+           OR actual.data_type IS DISTINCT FROM expected.data_type
+           OR (actual.is_nullable = 'YES') IS DISTINCT FROM expected.nullable
+           OR (actual.is_identity = 'YES') IS DISTINCT FROM expected.identity_column
+    ) THEN
+        v_failures := array_append(v_failures, 'column_manifest');
+    END IF;
+
+    IF EXISTS (
+        WITH expected(table_name, constraint_identity, constraint_type) AS (
+            VALUES
+              ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_source_contract', 'c'),
+              ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_ready_url_contract', 'c'),
+              ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_ready_sha_contract', 'c'),
+              ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_window_contract', 'c'),
+              ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_watermark_contract', 'c'),
+              ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_gap_contract', 'c'),
+              ('studio_live_billing_authorizations', 'studio_live_billing_checkpoint_binding', 'c'),
+              ('stripe_live_billing_reconciliation_account_evidence', 'primary:checkpoint_id,stripe_connected_account_id', 'p'),
+              ('stripe_live_billing_reconciliation_account_evidence', 'unique:checkpoint_id,studio_id', 'u'),
+              ('operational_alert_episodes', 'operational_alert_episode_ack_complete', 'c'),
+              ('operational_alert_outbox', 'operational_alert_outbox_episode_event_role_key', 'u'),
+              ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c')
+        ), actual AS (
+            SELECT relation.relname AS table_name,
+                   CASE
+                     WHEN relation.relname = 'stripe_live_billing_reconciliation_account_evidence'
+                      AND constraint_state.contype = 'p'
+                       THEN 'primary:' || columns.column_names
+                     WHEN relation.relname = 'stripe_live_billing_reconciliation_account_evidence'
+                      AND constraint_state.contype = 'u'
+                       THEN 'unique:' || columns.column_names
+                     ELSE constraint_state.conname
+                   END AS constraint_identity,
+                   constraint_state.contype::TEXT AS constraint_type,
+                   constraint_state.convalidated
+              FROM pg_constraint constraint_state
+              JOIN pg_class relation ON relation.oid = constraint_state.conrelid
+              JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+              LEFT JOIN LATERAL (
+                  SELECT string_agg(attribute.attname, ',' ORDER BY key_position.ordinality) AS column_names
+                    FROM unnest(constraint_state.conkey) WITH ORDINALITY key_position(attnum, ordinality)
+                    JOIN pg_attribute attribute
+                      ON attribute.attrelid = constraint_state.conrelid
+                     AND attribute.attnum = key_position.attnum
+              ) columns ON true
+             WHERE namespace.nspname = 'public'
+        )
+        SELECT 1 FROM expected
+        LEFT JOIN actual USING (table_name, constraint_identity)
+        WHERE actual.constraint_identity IS NULL
+           OR actual.constraint_type IS DISTINCT FROM expected.constraint_type
+           OR NOT actual.convalidated
+    ) THEN
+        v_failures := array_append(v_failures, 'constraint_manifest');
     END IF;
 
     IF NOT EXISTS (
@@ -466,10 +634,20 @@ BEGIN
         v_failures := array_append(v_failures, 'identity_guard_triggers');
     END IF;
 
-    -- Reserved migrations 89/90 have not yet integrated into this owner branch.
-    -- The director must replace this sentinel with their reviewed object checks
-    -- before the exact-head release candidate may report ready.
-    v_failures := array_append(v_failures, 'reserved_070000_080000_manifest_pending');
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger trigger
+        WHERE trigger.tgrelid = 'public.studio_live_billing_authorizations'::REGCLASS
+          AND trigger.tgname = 'bind_live_billing_authorization_checkpoint'
+          AND trigger.tgfoid = 'private.bind_live_billing_authorization_checkpoint()'::REGPROCEDURE
+          AND trigger.tgtype = 23 AND trigger.tgenabled = 'O' AND NOT trigger.tgisinternal
+    ) OR NOT EXISTS (
+        SELECT 1 FROM pg_index index_state
+        WHERE index_state.indexrelid = 'public.idx_stripe_events_live_billing_ingest_sequence'::REGCLASS
+          AND index_state.indrelid = 'public.stripe_events'::REGCLASS
+          AND index_state.indisunique AND index_state.indisvalid AND index_state.indisready
+    ) THEN
+        v_failures := array_append(v_failures, 'billing_trigger_index_manifest');
+    END IF;
 
     RETURN QUERY SELECT
         cardinality(v_failures) = 0,

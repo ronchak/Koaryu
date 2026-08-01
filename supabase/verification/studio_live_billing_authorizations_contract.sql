@@ -5,6 +5,7 @@ DECLARE
     v_role TEXT;
     v_protected_table TEXT;
     v_definition TEXT;
+    v_sequence TEXT;
 BEGIN
     FOREACH v_protected_table IN ARRAY ARRAY[
         'public.studio_live_billing_authorizations',
@@ -94,6 +95,49 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Per-account reconciliation evidence must have RLS enabled.';
     END IF;
+
+    IF to_regclass('private.stripe_connect_account_identity_guards') IS NULL
+       OR has_table_privilege('anon', 'private.stripe_connect_account_identity_guards', 'SELECT,INSERT,UPDATE,DELETE')
+       OR has_table_privilege('authenticated', 'private.stripe_connect_account_identity_guards', 'SELECT,INSERT,UPDATE,DELETE')
+       OR has_table_privilege('service_role', 'private.stripe_connect_account_identity_guards', 'SELECT,INSERT,UPDATE,DELETE') THEN
+        RAISE EXCEPTION 'Private Connect identity guard ACL drifted.';
+    END IF;
+
+    FOREACH v_sequence IN ARRAY ARRAY[
+        pg_get_serial_sequence('public.stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence'),
+        pg_get_serial_sequence('public.operational_alert_audit_events', 'id'),
+        pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence')
+    ] LOOP
+        IF v_sequence IS NULL
+           OR has_sequence_privilege('anon', v_sequence, 'USAGE,SELECT,UPDATE')
+           OR has_sequence_privilege('authenticated', v_sequence, 'USAGE,SELECT,UPDATE')
+           OR NOT has_sequence_privilege('service_role', v_sequence, 'USAGE')
+           OR NOT has_sequence_privilege('service_role', v_sequence, 'SELECT')
+           OR has_sequence_privilege('service_role', v_sequence, 'UPDATE') THEN
+            RAISE EXCEPTION 'Release identity sequence ACL drifted.';
+        END IF;
+    END LOOP;
+
+    FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+        IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight()', 'EXECUTE') THEN
+            RAISE EXCEPTION '% can execute the hosted schema preflight.', v_role;
+        END IF;
+    END LOOP;
+    IF EXISTS (
+        SELECT 1
+          FROM pg_proc function
+          CROSS JOIN LATERAL aclexplode(coalesce(
+              function.proacl, acldefault('f', function.proowner)
+          )) acl
+         WHERE function.oid = 'public.koaryu_release_schema_preflight()'::REGPROCEDURE
+           AND acl.grantee = 0
+           AND acl.privilege_type = 'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'PUBLIC can execute the hosted schema preflight.';
+    END IF;
+    IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'service_role cannot execute the hosted schema preflight.';
+    END IF;
 END $$;
 
 DO $$
@@ -108,6 +152,9 @@ DECLARE
     v_result RECORD;
     v_bad_event UUID;
     v_ref TEXT := replace(gen_random_uuid()::TEXT, '-', '');
+    v_guard_event UUID;
+    v_preflight RECORD;
+    v_audit_count INTEGER;
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -361,14 +408,14 @@ BEGIN
         RAISE EXCEPTION 'Reconnect generation inherited stale authorization evidence.';
     END IF;
 
+    PERFORM public.set_stripe_connect_account_exclusion_atomic(
+        'acct_ContractReady1', false, 'Restore mapped contract account', v_actor, NULL
+    );
     UPDATE public.studio_payment_accounts
        SET stripe_connected_account_id = 'acct_ContractReady1',
            metadata = jsonb_build_object('connect_account_generation', 1),
            charges_enabled = false
      WHERE studio_id = v_studio;
-    PERFORM public.set_stripe_connect_account_exclusion_atomic(
-        'acct_ContractReady1', false, 'Restore mapped contract account', v_actor, NULL
-    );
     PERFORM public.authorize_studio_live_billing_mutation_atomic(
         v_studio, 'connected_invoice.pay', 'connect_payments',
         'acct_ContractReady1', repeat('a', 40)
@@ -401,6 +448,111 @@ BEGIN
            AND error_reference IS NULL
     ) THEN
         RAISE EXCEPTION 'Failure correlation disposition did not remain privacy-safe.';
+    END IF;
+
+    PERFORM public.set_stripe_connect_account_exclusion_atomic(
+        'acct_GuardExcludedFinal1', true, 'Guard exclusion-first contract', v_actor, NULL
+    );
+    BEGIN
+        INSERT INTO public.studio_payment_accounts(
+            studio_id, stripe_connected_account_id, status, metadata
+        ) VALUES (
+            v_blank_studio, 'acct_GuardExcludedFinal1', 'pending', '{}'::JSONB
+        );
+        RAISE EXCEPTION 'Exclusion-first identity invariant accepted a mapping.';
+    EXCEPTION WHEN check_violation THEN
+        NULL;
+    END;
+
+    UPDATE public.studio_payment_accounts
+       SET stripe_connected_account_id = 'acct_GuardMappedFinal1'
+     WHERE studio_id = v_studio;
+    BEGIN
+        INSERT INTO public.stripe_connect_account_dispositions(
+            stripe_connected_account_id, excluded, reason, actor_id
+        ) VALUES (
+            'acct_GuardMappedFinal1', true, 'Guard mapping-first contract', v_actor
+        );
+        RAISE EXCEPTION 'Mapping-first identity invariant accepted an exclusion.';
+    EXCEPTION WHEN check_violation THEN
+        NULL;
+    END;
+    IF NOT EXISTS (
+        SELECT 1 FROM private.stripe_connect_account_identity_guards
+         WHERE stripe_connected_account_id = 'acct_GuardMappedFinal1'
+           AND mapped_studio_id = v_studio AND NOT excluded
+    ) OR NOT EXISTS (
+        SELECT 1 FROM private.stripe_connect_account_identity_guards
+         WHERE stripe_connected_account_id = 'acct_GuardExcludedFinal1'
+           AND mapped_studio_id IS NULL AND excluded
+    ) THEN
+        RAISE EXCEPTION 'Private Connect identity guard did not preserve the winning state.';
+    END IF;
+
+    INSERT INTO public.stripe_events(
+        stripe_event_id, stripe_account_id, livemode, type, payload,
+        processing_status, processing_token, processing_started_at, created_at
+    ) VALUES (
+        'evt_atomic_correlation', 'acct_GuardMappedFinal1', true,
+        'customer.subscription.updated', '{}'::JSONB,
+        'processing', 'contract-token', now(), now()
+    ) RETURNING id INTO v_guard_event;
+    PERFORM public.finish_stripe_event_processing_v2(
+        v_guard_event, 'contract-token', 'failed',
+        'unexpected_processing_error', v_ref
+    );
+    IF NOT EXISTS (
+        SELECT 1 FROM public.stripe_events
+         WHERE id = v_guard_event
+           AND processing_status = 'failed'
+           AND error = 'unexpected_processing_error'
+           AND error_reference = v_ref
+           AND processing_token IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Sanitized Stripe failure correlation was not persisted.';
+    END IF;
+
+    SELECT count(*) INTO v_audit_count
+      FROM public.audit_logs
+     WHERE studio_id = v_studio
+       AND action IN (
+           'live_billing.authorization_granted',
+           'live_billing.authorization_revoked'
+       );
+    IF v_audit_count < 2 THEN
+        RAISE EXCEPTION 'Live-billing authorization audit evidence is incomplete.';
+    END IF;
+
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight();
+    IF NOT v_preflight.ready
+       OR v_preflight.migration_count <> 91
+       OR v_preflight.migration_head <> '20260801090000'
+       OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
+           '20260727100000', '20260727110000', '20260801050957',
+           '20260801060000', '20260801070000', '20260801080000',
+           '20260801090000'
+       ]::TEXT[]
+       OR cardinality(v_preflight.security_failures) <> 0 THEN
+        RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
+    END IF;
+
+    EXECUTE 'CREATE POLICY injected_permissive_contract_policy
+        ON public.stripe_live_billing_reconciliation_account_evidence
+        FOR SELECT TO authenticated USING (false)';
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight();
+    IF v_preflight.ready
+       OR NOT ('policy_manifest' = ANY(v_preflight.security_failures)) THEN
+        RAISE EXCEPTION 'Hosted preflight accepted an injected policy-manifest drift.';
+    END IF;
+
+    EXECUTE format(
+        'GRANT UPDATE ON SEQUENCE %s TO service_role',
+        pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence')::REGCLASS
+    );
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight();
+    IF v_preflight.ready
+       OR NOT ('sequence_acl' = ANY(v_preflight.security_failures)) THEN
+        RAISE EXCEPTION 'Hosted preflight accepted injected service-role sequence UPDATE.';
     END IF;
 END $$;
 

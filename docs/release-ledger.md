@@ -160,14 +160,13 @@ Operator: `Codex release orchestrator`
   grants, functions, triggers, indexes, sequences, and required column. It does
   not depend on provider SQL pretty-printing. The policy manifest rejects
   missing, extra, permissive, role/command, and canonical predicate drift.
-- Integration gate: reserved migrations `20260801070000` (billing) and
-  `20260801080000` (alerts) are not in this owner branch. The packet reports
-  `integration_complete=false`, credentialed provider modes refuse to run, and
-  the preflight retains a failure sentinel. After integration, the director
-  must add their reviewed objects to the catalog/preflight manifest and remove
-  the sentinel before regenerating the immutable 84-to-91 packet. If either
-  owner adds verification SQL, its filename must also be added to the exact
-  contract inventory; otherwise CI fails closed as unreviewed drift.
+- Integration gate: migrations `20260801070000` (billing), `20260801080000`
+  (alerts), and `20260801090000` (parity) are ordered 89-91. The packet reports
+  `integration_complete=true` only for the exact 84-to-91 history and seven
+  expected pending versions. The semantic catalog and hosted preflight include
+  the security-relevant billing and alert tables/RLS, grants, functions,
+  triggers, indexes, sequences, columns, and constraints. The exact 32-file SQL
+  contract inventory fails CI on missing or unexpected verification files.
 - Recovery: any partial history, catalog mismatch, readiness failure, or guard
   conflict halts. Preserve applied state and recover only with reviewed
   forward-only migration work; production restore remains disaster recovery.

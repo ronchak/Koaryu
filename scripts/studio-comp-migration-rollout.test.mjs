@@ -23,13 +23,14 @@ const candidateSha = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
 }).trim();
 const validCatalogState =
-  "columns=1:11111111111111111111111111111111:0;" +
-  "functions=19:22222222222222222222222222222222:0;" +
-  "indexes=8:33333333333333333333333333333333:0;" +
-  "policies=12:44444444444444444444444444444444:0;" +
-  "sequences=2:55555555555555555555555555555555:0;" +
-  "tables=10:66666666666666666666666666666666:0;" +
-  "triggers=9:77777777777777777777777777777777:0";
+  "columns=27:11111111111111111111111111111111:0;" +
+  "constraints=12:88888888888888888888888888888888:0;" +
+  "functions=25:22222222222222222222222222222222:0;" +
+  "indexes=9:33333333333333333333333333333333:0;" +
+  "policies=14:44444444444444444444444444444444:0;" +
+  "sequences=3:55555555555555555555555555555555:0;" +
+  "tables=11:66666666666666666666666666666666:0;" +
+  "triggers=10:77777777777777777777777777777777:0";
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
@@ -64,15 +65,11 @@ function postSnapshot(packet, overrides = {}) {
   };
 }
 
-function integratedPacket() {
-  return { ...candidatePacket(), integrationComplete: true };
-}
-
 describe("studio-comp migration rollout guard", () => {
   it("derives an exact 84-to-N packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.ok(packet.migrationCount >= 86);
+    assert.equal(packet.migrationCount, 91);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(packet.pendingMigrations.length, packet.migrationCount - 84);
     assert.deepEqual(
@@ -80,12 +77,10 @@ describe("studio-comp migration rollout guard", () => {
       ROLLOUT.migrations.map(({ filename }) => filename),
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
-    assert.equal(packet.integrationComplete, false);
+    assert.equal(packet.integrationComplete, true);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
-      ROLLOUT.finalPendingVersions.filter(
-        (version) => !new Set(["20260801070000", "20260801080000"]).has(version),
-      ),
+      ROLLOUT.finalPendingVersions,
     );
   });
 
@@ -176,7 +171,7 @@ describe("studio-comp migration rollout guard", () => {
   });
 
   it("accepts only exact pre-state or semantically valid exact post-state", () => {
-    const packet = integratedPacket();
+    const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(preSnapshot(), packet), {
       state: "pre",
       providerFingerprint: null,
@@ -203,7 +198,19 @@ describe("studio-comp migration rollout guard", () => {
     assert.throws(
       () => classifyStateSnapshot(
         postSnapshot(packet, {
-          catalogState: validCatalogState.replace("indexes=8", "indexes=7"),
+          catalogState: validCatalogState.replace("indexes=9", "indexes=8"),
+        }),
+        packet,
+      ),
+      /Required table, RLS, grant, function, trigger, index, sequence, or column checks failed/,
+    );
+    assert.throws(
+      () => classifyStateSnapshot(
+        postSnapshot(packet, {
+          catalogState: validCatalogState.replace(
+            "sequences=3:55555555555555555555555555555555:0",
+            "sequences=3:55555555555555555555555555555555:1",
+          ),
         }),
         packet,
       ),
@@ -216,7 +223,7 @@ describe("studio-comp migration rollout guard", () => {
   });
 
   it("refuses to certify post-state before the exact 91-migration integration", () => {
-    const packet = candidatePacket();
+    const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),

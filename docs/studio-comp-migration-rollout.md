@@ -52,13 +52,12 @@ The only certifiable post-state is migration count 91, head
 ```
 
 The checker derives filenames and source hashes from the final candidate, then
-requires this sequence. It currently reports `integration_complete=false`
-because the reserved 070000 billing and 080000 alert migrations are not yet in
-this owner branch. Provider inspection, rehearsal, and apply refuse that state.
-After those migrations integrate, replace the explicit manifest sentinel in
-the 090000 readiness function with security-relevant checks for their reviewed
-objects and extend the semantic catalog manifest. Never certify an earlier
-head.
+requires this exact sequence and reports `integration_complete=true` only at
+91 migrations with these seven versions. The 070000 billing and 080000 alert
+tables, RLS, grants, functions, triggers, indexes, sequences, columns, and named
+constraints are included in the structural semantic manifest. Never certify an
+earlier head; regenerate the packet from the exact immutable release commit so
+all candidate migration hashes and counts remain current.
 
 The candidate must descend from both merged studio-comp commits and retain these
 exact source files:
@@ -116,9 +115,8 @@ node scripts/studio-comp-migration-rollout.mjs \
 
 Record the exact output. It pins the CLI, fixed pre-history, immutable Git
 ancestry, complete pending set, every candidate migration hash, and the source
-manifest hash. Regenerate it from the final exact candidate after 070000 and
-080000 integrate. Any missing reserved migration or migration after 090000
-halts before credentials are used.
+manifest hash. Any missing migration, unexpected version, or migration after
+090000 halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
