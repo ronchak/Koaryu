@@ -50,7 +50,7 @@ async def get_current_user_id(
 
 async def get_supabase() -> Client:
     """FastAPI dependency that provides an isolated Supabase admin client."""
-    return create_supabase_client()
+    return await run_in_threadpool(create_supabase_client)
 
 
 async def get_requested_studio_id(
@@ -81,7 +81,8 @@ async def get_current_studio_id(
     user belongs to it. Falls back to a deterministic membership when the
     request does not yet carry active studio state.
     """
-    membership = resolve_staff_role_for_user(
+    membership = await run_in_threadpool(
+        resolve_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,
@@ -95,7 +96,8 @@ async def get_current_write_studio_id(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> str:
-    membership = resolve_write_staff_role_for_user(
+    membership = await run_in_threadpool(
+        resolve_write_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,
@@ -109,7 +111,8 @@ async def get_current_write_staff_role(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> dict:
-    return resolve_write_staff_role_for_user(
+    return await run_in_threadpool(
+        resolve_write_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,
@@ -122,7 +125,8 @@ async def get_roster_schedule_manager_studio_id(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> str:
-    membership = resolve_roster_schedule_manager_staff_role_for_user(
+    membership = await run_in_threadpool(
+        resolve_roster_schedule_manager_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,
@@ -136,7 +140,8 @@ async def get_belt_configuration_admin_studio_id(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> str:
-    membership = resolve_belt_configuration_admin_staff_role_for_user(
+    membership = await run_in_threadpool(
+        resolve_belt_configuration_admin_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,
@@ -150,7 +155,8 @@ async def get_promotion_manager_studio_id(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> str:
-    membership = resolve_promotion_manager_staff_role_for_user(
+    membership = await run_in_threadpool(
+        resolve_promotion_manager_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,
@@ -164,7 +170,8 @@ async def get_lead_conversion_manager_studio_id(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> str:
-    membership = resolve_lead_conversion_manager_staff_role_for_user(
+    membership = await run_in_threadpool(
+        resolve_lead_conversion_manager_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,
@@ -178,7 +185,8 @@ async def get_lead_manager_studio_id(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ) -> str:
-    membership = resolve_lead_manager_staff_role_for_user(
+    membership = await run_in_threadpool(
+        resolve_lead_manager_staff_role_for_user,
         supabase,
         user_id,
         requested_studio_id,

@@ -23,6 +23,17 @@ Render should use Python `3.11`. The backend includes both `backend/runtime.txt`
 
 The configured `starter` Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
+Synchronous Supabase and Stripe calls on selected async request paths run in
+Starlette's bounded worker threadpool so provider latency does not block the
+single process's event loop. This is thread isolation, not additional Uvicorn
+workers. Subscription access-repair locks and retry windows are process-local;
+if the process count changes, expect up to one repair per studio per process and
+revisit cross-process coordination. Repair followers fail closed instead of
+occupying worker threads while the leader runs. Cancelling an awaiting request
+does not stop synchronous code already running in a worker, so provider timeouts
+and mutation idempotency remain required; platform checkout retains its
+per-studio serialization until an in-flight synchronous mutation finishes.
+
 `render.yaml` intentionally sets `autoDeployTrigger: 'off'`. A merge to `main` must not release the backend before the fixed candidate has passed staging. Trigger the production deploy with the exact approved commit SHA, then read the deployed SHA back from Render before recording the release. Do not re-enable commit auto-deploy as a shortcut.
 
 For a live dojo-floor demo, use the configured starter service only after it is warm, or use a larger always-on backend. Cold starts on small Render instances can still make the first authenticated or billing click feel broken even when the service is healthy.
