@@ -94,7 +94,6 @@ export function useBillingPageController({
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
   const canManageStudioBilling = currentRole === "admin";
   const canManageRoutineBillingActions = canManageRoutineBilling(currentRole);
-  const providerMutationsEnabled = areProviderMutationsEnabled(isPreviewMode);
   const isLiveRestricted = !isPreviewMode && currentRole !== null && !canViewStudioBilling;
   const shouldSettleEarly = shouldSettleBillingLoadEarly({
     isPreviewMode,
@@ -105,6 +104,7 @@ export function useBillingPageController({
     router.replace("/subscription-required");
   }, [markSubscriptionRequired, router]);
   const {
+    billingSystemStatus,
     enrollments,
     exportJobs,
     hasBillingLoadSettled,
@@ -130,6 +130,18 @@ export function useBillingPageController({
     shouldSettleEarly,
     token,
   });
+  const coreProviderMutationsEnabled = areProviderMutationsEnabled(
+    isPreviewMode,
+    billingSystemStatus?.mutation_capabilities.core_subscription
+  );
+  const connectOnboardingEnabled = areProviderMutationsEnabled(
+    isPreviewMode,
+    billingSystemStatus?.mutation_capabilities.connect_onboarding
+  );
+  const connectPaymentsEnabled = areProviderMutationsEnabled(
+    isPreviewMode,
+    billingSystemStatus?.mutation_capabilities.connect_payments
+  );
   const showPrimaryBillingLoading = shouldShowBillingLoading({
     isPreviewMode,
     hasPaymentAccount: paymentAccount !== null,
@@ -329,7 +341,7 @@ export function useBillingPageController({
       return;
     }
     const timer = window.setTimeout(() => {
-      void refreshConnectStatus({ sync: canManageStudioBilling && providerMutationsEnabled })
+      void refreshConnectStatus({ sync: canManageStudioBilling })
         .finally(() => {
           skipNextNormalBillingRefreshRef.current = true;
           setConnectReturnPending(false);
@@ -341,7 +353,6 @@ export function useBillingPageController({
     canManageStudioBilling,
     connectReturnPending,
     currentRole,
-    providerMutationsEnabled,
     refreshConnectStatus,
     router,
     searchParams,
@@ -457,7 +468,9 @@ export function useBillingPageController({
         hasStripeConnectedAccount,
         isEnrollmentPayerSelectDisabled,
         isPreviewMode,
-        providerMutationsEnabled,
+        coreProviderMutationsEnabled,
+        connectOnboardingEnabled,
+        connectPaymentsEnabled,
         invoiceController,
         koaryuFeeBasis,
         onConnectClick: handleConnectClick,

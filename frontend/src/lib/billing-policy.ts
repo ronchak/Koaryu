@@ -9,6 +9,9 @@ export function canManageRoutineBilling(
   return role === "admin" || role === "front_desk";
 }
 
-export function areProviderMutationsEnabled(isPreviewMode: boolean): boolean {
-  return isPreviewMode;
+export function areProviderMutationsEnabled(
+  isPreviewMode: boolean,
+  serverCapability = false
+): boolean {
+  return isPreviewMode || serverCapability;
 }

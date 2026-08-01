@@ -137,6 +137,14 @@ class BillingWebhookProjector:
         if event_type == "charge.refunded":
             self._project_charge_refund(data_object, account_id)
             return
+        if event_type in {
+            "charge.refund.updated",
+            "refund.created",
+            "refund.failed",
+            "refund.updated",
+        }:
+            self._project_refund(data_object, account_id)
+            return
         if event_type.startswith("charge.dispute."):
             self._project_dispute(data_object, account_id)
             return
@@ -150,6 +158,7 @@ class BillingWebhookProjector:
             event_type == "checkout.session.completed"
             or event_type.startswith("invoice.")
             or event_type.startswith("payment_intent.")
+            or event_type.startswith("refund.")
             or event_type.startswith("charge.")
             or event_type.startswith("customer.subscription.")
         )
@@ -180,8 +189,10 @@ class BillingWebhookProjector:
                 if payment_method_id and customer_id:
                     customer = self.stripe_service_cls().set_connected_customer_default_payment_method(
                         account_id=account_id,
+                        studio_id=studio_id,
                         customer_id=customer_id,
                         payment_method_id=payment_method_id,
+                        idempotency_key=f"koaryu:webhook-default-payment:{setup_intent_id}",
                     )
                     payment_fields = self._payment_method_fields_from_customer(customer)
                 else:
@@ -263,8 +274,8 @@ class BillingWebhookProjector:
     ) -> None:
         self._payment_events()._project_payment_intent(intent, account_id, event_type, event_created)
 
-    def _link_disputes_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
-        return self._payment_events()._link_disputes_to_payment(payment, account_id)
+    def _link_adjustments_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
+        return self._payment_events()._link_adjustments_to_payment(payment, account_id)
 
     def _project_charge_refund(self, charge: dict[str, Any], account_id: Optional[str]) -> None:
         self._payment_events()._project_charge_refund(charge, account_id)

@@ -103,7 +103,9 @@ export function BillingOverviewTab({
   paymentCohortAvailable,
   stripePaymentTotal,
   studentsLoaded,
-  providerMutationsEnabled,
+  coreProviderMutationsEnabled,
+  connectOnboardingEnabled,
+  connectPaymentsEnabled,
 }: {
   activeStudents: number;
   activeSubscriptionCount: number;
@@ -129,7 +131,9 @@ export function BillingOverviewTab({
   paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
   studentsLoaded: boolean;
-  providerMutationsEnabled: boolean;
+  coreProviderMutationsEnabled: boolean;
+  connectOnboardingEnabled: boolean;
+  connectPaymentsEnabled: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -193,8 +197,8 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={providerMutationsEnabled ? undefined : "Live Stripe checkout is currently disabled."}
+              disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
+              title={coreProviderMutationsEnabled ? undefined : "Koaryu Core Stripe mutations are not authorized for this studio."}
               isLoading={isLoadingAction("checkout")}
               onClick={() => void openBillingLink("/platform-billing/checkout", {
                 success_url: window.location.href,
@@ -207,10 +211,10 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
+              disabled={!coreProviderMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
               isLoading={isLoadingAction("portal")}
-              title={!providerMutationsEnabled
-                ? "Live Stripe portal access is currently disabled."
+              title={!coreProviderMutationsEnabled
+                ? "Koaryu Core Stripe mutations are not authorized for this studio."
                 : canOpenCustomerPortal
                   ? undefined
                   : "Available after Koaryu Core checkout creates a Stripe customer."}
@@ -247,6 +251,11 @@ export function BillingOverviewTab({
             <div>
               <p className="text-xs text-muted">UTC-month Stripe payment cohort</p>
               <p className="mt-1 text-sm text-text-primary">{formatMoney(stripePaymentTotal)}</p>
+              <p className="mt-1 text-[11px] text-muted">
+                {connectPaymentsEnabled
+                  ? "Live tuition mutations are authorized for this studio."
+                  : "Live tuition mutations are not authorized for this studio."}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted">UTC-month external payment cohort</p>
@@ -282,8 +291,8 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={providerMutationsEnabled ? undefined : "Stripe Connect activation is currently disabled."}
+              disabled={!connectOnboardingEnabled || !canManageKoaryuSubscription || isActionLoading}
+              title={connectOnboardingEnabled ? undefined : "Stripe Connect onboarding is not authorized for this studio."}
               isLoading={isLoadingAction("connect")}
               onClick={onConnectClick}
             >
@@ -293,10 +302,10 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+              disabled={!connectOnboardingEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
               isLoading={isLoadingAction("dashboard")}
-              title={!providerMutationsEnabled
-                ? "Stripe dashboard link creation is currently disabled."
+              title={!connectOnboardingEnabled
+                ? "Stripe Connect onboarding mutations are not authorized for this studio."
                 : canOpenStripeDashboard
                   ? "Open Stripe to review account status, requirements, payments, and payouts."
                   : "Available after Stripe Connect creates an account."}

@@ -141,6 +141,12 @@ class BillingWebhookHealthResponse(BaseModel):
     error_reference: Optional[str] = None
 
 
+class BillingMutationCapabilitiesResponse(BaseModel):
+    core_subscription: bool = False
+    connect_onboarding: bool = False
+    connect_payments: bool = False
+
+
 class BillingSystemStatusResponse(BaseModel):
     studio_id: str
     configured_stripe_mode: Optional[Literal["test", "live"]] = None
@@ -151,6 +157,7 @@ class BillingSystemStatusResponse(BaseModel):
     payment_account: StudioPaymentAccountResponse
     platform_webhooks: BillingWebhookHealthResponse
     connect_webhooks: BillingWebhookHealthResponse
+    mutation_capabilities: BillingMutationCapabilitiesResponse
     checks: list[BillingSystemCheck]
 
 

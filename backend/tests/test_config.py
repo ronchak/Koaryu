@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.core.config import Settings
 
@@ -189,7 +190,7 @@ class HostedConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Stripe live restricted key in production"):
             settings.validate_production_configuration()
 
-    def test_production_rejects_live_billing_switch_without_durable_authorization(self):
+    def test_production_live_billing_requires_exact_deployment_sha(self):
         settings = Settings(
             ENVIRONMENT="production",
             **{
@@ -198,7 +199,10 @@ class HostedConfigValidationTest(unittest.TestCase):
             },
         )
 
-        with self.assertRaisesRegex(RuntimeError, "durable live mutation authorization"):
+        with patch.dict("os.environ", {}, clear=True), self.assertRaisesRegex(RuntimeError, "RENDER_GIT_COMMIT"):
+            settings.validate_production_configuration()
+
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=True):
             settings.validate_production_configuration()
 
     def test_production_requires_jwt_secret_only_when_legacy_hs256_is_enabled(self):

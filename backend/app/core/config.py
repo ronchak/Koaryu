@@ -50,6 +50,7 @@ CA_BUNDLE_ENVIRONMENT_KEYS = (
 AMBIENT_TRANSPORT_ENVIRONMENT_KEYS = (
     PROXY_ENVIRONMENT_KEYS + CA_BUNDLE_ENVIRONMENT_KEYS
 )
+COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 PLACEHOLDER_MARKERS = (
@@ -327,9 +328,13 @@ class Settings(BaseSettings):
             missing.append("STRIPE_RESTRICTED_KEY must match STRIPE_MODE when set")
 
         if self.LIVE_BILLING_ENABLED:
-            missing.append(
-                "LIVE_BILLING_ENABLED must remain false until durable live mutation authorization is configured"
-            )
+            deployment_sha = os.environ.get("RENDER_GIT_COMMIT", "").strip().lower()
+            if environment != "production":
+                missing.append("LIVE_BILLING_ENABLED may only be true in production")
+            if not COMMIT_SHA_PATTERN.fullmatch(deployment_sha):
+                missing.append(
+                    "RENDER_GIT_COMMIT must contain the exact deployed candidate when live billing is enabled"
+                )
 
         platform_webhook_secret = self.STRIPE_PLATFORM_WEBHOOK_SECRET.strip()
         if (

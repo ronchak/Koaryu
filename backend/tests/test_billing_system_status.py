@@ -119,6 +119,9 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertTrue(response.ready_for_configured_mode)
         self.assertFalse(response.live_payments_authorized)
         self.assertFalse(response.ready_for_live_payments)
+        self.assertTrue(response.mutation_capabilities.core_subscription)
+        self.assertTrue(response.mutation_capabilities.connect_onboarding)
+        self.assertTrue(response.mutation_capabilities.connect_payments)
         self.assertTrue(BillingSystemStatusReporter.is_stale_webhook_processing({
             "processing_status": "processing",
             "processing_started_at": None,

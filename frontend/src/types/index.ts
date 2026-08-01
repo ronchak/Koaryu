@@ -60,6 +60,7 @@ export type BillingActionRequest =
   & ApiContracts.ApiPlatformPortalRequest;
 export type EmailUsage = ApiContracts.ApiEmailUsageResponse;
 export type PlatformBillingStatus = ApiContracts.ApiPlatformBillingStatusResponse;
+export type BillingSystemStatus = ApiContracts.ApiBillingSystemStatusResponse;
 export type StudioPaymentAccount = ApiContracts.ApiStudioPaymentAccountResponse;
 export type BillingPlanProgram = ApiContracts.ApiBillingPlanProgramResponse;
 export type BillingPlan = ApiContracts.ApiBillingPlanResponse;

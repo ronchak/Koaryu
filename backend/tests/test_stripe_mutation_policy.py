@@ -1,4 +1,5 @@
 import ast
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -8,10 +9,10 @@ from fastapi import HTTPException
 
 from app.services.stripe_mutation_policy import (
     LIVE_MUTATIONS_DISABLED_DETAIL,
-    LIVE_MUTATIONS_REQUIRE_DURABLE_AUTHORIZATION_DETAIL,
     STRIPE_MODE_MISMATCH_DETAIL,
     StripeMutationPolicy,
 )
+from app.services.studio_live_billing_authorizations import LIVE_SCOPE_REQUIRED_DETAIL
 from app.services.stripe_service import StripeService
 
 
@@ -271,17 +272,47 @@ class _Stripe:
     Customer = _Customer
 
 
+class _AuthorizedStore:
+    def __init__(self, studio_id="studio_1"):
+        self.studio_id = studio_id
+        self.calls = []
+
+    def authorize(self, **payload):
+        self.calls.append(payload)
+        return self.studio_id
+
+
 class StripeMutationPolicyTest(unittest.TestCase):
-    def test_test_mode_mutations_are_automatically_permitted(self):
+    def test_test_mode_mutations_require_explicit_scope_then_run_without_live_grant(self):
         service = StripeService()
         service.settings = _settings(mode="test")
         service._stripe = lambda: _Stripe
         _Customer.calls = []
 
-        customer = service.create_customer(name="Test Studio", metadata={"studio_id": "studio_1"})
+        customer = service.create_customer(
+            name="Test Studio", studio_id="studio_1", metadata={"studio_id": "studio_1"},
+        )
 
         self.assertEqual(customer["id"], "cus_test")
         self.assertEqual(len(_Customer.calls), 1)
+
+        with self.assertRaises(HTTPException) as raised:
+            StripeMutationPolicy(_settings(mode="test")).issue_permit("customer.create")
+        self.assertEqual(raised.exception.detail, LIVE_SCOPE_REQUIRED_DETAIL)
+
+    def test_raw_v2_sink_cannot_downgrade_its_connect_scope(self):
+        service = StripeService()
+        service.settings = _settings(mode="test")
+
+        with self.assertRaises(HTTPException) as raised:
+            service._stripe_v2_post(
+                "/v2/core/accounts",
+                {"contact_email": "operator@example.invalid"},
+                studio_id="studio_1",
+                scope="core_subscription",
+            )
+
+        self.assertEqual(raised.exception.detail, LIVE_SCOPE_REQUIRED_DETAIL)
 
     def test_live_mutations_fail_before_loading_stripe_when_switch_is_off(self):
         service = StripeService()
@@ -289,24 +320,52 @@ class StripeMutationPolicyTest(unittest.TestCase):
         service._stripe = Mock(side_effect=AssertionError("Stripe client must not load"))
 
         with self.assertRaises(HTTPException) as raised:
-            service.create_customer(name="Live Studio", metadata={})
+            service.create_customer(name="Live Studio", studio_id="studio_1", metadata={})
 
         self.assertEqual(raised.exception.status_code, 503)
         self.assertEqual(raised.exception.detail, LIVE_MUTATIONS_DISABLED_DETAIL)
         service._stripe.assert_not_called()
 
-    def test_live_switch_is_not_sufficient_without_durable_authorization(self):
+    def test_live_switch_is_not_sufficient_without_explicit_durable_scope(self):
         policy = StripeMutationPolicy(_settings(mode="live", live_enabled=True))
 
         with self.assertRaises(HTTPException) as raised:
             policy.issue_permit("customer.create")
 
         self.assertEqual(raised.exception.status_code, 503)
-        self.assertEqual(
-            raised.exception.detail,
-            LIVE_MUTATIONS_REQUIRE_DURABLE_AUTHORIZATION_DETAIL,
-        )
+        self.assertEqual(raised.exception.detail, LIVE_SCOPE_REQUIRED_DETAIL)
         self.assertFalse(policy.live_payments_authorized())
+
+    def test_live_scope_uses_durable_store_only_after_global_switch(self):
+        store = _AuthorizedStore()
+        permit = StripeMutationPolicy(
+            _settings(mode="live", live_enabled=True),
+            authorization_store=store,
+        ).issue_permit("connected_invoice.pay", studio_id="studio_1", account_id="acct_1")
+
+        self.assertEqual(permit.authorization_source, "durable_live_scope")
+        self.assertEqual(permit.studio_id, "studio_1")
+        self.assertEqual(store.calls, [{
+            "operation": "connected_invoice.pay",
+            "scope": "connect_payments",
+            "studio_id": "studio_1",
+            "account_id": "acct_1",
+            "expected_livemode": True,
+        }])
+
+    def test_live_switch_off_does_not_read_durable_store(self):
+        store = _AuthorizedStore()
+        with self.assertRaises(HTTPException) as raised:
+            StripeMutationPolicy(
+                _settings(mode="live", live_enabled=False),
+                authorization_store=store,
+            ).issue_permit(
+                "connected_invoice.pay",
+                studio_id="studio_1",
+                account_id="acct_1",
+            )
+        self.assertEqual(raised.exception.detail, LIVE_MUTATIONS_DISABLED_DETAIL)
+        self.assertEqual(store.calls, [])
 
     def test_declared_mode_and_secret_key_must_match(self):
         policy = StripeMutationPolicy(_settings(mode="test", key_mode="live"))
@@ -369,6 +428,24 @@ class StripeMutationPolicyTest(unittest.TestCase):
         }
 
         self.assertEqual(marked, expected)
+
+    def test_every_guarded_mutation_accepts_explicit_scope_context(self):
+        # This catches a new Stripe mutation that remains policy-marked but can
+        # only be invoked through ambient request state. Every provider sink
+        # must accept a studio argument and connected operations must also
+        # accept the exact account at the call boundary.
+        for name in (
+            name for name in dir(StripeService)
+            if getattr(getattr(StripeService, name), "__stripe_mutation_operation__", None)
+        ):
+            parameters = inspect.signature(getattr(StripeService, name)).parameters
+            with self.subTest(name=name):
+                self.assertTrue(
+                    "studio_id" in parameters,
+                )
+                operation = getattr(getattr(StripeService, name), "__stripe_mutation_operation__")
+                if operation.startswith("connected_"):
+                    self.assertIn("account_id", parameters)
 
     def test_raw_stripe_provider_mutation_inventory_is_exact(self):
         expected_raw_calls = {(f"backend/app/services/{path}", function, call) for path, function, call in {
@@ -554,7 +631,7 @@ async def bypass():
         service._stripe = lambda: SimpleNamespace(Account=_Account)
 
         with self.assertRaises(HTTPException) as raised:
-            service.create_connect_dashboard_url(account_id="acct_legacy")
+            service.create_connect_dashboard_url(account_id="acct_legacy", studio_id="studio_1")
 
         self.assertEqual(raised.exception.detail, LIVE_MUTATIONS_DISABLED_DETAIL)
         self.assertEqual(calls, [])

@@ -34,7 +34,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         service._stripe = lambda: _FakeStripe
 
-        url = service.create_connect_dashboard_url(account_id="acct_connected")
+        url = service.create_connect_dashboard_url(account_id="acct_connected", studio_id="studio_1")
 
         self.assertEqual(
             url,
@@ -49,7 +49,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         service._stripe = lambda: _FakeStripe
 
-        link = service.create_connect_dashboard_link(account_id="acct_connected")
+        link = service.create_connect_dashboard_link(account_id="acct_connected", studio_id="studio_1")
 
         self.assertEqual(link, {
             "url": "https://dashboard.stripe.com/test",
@@ -62,7 +62,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
-        def fake_v2_post(path, payload, *, idempotency_key=None):
+        def fake_v2_post(path, payload, *, idempotency_key=None, **_context):
             calls.append((path, payload, idempotency_key))
             return {"id": "acct_v2", "object": "v2.core.account"}
 
@@ -91,7 +91,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
-        def fake_v2_post(path, payload, *, idempotency_key=None):
+        def fake_v2_post(path, payload, *, idempotency_key=None, **_context):
             calls.append((path, payload, idempotency_key))
             return {"id": "acct_v2", "object": "v2.core.account"}
 
@@ -114,7 +114,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
-        def fake_v2_post(path, payload, *, idempotency_key=None):
+        def fake_v2_post(path, payload, *, idempotency_key=None, **_context):
             calls.append((path, payload, idempotency_key))
             return {"url": "https://connect.stripe.test/v2/acct_v2", "object": "v2.core.account_link"}
 
@@ -123,6 +123,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         link = service.create_connect_onboarding_link(
             account_id="acct_v2",
+            studio_id="studio_1",
             refresh_url="https://app.koaryu.test/billing/connect/refresh",
             return_url="https://app.koaryu.test/billing?connect=return",
         )
@@ -161,6 +162,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         link = service.create_connect_onboarding_link(
             account_id="acct_v1",
+            studio_id="studio_1",
             refresh_url="https://app.koaryu.test/billing/connect/refresh",
             return_url="https://app.koaryu.test/billing?connect=return",
         )
@@ -178,7 +180,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
         calls = []
 
-        def fake_v2_patch(path, payload, *, idempotency_key=None):
+        def fake_v2_patch(path, payload, *, idempotency_key=None, **_context):
             calls.append((path, payload, idempotency_key))
             return {"id": "acct_v2"}
 
@@ -186,6 +188,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         service.update_connect_account_branding(
             account_id="acct_v2",
+            studio_id="studio_1",
             primary_color="#0B0D10",
             secondary_color="#D6B25E",
             icon_file_id="file_icon",
@@ -224,6 +227,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         service.update_connect_account_branding(
             account_id="acct_v1",
+            studio_id="studio_1",
             primary_color="#0B0D10",
             secondary_color="#D6B25E",
         )
@@ -805,7 +809,7 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         service._stripe = lambda: _FakeStripeWithMismatchedAccount
 
         with self.assertRaises(HTTPException) as context:
-            service.create_connect_dashboard_url(account_id="acct_from_other_platform")
+            service.create_connect_dashboard_url(account_id="acct_from_other_platform", studio_id="studio_1")
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("Reconnect Stripe Payments in live mode", context.exception.detail)

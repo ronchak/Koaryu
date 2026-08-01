@@ -656,6 +656,39 @@ class BillingPaymentManagerTests(unittest.TestCase):
         self.assertEqual(_FakeStripeService.refunds[0]["idempotency_key"], "koaryu:refund:studio_1:payment_1:refund-key-1")
         self.assertEqual(facade.supabase.tables["audit_logs"][0]["action"], "billing.payment_refunded")
 
+    def test_pending_refund_audits_request_without_claiming_money_returned(self):
+        class PendingRefundFacade(_BillingFacade):
+            def _project_refund(self, refund: dict, account_id: str) -> dict:
+                row = super()._project_refund(refund, account_id)
+                row["status"] = "pending"
+                return row
+
+        facade = PendingRefundFacade({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_charge_id": "ch_1",
+                "amount_cents": 1200,
+                "refunded_amount_cents": 0,
+                "status": "succeeded",
+            }],
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+
+        refund = asyncio.run(manager.refund_payment(
+            "payment_1",
+            BillingRefundCreate(amount_cents=1000),
+            "studio_1",
+            "actor_1",
+            "refund-key-pending",
+        ))
+
+        self.assertEqual(refund.status, "pending")
+        audit = facade.supabase.tables["audit_logs"][0]
+        self.assertEqual(audit["action"], "billing.payment_refund_requested")
+        self.assertEqual(audit["metadata"]["status"], "pending")
+
     def test_refund_payment_requires_request_idempotency_key(self):
         facade = _BillingFacade({
             "billing_payments": [{

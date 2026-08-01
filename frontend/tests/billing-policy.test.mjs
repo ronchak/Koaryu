@@ -15,9 +15,10 @@ describe("billing policy", () => {
     assert.equal(canManageRoutineBilling(null), false);
   });
 
-  it("keeps provider mutations disabled outside preview mode", () => {
+  it("fails closed outside preview unless the server grants the studio capability", () => {
     assert.equal(areProviderMutationsEnabled(false), false);
     assert.equal(areProviderMutationsEnabled(true), true);
+    assert.equal(areProviderMutationsEnabled(false, true), true);
     assert.match(BILLING_BOUNDARY_MESSAGE, /currently disabled/i);
   });
 });

@@ -34,6 +34,12 @@ export interface BillingPageModelInput {
 }
 
 const COLLECTED_PAYMENT_STATUSES = new Set(["succeeded", "refunded", "externally_recorded"]);
+const BALANCE_BEARING_INVOICE_STATUSES = new Set([
+  "draft",
+  "open",
+  "partially_refunded",
+  "uncollectible",
+]);
 
 export function currentMonthPaymentTotals(
   payments: BillingPayment[],
@@ -122,8 +128,8 @@ export function buildBillingPageModel({
           stripePaymentTotal: 0,
         };
   const openInvoiceTotal = billingInvoices
-    .filter((invoice) => invoice.status === "open" || invoice.status === "draft")
-    .reduce((sum, invoice) => sum + Math.max(invoice.amount_due_cents - invoice.amount_paid_cents, 0), 0);
+    .filter((invoice) => BALANCE_BEARING_INVOICE_STATUSES.has(invoice.status))
+    .reduce((sum, invoice) => sum + Math.max(invoice.amount_remaining_cents, 0), 0);
   const failedInvoiceCount = billingPayers.filter(
     (payer) => payer.billing_status === "past_due" || payer.billing_status === "failed"
   ).length;

@@ -8,6 +8,7 @@ import type {
   BillingPaymentCohortSummary,
   BillingPayer,
   BillingPlan,
+  BillingSystemStatus,
   BillingSubscription,
   ExportJob,
   PlatformBillingStatus,
@@ -41,6 +42,7 @@ export function useBillingDataController({
   token,
 }: UseBillingDataControllerOptions) {
   const [platformBilling, setPlatformBilling] = useState<PlatformBillingStatus | null>(null);
+  const [billingSystemStatus, setBillingSystemStatus] = useState<BillingSystemStatus | null>(null);
   const [paymentAccount, setPaymentAccount] = useState<StudioPaymentAccount | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [payers, setPayers] = useState<BillingPayer[]>([]);
@@ -62,6 +64,7 @@ export function useBillingDataController({
   const shouldSettleWithoutAccess = !token || shouldSettleEarly;
   const resetBillingData = useCallback(({ settled }: { settled: boolean }) => {
     setPlatformBilling(null);
+    setBillingSystemStatus(null);
     setPaymentAccount(null);
     setPlans([]);
     setPayers([]);
@@ -100,6 +103,9 @@ export function useBillingDataController({
         canManageKoaryuSubscription
           ? api.get<PlatformBillingStatus>("/platform-billing/status", token)
           : Promise.resolve(null),
+        canManageKoaryuSubscription
+          ? api.get<BillingSystemStatus>("/billing/system/status", token)
+          : Promise.resolve(null),
         api.get<StudioPaymentAccount>("/billing/connect/status", token),
         api.get<BillingPlan[]>("/billing/plans", token),
         api.get<BillingPayer[]>("/billing/payers", token),
@@ -112,6 +118,7 @@ export function useBillingDataController({
 
       const [
         platformResult,
+        systemStatusResult,
         connectResult,
         plansResult,
         payersResult,
@@ -151,6 +158,12 @@ export function useBillingDataController({
       };
 
       applyResult("Koaryu Core", platformResult, setPlatformBilling, () => setPlatformBilling(null));
+      applyResult(
+        "Billing authorization",
+        systemStatusResult,
+        setBillingSystemStatus,
+        () => setBillingSystemStatus(null)
+      );
       applyResult("Stripe Connect", connectResult, setPaymentAccount, () => setPaymentAccount(null));
       applyResult("Plans", plansResult, setPlans, () => setPlans([]));
       applyResult("Families", payersResult, setPayers, () => setPayers([]));
@@ -210,7 +223,7 @@ export function useBillingDataController({
       }
       setPaymentAccount(account);
       if (sync) {
-        setMessage(account.charges_enabled ? "Stripe verification is complete." : "Stripe account status updated.");
+        setMessage("Stripe account status refreshed. Review every requirement before enabling payments.");
       }
       await refreshBilling();
     } catch (err) {
@@ -244,6 +257,7 @@ export function useBillingDataController({
   const hasVisibleBillingData = activeAccessKey !== null && loadedAccessKey === activeAccessKey;
 
   return {
+    billingSystemStatus: hasVisibleBillingData ? billingSystemStatus : null,
     enrollments: hasVisibleBillingData ? enrollments : [],
     exportJobs: hasVisibleBillingData ? exportJobs : [],
     hasBillingLoadSettled: activeAccessKey ? hasVisibleBillingData && hasBillingLoadSettled : shouldSettleWithoutAccess,

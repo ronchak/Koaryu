@@ -77,6 +77,7 @@ class BillingConnectActions:
 
         link = stripe_service.create_connect_onboarding_link(
             account_id=stripe_account_id,
+            studio_id=studio_id,
             refresh_url=safe_refresh_url,
             return_url=safe_return_url,
         )
@@ -131,7 +132,10 @@ class BillingConnectActions:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Connect Stripe before opening the Stripe dashboard.",
             )
-        url = self.stripe_service_cls().create_connect_dashboard_url(account_id=stripe_account_id)
+        url = self.stripe_service_cls().create_connect_dashboard_url(
+            account_id=stripe_account_id,
+            studio_id=studio_id,
+        )
         return BillingLinkResponse(url=url)
 
     def audit_onboarding_started(self, studio_id: str, actor_id: str) -> None:

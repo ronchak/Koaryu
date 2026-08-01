@@ -203,6 +203,12 @@ export interface ApiBillingLinkResponse {
   url: string;
 }
 
+export interface ApiBillingMutationCapabilitiesResponse {
+  core_subscription: boolean;
+  connect_onboarding: boolean;
+  connect_payments: boolean;
+}
+
 export interface ApiBillingPayerAutopaySetupRequest {
   success_url?: string | null;
   cancel_url?: string | null;
@@ -435,6 +441,7 @@ export interface ApiBillingSystemStatusResponse {
   payment_account: ApiStudioPaymentAccountResponse;
   platform_webhooks: ApiBillingWebhookHealthResponse;
   connect_webhooks: ApiBillingWebhookHealthResponse;
+  mutation_capabilities: ApiBillingMutationCapabilitiesResponse;
   checks: ApiBillingSystemCheck[];
 }
 

@@ -21,7 +21,7 @@ class _StripeV2RequestError(Exception):
 StripeLoader = Callable[[], Any]
 RequestOptionsBuilder = Callable[..., dict[str, str]]
 StripeV2Request = Callable[..., dict[str, Any]]
-MutationAuthorizer = Callable[[str], Any]
+MutationAuthorizer = Callable[..., Any]
 
 
 def stripe_v2_request(
@@ -104,7 +104,7 @@ class StripeConnectGateway:
         business_entity_type: str = "company",
         account_generation: int = 1,
     ):
-        self._authorize_mutation("connect_account.create")
+        self._authorize_mutation("connect_account.create", studio_id=studio_id)
         try:
             return self._create_account_v2(
                 studio_id=studio_id,
@@ -124,24 +124,37 @@ class StripeConnectGateway:
             account_generation=account_generation,
         )
 
-    def upload_branding_file(self, *, file_path: str, purpose: str) -> str:
-        self._authorize_mutation("connect_branding_file.create")
+    def upload_branding_file(
+        self,
+        *,
+        file_path: str,
+        purpose: str,
+        studio_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> str:
+        self._authorize_mutation("connect_branding_file.create", studio_id=studio_id)
         stripe = self._stripe()
         path = Path(file_path)
         with path.open("rb") as handle:
-            uploaded = stripe.File.create(file=handle, purpose=purpose)
+            uploaded = stripe.File.create(
+                file=handle,
+                purpose=purpose,
+                **self._request_options(idempotency_key=idempotency_key),
+            )
         return uploaded["id"] if isinstance(uploaded, dict) else uploaded.id
 
     def update_branding(
         self,
         *,
         account_id: str,
+        studio_id: Optional[str] = None,
         primary_color: str,
         secondary_color: str,
         icon_file_id: Optional[str] = None,
         logo_file_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Any:
-        self._authorize_mutation("connect_account.branding.update")
+        self._authorize_mutation("connect_account.branding.update", studio_id=studio_id, account_id=account_id)
         branding = {
             "primary_color": primary_color,
             "secondary_color": secondary_color,
@@ -158,7 +171,9 @@ class StripeConnectGateway:
                     "configuration": {"merchant": {"branding": branding}},
                     "include": ["configuration.merchant"],
                 },
-                idempotency_key=f"koaryu-connect-branding-{account_id}",
+                studio_id=studio_id,
+                account_id=account_id,
+                idempotency_key=idempotency_key or f"koaryu-connect-branding-{account_id}",
             )
         except _StripeV2RequestError as exc:
             if exc.code != "accounts_v2_access_blocked":
@@ -169,7 +184,7 @@ class StripeConnectGateway:
             return stripe.Account.modify(
                 account_id,
                 settings={"branding": branding},
-                **self._request_options(idempotency_key=f"koaryu-connect-branding-{account_id}"),
+                **self._request_options(idempotency_key=idempotency_key or f"koaryu-connect-branding-{account_id}"),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):
@@ -180,10 +195,11 @@ class StripeConnectGateway:
         self,
         *,
         account_id: str,
+        studio_id: Optional[str] = None,
         refresh_url: str,
         return_url: str,
     ):
-        self._authorize_mutation("connect_onboarding_link.create")
+        self._authorize_mutation("connect_onboarding_link.create", studio_id=studio_id, account_id=account_id)
         try:
             return self._stripe_v2_post(
                 "/v2/core/account_links",
@@ -199,6 +215,8 @@ class StripeConnectGateway:
                         },
                     },
                 },
+                studio_id=studio_id,
+                account_id=account_id,
             )
         except _StripeV2RequestError as exc:
             if exc.code != "accounts_v2_access_blocked":
@@ -230,8 +248,8 @@ class StripeConnectGateway:
                 self._raise_connect_account_error(exc, "create an onboarding link")
             raise
 
-    def create_dashboard_link(self, *, account_id: str):
-        return {"url": self.create_dashboard_url(account_id=account_id)}
+    def create_dashboard_link(self, *, account_id: str, studio_id: str):
+        return {"url": self.create_dashboard_url(account_id=account_id, studio_id=studio_id)}
 
     def retrieve_account(self, *, account_id: Optional[str] = None):
         stripe = self._stripe()
@@ -244,7 +262,7 @@ class StripeConnectGateway:
                 self._raise_connect_account_error(exc, "retrieve a connected account")
             raise
 
-    def create_dashboard_url(self, *, account_id: str) -> str:
+    def create_dashboard_url(self, *, account_id: str, studio_id: str) -> str:
         stripe = self._stripe()
         try:
             connected_account = stripe.Account.retrieve(account_id)
@@ -256,7 +274,7 @@ class StripeConnectGateway:
             if dashboard_type == "full" or account_type == "standard":
                 return self._account_holder_dashboard_url()
 
-            return self._create_legacy_dashboard_login_url(account_id=account_id)
+            return self._create_legacy_dashboard_login_url(account_id=account_id, studio_id=studio_id)
         except Exception as exc:
             if self._is_stripe_exception(exc):
                 self._raise_connect_account_error(exc, "open the connected account dashboard")
@@ -266,8 +284,12 @@ class StripeConnectGateway:
         mode_segment = "/test" if self.settings.STRIPE_SECRET_KEY.startswith("sk_test_") else ""
         return f"https://dashboard.stripe.com{mode_segment}"
 
-    def _create_legacy_dashboard_login_url(self, *, account_id: str) -> str:
-        self._authorize_mutation("connect_dashboard_login_link.create")
+    def _create_legacy_dashboard_login_url(self, *, account_id: str, studio_id: str) -> str:
+        self._authorize_mutation(
+            "connect_dashboard_login_link.create",
+            account_id=account_id,
+            studio_id=studio_id,
+        )
         stripe = self._stripe()
         try:
             link = stripe.Account.create_login_link(account_id)
@@ -328,6 +350,7 @@ class StripeConnectGateway:
         return self._stripe_v2_post(
             "/v2/core/accounts",
             payload,
+            studio_id=studio_id,
             idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}",
         )
 

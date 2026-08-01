@@ -250,7 +250,7 @@ The domain write and audit insert are not one database transaction. After an amb
 
 Application deployment, production migration, and live Stripe activation are three independent approvals. Live Stripe activation is not currently approved.
 
-`LIVE_BILLING_ENABLED` remains `false`. The mutation policy has no durable live-authorization source, and hosted configuration validation rejects enabling the flag; even setting the flag alone cannot issue a live mutation permit.
+`LIVE_BILLING_ENABLED` remains `false` by default and live activation is still unapproved. The durable authorization source and central mutation policy are defined in `stripe-live-billing-rollout.md`: the global flag alone is insufficient, and runtime also requires an unexpired exact-studio scope, current account binding/readiness, and an exact-candidate all-clear reconciliation checkpoint.
 
 A future activation request must name each exact transition and prove in Stripe test mode:
 

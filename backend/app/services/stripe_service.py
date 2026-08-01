@@ -22,7 +22,11 @@ def stripe_mutation(operation: str):
     def decorator(func):
         @wraps(func)
         def wrapped(self, *args, **kwargs):
-            self._authorize_stripe_mutation(operation)
+            self._authorize_stripe_mutation(
+                operation,
+                studio_id=kwargs.get("studio_id"),
+                account_id=kwargs.get("account_id"),
+            )
             return func(self, *args, **kwargs)
 
         wrapped.__stripe_mutation_operation__ = operation
@@ -34,11 +38,29 @@ def stripe_mutation(operation: str):
 class StripeService:
     """Thin wrapper around Stripe so the rest of the app stays testable."""
 
-    def __init__(self):
+    def __init__(self, *, supabase: Any = None):
         self.settings = get_settings()
+        self.supabase = supabase
 
-    def _authorize_stripe_mutation(self, operation: str) -> StripeMutationPermit:
-        return StripeMutationPolicy(self.settings).issue_permit(operation)
+    def _authorize_stripe_mutation(
+        self,
+        operation: str,
+        *,
+        studio_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+    ) -> StripeMutationPermit:
+        if self.supabase is None:
+            return StripeMutationPolicy(self.settings).issue_permit(
+                operation,
+                studio_id=studio_id,
+                account_id=account_id,
+            )
+        from app.services.studio_live_billing_authorizations import StudioLiveBillingAuthorizationStore
+
+        return StripeMutationPolicy(
+            self.settings,
+            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+        ).issue_permit(operation, studio_id=studio_id, account_id=account_id)
 
     def _stripe(self):
         if not self.settings.STRIPE_SECRET_KEY:
@@ -59,7 +81,14 @@ class StripeService:
         return stripe
 
     @stripe_mutation("customer.create")
-    def create_customer(self, *, name: str, metadata: dict[str, Any], idempotency_key: Optional[str] = None):
+    def create_customer(
+        self,
+        *,
+        name: str,
+        metadata: dict[str, Any],
+        studio_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ):
         stripe = self._stripe()
         return stripe.Customer.create(
             name=name,
@@ -91,6 +120,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         name: str,
         email: Optional[str] = None,
         phone: Optional[str] = None,
@@ -116,12 +146,14 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         customer_id: str,
         name: str,
         email: Optional[str] = None,
         phone: Optional[str] = None,
         address: Optional[dict[str, Any]] = None,
         metadata: dict[str, Any],
+        idempotency_key: Optional[str] = None,
     ):
         stripe = self._stripe()
         payload: dict[str, Any] = {"name": name, "metadata": metadata}
@@ -132,7 +164,7 @@ class StripeService:
         return stripe.Customer.modify(
             customer_id,
             **payload,
-            **self._request_options(account_id=account_id),
+            **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
         )
 
     def retrieve_connected_customer(self, *, account_id: str, customer_id: str, expand: Optional[list[str]] = None):
@@ -147,14 +179,16 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         customer_id: str,
         payment_method_id: str,
+        idempotency_key: Optional[str] = None,
     ):
         stripe = self._stripe()
         return stripe.Customer.modify(
             customer_id,
             invoice_settings={"default_payment_method": payment_method_id},
-            **self._request_options(account_id=account_id),
+            **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
         )
 
     def retrieve_connected_setup_intent(self, *, account_id: str, setup_intent_id: str, expand: Optional[list[str]] = None):
@@ -169,6 +203,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         name: str,
         description: Optional[str],
         metadata: dict[str, Any],
@@ -188,10 +223,12 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         product_id: str,
         name: str,
         description: Optional[str],
         metadata: dict[str, Any],
+        idempotency_key: Optional[str] = None,
     ):
         stripe = self._stripe()
         return stripe.Product.modify(
@@ -199,7 +236,7 @@ class StripeService:
             name=name,
             description=description or "",
             metadata=metadata,
-            **self._request_options(account_id=account_id),
+            **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
         )
 
     @stripe_mutation("connected_price.create")
@@ -207,6 +244,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         product_id: str,
         unit_amount: int,
         currency: str,
@@ -235,6 +273,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         customer_id: str,
         success_url: str,
         cancel_url: str,
@@ -258,6 +297,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         customer_id: str,
         price_id: str,
         collection_method: str,
@@ -294,6 +334,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         subscription_id: str,
         price_id: str,
         metadata: dict[str, Any],
@@ -314,6 +355,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         subscription_item_id: str,
         idempotency_key: Optional[str] = None,
         **payload: Any,
@@ -326,25 +368,38 @@ class StripeService:
         )
 
     @stripe_mutation("connected_subscription_item.delete")
-    def delete_connected_subscription_item(self, *, account_id: str, subscription_item_id: str):
+    def delete_connected_subscription_item(
+        self, *, account_id: str, studio_id: str, subscription_item_id: str, idempotency_key: Optional[str] = None,
+    ):
         stripe = self._stripe()
-        return stripe.SubscriptionItem.delete(subscription_item_id, **self._request_options(account_id=account_id))
+        return stripe.SubscriptionItem.delete(
+            subscription_item_id, **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
 
     @stripe_mutation("connected_subscription.update")
-    def update_connected_subscription(self, *, account_id: str, subscription_id: str, **payload: Any):
+    def update_connected_subscription(
+        self, *, account_id: str, studio_id: str, subscription_id: str, idempotency_key: Optional[str] = None, **payload: Any,
+    ):
         stripe = self._stripe()
-        return stripe.Subscription.modify(subscription_id, **payload, **self._request_options(account_id=account_id))
+        return stripe.Subscription.modify(
+            subscription_id, **payload, **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
 
     @stripe_mutation("connected_subscription.cancel")
-    def cancel_connected_subscription(self, *, account_id: str, subscription_id: str):
+    def cancel_connected_subscription(
+        self, *, account_id: str, studio_id: str, subscription_id: str, idempotency_key: Optional[str] = None,
+    ):
         stripe = self._stripe()
-        return stripe.Subscription.cancel(subscription_id, **self._request_options(account_id=account_id))
+        return stripe.Subscription.cancel(
+            subscription_id, **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
 
     @stripe_mutation("connected_invoice_item.create")
     def create_connected_invoice_item(
         self,
         *,
         account_id: str,
+        studio_id: str,
         customer_id: str,
         amount: int,
         currency: str,
@@ -373,6 +428,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         customer_id: str,
         collection_method: str,
         application_fee_amount: int,
@@ -404,20 +460,29 @@ class StripeService:
         )
 
     @stripe_mutation("connected_invoice.finalize")
-    def finalize_connected_invoice(self, *, account_id: str, invoice_id: str):
+    def finalize_connected_invoice(
+        self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: Optional[str] = None,
+    ):
         stripe = self._stripe()
-        return stripe.Invoice.finalize_invoice(invoice_id, **self._request_options(account_id=account_id))
+        return stripe.Invoice.finalize_invoice(
+            invoice_id, **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
 
     @stripe_mutation("connected_invoice.send")
-    def send_connected_invoice(self, *, account_id: str, invoice_id: str):
+    def send_connected_invoice(
+        self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: Optional[str] = None,
+    ):
         stripe = self._stripe()
-        return stripe.Invoice.send_invoice(invoice_id, **self._request_options(account_id=account_id))
+        return stripe.Invoice.send_invoice(
+            invoice_id, **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
 
     @stripe_mutation("connected_invoice.pay")
     def pay_connected_invoice(
         self,
         *,
         account_id: str,
+        studio_id: str,
         invoice_id: str,
         paid_out_of_band: bool = False,
         idempotency_key: Optional[str] = None,
@@ -433,9 +498,13 @@ class StripeService:
         )
 
     @stripe_mutation("connected_invoice.void")
-    def void_connected_invoice(self, *, account_id: str, invoice_id: str):
+    def void_connected_invoice(
+        self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: Optional[str] = None,
+    ):
         stripe = self._stripe()
-        return stripe.Invoice.void_invoice(invoice_id, **self._request_options(account_id=account_id))
+        return stripe.Invoice.void_invoice(
+            invoice_id, **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
 
     def retrieve_connected_invoice(self, *, account_id: str, invoice_id: str, expand: Optional[list[str]] = None):
         stripe = self._stripe()
@@ -461,6 +530,7 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         charge_id: str,
         amount: Optional[int],
         reason: Optional[str],
@@ -514,9 +584,20 @@ class StripeService:
         )
 
     @stripe_mutation("customer_portal_session.create")
-    def create_customer_portal_session(self, *, customer_id: str, return_url: str):
+    def create_customer_portal_session(
+        self,
+        *,
+        customer_id: str,
+        return_url: str,
+        studio_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ):
         stripe = self._stripe()
-        return stripe.billing_portal.Session.create(customer=customer_id, return_url=return_url)
+        return stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+            **self._request_options(idempotency_key=idempotency_key),
+        )
 
     def retrieve_subscription(self, subscription_id: str, *, expand: Optional[list[str]] = None):
         stripe = self._stripe()
@@ -551,25 +632,38 @@ class StripeService:
         )
 
     @stripe_mutation("connect_branding_file.create")
-    def upload_branding_file(self, *, file_path: str, purpose: str) -> str:
-        return self._connect_gateway().upload_branding_file(file_path=file_path, purpose=purpose)
+    def upload_branding_file(
+        self,
+        *,
+        file_path: str,
+        purpose: str,
+        studio_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> str:
+        return self._connect_gateway().upload_branding_file(
+            file_path=file_path, purpose=purpose, studio_id=studio_id, idempotency_key=idempotency_key,
+        )
 
     @stripe_mutation("connect_account.branding.update")
     def update_connect_account_branding(
         self,
         *,
         account_id: str,
+        studio_id: str,
         primary_color: str,
         secondary_color: str,
         icon_file_id: Optional[str] = None,
         logo_file_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Any:
         return self._connect_gateway().update_branding(
             account_id=account_id,
+            studio_id=studio_id,
             primary_color=primary_color,
             secondary_color=secondary_color,
             icon_file_id=icon_file_id,
             logo_file_id=logo_file_id,
+            idempotency_key=idempotency_key,
         )
 
     @stripe_mutation("connect_onboarding_link.create")
@@ -577,39 +671,65 @@ class StripeService:
         self,
         *,
         account_id: str,
+        studio_id: str,
         refresh_url: str,
         return_url: str,
     ):
         return self._connect_gateway().create_onboarding_link(
             account_id=account_id,
+            studio_id=studio_id,
             refresh_url=refresh_url,
             return_url=return_url,
         )
 
-    def create_connect_dashboard_link(self, *, account_id: str):
-        return self._connect_gateway().create_dashboard_link(account_id=account_id)
+    def create_connect_dashboard_link(self, *, account_id: str, studio_id: str):
+        return self._connect_gateway().create_dashboard_link(account_id=account_id, studio_id=studio_id)
 
     def retrieve_account(self, *, account_id: Optional[str] = None):
         return self._connect_gateway().retrieve_account(account_id=account_id)
 
-    def create_connect_dashboard_url(self, *, account_id: str) -> str:
-        return self._connect_gateway().create_dashboard_url(account_id=account_id)
+    def create_connect_dashboard_url(self, *, account_id: str, studio_id: str) -> str:
+        return self._connect_gateway().create_dashboard_url(account_id=account_id, studio_id=studio_id)
 
-    @stripe_mutation("stripe_v2.post")
-    def _stripe_v2_post(self, path: str, payload: dict[str, Any], *, idempotency_key: Optional[str] = None) -> dict[str, Any]:
-        return self._stripe_v2_request("POST", path, payload, idempotency_key=idempotency_key)
+    @stripe_mutation("connect_onboarding_v2.post")
+    def _stripe_v2_post(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        studio_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return self._stripe_v2_request(
+            "POST", path, payload, studio_id=studio_id, account_id=account_id,
+            idempotency_key=idempotency_key,
+        )
 
-    @stripe_mutation("stripe_v2.patch")
-    def _stripe_v2_patch(self, path: str, payload: dict[str, Any], *, idempotency_key: Optional[str] = None) -> dict[str, Any]:
-        return self._stripe_v2_request("PATCH", path, payload, idempotency_key=idempotency_key)
+    @stripe_mutation("connect_onboarding_v2.patch")
+    def _stripe_v2_patch(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        studio_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return self._stripe_v2_request(
+            "PATCH", path, payload, studio_id=studio_id, account_id=account_id,
+            idempotency_key=idempotency_key,
+        )
 
-    @stripe_mutation("stripe_v2.request")
+    @stripe_mutation("connect_onboarding_v2.request")
     def _stripe_v2_request(
         self,
         method: str,
         path: str,
         payload: dict[str, Any],
         *,
+        studio_id: Optional[str] = None,
+        account_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
         return stripe_v2_request(

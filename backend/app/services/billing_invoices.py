@@ -194,6 +194,7 @@ class BillingInvoiceManager:
         stripe_service = self.stripe_service_cls()
         stripe_invoice = stripe_service.create_connected_invoice(
             account_id=account["stripe_connected_account_id"],
+            studio_id=studio_id,
             customer_id=payer["stripe_customer_id"],
             collection_method=invoice_row["collection_method"],
             application_fee_amount=application_fee,
@@ -220,6 +221,7 @@ class BillingInvoiceManager:
             }
             stripe_item = stripe_service.create_connected_invoice_item(
                 account_id=account["stripe_connected_account_id"],
+                studio_id=studio_id,
                 customer_id=payer["stripe_customer_id"],
                 amount=amount,
                 currency=data.currency,
@@ -256,14 +258,18 @@ class BillingInvoiceManager:
         stripe_service = self.stripe_service_cls()
         stripe_invoice = stripe_service.finalize_connected_invoice(
             account_id=invoice["stripe_account_id"],
+            studio_id=studio_id,
             invoice_id=invoice["stripe_invoice_id"],
+            idempotency_key=self._idempotency_key("invoice-finalize", invoice_id),
         )
         send_error = None
         if _object_get(stripe_invoice, "collection_method") == "send_invoice":
             try:
                 stripe_invoice = stripe_service.send_connected_invoice(
                     account_id=invoice["stripe_account_id"],
+                    studio_id=studio_id,
                     invoice_id=invoice["stripe_invoice_id"],
+                    idempotency_key=self._idempotency_key("invoice-send", invoice_id),
                 )
             except Exception as exc:
                 error_id = uuid4().hex
@@ -345,6 +351,7 @@ class BillingInvoiceManager:
         try:
             stripe_invoice = self.stripe_service_cls().pay_connected_invoice(
                 account_id=invoice["stripe_account_id"],
+                studio_id=studio_id,
                 invoice_id=invoice["stripe_invoice_id"],
                 idempotency_key=stripe_idempotency_key,
             )
@@ -728,7 +735,9 @@ class BillingInvoiceManager:
         if invoice.get("stripe_invoice_id") and invoice.get("stripe_account_id"):
             stripe_invoice = self.stripe_service_cls().void_connected_invoice(
                 account_id=invoice["stripe_account_id"],
+                studio_id=studio_id,
                 invoice_id=invoice["stripe_invoice_id"],
+                idempotency_key=self._idempotency_key("invoice-void", invoice_id),
             )
             invoice = self._update_invoice_from_stripe(invoice_id, studio_id, stripe_invoice, invoice["stripe_account_id"])
         else:
