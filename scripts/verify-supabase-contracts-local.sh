@@ -183,6 +183,8 @@ INITDB="$PG_BIN_DIR/initdb"
 PG_CTL="$PG_BIN_DIR/pg_ctl"
 PSQL="$PG_BIN_DIR/psql"
 
+node "$ROOT_DIR/scripts/check-supabase-contract-inventory.mjs"
+
 shopt -s nullglob
 migration_files=("$MIGRATION_DIR"/*.sql)
 verification_files=("$VERIFICATION_DIR"/*.sql)
@@ -409,6 +411,71 @@ for migration_file in "${migration_files[@]}"; do
     exit "$status"
   fi
 done
+
+echo "[catalog] RUN deterministic pending-object security fingerprint"
+catalog_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
+    "$catalog_state"
+); then
+  echo "[catalog] PASS deterministic pending-object security fingerprint"
+else
+  status=$?
+  echo "[catalog] FAIL deterministic pending-object security fingerprint (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[catalog negative] RUN unmanifested permissive-policy rejection"
+"$PSQL" "${psql_args[@]}" --quiet --command="
+CREATE POLICY koaryu_harness_forbidden_permissive_policy
+    ON public.studio_live_billing_authorizations
+    AS PERMISSIVE FOR SELECT TO anon USING (true);
+"
+drifted_catalog_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
+    "$drifted_catalog_state" >/dev/null 2>&1
+); then
+  echo "[catalog negative] FAIL catalog accepted an unmanifested permissive policy" >&2
+  exit 1
+fi
+preflight_policy_rejected="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet --command="
+SELECT 'policy_manifest' = ANY(security_failures)
+  FROM public.koaryu_release_schema_preflight();
+"
+)"
+if [[ "$preflight_policy_rejected" != "t" ]]; then
+  echo "[catalog negative] FAIL readiness accepted an unmanifested permissive policy" >&2
+  exit 1
+fi
+"$PSQL" "${psql_args[@]}" --quiet --command="
+DROP POLICY koaryu_harness_forbidden_permissive_policy
+    ON public.studio_live_billing_authorizations;
+"
+echo "[catalog negative] PASS unmanifested permissive-policy rejection"
+
+echo "[concurrency] RUN Connect identity mapping/exclusion invariant"
+if bash "$ROOT_DIR/scripts/verify-connect-identity-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT" postgres postgres; then
+  echo "[concurrency] PASS Connect identity mapping/exclusion invariant"
+else
+  status=$?
+  echo "[concurrency] FAIL Connect identity mapping/exclusion invariant (exit $status)" >&2
+  exit "$status"
+fi
 
 verification_total=${#verification_files[@]}
 verification_index=0

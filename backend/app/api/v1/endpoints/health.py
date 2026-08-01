@@ -2,8 +2,10 @@ import os
 import re
 
 from fastapi import APIRouter, HTTPException, Response, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
+from app.services.release_schema_readiness import assert_hosted_release_schema_ready
 
 router = APIRouter()
 COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -49,11 +51,14 @@ async def health_live_head(response: Response):
 
 @router.get("/health/ready")
 async def health_ready(response: Response):
-    """Return readiness after rechecking the hosted runtime configuration."""
+    """Return readiness after rechecking hosted configuration and database head."""
     _set_health_headers(response)
     try:
-        get_settings().validate_runtime_configuration()
-    except RuntimeError as exc:
+        settings = get_settings()
+        settings.validate_runtime_configuration()
+        if settings.ENVIRONMENT.strip().lower() in {"production", "staging"}:
+            await run_in_threadpool(assert_hosted_release_schema_ready)
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Runtime configuration is not ready.",

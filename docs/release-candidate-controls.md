@@ -16,6 +16,8 @@ directly and verifies it before running:
   and generated API contract verification;
 - a fresh local migration replay, database lint, and the broad Supabase contract
   suite;
+- an exact SQL-contract inventory check and real concurrent opposite-direction
+  Connect mapping/exclusion transactions against the ephemeral database;
 - merge-safe full-history and exact-worktree Gitleaks, Bandit, and CodeQL static analysis; and
 - an aggregate fail-closed `Release candidate gate` job.
 
@@ -33,7 +35,14 @@ npm run check:release-workflow
 
 ## Provider Promotion Controls
 
-Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'`. The bootstrap change keeps Render's process health check on the backward-compatible `/health`; switch the provider to `/health/live` only after the approved artifact containing that endpoint is already live.
+Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'` and routes provider health to `/health/ready`.
+
+Database promotion precedes application promotion. Hosted readiness calls the
+service-role-only Supabase preflight and requires the exact final migration count
+91, head `20260801090000`, pending sequence, and required-object/security proof.
+Schema 84, a partial 85-90 state, a missing reserved migration manifest, or any
+provider/RPC error returns 503, so the new backend cannot be promoted healthy
+against an earlier database head.
 
 `npm run check:env-examples` fails if either repository provider control drifts or if the account-deletion cron is removed. Repository text cannot prove Render's current service setting: before the bootstrap merge, an authenticated operator must turn production auto-deploy off through Render and capture an authenticated readback. The guarded merge command independently rechecks that live provider state and refuses to merge without it. After the fixed candidate passes staging, deploy or promote that exact SHA explicitly, read back Vercel `/api/version` and Render `/health/ready`, and compare both full SHAs with the release ledger before assigning production traffic.
 

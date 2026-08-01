@@ -22,9 +22,18 @@ const candidateSha = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
+const validCatalogState =
+  "columns=1:11111111111111111111111111111111:0;" +
+  "functions=19:22222222222222222222222222222222:0;" +
+  "indexes=8:33333333333333333333333333333333:0;" +
+  "policies=12:44444444444444444444444444444444:0;" +
+  "sequences=2:55555555555555555555555555555555:0;" +
+  "tables=10:66666666666666666666666666666666:0;" +
+  "triggers=9:77777777777777777777777777777777:0";
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
-  "trigger=1:fedcba9876543210fedcba9876543210:0";
+  "trigger=1:fedcba9876543210fedcba9876543210:0;" +
+  `catalog=${validCatalogState}`;
 
 function candidatePacket() {
   return verifySourceTree(repositoryRoot, candidateSha);
@@ -50,8 +59,13 @@ function postSnapshot(packet, overrides = {}) {
     objectCounts: "3:1",
     functionState: "3:0123456789abcdef0123456789abcdef:0",
     triggerState: "1:fedcba9876543210fedcba9876543210:0",
+    catalogState: validCatalogState,
     ...overrides,
   };
+}
+
+function integratedPacket() {
+  return { ...candidatePacket(), integrationComplete: true };
 }
 
 describe("studio-comp migration rollout guard", () => {
@@ -66,6 +80,13 @@ describe("studio-comp migration rollout guard", () => {
       ROLLOUT.migrations.map(({ filename }) => filename),
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
+    assert.equal(packet.integrationComplete, false);
+    assert.deepEqual(
+      packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
+      ROLLOUT.finalPendingVersions.filter(
+        (version) => !new Set(["20260801070000", "20260801080000"]).has(version),
+      ),
+    );
   });
 
   it("defaults to read-only inspection but requires an immutable candidate and pinned target", () => {
@@ -155,7 +176,7 @@ describe("studio-comp migration rollout guard", () => {
   });
 
   it("accepts only exact pre-state or semantically valid exact post-state", () => {
-    const packet = candidatePacket();
+    const packet = integratedPacket();
     assert.deepEqual(classifyStateSnapshot(preSnapshot(), packet), {
       state: "pre",
       providerFingerprint: null,
@@ -180,8 +201,26 @@ describe("studio-comp migration rollout guard", () => {
       /does not match the approved staging evidence/,
     );
     assert.throws(
+      () => classifyStateSnapshot(
+        postSnapshot(packet, {
+          catalogState: validCatalogState.replace("indexes=8", "indexes=7"),
+        }),
+        packet,
+      ),
+      /Required table, RLS, grant, function, trigger, index, sequence, or column checks failed/,
+    );
+    assert.throws(
       () => classifyStateSnapshot(preSnapshot({ history: "85:unexpected" }), packet),
       /Unexpected migration history/,
+    );
+  });
+
+  it("refuses to certify post-state before the exact 91-migration integration", () => {
+    const packet = candidatePacket();
+    assert.equal(packet.integrationComplete, false);
+    assert.throws(
+      () => classifyStateSnapshot(postSnapshot(packet), packet),
+      /exact final 91-migration sequence/,
     );
   });
 

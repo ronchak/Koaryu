@@ -2,10 +2,9 @@
 
 Status: **Phase A tooling only; provider mutation locked**
 
-This packet reconciles the production 84-migration baseline with an immutable
-release candidate that contains the July 27 studio-comp migration pair. It is
-specialized to this rollout. It is not a generic migration or history-repair
-framework.
+This packet reconciles the production 84-migration baseline with the immutable
+91-migration release candidate. It is specialized to this rollout, not a
+generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
 never run migration or contract SQL against production. Only the named human
@@ -39,10 +38,27 @@ The fixed production pre-state is:
 84:57ae4269ef4d75c249d59ef297661a3a
 ```
 
-The post-state is intentionally not fixed at 86. The checker derives exact
-`84 -> N` history, pending filenames, hashes, and a manifest hash from the final
-candidate. This lets the director regenerate the packet after other launch
-migrations integrate without blessing an obsolete migration head.
+The only certifiable post-state is migration count 91, head
+`20260801090000`, with this exact pending version sequence:
+
+```text
+20260727100000
+20260727110000
+20260801050957
+20260801060000
+20260801070000
+20260801080000
+20260801090000
+```
+
+The checker derives filenames and source hashes from the final candidate, then
+requires this sequence. It currently reports `integration_complete=false`
+because the reserved 070000 billing and 080000 alert migrations are not yet in
+this owner branch. Provider inspection, rehearsal, and apply refuse that state.
+After those migrations integrate, replace the explicit manifest sentinel in
+the 090000 readiness function with security-relevant checks for their reviewed
+objects and extend the semantic catalog manifest. Never certify an earlier
+head.
 
 The candidate must descend from both merged studio-comp commits and retain these
 exact source files:
@@ -98,11 +114,11 @@ node scripts/studio-comp-migration-rollout.mjs \
   --candidate-sha <final-40-character-candidate-sha>
 ```
 
-Record the exact output. It pins the CLI, fixed pre-history, derived post-history,
-complete pending set, and source-manifest hash. The provisional `da2e02c` packet
-is `84 -> 86` with manifest
-`ab6dfd24935124f825fe578d063789f2db40900afa52d7f49240b49d3d390fe0`.
-It must be regenerated if the final candidate changes.
+Record the exact output. It pins the CLI, fixed pre-history, immutable Git
+ancestry, complete pending set, every candidate migration hash, and the source
+manifest hash. Regenerate it from the final exact candidate after 070000 and
+080000 integrate. Any missing reserved migration or migration after 090000
+halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
@@ -122,7 +138,8 @@ node scripts/studio-comp-migration-rollout.mjs \
   --candidate-sha <final-candidate-sha>
 ```
 
-Acceptance requires `state=pre`, the pinned staging ref
+The command is unavailable until the packet reports
+`integration_complete=true`. Acceptance then requires `state=pre`, the pinned staging ref
 `nxgsektqsgrtyfhawxbc`, the exact 84-row history, no July functions/trigger, and
 an `inspection_token`. If staging is behind, ahead, partially applied, or has
 manual objects, stop. Rebuild or catch-up needs a separate packet.
@@ -137,23 +154,29 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-The dry-run must report exactly every candidate migration after baseline 84, in
-order, with the July pair first. A missing, extra, reordered, or unparseable name
-halts the rollout.
+The dry-run must report the exact seven pending versions above, with their final
+candidate filenames and hashes. A missing, extra, reordered, or unparseable
+name halts the rollout.
 
 Staging application remains locked until the director approves Phase B. The
 approved command will require the same inspection token, exact project ref, a
 durable approval record, and `--approve-staging-apply`. After application:
 
-1. require the derived `N:<history-digest>` and exact pending version/name list;
-2. require three `postgres`-owned functions plus a trigger on the
-   `postgres`-owned `studio_subscriptions` table, invoker security, exact search
-   paths, no browser/PUBLIC execute path, and direct `service_role` execute only
-   on the two RPCs;
-3. record the emitted provider fingerprint;
-4. run linked lint and `studio_comp_atomic_contract.sql` only on staging;
-5. test PostgREST service-role execution and browser-role denial;
-6. only in the separately approved provider-smoke phase, create and remove the
+1. require count 91, head 090000, the exact seven-version sequence, and the
+   derived final history digest;
+2. require every table/RLS, policy, grant, function-security/search-path,
+   trigger, index, sequence-ACL, and column identity in the final semantic
+   catalog manifest; category counts and sorted identities are deterministic,
+   while harmless provider SQL formatting is excluded. The policy inventory is
+   exact: extra policies halt, constant-false deny predicates and the guarded
+   membership predicate are classified canonically, and arbitrary non-null
+   expressions do not pass;
+3. require the service-role-only readiness RPC to return `ready=true`, exact
+   count/head/pending versions, and an empty failure list;
+4. record the emitted provider fingerprint;
+5. run linked lint and approved contracts only on staging;
+6. test PostgREST service-role execution and browser-role denial;
+7. only in the separately approved provider-smoke phase, create and remove the
    disposable staging Auth actor and synthetic studio data.
 
 No staging provider read, dry-run, migration, contract, or Auth mutation was
@@ -206,6 +229,8 @@ that calls the missing RPC. After review, either apply the still-pending immutab
 migration or add a new forward corrective migration. Never mark history reverted,
 drop the trigger/functions, or use a production restore as ordinary rollback.
 
-If both migrations are recorded but the provider fingerprint fails, stop the
-release and add a reviewed forward migration. Application rollback is separate
-and does not roll back database history.
+If all migrations are recorded but readiness or the provider fingerprint fails,
+stop the release and add a reviewed forward migration. Application promotion is
+database-first: Render `/health/ready` remains 503 until the exact 91 head and
+required-object proof pass. Application rollback is separate and does not roll
+back database history.

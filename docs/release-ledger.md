@@ -139,6 +139,39 @@ Operator: `Codex release orchestrator`
 - Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
 - Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
 
+## Database-Parity Remediation Candidate — 2026-07-31
+
+- Scope: repository-only remediation; no staging or production provider read,
+  migration, contract execution, Auth fixture, or other provider mutation was
+  performed.
+- Final required database identity: 91 migrations, head
+  `20260801090000_harden_release_database_parity.sql`, with exact pending
+  versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
+  01090000 after the fixed 84-migration production baseline.
+- Security repair: revoke browser/PUBLIC access to the new identity sequences;
+  serialize Connect mapping/exclusion identities through one private guard row
+  and database constraint; prove both opposite-direction races with concurrent
+  transactions.
+- Promotion guard: Render health uses `/health/ready`; hosted readiness calls a
+  service-role-only exact-head/object preflight and fails closed on provider
+  errors. Schema 84 cannot receive healthy traffic from the new backend.
+- Catalog proof: deterministic sorted identities and security-relevant catalog
+  properties cover the currently integrated pending tables/RLS, policies,
+  grants, functions, triggers, indexes, sequences, and required column. It does
+  not depend on provider SQL pretty-printing. The policy manifest rejects
+  missing, extra, permissive, role/command, and canonical predicate drift.
+- Integration gate: reserved migrations `20260801070000` (billing) and
+  `20260801080000` (alerts) are not in this owner branch. The packet reports
+  `integration_complete=false`, credentialed provider modes refuse to run, and
+  the preflight retains a failure sentinel. After integration, the director
+  must add their reviewed objects to the catalog/preflight manifest and remove
+  the sentinel before regenerating the immutable 84-to-91 packet. If either
+  owner adds verification SQL, its filename must also be added to the exact
+  contract inventory; otherwise CI fails closed as unreviewed drift.
+- Recovery: any partial history, catalog mismatch, readiness failure, or guard
+  conflict halts. Preserve applied state and recover only with reviewed
+  forward-only migration work; production restore remains disaster recovery.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.

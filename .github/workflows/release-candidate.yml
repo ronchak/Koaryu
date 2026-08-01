@@ -177,6 +177,9 @@ jobs:
           SUPABASE_DB_TARGET: local
         run: scripts/verify-supabase-contracts.sh
 
+      - name: Prove Connect identity concurrency invariant
+        run: scripts/verify-connect-identity-concurrency.sh
+
       - name: Stop disposable database
         if: ${{ always() }}
         run: supabase stop --no-backup

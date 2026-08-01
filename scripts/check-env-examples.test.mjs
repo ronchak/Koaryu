@@ -156,7 +156,7 @@ envVars:
 services:
   - type: web
     name: koaryu
-    healthCheckPath: /health
+    healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
 `;
     const vercelConfig = {
@@ -175,7 +175,7 @@ services:
 services:
   - type: web
     name: koaryu
-    healthCheckPath: /health/live
+    healthCheckPath: /health
     autoDeployTrigger: commit
 `;
     const unsafeVercel = {
@@ -185,7 +185,7 @@ services:
     const failures = validateProviderDeploymentControls(unsafeRender, unsafeVercel);
 
     assert.ok(failures.some((failure) => failure.includes("autoDeployTrigger must be off")));
-    assert.ok(failures.some((failure) => failure.includes("bootstrap healthCheckPath must remain /health")));
+    assert.ok(failures.some((failure) => failure.includes("healthCheckPath must enforce /health/ready")));
     assert.ok(failures.some((failure) => failure.includes("enabled branch pattern \"*\"")));
     assert.ok(failures.some((failure) => failure.includes("cron contract must be preserved")));
   });
@@ -195,7 +195,7 @@ services:
 services:
   - type: web
     name: koaryu
-    healthCheckPath: /health
+    healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
 `;
     const vercelConfig = {

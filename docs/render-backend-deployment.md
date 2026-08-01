@@ -16,7 +16,7 @@ Expected service settings:
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Bootstrap health check path: `/health`; switch explicitly to `/health/live` only after the approved artifact containing that endpoint is live
+- Health check path: `/health/ready`
 - Automatic production deploys: off; deploy one reviewed commit explicitly
 
 Render should use Python `3.11`. The backend includes both `backend/runtime.txt` (`python-3.11.9`) and `backend/.python-version` (`3.11`) so Render does not default to a newer Python release that lacks compatible wheels for pinned dependencies.
@@ -179,7 +179,12 @@ curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. Readiness rechecks runtime configuration but does not yet probe Supabase or Stripe network availability.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only database preflight. It returns 503 unless Supabase reports exactly 91 migrations, head `20260801090000`, the seven expected pending versions after the production baseline, and no required-object/security failure. Missing RPCs, timeouts, provider errors, and schema 84 all fail closed without exposing provider detail. Stripe network health is not part of this route.
+
+Promote the database first. Do not route the new backend to a Supabase project
+until the final staging fingerprint and preflight pass. The reserved 070000 and
+080000 migrations and their catalog checks must be integrated before readiness
+can return 200; an application deploy that reaches schema 84 remains unhealthy.
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 

@@ -371,8 +371,8 @@ export function validateProviderDeploymentControls(renderSource, vercelConfig) {
     if (renderScalar(productionService, "autoDeployTrigger") !== "off") {
       failures.push("render.yaml: production autoDeployTrigger must be off");
     }
-    if (renderScalar(productionService, "healthCheckPath") !== "/health") {
-      failures.push("render.yaml: bootstrap healthCheckPath must remain /health until /health/live is deployed");
+    if (renderScalar(productionService, "healthCheckPath") !== "/health/ready") {
+      failures.push("render.yaml: production healthCheckPath must enforce /health/ready");
     }
   }
 
