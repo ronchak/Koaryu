@@ -797,6 +797,7 @@ class StripeService:
         studio_id: str,
         refresh_url: str,
         return_url: str,
+        idempotency_key: Optional[str] = None,
         bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
         return self._connect_gateway().create_onboarding_link(
@@ -804,6 +805,7 @@ class StripeService:
             studio_id=studio_id,
             refresh_url=refresh_url,
             return_url=return_url,
+            idempotency_key=idempotency_key,
             bootstrap_context=bootstrap_context,
         )
 

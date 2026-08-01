@@ -60,12 +60,27 @@ class BillingLinkResponse(BaseModel):
     url: str
 
 
+class ConnectOnboardingLinkResponse(BaseModel):
+    pending_url: str
+    delivery_receipt: Optional[str] = None
+
+
 class ConnectOnboardingLinkRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     return_url: Optional[str] = None
     refresh_url: Optional[str] = None
     business_entity_type: Optional[ConnectBusinessEntityType] = None
+
+
+class ConnectOnboardingDeliveryAckRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    receipt: str = Field(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class ConnectOnboardingDeliveryAckResponse(BaseModel):
+    acknowledged: bool
 
 
 class PlatformCheckoutRequest(BaseModel):

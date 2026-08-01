@@ -4,12 +4,22 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 
-from app.schemas.billing import BillingLinkResponse, StudioPaymentAccountResponse
+from app.schemas.billing import (
+    BillingLinkResponse,
+    ConnectOnboardingDeliveryAckResponse,
+    ConnectOnboardingLinkResponse,
+    StudioPaymentAccountResponse,
+)
 from app.services.billing_connect_accounts import BillingConnectAccountStore
-from app.services.stripe_connect_gateway import build_connect_account_v2_payload
+from app.services.platform_billing_helpers import build_idempotency_key, normalize_idempotency_key
+from app.services.stripe_connect_gateway import (
+    build_connect_account_v2_payload,
+    build_connect_onboarding_link_v2_payload,
+)
 from app.services.stripe_mutation_policy import configured_stripe_mode
 from app.services.stripe_service import StripeService
 from app.services.studio_live_billing_authorizations import (
+    LIVE_CONNECT_BOOTSTRAP_SUPPORT_DETAIL,
     StudioLiveBillingAuthorizationStore,
     new_connect_onboarding_bootstrap_context,
     stripe_payload_sha256,
@@ -41,7 +51,8 @@ class BillingConnectActions:
         refresh_url: Optional[str] = None,
         return_url: Optional[str] = None,
         business_entity_type: Optional[str] = None,
-    ) -> BillingLinkResponse:
+        request_idempotency_key: Optional[str] = None,
+    ) -> ConnectOnboardingLinkResponse:
         frontend_url = self.billing_service.settings.FRONTEND_URL.rstrip("/")
         safe_refresh_url = self.billing_service._safe_redirect_url(
             refresh_url,
@@ -163,14 +174,69 @@ class BillingConnectActions:
                     "metadata": metadata,
                 })
 
+        link_payload = build_connect_onboarding_link_v2_payload(
+            account_id=stripe_account_id,
+            refresh_url=safe_refresh_url,
+            return_url=safe_return_url,
+        )
+        ordinary_idempotency_key = None
+        if bootstrap_context is None:
+            normalized_request_key = normalize_idempotency_key(request_idempotency_key)
+            if not normalized_request_key:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Idempotency-Key is required for a fresh Connect onboarding link.",
+                )
+            account_generation = int((account.get("metadata") or {}).get("connect_account_generation") or 1)
+            ordinary_idempotency_key = build_idempotency_key(
+                "connect-onboarding-link",
+                studio_id,
+                stripe_account_id,
+                account_generation,
+                normalized_request_key,
+                stripe_payload_sha256(link_payload),
+            )
         link = stripe_service.create_connect_onboarding_link(
             account_id=stripe_account_id,
             studio_id=studio_id,
             refresh_url=safe_refresh_url,
             return_url=safe_return_url,
+            idempotency_key=ordinary_idempotency_key,
             bootstrap_context=bootstrap_context,
         )
-        return BillingLinkResponse(url=link["url"] if isinstance(link, dict) else link.url)
+        link_url = str(link["url"] if isinstance(link, dict) else link.url)
+        delivery_receipt = None
+        if authorization_store is not None and bootstrap_context is not None:
+            delivery_receipt = authorization_store.record_connect_onboarding_initial_link_response(
+                studio_id=studio_id,
+                account_id=stripe_account_id,
+                link_url=link_url,
+                payload_sha256=stripe_payload_sha256(link_payload),
+                bootstrap_context=bootstrap_context,
+            )
+        return ConnectOnboardingLinkResponse(
+            pending_url=link_url,
+            delivery_receipt=delivery_receipt,
+        )
+
+    async def acknowledge_onboarding_link_delivery(
+        self,
+        studio_id: str,
+        delivery_receipt: str,
+    ) -> ConnectOnboardingDeliveryAckResponse:
+        stripe_service = self.stripe_service_cls(supabase=self.billing_service.supabase)
+        if configured_stripe_mode(stripe_service.settings) != "live":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=LIVE_CONNECT_BOOTSTRAP_SUPPORT_DETAIL,
+            )
+        acknowledged = StudioLiveBillingAuthorizationStore(
+            self.billing_service.supabase
+        ).acknowledge_connect_onboarding_initial_link_delivery(
+            studio_id=studio_id,
+            delivery_receipt=delivery_receipt,
+        )
+        return ConnectOnboardingDeliveryAckResponse(acknowledged=acknowledged)
 
     async def sync_account(self, studio_id: str) -> StudioPaymentAccountResponse:
         account = self.connect_accounts.ensure_row(studio_id)

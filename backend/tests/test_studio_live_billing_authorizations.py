@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -65,6 +66,16 @@ class _AuthorizationSupabase(RpcBackedSupabase):
         if self.failure:
             raise self.failure
         return self._response("preflight_connect_onboarding_bootstrap_resume")
+
+    def _rpc_record_connect_onboarding_bootstrap_initial_link_response(self, _params):
+        if self.failure:
+            raise self.failure
+        return self._response("record_connect_onboarding_bootstrap_initial_link_response")
+
+    def _rpc_acknowledge_connect_onboarding_bootstrap_initial_link_delivery(self, _params):
+        if self.failure:
+            raise self.failure
+        return self._response("acknowledge_connect_onboarding_bootstrap_initial_link_delivery")
 
 
 class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
@@ -254,6 +265,87 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
             "load_connect_onboarding_bootstrap_recovery_context",
         ])
         self.assertNotIn("token", supabase.rpc_calls[0][1])
+
+    def test_initial_link_response_records_only_hashes_and_ack_is_exact_receipt_idempotent(self):
+        context = ConnectOnboardingBootstrapContext(
+            bootstrap_id="11111111-1111-4111-8111-111111111111",
+            account_generation=2,
+            initial_link_context_sha256="b" * 64,
+            account_create_idempotency_key="koaryu-connect-account-studio_1-g2",
+            initial_link_idempotency_key="koaryu-connect-onboarding-studio_1-g2-" + "c" * 24,
+        )
+        supabase = _AuthorizationSupabase(responses={
+            "record_connect_onboarding_bootstrap_initial_link_response": [{
+                "recorded": True,
+                "studio_id": "studio_1",
+                "bootstrap_id": context.bootstrap_id,
+            }],
+            "acknowledge_connect_onboarding_bootstrap_initial_link_delivery": [{
+                "acknowledged": True,
+                "studio_id": "studio_1",
+                "bootstrap_id": context.bootstrap_id,
+            }],
+        })
+        store = StudioLiveBillingAuthorizationStore(supabase, expected_candidate_sha=CANDIDATE_SHA)
+
+        with patch(
+            "app.services.studio_live_billing_authorizations.secrets.token_urlsafe",
+            return_value="r" * 64,
+        ):
+            receipt = store.record_connect_onboarding_initial_link_response(
+                studio_id="studio_1",
+                account_id="acct_1",
+                link_url="https://connect.stripe.test/secret-link",
+                payload_sha256="d" * 64,
+                bootstrap_context=context,
+            )
+        self.assertEqual(receipt, "r" * 64)
+        record_params = supabase.rpc_calls[-1][1]
+        self.assertNotIn(receipt, record_params.values())
+        self.assertNotIn("https://connect.stripe.test/secret-link", record_params.values())
+        self.assertRegex(record_params["p_delivery_receipt_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(record_params["p_initial_link_response_sha256"], r"^[0-9a-f]{64}$")
+
+        self.assertTrue(store.acknowledge_connect_onboarding_initial_link_delivery(
+            studio_id="studio_1",
+            delivery_receipt=receipt,
+        ))
+        ack_params = supabase.rpc_calls[-1][1]
+        self.assertNotIn(receipt, ack_params.values())
+        self.assertEqual(ack_params["p_studio_id"], "studio_1")
+        self.assertEqual(ack_params["p_candidate_sha"], CANDIDATE_SHA)
+
+    def test_delivery_ack_rejects_wrong_expired_or_cross_context_receipt(self):
+        store = StudioLiveBillingAuthorizationStore(
+            _AuthorizationSupabase(responses={
+                "acknowledge_connect_onboarding_bootstrap_initial_link_delivery": [],
+            }),
+            expected_candidate_sha=CANDIDATE_SHA,
+        )
+        with self.assertRaises(HTTPException) as raised:
+            store.acknowledge_connect_onboarding_initial_link_delivery(
+                studio_id="studio_1",
+                delivery_receipt="r" * 64,
+            )
+        self.assertEqual(raised.exception.status_code, 409)
+
+    def test_completed_bootstrap_preflight_falls_through_to_ordinary_authorization(self):
+        supabase = _AuthorizationSupabase(responses={
+            "preflight_connect_onboarding_bootstrap_begin": [{
+                "eligible": False,
+                "studio_id": "studio_1",
+            }],
+            "preflight_connect_onboarding_bootstrap_resume": [{
+                "eligible": False,
+                "studio_id": "studio_1",
+                "phase": "completed",
+            }],
+        })
+        state = StudioLiveBillingAuthorizationStore(
+            supabase,
+            expected_candidate_sha=CANDIDATE_SHA,
+        ).connect_onboarding_preflight_state(studio_id="studio_1")
+        self.assertEqual(state, "none")
 
     def test_read_only_preflight_is_fail_closed_and_never_queries_or_mutates_tables(self):
         for response, expected, expected_calls in (

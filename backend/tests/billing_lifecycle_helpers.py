@@ -194,12 +194,14 @@ class _FakeStripeService:
         studio_id: str,
         refresh_url: str,
         return_url: str,
+        idempotency_key=None,
         bootstrap_context=None,
     ):
         self.__class__.onboarding_calls.append({
             "account_id": account_id,
             "refresh_url": refresh_url,
             "return_url": return_url,
+            "idempotency_key": idempotency_key,
             "bootstrap_context": bootstrap_context,
         })
         return {"url": f"https://connect.stripe.test/setup/{account_id}"}

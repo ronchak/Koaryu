@@ -565,10 +565,23 @@ export interface ApiClassTemplateUpdate {
   is_active?: boolean | null;
 }
 
+export interface ApiConnectOnboardingDeliveryAckRequest {
+  receipt: string;
+}
+
+export interface ApiConnectOnboardingDeliveryAckResponse {
+  acknowledged: boolean;
+}
+
 export interface ApiConnectOnboardingLinkRequest {
   return_url?: string | null;
   refresh_url?: string | null;
   business_entity_type?: "company" | "individual" | null;
+}
+
+export interface ApiConnectOnboardingLinkResponse {
+  pending_url: string;
+  delivery_receipt?: string | null;
 }
 
 export interface ApiCsvImportActionOptions {

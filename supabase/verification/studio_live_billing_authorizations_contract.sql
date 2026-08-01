@@ -93,6 +93,14 @@ BEGIN
             v_role,
             'public.authorize_connect_onboarding_bootstrap_initial_link_v2(uuid,uuid,text,integer,text,text,text,text)',
             'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.record_connect_onboarding_bootstrap_initial_link_response(uuid,uuid,text,integer,text,text,text,text,text,text)',
+            'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(uuid,text,text)',
+            'EXECUTE'
         ) THEN
             RAISE EXCEPTION '% can call a service-only live-billing RPC.', v_role;
         END IF;
@@ -137,6 +145,14 @@ BEGIN
     ) OR NOT has_function_privilege(
         'service_role',
         'public.authorize_connect_onboarding_bootstrap_initial_link_v2(uuid,uuid,text,integer,text,text,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.record_connect_onboarding_bootstrap_initial_link_response(uuid,uuid,text,integer,text,text,text,text,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(uuid,text,text)',
         'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'service_role cannot call the required live-billing RPCs.';
@@ -272,6 +288,8 @@ DECLARE
     v_status TEXT;
     v_recovery_context JSONB;
     v_bootstrap_updated_at TIMESTAMPTZ;
+    v_delivery_receipt_hash TEXT := repeat('4', 64);
+    v_rotated_receipt_hash TEXT := repeat('5', 64);
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -661,6 +679,134 @@ BEGIN
         RAISE EXCEPTION 'Reviewed excluded account incorrectly blocked the in-scope bootstrap.';
     END IF;
 
+    -- A provider response registers only a short-lived hashed delivery receipt.
+    -- It does not retire the bootstrap before the authenticated browser acks.
+    SELECT * INTO v_result
+      FROM public.record_connect_onboarding_bootstrap_initial_link_response(
+          v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+          'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key,
+          repeat('6', 64), v_delivery_receipt_hash
+      );
+    IF NOT FOUND OR NOT v_result.recorded THEN
+        RAISE EXCEPTION 'Initial-link provider response was not recorded for delivery.';
+    END IF;
+    SELECT * INTO v_result
+      FROM public.preflight_connect_onboarding_bootstrap_resume(
+          v_blank_studio, repeat('a', 40)
+      );
+    IF NOT FOUND OR NOT v_result.eligible OR v_result.phase <> 'initial_link_delivery_pending' THEN
+        RAISE EXCEPTION 'A recorded response retired the bootstrap before browser acknowledgement.';
+    END IF;
+
+    -- If authorization won the lock just before expiry but the provider returned
+    -- afterward, response recording must not reopen the expired delivery window.
+    BEGIN
+        UPDATE public.stripe_connect_onboarding_bootstraps
+           SET initial_link_claimed_at = now() - INTERVAL '3 minutes',
+               initial_link_response_recorded_at = now() - INTERVAL '2 minutes',
+               initial_link_delivery_receipt_expires_at = now() - INTERVAL '1 second'
+         WHERE id = v_bootstrap.bootstrap_id;
+        PERFORM public.record_connect_onboarding_bootstrap_initial_link_response(
+            v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+            'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key,
+            repeat('6', 64), v_rotated_receipt_hash
+        );
+        IF NOT EXISTS (
+            SELECT 1 FROM public.stripe_connect_onboarding_bootstraps bootstrap
+             WHERE bootstrap.id = v_bootstrap.bootstrap_id
+               AND bootstrap.initial_link_support_required_at IS NOT NULL
+               AND bootstrap.initial_link_delivery_receipt_sha256 = v_delivery_receipt_hash
+        ) THEN
+            RAISE EXCEPTION 'Late provider response rotated an expired delivery receipt.';
+        END IF;
+        RAISE EXCEPTION 'rollback late-response expiry probe' USING ERRCODE = 'P0B31';
+    EXCEPTION WHEN SQLSTATE 'P0B31' THEN
+        NULL;
+    END;
+
+    -- A lost HTTP response can recover only the same provider response/key. A
+    -- retry rotates the delivery receipt so a late response cannot retire it.
+    SELECT * INTO v_result
+      FROM public.record_connect_onboarding_bootstrap_initial_link_response(
+          v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+          'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key,
+          repeat('6', 64), v_rotated_receipt_hash
+      );
+    IF NOT FOUND OR NOT v_result.recorded THEN
+        RAISE EXCEPTION 'Exact same-response recovery could not rotate its receipt.';
+    END IF;
+    PERFORM public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(
+        v_blank_studio, repeat('a', 40), v_delivery_receipt_hash
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'A stale delivery receipt retired the bootstrap.';
+    END IF;
+    PERFORM public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(
+        v_studio, repeat('a', 40), v_rotated_receipt_hash
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'A cross-studio delivery receipt retired the bootstrap.';
+    END IF;
+
+    -- A different provider response under the claimed idempotency key is
+    -- irreconcilable. Verify it becomes support-required, then roll back only
+    -- this negative-test subtransaction so the valid response can be acked.
+    BEGIN
+        PERFORM public.record_connect_onboarding_bootstrap_initial_link_response(
+            v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+            'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key,
+            repeat('7', 64), v_rotated_receipt_hash
+        );
+        IF NOT EXISTS (
+            SELECT 1 FROM public.stripe_connect_onboarding_bootstraps bootstrap
+             WHERE bootstrap.id = v_bootstrap.bootstrap_id
+               AND bootstrap.initial_link_support_required_at IS NOT NULL
+        ) THEN
+            RAISE EXCEPTION 'Changed provider response did not require support.';
+        END IF;
+        RAISE EXCEPTION 'rollback changed-response probe' USING ERRCODE = 'P0B30';
+    EXCEPTION WHEN SQLSTATE 'P0B30' THEN
+        NULL;
+    END;
+
+    SELECT * INTO v_result
+      FROM public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(
+          v_blank_studio, repeat('a', 40), v_rotated_receipt_hash
+      );
+    IF NOT FOUND OR NOT v_result.acknowledged THEN
+        RAISE EXCEPTION 'Exact browser delivery receipt did not retire the bootstrap.';
+    END IF;
+    -- Lost acknowledgement responses retry idempotently only with that receipt.
+    SELECT * INTO v_result
+      FROM public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(
+          v_blank_studio, repeat('a', 40), v_rotated_receipt_hash
+      );
+    IF NOT FOUND OR NOT v_result.acknowledged THEN
+        RAISE EXCEPTION 'Exact delivery acknowledgement was not idempotent.';
+    END IF;
+    SELECT * INTO v_result
+      FROM public.preflight_connect_onboarding_bootstrap_resume(
+          v_blank_studio, repeat('f', 40)
+      );
+    IF NOT FOUND OR v_result.eligible OR v_result.phase <> 'completed' THEN
+        RAISE EXCEPTION 'Delivered bootstrap was not durably retired across candidate change.';
+    END IF;
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+        v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+        'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'Delivered bootstrap authorized a second initial Account Link.';
+    END IF;
+    PERFORM public.record_connect_onboarding_bootstrap_initial_link_response(
+        v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+        'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key,
+        repeat('6', 64), repeat('8', 64)
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'Delivered bootstrap accepted another provider response.';
+    END IF;
+
     DELETE FROM public.stripe_events WHERE id = v_processing_event;
     UPDATE public.studio_payment_accounts
        SET stripe_connected_account_id = NULL,
@@ -676,6 +822,12 @@ BEGIN
            initial_link_payload_sha256 = NULL,
            initial_link_claimed_at = NULL,
            initial_link_last_retry_at = NULL,
+           initial_link_response_sha256 = NULL,
+           initial_link_response_recorded_at = NULL,
+           initial_link_delivery_receipt_sha256 = NULL,
+           initial_link_delivery_receipt_expires_at = NULL,
+           initial_link_delivered_at = NULL,
+           initial_link_support_required_at = NULL,
            authorized_at = now() - INTERVAL '10 minutes',
            expires_at = now() - INTERVAL '5 minutes',
            recovery_expires_at = now() - INTERVAL '1 minute',

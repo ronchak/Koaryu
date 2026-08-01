@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from app.core.request_body_limits import STRIPE_WEBHOOK_REQUEST_MAX_BYTES
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.main import app
-from app.schemas.billing import BillingLinkResponse, WebhookProcessResponse
+from app.schemas.billing import (
+    ConnectOnboardingDeliveryAckResponse,
+    ConnectOnboardingLinkResponse,
+    WebhookProcessResponse,
+)
 
 
 class BillingAndWebhookEndpointContractTest(unittest.TestCase):
@@ -30,7 +34,10 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
     ):
         service = billing_service_class.return_value
         service.create_connect_onboarding_link = AsyncMock(
-            return_value=BillingLinkResponse(url="https://connect.stripe.test/setup/acct_1")
+            return_value=ConnectOnboardingLinkResponse(
+                pending_url="https://connect.stripe.test/setup/acct_1",
+                delivery_receipt="r" * 64,
+            )
         )
         service.audit_connect_onboarding_started = AsyncMock()
 
@@ -41,10 +48,16 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
                 "return_url": "https://app.koaryu.test/billing?connect=return",
                 "business_entity_type": "company",
             },
+            headers={"Idempotency-Key": "connect-request-1"},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["url"], "https://connect.stripe.test/setup/acct_1")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertNotIn("url", response.json())
+        self.assertEqual(response.json(), {
+            "pending_url": "https://connect.stripe.test/setup/acct_1",
+            "delivery_receipt": "r" * 64,
+        })
         admin_studio_id.assert_called_once_with(self.supabase, "user_1", "studio_1")
         service.create_connect_onboarding_link.assert_awaited_once_with(
             "studio_1",
@@ -52,7 +65,40 @@ class BillingAndWebhookEndpointContractTest(unittest.TestCase):
             "https://app.koaryu.test/billing/connect/refresh",
             "https://app.koaryu.test/billing?connect=return",
             "company",
+            "connect-request-1",
         )
+
+    @patch("app.api.v1.endpoints.billing._admin_studio_id", return_value="studio_1")
+    @patch("app.api.v1.endpoints.billing.BillingService")
+    def test_connect_delivery_ack_derives_admin_studio_and_accepts_only_receipt(
+        self,
+        billing_service_class,
+        admin_studio_id,
+    ):
+        service = billing_service_class.return_value
+        service.acknowledge_connect_onboarding_link_delivery = AsyncMock(
+            return_value=ConnectOnboardingDeliveryAckResponse(acknowledged=True)
+        )
+
+        response = self.client.post(
+            "/api/v1/billing/connect/onboarding-link/acknowledge",
+            json={"receipt": "r" * 64},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.json(), {"acknowledged": True})
+        admin_studio_id.assert_called_once_with(self.supabase, "user_1", "studio_1")
+        service.acknowledge_connect_onboarding_link_delivery.assert_awaited_once_with(
+            "studio_1",
+            "r" * 64,
+        )
+
+        rejected = self.client.post(
+            "/api/v1/billing/connect/onboarding-link/acknowledge",
+            json={"receipt": "r" * 64, "studio_id": "studio_2"},
+        )
+        self.assertEqual(rejected.status_code, 422)
 
     @patch("app.api.v1.endpoints.webhooks.StripeWebhookService")
     def test_connect_webhook_endpoint_passes_raw_payload_signature_and_supabase(self, webhook_service_class):

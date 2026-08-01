@@ -54,6 +54,8 @@ export type InvoiceStatus = ApiContracts.ApiBillingInvoiceResponse["status"];
 export type PaymentStatus = ApiContracts.ApiBillingPaymentResponse["status"];
 
 export type BillingLinkResponse = ApiContracts.ApiBillingLinkResponse;
+export type ConnectOnboardingLinkResponse = ApiContracts.ApiConnectOnboardingLinkResponse;
+export type ConnectOnboardingDeliveryAckResponse = ApiContracts.ApiConnectOnboardingDeliveryAckResponse;
 export type BillingActionRequest =
   & ApiContracts.ApiConnectOnboardingLinkRequest
   & ApiContracts.ApiPlatformCheckoutRequest

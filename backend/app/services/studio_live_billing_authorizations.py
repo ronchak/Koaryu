@@ -240,6 +240,74 @@ class StudioLiveBillingAuthorizationStore:
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         return self._context_from_row(result.data[0], studio_id=studio_id)
 
+    def record_connect_onboarding_initial_link_response(
+        self,
+        *,
+        studio_id: str,
+        account_id: str,
+        link_url: str,
+        payload_sha256: str,
+        bootstrap_context: ConnectOnboardingBootstrapContext,
+    ) -> str:
+        if self.expected_candidate_sha is None or not bootstrap_context.bootstrap_id:
+            self._blocked(LIVE_SCOPE_DENIED_DETAIL)
+        delivery_receipt = secrets.token_urlsafe(48)
+        receipt_sha256 = hashlib.sha256(delivery_receipt.encode("utf-8")).hexdigest()
+        response_sha256 = hashlib.sha256(link_url.encode("utf-8")).hexdigest()
+        try:
+            result = self.supabase.rpc(
+                "record_connect_onboarding_bootstrap_initial_link_response",
+                {
+                    "p_bootstrap_id": bootstrap_context.bootstrap_id,
+                    "p_studio_id": studio_id,
+                    "p_candidate_sha": self.expected_candidate_sha,
+                    "p_connect_account_generation": bootstrap_context.account_generation,
+                    "p_stripe_connected_account_id": account_id,
+                    "p_initial_link_context_sha256": bootstrap_context.initial_link_context_sha256,
+                    "p_initial_link_payload_sha256": payload_sha256,
+                    "p_initial_link_idempotency_key": bootstrap_context.initial_link_idempotency_key,
+                    "p_initial_link_response_sha256": response_sha256,
+                    "p_delivery_receipt_sha256": receipt_sha256,
+                },
+            ).execute()
+        except Exception:
+            self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+        row = result.data[0] if result.data else None
+        if not row or row.get("recorded") is not True or row.get("studio_id") != studio_id:
+            self._blocked(LIVE_SCOPE_DENIED_DETAIL)
+        return delivery_receipt
+
+    def acknowledge_connect_onboarding_initial_link_delivery(
+        self,
+        *,
+        studio_id: str,
+        delivery_receipt: str,
+    ) -> bool:
+        if (
+            self.expected_candidate_sha is None
+            or not re.fullmatch(r"[A-Za-z0-9_-]{43,128}", delivery_receipt)
+        ):
+            self._blocked(LIVE_SCOPE_DENIED_DETAIL)
+        receipt_sha256 = hashlib.sha256(delivery_receipt.encode("utf-8")).hexdigest()
+        try:
+            result = self.supabase.rpc(
+                "acknowledge_connect_onboarding_bootstrap_initial_link_delivery",
+                {
+                    "p_studio_id": studio_id,
+                    "p_candidate_sha": self.expected_candidate_sha,
+                    "p_delivery_receipt_sha256": receipt_sha256,
+                },
+            ).execute()
+        except Exception:
+            self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+        row = result.data[0] if result.data else None
+        if not row or row.get("acknowledged") is not True or row.get("studio_id") != studio_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=LIVE_CONNECT_BOOTSTRAP_SUPPORT_DETAIL,
+            )
+        return True
+
     def can_begin_or_resume_connect_onboarding(self, *, studio_id: str) -> bool:
         """Read-only UI hint; provider sinks still reauthorize atomically."""
         return self.connect_onboarding_preflight_state(studio_id=studio_id) == "eligible"
@@ -274,7 +342,7 @@ class StudioLiveBillingAuthorizationStore:
             return "denied"
         if row.get("eligible") is True:
             return "eligible"
-        if row.get("phase") == "none":
+        if row.get("phase") in {"none", "completed"}:
             return "none"
         return "support_required" if row.get("phase") == "support_required" else "denied"
 

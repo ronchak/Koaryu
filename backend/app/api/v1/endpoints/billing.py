@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -23,6 +23,9 @@ from app.schemas.billing import (
     BillingRefundResponse,
     BillingSystemStatusResponse,
     BillingSubscriptionResponse,
+    ConnectOnboardingDeliveryAckRequest,
+    ConnectOnboardingDeliveryAckResponse,
+    ConnectOnboardingLinkResponse,
     ConnectOnboardingLinkRequest,
     ExportJobCreate,
     ExportJobResponse,
@@ -104,14 +107,17 @@ async def get_connect_status(
     return await BillingService(supabase).get_payment_account(studio_id)
 
 
-@router.post("/connect/onboarding-link", response_model=BillingLinkResponse)
+@router.post("/connect/onboarding-link", response_model=ConnectOnboardingLinkResponse)
 async def create_connect_onboarding_link(
     data: ConnectOnboardingLinkRequest,
     background_tasks: BackgroundTasks,
+    response: Response,
+    request_idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
+    response.headers["Cache-Control"] = "no-store"
     studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
     service = BillingService(supabase)
     link = await service.create_connect_onboarding_link(
@@ -120,9 +126,29 @@ async def create_connect_onboarding_link(
         data.refresh_url,
         data.return_url,
         data.business_entity_type,
+        request_idempotency_key,
     )
     background_tasks.add_task(service.audit_connect_onboarding_started, studio_id, user_id)
     return link
+
+
+@router.post(
+    "/connect/onboarding-link/acknowledge",
+    response_model=ConnectOnboardingDeliveryAckResponse,
+)
+async def acknowledge_connect_onboarding_link_delivery(
+    data: ConnectOnboardingDeliveryAckRequest,
+    response: Response,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    response.headers["Cache-Control"] = "no-store"
+    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
+    return await BillingService(supabase).acknowledge_connect_onboarding_link_delivery(
+        studio_id,
+        data.receipt,
+    )
 
 
 @router.post("/connect/sync", response_model=StudioPaymentAccountResponse)

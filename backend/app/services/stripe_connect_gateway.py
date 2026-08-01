@@ -266,6 +266,7 @@ class StripeConnectGateway:
         studio_id: Optional[str] = None,
         refresh_url: str,
         return_url: str,
+        idempotency_key: Optional[str] = None,
         bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
         try:
@@ -279,9 +280,8 @@ class StripeConnectGateway:
                 operation="connect_onboarding_link.create",
                 studio_id=studio_id,
                 account_id=account_id,
-                idempotency_key=(
-                    bootstrap_context.initial_link_idempotency_key if bootstrap_context else None
-                ),
+                idempotency_key=(bootstrap_context.initial_link_idempotency_key
+                                 if bootstrap_context else idempotency_key),
                 bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
@@ -292,6 +292,7 @@ class StripeConnectGateway:
             account_id=account_id,
             refresh_url=refresh_url,
             return_url=return_url,
+            idempotency_key=idempotency_key,
         )
 
     def _create_legacy_onboarding_link(
@@ -300,6 +301,7 @@ class StripeConnectGateway:
         account_id: str,
         refresh_url: str,
         return_url: str,
+        idempotency_key: Optional[str] = None,
     ):
         stripe = self._stripe()
         try:
@@ -308,6 +310,7 @@ class StripeConnectGateway:
                 refresh_url=refresh_url,
                 return_url=return_url,
                 type="account_onboarding",
+                **self._request_options(idempotency_key=idempotency_key),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):
