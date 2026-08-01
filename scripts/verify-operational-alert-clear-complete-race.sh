@@ -11,7 +11,7 @@ SOCKET_DIR="$2"
 DB_PORT="$3"
 RACE_ENVIRONMENT="activation-concurrency-contract"
 RACE_LEASE_TOKEN="activation-concurrency-lease"
-RACE_ATTEMPT_KEY="89a32f7d-e43d-4c12-9f65-8c13ce1fe7b4"
+RACE_ATTEMPT_ID="89a32f7d-e43d-4c12-9f65-8c13ce1fe7b4"
 RACE_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 MARKER_PATH="$(mktemp /tmp/koaryu-alert-complete.XXXXXX)"
 SESSION_LOG="$(mktemp /tmp/koaryu-alert-complete-log.XXXXXX)"
@@ -49,7 +49,7 @@ SQL
 attempt_id="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
 SELECT attempt_id
   FROM public.claim_operational_alert_delivery(
-    '$RACE_ENVIRONMENT', '$RACE_LEASE_TOKEN', '$RACE_ATTEMPT_KEY'::uuid, 300
+    '$RACE_ENVIRONMENT', '$RACE_LEASE_TOKEN', '$RACE_ATTEMPT_ID'::uuid, 300
   );
 SQL
 )"
