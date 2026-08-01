@@ -39,11 +39,16 @@ Merging `main` does not authorize an automatic production deployment. `frontend/
 
 Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only Supabase preflight and requires the exact final migration count
-97, head `20260801112153`, pending sequence, manifest version
-`release-db-attestation-v4`, and required-object/security proof. Schema 84, a
-partial 85-96 state, a missing final migration manifest, or any
+98, head `20260801115044`, pending sequence, manifest version
+`release-db-attestation-v5`, and required-object/security proof. Schema 84, a
+partial 85-97 state, a missing final migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.
+
+The local PostgreSQL proof does not certify hosted PostgREST exposed-schema
+configuration or actual schema ACL state. Authenticated operator readback must
+separately prove that `private` is not exposed and that hosted schema ACLs match
+the approved release gate before promotion.
 
 `npm run check:env-examples` fails if either repository provider control drifts or if the account-deletion cron is removed. Repository text cannot prove Render's current service setting: before the bootstrap merge, an authenticated operator must turn production auto-deploy off through Render and capture an authenticated readback. The guarded merge command independently rechecks that live provider state and refuses to merge without it. After the fixed candidate passes staging, deploy or promote that exact SHA explicitly, read back Vercel `/api/version` and Render `/health/ready`, and compare both full SHAs with the release ledger before assigning production traffic.
 

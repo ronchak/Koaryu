@@ -415,7 +415,7 @@ done
 echo "[operational manifest] RUN database-observable semantic and ACL signal"
 operational_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_operational_manifest_v4();
+SELECT private.koaryu_release_operational_manifest_v5();
 "
 )"
 if (
@@ -504,6 +504,10 @@ assert_attestation_rejects \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v4()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
+  "V5 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v5()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
   "checkpoint trigger-definition drift" \
   "ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints DISABLE TRIGGER enforce_live_billing_checkpoint_processed_events;" \
   "f"
@@ -558,6 +562,26 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "service-role table GRANT OPTION drift" \
   "GRANT SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "anon private-column ACL drift" \
+  "GRANT SELECT (stripe_connected_account_id) ON TABLE private.stripe_connect_account_identity_guards TO anon;" \
+  "f"
+assert_attestation_rejects \
+  "authenticated private-column ACL drift" \
+  "GRANT UPDATE (mapped_studio_id) ON TABLE private.stripe_connect_account_identity_guards TO authenticated;" \
+  "f"
+assert_attestation_rejects \
+  "unexpected custom-role private-column ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT (excluded) ON TABLE private.stripe_connect_account_identity_guards TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "service-role public-column GRANT OPTION drift" \
+  "GRANT UPDATE (grant_reason) ON TABLE public.studio_live_billing_authorizations TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "unexpected custom-role public-column GRANT OPTION drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT (error_reference) ON TABLE public.stripe_events TO koaryu_attestation_custom_role WITH GRANT OPTION;" \
   "f"
 assert_attestation_rejects \
   "studio payment account custom-role ACL drift" \

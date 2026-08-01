@@ -3,7 +3,7 @@
 Status: **Phase A tooling only; provider mutation locked**
 
 This packet reconciles the production 84-migration baseline with the immutable
-97-migration release candidate. It is specialized to this rollout, not a
+98-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -23,7 +23,7 @@ Therefore:
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
 - the release authority is the operator-side raw-catalog verifier plus its
-  repository-pinned SHA-256 manifests; the database V4 manifest exposed through
+  repository-pinned SHA-256 manifests; the database V5 manifest exposed through
   the stable V2-named RPC is an operational drift/readiness signal, not proof
   against a malicious database administrator;
 - the mutable parsed `statements` array is not treated as file identity.
@@ -39,8 +39,8 @@ The fixed production pre-state is:
 84:57ae4269ef4d75c249d59ef297661a3a
 ```
 
-The only certifiable post-state is migration count 97, head
-`20260801112153`, with this exact pending version sequence:
+The only certifiable post-state is migration count 98, head
+`20260801115044`, with this exact pending version sequence:
 
 ```text
 20260727100000
@@ -56,26 +56,33 @@ The only certifiable post-state is migration count 97, head
 20260801094000
 20260801105313
 20260801112153
+20260801115044
 ```
 
 The checker derives filenames and source hashes from the final candidate, then
 requires this exact sequence and reports `integration_complete=true` only at
-97 migrations with these thirteen versions. The 070000/091000/093000/105313
+98 migrations with these fourteen versions. The 070000/091000/093000/105313
 billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
 definitions, sequences, columns, and all scoped CHECK/UNIQUE/FK definitions are
-included in the semantic manifest. V4 compositionally preserves the V3 surface
+included in the semantic manifest. V5 compositionally preserves the V4/V3 surface
 and adds the delivery-state columns, CHECK constraints, partial unique index,
-and four changed/new bootstrap RPCs from migration 96. Table and sequence ACL evidence contains the
+and four changed/new bootstrap RPCs from migration 96. Table, sequence, and
+column ACL evidence are separate. The column ACL manifest includes every
+ordinary non-dropped column across the exact fourteen-table scope, including
+columns with an empty `pg_attribute.attacl`, and serializes every explicit grant
+with grantor, grantee, privilege, and grantability. Table and sequence ACL evidence contains the
 complete sorted grantor, grantee (including `PUBLIC` and custom roles),
 privilege, and grantability state, so extra grants and `WITH GRANT OPTION` drift
 change the pinned proof. This ACL scope explicitly includes the release-critical
 `studio_payment_accounts` mapping and `stripe_events` ingestion tables. The
-external verifier also attests the stable V2-named public RPC, the V4 helper,
-and their bodies/configuration/ACLs without asking V4 to attest its own body.
+external verifier also attests the stable V2-named public RPC, the V5 helper,
+and their bodies/configuration/ACLs without asking V5 to attest its own body.
 Never certify an
 earlier head; regenerate the packet from the exact immutable release commit so
-all candidate migration hashes and counts remain current.
+all candidate migration hashes and counts remain current. Hosted PostgREST
+exposed-schema configuration and actual schema ACL readback are separate
+provider/operator evidence and are not certified by local PostgreSQL.
 
 The candidate must descend from both merged studio-comp commits and retain these
 exact source files:
@@ -134,7 +141,7 @@ node scripts/studio-comp-migration-rollout.mjs \
 Record the exact output. It pins the CLI, fixed pre-history, immutable Git
 ancestry, complete pending set, every candidate migration hash, and the source
 manifest hash. Any missing migration, unexpected version, or migration after
-094000 halts before credentials are used.
+115044 halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
@@ -170,7 +177,7 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-The dry-run must report the exact thirteen pending versions above, with their final
+The dry-run must report the exact fourteen pending versions above, with their final
 candidate filenames and hashes. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
@@ -178,10 +185,10 @@ Staging application remains locked until the director approves Phase B. The
 approved command will require the same inspection token, exact project ref, a
 durable approval record, and `--approve-staging-apply`. After application:
 
-1. require count 97, head 112153, the exact thirteen-version sequence, and the
+1. require count 98, head 115044, the exact fourteen-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
-   trigger, index, sequence-ACL, and column identity in the final semantic
+   trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
    catalog manifest; category counts and sorted identities are deterministic,
    and definitions come from PostgreSQL's catalog representation rather than
    provider UI formatting. The policy inventory is
@@ -191,14 +198,17 @@ durable approval record, and `--approve-staging-apply`. After application:
 3. invoke the service-role-only V2-named readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v4`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v5`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
    malformed quoting halt without reflecting returned data;
 4. record the emitted provider fingerprint;
 5. run linked lint and approved contracts only on staging;
-6. test PostgREST service-role execution and browser-role denial;
+6. test PostgREST service-role execution and browser-role denial, then capture
+   authenticated provider readback proving `private` is absent from the exposed
+   schemas and the actual hosted schema ACL state matches the approved gate;
+   missing or unexpected exposure/ACL evidence halts even when local checks pass;
 7. only in the separately approved provider-smoke phase, create and remove the
    disposable staging Auth actor and synthetic studio data.
 
@@ -254,6 +264,6 @@ drop the trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 97 head and
+database-first: Render `/health/ready` remains 503 until the exact 98 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

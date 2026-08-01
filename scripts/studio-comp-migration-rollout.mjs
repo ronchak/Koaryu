@@ -17,7 +17,7 @@ export const ROLLOUT = Object.freeze({
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
   preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 97,
+  finalMigrationCount: 98,
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -32,12 +32,14 @@ export const ROLLOUT = Object.freeze({
     "20260801094000",
     "20260801105313",
     "20260801112153",
+    "20260801115044",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
     "a615bdfc9755b6c3e611e9f8829fdaf387b4f981",
     "0294fdbd2eecc72a8204222c244b7874fe35ada4",
     "accbb1f9c1bc87fa511f3c2bcafb9aeebafa33e2",
+    "d0c5159dd4ce7bf3ca9a126fa39577959e7ba15a",
   ]),
   migrations: Object.freeze([
     Object.freeze({
@@ -52,17 +54,18 @@ export const ROLLOUT = Object.freeze({
 });
 
 export const EXPECTED_OPERATIONAL_MANIFEST =
-  "a490b80a20d18bc23e194c4d0ca4917c02c4c200f18a8c43d15f863e2f34b037";
+  "7f3329d8adc0bebbdf63f23da1e40df88984c177917cc613df664eeb4ffc478e";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|97|20260801112153|" +
+  "true|98|20260801115044|" +
   ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v4";
+  "|0||release-db-attestation-v5";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
+  "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:a49de1a02cd80ca92017bde8b6c0a2ed8aa218d7ed56a383b73ae429158fd028:0;" +
-  "functions=44:85ba6dd78f86a4060c5b79a9908ce9e7ea59eb0e14edb04af0c3100b8adeece8:0;" +
+  "functions=45:bea0cfb4bfc1c993791d0dc81ed92d03921636ce109eb67d938416dfcf8674ae:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:f20b3f6d65c722b669ec0ef60d430a886ec64a225f8953f34231fd2f68ee70e2:0;" +
@@ -81,7 +84,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V4 operational readiness did not match the exact release state.");
+    throw new RolloutError("V5 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -405,6 +408,34 @@ table_acl_definitions as (
       on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
    where relation.relkind = 'r'
 ),
+column_acl_definitions as (
+  select namespace.nspname as schema_name,
+         relation.relname as table_name,
+         attribute.attnum,
+         attribute.attname as column_name,
+         coalesce((
+           select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' ||
+                    acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC'),
+                                 coalesce(grantee.rolname, 'PUBLIC'),
+                                 acl.privilege_type, acl.is_grantable
+                  )
+             from aclexplode(attribute.attacl) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state
+    from pg_class relation
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join acl_scope_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
+    join pg_attribute attribute
+      on attribute.attrelid = relation.oid
+     and attribute.attnum > 0
+     and not attribute.attisdropped
+   where relation.relkind = 'r'
+),
 required_policies(table_name, policy_name, permissive, command_name, role_names, predicate_kind) as (
   values
     ('studio_live_billing_authorizations', 'studio_live_billing_authorizations_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
@@ -510,6 +541,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v4()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v5()', 'search_path=pg_catalog', false, false),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -824,6 +856,11 @@ states as (
          encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || owner_name || ':' || acl_state, '|' order by schema_name, table_name), ''), 'UTF8'), 'sha256'), 'hex'),
          0::integer
     from table_acl_definitions
+  union all
+  select 'column_acls', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || attnum::text || ':' || column_name || ':' || acl_state, '|' order by schema_name, table_name, attnum), ''), 'UTF8'), 'sha256'), 'hex'),
+         0::integer
+    from column_acl_definitions
   union all
   select 'policies', count(*)::integer,
          encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || policy_name || ':' || coalesce(actual_permissive::text, '') || ':' || coalesce(actual_command_name, '') || ':' || coalesce(actual_role_names, '') || ':' || coalesce(actual_predicate_kind, ''), '|' order by table_name, policy_name), ''), 'UTF8'), 'sha256'), 'hex'),
@@ -1176,7 +1213,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 97-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 98-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1529,7 +1566,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 97-migration candidate through 112153.",
+        "Provider inspection requires the exact final 98-migration candidate through 115044.",
       );
     }
     runCommand(

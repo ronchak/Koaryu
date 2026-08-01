@@ -264,7 +264,10 @@ BEGIN
        OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v2_base()', 'EXECUTE')
        OR has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v4()', 'EXECUTE')
        OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v4()', 'EXECUTE')
-       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v4()', 'EXECUTE') THEN
+       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v4()', 'EXECUTE')
+       OR has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v5()', 'EXECUTE')
+       OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v5()', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v5()', 'EXECUTE') THEN
         RAISE EXCEPTION 'Private operational manifest helper is directly callable.';
     END IF;
 END $$;
@@ -1080,17 +1083,17 @@ BEGIN
 
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 97
-       OR v_preflight.migration_head <> '20260801112153'
+       OR v_preflight.migration_count <> 98
+       OR v_preflight.migration_head <> '20260801115044'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
            '20260801090000', '20260801091000', '20260801092000',
            '20260801093000', '20260801094000', '20260801105313',
-           '20260801112153'
+           '20260801112153', '20260801115044'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v4' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v5' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 
