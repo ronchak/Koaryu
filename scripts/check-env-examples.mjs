@@ -386,6 +386,11 @@ export function validateProviderDeploymentControls(renderSource, vercelConfig) {
     if (deploymentEnabled.staging !== true) {
       failures.push("frontend/vercel.json: automatic staging deployments must remain enabled");
     }
+    if (deploymentEnabled["codex/launch-readiness-candidate"] !== false) {
+      failures.push(
+        "frontend/vercel.json: the launch candidate preview must stay disabled until the five-minute cron plan gate is funded",
+      );
+    }
     for (const [pattern, enabled] of Object.entries(deploymentEnabled)) {
       const isExactNonMainBranch = /^[A-Za-z0-9._/-]+$/.test(pattern) && pattern !== "main";
       if (enabled === true && !isExactNonMainBranch) {

@@ -3,7 +3,8 @@
   "git": {
     "deploymentEnabled": {
       "main": false,
-      "staging": true
+      "staging": true,
+      "codex/launch-readiness-candidate": false
     }
   },
   "crons": [

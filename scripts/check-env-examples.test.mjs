@@ -160,7 +160,13 @@ services:
     autoDeployTrigger: 'off'
 `;
     const vercelConfig = {
-      git: { deploymentEnabled: { main: false, staging: true } },
+      git: {
+        deploymentEnabled: {
+          main: false,
+          staging: true,
+          "codex/launch-readiness-candidate": false,
+        },
+      },
       crons: [
         { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
         { path: "/api/cron/operational-alerts/evaluate", schedule: "*/5 * * * *" },
@@ -199,7 +205,13 @@ services:
     autoDeployTrigger: 'off'
 `;
     const vercelConfig = {
-      git: { deploymentEnabled: { main: false, staging: true } },
+      git: {
+        deploymentEnabled: {
+          main: false,
+          staging: true,
+          "codex/launch-readiness-candidate": false,
+        },
+      },
       crons: [
         { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
         { path: "/api/cron/operational-alerts/evaluate", schedule: "0 * * * *" },
