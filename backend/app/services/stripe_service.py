@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 from functools import wraps
 from typing import Any, Optional
+from urllib.parse import quote
 
 from fastapi import HTTPException, status
 
@@ -13,7 +14,101 @@ from app.services.stripe_connect_gateway import (
     _StripeV2RequestError,
     stripe_v2_request,
 )
-from app.services.stripe_mutation_policy import StripeMutationPermit, StripeMutationPolicy
+from app.services.stripe_mutation_policy import (
+    StripeMutationBlocked,
+    StripeMutationPermit,
+    StripeMutationPolicy,
+)
+
+
+def _exact_keys(value: Any, required: set[str], optional: set[str] | None = None) -> bool:
+    return isinstance(value, dict) and set(value) == required | (set(value) & (optional or set()))
+
+
+def _valid_connect_account_create_payload(payload: dict[str, Any], studio_id: Optional[str]) -> bool:
+    if not studio_id or not _exact_keys(
+        payload,
+        {"display_name", "dashboard", "identity", "configuration", "defaults", "metadata", "include"},
+        {"contact_email"},
+    ):
+        return False
+    display_name = payload.get("display_name")
+    identity = payload.get("identity")
+    configuration = payload.get("configuration")
+    defaults = payload.get("defaults")
+    metadata = payload.get("metadata")
+    entity_type = identity.get("entity_type") if isinstance(identity, dict) else None
+    identity_keys = {"country", "entity_type", "business_details"} if entity_type == "company" else {"country", "entity_type"}
+    return bool(
+        isinstance(display_name, str)
+        and display_name
+        and payload.get("dashboard") == "full"
+        and _exact_keys(identity, identity_keys)
+        and identity.get("country") == "us"
+        and entity_type in {"company", "individual"}
+        and (
+            entity_type != "company"
+            or identity.get("business_details") == {"registered_name": display_name}
+        )
+        and configuration == {"merchant": {"capabilities": {"card_payments": {"requested": True}}}}
+        and _exact_keys(defaults, {"currency", "responsibilities", "profile", "locales"})
+        and defaults.get("currency") == "usd"
+        and defaults.get("locales") == ["en-US"]
+        and defaults.get("responsibilities") == {
+            "fees_collector": "stripe",
+            "losses_collector": "stripe",
+        }
+        and defaults.get("profile") == {
+            "doing_business_as": display_name,
+            "product_description": "Martial arts tuition and membership payments",
+        }
+        and metadata == {
+            "studio_id": studio_id,
+            "product": "koaryu_payments",
+            "business_entity_type": entity_type,
+        }
+        and payload.get("include") == ["configuration.merchant", "identity", "defaults", "requirements"]
+        and (
+            "contact_email" not in payload
+            or isinstance(payload.get("contact_email"), str) and bool(payload.get("contact_email"))
+        )
+    )
+
+
+def _valid_connect_onboarding_payload(payload: dict[str, Any], account_id: Optional[str]) -> bool:
+    use_case = payload.get("use_case")
+    onboarding = use_case.get("account_onboarding") if isinstance(use_case, dict) else None
+    return bool(
+        account_id
+        and _exact_keys(payload, {"account", "use_case"})
+        and payload.get("account") == account_id
+        and _exact_keys(use_case, {"type", "account_onboarding"})
+        and use_case.get("type") == "account_onboarding"
+        and _exact_keys(
+            onboarding,
+            {"configurations", "collection_options", "refresh_url", "return_url"},
+        )
+        and onboarding.get("configurations") == ["merchant"]
+        and onboarding.get("collection_options") == {"fields": "eventually_due"}
+        and all(
+            isinstance(onboarding.get(key), str) and bool(onboarding.get(key))
+            for key in ("refresh_url", "return_url")
+        )
+    )
+
+
+def _valid_connect_branding_payload(payload: dict[str, Any]) -> bool:
+    configuration = payload.get("configuration")
+    merchant = configuration.get("merchant") if isinstance(configuration, dict) else None
+    branding = merchant.get("branding") if isinstance(merchant, dict) else None
+    return bool(
+        _exact_keys(payload, {"configuration", "include"})
+        and payload.get("include") == ["configuration.merchant"]
+        and _exact_keys(configuration, {"merchant"})
+        and _exact_keys(merchant, {"branding"})
+        and _exact_keys(branding, {"primary_color", "secondary_color"}, {"icon", "logo"})
+        and all(isinstance(value, str) and bool(value) for value in branding.values())
+    )
 
 
 def stripe_mutation(operation: str):
@@ -691,47 +786,75 @@ class StripeService:
     def create_connect_dashboard_url(self, *, account_id: str, studio_id: str) -> str:
         return self._connect_gateway().create_dashboard_url(account_id=account_id, studio_id=studio_id)
 
-    @stripe_mutation("connect_onboarding_v2.post")
     def _stripe_v2_post(
         self,
         path: str,
         payload: dict[str, Any],
         *,
+        operation: str,
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
         return self._stripe_v2_request(
-            "POST", path, payload, studio_id=studio_id, account_id=account_id,
+            "POST", path, payload, operation=operation, studio_id=studio_id, account_id=account_id,
             idempotency_key=idempotency_key,
         )
 
-    @stripe_mutation("connect_onboarding_v2.patch")
     def _stripe_v2_patch(
         self,
         path: str,
         payload: dict[str, Any],
         *,
+        operation: str,
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
         return self._stripe_v2_request(
-            "PATCH", path, payload, studio_id=studio_id, account_id=account_id,
+            "PATCH", path, payload, operation=operation, studio_id=studio_id, account_id=account_id,
             idempotency_key=idempotency_key,
         )
 
-    @stripe_mutation("connect_onboarding_v2.request")
     def _stripe_v2_request(
         self,
         method: str,
         path: str,
         payload: dict[str, Any],
         *,
+        operation: str,
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
+        request_matches_operation = (
+            operation == "connect_account.create"
+            and method == "POST"
+            and path == "/v2/core/accounts"
+            and account_id is None
+            and _valid_connect_account_create_payload(payload, studio_id)
+        ) or (
+            operation == "connect_onboarding_link.create"
+            and method == "POST"
+            and path == "/v2/core/account_links"
+            and _valid_connect_onboarding_payload(payload, account_id)
+        ) or (
+            operation == "connect_account.branding.update"
+            and method == "PATCH"
+            and bool(account_id)
+            and path == f"/v2/core/accounts/{quote(account_id, safe='')}"
+            and _valid_connect_branding_payload(payload)
+        )
+        if not request_matches_operation:
+            raise StripeMutationBlocked(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Stripe Accounts v2 request does not match an authorized operation.",
+            )
+        self._authorize_stripe_mutation(
+            operation,
+            studio_id=studio_id,
+            account_id=account_id,
+        )
         return stripe_v2_request(
             self.settings,
             method,

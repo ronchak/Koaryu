@@ -171,6 +171,7 @@ class StripeConnectGateway:
                     "configuration": {"merchant": {"branding": branding}},
                     "include": ["configuration.merchant"],
                 },
+                operation="connect_account.branding.update",
                 studio_id=studio_id,
                 account_id=account_id,
                 idempotency_key=idempotency_key or f"koaryu-connect-branding-{account_id}",
@@ -215,6 +216,7 @@ class StripeConnectGateway:
                         },
                     },
                 },
+                operation="connect_onboarding_link.create",
                 studio_id=studio_id,
                 account_id=account_id,
             )
@@ -350,6 +352,7 @@ class StripeConnectGateway:
         return self._stripe_v2_post(
             "/v2/core/accounts",
             payload,
+            operation="connect_account.create",
             studio_id=studio_id,
             idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}",
         )

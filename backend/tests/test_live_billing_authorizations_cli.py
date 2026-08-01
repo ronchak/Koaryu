@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
-from scripts.live_billing_authorizations import _drift, _parse_timestamp, build_parser
+from scripts.live_billing_authorizations import (
+    LiveBillingOperatorError,
+    _drift,
+    _load_report,
+    _parse_timestamp,
+    _record_checkpoint,
+    build_parser,
+)
 from tests.fakes.supabase import TableBackedSupabase
 
 
@@ -44,6 +55,87 @@ class LiveBillingAuthorizationCliTest(unittest.TestCase):
         self.assertTrue(any("generation" in reason for reason in reasons))
         self.assertTrue(any("current mapping" in reason for reason in reasons))
         self.assertTrue(any("payment-ready" in reason for reason in reasons))
+
+    def test_offline_or_staging_report_can_never_be_recorded(self):
+        base = {
+            "schema_version": 2,
+            "checkpoint_eligible": True,
+            "evidence_source": "provider_read",
+            "probe": "production",
+            "provider_mode": "live",
+            "candidate_sha": "a" * 40,
+            "deployment_readiness": {"production_exact_candidate_verified": True},
+        }
+        with self.subTest(source="offline"):
+            report = {**base, "evidence_source": "offline_snapshot"}
+            with patch.object(Path, "read_bytes", return_value=json.dumps(report).encode()):
+                with self.assertRaises(LiveBillingOperatorError):
+                    _load_report(Path("offline.json"))
+        with self.subTest(source="staging"):
+            report = {**base, "probe": "staging", "provider_mode": "test"}
+            with patch.object(Path, "read_bytes", return_value=json.dumps(report).encode()):
+                with self.assertRaises(LiveBillingOperatorError):
+                    _load_report(Path("staging.json"))
+
+    def test_checkpoint_record_independently_reprobes_exact_production_sha(self):
+        report = {
+            "schema_version": 2,
+            "checkpoint_eligible": True,
+            "evidence_source": "provider_read",
+            "probe": "production",
+            "provider_mode": "live",
+            "candidate_sha": "a" * 40,
+            "deployment_readiness": {"production_exact_candidate_verified": True},
+        }
+        args = SimpleNamespace(
+            report=Path("report.json"), actor="operator@example.invalid",
+            expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            reason="Fresh exact-candidate checkpoint", execute=False,
+        )
+        supabase = TableBackedSupabase()
+        with (
+            patch.object(Path, "read_bytes", return_value=json.dumps(report).encode()),
+            patch("scripts.live_billing_authorizations._resolve_actor", return_value=("actor_1", "operator@example.invalid")),
+            patch("scripts.live_billing_authorizations._verify_deployed_readiness", return_value={
+                "verified": True,
+                "url": "https://koaryu.onrender.com/health/ready",
+                "candidate_sha": "a" * 40,
+            }) as readiness,
+            patch("scripts.live_billing_authorizations._print_json") as print_json,
+        ):
+            _record_checkpoint(supabase, SimpleNamespace(), args, None, None)
+
+        readiness.assert_called_once()
+        self.assertEqual(readiness.call_args.args, ("production", "a" * 40))
+        print_json.assert_called_once()
+        self.assertTrue(print_json.call_args.args[0]["production_ready_url_verified"])
+
+    def test_checkpoint_record_rejects_mismatched_independent_probe(self):
+        report = {
+            "schema_version": 2,
+            "checkpoint_eligible": True,
+            "evidence_source": "provider_read",
+            "probe": "production",
+            "provider_mode": "live",
+            "candidate_sha": "a" * 40,
+            "deployment_readiness": {"production_exact_candidate_verified": True},
+        }
+        args = SimpleNamespace(
+            report=Path("report.json"), actor="operator@example.invalid",
+            expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            reason="Fresh exact-candidate checkpoint", execute=False,
+        )
+        with (
+            patch.object(Path, "read_bytes", return_value=json.dumps(report).encode()),
+            patch("scripts.live_billing_authorizations._resolve_actor", return_value=("actor_1", "operator@example.invalid")),
+            patch("scripts.live_billing_authorizations._verify_deployed_readiness", return_value={
+                "verified": True,
+                "url": "https://koaryu.onrender.com/health/ready",
+                "candidate_sha": "b" * 40,
+            }),
+        ):
+            with self.assertRaises(LiveBillingOperatorError):
+                _record_checkpoint(TableBackedSupabase(), SimpleNamespace(), args, None, None)
 
 
 if __name__ == "__main__":

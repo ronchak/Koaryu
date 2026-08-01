@@ -14,6 +14,11 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.core.config import get_settings
 from app.db.supabase import create_supabase_client
+from scripts.stripe_reconciliation_report import (
+    PRODUCTION_READY_URL,
+    ReconciliationReportError,
+    _verify_deployed_readiness,
+)
 from scripts.comp_studio import (
     CompStudioError,
     _add_selector,
@@ -31,6 +36,7 @@ AUTH_COLUMNS = (
     "studio_id,scope,enabled,stripe_connected_account_id,connect_account_generation,"
     "expires_at,revision,granted_at,granted_by,granted_by_email,grant_reason,"
     "revoked_at,revoked_by,revoked_by_email,revoke_reason,updated_at"
+    ",reconciliation_checkpoint_id,local_event_ingest_watermark"
 )
 ACCOUNT_COLUMNS = (
     "studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,"
@@ -43,6 +49,10 @@ CHECKPOINT_COLUMNS = (
     "enabled_platform_endpoint_count,enabled_connect_endpoint_count,"
     "platform_endpoint_contract_matched,connect_endpoint_contract_matched,"
     "verified_at,checkpoint_sequence,expires_at,source_report_sha256,reason,verified_by,verified_by_email"
+    ",evidence_source,deployment_ready_url,deployment_ready_sha,deployment_ready_verified_at,"
+    "event_window_started_at,event_window_ended_at,local_event_ingest_watermark,"
+    "provider_only_event_count,local_only_event_count,platform_delivery_verified_at,"
+    "unexpected_enabled_endpoint_count,account_evidence_count"
 )
 
 
@@ -245,7 +255,15 @@ def _load_report(path: Path) -> tuple[dict[str, Any], str]:
         report = json.loads(raw)
     except (OSError, json.JSONDecodeError) as exc:
         raise LiveBillingOperatorError(f"Could not read reconciliation report {path}.") from exc
-    if not isinstance(report, dict) or report.get("checkpoint_eligible") is not True:
+    if (
+        not isinstance(report, dict)
+        or report.get("checkpoint_eligible") is not True
+        or report.get("schema_version") != 2
+        or report.get("evidence_source") != "provider_read"
+        or report.get("probe") != "production"
+        or report.get("provider_mode") != "live"
+        or (report.get("deployment_readiness") or {}).get("production_exact_candidate_verified") is not True
+    ):
         raise LiveBillingOperatorError("Report is not an all-clear checkpoint candidate.")
     return report, hashlib.sha256(raw).hexdigest()
 
@@ -253,23 +271,19 @@ def _load_report(path: Path) -> tuple[dict[str, Any], str]:
 def _record_checkpoint(supabase: Any, settings: Any, args: argparse.Namespace, stdin: TextIO, stdout: TextIO) -> None:
     report, digest = _load_report(args.report)
     actor_id, actor_email = _resolve_actor(supabase, args.actor)
-    counts = report.get("counts") or {}
-    events = report.get("events_since_2026_07_13") or {}
-    delivery = report.get("webhook_delivery") or {}
+    candidate_sha = str(report.get("candidate_sha") or "")
+    try:
+        readiness = _verify_deployed_readiness(
+            "production",
+            candidate_sha,
+            now=datetime.now(timezone.utc),
+        )
+    except ReconciliationReportError as exc:
+        raise LiveBillingOperatorError("Independent production readiness verification failed.") from exc
+    if readiness.get("url") != PRODUCTION_READY_URL or readiness.get("candidate_sha") != candidate_sha:
+        raise LiveBillingOperatorError("Production readiness did not match the report candidate.")
     params = {
-        "p_candidate_sha": report.get("candidate_sha"),
-        "p_provider_account_count": counts.get("provider_accounts"),
-        "p_mapped_account_count": counts.get("mapped_accounts"),
-        "p_excluded_account_count": counts.get("excluded_accounts"),
-        "p_unresolved_account_count": counts.get("unresolved_accounts"),
-        "p_event_count_since_cutoff": events.get("total"),
-        "p_failed_event_count": events.get("failed"),
-        "p_latest_event_created_at": events.get("latest_created_at"),
-        "p_webhook_delivery_verified_at": delivery.get("verified_at"),
-        "p_enabled_platform_endpoint_count": delivery.get("enabled_platform_endpoint_count"),
-        "p_enabled_connect_endpoint_count": delivery.get("enabled_connect_endpoint_count"),
-        "p_platform_endpoint_contract_matched": delivery.get("platform_endpoint_contract_matched"),
-        "p_connect_endpoint_contract_matched": delivery.get("connect_endpoint_contract_matched"),
+        "p_report": report,
         "p_expires_at": _parse_timestamp(args.expires_at, "--expires-at"),
         "p_source_report_sha256": digest,
         "p_reason": args.reason,
@@ -277,10 +291,17 @@ def _record_checkpoint(supabase: Any, settings: Any, args: argparse.Namespace, s
         "p_actor_email": actor_email,
     }
     if not args.execute:
-        _print_json({"dry_run": True, "rpc": "record_stripe_live_billing_reconciliation_checkpoint", "params": params}, stdout)
+        _print_json({
+            "dry_run": True,
+            "rpc": "record_stripe_live_billing_reconciliation_checkpoint_v2",
+            "candidate_sha": candidate_sha,
+            "production_ready_url_verified": True,
+            "report_sha256": digest,
+            "expires_at": params["p_expires_at"],
+        }, stdout)
         return
     _run_write_confirmation(args, settings, stdin, stdout)
-    result = supabase.rpc("record_stripe_live_billing_reconciliation_checkpoint", params).execute()
+    result = supabase.rpc("record_stripe_live_billing_reconciliation_checkpoint_v2", params).execute()
     _print_json({"dry_run": False, "result": result.data}, stdout)
 
 

@@ -10,7 +10,7 @@ This runbook separates repository readiness from provider and financial authorit
 - `connect_onboarding`
 - `connect_payments`
 
-Connect payment grants bind the exact Stripe account and current `connect_account_generation`. Reconnect/reset, revocation, expiry, readiness loss, missing explicit caller scope, a mismatched deployment SHA, an unresolved provider/event account, any failed event, or an absent/failing reconciliation checkpoint denies the mutation. The latest live checkpoint must match the exact `RENDER_GIT_COMMIT`, expire within 24 hours, contain zero unresolved accounts and failures, and include a fresh provider/local event-ID delivery match. The database independently blocks grants while a live event account observed since 2026-07-13 is neither mapped nor explicitly excluded.
+Connect payment grants bind the exact Stripe account and current `connect_account_generation`. Reconnect/reset, revocation, expiry, readiness loss, missing explicit caller scope, a mismatched deployment SHA, an unresolved provider/event account, any failed event, or an absent/failing reconciliation checkpoint denies the mutation. The latest live checkpoint must match the exact `RENDER_GIT_COMMIT`, expire within 24 hours, contain zero unresolved accounts and failures, and include separately fresh matched platform delivery plus matched delivery for every mapped Connect account and generation. The database atomically locks and derives current grant, mapping, generation, readiness, checkpoint, per-account evidence, and post-grant failed/unmapped event state; callers supply no eligibility boolean. A new failed or unmapped event denies the next live mutation until its current database disposition is resolved.
 
 Only the service-role CLI calls the atomic grant/revoke/audit RPC. There is no public grant endpoint. Stripe-hosted Account Links remain admin-only, single-use onboarding URLs. Returning from Stripe triggers a read of account state; it never proves KYC or payment readiness.
 
@@ -28,7 +28,7 @@ Only the service-role CLI calls the atomic grant/revoke/audit RPC. There is no p
 
 ## Read-only reconciliation
 
-The reporter inventories every Stripe Connect account visible to the configured read-capable key, then separately lists events at platform scope and in each connected-account context. It reconciles the union of provider accounts, provider-event account IDs, local-event account IDs, and local studio mappings against explicit exclusions. A local mapping absent from the provider account inventory is unresolved rather than self-validating. It also reports current endpoint configuration and sanitized failed-event codes/references. It never prints event payloads and has no mutation call. A live checkpoint requires enabled endpoints matching the exact production platform and Connect URLs, the correct Connect flag, and respectively the exact six-event and 19-event sets in `render-backend-deployment.md`. Stripe's wildcard event subscription is deliberately rejected: accepting it would expand the ingestion surface beyond the event/projector contract reviewed for launch.
+The reporter inventories every Stripe Connect account visible to the configured read-capable key, then separately lists events at platform scope and in each connected-account context. It reconciles a bounded, reviewed event universe from 2026-07-13 through collection time using exact `(event ID, account ID)` equality. It also reconciles the union of provider accounts, provider-event account IDs, local-event account IDs, and local studio mappings against explicit exclusions. A local mapping absent from the provider account inventory is unresolved rather than self-validating. It reports current endpoint configuration and sanitized failed-event codes/references, never event payloads, and has no mutation call. A live checkpoint requires exactly one enabled endpoint matching each exact production URL/Connect flag, no other enabled endpoint, and respectively the exact six-event and 23-event sets in `render-backend-deployment.md`. Stripe's wildcard event subscription is deliberately rejected because it expands ingestion beyond the reviewed projector contract.
 
 Offline fixture validation performs no network access:
 
@@ -39,14 +39,29 @@ venv/bin/python scripts/stripe_reconciliation_report.py \
   --candidate-sha <40-character-candidate-sha>
 ```
 
-The future provider collection mode is read-only, but contacting Stripe and production Supabase still needs director approval:
+Offline output is diagnostic and permanently has `checkpoint_eligible=false`, regardless of its contents.
+
+Staging collection is a separately labeled diagnostic probe and can never be checkpoint-eligible:
 
 ```bash
 cd backend
 venv/bin/python scripts/stripe_reconciliation_report.py \
   --collect-read-only \
+  --probe staging \
+  --candidate-sha <40-character-staging-sha>
+```
+
+Production collection is read-only, but contacting Stripe, production Supabase, and the pinned production readiness URL still needs director approval:
+
+```bash
+cd backend
+venv/bin/python scripts/stripe_reconciliation_report.py \
+  --collect-read-only \
+  --probe production \
   --candidate-sha <40-character-candidate-sha>
 ```
+
+The collection must receive the exact candidate SHA from `https://koaryu.onrender.com/health/ready`. `record-checkpoint` independently repeats that pinned production readiness probe immediately before it can call the database writer; staging or offline evidence cannot be recorded.
 
 Treat the reported July 20 explanations as hypotheses. If provider events continued but local receipt stopped, investigate endpoint delivery, routing, and signing-secret verification. If both stopped, provider inactivity, mode mismatch, or incomplete collection remain possible. No replay or backfill is allowed from this report. First confirm the exact event-ID uniqueness/claim path and handler projection are idempotent; then obtain a separate replay approval with an event allowlist.
 
@@ -78,7 +93,7 @@ venv/bin/python scripts/live_billing_authorizations.py revoke \
 
 `account-disposition` is event/account specific. `excluded` means a verified non-Koaryu or retired account; `unresolved` removes that exclusion. The RPC refuses to exclude a currently mapped account.
 
-An all-clear reconciliation JSON may be recorded only through `record-checkpoint`. The CLI hashes the exact report bytes, the database bounds the checkpoint expiry to 24 hours, and runtime compares its candidate SHA to the deployed backend SHA.
+An all-clear reconciliation JSON may be recorded only through `record-checkpoint`. The CLI hashes the exact report bytes and independently re-probes the pinned production readiness URL. The database binds the exact candidate, bounded event window, local ingest watermark, platform proof, and every account/generation proof, and bounds checkpoint expiry to 24 hours. Runtime compares that candidate to its deployed `RENDER_GIT_COMMIT` and rechecks current database state atomically.
 
 ## Exact-candidate test-provider rehearsal
 

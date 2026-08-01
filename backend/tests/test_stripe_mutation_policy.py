@@ -3,7 +3,7 @@ import inspect
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
@@ -300,7 +300,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             StripeMutationPolicy(_settings(mode="test")).issue_permit("customer.create")
         self.assertEqual(raised.exception.detail, LIVE_SCOPE_REQUIRED_DETAIL)
 
-    def test_raw_v2_sink_cannot_downgrade_its_connect_scope(self):
+    def test_raw_v2_sink_rejects_operation_path_mismatch_before_provider_call(self):
         service = StripeService()
         service.settings = _settings(mode="test")
 
@@ -308,11 +308,76 @@ class StripeMutationPolicyTest(unittest.TestCase):
             service._stripe_v2_post(
                 "/v2/core/accounts",
                 {"contact_email": "operator@example.invalid"},
+                operation="connect_onboarding_link.create",
                 studio_id="studio_1",
-                scope="core_subscription",
             )
 
-        self.assertEqual(raised.exception.detail, LIVE_SCOPE_REQUIRED_DETAIL)
+        self.assertIn("does not match", raised.exception.detail)
+
+    def test_accountless_v2_connect_create_passes_the_full_policy_chain(self):
+        service = StripeService()
+        service.settings = _settings(mode="test")
+
+        with patch("app.services.stripe_service.stripe_v2_request", return_value={"id": "acct_test"}) as raw:
+            result = service.create_connect_account(
+                studio_id="studio_1",
+                business_name="Test Studio",
+            )
+
+        self.assertEqual(result, {"id": "acct_test"})
+        raw.assert_called_once()
+        self.assertEqual(raw.call_args.args[1:3], ("POST", "/v2/core/accounts"))
+
+    def test_accountless_v2_non_create_operation_is_denied(self):
+        service = StripeService()
+        service.settings = _settings(mode="test")
+
+        with patch("app.services.stripe_service.stripe_v2_request") as raw:
+            with self.assertRaises(HTTPException) as raised:
+                service._stripe_v2_post(
+                    "/v2/core/account_links",
+                    {"account": "acct_1"},
+                    operation="connect_onboarding_link.create",
+                    studio_id="studio_1",
+                    account_id=None,
+                )
+
+        self.assertIn("does not match", raised.exception.detail)
+        raw.assert_not_called()
+
+    def test_v2_semantic_gate_binds_payload_and_path_to_authorized_context(self):
+        service = StripeService()
+        service.settings = _settings(mode="test")
+        mismatches = (
+            ("POST", "/v2/core/accounts", {"metadata": {"studio_id": "studio_2"}},
+             "connect_account.create", "studio_1", None),
+            ("POST", "/v2/core/account_links", {"account": "acct_2"},
+             "connect_onboarding_link.create", "studio_1", "acct_1"),
+            ("PATCH", "/v2/core/accounts/acct_2", {"configuration": {}},
+             "connect_account.branding.update", "studio_1", "acct_1"),
+            ("POST", "/v2/core/account_links", {"account": "acct_1", "use_case": {"type": "other"}},
+             "connect_onboarding_link.create", "studio_1", "acct_1"),
+            ("PATCH", "/v2/core/accounts/acct_1", {
+                "configuration": {"merchant": {"capabilities": {"card_payments": {"requested": False}}}},
+                "include": ["configuration.merchant"],
+            }, "connect_account.branding.update", "studio_1", "acct_1"),
+        )
+
+        with patch("app.services.stripe_service.stripe_v2_request") as raw:
+            for method, path, payload, operation, studio_id, account_id in mismatches:
+                with self.subTest(operation=operation):
+                    with self.assertRaises(HTTPException) as raised:
+                        service._stripe_v2_request(
+                            method,
+                            path,
+                            payload,
+                            operation=operation,
+                            studio_id=studio_id,
+                            account_id=account_id,
+                        )
+                    self.assertIn("does not match", raised.exception.detail)
+
+        raw.assert_not_called()
 
     def test_live_mutations_fail_before_loading_stripe_when_switch_is_off(self):
         service = StripeService()
@@ -386,9 +451,6 @@ class StripeMutationPolicyTest(unittest.TestCase):
 
     def test_every_direct_stripe_service_mutation_is_policy_marked(self):
         expected = {
-            "_stripe_v2_patch",
-            "_stripe_v2_post",
-            "_stripe_v2_request",
             "cancel_connected_subscription",
             "create_connect_account",
             "create_connect_onboarding_link",

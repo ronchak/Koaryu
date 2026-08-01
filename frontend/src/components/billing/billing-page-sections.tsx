@@ -20,6 +20,7 @@ import type {
   StudioPaymentAccount,
 } from "@/types";
 import type { BillingPlan } from "@/types";
+import type { BillingProviderCopy } from "@/lib/billing-policy";
 
 type BillingPeriodCopy = {
   label: string;
@@ -86,6 +87,7 @@ export function BillingOverviewTab({
   currentMonthPaymentCount,
   billingPeriod,
   billingPlatform,
+  billingProviderCopy,
   canManageKoaryuSubscription,
   canOpenCustomerPortal,
   canOpenStripeDashboard,
@@ -105,7 +107,6 @@ export function BillingOverviewTab({
   studentsLoaded,
   coreProviderMutationsEnabled,
   connectOnboardingEnabled,
-  connectPaymentsEnabled,
 }: {
   activeStudents: number;
   activeSubscriptionCount: number;
@@ -114,6 +115,7 @@ export function BillingOverviewTab({
   currentMonthPaymentCount: number;
   billingPeriod: BillingPeriodCopy;
   billingPlatform: PlatformBillingStatus | null;
+  billingProviderCopy: BillingProviderCopy;
   canManageKoaryuSubscription: boolean;
   canOpenCustomerPortal: boolean;
   canOpenStripeDashboard: boolean;
@@ -133,7 +135,6 @@ export function BillingOverviewTab({
   studentsLoaded: boolean;
   coreProviderMutationsEnabled: boolean;
   connectOnboardingEnabled: boolean;
-  connectPaymentsEnabled: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -198,7 +199,7 @@ export function BillingOverviewTab({
               variant="primary"
               size="sm"
               disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={coreProviderMutationsEnabled ? undefined : "Koaryu Core Stripe mutations are not authorized for this studio."}
+              title={coreProviderMutationsEnabled ? undefined : billingProviderCopy.coreSubscription}
               isLoading={isLoadingAction("checkout")}
               onClick={() => void openBillingLink("/platform-billing/checkout", {
                 success_url: window.location.href,
@@ -214,7 +215,7 @@ export function BillingOverviewTab({
               disabled={!coreProviderMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
               isLoading={isLoadingAction("portal")}
               title={!coreProviderMutationsEnabled
-                ? "Koaryu Core Stripe mutations are not authorized for this studio."
+                ? billingProviderCopy.coreSubscription
                 : canOpenCustomerPortal
                   ? undefined
                   : "Available after Koaryu Core checkout creates a Stripe customer."}
@@ -252,9 +253,7 @@ export function BillingOverviewTab({
               <p className="text-xs text-muted">UTC-month Stripe payment cohort</p>
               <p className="mt-1 text-sm text-text-primary">{formatMoney(stripePaymentTotal)}</p>
               <p className="mt-1 text-[11px] text-muted">
-                {connectPaymentsEnabled
-                  ? "Live tuition mutations are authorized for this studio."
-                  : "Live tuition mutations are not authorized for this studio."}
+                {billingProviderCopy.connectPayments}
               </p>
             </div>
             <div>
@@ -292,7 +291,7 @@ export function BillingOverviewTab({
               variant="primary"
               size="sm"
               disabled={!connectOnboardingEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={connectOnboardingEnabled ? undefined : "Stripe Connect onboarding is not authorized for this studio."}
+              title={connectOnboardingEnabled ? undefined : billingProviderCopy.connectOnboarding}
               isLoading={isLoadingAction("connect")}
               onClick={onConnectClick}
             >
@@ -305,7 +304,7 @@ export function BillingOverviewTab({
               disabled={!connectOnboardingEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
               isLoading={isLoadingAction("dashboard")}
               title={!connectOnboardingEnabled
-                ? "Stripe Connect onboarding mutations are not authorized for this studio."
+                ? billingProviderCopy.connectOnboarding
                 : canOpenStripeDashboard
                   ? "Open Stripe to review account status, requirements, payments, and payouts."
                   : "Available after Stripe Connect creates an account."}

@@ -8,7 +8,9 @@ import json
 from pathlib import Path
 import re
 import sys
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
+
+import httpx
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -23,8 +25,12 @@ KNOWN_SILENCE_START = datetime(2026, 7, 20, tzinfo=timezone.utc)
 FRESH_DELIVERY_WINDOW = timedelta(hours=24)
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SANITIZED_ERROR_CODE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,79}$")
+PRODUCTION_READY_URL = "https://koaryu.onrender.com/health/ready"
+STAGING_READY_URL = "https://koaryu-staging.onrender.com/health/ready"
 PRODUCTION_PLATFORM_WEBHOOK_URL = "https://koaryu.onrender.com/api/v1/webhooks/stripe/platform"
 PRODUCTION_CONNECT_WEBHOOK_URL = "https://koaryu.onrender.com/api/v1/webhooks/stripe/connect"
+STAGING_PLATFORM_WEBHOOK_URL = "https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/platform"
+STAGING_CONNECT_WEBHOOK_URL = "https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/connect"
 PLATFORM_EVENTS = {
     "checkout.session.completed",
     "customer.subscription.created",
@@ -47,6 +53,10 @@ CONNECT_EVENTS = {
     "payment_intent.succeeded",
     "payment_intent.payment_failed",
     "charge.refunded",
+    "charge.refund.updated",
+    "refund.created",
+    "refund.failed",
+    "refund.updated",
     "charge.dispute.created",
     "charge.dispute.updated",
     "charge.dispute.closed",
@@ -61,15 +71,20 @@ class ReconciliationReportError(RuntimeError):
 
 
 def _timestamp(value: Any) -> Optional[datetime]:
-    if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, timezone.utc)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return datetime.fromtimestamp(value, timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
         return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
-    return value.astimezone(timezone.utc) if isinstance(value, datetime) and value.tzinfo else value
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return None
 
 
 def _iso(value: Any) -> Optional[str]:
@@ -90,9 +105,7 @@ def _sanitized_error_code(value: Any) -> Optional[str]:
     normalized = str(value or "").strip().lower()
     if not normalized:
         return None
-    if SANITIZED_ERROR_CODE_PATTERN.fullmatch(normalized):
-        return normalized
-    return "redacted_unstructured_error"
+    return normalized if SANITIZED_ERROR_CODE_PATTERN.fullmatch(normalized) else "redacted_unstructured_error"
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -105,6 +118,15 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _provider_event_account(row: dict[str, Any]) -> Optional[str]:
     return _stripe_id(row.get("account")) or _stripe_id(row.get("_koaryu_observed_account_id"))
+
+
+def _positive_generation(row: dict[str, Any]) -> Optional[int]:
+    value = (row.get("metadata") or {}).get("connect_account_generation", 1)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _paginate_stripe(list_call, **params: Any) -> list[dict[str, Any]]:
@@ -131,27 +153,63 @@ def _paginate_supabase(query_factory) -> list[dict[str, Any]]:
         offset += 200
 
 
-def collect_read_only_snapshot(candidate_sha: str) -> dict[str, Any]:
-    """Read provider and local state. This function never calls a Stripe mutation API."""
+def _verify_deployed_readiness(probe: str, candidate_sha: str, *, now: datetime) -> dict[str, Any]:
+    expected = {
+        "production": (PRODUCTION_READY_URL, "production"),
+        "staging": (STAGING_READY_URL, "staging"),
+    }.get(probe)
+    if expected is None:
+        raise ReconciliationReportError("--probe must be production or staging.")
+    url, environment = expected
+    try:
+        response = httpx.get(url, timeout=15, follow_redirects=False, headers={"cache-control": "no-cache"})
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ReconciliationReportError("Pinned deployment readiness probe failed.") from exc
+    if not isinstance(payload, dict) or (
+        payload.get("status") != "ready"
+        or payload.get("service") != "koaryu-api"
+        or payload.get("environment") != environment
+        or payload.get("commit_sha") != candidate_sha
+    ):
+        raise ReconciliationReportError("Pinned /health/ready did not report the exact candidate identity.")
+    return {
+        "verified": True,
+        "url": url,
+        "environment": environment,
+        "candidate_sha": candidate_sha,
+        "verified_at": now.isoformat(),
+    }
+
+
+def collect_read_only_snapshot(candidate_sha: str, *, probe: str, now: Optional[datetime] = None) -> dict[str, Any]:
+    """Read provider and local state without invoking a mutation API."""
     if not SHA_PATTERN.fullmatch(candidate_sha):
         raise ReconciliationReportError("--candidate-sha must be an exact lowercase 40-character SHA.")
+    now = now or datetime.now(timezone.utc)
     settings = get_settings()
     key = str(settings.STRIPE_RESTRICTED_KEY or settings.STRIPE_SECRET_KEY).strip()
-    if not key.startswith(("rk_test_", "rk_live_", "sk_test_", "sk_live_")):
+    key_mode = "live" if key.startswith(("rk_live_", "sk_live_")) else "test" if key.startswith(("rk_test_", "sk_test_")) else None
+    if key_mode is None:
         raise ReconciliationReportError("A mode-identifiable read-capable Stripe key is required.")
+    if (probe == "production" and key_mode != "live") or (probe == "staging" and key_mode != "test"):
+        raise ReconciliationReportError("The selected diagnostic probe does not match the Stripe key mode.")
+    readiness = _verify_deployed_readiness(probe, candidate_sha, now=now)
     stripe = importlib.import_module("stripe")
     stripe.api_key = key
     supabase = create_supabase_client()
+    created_window = {"gte": int(CUTOFF.timestamp()), "lte": int(now.timestamp())}
 
     provider_accounts = _paginate_stripe(stripe.Account.list)
-    provider_events = _paginate_stripe(stripe.Event.list, created={"gte": int(CUTOFF.timestamp())})
+    provider_events = _paginate_stripe(stripe.Event.list, created=created_window)
     for account in provider_accounts:
         account_id = _stripe_id(account)
         if not account_id:
             continue
         connected_events = _paginate_stripe(
             stripe.Event.list,
-            created={"gte": int(CUTOFF.timestamp())},
+            created=created_window,
             stripe_account=account_id,
         )
         for event in connected_events:
@@ -165,12 +223,17 @@ def collect_read_only_snapshot(candidate_sha: str) -> dict[str, Any]:
         "stripe_connected_account_id,excluded,reason,revision,changed_at"
     ).order("stripe_connected_account_id"))
     local_events = _paginate_supabase(lambda: supabase.table("stripe_events").select(
-        "stripe_event_id,stripe_account_id,livemode,type,processing_status,error,error_reference,processed_at,created_at"
-    ).gte("created_at", CUTOFF.isoformat()).order("created_at"))
+        "stripe_event_id,stripe_account_id,livemode,type,processing_status,error,error_reference,processed_at,created_at,"
+        "live_billing_ingest_sequence"
+    ).gte("created_at", CUTOFF.isoformat()).lte("created_at", now.isoformat()).order("live_billing_ingest_sequence"))
     return {
         "candidate_sha": candidate_sha,
-        "collected_at": datetime.now(timezone.utc).isoformat(),
-        "provider_mode": "live" if key.startswith(("rk_live_", "sk_live_")) else "test",
+        "collected_at": now.isoformat(),
+        "event_window": {"started_at": CUTOFF.isoformat(), "ended_at": now.isoformat()},
+        "evidence_source": "provider_read",
+        "probe": probe,
+        "deployment_readiness": readiness,
+        "provider_mode": key_mode,
         "provider_accounts": provider_accounts,
         "provider_events": provider_events,
         "webhook_endpoints": endpoints,
@@ -188,6 +251,13 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
     mode = snapshot.get("provider_mode")
     if mode not in {"test", "live"}:
         raise ReconciliationReportError("Snapshot provider_mode must be test or live.")
+    evidence_source = snapshot.get("evidence_source")
+    probe = snapshot.get("probe")
+    window = snapshot.get("event_window") or {}
+    window_start = _timestamp(window.get("started_at"))
+    window_end = _timestamp(window.get("ended_at"))
+    if window_start != CUTOFF or window_end is None or window_end > now + timedelta(minutes=5):
+        raise ReconciliationReportError("Snapshot event window is invalid.")
 
     provider_accounts = {_stripe_id(row): _as_dict(row) for row in snapshot.get("provider_accounts") or []}
     provider_accounts.pop(None, None)
@@ -201,23 +271,42 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         for row in snapshot.get("account_dispositions") or []
         if row.get("excluded") is True and row.get("stripe_connected_account_id")
     }
-    provider_ids = set(provider_accounts)
-
     expected_livemode = mode == "live"
-    local_events = [
-        row for row in snapshot.get("local_events") or []
-        if row.get("livemode") is expected_livemode
-        and (created_at := _timestamp(row.get("created_at"))) is not None
-        and created_at >= CUTOFF
-    ]
-    provider_events = [
+
+    def in_reviewed_universe(row: dict[str, Any], *, provider: bool) -> bool:
+        account_id = _provider_event_account(row) if provider else row.get("stripe_account_id")
+        event_type = str(row.get("type") or "")
+        event_time = _timestamp(row.get("created") if provider else row.get("created_at"))
+        expected_types = CONNECT_EVENTS if account_id else PLATFORM_EVENTS
+        return bool(
+            row.get("livemode") is expected_livemode
+            and event_type in expected_types
+            and event_time is not None
+            and window_start <= event_time <= window_end
+        )
+
+    raw_provider_events = [
         row for row in snapshot.get("provider_events") or []
         if row.get("livemode") is expected_livemode
-        and (created_at := _timestamp(row.get("created"))) is not None
-        and created_at >= CUTOFF
+        and (event_time := _timestamp(row.get("created"))) is not None
+        and window_start <= event_time <= window_end
     ]
+    raw_local_events = [
+        row for row in snapshot.get("local_events") or []
+        if row.get("livemode") is expected_livemode
+        and (event_time := _timestamp(row.get("created_at"))) is not None
+        and window_start <= event_time <= window_end
+    ]
+    provider_events = [row for row in raw_provider_events if in_reviewed_universe(row, provider=True)]
+    local_events = [row for row in raw_local_events if in_reviewed_universe(row, provider=False)]
     invalid_provider_event_id_count = sum(1 for row in provider_events if not _stripe_id(row))
     invalid_local_event_id_count = sum(1 for row in local_events if not row.get("stripe_event_id"))
+    invalid_local_sequence_count = sum(
+        1 for row in raw_local_events
+        if isinstance(row.get("live_billing_ingest_sequence"), bool)
+        or not isinstance(row.get("live_billing_ingest_sequence"), int)
+        or row.get("live_billing_ingest_sequence") <= 0
+    )
     provider_event_keys = {
         (event_id, _provider_event_account(row))
         for row in provider_events
@@ -230,89 +319,158 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         for (event_id, account_id), count in Counter(local_event_key_list).items()
         if count > 1
     ]
+    provider_only_keys = provider_event_keys - local_event_keys
+    local_only_keys = local_event_keys - provider_event_keys
     matched_keys = provider_event_keys & local_event_keys
-    matched_times = [
-        _timestamp(row.get("created_at")) for row in local_events
-        if (row.get("stripe_event_id"), row.get("stripe_account_id")) in matched_keys
-        and row.get("processing_status") == "processed"
-    ]
-    latest_matched_delivery = max((value for value in matched_times if value), default=None)
-    delivery_fresh = bool(latest_matched_delivery and now - latest_matched_delivery <= FRESH_DELIVERY_WINDOW)
 
-    failed = [row for row in local_events if row.get("processing_status") == "failed"]
-    observed_event_accounts = {str(row["stripe_account_id"]) for row in local_events if row.get("stripe_account_id")}
+    def local_matched_times(account_id: Optional[str]) -> list[datetime]:
+        return [
+            value for row in local_events
+            if row.get("stripe_account_id") == account_id
+            and (row.get("stripe_event_id"), account_id) in matched_keys
+            and row.get("processing_status") == "processed"
+            and (value := _timestamp(row.get("created_at"))) is not None
+        ]
+
+    platform_times = local_matched_times(None)
+    latest_platform_delivery = max(platform_times, default=None)
+    platform_delivery_fresh = bool(
+        latest_platform_delivery
+        and now - FRESH_DELIVERY_WINDOW <= latest_platform_delivery <= now + timedelta(minutes=5)
+    )
+    failed = [row for row in raw_local_events if row.get("processing_status") == "failed"]
+    observed_event_accounts = {str(row["stripe_account_id"]) for row in raw_local_events if row.get("stripe_account_id")}
     provider_event_accounts = {
-        account_id
-        for row in provider_events
-        if (account_id := _provider_event_account(row))
+        account_id for row in raw_provider_events if (account_id := _provider_event_account(row))
     }
+    provider_ids = set(provider_accounts)
     mapping_ids = set(mappings)
     account_universe = provider_ids | provider_event_accounts | observed_event_accounts | mapping_ids
-    # A local mapping is proven current only when the provider account inventory
-    # also contains it. A stale local-only mapping remains unresolved rather
-    # than being allowed to bless itself.
     mapped_ids = mapping_ids & provider_ids
     excluded_ids = (account_universe - mapping_ids) & excluded
     unresolved_ids = account_universe - mapped_ids - excluded_ids
-    unresolved_event_accounts = (
-        provider_event_accounts | observed_event_accounts
-    ) - mapped_ids - excluded_ids
+    unresolved_event_accounts = (provider_event_accounts | observed_event_accounts) - mapped_ids - excluded_ids
     local_mappings_absent_from_provider = mapping_ids - provider_ids
-    latest_local = max(
-        (value for row in local_events if (value := _timestamp(row.get("created_at"))) is not None),
-        default=None,
-    )
-    latest_provider = max(
-        (value for row in provider_events if (value := _timestamp(row.get("created"))) is not None),
-        default=None,
-    )
+
+    account_evidence: list[dict[str, Any]] = []
+    invalid_generation_count = 0
+    for account_id in sorted(mapped_ids):
+        mapping = mappings[account_id]
+        generation = _positive_generation(mapping)
+        if generation is None:
+            invalid_generation_count += 1
+        provider_keys = {key for key in provider_event_keys if key[1] == account_id}
+        local_keys = {key for key in local_event_keys if key[1] == account_id}
+        times = local_matched_times(account_id)
+        latest_delivery = max(times, default=None)
+        delivery_fresh = bool(
+            latest_delivery
+            and now - FRESH_DELIVERY_WINDOW <= latest_delivery <= now + timedelta(minutes=5)
+        )
+        account_evidence.append({
+            "studio_id": mapping.get("studio_id"),
+            "stripe_connected_account_id": account_id,
+            "connect_account_generation": generation,
+            "provider_event_count": len(provider_keys),
+            "local_event_count": len(local_keys),
+            "provider_only_event_count": len(provider_keys - local_keys),
+            "local_only_event_count": len(local_keys - provider_keys),
+            "delivery_verified_at": _iso(latest_delivery) if delivery_fresh else None,
+            "fresh": delivery_fresh,
+        })
+
+    endpoint_urls = {
+        "production": (PRODUCTION_PLATFORM_WEBHOOK_URL, PRODUCTION_CONNECT_WEBHOOK_URL),
+        "staging": (STAGING_PLATFORM_WEBHOOK_URL, STAGING_CONNECT_WEBHOOK_URL),
+    }.get(probe, (None, None))
+    platform_url, connect_url = endpoint_urls
     endpoints = [_as_dict(row) for row in snapshot.get("webhook_endpoints") or []]
-    def endpoint_matches(row: dict[str, Any], *, url: str, connect: bool, events: set[str]) -> bool:
-        # Wildcard delivery is deliberately rejected: it expands the ingestion
-        # surface beyond the explicitly reviewed projector contract.
+    enabled_endpoints = [row for row in endpoints if row.get("status") == "enabled"]
+
+    def endpoint_matches(row: dict[str, Any], *, url: Optional[str], connect: bool, events: set[str]) -> bool:
         enabled_events = row.get("enabled_events") or []
         return bool(
-            row.get("status") == "enabled"
+            url
             and row.get("connect") is connect
             and row.get("url") == url
             and "*" not in enabled_events
             and set(enabled_events) == events
         )
 
-    platform_endpoint_contract_matched = any(
-        endpoint_matches(
-            row,
-            url=PRODUCTION_PLATFORM_WEBHOOK_URL,
-            connect=False,
-            events=PLATFORM_EVENTS,
+    enabled_platform = [row for row in enabled_endpoints if row.get("connect") is False]
+    enabled_connect = [row for row in enabled_endpoints if row.get("connect") is True]
+    platform_endpoint_contract_matched = len(enabled_platform) == 1 and endpoint_matches(
+        enabled_platform[0], url=platform_url, connect=False, events=PLATFORM_EVENTS
+    )
+    connect_endpoint_contract_matched = len(enabled_connect) == 1 and endpoint_matches(
+        enabled_connect[0], url=connect_url, connect=True, events=CONNECT_EVENTS
+    )
+    unexpected_enabled_endpoint_count = len(enabled_endpoints) - int(platform_endpoint_contract_matched) - int(connect_endpoint_contract_matched)
+
+    deployment = snapshot.get("deployment_readiness") or {}
+    deployment_verified_at = _timestamp(deployment.get("verified_at"))
+    production_readiness_verified = bool(
+        evidence_source == "provider_read"
+        and probe == "production"
+        and deployment.get("verified") is True
+        and deployment.get("url") == PRODUCTION_READY_URL
+        and deployment.get("environment") == "production"
+        and deployment.get("candidate_sha") == candidate_sha
+        and deployment_verified_at is not None
+        and now - timedelta(minutes=15) <= deployment_verified_at <= now + timedelta(minutes=5)
+    )
+    account_delivery_complete = bool(
+        len(account_evidence) == len(mapped_ids)
+        and all(
+            evidence["fresh"]
+            and evidence["connect_account_generation"] is not None
+            and evidence["provider_event_count"] > 0
+            and evidence["provider_only_event_count"] == 0
+            and evidence["local_only_event_count"] == 0
+            for evidence in account_evidence
         )
-        for row in endpoints
     )
-    connect_endpoint_contract_matched = any(
-        endpoint_matches(
-            row,
-            url=PRODUCTION_CONNECT_WEBHOOK_URL,
-            connect=True,
-            events=CONNECT_EVENTS,
-        )
-        for row in endpoints
+    latest_local = max(
+        (value for row in raw_local_events if (value := _timestamp(row.get("created_at"))) is not None),
+        default=None,
     )
-    enabled_platform_endpoint_count = sum(
-        1 for row in endpoints if row.get("status") == "enabled" and row.get("connect") is False
+    latest_provider = max(
+        (value for row in raw_provider_events if (value := _timestamp(row.get("created"))) is not None),
+        default=None,
     )
-    enabled_connect_endpoint_count = sum(
-        1 for row in endpoints if row.get("status") == "enabled" and row.get("connect") is True
+    watermark = max(
+        (
+            row["live_billing_ingest_sequence"] for row in raw_local_events
+            if isinstance(row.get("live_billing_ingest_sequence"), int)
+            and not isinstance(row.get("live_billing_ingest_sequence"), bool)
+        ),
+        default=0,
+    )
+    checkpoint_eligible = bool(
+        production_readiness_verified
+        and mode == "live"
+        and not unresolved_ids
+        and not unresolved_event_accounts
+        and not failed
+        and not provider_only_keys
+        and not local_only_keys
+        and platform_delivery_fresh
+        and account_delivery_complete
+        and platform_endpoint_contract_matched
+        and connect_endpoint_contract_matched
+        and unexpected_enabled_endpoint_count == 0
+        and not duplicate_keys
+        and invalid_provider_event_id_count == 0
+        and invalid_local_event_id_count == 0
+        and invalid_local_sequence_count == 0
+        and invalid_generation_count == 0
     )
 
     hypotheses: list[str] = []
     if latest_provider and latest_provider > KNOWN_SILENCE_START and (not latest_local or latest_local <= KNOWN_SILENCE_START):
         hypotheses.append("Provider events continued after July 20 but local receipt did not; investigate endpoint delivery, routing, and secret verification.")
     if (not latest_provider or latest_provider <= KNOWN_SILENCE_START) and (not latest_local or latest_local <= KNOWN_SILENCE_START):
-        hypotheses.append("Neither snapshot shows events after July 20; provider inactivity, account-mode mismatch, or incomplete event collection remain hypotheses.")
-    if not platform_endpoint_contract_matched:
-        hypotheses.append("No enabled platform endpoint exactly matches the production URL and six-event contract.")
-    if not connect_endpoint_contract_matched:
-        hypotheses.append("No enabled Connect endpoint exactly matches the production URL and 19-event contract.")
+        hypotheses.append("Neither bounded snapshot shows events after July 20; provider inactivity, mode mismatch, or incomplete collection remain hypotheses.")
     if failed:
         hypotheses.append("Failed local events require event-id-specific diagnosis and idempotency proof before any replay or backfill.")
 
@@ -324,26 +482,19 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         "error_reference": row.get("error_reference"),
         "created_at": _iso(row.get("created_at")),
     } for row in failed]
-    idempotency_ready = not duplicate_keys and all(row.get("stripe_event_id") for row in failed)
-    checkpoint_eligible = bool(
-        mode == "live"
-        and not unresolved_ids
-        and not unresolved_event_accounts
-        and not failed
-        and delivery_fresh
-        and platform_endpoint_contract_matched
-        and connect_endpoint_contract_matched
-        and not duplicate_keys
-        and invalid_provider_event_id_count == 0
-        and invalid_local_event_id_count == 0
-    )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_sha": candidate_sha,
         "provider_mode": mode,
-        "cutoff": CUTOFF.isoformat(),
+        "evidence_source": evidence_source,
+        "probe": probe,
         "generated_at": now.isoformat(),
+        "event_window": {"started_at": window_start.isoformat(), "ended_at": window_end.isoformat()},
         "checkpoint_eligible": checkpoint_eligible,
+        "deployment_readiness": {
+            "production_exact_candidate_verified": production_readiness_verified,
+            "verified_at": _iso(deployment_verified_at) if production_readiness_verified else None,
+        },
         "counts": {
             "provider_accounts": len(account_universe),
             "listed_provider_accounts": len(provider_ids),
@@ -353,51 +504,45 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
             "unresolved_event_accounts": len(unresolved_event_accounts),
             "local_payment_account_rows": len(snapshot.get("local_mappings") or []),
         },
-        "account_reconciliation": [{
-            "stripe_connected_account_id": account_id,
-            "disposition": "mapped" if account_id in mapped_ids else "excluded" if account_id in excluded_ids else "unresolved",
-            "studio_id": (mappings.get(account_id) or {}).get("studio_id"),
-            "observed_by_provider_account_list": account_id in provider_ids,
-            "observed_in_provider_events": account_id in provider_event_accounts,
-            "observed_in_local_events": account_id in observed_event_accounts,
-            "present_in_local_mappings": account_id in mapping_ids,
-        } for account_id in sorted(account_universe)],
-        "event_account_reconciliation": [{
-            "stripe_connected_account_id": account_id,
-            "disposition": "mapped" if account_id in mapped_ids else "excluded" if account_id in excluded_ids else "unresolved",
-            "studio_id": (mappings.get(account_id) or {}).get("studio_id"),
-        } for account_id in sorted(provider_event_accounts | observed_event_accounts)],
+        "account_evidence": account_evidence,
         "mapping_drift": {
             "local_mappings_absent_from_provider_count": len(local_mappings_absent_from_provider),
             "all_local_mappings_provider_proven": not local_mappings_absent_from_provider,
         },
         "events_since_2026_07_13": {
-            "total": len(local_events),
-            "provider_total": len(provider_event_keys),
+            "bounded_provider_total": len(provider_event_keys),
+            "bounded_local_total": len(local_event_keys),
             "matched_provider_delivery_count": len(matched_keys),
+            "provider_only_event_count": len(provider_only_keys),
+            "local_only_event_count": len(local_only_keys),
             "failed": len(failed),
             "latest_created_at": _iso(latest_local),
             "latest_provider_created_at": _iso(latest_provider),
+            "local_event_ingest_watermark": watermark,
             "failures": sanitized_failures,
         },
+        "platform_delivery": {
+            "provider_event_count": len({key for key in provider_event_keys if key[1] is None}),
+            "local_event_count": len({key for key in local_event_keys if key[1] is None}),
+            "delivery_verified_at": _iso(latest_platform_delivery) if platform_delivery_fresh else None,
+            "fresh": platform_delivery_fresh,
+        },
         "webhook_delivery": {
-            "enabled_platform_endpoint_count": enabled_platform_endpoint_count,
-            "enabled_connect_endpoint_count": enabled_connect_endpoint_count,
+            "enabled_platform_endpoint_count": len(enabled_platform),
+            "enabled_connect_endpoint_count": len(enabled_connect),
+            "unexpected_enabled_endpoint_count": unexpected_enabled_endpoint_count,
             "platform_endpoint_contract_matched": platform_endpoint_contract_matched,
             "connect_endpoint_contract_matched": connect_endpoint_contract_matched,
             "wildcard_accepted": False,
-            "verified_at": _iso(latest_matched_delivery) if delivery_fresh else None,
-            "fresh_within_hours": 24,
-            "authoritative_for_checkpoint": delivery_fresh,
         },
         "event_idempotency_gate": {
             "unique_local_event_account_keys": not duplicate_keys,
             "duplicate_keys": duplicate_keys,
-            "failed_events_have_event_ids": idempotency_ready,
             "invalid_provider_event_id_count": invalid_provider_event_id_count,
             "invalid_local_event_id_count": invalid_local_event_id_count,
+            "invalid_local_sequence_count": invalid_local_sequence_count,
             "replay_or_backfill_allowed": False,
-            "reason": "Phase A is read-only; prove the exact handler path idempotent by event id before separately approving any replay.",
+            "reason": "Read-only evidence never authorizes replay; prove the exact event-id handler path before separate approval.",
         },
         "july_20_silence": {
             "known_reference_date": KNOWN_SILENCE_START.isoformat(),
@@ -409,8 +554,9 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create a sanitized, read-only Stripe reconciliation report.")
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--snapshot", type=Path, help="Offline sanitized snapshot; performs no network calls.")
-    source.add_argument("--collect-read-only", action="store_true", help="Read Stripe and Supabase; never mutate either.")
+    source.add_argument("--snapshot", type=Path, help="Offline sanitized snapshot; permanently checkpoint-ineligible.")
+    source.add_argument("--collect-read-only", action="store_true", help="Read Stripe, Supabase, and pinned readiness only.")
+    parser.add_argument("--probe", choices=("production", "staging"), help="Required for live collection; staging is diagnostic only.")
     parser.add_argument("--candidate-sha", required=True)
     return parser
 
@@ -419,10 +565,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.snapshot:
+            if args.probe:
+                raise ReconciliationReportError("Offline snapshots cannot claim a deployment probe.")
             snapshot = json.loads(args.snapshot.read_text())
             snapshot["candidate_sha"] = args.candidate_sha
+            snapshot["evidence_source"] = "offline_snapshot"
+            snapshot["probe"] = None
+            snapshot["deployment_readiness"] = None
         else:
-            snapshot = collect_read_only_snapshot(args.candidate_sha)
+            if not args.probe:
+                raise ReconciliationReportError("--collect-read-only requires --probe production or staging.")
+            snapshot = collect_read_only_snapshot(args.candidate_sha, probe=args.probe)
         print(json.dumps(build_report(snapshot), indent=2, sort_keys=True))
         return 0
     except (OSError, json.JSONDecodeError, ReconciliationReportError, ModuleNotFoundError) as exc:

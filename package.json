@@ -19,6 +19,6 @@
     "audit:support-privacy": "python3 scripts/audit-support-privacy.py",
     "generate:api-types": "backend/venv/bin/python scripts/generate-api-types.py",
     "check:api-types": "backend/venv/bin/python scripts/generate-api-types.py --check",
-    "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py"
+    "dev:stripe-connect-smoke": "backend/venv/bin/python scripts/verify-connect-webhook-smoke.py --target local"
   }
 }

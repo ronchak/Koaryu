@@ -9,6 +9,7 @@ import { BillingPlansTab } from "@/components/billing/billing-plans-tab";
 import { BillingReportsTab } from "@/components/billing/billing-reports-tab";
 import type { BillingActionController } from "@/lib/billing-action-controller";
 import type { BillingInvoiceController } from "@/lib/billing-invoice-controller";
+import type { BillingProviderCopy } from "@/lib/billing-policy";
 import type {
   BillingInvoice,
   BillingPayment,
@@ -33,6 +34,7 @@ type BillingTabContentProps = {
   billingPeriod: { label: string; value: string };
   billingPlans: BillingPlan[];
   billingPlatform: PlatformBillingStatus | null;
+  billingProviderCopy: BillingProviderCopy;
   billingStudentOptions: { id: string; name: string }[];
   canManageKoaryuSubscription: boolean;
   canManageRoutineBilling: boolean;
@@ -58,7 +60,6 @@ type BillingTabContentProps = {
   planNameById: Map<string, string>;
   coreProviderMutationsEnabled: boolean;
   connectOnboardingEnabled: boolean;
-  connectPaymentsEnabled: boolean;
   stripePaymentTotal: number;
   studentNameById: Map<string, string>;
   studentsLoaded: boolean;
@@ -78,6 +79,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
     billingPeriod,
     billingPlans,
     billingPlatform,
+    billingProviderCopy,
     billingStudentOptions,
     canManageKoaryuSubscription,
     canManageRoutineBilling,
@@ -103,7 +105,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
     planNameById,
     coreProviderMutationsEnabled,
     connectOnboardingEnabled,
-    connectPaymentsEnabled,
     stripePaymentTotal,
     studentNameById,
     studentsLoaded,
@@ -146,6 +147,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         currentMonthPaymentCount={currentMonthPaymentCount}
         billingPeriod={billingPeriod}
         billingPlatform={billingPlatform}
+        billingProviderCopy={billingProviderCopy}
         canManageKoaryuSubscription={canManageKoaryuSubscription}
         canOpenCustomerPortal={canOpenCustomerPortal}
         canOpenStripeDashboard={canOpenStripeDashboard}
@@ -163,7 +165,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
         paymentCohortAvailable={paymentCohortAvailable}
         coreProviderMutationsEnabled={coreProviderMutationsEnabled}
         connectOnboardingEnabled={connectOnboardingEnabled}
-        connectPaymentsEnabled={connectPaymentsEnabled}
         stripePaymentTotal={stripePaymentTotal}
         studentsLoaded={studentsLoaded}
       />

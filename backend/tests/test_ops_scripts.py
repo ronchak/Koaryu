@@ -7,6 +7,9 @@ import runpy
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -99,6 +102,73 @@ def test_connect_smoke_uses_shared_service_role_factory(monkeypatch):
     monkeypatch.setattr(module, "create_supabase_client", lambda: expected_client)
 
     assert module._supabase_client() is expected_client
+
+
+def test_connect_smoke_package_command_pins_the_local_target():
+    package = json.loads((ROOT_DIR / "package.json").read_text(encoding="utf-8"))
+
+    assert package["scripts"]["dev:stripe-connect-smoke"].endswith("--target local")
+
+
+def _smoke_args(module, target: str):
+    return SimpleNamespace(
+        target=target,
+        endpoint=module.DEFAULT_ENDPOINT if target == "local" else module.STAGING_ENDPOINT,
+        confirm_stateful_target=True,
+        account="acct_fixture",
+        allow_newest_account=False,
+    )
+
+
+def test_connect_smoke_accepts_only_exact_local_or_staging_bindings(monkeypatch):
+    module = _load_connect_smoke_module()
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fixture")
+    monkeypatch.delenv("STRIPE_RESTRICTED_KEY", raising=False)
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("SUPABASE_URL", module.LOCAL_SUPABASE_URL)
+    module._require_safety_confirmation(_smoke_args(module, "local"))
+
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("SUPABASE_URL", module.STAGING_SUPABASE_URL)
+    module._require_safety_confirmation(_smoke_args(module, "staging"))
+
+    monkeypatch.setenv("SUPABASE_URL", module.LOCAL_SUPABASE_URL)
+    with pytest.raises(SystemExit, match="pinned staging target"):
+        module._require_safety_confirmation(_smoke_args(module, "staging"))
+
+
+@pytest.mark.parametrize(
+    ("environment", "supabase_url", "secret_key"),
+    (
+        ("production", "http://127.0.0.1:54321", "sk_test_fixture"),
+        ("development", "https://mimguepumzsgmcaycdsh.supabase.co", "sk_test_fixture"),
+        ("development", "http://127.0.0.1:54321", "sk_live_fixture"),
+    ),
+)
+def test_connect_smoke_permanently_denies_every_production_marker(
+    monkeypatch, environment, supabase_url, secret_key,
+):
+    module = _load_connect_smoke_module()
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.setenv("SUPABASE_URL", supabase_url)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", secret_key)
+    monkeypatch.delenv("STRIPE_RESTRICTED_KEY", raising=False)
+
+    with pytest.raises(SystemExit, match="permanently denied"):
+        module._require_safety_confirmation(_smoke_args(module, "local"))
+
+
+def test_connect_smoke_rejects_unpinned_endpoint_before_provider_or_database_use(monkeypatch):
+    module = _load_connect_smoke_module()
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("SUPABASE_URL", module.LOCAL_SUPABASE_URL)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fixture")
+    args = _smoke_args(module, "local")
+    args.endpoint = "http://localhost:8001/api/v1/webhooks/stripe/connect"
+
+    with pytest.raises(SystemExit, match="pinned local target"):
+        module._require_safety_confirmation(args)
 
 
 def test_support_triage_digest_fails_when_supabase_cli_is_missing(tmp_path):

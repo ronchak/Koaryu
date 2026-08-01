@@ -290,6 +290,10 @@ payment_intent.processing
 payment_intent.succeeded
 payment_intent.payment_failed
 charge.refunded
+charge.refund.updated
+refund.created
+refund.failed
+refund.updated
 charge.dispute.created
 charge.dispute.updated
 charge.dispute.closed
@@ -319,7 +323,7 @@ npm run dev:stripe-connect-smoke -- --confirm-stateful-target --account acct_...
 
 The smoke test signs a synthetic Connect `account.updated` event with `STRIPE_CONNECT_WEBHOOK_SECRET`, posts it to `/api/v1/webhooks/stripe/connect`, and posts the same event again. A passing result returns `processed` first and `already_processed` second, proving the local route, signature validation, projector entrypoint, and `stripe_events` dedupe table.
 
-This script reads `backend/.env` and root `.env`, uses `SUPABASE_SERVICE_ROLE_KEY`, and mutates local billing/webhook rows through the running backend. Pass `--confirm-stateful-target` only after confirming those env files and the backend are pointed at the intended disposable/local target. Pass `--account acct_...` so the smoke cannot silently choose whichever connected account row happens to be newest. Non-loopback webhook endpoints are blocked unless `--allow-remote-endpoint` is supplied for an explicitly intended remote smoke.
+This script reads `backend/.env` and root `.env`, uses `SUPABASE_SERVICE_ROLE_KEY`, and mutates billing/webhook rows through the running backend. Production environment labels, the production Supabase URL, and all live Stripe keys are permanently denied. `--target local` requires the exact development/local-Supabase/loopback binding; `--target staging` requires the exact staging environment, project, and Connect URL. There is no arbitrary remote URL override. Pass `--confirm-stateful-target` only after verifying the intended disposable target, and pass `--account acct_...` so the smoke cannot silently choose the newest row.
 
 For true Stripe delivery in local development, use the Stripe CLI or a trusted HTTPS tunnel:
 

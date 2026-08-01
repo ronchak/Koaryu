@@ -26,7 +26,10 @@ from app.services.studio_live_billing_authorizations import StudioLiveBillingAut
 
 
 BILLING_WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
-BILLING_WEBHOOK_RECENT_WITHIN = timedelta(days=35)
+# This status hint must not turn the July 20 stream into current delivery proof.
+# Live mutation permits use the stronger provider-attested checkpoint and fresh
+# platform/per-account evidence in the atomic database authorization RPC.
+BILLING_WEBHOOK_RECENT_WITHIN = timedelta(hours=24)
 BILLING_WEBHOOK_CLOCK_SKEW = timedelta(minutes=5)
 
 
