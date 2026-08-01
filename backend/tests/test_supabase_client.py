@@ -5,6 +5,7 @@ import pytest
 from app.core.config import (
     AMBIENT_TRANSPORT_ENVIRONMENT_KEYS,
     CA_BUNDLE_ENVIRONMENT_KEYS,
+    KOARYU_PRODUCTION_FRONTEND_URL,
     KOARYU_PRODUCTION_SUPABASE_URL,
     KOARYU_STAGING_SUPABASE_URL,
     LOCAL_SUPABASE_URL,
@@ -28,6 +29,7 @@ def _clear_proxy_environment(monkeypatch):
 def test_runtime_rejects_raw_url_controls_before_readiness(control):
     settings = Settings(
         ENVIRONMENT="production",
+        FRONTEND_URL=KOARYU_PRODUCTION_FRONTEND_URL,
         SUPABASE_URL=f"https://mimguepumzsgmcaycdsh{control}.supabase.co",
     )
 
@@ -39,6 +41,7 @@ def test_runtime_rejects_raw_url_controls_before_readiness(control):
 def test_factory_rejects_raw_url_controls_before_sdk_construction(control):
     settings = Settings(
         ENVIRONMENT="production",
+        FRONTEND_URL=KOARYU_PRODUCTION_FRONTEND_URL,
         SUPABASE_URL=f"https://mimguepumzsgmcaycdsh{control}.supabase.co",
     )
 
