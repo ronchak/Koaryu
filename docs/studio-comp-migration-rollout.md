@@ -186,7 +186,10 @@ durable approval record, and `--approve-staging-apply`. After application:
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
    `release-db-attestation-v3`; a missing, malformed, stale, or failing result
-   halts before `state=post` or a fingerprint can be emitted;
+   halts before `state=post` or a fingerprint can be emitted. Linked scalar
+   results are decoded as strict single-column CSV, including standard quoting
+   for the comma-delimited pending-version tuple; extra rows, extra columns, or
+   malformed quoting halt without reflecting returned data;
 4. record the emitted provider fingerprint;
 5. run linked lint and approved contracts only on staging;
 6. test PostgREST service-role execution and browser-role denial;

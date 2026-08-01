@@ -1242,15 +1242,117 @@ function runCommand(command, args, { cwd = REPOSITORY_ROOT, env = process.env, l
   return result.stdout;
 }
 
-function parseSingleValueCsv(output, expectedHeader) {
-  if (output.includes("\r") || output.includes("\t")) {
-    throw new RolloutError(`${expectedHeader} query returned noncanonical control characters.`);
+export function parseSingleValueCsv(output, expectedHeader) {
+  const malformed = (reason) => {
+    throw new RolloutError(`${expectedHeader} query returned ${reason}.`);
+  };
+  if (typeof output !== "string") {
+    malformed("an unexpected CSV shape");
   }
-  const lines = output.endsWith("\n") ? output.slice(0, -1).split("\n") : output.split("\n");
-  if (lines.length !== 2 || lines[0] !== expectedHeader) {
-    throw new RolloutError(`${expectedHeader} query returned an unexpected CSV shape.`);
+  if (/[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/.test(output)) {
+    malformed("noncanonical control characters");
   }
-  return lines[1];
+
+  const records = [];
+  let record = [];
+  let field = "";
+  let state = "start";
+  let justEndedRecord = false;
+
+  const endField = () => {
+    record.push(field);
+    field = "";
+    state = "start";
+  };
+  const endRecord = () => {
+    endField();
+    records.push(record);
+    record = [];
+    justEndedRecord = true;
+  };
+
+  for (let index = 0; index < output.length;) {
+    const character = output[index];
+    justEndedRecord = false;
+
+    if (state === "quoted") {
+      if (character === '"') {
+        if (output[index + 1] === '"') {
+          field += '"';
+          index += 2;
+        } else {
+          state = "after_quote";
+          index += 1;
+        }
+      } else if (character === "\r") {
+        if (output[index + 1] !== "\n") {
+          malformed("a malformed CSV record ending");
+        }
+        field += "\r\n";
+        index += 2;
+      } else {
+        field += character;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (state === "after_quote") {
+      if (character === ",") {
+        endField();
+        index += 1;
+      } else if (character === "\n") {
+        endRecord();
+        index += 1;
+      } else if (character === "\r" && output[index + 1] === "\n") {
+        endRecord();
+        index += 2;
+      } else {
+        malformed("malformed CSV quoting");
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      if (state !== "start") {
+        malformed("malformed CSV quoting");
+      }
+      state = "quoted";
+      index += 1;
+    } else if (character === ",") {
+      endField();
+      index += 1;
+    } else if (character === "\n") {
+      endRecord();
+      index += 1;
+    } else if (character === "\r") {
+      if (output[index + 1] !== "\n") {
+        malformed("a malformed CSV record ending");
+      }
+      endRecord();
+      index += 2;
+    } else {
+      field += character;
+      state = "unquoted";
+      index += 1;
+    }
+  }
+
+  if (state === "quoted") {
+    malformed("malformed CSV quoting");
+  }
+  if (!justEndedRecord) {
+    endRecord();
+  }
+  if (
+    records.length !== 2 ||
+    records[0].length !== 1 ||
+    records[0][0] !== expectedHeader ||
+    records[1].length !== 1
+  ) {
+    malformed("an unexpected CSV shape");
+  }
+  return records[1][0];
 }
 
 function querySingleValue(sourceRoot, sql, header, env) {

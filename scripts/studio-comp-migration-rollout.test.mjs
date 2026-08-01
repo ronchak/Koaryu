@@ -15,6 +15,7 @@ import {
   buildProductionConfirmationPhrase,
   classifyStateSnapshot,
   extractPendingMigrations,
+  parseSingleValueCsv,
   parseArguments,
   readRemoteState,
   validateApplyAuthorization,
@@ -36,6 +37,11 @@ const validFingerprint =
 
 function candidatePacket() {
   return verifySourceTree(repositoryRoot, candidateSha);
+}
+
+function singleValueCsv(header, value, recordEnding = "\n") {
+  const encoded = /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+  return `${header}${recordEnding}${encoded}${recordEnding}`;
 }
 
 function preSnapshot(overrides = {}) {
@@ -82,6 +88,48 @@ describe("studio-comp migration rollout guard", () => {
     );
     for (const value of [null, "", "true|95|20260801094000", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
       assert.throws(() => validateOperationalReadiness(value), /V3 operational readiness/);
+    }
+  });
+
+  it("decodes the pinned CLI single-field CSV contract before exact V3 validation", () => {
+    const quotedReadiness = singleValueCsv(
+      "operational_readiness",
+      EXPECTED_OPERATIONAL_READINESS,
+    );
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|95\|/);
+    assert.equal(
+      parseSingleValueCsv(quotedReadiness, "operational_readiness"),
+      EXPECTED_OPERATIONAL_READINESS,
+    );
+    assert.equal(parseSingleValueCsv("target_history\n\n", "target_history"), "");
+    assert.equal(
+      parseSingleValueCsv('sample\r\n"first, line\r\nsecond ""line"""\r\n', "sample"),
+      'first, line\r\nsecond "line"',
+    );
+  });
+
+  it("rejects malformed or non-scalar CSV without reflecting returned data", () => {
+    const sentinel = "sensitive-fixture-value";
+    const invalidOutputs = [
+      `operational_readiness\n${sentinel},extra\n`,
+      `operational_readiness\n${sentinel}\nextra\n`,
+      `wrong_header\n${sentinel}\n`,
+      `operational_readiness\n"${sentinel}\n`,
+      `operational_readiness\n"${sentinel}"junk\n`,
+      `operational_readiness\n${sentinel}"junk\n`,
+      `operational_readiness\r${sentinel}\n`,
+      `operational_readiness\n"${sentinel}\rcorrupt"\n`,
+      `operational_readiness\n${sentinel}\tvalue\n`,
+      `operational_readiness\n${sentinel}\n\n`,
+      "operational_readiness\n",
+    ];
+    for (const output of invalidOutputs) {
+      assert.throws(
+        () => parseSingleValueCsv(output, "operational_readiness"),
+        (error) =>
+          /operational_readiness query returned/.test(error.message) &&
+          !error.message.includes(sentinel),
+      );
     }
   });
 
@@ -277,7 +325,7 @@ describe("studio-comp migration rollout guard", () => {
       validFingerprint,
       (_root, _sql, header) => {
         postHeaders.push(header);
-        return postValues.get(header);
+        return parseSingleValueCsv(singleValueCsv(header, postValues.get(header)), header);
       },
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
@@ -293,7 +341,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.deepEqual(
       readRemoteState(repositoryRoot, packet, {}, null, (_root, _sql, header) => {
         preHeaders.push(header);
-        return preValues.get(header);
+        return parseSingleValueCsv(singleValueCsv(header, preValues.get(header)), header);
       }),
       { state: "pre", providerFingerprint: null },
     );
