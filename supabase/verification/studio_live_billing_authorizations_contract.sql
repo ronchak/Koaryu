@@ -158,6 +158,9 @@ BEGIN
         IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight()', 'EXECUTE') THEN
             RAISE EXCEPTION '% can execute the hosted schema preflight.', v_role;
         END IF;
+        IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v2()', 'EXECUTE') THEN
+            RAISE EXCEPTION '% can execute the hosted V2 schema preflight.', v_role;
+        END IF;
     END LOOP;
     IF EXISTS (
         SELECT 1
@@ -171,8 +174,28 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'PUBLIC can execute the hosted schema preflight.';
     END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM pg_proc function
+          CROSS JOIN LATERAL aclexplode(coalesce(
+              function.proacl, acldefault('f', function.proowner)
+          )) acl
+         WHERE function.oid = 'public.koaryu_release_schema_preflight_v2()'::REGPROCEDURE
+           AND acl.grantee = 0
+           AND acl.privilege_type = 'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'PUBLIC can execute the hosted V2 schema preflight.';
+    END IF;
     IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight()', 'EXECUTE') THEN
         RAISE EXCEPTION 'service_role cannot execute the hosted schema preflight.';
+    END IF;
+    IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight_v2()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'service_role cannot execute the hosted V2 schema preflight.';
+    END IF;
+    IF has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE')
+       OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'Private operational manifest helper is directly callable.';
     END IF;
 END $$;
 
@@ -727,23 +750,24 @@ BEGIN
         RAISE EXCEPTION 'Live-billing authorization audit evidence is incomplete.';
     END IF;
 
-    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight();
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 92
-       OR v_preflight.migration_head <> '20260801091000'
+       OR v_preflight.migration_count <> 93
+       OR v_preflight.migration_head <> '20260801092000'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
-           '20260801090000', '20260801091000'
+           '20260801090000', '20260801091000', '20260801092000'
        ]::TEXT[]
-       OR cardinality(v_preflight.security_failures) <> 0 THEN
+       OR cardinality(v_preflight.security_failures) <> 0
+       OR v_preflight.manifest_version <> 'release-db-attestation-v2' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 
     EXECUTE 'CREATE POLICY injected_permissive_contract_policy
         ON public.stripe_live_billing_reconciliation_account_evidence
         FOR SELECT TO authenticated USING (false)';
-    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight();
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF v_preflight.ready
        OR NOT ('policy_manifest' = ANY(v_preflight.security_failures)) THEN
         RAISE EXCEPTION 'Hosted preflight accepted an injected policy-manifest drift.';
@@ -753,7 +777,7 @@ BEGIN
         'GRANT UPDATE ON SEQUENCE %s TO service_role',
         pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence')::REGCLASS
     );
-    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight();
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF v_preflight.ready
        OR NOT ('sequence_acl' = ANY(v_preflight.security_failures)) THEN
         RAISE EXCEPTION 'Hosted preflight accepted injected service-role sequence UPDATE.';

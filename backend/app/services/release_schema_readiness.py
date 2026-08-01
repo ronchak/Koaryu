@@ -6,8 +6,9 @@ from app.db.supabase import get_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
-EXPECTED_RELEASE_MIGRATION_COUNT = 92
-EXPECTED_RELEASE_MIGRATION_HEAD = "20260801091000"
+EXPECTED_RELEASE_MIGRATION_COUNT = 93
+EXPECTED_RELEASE_MIGRATION_HEAD = "20260801092000"
+EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v2"
 EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260727100000",
     "20260727110000",
@@ -17,6 +18,7 @@ EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260801080000",
     "20260801090000",
     "20260801091000",
+    "20260801092000",
 ]
 
 
@@ -33,6 +35,7 @@ def validate_release_schema_preflight(row: Any) -> None:
         or row.get("migration_head") != EXPECTED_RELEASE_MIGRATION_HEAD
         or row.get("pending_versions") != EXPECTED_RELEASE_PENDING_VERSIONS
         or row.get("security_failures") != []
+        or row.get("manifest_version") != EXPECTED_RELEASE_MANIFEST_VERSION
     ):
         raise ReleaseSchemaNotReadyError("Release schema preflight did not match exact head.")
 
@@ -40,7 +43,7 @@ def validate_release_schema_preflight(row: Any) -> None:
 def assert_hosted_release_schema_ready() -> None:
     result = execute_required_rpc(
         get_supabase_client(),
-        "koaryu_release_schema_preflight",
+        "koaryu_release_schema_preflight_v2",
         {},
     )
     validate_release_schema_preflight(first_rpc_row(result))

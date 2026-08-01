@@ -412,6 +412,25 @@ for migration_file in "${migration_files[@]}"; do
   fi
 done
 
+echo "[operational manifest] RUN database-observable semantic and ACL signal"
+operational_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_operational_manifest_v2();
+"
+)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateOperationalManifest } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalManifest(process.argv[1]);" \
+    "$operational_manifest"
+); then
+  echo "[operational manifest] PASS database-observable semantic and ACL signal"
+else
+  status=$?
+  echo "[operational manifest] FAIL database-observable semantic and ACL signal (exit $status)" >&2
+  exit "$status"
+fi
+
 echo "[catalog] RUN deterministic pending-object security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"
@@ -431,41 +450,99 @@ else
   exit "$status"
 fi
 
-echo "[catalog negative] RUN unmanifested permissive-policy rejection"
-"$PSQL" "${psql_args[@]}" --quiet --command="
-CREATE POLICY koaryu_harness_forbidden_permissive_policy
-    ON public.studio_live_billing_authorizations
-    AS PERMISSIVE FOR SELECT TO anon USING (true);
-"
-drifted_catalog_state="$({
-  cd "$ROOT_DIR"
-  node --input-type=module --eval \
-    "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
-} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-if (
-  cd "$ROOT_DIR"
-  node --input-type=module --eval \
-    "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
-    "$drifted_catalog_state" >/dev/null 2>&1
-); then
-  echo "[catalog negative] FAIL catalog accepted an unmanifested permissive policy" >&2
-  exit 1
-fi
-preflight_policy_rejected="$(
-  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet --command="
-SELECT 'policy_manifest' = ANY(security_failures)
-  FROM public.koaryu_release_schema_preflight();
-"
-)"
-if [[ "$preflight_policy_rejected" != "t" ]]; then
-  echo "[catalog negative] FAIL readiness accepted an unmanifested permissive policy" >&2
-  exit 1
-fi
-"$PSQL" "${psql_args[@]}" --quiet --command="
-DROP POLICY koaryu_harness_forbidden_permissive_policy
-    ON public.studio_live_billing_authorizations;
-"
-echo "[catalog negative] PASS unmanifested permissive-policy rejection"
+assert_attestation_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local expected_v2_ready="$3"
+  local result=""
+  local drifted_catalog_state=""
+  local actual_v2_ready=""
+
+  echo "[attestation negative] RUN $label"
+  result="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    (
+      cd "$ROOT_DIR"
+      node --input-type=module --eval \
+        "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+    )
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v2();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
+  actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+
+  if (
+    cd "$ROOT_DIR"
+    node --input-type=module --eval \
+      "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
+      "$drifted_catalog_state" >/dev/null 2>&1
+  ); then
+    echo "[attestation negative] FAIL raw catalog accepted $label" >&2
+    exit 1
+  fi
+  if [[ "$actual_v2_ready" != "$expected_v2_ready" ]]; then
+    echo "[attestation negative] FAIL V2 readiness result for $label" >&2
+    exit 1
+  fi
+  echo "[attestation negative] PASS $label"
+}
+
+assert_attestation_rejects \
+  "stored function-body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN false; END;' WHERE oid = 'private.live_billing_event_is_in_scope(text,text)'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "V2 self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v2()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "checkpoint trigger-definition drift" \
+  "ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints DISABLE TRIGGER enforce_live_billing_checkpoint_processed_events;" \
+  "f"
+assert_attestation_rejects \
+  "bootstrap index-definition drift" \
+  "DROP INDEX public.idx_stripe_connect_onboarding_bootstraps_generation_once;" \
+  "f"
+assert_attestation_rejects \
+  "bootstrap CHECK-expression drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.stripe_connect_onboarding_bootstraps'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "private identity UNIQUE drift" \
+  "ALTER TABLE private.stripe_connect_account_identity_guards DROP CONSTRAINT stripe_connect_account_identity_guards_mapped_studio_id_key;" \
+  "f"
+assert_attestation_rejects \
+  "private identity FK drift" \
+  "ALTER TABLE private.stripe_connect_account_identity_guards DROP CONSTRAINT stripe_connect_account_identity_guards_mapped_studio_id_fkey;" \
+  "f"
+assert_attestation_rejects \
+  "private identity CHECK drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'private.stripe_connect_account_identity_guards'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE private.stripe_connect_account_identity_guards DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "public Connect mapping FK drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.studio_payment_accounts'::regclass AND contype = 'f' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.studio_payment_accounts DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "public Connect exclusion CHECK drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.stripe_connect_account_dispositions'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.stripe_connect_account_dispositions DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "required service-role table ACL drift" \
+  "REVOKE SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "required service-role RPC ACL drift" \
+  "REVOKE EXECUTE ON FUNCTION public.authorize_connect_onboarding_bootstrap_account_create(uuid,text,integer,text,text,text,text,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "forbidden browser/PUBLIC ACL drift" \
+  "GRANT SELECT ON TABLE public.stripe_connect_onboarding_bootstraps TO anon;" \
+  "f"
+assert_attestation_rejects \
+  "unmanifested permissive policy drift" \
+  "CREATE POLICY koaryu_harness_forbidden_permissive_policy ON public.studio_live_billing_authorizations AS PERMISSIVE FOR SELECT TO anon USING (true);" \
+  "f"
 
 echo "[concurrency] RUN Connect identity mapping/exclusion invariant"
 if bash "$ROOT_DIR/scripts/verify-connect-identity-concurrency.sh" \

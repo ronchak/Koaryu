@@ -144,10 +144,10 @@ Operator: `Codex release orchestrator`
 - Scope: repository-only remediation; no staging or production provider read,
   migration, contract execution, Auth fixture, or other provider mutation was
   performed.
-- Final required database identity: 92 migrations, head
-  `20260801091000_close_live_connect_onboarding_bootstrap_gap.sql`, with exact pending
+- Final required database identity: 93 migrations, head
+  `20260801092000_attest_release_database_semantics.sql`, with exact pending
   versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
-  01090000 and 01091000 after the fixed 84-migration production baseline.
+  01090000, 01091000, and 01092000 after the fixed 84-migration production baseline.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
   and database constraint; prove both opposite-direction races with concurrent
@@ -157,13 +157,14 @@ Operator: `Codex release orchestrator`
   errors. Schema 84 cannot receive healthy traffic from the new backend.
 - Catalog proof: deterministic sorted identities and security-relevant catalog
   properties cover the currently integrated pending tables/RLS, policies,
-  grants, functions, triggers, indexes, sequences, and required column. It does
-  not depend on provider SQL pretty-printing. The policy manifest rejects
+  exact ACLs and stored function bodies, complete trigger/index definitions,
+  sequences, columns, and scoped CHECK/UNIQUE/FK definitions. PostgreSQL catalog
+  rendering, not provider UI pretty-printing, is pinned. The policy manifest rejects
   missing, extra, permissive, role/command, and canonical predicate drift.
 - Integration gate: migrations `20260801070000` (billing), `20260801080000`
-  (alerts), `20260801090000` (parity), and `20260801091000` (Connect bootstrap)
-  are ordered 89-92. The packet reports
-  `integration_complete=true` only for the exact 84-to-92 history and eight
+  (alerts), `20260801090000` (parity), `20260801091000` (Connect bootstrap),
+  and `20260801092000` (attestation) are ordered 89-93. The packet reports
+  `integration_complete=true` only for the exact 84-to-93 history and nine
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. The exact 32-file SQL

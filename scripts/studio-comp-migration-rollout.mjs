@@ -17,7 +17,7 @@ export const ROLLOUT = Object.freeze({
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
   preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 92,
+  finalMigrationCount: 93,
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -27,6 +27,7 @@ export const ROLLOUT = Object.freeze({
     "20260801080000",
     "20260801090000",
     "20260801091000",
+    "20260801092000",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -43,6 +44,28 @@ export const ROLLOUT = Object.freeze({
     }),
   ]),
 });
+
+export const EXPECTED_OPERATIONAL_MANIFEST =
+  "e7b3709c34874ef48baae2ca881d4e00a83e1d60aa3e2f47063bf6989d44be4a";
+
+export const EXPECTED_CATALOG_STATE =
+  "columns=33:66aacac8e7789e11e1fd4056c463a9bf6851333d19fb1d5e949fc898fe694a62:0;" +
+  "constraints=12:e935a922af794131c6fa9a6f08dba2948ba1ba8ecabb5e536c9cab94b5e3cf82:0;" +
+  "functions=32:ba44326a842cdd330737857c59a50b7eac23693dfa3b385c5f49eb24613e79c5:0;" +
+  "indexes=10:0d1e6e31bc5366e04d8ad554b3d7ce6d43d1e73e6fe91c1f50fed7a766636afb:0;" +
+  "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
+  "scoped_constraints=138:f2df9a570bf2d52e9a27e5eaad29e75a1ce4f47f8e2cb8097636d68f8ce530ea:0;" +
+  "scoped_indexes=32:029ff9098f63de005a410481e5c4ad26148fc05bd6d47c0d0f7ad30cf3e81a77:0;" +
+  "sequences=3:03e4f7772c2d039dadf7657f21717194985f1462b7bf810e7cd30847f345d245:0;" +
+  "tables=12:4d8e9a0b7f19701e23def67e95e2e6e39ae398c634eeb88a2c293eb3a9e23152:0;" +
+  "triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0";
+
+export function validateOperationalManifest(value) {
+  if (value !== EXPECTED_OPERATIONAL_MANIFEST) {
+    throw new RolloutError(`Operational semantic/ACL manifest mismatch: ${value}.`);
+  }
+  return value;
+}
 
 const HISTORY_SCHEMA_SQL = `
 select
@@ -276,6 +299,11 @@ with required_tables(schema_name, table_name, rls_enabled, service_privileges) a
     ('public', 'operational_alert_heartbeats', true, 'INSERT,SELECT,UPDATE'),
     ('private', 'stripe_connect_account_identity_guards', false, '')
 ),
+scoped_definition_tables(schema_name, table_name) as (
+  select schema_name, table_name from required_tables
+  union all
+  select 'public', 'studio_payment_accounts'
+),
 table_actual as (
   select
     namespace.nspname as schema_name,
@@ -403,6 +431,8 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.record_operational_alert_heartbeat(text, text, text)', 'search_path=public, pg_temp', false, true),
     ('public.operational_alert_heartbeats(text)', 'search_path=public, pg_temp', false, true),
     ('public.koaryu_release_schema_preflight()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v2()', 'search_path=pg_catalog', true, true),
+    ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -414,7 +444,28 @@ function_actual as (
          exists (select 1 from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl where acl.grantee = 0 and acl.privilege_type = 'EXECUTE') as public_execute,
          has_function_privilege('anon', function.oid, 'EXECUTE') as anon_execute,
          has_function_privilege('authenticated', function.oid, 'EXECUTE') as authenticated_execute,
-         has_function_privilege('service_role', function.oid, 'EXECUTE') as service_execute
+         has_function_privilege('service_role', function.oid, 'EXECUTE') as service_execute,
+         encode(extensions.digest(convert_to(function.prosrc, 'UTF8'), 'sha256'), 'hex') as body_sha256,
+         coalesce((
+           select string_agg(
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantee.rolname, 'PUBLIC'), acl.privilege_type, acl.is_grantable
+                  )
+             from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state,
+         exists (
+           select 1
+             from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl
+             left join pg_roles grantee on grantee.oid = acl.grantee
+            where acl.privilege_type = 'EXECUTE'
+              and acl.grantee <> function.proowner
+              and not (
+                grantee.rolname = 'service_role'
+                and required.service_execute
+                and not acl.is_grantable
+              )
+         ) as unexpected_execute_grant
     from pg_proc function
     join pg_namespace namespace on namespace.oid = function.pronamespace
     join pg_roles owner on owner.oid = function.proowner
@@ -427,7 +478,8 @@ function_compared as (
          actual.security_definer as actual_security_definer,
          actual.search_path_config as actual_search_path_config,
          actual.public_execute, actual.anon_execute, actual.authenticated_execute,
-         actual.service_execute as actual_service_execute
+         actual.service_execute as actual_service_execute,
+         actual.body_sha256, actual.acl_state, actual.unexpected_execute_grant
     from required_functions required
     left join function_actual actual using (signature)
 ),
@@ -449,7 +501,8 @@ required_triggers(table_name, trigger_name, function_schema, function_name, trig
 trigger_actual as (
   select relation.relname as table_name, trigger.tgname as trigger_name,
          function_namespace.nspname as function_schema, function.proname as function_name,
-         trigger.tgtype::integer as trigger_type, trigger.tgenabled, trigger.tgisinternal
+         trigger.tgtype::integer as trigger_type, trigger.tgenabled, trigger.tgisinternal,
+         encode(extensions.digest(convert_to(pg_get_triggerdef(trigger.oid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
     from pg_trigger trigger
     join pg_class relation on relation.oid = trigger.tgrelid
     join pg_namespace namespace on namespace.oid = relation.relnamespace
@@ -463,7 +516,7 @@ trigger_compared as (
   select required.*, actual.function_schema as actual_function_schema,
          actual.function_name as actual_function_name,
          actual.trigger_type as actual_trigger_type,
-         actual.tgenabled, actual.tgisinternal
+         actual.tgenabled, actual.tgisinternal, actual.definition_sha256
     from required_triggers required
     left join trigger_actual actual using (table_name, trigger_name)
 ),
@@ -483,7 +536,8 @@ required_indexes(index_name, table_name, unique_index, partial_index) as (
 index_actual as (
   select index_relation.relname as index_name, table_relation.relname as table_name,
          index.indisunique as unique_index, index.indpred is not null as partial_index,
-         index.indisvalid, index.indisready
+         index.indisvalid, index.indisready,
+         encode(extensions.digest(convert_to(pg_get_indexdef(index.indexrelid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
     from pg_index index
     join pg_class index_relation on index_relation.oid = index.indexrelid
     join pg_class table_relation on table_relation.oid = index.indrelid
@@ -495,7 +549,7 @@ index_compared as (
   select required.*, actual.table_name as actual_table_name,
          actual.unique_index as actual_unique_index,
          actual.partial_index as actual_partial_index,
-         actual.indisvalid, actual.indisready
+         actual.indisvalid, actual.indisready, actual.definition_sha256
     from required_indexes required
     left join index_actual actual using (index_name)
 ),
@@ -606,7 +660,8 @@ constraint_actual as (
            else constraint_state.conname
          end as constraint_identity,
          constraint_state.contype::text as constraint_type,
-         constraint_state.convalidated
+         constraint_state.convalidated,
+         encode(extensions.digest(convert_to(pg_get_constraintdef(constraint_state.oid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
     from pg_constraint constraint_state
     join pg_class relation on relation.oid = constraint_state.conrelid
     join pg_namespace namespace on namespace.oid = relation.relnamespace
@@ -622,50 +677,83 @@ constraint_actual as (
 constraint_compared as (
   select required.*,
          actual.constraint_type as actual_constraint_type,
-         actual.convalidated
+         actual.convalidated, actual.definition_sha256
     from required_constraints required
     left join constraint_actual actual using (table_name, constraint_identity)
 ),
+scoped_index_definitions as (
+  select namespace.nspname as schema_name, table_relation.relname as table_name,
+         index_relation.relname as index_name,
+         encode(extensions.digest(convert_to(pg_get_indexdef(index_state.indexrelid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
+    from pg_index index_state
+    join pg_class index_relation on index_relation.oid = index_state.indexrelid
+    join pg_class table_relation on table_relation.oid = index_state.indrelid
+    join pg_namespace namespace on namespace.oid = table_relation.relnamespace
+    join scoped_definition_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = table_relation.relname
+),
+scoped_constraint_definitions as (
+  select namespace.nspname as schema_name, relation.relname as table_name,
+         constraint_state.conname as constraint_name,
+         constraint_state.contype::text as constraint_type,
+         constraint_state.convalidated,
+         encode(extensions.digest(convert_to(pg_get_constraintdef(constraint_state.oid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
+    from pg_constraint constraint_state
+    join pg_class relation on relation.oid = constraint_state.conrelid
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join scoped_definition_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
+),
 states as (
   select 'tables' as category, count(*)::integer as object_count,
-         md5(string_agg(schema_name || '.' || table_name || ':' || coalesce(owner_name, '') || ':' || coalesce(relrowsecurity::text, '') || ':' || coalesce(actual_service_privileges, ''), '|' order by schema_name, table_name)) as state_digest,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || coalesce(owner_name, '') || ':' || coalesce(relrowsecurity::text, '') || ':' || coalesce(actual_service_privileges, ''), '|' order by schema_name, table_name), ''), 'UTF8'), 'sha256'), 'hex') as state_digest,
          count(*) filter (where owner_name is null or owner_name <> 'postgres' or relrowsecurity is distinct from rls_enabled or public_access or anon_access or authenticated_access or actual_service_privileges is distinct from service_privileges)::integer as failures
     from table_compared
   union all
   select 'policies', count(*)::integer,
-         md5(string_agg(table_name || ':' || policy_name || ':' || coalesce(actual_permissive::text, '') || ':' || coalesce(actual_command_name, '') || ':' || coalesce(actual_role_names, '') || ':' || coalesce(actual_predicate_kind, ''), '|' order by table_name, policy_name)),
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || policy_name || ':' || coalesce(actual_permissive::text, '') || ':' || coalesce(actual_command_name, '') || ':' || coalesce(actual_role_names, '') || ':' || coalesce(actual_predicate_kind, ''), '|' order by table_name, policy_name), ''), 'UTF8'), 'sha256'), 'hex'),
          count(*) filter (where not expected_policy or not actual_policy or actual_permissive is distinct from permissive or actual_command_name is distinct from command_name or actual_role_names is distinct from role_names or actual_predicate_kind is distinct from predicate_kind)::integer
     from policy_compared
   union all
   select 'functions', count(*)::integer,
-         md5(string_agg(signature || ':' || coalesce(owner_name, '') || ':' || coalesce(language_name, '') || ':' || coalesce(actual_security_definer::text, '') || ':' || coalesce(actual_search_path_config, '') || ':' || coalesce(actual_service_execute::text, ''), '|' order by signature)),
-         count(*) filter (where owner_name is null or owner_name <> 'postgres' or language_name not in ('sql', 'plpgsql') or actual_security_definer is distinct from security_definer or actual_search_path_config is distinct from search_path_config or public_execute or anon_execute or authenticated_execute or actual_service_execute is distinct from service_execute)::integer
+         encode(extensions.digest(convert_to(coalesce(string_agg(signature || ':' || coalesce(owner_name, '') || ':' || coalesce(language_name, '') || ':' || coalesce(actual_security_definer::text, '') || ':' || coalesce(actual_search_path_config, '') || ':' || coalesce(actual_service_execute::text, '') || ':' || coalesce(body_sha256, '') || ':' || coalesce(acl_state, ''), '|' order by signature), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where owner_name is null or owner_name <> 'postgres' or language_name not in ('sql', 'plpgsql') or actual_security_definer is distinct from security_definer or actual_search_path_config is distinct from search_path_config or public_execute or anon_execute or authenticated_execute or actual_service_execute is distinct from service_execute or unexpected_execute_grant)::integer
     from function_compared
   union all
   select 'triggers', count(*)::integer,
-         md5(string_agg(table_name || ':' || trigger_name || ':' || coalesce(actual_function_schema, '') || '.' || coalesce(actual_function_name, '') || ':' || coalesce(actual_trigger_type::text, '') || ':' || coalesce(tgenabled::text, ''), '|' order by table_name, trigger_name)),
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || trigger_name || ':' || coalesce(actual_function_schema, '') || '.' || coalesce(actual_function_name, '') || ':' || coalesce(actual_trigger_type::text, '') || ':' || coalesce(tgenabled::text, '') || ':' || coalesce(definition_sha256, ''), '|' order by table_name, trigger_name), ''), 'UTF8'), 'sha256'), 'hex'),
          count(*) filter (where actual_function_schema is distinct from function_schema or actual_function_name is distinct from function_name or actual_trigger_type is distinct from trigger_type or tgenabled is distinct from 'O' or tgisinternal is distinct from false)::integer
     from trigger_compared
   union all
   select 'indexes', count(*)::integer,
-         md5(string_agg(index_name || ':' || coalesce(actual_table_name, '') || ':' || coalesce(actual_unique_index::text, '') || ':' || coalesce(actual_partial_index::text, '') || ':' || coalesce(indisvalid::text, '') || ':' || coalesce(indisready::text, ''), '|' order by index_name)),
+         encode(extensions.digest(convert_to(coalesce(string_agg(index_name || ':' || coalesce(actual_table_name, '') || ':' || coalesce(actual_unique_index::text, '') || ':' || coalesce(actual_partial_index::text, '') || ':' || coalesce(indisvalid::text, '') || ':' || coalesce(indisready::text, '') || ':' || coalesce(definition_sha256, ''), '|' order by index_name), ''), 'UTF8'), 'sha256'), 'hex'),
          count(*) filter (where actual_table_name is distinct from table_name or actual_unique_index is distinct from unique_index or actual_partial_index is distinct from partial_index or indisvalid is distinct from true or indisready is distinct from true)::integer
     from index_compared
   union all
   select 'sequences', count(*)::integer,
-         md5(string_agg(table_name || '.' || column_name || ':' || coalesce(owner_name, '') || ':' || coalesce(actual_service_usage::text, '') || ':' || coalesce(actual_service_select::text, '') || ':' || coalesce(actual_service_update::text, ''), '|' order by table_name, column_name)),
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || '.' || column_name || ':' || coalesce(owner_name, '') || ':' || coalesce(actual_service_usage::text, '') || ':' || coalesce(actual_service_select::text, '') || ':' || coalesce(actual_service_update::text, ''), '|' order by table_name, column_name), ''), 'UTF8'), 'sha256'), 'hex'),
          count(*) filter (where owner_name is null or owner_name <> 'postgres' or public_access or anon_access or authenticated_access or actual_service_usage is distinct from service_usage or actual_service_select is distinct from service_select or actual_service_update is distinct from service_update)::integer
     from sequence_compared
   union all
   select 'columns', count(*)::integer,
-         md5(string_agg(table_name || '.' || column_name || ':' || coalesce(actual_data_type, '') || ':' || coalesce(actual_nullable::text, '') || ':' || coalesce(actual_identity_column::text, ''), '|' order by table_name, column_name)),
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || '.' || column_name || ':' || coalesce(actual_data_type, '') || ':' || coalesce(actual_nullable::text, '') || ':' || coalesce(actual_identity_column::text, ''), '|' order by table_name, column_name), ''), 'UTF8'), 'sha256'), 'hex'),
          count(*) filter (where actual_data_type is distinct from data_type or actual_nullable is distinct from nullable or actual_identity_column is distinct from identity_column)::integer
     from column_compared
   union all
   select 'constraints', count(*)::integer,
-         md5(string_agg(table_name || ':' || constraint_identity || ':' || coalesce(actual_constraint_type, '') || ':' || coalesce(convalidated::text, ''), '|' order by table_name, constraint_identity)),
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || constraint_identity || ':' || coalesce(actual_constraint_type, '') || ':' || coalesce(convalidated::text, '') || ':' || coalesce(definition_sha256, ''), '|' order by table_name, constraint_identity), ''), 'UTF8'), 'sha256'), 'hex'),
          count(*) filter (where actual_constraint_type is distinct from constraint_type or convalidated is distinct from true)::integer
     from constraint_compared
+  union all
+  select 'scoped_indexes', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || index_name || ':' || definition_sha256, '|' order by schema_name, table_name, index_name), ''), 'UTF8'), 'sha256'), 'hex'),
+         0::integer
+    from scoped_index_definitions
+  union all
+  select 'scoped_constraints', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || constraint_name || ':' || constraint_type || ':' || convalidated::text || ':' || definition_sha256, '|' order by schema_name, table_name, constraint_name), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where not convalidated)::integer
+    from scoped_constraint_definitions
 )
 select string_agg(category || '=' || object_count::text || ':' || state_digest || ':' || failures::text, ';' order by category) as catalog_state
 from states
@@ -785,7 +873,7 @@ export function parseArguments(argv) {
   }
   if (
     result.expectedProviderFingerprint !== null &&
-    !/^functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=[a-z0-9=;:]+$/.test(
+    !/^functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=[a-z0-9_=;:]+$/.test(
       result.expectedProviderFingerprint,
     )
   ) {
@@ -965,7 +1053,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 92-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 93-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -991,33 +1079,31 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
 }
 
 export function validateCatalogState(catalogState) {
-  const expectedCatalogCounts = new Map([
-    ["columns", 33],
-    ["constraints", 12],
-    ["functions", 30],
-    ["indexes", 10],
-    ["policies", 16],
-    ["sequences", 3],
-    ["tables", 12],
-    ["triggers", 12],
-  ]);
+  const expectedCatalog = new Map(
+    EXPECTED_CATALOG_STATE.split(";").map((part) => {
+      const match = /^([a-z_]+)=([0-9]+):([0-9a-f]{64}):0$/.exec(part);
+      return [match[1], [Number(match[2]), match[3]]];
+    }),
+  );
   const catalogParts = (catalogState ?? "").split(";");
-  if (catalogParts.length !== expectedCatalogCounts.size) {
+  if (catalogParts.length !== expectedCatalog.size) {
     throw new RolloutError("Required pending-migration catalog fingerprint is incomplete.");
   }
   for (const part of catalogParts) {
-    const match = /^([a-z]+)=([0-9]+):([0-9a-f]{32}):([0-9]+)$/.exec(part);
+    const match = /^([a-z_]+)=([0-9]+):([0-9a-f]{64}):([0-9]+)$/.exec(part);
+    const expected = match ? expectedCatalog.get(match[1]) : null;
     if (
       !match ||
-      expectedCatalogCounts.get(match[1]) !== Number(match[2]) ||
+      expected?.[0] !== Number(match[2]) ||
+      expected?.[1] !== match[3] ||
       match[4] !== "0"
     ) {
       throw new RolloutError(
-        `Required table, RLS, grant, function, trigger, index, sequence, or column checks failed: ${part}.`,
+        `Repository-pinned raw catalog manifest mismatch: ${catalogState}.`,
       );
     }
   }
-  if (new Set(catalogParts.map((part) => part.split("=")[0])).size !== expectedCatalogCounts.size) {
+  if (new Set(catalogParts.map((part) => part.split("=")[0])).size !== expectedCatalog.size) {
     throw new RolloutError("Required pending-migration catalog categories are duplicated.");
   }
   return catalogState;
@@ -1204,7 +1290,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 92-migration candidate, including 070000, 080000, and 091000.",
+        "Provider inspection requires the exact final 93-migration candidate through 092000.",
       );
     }
     runCommand(

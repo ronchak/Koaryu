@@ -3,7 +3,7 @@
 Status: **Phase A tooling only; provider mutation locked**
 
 This packet reconciles the production 84-migration baseline with the immutable
-92-migration release candidate. It is specialized to this rollout, not a
+93-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -22,9 +22,9 @@ Therefore:
 - repository SHA-256 values prove the intended files in the immutable Git
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
-- the provider proof is the exact ordered version/name sequence plus the
-  resulting function, trigger, ownership, security, search-path, and ACL
-  fingerprint;
+- the release authority is the operator-side raw-catalog verifier plus its
+  repository-pinned SHA-256 manifests; the database V2 RPC is an operational
+  drift/readiness signal, not proof against a malicious database administrator;
 - the mutable parsed `statements` array is not treated as file identity.
 
 Residual risk remains that history was repaired or altered independently and
@@ -38,8 +38,8 @@ The fixed production pre-state is:
 84:57ae4269ef4d75c249d59ef297661a3a
 ```
 
-The only certifiable post-state is migration count 92, head
-`20260801091000`, with this exact pending version sequence:
+The only certifiable post-state is migration count 93, head
+`20260801092000`, with this exact pending version sequence:
 
 ```text
 20260727100000
@@ -50,13 +50,17 @@ The only certifiable post-state is migration count 92, head
 20260801080000
 20260801090000
 20260801091000
+20260801092000
 ```
 
 The checker derives filenames and source hashes from the final candidate, then
 requires this exact sequence and reports `integration_complete=true` only at
-92 migrations with these eight versions. The 070000/091000 billing and 080000 alert
-tables, RLS, grants, functions, triggers, indexes, sequences, columns, and named
-constraints are included in the structural semantic manifest. Never certify an
+93 migrations with these nine versions. The 070000/091000 billing and 080000 alert
+tables, RLS, exact ACLs and stored function bodies, complete trigger/index
+definitions, sequences, columns, and all scoped CHECK/UNIQUE/FK definitions are
+included in the semantic manifest. The external verifier also attests the V2
+RPC and its private helper bodies/ACLs without asking V2 to attest its own body.
+Never certify an
 earlier head; regenerate the packet from the exact immutable release commit so
 all candidate migration hashes and counts remain current.
 
@@ -153,7 +157,7 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-The dry-run must report the exact eight pending versions above, with their final
+The dry-run must report the exact nine pending versions above, with their final
 candidate filenames and hashes. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
@@ -161,17 +165,19 @@ Staging application remains locked until the director approves Phase B. The
 approved command will require the same inspection token, exact project ref, a
 durable approval record, and `--approve-staging-apply`. After application:
 
-1. require count 92, head 091000, the exact eight-version sequence, and the
+1. require count 93, head 092000, the exact nine-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, sequence-ACL, and column identity in the final semantic
    catalog manifest; category counts and sorted identities are deterministic,
-   while harmless provider SQL formatting is excluded. The policy inventory is
+   and definitions come from PostgreSQL's catalog representation rather than
+   provider UI formatting. The policy inventory is
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. require the service-role-only readiness RPC to return `ready=true`, exact
-   count/head/pending versions, and an empty failure list;
+3. require the service-role-only V2 readiness RPC to return `ready=true`, exact
+   count/head/pending versions, an empty failure list, and manifest version
+   `release-db-attestation-v2`;
 4. record the emitted provider fingerprint;
 5. run linked lint and approved contracts only on staging;
 6. test PostgREST service-role execution and browser-role denial;
@@ -230,6 +236,6 @@ drop the trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 92 head and
+database-first: Render `/health/ready` remains 503 until the exact 93 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

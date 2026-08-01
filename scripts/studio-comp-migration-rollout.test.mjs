@@ -6,6 +6,8 @@ import { describe, it } from "node:test";
 
 import {
   ROLLOUT,
+  EXPECTED_CATALOG_STATE,
+  EXPECTED_OPERATIONAL_MANIFEST,
   assertExactPendingMigrations,
   assertSafeCredentialedTransport,
   buildInspectionToken,
@@ -14,6 +16,7 @@ import {
   extractPendingMigrations,
   parseArguments,
   validateApplyAuthorization,
+  validateOperationalManifest,
   verifySourceTree,
 } from "./studio-comp-migration-rollout.mjs";
 
@@ -22,15 +25,7 @@ const candidateSha = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
-const validCatalogState =
-  "columns=33:11111111111111111111111111111111:0;" +
-  "constraints=12:88888888888888888888888888888888:0;" +
-  "functions=30:22222222222222222222222222222222:0;" +
-  "indexes=10:33333333333333333333333333333333:0;" +
-  "policies=16:44444444444444444444444444444444:0;" +
-  "sequences=3:55555555555555555555555555555555:0;" +
-  "tables=12:66666666666666666666666666666666:0;" +
-  "triggers=12:77777777777777777777777777777777:0";
+const validCatalogState = EXPECTED_CATALOG_STATE;
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
@@ -66,10 +61,18 @@ function postSnapshot(packet, overrides = {}) {
 }
 
 describe("studio-comp migration rollout guard", () => {
+  it("pins the database-observable manifest without treating it as release authority", () => {
+    assert.equal(validateOperationalManifest(EXPECTED_OPERATIONAL_MANIFEST), EXPECTED_OPERATIONAL_MANIFEST);
+    assert.throws(
+      () => validateOperationalManifest("0".repeat(64)),
+      /Operational semantic\/ACL manifest mismatch/,
+    );
+  });
+
   it("derives an exact 84-to-N packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 92);
+    assert.equal(packet.migrationCount, 93);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(packet.pendingMigrations.length, packet.migrationCount - 84);
     assert.deepEqual(
@@ -202,19 +205,16 @@ describe("studio-comp migration rollout guard", () => {
         }),
         packet,
       ),
-      /Required table, RLS, grant, function, trigger, index, sequence, or column checks failed/,
+      /Repository-pinned raw catalog manifest mismatch/,
     );
     assert.throws(
       () => classifyStateSnapshot(
         postSnapshot(packet, {
-          catalogState: validCatalogState.replace(
-            "sequences=3:55555555555555555555555555555555:0",
-            "sequences=3:55555555555555555555555555555555:1",
-          ),
+          catalogState: validCatalogState.replace(/(sequences=3:[0-9a-f]{64}):0/, "$1:1"),
         }),
         packet,
       ),
-      /Required table, RLS, grant, function, trigger, index, sequence, or column checks failed/,
+      /Repository-pinned raw catalog manifest mismatch/,
     );
     assert.throws(
       () => classifyStateSnapshot(preSnapshot({ history: "85:unexpected" }), packet),
@@ -222,12 +222,12 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 92-migration integration", () => {
+  it("refuses to certify post-state before the exact 93-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 92-migration sequence/,
+      /exact final 93-migration sequence/,
     );
   });
 
