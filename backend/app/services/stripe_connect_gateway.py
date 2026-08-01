@@ -7,6 +7,8 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException, status
 
+from app.services.studio_live_billing_authorizations import ConnectOnboardingBootstrapContext
+
 
 STRIPE_ACCOUNTS_V2_VERSION = "2026-05-27.preview"
 
@@ -103,8 +105,8 @@ class StripeConnectGateway:
         contact_email: Optional[str] = None,
         business_entity_type: str = "company",
         account_generation: int = 1,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
-        self._authorize_mutation("connect_account.create", studio_id=studio_id)
         try:
             return self._create_account_v2(
                 studio_id=studio_id,
@@ -112,9 +114,10 @@ class StripeConnectGateway:
                 contact_email=contact_email,
                 business_entity_type=business_entity_type,
                 account_generation=account_generation,
+                bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
-            if exc.code != "accounts_v2_access_blocked":
+            if bootstrap_context or exc.code != "accounts_v2_access_blocked":
                 self._raise_connect_account_error(exc, "create a connected account")
 
         return self._create_account_v1(
@@ -199,8 +202,8 @@ class StripeConnectGateway:
         studio_id: Optional[str] = None,
         refresh_url: str,
         return_url: str,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
-        self._authorize_mutation("connect_onboarding_link.create", studio_id=studio_id, account_id=account_id)
         try:
             return self._stripe_v2_post(
                 "/v2/core/account_links",
@@ -219,9 +222,13 @@ class StripeConnectGateway:
                 operation="connect_onboarding_link.create",
                 studio_id=studio_id,
                 account_id=account_id,
+                idempotency_key=(
+                    bootstrap_context.initial_link_idempotency_key if bootstrap_context else None
+                ),
+                bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
-            if exc.code != "accounts_v2_access_blocked":
+            if bootstrap_context or exc.code != "accounts_v2_access_blocked":
                 self._raise_connect_account_error(exc, "create an onboarding link")
 
         return self._create_legacy_onboarding_link(
@@ -309,6 +316,7 @@ class StripeConnectGateway:
         contact_email: Optional[str] = None,
         business_entity_type: str = "company",
         account_generation: int = 1,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> dict[str, Any]:
         identity: dict[str, Any] = {
             "country": "us",
@@ -354,7 +362,12 @@ class StripeConnectGateway:
             payload,
             operation="connect_account.create",
             studio_id=studio_id,
-            idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}",
+            idempotency_key=(
+                bootstrap_context.account_create_idempotency_key
+                if bootstrap_context
+                else f"koaryu-connect-account-{studio_id}-g{account_generation}"
+            ),
+            bootstrap_context=bootstrap_context,
         )
 
     def _create_account_v1(

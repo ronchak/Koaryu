@@ -32,6 +32,18 @@ BEGIN
         END IF;
     END LOOP;
 
+    IF to_regclass('public.stripe_connect_onboarding_bootstraps') IS NULL
+       OR has_table_privilege('anon', 'public.stripe_connect_onboarding_bootstraps', 'SELECT,INSERT,UPDATE,DELETE')
+       OR has_table_privilege('authenticated', 'public.stripe_connect_onboarding_bootstraps', 'SELECT,INSERT,UPDATE,DELETE')
+       OR has_table_privilege('service_role', 'public.stripe_connect_onboarding_bootstraps', 'SELECT,INSERT,UPDATE,DELETE')
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_class relation
+           WHERE relation.oid = 'public.stripe_connect_onboarding_bootstraps'::REGCLASS
+             AND relation.relrowsecurity
+       ) THEN
+        RAISE EXCEPTION 'Connect onboarding bootstrap table is not default-deny.';
+    END IF;
+
     IF has_function_privilege(
         'service_role',
         'public.record_stripe_live_billing_reconciliation_checkpoint(text,integer,integer,integer,integer,integer,integer,timestamp with time zone,timestamp with time zone,integer,integer,boolean,boolean,timestamp with time zone,text,text,uuid,text)',
@@ -53,6 +65,18 @@ BEGIN
             v_role,
             'public.set_studio_live_billing_authorization_atomic(uuid,text,boolean,timestamp with time zone,text,uuid,text,text)',
             'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.authorize_connect_onboarding_bootstrap_account_create(uuid,text,integer,text,text,text,text,text)',
+            'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.bind_connect_onboarding_bootstrap_account(uuid,text,integer,text,text,text)',
+            'EXECUTE'
+        ) OR has_function_privilege(
+            v_role,
+            'public.authorize_connect_onboarding_bootstrap_initial_link(uuid,text,integer,text,text,text,text,text)',
+            'EXECUTE'
         ) THEN
             RAISE EXCEPTION '% can call a service-only live-billing RPC.', v_role;
         END IF;
@@ -69,6 +93,18 @@ BEGIN
     ) OR NOT has_function_privilege(
         'service_role',
         'public.set_studio_live_billing_authorization_atomic(uuid,text,boolean,timestamp with time zone,text,uuid,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.authorize_connect_onboarding_bootstrap_account_create(uuid,text,integer,text,text,text,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.bind_connect_onboarding_bootstrap_account(uuid,text,integer,text,text,text)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.authorize_connect_onboarding_bootstrap_initial_link(uuid,text,integer,text,text,text,text,text)',
         'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'service_role cannot call the required live-billing RPCs.';
@@ -146,6 +182,7 @@ DECLARE
     v_owner UUID := gen_random_uuid();
     v_studio UUID := gen_random_uuid();
     v_blank_studio UUID := gen_random_uuid();
+    v_other_studio UUID := gen_random_uuid();
     v_checkpoint public.stripe_live_billing_reconciliation_checkpoints%ROWTYPE;
     v_report JSONB;
     v_watermark BIGINT;
@@ -155,6 +192,11 @@ DECLARE
     v_guard_event UUID;
     v_preflight RECORD;
     v_audit_count INTEGER;
+    v_bootstrap RECORD;
+    v_bootstrap_token TEXT := repeat('T', 43);
+    v_link_key TEXT;
+    v_processing_event UUID;
+    v_status TEXT;
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -170,7 +212,9 @@ BEGIN
         (v_studio, 'Atomic Live Billing Contract',
          'atomic-live-billing-' || replace(v_studio::TEXT, '-', ''), v_owner),
         (v_blank_studio, 'Accountless Connect Contract',
-         'accountless-connect-' || replace(v_blank_studio::TEXT, '-', ''), v_owner);
+         'accountless-connect-' || replace(v_blank_studio::TEXT, '-', ''), v_owner),
+        (v_other_studio, 'Pre-existing Evidence Contract',
+         'pre-existing-evidence-' || replace(v_other_studio::TEXT, '-', ''), v_owner);
 
     INSERT INTO public.studio_payment_accounts(
         studio_id, stripe_connected_account_id, status, charges_enabled,
@@ -322,6 +366,166 @@ BEGIN
     IF NOT FOUND OR NOT v_result.authorized THEN
         RAISE EXCEPTION 'Semantic accountless Connect create was denied.';
     END IF;
+
+    v_link_key := 'koaryu-connect-onboarding-' || v_blank_studio::TEXT || '-g1-' || repeat('b', 24);
+    SELECT * INTO v_bootstrap
+      FROM public.authorize_connect_onboarding_bootstrap_account_create(
+          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+          repeat('1', 64), repeat('2', 64),
+          'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1',
+          v_link_key
+      );
+    IF NOT FOUND OR NOT v_bootstrap.authorized OR v_bootstrap.bootstrap_id IS NULL THEN
+        RAISE EXCEPTION 'Account creation did not issue an exact bootstrap permit.';
+    END IF;
+
+    SELECT * INTO v_result
+      FROM public.bind_connect_onboarding_bootstrap_account(
+          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+          'acct_BootstrapCreated1', 'individual'
+      );
+    IF v_result.stripe_connected_account_id <> 'acct_BootstrapCreated1'
+       OR private.current_connect_account_generation(v_result.metadata) <> 1 THEN
+        RAISE EXCEPTION 'Created account was not atomically bound to the bootstrap generation.';
+    END IF;
+
+    SELECT * INTO v_result
+      FROM public.authorize_connect_onboarding_bootstrap_initial_link(
+          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+          'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+      );
+    IF NOT FOUND OR NOT v_result.authorized
+       OR v_result.bootstrap_id <> v_bootstrap.bootstrap_id THEN
+        RAISE EXCEPTION 'Initial Account Link did not consume the same bootstrap permit.';
+    END IF;
+
+    -- An uncertain provider call may reauthorize only the same permit, payload,
+    -- account, generation, candidate, and stored idempotency key.
+    SELECT * INTO v_result
+      FROM public.authorize_connect_onboarding_bootstrap_initial_link(
+          v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+          'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+      );
+    IF NOT FOUND OR v_result.bootstrap_id <> v_bootstrap.bootstrap_id THEN
+        RAISE EXCEPTION 'Exact idempotent retry minted or lost the original permit.';
+    END IF;
+
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
+        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+        'acct_BootstrapCreated1', repeat('2', 64), repeat('4', 64), v_link_key
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'Changed initial-link payload replayed a claimed bootstrap.';
+    END IF;
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
+        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+        'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64),
+        'koaryu-connect-onboarding-' || v_blank_studio::TEXT || '-g1-' || repeat('c', 24)
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'Changed idempotency key replayed a claimed bootstrap.';
+    END IF;
+
+    -- No ordinary or later Account Link inherits the bootstrap waiver.
+    PERFORM public.authorize_studio_live_billing_mutation_atomic(
+        v_blank_studio, 'connect_onboarding_link.create', 'connect_onboarding',
+        'acct_BootstrapCreated1', repeat('a', 40)
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'A later Account Link bypassed generation-bound checkpoint evidence.';
+    END IF;
+
+    INSERT INTO public.studio_payment_accounts(
+        studio_id, stripe_connected_account_id, status, charges_enabled,
+        payouts_enabled, details_submitted, requirements_due, metadata
+    ) VALUES (
+        v_other_studio, 'acct_PreexistingGap1', 'onboarding_incomplete', false,
+        false, false, ARRAY[]::TEXT[], jsonb_build_object('connect_account_generation', 1)
+    );
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
+        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+        'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'Bootstrap waiver covered a second mapping without checkpoint evidence.';
+    END IF;
+    DELETE FROM public.studio_payment_accounts WHERE studio_id = v_other_studio;
+
+    INSERT INTO public.stripe_events(
+        stripe_event_id, stripe_account_id, livemode, type, payload,
+        processing_status, created_at
+    ) VALUES (
+        'evt_bootstrap_processing_gate', 'acct_BootstrapCreated1', true,
+        'account.application.deauthorized', '{}'::JSONB, 'pending', now()
+    ) RETURNING id INTO v_processing_event;
+
+    FOREACH v_status IN ARRAY ARRAY['pending', 'processing', 'failed', 'ignored'] LOOP
+        UPDATE public.stripe_events
+           SET processing_status = v_status,
+               processed_at = NULL,
+               error = CASE WHEN v_status = 'failed' THEN 'bootstrap_processing_gate' ELSE NULL END
+         WHERE id = v_processing_event;
+        PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
+            v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+            'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+        );
+        IF FOUND THEN
+            RAISE EXCEPTION 'Relevant % event passed the mutation-time processing gate.', v_status;
+        END IF;
+    END LOOP;
+    UPDATE public.stripe_events
+       SET processing_status = 'processed', processed_at = now(), error = NULL
+     WHERE id = v_processing_event;
+
+    PERFORM public.set_stripe_connect_account_exclusion_atomic(
+        'acct_ExcludedBootstrap1', true, 'Reviewed out-of-scope bootstrap contract', v_actor, NULL
+    );
+    INSERT INTO public.stripe_events(
+        stripe_event_id, stripe_account_id, livemode, type, payload,
+        processing_status, created_at
+    ) VALUES (
+        'evt_bootstrap_excluded_ignored', 'acct_ExcludedBootstrap1', true,
+        'account.updated', '{}'::JSONB, 'ignored', now()
+    );
+    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link(
+        v_blank_studio, repeat('a', 40), 1, v_bootstrap_token,
+        'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+    );
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Reviewed excluded account incorrectly blocked the in-scope bootstrap.';
+    END IF;
+
+    DELETE FROM public.stripe_events WHERE id = v_processing_event;
+    UPDATE public.studio_payment_accounts
+       SET stripe_connected_account_id = NULL,
+           status = 'not_connected',
+           metadata = jsonb_build_object('connect_account_generation', 1)
+     WHERE studio_id = v_blank_studio;
+
+    -- Even an expired, unbound permit cannot be replaced for the same studio
+    -- generation after a provider result became uncertain.
+    UPDATE public.stripe_connect_onboarding_bootstraps
+       SET stripe_connected_account_id = NULL,
+           account_bound_at = NULL,
+           initial_link_payload_sha256 = NULL,
+           initial_link_claimed_at = NULL,
+           initial_link_last_retry_at = NULL,
+           authorized_at = now() - INTERVAL '10 minutes',
+           expires_at = now() - INTERVAL '5 minutes',
+           aborted_at = NULL
+     WHERE id = v_bootstrap.bootstrap_id;
+    PERFORM public.authorize_connect_onboarding_bootstrap_account_create(
+        v_blank_studio, repeat('a', 40), 1, repeat('u', 43),
+        repeat('1', 64), repeat('2', 64),
+        'koaryu-connect-account-' || v_blank_studio::TEXT || '-g1',
+        'koaryu-connect-onboarding-' || v_blank_studio::TEXT || '-g1-' || repeat('d', 24)
+    );
+    IF FOUND THEN
+        RAISE EXCEPTION 'Expired uncertain create minted a second generation permit.';
+    END IF;
+    UPDATE public.stripe_connect_onboarding_bootstraps
+       SET aborted_at = now()
+     WHERE id = v_bootstrap.bootstrap_id;
 
     SELECT * INTO v_result
       FROM public.authorize_studio_live_billing_mutation_atomic(
@@ -525,12 +729,12 @@ BEGIN
 
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight();
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 91
-       OR v_preflight.migration_head <> '20260801090000'
+       OR v_preflight.migration_count <> 92
+       OR v_preflight.migration_head <> '20260801091000'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
-           '20260801090000'
+           '20260801090000', '20260801091000'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0 THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;

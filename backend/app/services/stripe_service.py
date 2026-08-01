@@ -19,6 +19,11 @@ from app.services.stripe_mutation_policy import (
     StripeMutationPermit,
     StripeMutationPolicy,
 )
+from app.services.studio_live_billing_authorizations import (
+    ConnectOnboardingBootstrapContext,
+    connect_initial_link_context_sha256,
+    stripe_payload_sha256,
+)
 
 
 def _exact_keys(value: Any, required: set[str], optional: set[str] | None = None) -> bool:
@@ -130,6 +135,17 @@ def stripe_mutation(operation: str):
     return decorator
 
 
+def stripe_sink_guarded(operation: str):
+    """Inventory marker for mutations authorized by the raw provider sink."""
+
+    def decorator(func):
+        func.__stripe_mutation_operation__ = operation
+        func.__stripe_sink_guarded__ = True
+        return func
+
+    return decorator
+
+
 class StripeService:
     """Thin wrapper around Stripe so the rest of the app stays testable."""
 
@@ -143,19 +159,29 @@ class StripeService:
         *,
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
+        payload_sha256: Optional[str] = None,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> StripeMutationPermit:
         if self.supabase is None:
             return StripeMutationPolicy(self.settings).issue_permit(
                 operation,
                 studio_id=studio_id,
                 account_id=account_id,
+                payload_sha256=payload_sha256,
+                bootstrap_context=bootstrap_context,
             )
         from app.services.studio_live_billing_authorizations import StudioLiveBillingAuthorizationStore
 
         return StripeMutationPolicy(
             self.settings,
             authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
-        ).issue_permit(operation, studio_id=studio_id, account_id=account_id)
+        ).issue_permit(
+            operation,
+            studio_id=studio_id,
+            account_id=account_id,
+            payload_sha256=payload_sha256,
+            bootstrap_context=bootstrap_context,
+        )
 
     def _stripe(self):
         if not self.settings.STRIPE_SECRET_KEY:
@@ -708,7 +734,7 @@ class StripeService:
             expand=["data.items.data"],
         )
 
-    @stripe_mutation("connect_account.create")
+    @stripe_sink_guarded("connect_account.create")
     def create_connect_account(
         self,
         *,
@@ -717,6 +743,7 @@ class StripeService:
         contact_email: Optional[str] = None,
         business_entity_type: str = "company",
         account_generation: int = 1,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
         return self._connect_gateway().create_account(
             studio_id=studio_id,
@@ -724,6 +751,7 @@ class StripeService:
             contact_email=contact_email,
             business_entity_type=business_entity_type,
             account_generation=account_generation,
+            bootstrap_context=bootstrap_context,
         )
 
     @stripe_mutation("connect_branding_file.create")
@@ -761,7 +789,7 @@ class StripeService:
             idempotency_key=idempotency_key,
         )
 
-    @stripe_mutation("connect_onboarding_link.create")
+    @stripe_sink_guarded("connect_onboarding_link.create")
     def create_connect_onboarding_link(
         self,
         *,
@@ -769,12 +797,14 @@ class StripeService:
         studio_id: str,
         refresh_url: str,
         return_url: str,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
         return self._connect_gateway().create_onboarding_link(
             account_id=account_id,
             studio_id=studio_id,
             refresh_url=refresh_url,
             return_url=return_url,
+            bootstrap_context=bootstrap_context,
         )
 
     def create_connect_dashboard_link(self, *, account_id: str, studio_id: str):
@@ -795,10 +825,12 @@ class StripeService:
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> dict[str, Any]:
         return self._stripe_v2_request(
             "POST", path, payload, operation=operation, studio_id=studio_id, account_id=account_id,
             idempotency_key=idempotency_key,
+            bootstrap_context=bootstrap_context,
         )
 
     def _stripe_v2_patch(
@@ -810,10 +842,12 @@ class StripeService:
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> dict[str, Any]:
         return self._stripe_v2_request(
             "PATCH", path, payload, operation=operation, studio_id=studio_id, account_id=account_id,
             idempotency_key=idempotency_key,
+            bootstrap_context=bootstrap_context,
         )
 
     def _stripe_v2_request(
@@ -826,6 +860,7 @@ class StripeService:
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> dict[str, Any]:
         request_matches_operation = (
             operation == "connect_account.create"
@@ -850,10 +885,36 @@ class StripeService:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Stripe Accounts v2 request does not match an authorized operation.",
             )
+        if bootstrap_context and (
+            (operation == "connect_account.create"
+             and idempotency_key != bootstrap_context.account_create_idempotency_key)
+            or (operation == "connect_onboarding_link.create"
+                and idempotency_key != bootstrap_context.initial_link_idempotency_key)
+            or operation not in {"connect_account.create", "connect_onboarding_link.create"}
+        ):
+            raise StripeMutationBlocked(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Stripe bootstrap request does not match its stored idempotency context.",
+            )
+        if bootstrap_context and operation == "connect_onboarding_link.create":
+            onboarding = payload["use_case"]["account_onboarding"]
+            link_context_sha256 = connect_initial_link_context_sha256(
+                studio_id=studio_id or "",
+                account_generation=bootstrap_context.account_generation,
+                refresh_url=onboarding["refresh_url"],
+                return_url=onboarding["return_url"],
+            )
+            if link_context_sha256 != bootstrap_context.initial_link_context_sha256:
+                raise StripeMutationBlocked(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Stripe bootstrap request does not match its stored initial-link context.",
+                )
         self._authorize_stripe_mutation(
             operation,
             studio_id=studio_id,
             account_id=account_id,
+            payload_sha256=stripe_payload_sha256(payload),
+            bootstrap_context=bootstrap_context,
         )
         return stripe_v2_request(
             self.settings,

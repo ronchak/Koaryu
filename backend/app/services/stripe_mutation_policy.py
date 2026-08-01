@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional
 from fastapi import HTTPException, status
 
 from app.services.studio_live_billing_authorizations import (
+    ConnectOnboardingBootstrapContext,
     LIVE_SCOPE_REQUIRED_DETAIL,
     LiveBillingScope,
     StudioLiveBillingAuthorizationStore,
@@ -87,6 +88,8 @@ class StripeMutationPolicy:
         *,
         studio_id: Optional[str] = None,
         account_id: Optional[str] = None,
+        payload_sha256: Optional[str] = None,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> StripeMutationPermit:
         declared_mode = declared_stripe_mode(self.settings)
         key = str(getattr(self.settings, "STRIPE_SECRET_KEY", "") or "").strip()
@@ -127,12 +130,19 @@ class StripeMutationPolicy:
                 detail=LIVE_MUTATIONS_DISABLED_DETAIL,
             )
         store = self.authorization_store or StudioLiveBillingAuthorizationStore(self._supabase())
+        authorization_context = {
+            "operation": operation,
+            "scope": live_scope,
+            "studio_id": studio_id,
+            "account_id": account_id,
+            "expected_livemode": True,
+        }
+        if payload_sha256 is not None:
+            authorization_context["payload_sha256"] = payload_sha256
+        if bootstrap_context is not None:
+            authorization_context["bootstrap_context"] = bootstrap_context
         authorized_studio_id = store.authorize(
-            operation=operation,
-            scope=live_scope,
-            studio_id=studio_id,
-            account_id=account_id,
-            expected_livemode=True,
+            **authorization_context,
         )
         return StripeMutationPermit(
             operation=operation,

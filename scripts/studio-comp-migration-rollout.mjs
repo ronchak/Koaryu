@@ -17,7 +17,7 @@ export const ROLLOUT = Object.freeze({
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
   preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 91,
+  finalMigrationCount: 92,
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -26,6 +26,7 @@ export const ROLLOUT = Object.freeze({
     "20260801070000",
     "20260801080000",
     "20260801090000",
+    "20260801091000",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -266,6 +267,7 @@ with required_tables(schema_name, table_name, rls_enabled, service_privileges) a
     ('public', 'stripe_live_billing_reconciliation_checkpoints', true, 'SELECT'),
     ('public', 'stripe_connect_account_dispositions', true, 'SELECT'),
     ('public', 'stripe_live_billing_reconciliation_account_evidence', true, 'SELECT'),
+    ('public', 'stripe_connect_onboarding_bootstraps', true, ''),
     ('public', 'operational_alert_episodes', true, 'INSERT,SELECT,UPDATE'),
     ('public', 'operational_alert_outbox', true, 'INSERT,SELECT,UPDATE'),
     ('public', 'operational_alert_delivery_attempts', true, 'INSERT,SELECT'),
@@ -320,6 +322,8 @@ required_policies(table_name, policy_name, permissive, command_name, role_names,
     ('stripe_connect_account_dispositions', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('stripe_live_billing_reconciliation_account_evidence', 'stripe_live_billing_account_evidence_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
     ('stripe_live_billing_reconciliation_account_evidence', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+    ('stripe_connect_onboarding_bootstraps', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('operational_alert_episodes', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('operational_alert_outbox', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
     ('operational_alert_delivery_attempts', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
@@ -377,6 +381,11 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.record_stripe_live_billing_reconciliation_checkpoint(text, integer, integer, integer, integer, integer, integer, timestamp with time zone, timestamp with time zone, integer, integer, boolean, boolean, timestamp with time zone, text, text, uuid, text)', 'search_path=public, pg_temp', true, false),
     ('public.record_stripe_live_billing_reconciliation_checkpoint_v2(jsonb, timestamp with time zone, text, text, uuid, text)', 'search_path=""', true, true),
     ('public.authorize_studio_live_billing_mutation_atomic(uuid, text, text, text, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_account_create(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, true),
+    ('public.bind_connect_onboarding_bootstrap_account(uuid, text, integer, text, text, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_initial_link(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, true),
+    ('private.live_billing_event_is_in_scope(text, text)', 'search_path=""', true, false),
+    ('private.enforce_live_billing_checkpoint_processed_events()', 'search_path=""', true, false),
     ('private.current_connect_account_generation(jsonb)', 'search_path=""', false, true),
     ('private.bind_live_billing_authorization_checkpoint()', 'search_path=""', true, false),
     ('public.set_studio_live_billing_authorization_atomic(uuid, text, boolean, timestamp with time zone, text, uuid, text, text)', 'search_path=public, pg_temp', true, true),
@@ -428,6 +437,8 @@ required_triggers(table_name, trigger_name, function_schema, function_name, trig
     ('studio_live_billing_authorizations', 'set_studio_live_billing_authorizations_updated_at', 'public', 'update_updated_at_column', 19),
     ('stripe_connect_account_dispositions', 'set_stripe_connect_account_dispositions_updated_at', 'public', 'update_updated_at_column', 19),
     ('studio_live_billing_authorizations', 'bind_live_billing_authorization_checkpoint', 'private', 'bind_live_billing_authorization_checkpoint', 23),
+    ('stripe_connect_onboarding_bootstraps', 'set_stripe_connect_onboarding_bootstraps_updated_at', 'public', 'update_updated_at_column', 19),
+    ('stripe_live_billing_reconciliation_checkpoints', 'enforce_live_billing_checkpoint_processed_events', 'private', 'enforce_live_billing_checkpoint_processed_events', 7),
     ('operational_alert_delivery_attempts', 'prevent_operational_alert_attempt_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
     ('operational_alert_delivery_outcomes', 'prevent_operational_alert_outcome_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
     ('operational_alert_audit_events', 'prevent_operational_alert_audit_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
@@ -462,6 +473,7 @@ required_indexes(index_name, table_name, unique_index, partial_index) as (
     ('idx_stripe_live_billing_reconciliation_checkpoints_latest', 'stripe_live_billing_reconciliation_checkpoints', false, false),
     ('idx_stripe_events_error_reference', 'stripe_events', true, true),
     ('idx_stripe_events_live_billing_ingest_sequence', 'stripe_events', true, false),
+    ('idx_stripe_connect_onboarding_bootstraps_generation_once', 'stripe_connect_onboarding_bootstraps', true, false),
     ('operational_alert_episodes_one_unresolved', 'operational_alert_episodes', true, true),
     ('operational_alert_episodes_recent', 'operational_alert_episodes', false, false),
     ('operational_alert_outbox_claim', 'operational_alert_outbox', false, true),
@@ -542,6 +554,12 @@ required_columns(table_name, column_name, data_type, nullable, identity_column) 
     ('stripe_live_billing_reconciliation_checkpoints', 'account_evidence_count', 'integer', true, false),
     ('studio_live_billing_authorizations', 'reconciliation_checkpoint_id', 'uuid', true, false),
     ('studio_live_billing_authorizations', 'local_event_ingest_watermark', 'bigint', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'bootstrap_token_sha256', 'text', false, false),
+    ('stripe_connect_onboarding_bootstraps', 'connect_account_generation', 'integer', false, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_payload_sha256', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connected_account_id', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'expires_at', 'timestamp with time zone', false, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_claimed_at', 'timestamp with time zone', true, false),
     ('operational_alert_episodes', 'backup_destination_id', 'text', false, false),
     ('operational_alert_episodes', 'escalation_after_minutes', 'integer', false, false),
     ('operational_alert_episodes', 'acknowledged_at', 'timestamp with time zone', true, false),
@@ -947,7 +965,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 91-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 92-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -974,14 +992,14 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
 
 export function validateCatalogState(catalogState) {
   const expectedCatalogCounts = new Map([
-    ["columns", 27],
+    ["columns", 33],
     ["constraints", 12],
-    ["functions", 25],
-    ["indexes", 9],
-    ["policies", 14],
+    ["functions", 30],
+    ["indexes", 10],
+    ["policies", 16],
     ["sequences", 3],
-    ["tables", 11],
-    ["triggers", 10],
+    ["tables", 12],
+    ["triggers", 12],
   ]);
   const catalogParts = (catalogState ?? "").split(";");
   if (catalogParts.length !== expectedCatalogCounts.size) {
@@ -1186,7 +1204,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 91-migration candidate, including 070000 and 080000.",
+        "Provider inspection requires the exact final 92-migration candidate, including 070000, 080000, and 091000.",
       );
     }
     runCommand(

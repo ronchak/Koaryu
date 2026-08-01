@@ -144,10 +144,10 @@ Operator: `Codex release orchestrator`
 - Scope: repository-only remediation; no staging or production provider read,
   migration, contract execution, Auth fixture, or other provider mutation was
   performed.
-- Final required database identity: 91 migrations, head
-  `20260801090000_harden_release_database_parity.sql`, with exact pending
+- Final required database identity: 92 migrations, head
+  `20260801091000_close_live_connect_onboarding_bootstrap_gap.sql`, with exact pending
   versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
-  01090000 after the fixed 84-migration production baseline.
+  01090000 and 01091000 after the fixed 84-migration production baseline.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
   and database constraint; prove both opposite-direction races with concurrent
@@ -161,8 +161,9 @@ Operator: `Codex release orchestrator`
   not depend on provider SQL pretty-printing. The policy manifest rejects
   missing, extra, permissive, role/command, and canonical predicate drift.
 - Integration gate: migrations `20260801070000` (billing), `20260801080000`
-  (alerts), and `20260801090000` (parity) are ordered 89-91. The packet reports
-  `integration_complete=true` only for the exact 84-to-91 history and seven
+  (alerts), `20260801090000` (parity), and `20260801091000` (Connect bootstrap)
+  are ordered 89-92. The packet reports
+  `integration_complete=true` only for the exact 84-to-92 history and eight
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. The exact 32-file SQL

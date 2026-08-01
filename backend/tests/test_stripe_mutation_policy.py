@@ -12,7 +12,11 @@ from app.services.stripe_mutation_policy import (
     STRIPE_MODE_MISMATCH_DETAIL,
     StripeMutationPolicy,
 )
-from app.services.studio_live_billing_authorizations import LIVE_SCOPE_REQUIRED_DETAIL
+from app.services.studio_live_billing_authorizations import (
+    ConnectOnboardingBootstrapContext,
+    LIVE_SCOPE_REQUIRED_DETAIL,
+    connect_initial_link_context_sha256,
+)
 from app.services.stripe_service import StripeService
 
 
@@ -379,6 +383,88 @@ class StripeMutationPolicyTest(unittest.TestCase):
 
         raw.assert_not_called()
 
+    def test_bootstrap_sink_rejects_changed_idempotency_key_before_provider_call(self):
+        service = StripeService()
+        service.settings = _settings(mode="test")
+        context = ConnectOnboardingBootstrapContext(
+            token="t" * 43,
+            account_generation=1,
+            initial_link_context_sha256="b" * 64,
+            account_create_idempotency_key="koaryu-connect-account-studio_1-g1",
+            initial_link_idempotency_key="koaryu-connect-onboarding-studio_1-g1-" + "c" * 24,
+        )
+        payload = {
+            "account": "acct_1",
+            "use_case": {
+                "type": "account_onboarding",
+                "account_onboarding": {
+                    "configurations": ["merchant"],
+                    "collection_options": {"fields": "eventually_due"},
+                    "refresh_url": "https://app.koaryu.test/billing/connect/refresh",
+                    "return_url": "https://app.koaryu.test/billing?connect=return",
+                },
+            },
+        }
+
+        with patch("app.services.stripe_service.stripe_v2_request") as raw:
+            with self.assertRaises(HTTPException) as raised:
+                service._stripe_v2_post(
+                    "/v2/core/account_links",
+                    payload,
+                    operation="connect_onboarding_link.create",
+                    studio_id="studio_1",
+                    account_id="acct_1",
+                    idempotency_key="koaryu-connect-onboarding-studio_1-g1-" + "d" * 24,
+                    bootstrap_context=context,
+                )
+
+        self.assertIn("idempotency context", raised.exception.detail)
+        raw.assert_not_called()
+
+    def test_bootstrap_sink_rejects_changed_initial_link_context_before_provider_call(self):
+        service = StripeService()
+        service.settings = _settings(mode="test")
+        link_key = "koaryu-connect-onboarding-studio_1-g1-" + "c" * 24
+        context = ConnectOnboardingBootstrapContext(
+            token="t" * 43,
+            account_generation=1,
+            initial_link_context_sha256=connect_initial_link_context_sha256(
+                studio_id="studio_1",
+                account_generation=1,
+                refresh_url="https://app.koaryu.test/billing/connect/refresh",
+                return_url="https://app.koaryu.test/billing?connect=return",
+            ),
+            account_create_idempotency_key="koaryu-connect-account-studio_1-g1",
+            initial_link_idempotency_key=link_key,
+        )
+        payload = {
+            "account": "acct_1",
+            "use_case": {
+                "type": "account_onboarding",
+                "account_onboarding": {
+                    "configurations": ["merchant"],
+                    "collection_options": {"fields": "eventually_due"},
+                    "refresh_url": "https://app.koaryu.test/billing/connect/refresh",
+                    "return_url": "https://changed.koaryu.test/billing?connect=return",
+                },
+            },
+        }
+
+        with patch("app.services.stripe_service.stripe_v2_request") as raw:
+            with self.assertRaises(HTTPException) as raised:
+                service._stripe_v2_post(
+                    "/v2/core/account_links",
+                    payload,
+                    operation="connect_onboarding_link.create",
+                    studio_id="studio_1",
+                    account_id="acct_1",
+                    idempotency_key=link_key,
+                    bootstrap_context=context,
+                )
+
+        self.assertIn("initial-link context", raised.exception.detail)
+        raw.assert_not_called()
+
     def test_live_mutations_fail_before_loading_stripe_when_switch_is_off(self):
         service = StripeService()
         service.settings = _settings(mode="live", live_enabled=False)
@@ -490,6 +576,13 @@ class StripeMutationPolicyTest(unittest.TestCase):
         }
 
         self.assertEqual(marked, expected)
+
+    def test_only_first_connect_create_and_link_defer_to_the_validated_provider_sink(self):
+        guarded = {
+            name for name in dir(StripeService)
+            if getattr(getattr(StripeService, name), "__stripe_sink_guarded__", False)
+        }
+        self.assertEqual(guarded, {"create_connect_account", "create_connect_onboarding_link"})
 
     def test_every_guarded_mutation_accepts_explicit_scope_context(self):
         # This catches a new Stripe mutation that remains policy-marked but can

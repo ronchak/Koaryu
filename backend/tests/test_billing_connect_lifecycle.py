@@ -27,7 +27,117 @@ from tests.billing_lifecycle_helpers import (
 )
 
 
+class _BootstrapLifecycleSupabase(_FakeSupabase):
+    def __init__(self, tables):
+        super().__init__(tables)
+        self.bootstrap_id = "bootstrap_1"
+        self.bootstrap_create = None
+        self.bootstrap_link = None
+
+    def _rpc_authorize_connect_onboarding_bootstrap_account_create(self, params):
+        if self.bootstrap_create is None:
+            self.bootstrap_create = dict(params)
+        elif self.bootstrap_create != params:
+            return []
+        return [{
+            "authorized": True,
+            "studio_id": params["p_studio_id"],
+            "checkpoint_id": "checkpoint_1",
+            "bootstrap_id": self.bootstrap_id,
+        }]
+
+    def _rpc_bind_connect_onboarding_bootstrap_account(self, params):
+        if not self.bootstrap_create or params["p_bootstrap_token"] != self.bootstrap_create["p_bootstrap_token"]:
+            return []
+        row = next(
+            row for row in self.tables["studio_payment_accounts"]
+            if row["studio_id"] == params["p_studio_id"]
+        )
+        row.update({
+            "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+            "status": "onboarding_incomplete",
+            "metadata": {
+                **(row.get("metadata") or {}),
+                "business_entity_type": params["p_business_entity_type"],
+                "connect_account_generation": params["p_connect_account_generation"],
+            },
+        })
+        return [dict(row)]
+
+    def _rpc_authorize_connect_onboarding_bootstrap_initial_link(self, params):
+        if not self.bootstrap_create or params["p_bootstrap_token"] != self.bootstrap_create["p_bootstrap_token"]:
+            return []
+        if self.bootstrap_link is None:
+            self.bootstrap_link = dict(params)
+        elif self.bootstrap_link != params:
+            return []
+        return [{
+            "authorized": True,
+            "studio_id": params["p_studio_id"],
+            "checkpoint_id": "checkpoint_1",
+            "bootstrap_id": self.bootstrap_id,
+        }]
+
+
 class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
+    def test_live_first_onboarding_runs_real_policy_rpc_chain_and_only_mocks_provider_transport(self):
+        studio_id = "11111111-1111-4111-8111-111111111111"
+        settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+            "STRIPE_MODE": "live",
+            "STRIPE_SECRET_KEY": "sk_live_contract",
+            "LIVE_BILLING_ENABLED": True,
+        })()
+        supabase = _BootstrapLifecycleSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": studio_id,
+                "stripe_connected_account_id": None,
+                "status": "not_connected",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements_due": [],
+                "platform_fee_bps": 50,
+                "metadata": {"connect_account_generation": 1},
+            }],
+            "studios": [{"id": studio_id, "name": "Policy Chain Studio", "owner_id": "owner_1"}],
+        })
+        provider_calls = []
+
+        def provider_transport(_settings, method, path, payload, *, idempotency_key=None):
+            provider_calls.append((method, path, payload, idempotency_key))
+            if path == "/v2/core/accounts":
+                return {"id": "acct_BootstrapPolicy1"}
+            return {"url": "https://connect.stripe.test/bootstrap"}
+
+        with patch("app.services.billing_service.get_settings", return_value=settings), patch(
+            "app.services.stripe_service.get_settings", return_value=settings
+        ), patch("app.services.stripe_service.stripe_v2_request", side_effect=provider_transport), patch.dict(
+            "os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False
+        ):
+            service = BillingService(supabase)
+            link = asyncio.run(service.create_connect_onboarding_link(
+                studio_id,
+                "actor_1",
+                business_entity_type="individual",
+            ))
+
+        self.assertEqual(link.url, "https://connect.stripe.test/bootstrap")
+        self.assertEqual([name for name, _params in supabase.rpc_calls], [
+            "authorize_connect_onboarding_bootstrap_account_create",
+            "bind_connect_onboarding_bootstrap_account",
+            "authorize_connect_onboarding_bootstrap_initial_link",
+        ])
+        self.assertEqual(supabase.tables["studio_payment_accounts"][0]["stripe_connected_account_id"], "acct_BootstrapPolicy1")
+        self.assertEqual(len(provider_calls), 2)
+        self.assertEqual(provider_calls[0][3], supabase.bootstrap_create["p_account_create_idempotency_key"])
+        self.assertEqual(provider_calls[1][3], supabase.bootstrap_link["p_initial_link_idempotency_key"])
+        self.assertEqual(
+            supabase.bootstrap_create["p_initial_link_idempotency_key"],
+            supabase.bootstrap_link["p_initial_link_idempotency_key"],
+        )
+
     def test_standard_connect_account_uses_account_holder_dashboard_url(self):
         _FakeStripe.reset()
         service = StripeService()

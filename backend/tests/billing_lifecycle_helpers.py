@@ -150,6 +150,13 @@ class _FakeStripeService:
     subscription_response = None
     payment_intent_response = None
 
+    def __init__(self, *, supabase=None):
+        self.supabase = supabase
+        self.settings = type("Settings", (), {
+            "STRIPE_MODE": "test",
+            "STRIPE_SECRET_KEY": "sk_test_123",
+        })()
+
     @classmethod
     def reset(cls):
         cls.connect_account_calls = []
@@ -180,11 +187,20 @@ class _FakeStripeService:
         self.__class__.connect_account_calls.append(payload)
         return {"id": "acct_created"}
 
-    def create_connect_onboarding_link(self, *, account_id: str, studio_id: str, refresh_url: str, return_url: str):
+    def create_connect_onboarding_link(
+        self,
+        *,
+        account_id: str,
+        studio_id: str,
+        refresh_url: str,
+        return_url: str,
+        bootstrap_context=None,
+    ):
         self.__class__.onboarding_calls.append({
             "account_id": account_id,
             "refresh_url": refresh_url,
             "return_url": return_url,
+            "bootstrap_context": bootstrap_context,
         })
         return {"url": f"https://connect.stripe.test/setup/{account_id}"}
 

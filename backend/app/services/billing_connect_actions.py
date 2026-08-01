@@ -6,7 +6,12 @@ from fastapi import HTTPException, status
 
 from app.schemas.billing import BillingLinkResponse, StudioPaymentAccountResponse
 from app.services.billing_connect_accounts import BillingConnectAccountStore
+from app.services.stripe_mutation_policy import configured_stripe_mode
 from app.services.stripe_service import StripeService
+from app.services.studio_live_billing_authorizations import (
+    StudioLiveBillingAuthorizationStore,
+    new_connect_onboarding_bootstrap_context,
+)
 
 
 class BillingConnectActions:
@@ -46,7 +51,8 @@ class BillingConnectActions:
         )
         account = self.connect_accounts.ensure_row(studio_id)
         stripe_account_id = account.get("stripe_connected_account_id")
-        stripe_service = self.stripe_service_cls()
+        stripe_service = self.stripe_service_cls(supabase=self.billing_service.supabase)
+        bootstrap_context = None
 
         if not stripe_account_id:
             if business_entity_type not in {"company", "individual"}:
@@ -56,6 +62,12 @@ class BillingConnectActions:
                 )
             studio = self.billing_service._get_studio(studio_id)
             account_generation = int((account.get("metadata") or {}).get("connect_account_generation") or 1)
+            bootstrap_context = new_connect_onboarding_bootstrap_context(
+                studio_id=studio_id,
+                account_generation=account_generation,
+                refresh_url=safe_refresh_url,
+                return_url=safe_return_url,
+            )
             stripe_account = stripe_service.create_connect_account(
                 studio_id=studio_id,
                 business_name=studio.get("name") or "Koaryu studio",
@@ -65,21 +77,34 @@ class BillingConnectActions:
                 ),
                 business_entity_type=business_entity_type,
                 account_generation=account_generation,
+                bootstrap_context=bootstrap_context,
             )
             stripe_account_id = stripe_account["id"] if isinstance(stripe_account, dict) else stripe_account.id
-            metadata = dict(account.get("metadata") or {})
-            metadata["business_entity_type"] = business_entity_type
-            account = self.connect_accounts.update(studio_id, {
-                "stripe_connected_account_id": stripe_account_id,
-                "status": "onboarding_incomplete",
-                "metadata": metadata,
-            })
+            if configured_stripe_mode(stripe_service.settings) == "live":
+                account = StudioLiveBillingAuthorizationStore(
+                    self.billing_service.supabase,
+                ).bind_created_connect_account(
+                    studio_id=studio_id,
+                    account_id=stripe_account_id,
+                    business_entity_type=business_entity_type,
+                    bootstrap_context=bootstrap_context,
+                )
+            else:
+                metadata = dict(account.get("metadata") or {})
+                metadata["business_entity_type"] = business_entity_type
+                metadata["connect_account_generation"] = account_generation
+                account = self.connect_accounts.update(studio_id, {
+                    "stripe_connected_account_id": stripe_account_id,
+                    "status": "onboarding_incomplete",
+                    "metadata": metadata,
+                })
 
         link = stripe_service.create_connect_onboarding_link(
             account_id=stripe_account_id,
             studio_id=studio_id,
             refresh_url=safe_refresh_url,
             return_url=safe_return_url,
+            bootstrap_context=bootstrap_context,
         )
         return BillingLinkResponse(url=link["url"] if isinstance(link, dict) else link.url)
 

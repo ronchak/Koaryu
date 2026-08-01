@@ -160,6 +160,45 @@ class StripeReconciliationReportTest(unittest.TestCase):
         self.assertEqual(report["events_since_2026_07_13"]["provider_only_event_count"], 0)
         self.assertEqual(report["events_since_2026_07_13"]["local_only_event_count"], 0)
 
+    def test_relevant_pending_or_processing_event_is_checkpoint_ineligible(self):
+        now = datetime.now(timezone.utc)
+        for processing_status in ("pending", "processing", "ignored"):
+            with self.subTest(processing_status=processing_status):
+                snapshot = _snapshot(now)
+                event_time = now - timedelta(minutes=1)
+                snapshot["provider_events"].append(_event(
+                    "evt_deauthorized", "account.application.deauthorized", event_time, "acct_mapped"
+                ))
+                local = _local_event(
+                    "evt_deauthorized", "account.application.deauthorized", event_time, 3, "acct_mapped"
+                )
+                local["processing_status"] = processing_status
+                local["processed_at"] = None
+                snapshot["local_events"].append(local)
+
+                report = build_report(snapshot, now=now)
+
+                self.assertFalse(report["checkpoint_eligible"])
+                self.assertEqual(report["events_since_2026_07_13"]["not_processed"], 1)
+
+    def test_ignored_event_for_approved_excluded_account_stays_out_of_relevant_universe(self):
+        now = datetime.now(timezone.utc)
+        snapshot = _snapshot(now)
+        event_time = now - timedelta(minutes=1)
+        snapshot["provider_events"].append(
+            _event("evt_excluded", "account.updated", event_time, "acct_excluded")
+        )
+        excluded = _local_event("evt_excluded", "account.updated", event_time, 3, "acct_excluded")
+        excluded["processing_status"] = "ignored"
+        excluded["processed_at"] = None
+        snapshot["local_events"].append(excluded)
+
+        report = build_report(snapshot, now=now)
+
+        self.assertTrue(report["checkpoint_eligible"])
+        self.assertEqual(report["events_since_2026_07_13"]["not_processed"], 0)
+        self.assertEqual(report["events_since_2026_07_13"]["bounded_local_total"], 2)
+
     def test_offline_snapshot_is_permanently_ineligible_even_with_valid_looking_fields(self):
         now = datetime.now(timezone.utc)
         snapshot = _snapshot(now)

@@ -23,14 +23,14 @@ const candidateSha = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
 }).trim();
 const validCatalogState =
-  "columns=27:11111111111111111111111111111111:0;" +
+  "columns=33:11111111111111111111111111111111:0;" +
   "constraints=12:88888888888888888888888888888888:0;" +
-  "functions=25:22222222222222222222222222222222:0;" +
-  "indexes=9:33333333333333333333333333333333:0;" +
-  "policies=14:44444444444444444444444444444444:0;" +
+  "functions=30:22222222222222222222222222222222:0;" +
+  "indexes=10:33333333333333333333333333333333:0;" +
+  "policies=16:44444444444444444444444444444444:0;" +
   "sequences=3:55555555555555555555555555555555:0;" +
-  "tables=11:66666666666666666666666666666666:0;" +
-  "triggers=10:77777777777777777777777777777777:0";
+  "tables=12:66666666666666666666666666666666:0;" +
+  "triggers=12:77777777777777777777777777777777:0";
 const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
@@ -69,7 +69,7 @@ describe("studio-comp migration rollout guard", () => {
   it("derives an exact 84-to-N packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 91);
+    assert.equal(packet.migrationCount, 92);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(packet.pendingMigrations.length, packet.migrationCount - 84);
     assert.deepEqual(
@@ -198,7 +198,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.throws(
       () => classifyStateSnapshot(
         postSnapshot(packet, {
-          catalogState: validCatalogState.replace("indexes=9", "indexes=8"),
+          catalogState: validCatalogState.replace("indexes=10", "indexes=9"),
         }),
         packet,
       ),
@@ -222,12 +222,12 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 91-migration integration", () => {
+  it("refuses to certify post-state before the exact 92-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 91-migration sequence/,
+      /exact final 92-migration sequence/,
     );
   });
 
@@ -307,7 +307,7 @@ describe("studio-comp migration rollout guard", () => {
     const packet = candidatePacket();
     const expandedPacket = {
       ...packet,
-      pendingMigrations: [...packet.pendingMigrations, "20260801090000_later_owner_migration.sql"],
+      pendingMigrations: [...packet.pendingMigrations, "20260801092000_later_owner_migration.sql"],
       sourceManifestSha256: "a".repeat(64),
     };
     const phrase = buildProductionConfirmationPhrase(expandedPacket);

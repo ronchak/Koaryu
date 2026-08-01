@@ -3,7 +3,7 @@
 Status: **Phase A tooling only; provider mutation locked**
 
 This packet reconciles the production 84-migration baseline with the immutable
-91-migration release candidate. It is specialized to this rollout, not a
+92-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -38,8 +38,8 @@ The fixed production pre-state is:
 84:57ae4269ef4d75c249d59ef297661a3a
 ```
 
-The only certifiable post-state is migration count 91, head
-`20260801090000`, with this exact pending version sequence:
+The only certifiable post-state is migration count 92, head
+`20260801091000`, with this exact pending version sequence:
 
 ```text
 20260727100000
@@ -49,11 +49,12 @@ The only certifiable post-state is migration count 91, head
 20260801070000
 20260801080000
 20260801090000
+20260801091000
 ```
 
 The checker derives filenames and source hashes from the final candidate, then
 requires this exact sequence and reports `integration_complete=true` only at
-91 migrations with these seven versions. The 070000 billing and 080000 alert
+92 migrations with these eight versions. The 070000/091000 billing and 080000 alert
 tables, RLS, grants, functions, triggers, indexes, sequences, columns, and named
 constraints are included in the structural semantic manifest. Never certify an
 earlier head; regenerate the packet from the exact immutable release commit so
@@ -116,7 +117,7 @@ node scripts/studio-comp-migration-rollout.mjs \
 Record the exact output. It pins the CLI, fixed pre-history, immutable Git
 ancestry, complete pending set, every candidate migration hash, and the source
 manifest hash. Any missing migration, unexpected version, or migration after
-090000 halts before credentials are used.
+091000 halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
@@ -152,7 +153,7 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-The dry-run must report the exact seven pending versions above, with their final
+The dry-run must report the exact eight pending versions above, with their final
 candidate filenames and hashes. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
@@ -160,7 +161,7 @@ Staging application remains locked until the director approves Phase B. The
 approved command will require the same inspection token, exact project ref, a
 durable approval record, and `--approve-staging-apply`. After application:
 
-1. require count 91, head 090000, the exact seven-version sequence, and the
+1. require count 92, head 091000, the exact eight-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, sequence-ACL, and column identity in the final semantic
@@ -229,6 +230,6 @@ drop the trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 91 head and
+database-first: Render `/health/ready` remains 503 until the exact 92 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

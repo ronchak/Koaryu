@@ -39,7 +39,7 @@ Merging `main` does not authorize an automatic production deployment. `frontend/
 
 Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only Supabase preflight and requires the exact final migration count
-91, head `20260801090000`, pending sequence, and required-object/security proof.
+92, head `20260801091000`, pending sequence, and required-object/security proof.
 Schema 84, a partial 85-90 state, a missing final migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.

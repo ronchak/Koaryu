@@ -279,7 +279,8 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         event_time = _timestamp(row.get("created") if provider else row.get("created_at"))
         expected_types = CONNECT_EVENTS if account_id else PLATFORM_EVENTS
         return bool(
-            row.get("livemode") is expected_livemode
+            not (account_id and account_id in excluded and account_id not in mappings)
+            and row.get("livemode") is expected_livemode
             and event_type in expected_types
             and event_time is not None
             and window_start <= event_time <= window_end
@@ -338,7 +339,15 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         latest_platform_delivery
         and now - FRESH_DELIVERY_WINDOW <= latest_platform_delivery <= now + timedelta(minutes=5)
     )
-    failed = [row for row in raw_local_events if row.get("processing_status") == "failed"]
+    not_processed = [row for row in local_events if row.get("processing_status") != "processed"]
+    failed = [
+        row for row in raw_local_events
+        if row.get("processing_status") == "failed"
+        and not (
+            row.get("stripe_account_id") in excluded
+            and row.get("stripe_account_id") not in mappings
+        )
+    ]
     observed_event_accounts = {str(row["stripe_account_id"]) for row in raw_local_events if row.get("stripe_account_id")}
     provider_event_accounts = {
         account_id for row in raw_provider_events if (account_id := _provider_event_account(row))
@@ -452,6 +461,7 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
         and not unresolved_ids
         and not unresolved_event_accounts
         and not failed
+        and not not_processed
         and not provider_only_keys
         and not local_only_keys
         and platform_delivery_fresh
@@ -516,6 +526,7 @@ def build_report(snapshot: dict[str, Any], *, now: Optional[datetime] = None) ->
             "provider_only_event_count": len(provider_only_keys),
             "local_only_event_count": len(local_only_keys),
             "failed": len(failed),
+            "not_processed": len(not_processed),
             "latest_created_at": _iso(latest_local),
             "latest_provider_created_at": _iso(latest_provider),
             "local_event_ingest_watermark": watermark,
