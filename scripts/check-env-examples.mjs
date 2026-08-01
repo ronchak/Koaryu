@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ENV_KEY_PATTERN = /^[A-Z][A-Z0-9_]*$/;
-const FRONTEND_PLATFORM_KEYS = new Set(["NODE_ENV", "VERCEL_ENV", "VERCEL_TARGET_ENV"]);
+const FRONTEND_PLATFORM_KEYS = new Set([
+  "NODE_ENV",
+  "VERCEL_ENV",
+  "VERCEL_TARGET_ENV",
+  "VERCEL_GIT_COMMIT_SHA",
+]);
 
 const backendSecretKeys = [
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -17,6 +22,16 @@ const backendSecretKeys = [
   "STRIPE_KOARYU_CORE_PRICE_ID",
   "ACCOUNT_DELETION_WORKER_SECRET",
   "OPERATIONAL_ALERT_WORKER_SECRET",
+  "OPERATIONAL_ALERT_PRIMARY_URL",
+  "OPERATIONAL_ALERT_PRIMARY_HOST",
+  "OPERATIONAL_ALERT_PRIMARY_URL_SHA256",
+  "OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET",
+  "OPERATIONAL_ALERT_PRIMARY_ACK_SECRET",
+  "OPERATIONAL_ALERT_BACKUP_URL",
+  "OPERATIONAL_ALERT_BACKUP_HOST",
+  "OPERATIONAL_ALERT_BACKUP_URL_SHA256",
+  "OPERATIONAL_ALERT_BACKUP_BEARER_SECRET",
+  "OPERATIONAL_ALERT_BACKUP_ACK_SECRET",
   "SUPPORT_TRIAGE_SECRET",
 ];
 
@@ -59,6 +74,14 @@ const frontendSecretKeys = [
   "CRON_SECRET",
   "ACCOUNT_DELETION_WORKER_SECRET",
   "OPERATIONAL_ALERT_WORKER_SECRET",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_HOST",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL_SHA256",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_BEARER_SECRET",
+  "OPERATIONAL_ALERT_DELETION_DEADMAN_URL",
+  "OPERATIONAL_ALERT_DELETION_DEADMAN_HOST",
+  "OPERATIONAL_ALERT_DELETION_DEADMAN_URL_SHA256",
+  "OPERATIONAL_ALERT_DELETION_DEADMAN_BEARER_SECRET",
 ];
 
 const placeholderTokenPattern = /(?:^|[^a-z0-9])(?:your|placeholder|example|todo)(?:[^a-z0-9]|$)/;
@@ -379,10 +402,11 @@ export function validateProviderDeploymentControls(renderSource, vercelConfig) {
   if (deletionCron?.schedule !== "0 8 * * *") {
     failures.push("frontend/vercel.json: the account-deletion cron contract must be preserved");
   }
-  if (vercelConfig?.crons?.some(
+  const alertCron = vercelConfig?.crons?.find(
     (cron) => cron?.path === "/api/cron/operational-alerts/evaluate",
-  )) {
-    failures.push("frontend/vercel.json: Phase A operational alert evaluation must remain unscheduled");
+  );
+  if (alertCron?.schedule !== "*/5 * * * *") {
+    failures.push("frontend/vercel.json: operational alert evaluation must use the exact five-minute schedule");
   }
   return failures;
 }

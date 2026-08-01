@@ -66,10 +66,18 @@ BEGIN
            OR has_function_privilege('authenticated', v_function, 'EXECUTE') THEN
             RAISE EXCEPTION 'Client role still has EXECUTE on %.', v_signature;
         END IF;
-        IF NOT has_function_privilege('service_role', v_function, 'EXECUTE') THEN
+        IF v_signature <> 'public.evaluate_operational_alert(text,text,bigint,integer,integer,text,text,text,text)'
+           AND NOT has_function_privilege('service_role', v_function, 'EXECUTE') THEN
             RAISE EXCEPTION 'service_role requires EXECUTE on %.', v_signature;
         END IF;
     END LOOP;
+    IF has_function_privilege(
+        'service_role',
+        'public.evaluate_operational_alert(text,text,bigint,integer,integer,text,text,text,text)',
+        'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'Legacy evaluator overload must not remain service-role executable.';
+    END IF;
 
     SELECT string_agg(format('%s:%s', expected.table_name, expected.grantee), ', ')
       INTO v_missing

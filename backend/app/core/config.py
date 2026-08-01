@@ -1,7 +1,10 @@
 from functools import lru_cache
+import hashlib
+import ipaddress
 import os
 from pathlib import Path
 import re
+import secrets
 from typing import Literal
 from urllib.parse import urlparse
 from urllib.request import getproxies
@@ -170,6 +173,16 @@ class Settings(BaseSettings):
     ACCOUNT_DELETION_WORKER_SECRET: str = ""
     OPERATIONAL_ALERTS_ENABLED: bool = False
     OPERATIONAL_ALERT_WORKER_SECRET: str = ""
+    OPERATIONAL_ALERT_PRIMARY_URL: str = ""
+    OPERATIONAL_ALERT_PRIMARY_HOST: str = ""
+    OPERATIONAL_ALERT_PRIMARY_URL_SHA256: str = ""
+    OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET: str = ""
+    OPERATIONAL_ALERT_PRIMARY_ACK_SECRET: str = ""
+    OPERATIONAL_ALERT_BACKUP_URL: str = ""
+    OPERATIONAL_ALERT_BACKUP_HOST: str = ""
+    OPERATIONAL_ALERT_BACKUP_URL_SHA256: str = ""
+    OPERATIONAL_ALERT_BACKUP_BEARER_SECRET: str = ""
+    OPERATIONAL_ALERT_BACKUP_ACK_SECRET: str = ""
     SUPPORT_TRIAGE_SECRET: str = ""
 
     # API
@@ -396,15 +409,58 @@ class Settings(BaseSettings):
             missing.append("SUPPORT_TRIAGE_SECRET must be a long random secret")
 
         if self.OPERATIONAL_ALERTS_ENABLED:
-            if environment == "production":
-                missing.append(
-                    "OPERATIONAL_ALERTS_ENABLED must remain false in production while Phase A uses recording-only delivery"
-                )
             if (
                 is_placeholder_value(self.OPERATIONAL_ALERT_WORKER_SECRET)
                 or not has_minimum_secret_length(self.OPERATIONAL_ALERT_WORKER_SECRET)
             ):
                 missing.append("OPERATIONAL_ALERT_WORKER_SECRET must be a long random secret when alerts are enabled")
+            alert_destinations = (
+                (
+                    "PRIMARY",
+                    self.OPERATIONAL_ALERT_PRIMARY_URL,
+                    self.OPERATIONAL_ALERT_PRIMARY_URL_SHA256,
+                    self.OPERATIONAL_ALERT_PRIMARY_HOST,
+                    self.OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET,
+                    self.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET,
+                ),
+                (
+                    "BACKUP",
+                    self.OPERATIONAL_ALERT_BACKUP_URL,
+                    self.OPERATIONAL_ALERT_BACKUP_URL_SHA256,
+                    self.OPERATIONAL_ALERT_BACKUP_HOST,
+                    self.OPERATIONAL_ALERT_BACKUP_BEARER_SECRET,
+                    self.OPERATIONAL_ALERT_BACKUP_ACK_SECRET,
+                ),
+            )
+            for label, url, fingerprint, hostname, bearer_secret, ack_secret in alert_destinations:
+                try:
+                    validate_operational_alert_destination(url, fingerprint, hostname)
+                except ValueError:
+                    missing.append(
+                        f"OPERATIONAL_ALERT_{label}_URL, host allowlist, and fingerprint must be an exact public HTTPS destination"
+                    )
+                if is_placeholder_value(bearer_secret) or not has_minimum_secret_length(bearer_secret):
+                    missing.append(
+                        f"OPERATIONAL_ALERT_{label}_BEARER_SECRET must be a long random secret"
+                    )
+                if is_placeholder_value(ack_secret) or not has_minimum_secret_length(ack_secret):
+                    missing.append(
+                        f"OPERATIONAL_ALERT_{label}_ACK_SECRET must be a long random secret"
+                    )
+            configured_alert_secrets = {
+                self.OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET,
+                self.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET,
+                self.OPERATIONAL_ALERT_BACKUP_BEARER_SECRET,
+                self.OPERATIONAL_ALERT_BACKUP_ACK_SECRET,
+            }
+            if len(configured_alert_secrets) != 4:
+                missing.append("operational alert bearer and acknowledgement secrets must all be distinct")
+            if (
+                self.OPERATIONAL_ALERT_PRIMARY_URL == self.OPERATIONAL_ALERT_BACKUP_URL
+                or self.OPERATIONAL_ALERT_PRIMARY_URL_SHA256
+                == self.OPERATIONAL_ALERT_BACKUP_URL_SHA256
+            ):
+                missing.append("operational alert primary and backup destinations must be distinct")
 
         if environment == "staging":
             if self.SUPABASE_URL != KOARYU_STAGING_SUPABASE_URL:
@@ -425,3 +481,51 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_operational_alert_destination(
+    url: str,
+    expected_sha256: str,
+    expected_hostname: str,
+) -> str:
+    """Validate one exact, public HTTPS destination without resolving or logging it."""
+    if not url or url != url.strip() or any(ord(character) < 32 or ord(character) == 127 for character in url):
+        raise ValueError("invalid operational alert destination")
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.port not in {None, 443}
+    ):
+        raise ValueError("invalid operational alert destination")
+    hostname = parsed.hostname.lower()
+    if (
+        expected_hostname != expected_hostname.strip().lower()
+        or not re.fullmatch(
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+",
+            expected_hostname,
+        )
+        or not secrets.compare_digest(hostname, expected_hostname)
+    ):
+        raise ValueError("invalid operational alert destination")
+    if hostname == "localhost" or hostname.endswith(
+        (".localhost", ".local", ".test", ".invalid", ".example")
+    ):
+        raise ValueError("invalid operational alert destination")
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            raise ValueError("invalid operational alert destination")
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256 or ""):
+        raise ValueError("invalid operational alert destination")
+    if not secrets.compare_digest(digest, expected_sha256):
+        raise ValueError("invalid operational alert destination")
+    return url

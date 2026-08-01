@@ -161,7 +161,10 @@ services:
 `;
     const vercelConfig = {
       git: { deploymentEnabled: { main: false, staging: true } },
-      crons: [{ path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" }],
+      crons: [
+        { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
+        { path: "/api/cron/operational-alerts/evaluate", schedule: "*/5 * * * *" },
+      ],
     };
 
     assert.deepEqual(validateProviderDeploymentControls(renderSource, vercelConfig), []);
@@ -187,7 +190,7 @@ services:
     assert.ok(failures.some((failure) => failure.includes("cron contract must be preserved")));
   });
 
-  it("rejects external activation of the Phase A alert evaluator", () => {
+  it("rejects drift from the exact operational alert evaluator schedule", () => {
     const renderSource = `
 services:
   - type: web
@@ -199,12 +202,12 @@ services:
       git: { deploymentEnabled: { main: false, staging: true } },
       crons: [
         { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
-        { path: "/api/cron/operational-alerts/evaluate", schedule: "*/5 * * * *" },
+        { path: "/api/cron/operational-alerts/evaluate", schedule: "0 * * * *" },
       ],
     };
 
     assert.ok(validateProviderDeploymentControls(renderSource, vercelConfig).some(
-      (failure) => failure.includes("must remain unscheduled"),
+      (failure) => failure.includes("exact five-minute schedule"),
     ));
   });
 });

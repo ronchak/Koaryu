@@ -16,28 +16,17 @@ const SAFE_RESOURCE_PATHS = Object.freeze({
   "/dashboard/bootstrap": "dashboard-bootstrap",
   "/dashboard/summary": "dashboard-summary",
 });
+const REQUIRED_RESOURCES = new Set(Object.values(SAFE_RESOURCE_PATHS));
 const SAFE_SERVER_TIMING_NAMES = new Set([
-  "koaryu_studio",
-  "koaryu_students",
-  "koaryu_leads",
-  "koaryu_belts",
-  "koaryu_programs",
-  "koaryu_total",
-  "koaryu_route_total",
-  "koaryu_summary_student_rows",
-  "koaryu_summary_student_counts",
-  "koaryu_summary_lead_counts",
-  "koaryu_summary_schedule_counts",
-  "koaryu_summary_belt_counts",
-  "koaryu_summary_inactivity_counts",
-  "koaryu_summary_new_student_counts",
-  "koaryu_summary_operational_counts",
-  "koaryu_summary_churn_counts",
-  "koaryu_summary_test_readiness",
-  "koaryu_summary_billing_counts",
-  "koaryu_summary_setup_flags",
-  "koaryu_summary_recent_students",
-  "koaryu_summary_total",
+  "koaryu_studio", "koaryu_students", "koaryu_leads", "koaryu_belts",
+  "koaryu_programs", "koaryu_total", "koaryu_route_total",
+  "koaryu_summary_student_rows", "koaryu_summary_student_counts",
+  "koaryu_summary_lead_counts", "koaryu_summary_schedule_counts",
+  "koaryu_summary_belt_counts", "koaryu_summary_inactivity_counts",
+  "koaryu_summary_new_student_counts", "koaryu_summary_operational_counts",
+  "koaryu_summary_churn_counts", "koaryu_summary_test_readiness",
+  "koaryu_summary_billing_counts", "koaryu_summary_setup_flags",
+  "koaryu_summary_recent_students", "koaryu_summary_total",
   "koaryu_summary_route_total",
 ]);
 
@@ -70,8 +59,70 @@ export async function openVerifiedBrowser(options, dependencies) {
   return { verification, browser };
 }
 
-function round(value) {
-  return Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
+function finiteNonnegative(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function roundRequired(value, name) {
+  if (!finiteNonnegative(value)) throw new Error(`${name} must be a finite nonnegative metric.`);
+  return Math.round(value * 10) / 10;
+}
+
+export function validateCapturedEvidence(evidence) {
+  if (
+    evidence.blocked_requests.write_methods !== 0
+    || evidence.blocked_requests.unknown_origins !== 0
+  ) {
+    throw new Error("dashboard evidence contains blocked writes or unknown origins.");
+  }
+  const responseResources = new Set();
+  for (const entry of evidence.server_timing) {
+    if (!REQUIRED_RESOURCES.has(entry.resource) || entry.status < 200 || entry.status >= 300) {
+      throw new Error("dashboard bootstrap and summary must return successful responses.");
+    }
+    responseResources.add(entry.resource);
+  }
+  const timingResources = new Set();
+  for (const entry of evidence.resources) {
+    if (!REQUIRED_RESOURCES.has(entry.resource)) {
+      throw new Error("performance evidence contains an unexpected resource label.");
+    }
+    for (const [name, value] of Object.entries(entry)) {
+      if (name !== "resource" && !finiteNonnegative(value)) {
+        throw new Error(`resource metric ${name} must be finite and nonnegative.`);
+      }
+    }
+    timingResources.add(entry.resource);
+  }
+  for (const resource of REQUIRED_RESOURCES) {
+    if (!responseResources.has(resource) || !timingResources.has(resource)) {
+      throw new Error(`required successful resource evidence is missing for ${resource}.`);
+    }
+  }
+  const metrics = [
+    evidence.dashboard_ready_ms,
+    evidence.navigation.dom_content_loaded_ms,
+    evidence.navigation.load_event_ms,
+    evidence.web_vitals.first_contentful_paint_ms,
+    evidence.web_vitals.largest_contentful_paint_ms,
+    evidence.web_vitals.cumulative_layout_shift,
+  ];
+  if (!metrics.every(finiteNonnegative)) {
+    throw new Error("all required dashboard metrics must be finite and nonnegative.");
+  }
+  return evidence;
+}
+
+export async function verifyPostCaptureRelease(options, initialVerification, verifyDeployment) {
+  const verification = await verifyDeployment(options);
+  if (
+    !verification?.verified
+    || verification.expected_sha !== initialVerification.expected_sha
+    || verification.environment !== initialVerification.environment
+  ) {
+    throw new Error("deployed release identity changed during performance capture.");
+  }
+  return verification;
 }
 
 function parseArgs(argv) {
@@ -88,12 +139,13 @@ function parseArgs(argv) {
 }
 
 export async function captureDashboardPerformance(options, dependencies = {}) {
+  const verifyDeployment = dependencies.verifyDeployment ?? verifyDeployedRelease;
   const launchBrowser = dependencies.launchBrowser ?? (async () => {
     const { chromium } = await import("playwright");
     return chromium.launch({ headless: true });
   });
   const { verification, browser } = await openVerifiedBrowser(options, {
-    verifyDeployment: dependencies.verifyDeployment ?? verifyDeployedRelease,
+    verifyDeployment,
     launchBrowser,
   });
   const allowedOrigins = new Set([
@@ -103,6 +155,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
   ]);
   const blocked = { write_methods: 0, unknown_origins: 0 };
   const responseTimings = [];
+  let evidence;
 
   try {
     const context = await browser.newContext({ storageState: options.storageState });
@@ -147,9 +200,12 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-    await page.locator("main").waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator('[data-koaryu-dashboard-ready="true"]').waitFor({
+      state: "attached",
+      timeout: 20_000,
+    });
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-    const dashboardVisibleMs = Date.now() - startedAt;
+    const dashboardReadyMs = Date.now() - startedAt;
     if (new URL(page.url()).pathname !== "/dashboard") {
       throw new Error("authenticated storage state did not reach /dashboard.");
     }
@@ -184,37 +240,49 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       };
     });
 
-    if (blocked.write_methods > 0) {
-      throw new Error("dashboard attempted a state-changing request; evidence capture was aborted.");
-    }
-    return {
-      schema_version: 1,
+    evidence = validateCapturedEvidence({
+      schema_version: 2,
       captured_at: new Date().toISOString(),
       environment: verification.environment,
       exact_sha_verified: verification.expected_sha,
       privacy: "allowlisted-aggregate-timings-only",
-      dashboard_visible_ms: dashboardVisibleMs,
+      dashboard_ready_ms: roundRequired(dashboardReadyMs, "dashboard_ready_ms"),
       blocked_requests: blocked,
-      navigation: browserEvidence.navigation && {
-        dom_content_loaded_ms: round(browserEvidence.navigation.dom_content_loaded_ms),
-        load_event_ms: round(browserEvidence.navigation.load_event_ms),
+      navigation: {
+        dom_content_loaded_ms: roundRequired(
+          browserEvidence.navigation?.dom_content_loaded_ms,
+          "dom_content_loaded_ms",
+        ),
+        load_event_ms: roundRequired(browserEvidence.navigation?.load_event_ms, "load_event_ms"),
       },
       web_vitals: {
-        first_contentful_paint_ms: round(browserEvidence.first_contentful_paint_ms),
-        largest_contentful_paint_ms: round(browserEvidence.largest_contentful_paint_ms),
-        cumulative_layout_shift: round(browserEvidence.cumulative_layout_shift),
+        first_contentful_paint_ms: roundRequired(
+          browserEvidence.first_contentful_paint_ms,
+          "first_contentful_paint_ms",
+        ),
+        largest_contentful_paint_ms: roundRequired(
+          browserEvidence.largest_contentful_paint_ms,
+          "largest_contentful_paint_ms",
+        ),
+        cumulative_layout_shift: roundRequired(
+          browserEvidence.cumulative_layout_shift,
+          "cumulative_layout_shift",
+        ),
       },
       resources: browserEvidence.resources.map((entry) => ({
         resource: entry.resource,
-        duration_ms: round(entry.duration_ms),
-        response_start_ms: round(entry.response_start_ms),
-        transfer_bytes: Number.isSafeInteger(entry.transfer_bytes) ? entry.transfer_bytes : null,
+        duration_ms: roundRequired(entry.duration_ms, `${entry.resource}.duration_ms`),
+        response_start_ms: roundRequired(entry.response_start_ms, `${entry.resource}.response_start_ms`),
+        transfer_bytes: roundRequired(entry.transfer_bytes, `${entry.resource}.transfer_bytes`),
       })),
       server_timing: responseTimings,
-    };
+    });
   } finally {
     await browser.close();
   }
+
+  await verifyPostCaptureRelease(options, verification, verifyDeployment);
+  return evidence;
 }
 
 async function main() {

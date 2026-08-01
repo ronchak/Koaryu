@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 from unittest.mock import patch
 
@@ -44,6 +45,25 @@ class CandidateSettings(Settings):
     """Include the candidate-only alert credential without copying its feature."""
 
     OPERATIONAL_ALERT_WORKER_SECRET: str = ""
+
+
+def _alert_activation_settings():
+    primary = "https://alerts.example.com/primary"
+    backup = "https://alerts.example.com/backup"
+    return {
+        "OPERATIONAL_ALERTS_ENABLED": True,
+        "OPERATIONAL_ALERT_WORKER_SECRET": "w" * 40,
+        "OPERATIONAL_ALERT_PRIMARY_URL": primary,
+        "OPERATIONAL_ALERT_PRIMARY_HOST": "alerts.example.com",
+        "OPERATIONAL_ALERT_PRIMARY_URL_SHA256": hashlib.sha256(primary.encode()).hexdigest(),
+        "OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET": "p" * 40,
+        "OPERATIONAL_ALERT_PRIMARY_ACK_SECRET": "a" * 40,
+        "OPERATIONAL_ALERT_BACKUP_URL": backup,
+        "OPERATIONAL_ALERT_BACKUP_HOST": "alerts.example.com",
+        "OPERATIONAL_ALERT_BACKUP_URL_SHA256": hashlib.sha256(backup.encode()).hexdigest(),
+        "OPERATIONAL_ALERT_BACKUP_BEARER_SECRET": "b" * 40,
+        "OPERATIONAL_ALERT_BACKUP_ACK_SECRET": "c" * 40,
+    }
 
 
 class HostedConfigValidationTest(unittest.TestCase):
@@ -270,24 +290,23 @@ class HostedConfigValidationTest(unittest.TestCase):
 
         settings.validate_runtime_configuration()
 
-    def test_staging_accepts_recording_alerts_with_dedicated_secret(self):
+    def test_staging_accepts_exact_operational_alert_activation(self):
         settings = Settings(
             ENVIRONMENT="staging",
             **{
                 **VALID_STAGING_SETTINGS,
-                "OPERATIONAL_ALERTS_ENABLED": True,
-                "OPERATIONAL_ALERT_WORKER_SECRET": "alert-worker-secret-1234567890abcdef",
+                **_alert_activation_settings(),
             },
         )
 
         settings.validate_runtime_configuration()
 
-    def test_staging_rejects_recording_alerts_without_dedicated_secret(self):
+    def test_staging_rejects_alerts_without_dedicated_secret(self):
         settings = Settings(
             ENVIRONMENT="staging",
             **{
                 **VALID_STAGING_SETTINGS,
-                "OPERATIONAL_ALERTS_ENABLED": True,
+                **_alert_activation_settings(),
                 "OPERATIONAL_ALERT_WORKER_SECRET": "short",
             },
         )
@@ -295,12 +314,12 @@ class HostedConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "OPERATIONAL_ALERT_WORKER_SECRET"):
             settings.validate_runtime_configuration()
 
-    def test_staging_rejects_documented_recording_alert_secret_placeholder(self):
+    def test_staging_rejects_documented_alert_secret_placeholder(self):
         settings = Settings(
             ENVIRONMENT="staging",
             **{
                 **VALID_STAGING_SETTINGS,
-                "OPERATIONAL_ALERTS_ENABLED": True,
+                **_alert_activation_settings(),
                 "OPERATIONAL_ALERT_WORKER_SECRET": (
                     "long-random-secret-for-operational-alert-evaluation"
                 ),
@@ -310,17 +329,41 @@ class HostedConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "OPERATIONAL_ALERT_WORKER_SECRET"):
             settings.validate_runtime_configuration()
 
-    def test_production_rejects_recording_alert_activation(self):
+    def test_production_accepts_complete_fail_closed_alert_activation(self):
         settings = Settings(
             ENVIRONMENT="production",
             **{
                 **VALID_PRODUCTION_SETTINGS,
-                "OPERATIONAL_ALERTS_ENABLED": True,
-                "OPERATIONAL_ALERT_WORKER_SECRET": "alert-worker-secret-1234567890abcdef",
+                **_alert_activation_settings(),
             },
         )
 
-        with self.assertRaisesRegex(RuntimeError, "must remain false in production"):
+        settings.validate_runtime_configuration()
+
+    def test_production_rejects_alert_activation_with_fingerprint_drift(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                **_alert_activation_settings(),
+                "OPERATIONAL_ALERT_PRIMARY_URL_SHA256": "0" * 64,
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "PRIMARY_URL, host allowlist, and fingerprint"):
+            settings.validate_runtime_configuration()
+
+    def test_production_rejects_alert_destination_outside_exact_host_allowlist(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                **_alert_activation_settings(),
+                "OPERATIONAL_ALERT_PRIMARY_HOST": "other.example.com",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "PRIMARY_URL, host allowlist"):
             settings.validate_runtime_configuration()
 
     def test_staging_rejects_production_destinations(self):

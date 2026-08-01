@@ -1,17 +1,17 @@
-# Operational Alerts Phase A
+# Operational Alerts
 
-Status: **inactive recording foundation; no operational assurance**
+Status: **operationally activatable but disabled; no operational assurance until the human/provider gates below are complete**
 
-Phase A establishes durable, counts-only alert episodes and delivery evidence. It does not send an email, Slack message, SMS, page, or webhook. It has no approved scheduler, primary address, backup human, external dead-man monitor, acknowledgment loop, or response-time assurance. `OPERATIONAL_ALERTS_ENABLED` must remain `false` in production until those activation dependencies are approved and implemented.
+The repository contains durable, counts-only episodes, a receipt-bearing HTTPS primary/backup transport, acknowledgement/escalation/resolution lifecycle, a five-minute evaluator schedule, and exact-allowlisted evaluator/deletion-worker dead-man check-ins. Production remains `OPERATIONAL_ALERTS_ENABLED=false`; no real destination, owner, token, or dead-man value is committed. The schedule returns `204` and performs no backend or provider call while disabled.
 
 ## Four-rule catalog
 
-| Rule | Counts-only condition | Severity | Logical destination |
+| Rule | Counts-only condition | Severity | Primary / backup | Escalate if unacknowledged |
 | --- | --- | --- | --- |
-| `stripe-live-webhook-failure` | Live failed events older than 10 minutes, or processing events whose claim is older than 10 minutes | critical | `primary-owner` |
-| `account-deletion-worker-overdue` | Scheduled deletion requests overdue by 24 hours | high | `primary-owner` |
-| `support-urgent-untriaged` | Open urgent tickets untriaged for 30 minutes | high | `primary-owner` |
-| `billing-reconciliation-stale` | Invoice retry operations in `reconciliation_required` for one hour | high | `primary-owner` |
+| `stripe-live-webhook-failure` | Live failed events older than 10 minutes, or processing events whose claim is older than 10 minutes | critical | `primary-owner` / `backup-owner` | 15 minutes |
+| `account-deletion-worker-overdue` | Scheduled deletion requests overdue by 24 hours | high | `primary-owner` / `backup-owner` | 120 minutes |
+| `support-urgent-untriaged` | Open urgent tickets untriaged for 30 minutes | high | `primary-owner` / `backup-owner` | 60 minutes |
+| `billing-reconciliation-stale` | Invoice retry operations in `reconciliation_required` for one hour | high | `primary-owner` / `backup-owner` | 120 minutes |
 
 Every rule uses `counts-only-v1`. Source inspection happens inside `operational_alert_metric_counts()` and returns only rule ID, aggregate count, and database observation time. The evaluator does not use PostgREST `HEAD`, range headers, client count metadata, or source-row selects anywhere in the alert path.
 
@@ -19,15 +19,23 @@ The envelope and durable audit may contain only the rule ID, environment, severi
 
 ## Durable delivery contract
 
-One unresolved episode is keyed by `(environment, rule_id)`. Opening an episode creates one primary logical outbox item. Repeated positive evaluations update and deduplicate that episode. A clear observation closes it and cancels an unsent pending item. Phase A deliberately has no acknowledgment, escalation, reminder, backup delivery, or resolution-notification state.
+One unresolved episode is keyed by `(environment, rule_id)`. Opening creates a primary `triggered` outbox item. An overdue unacknowledged episode creates one backup `escalated` item. A clear observation closes the episode, cancels pending trigger/escalation sends, and creates `resolved` items only for roles whose prior delivery has a durable successful receipt. Outbox dedupe is `(episode_id, event_kind, destination_role)`.
 
 Before any adapter invocation, `claim_operational_alert_delivery` leases the outbox row and inserts an immutable attempt with a caller-generated UUID idempotency key. The uniqueness contract is `(environment, rule_id, episode_id, attempt_key)`. A retry of the same claim returns the already persisted attempt. The adapter receives that key and must treat it idempotently.
 
 Only `complete_operational_alert_delivery` may mark an outbox item `sent`. In one database transaction it first inserts an immutable successful outcome containing a nonblank receipt, then marks the outbox sent. A constraint trigger rejects sent state without its matching durable receipt. Failures append a bounded failure outcome/audit event and requeue the item. Attempts, outcomes, and audit events reject updates and deletes.
 
-The only concrete adapter is `RecordingAlertDestination`. It performs no network I/O, deduplicates by attempt key, and returns a synthetic receipt. The guarded internal evaluator and Vercel proxy both reject production and are inactive by default. No Vercel cron entry is present, so merging this code cannot schedule evaluation.
+Enabled internal evaluation constructs only `HttpsAlertDestination`; the recording adapter remains test-only. Each role must have an exact public HTTPS URL, a separately configured exact provider-host allowlist entry, its SHA-256 URL fingerprint, and a distinct bearer secret. The client ignores ambient proxy configuration, refuses redirects, uses bounded timeouts/body size, retries transient ambiguity once with the same idempotency key, and accepts only a 2xx `application/json` body containing exactly one bounded `receipt_id`. URLs, headers, bodies, tokens, and exception strings are not logged or persisted.
 
-Evaluator and deletion-worker heartbeats are durable primitives, not dead-man coverage. Detecting a missing evaluator heartbeat requires an independent scheduler and monitor; the evaluator cannot reliably page on its own failure.
+Acknowledgement uses `POST /api/v1/internal/operational-alerts/{episode_id}/acknowledge`. Separate primary/backup acknowledgement secrets derive the role and logical actor; callers cannot submit actor identity. For example, an approved primary operator may use a private shell without echoing the secret:
+
+```bash
+curl --fail-with-body --request POST \
+  --header "X-Internal-Secret: $OPERATIONAL_ALERT_PRIMARY_ACK_SECRET" \
+  "https://koaryu.onrender.com/api/v1/internal/operational-alerts/$EPISODE_ID/acknowledge"
+```
+
+Evaluator and deletion-worker heartbeats increment a durable sequence. Before either worker call begins, its dead-man URL, exact provider-host allowlist entry, fingerprint, bearer secret, environment, and full deployed SHA are validated. A successful worker run sends its sequence to that endpoint; the sequence forms the stable check-in idempotency key. Check-ins also refuse redirects and require the same strict receipt shape. This becomes dead-man coverage only after an independent provider, grace period, recipients, and billing are configured and rehearsed.
 
 ## Response runbooks
 
@@ -63,12 +71,12 @@ Evaluator and deletion-worker heartbeats are durable primitives, not dead-man co
 
 The director/client must decide and record all of the following before this can provide operational assurance:
 
-1. The real private primary destination and transport, with a delivery-receipt contract and cost approval.
-2. A named backup human, their authority, private backup destination, and cost approval.
-3. Acknowledgment, escalation, and resolution semantics and their durable implementation (not present in Phase A).
-4. The scheduler cadence and owner, plus a separate external dead-man monitor for evaluator and deletion-worker heartbeats.
-5. The privacy retention period for episodes, attempts, outcomes, audit events, heartbeats, and any destination receipts.
-6. A private baseline/disposition for the seven existing failed live Stripe events.
-7. A staging rehearsal proving primary and backup receipt, acknowledgment, escalation, resolution, dead-man behavior, and owner handoff before production activation.
+1. Name the primary and backup humans, document their authority/coverage windows, and approve the four escalation intervals above.
+2. Select and fund a receipt-bearing HTTPS receiver that honors `Idempotency-Key`; privately install two exact URLs, their exact provider-host allowlist values, computed SHA-256 fingerprints, distinct bearer secrets, and distinct acknowledgement secrets on Render.
+3. Confirm the Vercel plan supports the committed five-minute cron, install matching worker/cron secrets, and keep the switch false until rehearsal.
+4. Select and fund an independent dead-man provider; decide grace periods and primary/backup recipients; privately install the two exact URLs/provider-host allowlist values/fingerprints/bearer secrets on Vercel.
+5. Approve retention for episodes, attempts, outcomes, audit events, heartbeats, and destination receipts.
+6. Privately disposition the seven existing failed live Stripe events so the production baseline is understood.
+7. Deploy one exact SHA to staging and rehearse trigger, retry/idempotency, receipt, primary acknowledgement, backup escalation, both resolution deliveries, missed evaluator/deletion check-ins, and handoff. Reverify the SHA, then obtain explicit production-enable approval.
 
 Do not install a log drain, Speed Insights, or another retained/paid telemetry destination until destination, sampling, retention, privacy, and cost are approved.

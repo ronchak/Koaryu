@@ -63,7 +63,7 @@ npm run capture:dashboard-performance -- \
   --storage-state /absolute/private/path/storage-state.json
 ```
 
-The harness runs exact-SHA verification before launching Chromium, permits only GET/HEAD/OPTIONS to pinned frontend/backend/Supabase origins, aborts state-changing requests, and emits only aggregate timing labels. It does not emit URLs, query strings, response bodies, tenant/user identifiers, credentials, or storage state. Keep the storage-state file private and delete it through the approved local secret-handling workflow after capture.
+The harness verifies the exact SHA before Chromium and again after the browser closes, so an alias move during capture invalidates the result. It waits for the dashboard's explicit ready marker (successful bootstrap plus summary state), requires successful 2xx bootstrap and summary responses and resource timings, rejects every non-finite required metric, and fails if any write or unknown-origin request was blocked. It emits only aggregate timing labels; it does not emit URLs, query strings, response bodies, tenant/user identifiers, credentials, or storage state. Keep the storage-state file private and delete it through the approved local secret-handling workflow after capture.
 
 Then complete the functional smoke:
 

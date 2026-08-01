@@ -1,3 +1,8 @@
+import {
+  sendDeadManCheckIn,
+  validateDeadManCheckInConfiguration,
+} from "../../../../../lib/dead-man-check-in.ts";
+
 const ALLOWED_RULE_IDS = new Set([
   "stripe-live-webhook-failure",
   "account-deletion-worker-overdue",
@@ -16,6 +21,7 @@ function response(body: object, status: number) {
 }
 
 const STAGING_BACKEND_API = "https://koaryu-staging.onrender.com/api/v1";
+const PRODUCTION_BACKEND_API = "https://koaryu.onrender.com/api/v1";
 const LOCAL_BACKEND_APIS = new Set([
   "http://127.0.0.1:8001/api/v1",
   "http://localhost:8001/api/v1",
@@ -41,6 +47,9 @@ function configuredBackendBase(environment: string) {
     if (environment === "staging") {
       return normalized === STAGING_BACKEND_API ? normalized : null;
     }
+    if (environment === "production") {
+      return normalized === PRODUCTION_BACKEND_API ? normalized : null;
+    }
     if (["development", "test"].includes(environment)) {
       return LOCAL_BACKEND_APIS.has(normalized) ? normalized : null;
     }
@@ -57,7 +66,7 @@ function safeUpstreamSummary(value: unknown, expectedEnvironment: string) {
   const body = value as Record<string, unknown>;
   if (
     body.environment !== expectedEnvironment
-    || body.mode !== "recording-only"
+    || body.mode !== "https"
     || typeof body.metrics !== "object"
     || body.metrics === null
     || Array.isArray(body.metrics)
@@ -80,23 +89,28 @@ function safeUpstreamSummary(value: unknown, expectedEnvironment: string) {
     && Number(body[name]) >= 0
     ? Number(body[name])
     : null;
-  const summary = {
-    environment: String(body.environment),
-    mode: "recording-only",
-    metrics,
-    deliveries_claimed: integer("deliveries_claimed"),
-    deliveries_recorded: integer("deliveries_recorded"),
-    deliveries_failed: integer("deliveries_failed"),
-    heartbeat_recorded: body.heartbeat_recorded === true,
-  };
+  const deliveriesClaimed = integer("deliveries_claimed");
+  const deliveriesDelivered = integer("deliveries_delivered");
+  const deliveriesFailed = integer("deliveries_failed");
+  const heartbeatSequence = integer("heartbeat_sequence");
   if (
-    summary.deliveries_claimed === null
-    || summary.deliveries_recorded === null
-    || summary.deliveries_failed === null
+    deliveriesClaimed === null
+    || deliveriesDelivered === null
+    || deliveriesFailed === null
+    || heartbeatSequence === null
   ) {
     return null;
   }
-  return summary;
+  return {
+    environment: String(body.environment),
+    mode: "https",
+    metrics,
+    deliveries_claimed: deliveriesClaimed,
+    deliveries_delivered: deliveriesDelivered,
+    deliveries_failed: deliveriesFailed,
+    heartbeat_recorded: body.heartbeat_recorded === true,
+    heartbeat_sequence: heartbeatSequence,
+  };
 }
 
 export async function GET(request: Request) {
@@ -106,7 +120,10 @@ export async function GET(request: Request) {
   }
 
   if (process.env.OPERATIONAL_ALERTS_ENABLED !== "true") {
-    return response({ detail: "Operational alerts are not enabled." }, 503);
+    return new Response(null, {
+      status: 204,
+      headers: { "Cache-Control": "no-store, private" },
+    });
   }
 
   const deploymentEnvironment = [
@@ -114,8 +131,18 @@ export async function GET(request: Request) {
     process.env.VERCEL_ENV,
     process.env.NODE_ENV,
   ].map((value) => value?.trim().toLowerCase()).find(Boolean) ?? "";
-  if (!["development", "test", "staging"].includes(deploymentEnvironment)) {
-    return response({ detail: "Recording-only alerts require a non-production environment." }, 503);
+  if (!["development", "test", "staging", "production"].includes(deploymentEnvironment)) {
+    return response({ detail: "Operational alerts require a known environment." }, 503);
+  }
+  const commitSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim().toLowerCase() ?? "";
+  try {
+    validateDeadManCheckInConfiguration({
+      workerId: "evaluator",
+      environment: deploymentEnvironment as "development" | "test" | "staging" | "production",
+      commitSha,
+    });
+  } catch {
+    return response({ detail: "Evaluator dead-man configuration is incomplete." }, 500);
   }
 
   const workerSecret = process.env.OPERATIONAL_ALERT_WORKER_SECRET ?? "";
@@ -148,6 +175,12 @@ export async function GET(request: Request) {
         upstream.ok ? 502 : upstream.status,
       );
     }
+    await sendDeadManCheckIn({
+      workerId: "evaluator",
+      environment: deploymentEnvironment as "development" | "test" | "staging" | "production",
+      commitSha,
+      sequence: summary.heartbeat_sequence,
+    });
     return response(summary, 200);
   } catch {
     return response({ detail: "Could not reach operational alert evaluator." }, 502);

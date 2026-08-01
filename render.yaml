@@ -52,5 +52,25 @@ services:
         value: "false"
       - key: OPERATIONAL_ALERT_WORKER_SECRET
         sync: false
+      - key: OPERATIONAL_ALERT_PRIMARY_URL
+        sync: false
+      - key: OPERATIONAL_ALERT_PRIMARY_HOST
+        sync: false
+      - key: OPERATIONAL_ALERT_PRIMARY_URL_SHA256
+        sync: false
+      - key: OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET
+        sync: false
+      - key: OPERATIONAL_ALERT_PRIMARY_ACK_SECRET
+        sync: false
+      - key: OPERATIONAL_ALERT_BACKUP_URL
+        sync: false
+      - key: OPERATIONAL_ALERT_BACKUP_HOST
+        sync: false
+      - key: OPERATIONAL_ALERT_BACKUP_URL_SHA256
+        sync: false
+      - key: OPERATIONAL_ALERT_BACKUP_BEARER_SECRET
+        sync: false
+      - key: OPERATIONAL_ALERT_BACKUP_ACK_SECRET
+        sync: false
       - key: SUPPORT_TRIAGE_SECRET
         sync: false

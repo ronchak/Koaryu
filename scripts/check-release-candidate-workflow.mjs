@@ -24,6 +24,7 @@ const requiredSnippets = [
   "github/codeql-action/analyze@v4",
   "npm run check:env-examples",
   "npm run audit:support-privacy",
+  "node --test scripts/verify-deployed-release.test.mjs",
 ];
 
 export function validateReleaseCandidateWorkflow(source) {

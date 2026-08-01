@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { GET } from "../src/app/api/cron/operational-alerts/evaluate/route.ts";
@@ -9,6 +10,11 @@ const ENV_KEYS = [
   "CRON_SECRET",
   "OPERATIONAL_ALERTS_ENABLED",
   "OPERATIONAL_ALERT_WORKER_SECRET",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_HOST",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL_SHA256",
+  "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_BEARER_SECRET",
+  "VERCEL_GIT_COMMIT_SHA",
   "VERCEL_ENV",
   "VERCEL_TARGET_ENV",
 ];
@@ -23,7 +29,7 @@ function request(secret = "cron-secret") {
 function validUpstreamBody() {
   return {
     environment: "staging",
-    mode: "recording-only",
+    mode: "https",
     metrics: {
       "stripe-live-webhook-failure": 0,
       "account-deletion-worker-overdue": 0,
@@ -32,9 +38,10 @@ function validUpstreamBody() {
     },
     lifecycle_events: {},
     deliveries_claimed: 0,
-    deliveries_recorded: 0,
+    deliveries_delivered: 0,
     deliveries_failed: 0,
     heartbeat_recorded: true,
+    heartbeat_sequence: 7,
   };
 }
 
@@ -44,6 +51,13 @@ describe("operational alert cron proxy", () => {
     process.env.CRON_SECRET = "cron-secret";
     process.env.OPERATIONAL_ALERTS_ENABLED = "true";
     process.env.OPERATIONAL_ALERT_WORKER_SECRET = "W".repeat(40);
+    process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL = "https://deadman.example.com/evaluator";
+    process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_HOST = "deadman.example.com";
+    process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL_SHA256 = createHash("sha256")
+      .update(process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL)
+      .digest("hex");
+    process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_BEARER_SECRET = "D".repeat(40);
+    process.env.VERCEL_GIT_COMMIT_SHA = "a".repeat(40);
     process.env.VERCEL_TARGET_ENV = "staging";
   });
 
@@ -72,16 +86,15 @@ describe("operational alert cron proxy", () => {
     process.env.OPERATIONAL_ALERTS_ENABLED = "false";
     const result = await GET(request());
 
-    assert.equal(result.status, 503);
-    assert.deepEqual(await result.json(), { detail: "Operational alerts are not enabled." });
+    assert.equal(result.status, 204);
+    assert.equal(await result.text(), "");
   });
 
-  it("refuses the recording adapter in production", async () => {
+  it("refuses a staging backend binding in production", async () => {
     process.env.VERCEL_TARGET_ENV = "production";
     const result = await GET(request());
 
-    assert.equal(result.status, 503);
-    assert.match((await result.json()).detail, /non-production environment/);
+    assert.equal(result.status, 500);
   });
 
   it("rejects the documented worker-secret placeholder", async () => {
@@ -107,9 +120,26 @@ describe("operational alert cron proxy", () => {
     assert.equal(fetched, false);
   });
 
+  it("preflights dead-man identity before invoking the backend", async () => {
+    process.env.OPERATIONAL_ALERT_EVALUATOR_DEADMAN_HOST = "other.example.com";
+    let fetched = false;
+    globalThis.fetch = async () => {
+      fetched = true;
+      return Response.json(validUpstreamBody());
+    };
+
+    const result = await GET(request());
+
+    assert.equal(result.status, 500);
+    assert.equal(fetched, false);
+  });
+
   it("calls only the guarded evaluator and returns a counts-only summary", async () => {
     let captured;
     globalThis.fetch = async (url, init) => {
+      if (String(url).includes("deadman.example.com")) {
+        return Response.json({ receipt_id: "deadman-receipt-7" });
+      }
       captured = { url: String(url), init };
       return Response.json({ ...validUpstreamBody(), unsafe: "must-not-pass" });
     };
@@ -148,5 +178,19 @@ describe("operational alert cron proxy", () => {
     const result = await GET(request());
 
     assert.equal(result.status, 502);
+  });
+
+  it("fails closed when the exact dead-man receipt is malformed", async () => {
+    globalThis.fetch = async (url) => {
+      if (String(url).includes("deadman.example.com")) {
+        return Response.json({ receipt_id: "ok", extra: "not-allowed" });
+      }
+      return Response.json(validUpstreamBody());
+    };
+
+    const result = await GET(request());
+
+    assert.equal(result.status, 502);
+    assert.deepEqual(await result.json(), { detail: "Could not reach operational alert evaluator." });
   });
 });

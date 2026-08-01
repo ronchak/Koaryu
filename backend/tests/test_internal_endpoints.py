@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -23,6 +24,20 @@ class EnabledAlertSettings(FakeSettings):
     SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
     OPERATIONAL_ALERTS_ENABLED = True
     OPERATIONAL_ALERT_WORKER_SECRET = "operational-alert-secret-1234567890"
+    OPERATIONAL_ALERT_PRIMARY_URL = "https://alerts.example.com/primary"
+    OPERATIONAL_ALERT_PRIMARY_HOST = "alerts.example.com"
+    OPERATIONAL_ALERT_PRIMARY_URL_SHA256 = hashlib.sha256(
+        OPERATIONAL_ALERT_PRIMARY_URL.encode()
+    ).hexdigest()
+    OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET = "p" * 40
+    OPERATIONAL_ALERT_PRIMARY_ACK_SECRET = "a" * 40
+    OPERATIONAL_ALERT_BACKUP_URL = "https://alerts.example.com/backup"
+    OPERATIONAL_ALERT_BACKUP_HOST = "alerts.example.com"
+    OPERATIONAL_ALERT_BACKUP_URL_SHA256 = hashlib.sha256(
+        OPERATIONAL_ALERT_BACKUP_URL.encode()
+    ).hexdigest()
+    OPERATIONAL_ALERT_BACKUP_BEARER_SECRET = "b" * 40
+    OPERATIONAL_ALERT_BACKUP_ACK_SECRET = "c" * 40
 
 
 class LocalAlertSettings(EnabledAlertSettings):
@@ -196,7 +211,7 @@ class InternalEndpointTest(unittest.TestCase):
     ):
         alert_service_class.return_value.evaluate.return_value = {
             "environment": "staging",
-            "mode": "recording-only",
+            "mode": "https",
             "metrics": {
                 "stripe-live-webhook-failure": 0,
                 "account-deletion-worker-overdue": 0,
@@ -205,9 +220,10 @@ class InternalEndpointTest(unittest.TestCase):
             },
             "lifecycle_events": {},
             "deliveries_claimed": 0,
-            "deliveries_recorded": 0,
+            "deliveries_delivered": 0,
             "deliveries_failed": 0,
             "heartbeat_recorded": True,
+            "heartbeat_sequence": 1,
         }
 
         response = self.client.post(
@@ -216,8 +232,47 @@ class InternalEndpointTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["mode"], "recording-only")
+        self.assertEqual(response.json()["mode"], "https")
         alert_service_class.return_value.evaluate.assert_called_once()
+
+    @patch("app.api.v1.endpoints.internal.get_settings", return_value=EnabledAlertSettings())
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_ack_derives_primary_identity_from_secret(
+        self,
+        alert_service_class,
+        _settings,
+    ):
+        alert_service_class.return_value.acknowledge.return_value = {
+            "episode_id": "11111111-1111-4111-8111-111111111111",
+            "lifecycle_event": "acknowledged",
+            "acknowledged": True,
+            "acknowledged_by_role": "primary",
+        }
+
+        response = self.client.post(
+            "/api/v1/internal/operational-alerts/11111111-1111-4111-8111-111111111111/acknowledge",
+            headers={"X-Internal-Secret": EnabledAlertSettings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        call = alert_service_class.return_value.acknowledge.call_args.kwargs
+        self.assertEqual(call["actor_role"], "primary")
+        self.assertEqual(call["actor_ref"], "primary-owner")
+
+    @patch("app.api.v1.endpoints.internal.get_settings", return_value=EnabledAlertSettings())
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_ack_rejects_worker_secret(
+        self,
+        alert_service_class,
+        _settings,
+    ):
+        response = self.client.post(
+            "/api/v1/internal/operational-alerts/11111111-1111-4111-8111-111111111111/acknowledge",
+            headers={"X-Internal-Secret": EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        alert_service_class.return_value.acknowledge.assert_not_called()
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
     @patch("app.api.v1.endpoints.internal.SupportService")

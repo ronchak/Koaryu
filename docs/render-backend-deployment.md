@@ -60,9 +60,19 @@ STRIPE_KOARYU_CORE_PRICE_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
 OPERATIONAL_ALERT_WORKER_SECRET=
+OPERATIONAL_ALERT_PRIMARY_URL=
+OPERATIONAL_ALERT_PRIMARY_HOST=
+OPERATIONAL_ALERT_PRIMARY_URL_SHA256=
+OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET=
+OPERATIONAL_ALERT_PRIMARY_ACK_SECRET=
+OPERATIONAL_ALERT_BACKUP_URL=
+OPERATIONAL_ALERT_BACKUP_HOST=
+OPERATIONAL_ALERT_BACKUP_URL_SHA256=
+OPERATIONAL_ALERT_BACKUP_BEARER_SECRET=
+OPERATIONAL_ALERT_BACKUP_ACK_SECRET=
 ```
 
-Keep `OPERATIONAL_ALERTS_ENABLED=false` in production. Phase A has only a recording adapter and an unscheduled proxy; it provides no operational assurance. See [Operational Alerts Phase A](operational-alerts.md) for the decisions required before activation.
+Keep `OPERATIONAL_ALERTS_ENABLED=false` in production until the primary/backup humans, receipt-bearing receiver, exact URL fingerprints, acknowledgement credentials, Vercel scheduler plan, independent dead-man provider, retention, staging rehearsal, and explicit enable approval are complete. The committed evaluator schedule is a `204` no-op while disabled. See [Operational Alerts](operational-alerts.md).
 
 `STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
 

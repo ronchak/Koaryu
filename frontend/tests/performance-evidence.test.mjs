@@ -5,6 +5,8 @@ import {
   classifyResource,
   openVerifiedBrowser,
   sanitizeServerTiming,
+  validateCapturedEvidence,
+  verifyPostCaptureRelease,
 } from "../scripts/capture-dashboard-performance.mjs";
 
 describe("privacy-safe performance evidence", () => {
@@ -46,5 +48,69 @@ describe("privacy-safe performance evidence", () => {
     ), [
       { name: "koaryu_summary_total", duration_ms: 12.4 },
     ]);
+  });
+
+  it("requires a ready dashboard, both successful resources, finite metrics, and zero blocks", () => {
+    const evidence = {
+      dashboard_ready_ms: 10,
+      blocked_requests: { write_methods: 0, unknown_origins: 0 },
+      navigation: { dom_content_loaded_ms: 4, load_event_ms: 8 },
+      web_vitals: {
+        first_contentful_paint_ms: 3,
+        largest_contentful_paint_ms: 7,
+        cumulative_layout_shift: 0,
+      },
+      resources: [
+        { resource: "dashboard-bootstrap", duration_ms: 2, response_start_ms: 1, transfer_bytes: 0 },
+        { resource: "dashboard-summary", duration_ms: 3, response_start_ms: 2, transfer_bytes: 0 },
+      ],
+      server_timing: [
+        { resource: "dashboard-bootstrap", status: 200, server_timing: [] },
+        { resource: "dashboard-summary", status: 204, server_timing: [] },
+      ],
+    };
+
+    assert.equal(validateCapturedEvidence(evidence), evidence);
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        blocked_requests: { write_methods: 0, unknown_origins: 1 },
+      }),
+      /blocked writes or unknown origins/,
+    );
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        web_vitals: { ...evidence.web_vitals, largest_contentful_paint_ms: Number.NaN },
+      }),
+      /finite and nonnegative/,
+    );
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        server_timing: evidence.server_timing.filter((entry) => entry.resource !== "dashboard-summary"),
+      }),
+      /missing for dashboard-summary/,
+    );
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        server_timing: evidence.server_timing.map((entry) => (
+          entry.resource === "dashboard-summary" ? { ...entry, status: 500 } : entry
+        )),
+      }),
+      /successful responses/,
+    );
+  });
+
+  it("rejects an alias race when the post-capture release identity changes", async () => {
+    await assert.rejects(
+      verifyPostCaptureRelease(
+        {},
+        { verified: true, environment: "production", expected_sha: "a".repeat(40) },
+        async () => ({ verified: true, environment: "production", expected_sha: "b".repeat(40) }),
+      ),
+      /changed during performance capture/,
+    );
   });
 });

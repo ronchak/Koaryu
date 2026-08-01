@@ -1010,15 +1010,23 @@ export interface ApiLeadUpdate {
   lost_reason?: "no_show" | "price_objection" | "timing" | "no_response" | "other" | null;
 }
 
+export interface ApiOperationalAlertAcknowledgementResponse {
+  episode_id: string;
+  lifecycle_event: "acknowledged" | "already_acknowledged" | "closed";
+  acknowledged: boolean;
+  acknowledged_by_role?: "primary" | "backup" | null;
+}
+
 export interface ApiOperationalAlertEvaluationResponse {
-  environment: "development" | "test" | "staging";
-  mode: "recording-only";
+  environment: "development" | "test" | "staging" | "production";
+  mode: "https";
   metrics: Record<string, number>;
   lifecycle_events: Record<string, string>;
   deliveries_claimed: number;
-  deliveries_recorded: number;
+  deliveries_delivered: number;
   deliveries_failed: number;
   heartbeat_recorded: boolean;
+  heartbeat_sequence: number;
 }
 
 export interface ApiPlatformBillingStatusResponse {

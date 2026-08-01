@@ -5,13 +5,20 @@ from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from supabase import Client
 
-from app.core.config import KOARYU_STAGING_SUPABASE_URL, get_settings
+from app.core.config import (
+    KOARYU_PRODUCTION_SUPABASE_URL,
+    KOARYU_STAGING_SUPABASE_URL,
+    get_settings,
+)
 from app.core.deps import get_supabase
 from app.schemas.account import AccountDeletionProcessResponse
-from app.schemas.operational_alerts import OperationalAlertEvaluationResponse
+from app.schemas.operational_alerts import (
+    OperationalAlertAcknowledgementResponse,
+    OperationalAlertEvaluationResponse,
+)
 from app.schemas.support import (
     SupportTicketResponse,
     SupportTicketSeverity,
@@ -21,7 +28,7 @@ from app.schemas.support import (
     SupportTriageFilters,
 )
 from app.services.account_service import AccountService
-from app.services.operational_alerts import OperationalAlertService
+from app.services.operational_alerts import HttpsAlertDestination, OperationalAlertService
 from app.services.support_service import SupportService
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -45,6 +52,11 @@ def _verify_operational_alert_target(environment: str, supabase_url: str) -> str
         and supabase_url == KOARYU_STAGING_SUPABASE_URL
     ):
         return normalized_environment
+    if (
+        normalized_environment == "production"
+        and supabase_url == KOARYU_PRODUCTION_SUPABASE_URL
+    ):
+        return normalized_environment
     parsed = urlparse(supabase_url)
     if (
         normalized_environment in {"development", "test"}
@@ -60,6 +72,7 @@ def _verify_operational_alert_target(environment: str, supabase_url: str) -> str
 
 @router.post("/account-deletions/process-due", response_model=AccountDeletionProcessResponse)
 async def process_due_account_deletions(
+    response: Response,
     internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
     supabase: Client = Depends(get_supabase),
 ):
@@ -72,11 +85,12 @@ async def process_due_account_deletions(
                 settings.ENVIRONMENT,
                 settings.SUPABASE_URL,
             )
-            OperationalAlertService(supabase).record_heartbeat(
+            heartbeat_sequence = OperationalAlertService(supabase).record_heartbeat(
                 environment=alert_environment,
                 worker_id="deletion-worker",
                 commit_sha=os.environ.get("RENDER_GIT_COMMIT"),
             )
+            response.headers["X-Koaryu-Heartbeat-Sequence"] = str(heartbeat_sequence)
         except Exception as exc:
             logger.warning(
                 "Operational alert deletion-worker heartbeat failed",
@@ -113,10 +127,55 @@ async def evaluate_operational_alerts(
         settings.OPERATIONAL_ALERT_WORKER_SECRET,
         "Operational alert evaluator",
     )
-    return OperationalAlertService(supabase).evaluate(
+    destination = HttpsAlertDestination.from_settings(settings)
+    return OperationalAlertService(supabase, destination=destination).evaluate(
         environment=environment,
         commit_sha=os.environ.get("RENDER_GIT_COMMIT"),
     )
+
+
+@router.post(
+    "/operational-alerts/{episode_id}/acknowledge",
+    response_model=OperationalAlertAcknowledgementResponse,
+)
+async def acknowledge_operational_alert(
+    episode_id: UUID,
+    internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+    supabase: Client = Depends(get_supabase),
+):
+    settings = get_settings()
+    if not settings.OPERATIONAL_ALERTS_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Operational alerts are not enabled.",
+        )
+    environment = _verify_operational_alert_target(
+        settings.ENVIRONMENT,
+        settings.SUPABASE_URL,
+    )
+    actor_role: str | None = None
+    actor_ref: str | None = None
+    if internal_secret and settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET and secrets.compare_digest(
+        internal_secret,
+        settings.OPERATIONAL_ALERT_PRIMARY_ACK_SECRET,
+    ):
+        actor_role, actor_ref = "primary", "primary-owner"
+    elif internal_secret and settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET and secrets.compare_digest(
+        internal_secret,
+        settings.OPERATIONAL_ALERT_BACKUP_ACK_SECRET,
+    ):
+        actor_role, actor_ref = "backup", "backup-owner"
+    if actor_role is None or actor_ref is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal secret.")
+    result = OperationalAlertService(supabase).acknowledge(
+        environment=environment,
+        episode_id=episode_id,
+        actor_role=actor_role,
+        actor_ref=actor_ref,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert episode not found.")
+    return result
 
 
 @router.get("/support/tickets", response_model=list[SupportTicketResponse])
