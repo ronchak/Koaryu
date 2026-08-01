@@ -2,6 +2,7 @@ import {
   sendDeadManCheckIn,
   validateDeadManCheckInConfiguration,
 } from "../../../../../lib/dead-man-check-in.ts";
+import { configuredBackendApiBase } from "../../../../../lib/backend-api-target.ts";
 
 const ALLOWED_RULE_IDS = new Set([
   "stripe-live-webhook-failure",
@@ -18,45 +19,6 @@ function response(body: object, status: number) {
     status,
     headers: { "Cache-Control": "no-store, private" },
   });
-}
-
-const STAGING_BACKEND_API = "https://koaryu-staging.onrender.com/api/v1";
-const PRODUCTION_BACKEND_API = "https://koaryu.onrender.com/api/v1";
-const LOCAL_BACKEND_APIS = new Set([
-  "http://127.0.0.1:8001/api/v1",
-  "http://localhost:8001/api/v1",
-]);
-
-function configuredBackendBase(environment: string) {
-  const raw = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
-  if (!raw || raw !== raw.trim()) {
-    return null;
-  }
-  try {
-    const parsed = new URL(raw);
-    if (
-      !["http:", "https:"].includes(parsed.protocol)
-      || parsed.username
-      || parsed.password
-      || parsed.search
-      || parsed.hash
-    ) {
-      return null;
-    }
-    const normalized = raw.replace(/\/$/, "");
-    if (environment === "staging") {
-      return normalized === STAGING_BACKEND_API ? normalized : null;
-    }
-    if (environment === "production") {
-      return normalized === PRODUCTION_BACKEND_API ? normalized : null;
-    }
-    if (["development", "test"].includes(environment)) {
-      return LOCAL_BACKEND_APIS.has(normalized) ? normalized : null;
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 function safeUpstreamSummary(value: unknown, expectedEnvironment: string) {
@@ -153,7 +115,7 @@ export async function GET(request: Request) {
   ) {
     return response({ detail: "Operational alert worker secret is not configured." }, 500);
   }
-  const backendBase = configuredBackendBase(deploymentEnvironment);
+  const backendBase = configuredBackendApiBase(deploymentEnvironment);
   if (!backendBase) {
     return response({ detail: "Backend API URL is not configured." }, 500);
   }
@@ -163,6 +125,7 @@ export async function GET(request: Request) {
       method: "POST",
       headers: { "X-Internal-Secret": workerSecret },
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(20_000),
     });
     const summary = safeUpstreamSummary(

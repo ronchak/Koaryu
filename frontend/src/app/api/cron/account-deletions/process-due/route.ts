@@ -3,46 +3,23 @@ import {
   sendDeadManCheckIn,
   validateDeadManCheckInConfiguration,
 } from "../../../../../lib/dead-man-check-in.ts";
-
-const WORKER_SECRET = process.env.ACCOUNT_DELETION_WORKER_SECRET || "";
-const CRON_SECRET = process.env.CRON_SECRET || "";
+import { configuredBackendApiBase } from "../../../../../lib/backend-api-target.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function getBackendApiBase() {
-  const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
-  if (!rawBackendApiBase) {
-    return null;
-  }
-
-  try {
-    const parsedBackendApiBase = new URL(rawBackendApiBase);
-    if (!["https:", "http:"].includes(parsedBackendApiBase.protocol)) {
-      return null;
-    }
-  } catch {
-    return null;
-  }
-
-  return rawBackendApiBase;
-}
-
 function isAuthorized(request: NextRequest) {
-  if (!CRON_SECRET) {
+  const cronSecret = process.env.CRON_SECRET ?? "";
+  if (!cronSecret) {
     return false;
   }
 
-  return request.headers.get("authorization") === `Bearer ${CRON_SECRET}`;
+  return request.headers.get("authorization") === `Bearer ${cronSecret}`;
 }
 
 export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) {
     return Response.json({ detail: "Unauthorized cron request." }, { status: 401 });
-  }
-
-  if (!WORKER_SECRET) {
-    return Response.json({ detail: "Account deletion worker secret is not configured." }, { status: 500 });
   }
 
   const environment = [
@@ -51,6 +28,19 @@ export async function GET(request: NextRequest) {
     process.env.NODE_ENV,
   ].map((value) => value?.trim().toLowerCase()).find(Boolean);
   const commitSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim().toLowerCase() ?? "";
+
+  const backendApiBase = configuredBackendApiBase(environment ?? "");
+  if (!backendApiBase) {
+    return Response.json({ detail: "Backend API URL is not configured." }, { status: 500 });
+  }
+
+  // Do not read or forward this credential until the deployment environment
+  // is bound to one exact Koaryu backend target.
+  const workerSecret = process.env.ACCOUNT_DELETION_WORKER_SECRET ?? "";
+  if (!workerSecret) {
+    return Response.json({ detail: "Account deletion worker secret is not configured." }, { status: 500 });
+  }
+
   if (process.env.OPERATIONAL_ALERTS_ENABLED === "true") {
     if (!environment || !["development", "test", "staging", "production"].includes(environment)) {
       return Response.json({ detail: "Account deletion dead-man identity was unavailable." }, { status: 500 });
@@ -66,23 +56,17 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const backendApiBase = getBackendApiBase();
-  if (!backendApiBase) {
-    return Response.json({ detail: "Backend API URL is not configured." }, { status: 500 });
-  }
-
-  const target = new URL(
-    "internal/account-deletions/process-due",
-    backendApiBase.replace(/\/$/, "") + "/"
-  );
+  const target = `${backendApiBase}/internal/account-deletions/process-due`;
 
   try {
     const upstream = await fetch(target, {
       method: "POST",
       headers: {
-        "x-internal-secret": WORKER_SECRET,
+        "x-internal-secret": workerSecret,
       },
       cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(20_000),
     });
 
     const body = await upstream.json().catch(() => null);

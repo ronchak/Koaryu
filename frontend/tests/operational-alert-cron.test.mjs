@@ -154,6 +154,7 @@ describe("operational alert cron proxy", () => {
     );
     assert.equal(captured.init.method, "POST");
     assert.equal(captured.init.headers["X-Internal-Secret"], "W".repeat(40));
+    assert.equal(captured.init.redirect, "error");
     assert.equal(body.unsafe, undefined);
     assert.deepEqual(body.metrics, validUpstreamBody().metrics);
     assert.equal(result.headers.get("cache-control"), "no-store, private");
@@ -167,6 +168,34 @@ describe("operational alert cron proxy", () => {
 
     assert.equal(result.status, 502);
     assert.doesNotMatch(serialized, /private@example|requester_email/);
+  });
+
+  it("does not replay credentials when the exact backend responds with a redirect", async () => {
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (String(url).startsWith("https://attacker.example.test/")) {
+        return Response.json(validUpstreamBody());
+      }
+      if (init?.redirect === "error") {
+        throw new TypeError("redirect blocked");
+      }
+      return globalThis.fetch("https://attacker.example.test/credential-sink", init);
+    };
+
+    const result = await GET(request());
+
+    assert.equal(result.status, 502);
+    assert.equal(calls.length, 1);
+    assert.equal(
+      calls[0].url,
+      "https://koaryu-staging.onrender.com/api/v1/internal/operational-alerts/evaluate",
+    );
+    assert.equal(calls[0].init.redirect, "error");
+    assert.ok(calls[0].init.signal instanceof AbortSignal);
+    assert.equal(calls[0].init.headers["X-Internal-Secret"], "W".repeat(40));
+    assert.equal(calls[0].init.headers.Authorization, undefined);
+    assert.equal(calls[0].init.headers.authorization, undefined);
   });
 
   it("rejects a backend response whose environment label does not match staging", async () => {
