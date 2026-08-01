@@ -532,12 +532,44 @@ assert_attestation_rejects \
   "REVOKE SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence FROM service_role;" \
   "f"
 assert_attestation_rejects \
+  "unexpected custom-role table ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "service-role table GRANT OPTION drift" \
+  "GRANT SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "studio payment account custom-role ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT ON TABLE public.studio_payment_accounts TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "studio payment account service-role GRANT OPTION drift" \
+  "GRANT SELECT ON TABLE public.studio_payment_accounts TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "Stripe event custom-role ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT ON TABLE public.stripe_events TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "Stripe event service-role GRANT OPTION drift" \
+  "GRANT SELECT ON TABLE public.stripe_events TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
   "required service-role RPC ACL drift" \
-  "REVOKE EXECUTE ON FUNCTION public.authorize_connect_onboarding_bootstrap_account_create(uuid,text,integer,text,text,text,text,text) FROM service_role;" \
+  "REVOKE EXECUTE ON FUNCTION public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid,uuid,text,integer,text,text) FROM service_role;" \
   "f"
 assert_attestation_rejects \
   "forbidden browser/PUBLIC ACL drift" \
   "GRANT SELECT ON TABLE public.stripe_connect_onboarding_bootstraps TO anon;" \
+  "f"
+assert_attestation_rejects \
+  "unexpected custom-role sequence ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; DO \$koaryu\$ BEGIN EXECUTE format('GRANT SELECT ON SEQUENCE %s TO koaryu_attestation_custom_role', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence')::REGCLASS); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "service-role sequence GRANT OPTION drift" \
+  "DO \$koaryu\$ BEGIN EXECUTE format('GRANT USAGE ON SEQUENCE %s TO service_role WITH GRANT OPTION', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence')::REGCLASS); END \$koaryu\$;" \
   "f"
 assert_attestation_rejects \
   "unmanifested permissive policy drift" \

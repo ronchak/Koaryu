@@ -3,7 +3,7 @@
 Status: **Phase A tooling only; provider mutation locked**
 
 This packet reconciles the production 84-migration baseline with the immutable
-93-migration release candidate. It is specialized to this rollout, not a
+95-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -38,8 +38,8 @@ The fixed production pre-state is:
 84:57ae4269ef4d75c249d59ef297661a3a
 ```
 
-The only certifiable post-state is migration count 93, head
-`20260801092000`, with this exact pending version sequence:
+The only certifiable post-state is migration count 95, head
+`20260801094000`, with this exact pending version sequence:
 
 ```text
 20260727100000
@@ -51,15 +51,22 @@ The only certifiable post-state is migration count 93, head
 20260801090000
 20260801091000
 20260801092000
+20260801093000
+20260801094000
 ```
 
 The checker derives filenames and source hashes from the final candidate, then
 requires this exact sequence and reports `integration_complete=true` only at
-93 migrations with these nine versions. The 070000/091000 billing and 080000 alert
+95 migrations with these eleven versions. The 070000/091000/093000 billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
 definitions, sequences, columns, and all scoped CHECK/UNIQUE/FK definitions are
-included in the semantic manifest. The external verifier also attests the V2
-RPC and its private helper bodies/ACLs without asking V2 to attest its own body.
+included in the semantic manifest. Table and sequence ACL evidence contains the
+complete sorted grantor, grantee (including `PUBLIC` and custom roles),
+privilege, and grantability state, so extra grants and `WITH GRANT OPTION` drift
+change the pinned proof. This ACL scope explicitly includes the release-critical
+`studio_payment_accounts` mapping and `stripe_events` ingestion tables. The
+external verifier also attests the V2 RPC and its
+private helper bodies/ACLs without asking V2 to attest its own body.
 Never certify an
 earlier head; regenerate the packet from the exact immutable release commit so
 all candidate migration hashes and counts remain current.
@@ -121,7 +128,7 @@ node scripts/studio-comp-migration-rollout.mjs \
 Record the exact output. It pins the CLI, fixed pre-history, immutable Git
 ancestry, complete pending set, every candidate migration hash, and the source
 manifest hash. Any missing migration, unexpected version, or migration after
-091000 halts before credentials are used.
+094000 halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
@@ -157,7 +164,7 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-The dry-run must report the exact nine pending versions above, with their final
+The dry-run must report the exact eleven pending versions above, with their final
 candidate filenames and hashes. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
@@ -165,7 +172,7 @@ Staging application remains locked until the director approves Phase B. The
 approved command will require the same inspection token, exact project ref, a
 durable approval record, and `--approve-staging-apply`. After application:
 
-1. require count 93, head 092000, the exact nine-version sequence, and the
+1. require count 95, head 094000, the exact eleven-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, sequence-ACL, and column identity in the final semantic
@@ -175,9 +182,11 @@ durable approval record, and `--approve-staging-apply`. After application:
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. require the service-role-only V2 readiness RPC to return `ready=true`, exact
+3. invoke the service-role-only V2 readiness RPC during every apparent-post
+   linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v2`;
+   `release-db-attestation-v3`; a missing, malformed, stale, or failing result
+   halts before `state=post` or a fingerprint can be emitted;
 4. record the emitted provider fingerprint;
 5. run linked lint and approved contracts only on staging;
 6. test PostgREST service-role execution and browser-role denial;
@@ -236,6 +245,6 @@ drop the trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 93 head and
+database-first: Render `/health/ready` remains 503 until the exact 95 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

@@ -8,6 +8,7 @@ import {
   ROLLOUT,
   EXPECTED_CATALOG_STATE,
   EXPECTED_OPERATIONAL_MANIFEST,
+  EXPECTED_OPERATIONAL_READINESS,
   assertExactPendingMigrations,
   assertSafeCredentialedTransport,
   buildInspectionToken,
@@ -15,8 +16,10 @@ import {
   classifyStateSnapshot,
   extractPendingMigrations,
   parseArguments,
+  readRemoteState,
   validateApplyAuthorization,
   validateOperationalManifest,
+  validateOperationalReadiness,
   verifySourceTree,
 } from "./studio-comp-migration-rollout.mjs";
 
@@ -43,6 +46,8 @@ function preSnapshot(overrides = {}) {
     objectCounts: "0:0",
     functionState: null,
     triggerState: null,
+    catalogState: null,
+    operationalReadiness: null,
     ...overrides,
   };
 }
@@ -56,6 +61,7 @@ function postSnapshot(packet, overrides = {}) {
     functionState: "3:0123456789abcdef0123456789abcdef:0",
     triggerState: "1:fedcba9876543210fedcba9876543210:0",
     catalogState: validCatalogState,
+    operationalReadiness: EXPECTED_OPERATIONAL_READINESS,
     ...overrides,
   };
 }
@@ -69,10 +75,20 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
+  it("requires the exact V3 operational readiness output", () => {
+    assert.equal(
+      validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS),
+      EXPECTED_OPERATIONAL_READINESS,
+    );
+    for (const value of [null, "", "true|95|20260801094000", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
+      assert.throws(() => validateOperationalReadiness(value), /V3 operational readiness/);
+    }
+  });
+
   it("derives an exact 84-to-N packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 93);
+    assert.equal(packet.migrationCount, 95);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(packet.pendingMigrations.length, packet.migrationCount - 84);
     assert.deepEqual(
@@ -222,12 +238,74 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 93-migration integration", () => {
+  it("rejects missing, malformed, or non-ready V3 output before post certification", () => {
+    const packet = candidatePacket();
+    for (const operationalReadiness of [
+      null,
+      "",
+      EXPECTED_OPERATIONAL_READINESS.replace(/^true/, "false"),
+      EXPECTED_OPERATIONAL_READINESS.replace("|95|", "|94|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("20260801094000", "20260801093000"),
+      EXPECTED_OPERATIONAL_READINESS.replace("20260801093000,", ""),
+      EXPECTED_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v3", "release-db-attestation-v2"),
+    ]) {
+      assert.throws(
+        () => classifyStateSnapshot(postSnapshot(packet, { operationalReadiness }), packet),
+        /V3 operational readiness/,
+      );
+    }
+  });
+
+  it("invokes V3 for apparent post-state but not for the migration-84 pre-state", () => {
+    const packet = candidatePacket();
+    const postValues = new Map([
+      ["history_schema", "0:1:1:1:0"],
+      ["history_state", packet.postHistory],
+      ["target_history", packet.postTargetHistory],
+      ["object_counts", "3:1"],
+      ["function_state", "3:0123456789abcdef0123456789abcdef:0"],
+      ["trigger_state", "1:fedcba9876543210fedcba9876543210:0"],
+      ["catalog_state", validCatalogState],
+      ["operational_readiness", EXPECTED_OPERATIONAL_READINESS],
+    ]);
+    const postHeaders = [];
+    const post = readRemoteState(
+      repositoryRoot,
+      packet,
+      {},
+      validFingerprint,
+      (_root, _sql, header) => {
+        postHeaders.push(header);
+        return postValues.get(header);
+      },
+    );
+    assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
+    assert.equal(postHeaders.at(-1), "operational_readiness");
+
+    const preHeaders = [];
+    const preValues = new Map([
+      ["history_schema", "0:1:1:1:0"],
+      ["history_state", ROLLOUT.preHistory],
+      ["target_history", ""],
+      ["object_counts", "0:0"],
+    ]);
+    assert.deepEqual(
+      readRemoteState(repositoryRoot, packet, {}, null, (_root, _sql, header) => {
+        preHeaders.push(header);
+        return preValues.get(header);
+      }),
+      { state: "pre", providerFingerprint: null },
+    );
+    assert.ok(!preHeaders.includes("operational_readiness"));
+  });
+
+  it("refuses to certify post-state before the exact 95-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 93-migration sequence/,
+      /exact final 95-migration sequence/,
     );
   });
 
@@ -307,7 +385,7 @@ describe("studio-comp migration rollout guard", () => {
     const packet = candidatePacket();
     const expandedPacket = {
       ...packet,
-      pendingMigrations: [...packet.pendingMigrations, "20260801092000_later_owner_migration.sql"],
+      pendingMigrations: [...packet.pendingMigrations, "20260801100000_later_owner_migration.sql"],
       sourceManifestSha256: "a".repeat(64),
     };
     const phrase = buildProductionConfirmationPhrase(expandedPacket);

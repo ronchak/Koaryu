@@ -179,12 +179,12 @@ curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V2 database preflight. It returns 503 unless Supabase reports exactly 93 migrations, head `20260801092000`, the nine expected pending versions after the production baseline, manifest version `release-db-attestation-v2`, and no required-object/security failure. Missing RPCs, timeouts, provider errors, and schema 84 all fail closed without exposing provider detail. The repository-pinned operator raw-catalog verifier remains release authority; V2 is an operational signal, not proof against a malicious database administrator. Stripe network health is not part of this route.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V2 database preflight. It returns 503 unless Supabase reports exactly 95 migrations, head `20260801094000`, the eleven expected pending versions after the production baseline, manifest version `release-db-attestation-v3`, and no required-object/security failure. Missing RPCs, timeouts, provider errors, and schema 84 all fail closed without exposing provider detail. The repository-pinned operator raw-catalog verifier remains release authority; V2 is an operational signal, not proof against a malicious database administrator. Stripe network health is not part of this route.
 
 Promote the database first. Do not route the new backend to a Supabase project
 until the final staging fingerprint and preflight pass. The exact-head manifest
 includes the 070000 billing and 080000 alert security surfaces; an application
-deploy that reaches schema 84 or any partial 85-92 state remains unhealthy.
+deploy that reaches schema 84 or any partial 85-94 state remains unhealthy.
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 

@@ -17,7 +17,7 @@ export const ROLLOUT = Object.freeze({
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
   preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 93,
+  finalMigrationCount: 95,
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -28,10 +28,13 @@ export const ROLLOUT = Object.freeze({
     "20260801090000",
     "20260801091000",
     "20260801092000",
+    "20260801093000",
+    "20260801094000",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
     "a615bdfc9755b6c3e611e9f8829fdaf387b4f981",
+    "0294fdbd2eecc72a8204222c244b7874fe35ada4",
   ]),
   migrations: Object.freeze([
     Object.freeze({
@@ -46,18 +49,24 @@ export const ROLLOUT = Object.freeze({
 });
 
 export const EXPECTED_OPERATIONAL_MANIFEST =
-  "e7b3709c34874ef48baae2ca881d4e00a83e1d60aa3e2f47063bf6989d44be4a";
+  "53f7f07e127fcc6fc0c89717d603e31cc732a8ca49c7b86591f2c2711263831a";
+
+export const EXPECTED_OPERATIONAL_READINESS =
+  "true|95|20260801094000|" +
+  ROLLOUT.finalPendingVersions.join(",") +
+  "|0||release-db-attestation-v3";
 
 export const EXPECTED_CATALOG_STATE =
-  "columns=33:66aacac8e7789e11e1fd4056c463a9bf6851333d19fb1d5e949fc898fe694a62:0;" +
-  "constraints=12:e935a922af794131c6fa9a6f08dba2948ba1ba8ecabb5e536c9cab94b5e3cf82:0;" +
-  "functions=32:ba44326a842cdd330737857c59a50b7eac23693dfa3b385c5f49eb24613e79c5:0;" +
+  "columns=35:bdd37497e490bde0a8491192935ce84bb7c9c65d2021f8b487e993586c6bce46:0;" +
+  "constraints=15:c5bf7762e24e3704c2541d2c17c5bff85f54bb0fd7eb4430cb958849afaedb3b:0;" +
+  "functions=41:a132ecf3b41840c130df99d12b72b85e8955b81d0fd7ac8205e0d24b0f50fab4:0;" +
   "indexes=10:0d1e6e31bc5366e04d8ad554b3d7ce6d43d1e73e6fe91c1f50fed7a766636afb:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
-  "scoped_constraints=138:f2df9a570bf2d52e9a27e5eaad29e75a1ce4f47f8e2cb8097636d68f8ce530ea:0;" +
+  "scoped_constraints=141:1ba160bb85d392c5b5a78142fc35d0e84fa75ffdca5d1e7ba2e6ccc9765734aa:0;" +
   "scoped_indexes=32:029ff9098f63de005a410481e5c4ad26148fc05bd6d47c0d0f7ad30cf3e81a77:0;" +
-  "sequences=3:03e4f7772c2d039dadf7657f21717194985f1462b7bf810e7cd30847f345d245:0;" +
-  "tables=12:4d8e9a0b7f19701e23def67e95e2e6e39ae398c634eeb88a2c293eb3a9e23152:0;" +
+  "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
+  "table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;" +
+  "tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;" +
   "triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0";
 
 export function validateOperationalManifest(value) {
@@ -66,6 +75,21 @@ export function validateOperationalManifest(value) {
   }
   return value;
 }
+
+export function validateOperationalReadiness(value) {
+  if (value !== EXPECTED_OPERATIONAL_READINESS) {
+    throw new RolloutError("V3 operational readiness did not match the exact release state.");
+  }
+  return value;
+}
+
+export const OPERATIONAL_READINESS_SQL = `
+select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
+       array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
+       coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
+  as operational_readiness
+from public.koaryu_release_schema_preflight_v2()
+`;
 
 const HISTORY_SCHEMA_SQL = `
 select
@@ -299,6 +323,13 @@ with required_tables(schema_name, table_name, rls_enabled, service_privileges) a
     ('public', 'operational_alert_heartbeats', true, 'INSERT,SELECT,UPDATE'),
     ('private', 'stripe_connect_account_identity_guards', false, '')
 ),
+acl_scope_tables(schema_name, table_name) as (
+  select schema_name, table_name from required_tables
+  union all
+  values
+    ('public', 'studio_payment_accounts'),
+    ('public', 'stripe_events')
+),
 scoped_definition_tables(schema_name, table_name) as (
   select schema_name, table_name from required_tables
   union all
@@ -310,6 +341,16 @@ table_actual as (
     relation.relname as table_name,
     owner.rolname as owner_name,
     relation.relrowsecurity,
+    coalesce((
+      select string_agg(
+               coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+               coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+               ',' order by coalesce(grantor.rolname, 'PUBLIC'), coalesce(grantee.rolname, 'PUBLIC'), acl.privilege_type, acl.is_grantable
+             )
+        from aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner))) acl
+        left join pg_roles grantor on grantor.oid = acl.grantor
+        left join pg_roles grantee on grantee.oid = acl.grantee
+    ), '') as acl_state,
     exists (
       select 1
         from aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner))) acl
@@ -336,9 +377,30 @@ table_actual as (
 table_compared as (
   select required.*, actual.owner_name, actual.relrowsecurity,
          actual.public_access, actual.anon_access, actual.authenticated_access,
-         actual.service_privileges as actual_service_privileges
+         actual.service_privileges as actual_service_privileges,
+         actual.acl_state
     from required_tables required
     left join table_actual actual using (schema_name, table_name)
+),
+table_acl_definitions as (
+  select namespace.nspname as schema_name, relation.relname as table_name,
+         owner.rolname as owner_name,
+         coalesce((
+           select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC'), coalesce(grantee.rolname, 'PUBLIC'), acl.privilege_type, acl.is_grantable
+                  )
+             from aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner))) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state
+    from pg_class relation
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join pg_roles owner on owner.oid = relation.relowner
+    join acl_scope_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
+   where relation.relkind = 'r'
 ),
 required_policies(table_name, policy_name, permissive, command_name, role_names, predicate_kind) as (
   values
@@ -409,9 +471,17 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.record_stripe_live_billing_reconciliation_checkpoint(text, integer, integer, integer, integer, integer, integer, timestamp with time zone, timestamp with time zone, integer, integer, boolean, boolean, timestamp with time zone, text, text, uuid, text)', 'search_path=public, pg_temp', true, false),
     ('public.record_stripe_live_billing_reconciliation_checkpoint_v2(jsonb, timestamp with time zone, text, text, uuid, text)', 'search_path=""', true, true),
     ('public.authorize_studio_live_billing_mutation_atomic(uuid, text, text, text, text)', 'search_path=""', true, true),
-    ('public.authorize_connect_onboarding_bootstrap_account_create(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, true),
-    ('public.bind_connect_onboarding_bootstrap_account(uuid, text, integer, text, text, text)', 'search_path=""', true, true),
-    ('public.authorize_connect_onboarding_bootstrap_initial_link(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_account_create(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, false),
+    ('public.bind_connect_onboarding_bootstrap_account(uuid, text, integer, text, text, text)', 'search_path=""', true, false),
+    ('public.authorize_connect_onboarding_bootstrap_initial_link(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, false),
+    ('private.connect_onboarding_bootstrap_link_checkpoint(uuid, text)', 'search_path=""', true, false),
+    ('public.preflight_connect_onboarding_bootstrap_begin(uuid, text)', 'search_path=""', true, true),
+    ('public.preflight_connect_onboarding_bootstrap_resume(uuid, text)', 'search_path=""', true, true),
+    ('public.prepare_connect_onboarding_bootstrap_atomic(uuid, text, integer, jsonb, text, text, text, text)', 'search_path=""', true, true),
+    ('public.load_connect_onboarding_bootstrap_recovery_context(uuid, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid, uuid, text, integer, text, text)', 'search_path=""', true, true),
+    ('public.bind_connect_onboarding_bootstrap_account_v2(uuid, uuid, text, integer, text, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_initial_link_v2(uuid, uuid, text, integer, text, text, text, text)', 'search_path=""', true, true),
     ('private.live_billing_event_is_in_scope(text, text)', 'search_path=""', true, false),
     ('private.enforce_live_billing_checkpoint_processed_events()', 'search_path=""', true, false),
     ('private.current_connect_account_generation(jsonb)', 'search_path=""', false, true),
@@ -433,6 +503,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.koaryu_release_schema_preflight()', 'search_path=pg_catalog', true, true),
     ('public.koaryu_release_schema_preflight_v2()', 'search_path=pg_catalog', true, true),
     ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -448,10 +519,12 @@ function_actual as (
          encode(extensions.digest(convert_to(function.prosrc, 'UTF8'), 'sha256'), 'hex') as body_sha256,
          coalesce((
            select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
                     coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
-                    ',' order by coalesce(grantee.rolname, 'PUBLIC'), acl.privilege_type, acl.is_grantable
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC'), coalesce(grantee.rolname, 'PUBLIC'), acl.privilege_type, acl.is_grantable
                   )
              from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
              left join pg_roles grantee on grantee.oid = acl.grantee
          ), '') as acl_state,
          exists (
@@ -562,6 +635,16 @@ required_sequences(table_name, column_name, service_usage, service_select, servi
 sequence_actual as (
   select table_relation.relname as table_name, attribute.attname as column_name,
          owner.rolname as owner_name,
+         coalesce((
+           select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC'), coalesce(grantee.rolname, 'PUBLIC'), acl.privilege_type, acl.is_grantable
+                  )
+             from aclexplode(coalesce(sequence.relacl, acldefault('S', sequence.relowner))) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state,
          exists (select 1 from aclexplode(coalesce(sequence.relacl, acldefault('S', sequence.relowner))) acl where acl.grantee = 0) as public_access,
          has_sequence_privilege('anon', sequence.oid, 'USAGE,SELECT,UPDATE') as anon_access,
          has_sequence_privilege('authenticated', sequence.oid, 'USAGE,SELECT,UPDATE') as authenticated_access,
@@ -582,7 +665,8 @@ sequence_compared as (
          actual.anon_access, actual.authenticated_access,
          actual.service_usage as actual_service_usage,
          actual.service_select as actual_service_select,
-         actual.service_update as actual_service_update
+         actual.service_update as actual_service_update,
+         actual.acl_state
     from required_sequences required
     left join sequence_actual actual using (table_name, column_name)
 ),
@@ -614,6 +698,8 @@ required_columns(table_name, column_name, data_type, nullable, identity_column) 
     ('stripe_connect_onboarding_bootstraps', 'stripe_connected_account_id', 'text', true, false),
     ('stripe_connect_onboarding_bootstraps', 'expires_at', 'timestamp with time zone', false, false),
     ('stripe_connect_onboarding_bootstraps', 'initial_link_claimed_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'recovery_context', 'jsonb', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'recovery_expires_at', 'timestamp with time zone', true, false),
     ('operational_alert_episodes', 'backup_destination_id', 'text', false, false),
     ('operational_alert_episodes', 'escalation_after_minutes', 'integer', false, false),
     ('operational_alert_episodes', 'acknowledged_at', 'timestamp with time zone', true, false),
@@ -646,7 +732,10 @@ required_constraints(table_name, constraint_identity, constraint_type) as (
     ('stripe_live_billing_reconciliation_account_evidence', 'unique:checkpoint_id,studio_id', 'u'),
     ('operational_alert_episodes', 'operational_alert_episode_ack_complete', 'c'),
     ('operational_alert_outbox', 'operational_alert_outbox_episode_event_role_key', 'u'),
-    ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c')
+    ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_pair', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_context_object', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_expiry', 'c')
 ),
 constraint_actual as (
   select relation.relname as table_name,
@@ -706,9 +795,14 @@ scoped_constraint_definitions as (
 ),
 states as (
   select 'tables' as category, count(*)::integer as object_count,
-         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || coalesce(owner_name, '') || ':' || coalesce(relrowsecurity::text, '') || ':' || coalesce(actual_service_privileges, ''), '|' order by schema_name, table_name), ''), 'UTF8'), 'sha256'), 'hex') as state_digest,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || coalesce(owner_name, '') || ':' || coalesce(relrowsecurity::text, '') || ':' || coalesce(actual_service_privileges, '') || ':' || coalesce(acl_state, ''), '|' order by schema_name, table_name), ''), 'UTF8'), 'sha256'), 'hex') as state_digest,
          count(*) filter (where owner_name is null or owner_name <> 'postgres' or relrowsecurity is distinct from rls_enabled or public_access or anon_access or authenticated_access or actual_service_privileges is distinct from service_privileges)::integer as failures
     from table_compared
+  union all
+  select 'table_acls', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || owner_name || ':' || acl_state, '|' order by schema_name, table_name), ''), 'UTF8'), 'sha256'), 'hex'),
+         0::integer
+    from table_acl_definitions
   union all
   select 'policies', count(*)::integer,
          encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || policy_name || ':' || coalesce(actual_permissive::text, '') || ':' || coalesce(actual_command_name, '') || ':' || coalesce(actual_role_names, '') || ':' || coalesce(actual_predicate_kind, ''), '|' order by table_name, policy_name), ''), 'UTF8'), 'sha256'), 'hex'),
@@ -731,7 +825,7 @@ states as (
     from index_compared
   union all
   select 'sequences', count(*)::integer,
-         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || '.' || column_name || ':' || coalesce(owner_name, '') || ':' || coalesce(actual_service_usage::text, '') || ':' || coalesce(actual_service_select::text, '') || ':' || coalesce(actual_service_update::text, ''), '|' order by table_name, column_name), ''), 'UTF8'), 'sha256'), 'hex'),
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || '.' || column_name || ':' || coalesce(owner_name, '') || ':' || coalesce(actual_service_usage::text, '') || ':' || coalesce(actual_service_select::text, '') || ':' || coalesce(actual_service_update::text, '') || ':' || coalesce(acl_state, ''), '|' order by table_name, column_name), ''), 'UTF8'), 'sha256'), 'hex'),
          count(*) filter (where owner_name is null or owner_name <> 'postgres' or public_access or anon_access or authenticated_access or actual_service_usage is distinct from service_usage or actual_service_select is distinct from service_select or actual_service_update is distinct from service_update)::integer
     from sequence_compared
   union all
@@ -1036,7 +1130,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
 }
 
 export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint = null) {
-  const { history, targetHistory, objectCounts, functionState, triggerState, catalogState } = snapshot;
+  const {
+    history,
+    targetHistory,
+    objectCounts,
+    functionState,
+    triggerState,
+    catalogState,
+    operationalReadiness,
+  } = snapshot;
   if (snapshot.historySchema !== "0:1:1:1:0") {
     throw new RolloutError(
       "Supabase migration history did not have the expected no-hash/statement-array shape.",
@@ -1053,7 +1155,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 93-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 95-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1066,6 +1168,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
       throw new RolloutError("Trigger definition, binding, enabled state, or metadata column check failed.");
     }
     validateCatalogState(catalogState);
+    validateOperationalReadiness(operationalReadiness);
     const providerFingerprint =
       `functions=${functionState};trigger=${triggerState};catalog=${catalogState}`;
     if (expectedProviderFingerprint && providerFingerprint !== expectedProviderFingerprint) {
@@ -1159,33 +1262,46 @@ function querySingleValue(sourceRoot, sql, header, env) {
   return parseSingleValueCsv(output, header);
 }
 
-function readRemoteState(sourceRoot, packet, env, expectedProviderFingerprint = null) {
+export function readRemoteState(
+  sourceRoot,
+  packet,
+  env,
+  expectedProviderFingerprint = null,
+  query = querySingleValue,
+) {
   const snapshot = {
-    historySchema: querySingleValue(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
-    history: querySingleValue(sourceRoot, HISTORY_SQL, "history_state", env),
-    targetHistory: querySingleValue(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
-    objectCounts: querySingleValue(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
+    historySchema: query(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
+    history: query(sourceRoot, HISTORY_SQL, "history_state", env),
+    targetHistory: query(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
+    objectCounts: query(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
     functionState: null,
     triggerState: null,
     catalogState: null,
+    operationalReadiness: null,
   };
   if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
-    snapshot.functionState = querySingleValue(
+    snapshot.functionState = query(
       sourceRoot,
       FUNCTION_STATE_SQL,
       "function_state",
       env,
     );
-    snapshot.triggerState = querySingleValue(
+    snapshot.triggerState = query(
       sourceRoot,
       TRIGGER_STATE_SQL,
       "trigger_state",
       env,
     );
-    snapshot.catalogState = querySingleValue(
+    snapshot.catalogState = query(
       sourceRoot,
       CATALOG_STATE_SQL,
       "catalog_state",
+      env,
+    );
+    snapshot.operationalReadiness = query(
+      sourceRoot,
+      OPERATIONAL_READINESS_SQL,
+      "operational_readiness",
       env,
     );
   }
@@ -1290,7 +1406,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 93-migration candidate through 092000.",
+        "Provider inspection requires the exact final 95-migration candidate through 094000.",
       );
     }
     runCommand(
