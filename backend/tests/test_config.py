@@ -234,6 +234,59 @@ class HostedConfigValidationTest(unittest.TestCase):
 
         settings.validate_runtime_configuration()
 
+    def test_staging_accepts_recording_alerts_with_dedicated_secret(self):
+        settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                "OPERATIONAL_ALERTS_ENABLED": True,
+                "OPERATIONAL_ALERT_WORKER_SECRET": "alert-worker-secret-1234567890abcdef",
+            },
+        )
+
+        settings.validate_runtime_configuration()
+
+    def test_staging_rejects_recording_alerts_without_dedicated_secret(self):
+        settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                "OPERATIONAL_ALERTS_ENABLED": True,
+                "OPERATIONAL_ALERT_WORKER_SECRET": "short",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "OPERATIONAL_ALERT_WORKER_SECRET"):
+            settings.validate_runtime_configuration()
+
+    def test_staging_rejects_documented_recording_alert_secret_placeholder(self):
+        settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                "OPERATIONAL_ALERTS_ENABLED": True,
+                "OPERATIONAL_ALERT_WORKER_SECRET": (
+                    "long-random-secret-for-operational-alert-evaluation"
+                ),
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "OPERATIONAL_ALERT_WORKER_SECRET"):
+            settings.validate_runtime_configuration()
+
+    def test_production_rejects_recording_alert_activation(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "OPERATIONAL_ALERTS_ENABLED": True,
+                "OPERATIONAL_ALERT_WORKER_SECRET": "alert-worker-secret-1234567890abcdef",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "must remain false in production"):
+            settings.validate_runtime_configuration()
+
     def test_staging_rejects_production_destinations(self):
         for name, value in (
             ("SUPABASE_URL", "https://mimguepumzsgmcaycdsh.supabase.co"),

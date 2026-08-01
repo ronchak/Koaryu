@@ -13,7 +13,21 @@ from app.schemas.support import SupportTicketResponse
 
 class FakeSettings:
     ACCOUNT_DELETION_WORKER_SECRET = "delete-secret"
+    OPERATIONAL_ALERTS_ENABLED = False
+    OPERATIONAL_ALERT_WORKER_SECRET = "operational-alert-secret"
     SUPPORT_TRIAGE_SECRET = "support-secret"
+
+
+class EnabledAlertSettings(FakeSettings):
+    ENVIRONMENT = "staging"
+    SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
+    OPERATIONAL_ALERTS_ENABLED = True
+    OPERATIONAL_ALERT_WORKER_SECRET = "operational-alert-secret-1234567890"
+
+
+class LocalAlertSettings(EnabledAlertSettings):
+    ENVIRONMENT = "development"
+    SUPABASE_URL = "http://127.0.0.1:54321"
 
 
 class InternalEndpointTest(unittest.TestCase):
@@ -77,6 +91,133 @@ class InternalEndpointTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["completed"], 1)
+
+    @patch("app.api.v1.endpoints.internal.get_settings")
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    @patch("app.api.v1.endpoints.internal.AccountService")
+    def test_deletion_heartbeat_rejects_dev_label_on_production_target_before_rpc(
+        self,
+        account_service_class,
+        alert_service_class,
+        settings,
+    ):
+        class UnsafeSettings(EnabledAlertSettings):
+            ENVIRONMENT = "development"
+            SUPABASE_URL = "https://mimguepumzsgmcaycdsh.supabase.co"
+
+        settings.return_value = UnsafeSettings()
+        account_service_class.return_value.process_due_deletions = AsyncMock(
+            return_value=AccountDeletionProcessResponse(processed=0),
+        )
+
+        response = self.client.post(
+            "/api/v1/internal/account-deletions/process-due",
+            headers={"X-Internal-Secret": "delete-secret"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        alert_service_class.assert_not_called()
+
+    def test_operational_alert_target_accepts_pinned_staging_and_local_supabase(self):
+        self.assertEqual(
+            internal._verify_operational_alert_target(
+                EnabledAlertSettings.ENVIRONMENT,
+                EnabledAlertSettings.SUPABASE_URL,
+            ),
+            "staging",
+        )
+        self.assertEqual(
+            internal._verify_operational_alert_target(
+                LocalAlertSettings.ENVIRONMENT,
+                LocalAlertSettings.SUPABASE_URL,
+            ),
+            "development",
+        )
+
+    @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_evaluator_stays_inactive_by_default(
+        self,
+        alert_service_class,
+        _settings,
+    ):
+        response = self.client.post(
+            "/api/v1/internal/operational-alerts/evaluate",
+            headers={"X-Internal-Secret": "operational-alert-secret"},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        alert_service_class.assert_not_called()
+
+    @patch("app.api.v1.endpoints.internal.get_settings", return_value=EnabledAlertSettings())
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_evaluator_requires_dedicated_secret(
+        self,
+        alert_service_class,
+        _settings,
+    ):
+        response = self.client.post(
+            "/api/v1/internal/operational-alerts/evaluate",
+            headers={"X-Internal-Secret": "wrong-secret"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        alert_service_class.assert_not_called()
+
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_evaluator_rejects_dev_label_on_hosted_target(
+        self,
+        alert_service_class,
+    ):
+        class UnsafeSettings(EnabledAlertSettings):
+            ENVIRONMENT = "development"
+            SUPABASE_URL = "https://mimguepumzsgmcaycdsh.supabase.co"
+
+        with patch(
+            "app.api.v1.endpoints.internal.get_settings",
+            return_value=UnsafeSettings(),
+        ):
+            response = self.client.post(
+                "/api/v1/internal/operational-alerts/evaluate",
+                headers={
+                    "X-Internal-Secret": EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET,
+                },
+            )
+
+        self.assertEqual(response.status_code, 503)
+        alert_service_class.assert_not_called()
+
+    @patch("app.api.v1.endpoints.internal.get_settings", return_value=EnabledAlertSettings())
+    @patch("app.api.v1.endpoints.internal.OperationalAlertService")
+    def test_operational_alert_evaluator_returns_counts_only_summary(
+        self,
+        alert_service_class,
+        _settings,
+    ):
+        alert_service_class.return_value.evaluate.return_value = {
+            "environment": "staging",
+            "mode": "recording-only",
+            "metrics": {
+                "stripe-live-webhook-failure": 0,
+                "account-deletion-worker-overdue": 0,
+                "support-urgent-untriaged": 0,
+                "billing-reconciliation-stale": 0,
+            },
+            "lifecycle_events": {},
+            "deliveries_claimed": 0,
+            "deliveries_recorded": 0,
+            "deliveries_failed": 0,
+            "heartbeat_recorded": True,
+        }
+
+        response = self.client.post(
+            "/api/v1/internal/operational-alerts/evaluate",
+            headers={"X-Internal-Secret": EnabledAlertSettings.OPERATIONAL_ALERT_WORKER_SECRET},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["mode"], "recording-only")
+        alert_service_class.return_value.evaluate.assert_called_once()
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
     @patch("app.api.v1.endpoints.internal.SupportService")

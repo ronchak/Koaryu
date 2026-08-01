@@ -1010,6 +1010,17 @@ export interface ApiLeadUpdate {
   lost_reason?: "no_show" | "price_objection" | "timing" | "no_response" | "other" | null;
 }
 
+export interface ApiOperationalAlertEvaluationResponse {
+  environment: "development" | "test" | "staging";
+  mode: "recording-only";
+  metrics: Record<string, number>;
+  lifecycle_events: Record<string, string>;
+  deliveries_claimed: number;
+  deliveries_recorded: number;
+  deliveries_failed: number;
+  heartbeat_recorded: boolean;
+}
+
 export interface ApiPlatformBillingStatusResponse {
   studio_id: string;
   plan_name: string;

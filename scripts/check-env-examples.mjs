@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ENV_KEY_PATTERN = /^[A-Z][A-Z0-9_]*$/;
-const FRONTEND_PLATFORM_KEYS = new Set(["NODE_ENV"]);
+const FRONTEND_PLATFORM_KEYS = new Set(["NODE_ENV", "VERCEL_ENV", "VERCEL_TARGET_ENV"]);
 
 const backendSecretKeys = [
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -16,6 +16,7 @@ const backendSecretKeys = [
   "STRIPE_CONNECT_WEBHOOK_SECRET",
   "STRIPE_KOARYU_CORE_PRICE_ID",
   "ACCOUNT_DELETION_WORKER_SECRET",
+  "OPERATIONAL_ALERT_WORKER_SECRET",
   "SUPPORT_TRIAGE_SECRET",
 ];
 
@@ -29,6 +30,7 @@ const backendPublicKeys = [
   "DEMO_RESET_STUDIO_IDS",
   "STRIPE_MODE",
   "LIVE_BILLING_ENABLED",
+  "OPERATIONAL_ALERTS_ENABLED",
   "BILLING_PLATFORM_FEE_BPS",
   "API_V1_PREFIX",
 ];
@@ -48,6 +50,7 @@ const frontendPublicKeys = [
   "NEXT_PUBLIC_PREVIEW_MODE",
   "NEXT_PUBLIC_STUDENTS_PAGED_ROSTER",
   "NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG",
+  "OPERATIONAL_ALERTS_ENABLED",
 ];
 
 const frontendSecretKeys = [
@@ -55,6 +58,7 @@ const frontendSecretKeys = [
   "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
   "CRON_SECRET",
   "ACCOUNT_DELETION_WORKER_SECRET",
+  "OPERATIONAL_ALERT_WORKER_SECRET",
 ];
 
 const placeholderTokenPattern = /(?:^|[^a-z0-9])(?:your|placeholder|example|todo)(?:[^a-z0-9]|$)/;
@@ -69,6 +73,7 @@ const renderCriticalValues = new Map([
   ["SUPABASE_DEVELOPMENT_PROJECT_REF", ""],
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "false"],
+  ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
 
@@ -373,6 +378,11 @@ export function validateProviderDeploymentControls(renderSource, vercelConfig) {
   );
   if (deletionCron?.schedule !== "0 8 * * *") {
     failures.push("frontend/vercel.json: the account-deletion cron contract must be preserved");
+  }
+  if (vercelConfig?.crons?.some(
+    (cron) => cron?.path === "/api/cron/operational-alerts/evaluate",
+  )) {
+    failures.push("frontend/vercel.json: Phase A operational alert evaluation must remain unscheduled");
   }
   return failures;
 }

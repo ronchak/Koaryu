@@ -20,6 +20,7 @@ contract_files=(
   "friendly_pilot_authorization.sql"
   "function_execution_security.sql"
   "lead_conversion_atomic_contract.sql"
+  "operational_alert_delivery_state.sql"
   "remaining_operational_client_write_controls.sql"
   "program_ladder_unification.sql"
   "recurring_class_series_delete_atomic_contract.sql"

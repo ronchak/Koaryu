@@ -37,6 +37,8 @@ Merging `main` does not authorize an automatic production deployment. `frontend/
 
 `npm run check:env-examples` fails if either repository provider control drifts or if the account-deletion cron is removed. Repository text cannot prove Render's current service setting: before the bootstrap merge, an authenticated operator must turn production auto-deploy off through Render and capture an authenticated readback. The guarded merge command independently rechecks that live provider state and refuses to merge without it. After the fixed candidate passes staging, deploy or promote that exact SHA explicitly, read back Vercel `/api/version` and Render `/health/ready`, and compare both full SHAs with the release ledger before assigning production traffic.
 
+Use `npm run verify:deployed-release -- --environment <staging|production> --expected-sha <full-sha> --frontend-origin <pinned-origin> --backend-api <pinned-api-v1>` for the application-reported readback. It requires both Render readiness routes and Vercel to report one exact full SHA. Run it before browser smoke or performance capture; evidence from a mismatched pair or mutable alias is invalid. Authenticated provider deployment metadata remains a separate required readback.
+
 ## Main-Branch Ruleset
 
 After the workflow exists on `main` and has produced the named check, maintain

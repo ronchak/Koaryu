@@ -59,7 +59,10 @@ STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
+OPERATIONAL_ALERT_WORKER_SECRET=
 ```
+
+Keep `OPERATIONAL_ALERTS_ENABLED=false` in production. Phase A has only a recording adapter and an unscheduled proxy; it provides no operational assurance. See [Operational Alerts Phase A](operational-alerts.md) for the decisions required before activation.
 
 `STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
 
@@ -188,6 +191,16 @@ Do not route `/` through frontend auth middleware just to warm Render. The landi
 ## Release Verification
 
 Before tagging or announcing a release:
+
+After both providers report the candidate deployed, run the pinned GET-only verifier before any performance capture:
+
+```bash
+npm run verify:deployed-release -- \
+  --environment production \
+  --expected-sha "$RELEASE_SHA" \
+  --frontend-origin https://koaryu.app \
+  --backend-api https://koaryu.onrender.com/api/v1
+```
 
 ```bash
 cd backend

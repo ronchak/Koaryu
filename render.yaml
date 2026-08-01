@@ -48,5 +48,9 @@ services:
         sync: false
       - key: ACCOUNT_DELETION_WORKER_SECRET
         sync: false
+      - key: OPERATIONAL_ALERTS_ENABLED
+        value: "false"
+      - key: OPERATIONAL_ALERT_WORKER_SECRET
+        sync: false
       - key: SUPPORT_TRIAGE_SECRET
         sync: false

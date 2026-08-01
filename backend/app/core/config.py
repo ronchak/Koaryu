@@ -72,6 +72,7 @@ PLACEHOLDER_VALUES = {
     "jwt-secret",
     "long-random-secret",
     "long-random-secret-for-support-ticket-triage",
+    "long-random-secret-for-operational-alert-evaluation",
     "long-random-secret-for-the-deletion-cron",
     "long-random-secret-for-the-deletion-worker",
     "placeholder-key",
@@ -146,6 +147,8 @@ class Settings(BaseSettings):
     STRIPE_KOARYU_CORE_PRICE_ID: str = ""
     BILLING_PLATFORM_FEE_BPS: int = 50
     ACCOUNT_DELETION_WORKER_SECRET: str = ""
+    OPERATIONAL_ALERTS_ENABLED: bool = False
+    OPERATIONAL_ALERT_WORKER_SECRET: str = ""
     SUPPORT_TRIAGE_SECRET: str = ""
 
     # API
@@ -365,6 +368,17 @@ class Settings(BaseSettings):
 
         if not has_minimum_secret_length(self.SUPPORT_TRIAGE_SECRET):
             missing.append("SUPPORT_TRIAGE_SECRET must be a long random secret")
+
+        if self.OPERATIONAL_ALERTS_ENABLED:
+            if environment == "production":
+                missing.append(
+                    "OPERATIONAL_ALERTS_ENABLED must remain false in production while Phase A uses recording-only delivery"
+                )
+            if (
+                is_placeholder_value(self.OPERATIONAL_ALERT_WORKER_SECRET)
+                or not has_minimum_secret_length(self.OPERATIONAL_ALERT_WORKER_SECRET)
+            ):
+                missing.append("OPERATIONAL_ALERT_WORKER_SECRET must be a long random secret when alerts are enabled")
 
         if environment == "staging":
             if self.SUPABASE_URL != KOARYU_STAGING_SUPABASE_URL:

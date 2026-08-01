@@ -186,4 +186,25 @@ services:
     assert.ok(failures.some((failure) => failure.includes("enabled branch pattern \"*\"")));
     assert.ok(failures.some((failure) => failure.includes("cron contract must be preserved")));
   });
+
+  it("rejects external activation of the Phase A alert evaluator", () => {
+    const renderSource = `
+services:
+  - type: web
+    name: koaryu
+    healthCheckPath: /health
+    autoDeployTrigger: 'off'
+`;
+    const vercelConfig = {
+      git: { deploymentEnabled: { main: false, staging: true } },
+      crons: [
+        { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
+        { path: "/api/cron/operational-alerts/evaluate", schedule: "*/5 * * * *" },
+      ],
+    };
+
+    assert.ok(validateProviderDeploymentControls(renderSource, vercelConfig).some(
+      (failure) => failure.includes("must remain unscheduled"),
+    ));
+  });
 });
