@@ -144,10 +144,10 @@ Operator: `Codex release orchestrator`
 - Scope: repository-only remediation; no staging or production provider read,
   migration, contract execution, Auth fixture, or other provider mutation was
   performed.
-- Final required database identity: 95 migrations, head
-  `20260801094000_harden_release_acl_attestation.sql`, with exact pending
+- Final required database identity: 97 migrations, head
+  `20260801112153_finalize_release_database_attestation_v4.sql`, with exact pending
   versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
-  01090000, 01091000, 01092000, 01093000, and 01094000 after the fixed
+  01090000, 01091000, 01092000, 01093000, 01094000, 01105313, and 01112153 after the fixed
   84-migration production baseline.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
@@ -165,15 +165,16 @@ Operator: `Codex release orchestrator`
 - Integration gate: migrations `20260801070000` (billing), `20260801080000`
   (alerts), `20260801090000` (parity), `20260801091000` (Connect bootstrap),
   `20260801092000` (semantic attestation), `20260801093000` (Connect recovery),
-  and `20260801094000` (ACL/readiness attestation) are ordered 89-95. The packet reports
-  `integration_complete=true` only for the exact 84-to-95 history and eleven
+  `20260801094000` (ACL/readiness attestation), `20260801105313` (Connect
+  delivery retirement), and `20260801112153` (V4 attestation) are ordered 89-97. The packet reports
+  `integration_complete=true` only for the exact 84-to-97 history and thirteen
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
   table/sequence ACL grantor, grantee, privilege, and grantability rows reject
   custom-role and grant-option drift, including on `studio_payment_accounts`
   and `stripe_events`. Apparent-post linked inspection also
-  requires exact V3 output before certification. The exact 32-file SQL
+  requires exact V4 output before certification. The exact 32-file SQL
   contract inventory fails CI on missing or unexpected verification files.
 - Recovery: any partial history, catalog mismatch, readiness failure, or guard
   conflict halts. Preserve applied state and recover only with reviewed

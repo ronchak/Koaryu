@@ -415,7 +415,7 @@ done
 echo "[operational manifest] RUN database-observable semantic and ACL signal"
 operational_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_operational_manifest_v2();
+SELECT private.koaryu_release_operational_manifest_v4();
 "
 )"
 if (
@@ -492,8 +492,16 @@ assert_attestation_rejects \
   "UPDATE pg_proc SET prosrc = 'BEGIN RETURN false; END;' WHERE oid = 'private.live_billing_event_is_in_scope(text,text)'::regprocedure;" \
   "f"
 assert_attestation_rejects \
+  "Connect delivery response RPC body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN; END;' WHERE oid = 'public.record_connect_onboarding_bootstrap_initial_link_response(uuid,uuid,text,integer,text,text,text,text,text,text)'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
   "V2 self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v2()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V4 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v4()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \
@@ -506,6 +514,18 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "bootstrap CHECK-expression drift" \
   "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.stripe_connect_onboarding_bootstraps'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery column drift" \
+  "ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP COLUMN initial_link_support_required_at CASCADE;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery CHECK drift" \
+  "ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP CONSTRAINT stripe_connect_onboarding_bootstraps_receipt_expiry;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery index drift" \
+  "DROP INDEX public.idx_stripe_connect_onboarding_bootstraps_delivery_receipt;" \
   "f"
 assert_attestation_rejects \
   "private identity UNIQUE drift" \
@@ -558,6 +578,14 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "required service-role RPC ACL drift" \
   "REVOKE EXECUTE ON FUNCTION public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid,uuid,text,integer,text,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery required service-role RPC ACL drift" \
+  "REVOKE EXECUTE ON FUNCTION public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(uuid,text,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery unexpected custom-role RPC GRANT OPTION drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT EXECUTE ON FUNCTION public.record_connect_onboarding_bootstrap_initial_link_response(uuid,uuid,text,integer,text,text,text,text,text,text) TO koaryu_attestation_custom_role WITH GRANT OPTION;" \
   "f"
 assert_attestation_rejects \
   "forbidden browser/PUBLIC ACL drift" \

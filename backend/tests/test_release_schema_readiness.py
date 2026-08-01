@@ -33,10 +33,13 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             None,
             {**exact_preflight_row(), "ready": False},
             {**exact_preflight_row(), "migration_count": 84},
+            {**exact_preflight_row(), "migration_count": 96},
             {**exact_preflight_row(), "migration_head": "20260801080000"},
+            {**exact_preflight_row(), "migration_head": "20260801105313"},
             {**exact_preflight_row(), "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1]},
             {**exact_preflight_row(), "security_failures": ["table:missing"]},
             {**exact_preflight_row(), "manifest_version": "stale-manifest"},
+            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v3"},
         ]
         for row in mismatches:
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):

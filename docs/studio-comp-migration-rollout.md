@@ -3,7 +3,7 @@
 Status: **Phase A tooling only; provider mutation locked**
 
 This packet reconciles the production 84-migration baseline with the immutable
-95-migration release candidate. It is specialized to this rollout, not a
+97-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -23,8 +23,9 @@ Therefore:
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
 - the release authority is the operator-side raw-catalog verifier plus its
-  repository-pinned SHA-256 manifests; the database V2 RPC is an operational
-  drift/readiness signal, not proof against a malicious database administrator;
+  repository-pinned SHA-256 manifests; the database V4 manifest exposed through
+  the stable V2-named RPC is an operational drift/readiness signal, not proof
+  against a malicious database administrator;
 - the mutable parsed `statements` array is not treated as file identity.
 
 Residual risk remains that history was repaired or altered independently and
@@ -38,8 +39,8 @@ The fixed production pre-state is:
 84:57ae4269ef4d75c249d59ef297661a3a
 ```
 
-The only certifiable post-state is migration count 95, head
-`20260801094000`, with this exact pending version sequence:
+The only certifiable post-state is migration count 97, head
+`20260801112153`, with this exact pending version sequence:
 
 ```text
 20260727100000
@@ -53,20 +54,25 @@ The only certifiable post-state is migration count 95, head
 20260801092000
 20260801093000
 20260801094000
+20260801105313
+20260801112153
 ```
 
 The checker derives filenames and source hashes from the final candidate, then
 requires this exact sequence and reports `integration_complete=true` only at
-95 migrations with these eleven versions. The 070000/091000/093000 billing and 080000 alert
+97 migrations with these thirteen versions. The 070000/091000/093000/105313
+billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
 definitions, sequences, columns, and all scoped CHECK/UNIQUE/FK definitions are
-included in the semantic manifest. Table and sequence ACL evidence contains the
+included in the semantic manifest. V4 compositionally preserves the V3 surface
+and adds the delivery-state columns, CHECK constraints, partial unique index,
+and four changed/new bootstrap RPCs from migration 96. Table and sequence ACL evidence contains the
 complete sorted grantor, grantee (including `PUBLIC` and custom roles),
 privilege, and grantability state, so extra grants and `WITH GRANT OPTION` drift
 change the pinned proof. This ACL scope explicitly includes the release-critical
 `studio_payment_accounts` mapping and `stripe_events` ingestion tables. The
-external verifier also attests the V2 RPC and its
-private helper bodies/ACLs without asking V2 to attest its own body.
+external verifier also attests the stable V2-named public RPC, the V4 helper,
+and their bodies/configuration/ACLs without asking V4 to attest its own body.
 Never certify an
 earlier head; regenerate the packet from the exact immutable release commit so
 all candidate migration hashes and counts remain current.
@@ -164,7 +170,7 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-The dry-run must report the exact eleven pending versions above, with their final
+The dry-run must report the exact thirteen pending versions above, with their final
 candidate filenames and hashes. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
@@ -172,7 +178,7 @@ Staging application remains locked until the director approves Phase B. The
 approved command will require the same inspection token, exact project ref, a
 durable approval record, and `--approve-staging-apply`. After application:
 
-1. require count 95, head 094000, the exact eleven-version sequence, and the
+1. require count 97, head 112153, the exact thirteen-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, sequence-ACL, and column identity in the final semantic
@@ -182,10 +188,10 @@ durable approval record, and `--approve-staging-apply`. After application:
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. invoke the service-role-only V2 readiness RPC during every apparent-post
+3. invoke the service-role-only V2-named readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v3`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v4`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
@@ -248,6 +254,6 @@ drop the trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 95 head and
+database-first: Render `/health/ready` remains 503 until the exact 97 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

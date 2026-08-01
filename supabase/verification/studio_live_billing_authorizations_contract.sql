@@ -261,7 +261,10 @@ BEGIN
        OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE')
        OR has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v2_base()', 'EXECUTE')
        OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v2_base()', 'EXECUTE')
-       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v2_base()', 'EXECUTE') THEN
+       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v2_base()', 'EXECUTE')
+       OR has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v4()', 'EXECUTE')
+       OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v4()', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v4()', 'EXECUTE') THEN
         RAISE EXCEPTION 'Private operational manifest helper is directly callable.';
     END IF;
 END $$;
@@ -619,21 +622,32 @@ BEGIN
         RAISE EXCEPTION 'A later Account Link bypassed generation-bound checkpoint evidence.';
     END IF;
 
-    INSERT INTO public.studio_payment_accounts(
-        studio_id, stripe_connected_account_id, status, charges_enabled,
-        payouts_enabled, details_submitted, requirements_due, metadata
-    ) VALUES (
-        v_other_studio, 'acct_PreexistingGap1', 'onboarding_incomplete', false,
-        false, false, ARRAY[]::TEXT[], jsonb_build_object('connect_account_generation', 1)
-    );
-    PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
-        v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
-        'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
-    );
-    IF FOUND THEN
-        RAISE EXCEPTION 'Bootstrap waiver covered a second mapping without checkpoint evidence.';
-    END IF;
-    DELETE FROM public.studio_payment_accounts WHERE studio_id = v_other_studio;
+    BEGIN
+        INSERT INTO public.studio_payment_accounts(
+            studio_id, stripe_connected_account_id, status, charges_enabled,
+            payouts_enabled, details_submitted, requirements_due, metadata
+        ) VALUES (
+            v_other_studio, 'acct_PreexistingGap1', 'onboarding_incomplete', false,
+            false, false, ARRAY[]::TEXT[], jsonb_build_object('connect_account_generation', 1)
+        );
+        PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+            v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+            'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+        );
+        IF FOUND THEN
+            RAISE EXCEPTION 'Bootstrap waiver covered a second mapping without checkpoint evidence.';
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM public.stripe_connect_onboarding_bootstraps bootstrap
+             WHERE bootstrap.id = v_bootstrap.bootstrap_id
+               AND bootstrap.initial_link_support_required_at IS NOT NULL
+        ) THEN
+            RAISE EXCEPTION 'Second mapping did not close uncertain initial-link retry.';
+        END IF;
+        RAISE EXCEPTION 'rollback second-mapping probe' USING ERRCODE = 'P0B33';
+    EXCEPTION WHEN SQLSTATE 'P0B33' THEN
+        NULL;
+    END;
 
     INSERT INTO public.stripe_events(
         stripe_event_id, stripe_account_id, livemode, type, payload,
@@ -644,18 +658,30 @@ BEGIN
     ) RETURNING id INTO v_processing_event;
 
     FOREACH v_status IN ARRAY ARRAY['pending', 'processing', 'failed', 'ignored'] LOOP
-        UPDATE public.stripe_events
-           SET processing_status = v_status,
-               processed_at = NULL,
-               error = CASE WHEN v_status = 'failed' THEN 'bootstrap_processing_gate' ELSE NULL END
-         WHERE id = v_processing_event;
-        PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
-            v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
-            'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
-        );
-        IF FOUND THEN
-            RAISE EXCEPTION 'Relevant % event passed the mutation-time processing gate.', v_status;
-        END IF;
+        BEGIN
+            UPDATE public.stripe_events
+               SET processing_status = v_status,
+                   processed_at = NULL,
+                   error = CASE WHEN v_status = 'failed' THEN 'bootstrap_processing_gate' ELSE NULL END
+             WHERE id = v_processing_event;
+            PERFORM public.authorize_connect_onboarding_bootstrap_initial_link_v2(
+                v_bootstrap.bootstrap_id, v_blank_studio, repeat('a', 40), 1,
+                'acct_BootstrapCreated1', repeat('2', 64), repeat('3', 64), v_link_key
+            );
+            IF FOUND THEN
+                RAISE EXCEPTION 'Relevant % event passed the mutation-time processing gate.', v_status;
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM public.stripe_connect_onboarding_bootstraps bootstrap
+                 WHERE bootstrap.id = v_bootstrap.bootstrap_id
+                   AND bootstrap.initial_link_support_required_at IS NOT NULL
+            ) THEN
+                RAISE EXCEPTION 'Blocked % event did not close uncertain initial-link retry.', v_status;
+            END IF;
+            RAISE EXCEPTION 'rollback processing-state probe' USING ERRCODE = 'P0B32';
+        EXCEPTION WHEN SQLSTATE 'P0B32' THEN
+            NULL;
+        END;
     END LOOP;
     UPDATE public.stripe_events
        SET processing_status = 'processed', processed_at = now(), error = NULL
@@ -1054,16 +1080,17 @@ BEGIN
 
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 95
-       OR v_preflight.migration_head <> '20260801094000'
+       OR v_preflight.migration_count <> 97
+       OR v_preflight.migration_head <> '20260801112153'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
            '20260801090000', '20260801091000', '20260801092000',
-           '20260801093000', '20260801094000'
+           '20260801093000', '20260801094000', '20260801105313',
+           '20260801112153'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v3' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v4' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 

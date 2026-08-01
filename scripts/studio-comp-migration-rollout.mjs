@@ -17,7 +17,7 @@ export const ROLLOUT = Object.freeze({
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
   preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 95,
+  finalMigrationCount: 97,
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -30,11 +30,14 @@ export const ROLLOUT = Object.freeze({
     "20260801092000",
     "20260801093000",
     "20260801094000",
+    "20260801105313",
+    "20260801112153",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
     "a615bdfc9755b6c3e611e9f8829fdaf387b4f981",
     "0294fdbd2eecc72a8204222c244b7874fe35ada4",
+    "accbb1f9c1bc87fa511f3c2bcafb9aeebafa33e2",
   ]),
   migrations: Object.freeze([
     Object.freeze({
@@ -49,21 +52,21 @@ export const ROLLOUT = Object.freeze({
 });
 
 export const EXPECTED_OPERATIONAL_MANIFEST =
-  "53f7f07e127fcc6fc0c89717d603e31cc732a8ca49c7b86591f2c2711263831a";
+  "a490b80a20d18bc23e194c4d0ca4917c02c4c200f18a8c43d15f863e2f34b037";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|95|20260801094000|" +
+  "true|97|20260801112153|" +
   ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v3";
+  "|0||release-db-attestation-v4";
 
 export const EXPECTED_CATALOG_STATE =
-  "columns=35:bdd37497e490bde0a8491192935ce84bb7c9c65d2021f8b487e993586c6bce46:0;" +
-  "constraints=15:c5bf7762e24e3704c2541d2c17c5bff85f54bb0fd7eb4430cb958849afaedb3b:0;" +
-  "functions=41:a132ecf3b41840c130df99d12b72b85e8955b81d0fd7ac8205e0d24b0f50fab4:0;" +
-  "indexes=10:0d1e6e31bc5366e04d8ad554b3d7ce6d43d1e73e6fe91c1f50fed7a766636afb:0;" +
+  "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
+  "constraints=23:a49de1a02cd80ca92017bde8b6c0a2ed8aa218d7ed56a383b73ae429158fd028:0;" +
+  "functions=44:85ba6dd78f86a4060c5b79a9908ce9e7ea59eb0e14edb04af0c3100b8adeece8:0;" +
+  "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
-  "scoped_constraints=141:1ba160bb85d392c5b5a78142fc35d0e84fa75ffdca5d1e7ba2e6ccc9765734aa:0;" +
-  "scoped_indexes=32:029ff9098f63de005a410481e5c4ad26148fc05bd6d47c0d0f7ad30cf3e81a77:0;" +
+  "scoped_constraints=149:f20b3f6d65c722b669ec0ef60d430a886ec64a225f8953f34231fd2f68ee70e2:0;" +
+  "scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;" +
   "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
   "table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;" +
   "tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;" +
@@ -78,7 +81,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V3 operational readiness did not match the exact release state.");
+    throw new RolloutError("V4 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -482,6 +485,8 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid, uuid, text, integer, text, text)', 'search_path=""', true, true),
     ('public.bind_connect_onboarding_bootstrap_account_v2(uuid, uuid, text, integer, text, text)', 'search_path=""', true, true),
     ('public.authorize_connect_onboarding_bootstrap_initial_link_v2(uuid, uuid, text, integer, text, text, text, text)', 'search_path=""', true, true),
+    ('public.record_connect_onboarding_bootstrap_initial_link_response(uuid, uuid, text, integer, text, text, text, text, text, text)', 'search_path=""', true, true),
+    ('public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(uuid, text, text)', 'search_path=""', true, true),
     ('private.live_billing_event_is_in_scope(text, text)', 'search_path=""', true, false),
     ('private.enforce_live_billing_checkpoint_processed_events()', 'search_path=""', true, false),
     ('private.current_connect_account_generation(jsonb)', 'search_path=""', false, true),
@@ -504,6 +509,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.koaryu_release_schema_preflight_v2()', 'search_path=pg_catalog', true, true),
     ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v4()', 'search_path=pg_catalog', false, false),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -600,6 +606,7 @@ required_indexes(index_name, table_name, unique_index, partial_index) as (
     ('idx_stripe_events_error_reference', 'stripe_events', true, true),
     ('idx_stripe_events_live_billing_ingest_sequence', 'stripe_events', true, false),
     ('idx_stripe_connect_onboarding_bootstraps_generation_once', 'stripe_connect_onboarding_bootstraps', true, false),
+    ('idx_stripe_connect_onboarding_bootstraps_delivery_receipt', 'stripe_connect_onboarding_bootstraps', true, true),
     ('operational_alert_episodes_one_unresolved', 'operational_alert_episodes', true, true),
     ('operational_alert_episodes_recent', 'operational_alert_episodes', false, false),
     ('operational_alert_outbox_claim', 'operational_alert_outbox', false, true),
@@ -700,6 +707,12 @@ required_columns(table_name, column_name, data_type, nullable, identity_column) 
     ('stripe_connect_onboarding_bootstraps', 'initial_link_claimed_at', 'timestamp with time zone', true, false),
     ('stripe_connect_onboarding_bootstraps', 'recovery_context', 'jsonb', true, false),
     ('stripe_connect_onboarding_bootstraps', 'recovery_expires_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_response_sha256', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_response_recorded_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_delivery_receipt_sha256', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_delivery_receipt_expires_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_delivered_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_support_required_at', 'timestamp with time zone', true, false),
     ('operational_alert_episodes', 'backup_destination_id', 'text', false, false),
     ('operational_alert_episodes', 'escalation_after_minutes', 'integer', false, false),
     ('operational_alert_episodes', 'acknowledged_at', 'timestamp with time zone', true, false),
@@ -735,7 +748,15 @@ required_constraints(table_name, constraint_identity, constraint_type) as (
     ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c'),
     ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_pair', 'c'),
     ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_context_object', 'c'),
-    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_expiry', 'c')
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_expiry', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_response_hash', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_receipt_hash', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_response_pair', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_receipt_pair', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_delivery_order', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_receipt_expiry', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_delivered_state', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_terminal_state', 'c')
 ),
 constraint_actual as (
   select relation.relname as table_name,
@@ -1155,7 +1176,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 95-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 97-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1508,7 +1529,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 95-migration candidate through 094000.",
+        "Provider inspection requires the exact final 97-migration candidate through 112153.",
       );
     }
     runCommand(
