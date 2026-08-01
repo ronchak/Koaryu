@@ -144,11 +144,11 @@ Operator: `Codex release orchestrator`
 - Scope: repository-only remediation; no staging or production provider read,
   migration, contract execution, Auth fixture, or other provider mutation was
   performed.
-- Final required database identity: 99 migrations, head
-  `20260801123112_repair_operational_alert_delivery_claim_attestation_v6.sql`, with exact pending
+- Final required database identity: 100 migrations, head
+  `20260801131844_finalize_release_database_attestation_v7.sql`, with exact pending
   versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
   01090000, 01091000, 01092000, 01093000, 01094000, 01105313, 01112153,
-  01115044, and 01123112 after the fixed
+  01115044, 01123112, and 01131844 after the fixed
   84-migration production baseline.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
@@ -168,9 +168,10 @@ Operator: `Codex release orchestrator`
   `20260801092000` (semantic attestation), `20260801093000` (Connect recovery),
   `20260801094000` (ACL/readiness attestation), `20260801105313` (Connect
   delivery retirement), `20260801112153` (V4 attestation), `20260801115044`
-  (V5 column-ACL attestation), and `20260801123112` (alert-delivery lint repair
-  and V6 attestation) are ordered 89-99. The packet reports
-  `integration_complete=true` only for the exact 84-to-99 history and fifteen
+  (V5 column-ACL attestation), `20260801123112` (alert-delivery lint repair
+  and V6 attestation), and `20260801131844` (runtime-invariant V7 and explicit
+  least-privilege ACL convergence) are ordered 89-100. The packet reports
+  `integration_complete=true` only for the exact 84-to-100 history and sixteen
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
@@ -179,7 +180,7 @@ Operator: `Codex release orchestrator`
   and `stripe_events`. A separate column-ACL manifest covers every ordinary,
   non-dropped column across all fourteen scoped tables, including empty
   `attacl`, and rejects explicit custom/browser grants and grant-option drift.
-  Apparent-post linked inspection also requires exact V6 output before
+  Apparent-post linked inspection also requires exact V7 output before
   certification. Hosted exposed-schema and schema-ACL readback remain a
   separate provider/operator gate that local PostgreSQL cannot certify. The exact 32-file SQL
   contract inventory fails CI on missing or unexpected verification files.

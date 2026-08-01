@@ -415,7 +415,7 @@ done
 echo "[operational manifest] RUN database-observable semantic and ACL signal"
 operational_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_operational_manifest_v6();
+SELECT private.koaryu_release_operational_manifest_v7();
 "
 )"
 if (
@@ -500,16 +500,20 @@ assert_attestation_rejects \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v2()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
-  "V4 helper self-body drift (external authority only)" \
+  "V4 helper self-body drift" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v4()'::regprocedure;" \
-  "t"
+  "f"
 assert_attestation_rejects \
-  "V5 helper self-body drift (external authority only)" \
+  "V5 helper self-body drift" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v5()'::regprocedure;" \
-  "t"
+  "f"
 assert_attestation_rejects \
-  "V6 helper self-body drift (external authority only)" \
+  "V6 helper self-body drift" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v6()'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "V7 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v7()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \
@@ -522,6 +526,10 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "bootstrap CHECK-expression drift" \
   "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.stripe_connect_onboarding_bootstraps'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "UTC-normalized reconciliation window CHECK drift" \
+  "ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints DROP CONSTRAINT stripe_live_checkpoint_window_contract; ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints ADD CONSTRAINT stripe_live_checkpoint_window_contract CHECK (event_window_started_at IS NULL OR event_window_ended_at IS NOT NULL);" \
   "f"
 assert_attestation_rejects \
   "Connect delivery column drift" \
@@ -596,12 +604,20 @@ assert_attestation_rejects \
   "GRANT SELECT ON TABLE public.studio_payment_accounts TO service_role WITH GRANT OPTION;" \
   "f"
 assert_attestation_rejects \
+  "studio payment account browser structural ACL drift" \
+  "GRANT TRIGGER ON TABLE public.studio_payment_accounts TO authenticated;" \
+  "f"
+assert_attestation_rejects \
   "Stripe event custom-role ACL drift" \
   "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT ON TABLE public.stripe_events TO koaryu_attestation_custom_role;" \
   "f"
 assert_attestation_rejects \
   "Stripe event service-role GRANT OPTION drift" \
   "GRANT SELECT ON TABLE public.stripe_events TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "Stripe event excessive service-role ACL drift" \
+  "GRANT TRUNCATE ON TABLE public.stripe_events TO service_role;" \
   "f"
 assert_attestation_rejects \
   "required service-role RPC ACL drift" \

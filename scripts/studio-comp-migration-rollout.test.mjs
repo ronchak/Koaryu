@@ -81,22 +81,22 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("requires the exact V6 operational readiness output", () => {
+  it("requires the exact V7 operational readiness output", () => {
     assert.equal(
       validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS),
       EXPECTED_OPERATIONAL_READINESS,
     );
-    for (const value of [null, "", "true|99|20260801123112", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
-      assert.throws(() => validateOperationalReadiness(value), /V6 operational readiness/);
+    for (const value of [null, "", "true|100|20260801131844", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
+      assert.throws(() => validateOperationalReadiness(value), /V7 operational readiness/);
     }
   });
 
-  it("decodes the pinned CLI single-field CSV contract before exact V6 validation", () => {
+  it("decodes the pinned CLI single-field CSV contract before exact V7 validation", () => {
     const quotedReadiness = singleValueCsv(
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|99\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|100\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -136,7 +136,7 @@ describe("studio-comp migration rollout guard", () => {
   it("derives an exact 84-to-N packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 99);
+    assert.equal(packet.migrationCount, 100);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(packet.pendingMigrations.length, packet.migrationCount - 84);
     assert.deepEqual(
@@ -286,26 +286,26 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("rejects missing, malformed, or non-ready V6 output before post certification", () => {
+  it("rejects missing, malformed, or non-ready V7 output before post certification", () => {
     const packet = candidatePacket();
     for (const operationalReadiness of [
       null,
       "",
       EXPECTED_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_OPERATIONAL_READINESS.replace("|99|", "|98|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("20260801123112", "20260801115044"),
+      EXPECTED_OPERATIONAL_READINESS.replace("|100|", "|99|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("20260801131844", "20260801123112"),
       EXPECTED_OPERATIONAL_READINESS.replace("20260801105313,", ""),
       EXPECTED_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v6", "release-db-attestation-v5"),
+      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v7", "release-db-attestation-v6"),
     ]) {
       assert.throws(
         () => classifyStateSnapshot(postSnapshot(packet, { operationalReadiness }), packet),
-        /V6 operational readiness/,
+        /V7 operational readiness/,
       );
     }
   });
 
-  it("invokes V6 for apparent post-state but not for the migration-84 pre-state", () => {
+  it("invokes V7 for apparent post-state but not for the migration-84 pre-state", () => {
     const packet = candidatePacket();
     const postValues = new Map([
       ["history_schema", "0:1:1:1:0"],
@@ -348,12 +348,12 @@ describe("studio-comp migration rollout guard", () => {
     assert.ok(!preHeaders.includes("operational_readiness"));
   });
 
-  it("refuses to certify post-state before the exact 99-migration integration", () => {
+  it("refuses to certify post-state before the exact 100-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 99-migration sequence/,
+      /exact final 100-migration sequence/,
     );
   });
 

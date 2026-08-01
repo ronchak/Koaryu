@@ -225,6 +225,9 @@ BEGIN
         IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v2()', 'EXECUTE') THEN
             RAISE EXCEPTION '% can execute the hosted V2 schema preflight.', v_role;
         END IF;
+        IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v6()', 'EXECUTE') THEN
+            RAISE EXCEPTION '% can execute the retired hosted V6 schema preflight.', v_role;
+        END IF;
     END LOOP;
     IF EXISTS (
         SELECT 1
@@ -250,6 +253,18 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'PUBLIC can execute the hosted V2 schema preflight.';
     END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM pg_proc function
+          CROSS JOIN LATERAL aclexplode(coalesce(
+              function.proacl, acldefault('f', function.proowner)
+          )) acl
+         WHERE function.oid = 'public.koaryu_release_schema_preflight_v6()'::REGPROCEDURE
+           AND acl.grantee = 0
+           AND acl.privilege_type = 'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'PUBLIC can execute the retired hosted V6 schema preflight.';
+    END IF;
     IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight()', 'EXECUTE') THEN
         RAISE EXCEPTION 'service_role cannot execute the hosted schema preflight.';
     END IF;
@@ -270,7 +285,11 @@ BEGIN
        OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v5()', 'EXECUTE')
        OR has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v6()', 'EXECUTE')
        OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v6()', 'EXECUTE')
-       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v6()', 'EXECUTE') THEN
+       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v6()', 'EXECUTE')
+       OR has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v7()', 'EXECUTE')
+       OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v7()', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v7()', 'EXECUTE')
+       OR has_function_privilege('service_role', 'public.koaryu_release_schema_preflight_v6()', 'EXECUTE') THEN
         RAISE EXCEPTION 'Private operational manifest helper is directly callable.';
     END IF;
 END $$;
@@ -1086,18 +1105,48 @@ BEGIN
 
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 99
-       OR v_preflight.migration_head <> '20260801123112'
+       OR v_preflight.migration_count <> 100
+       OR v_preflight.migration_head <> '20260801131844'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
            '20260801090000', '20260801091000', '20260801092000',
            '20260801093000', '20260801094000', '20260801105313',
-           '20260801112153', '20260801115044', '20260801123112'
+           '20260801112153', '20260801115044', '20260801123112',
+           '20260801131844'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v6' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v7' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
+    END IF;
+
+    EXECUTE 'ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints
+        DROP CONSTRAINT stripe_live_checkpoint_window_contract';
+    EXECUTE 'ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints
+        ADD CONSTRAINT stripe_live_checkpoint_window_contract
+        CHECK (event_window_started_at IS NULL OR event_window_ended_at IS NOT NULL)';
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF v_preflight.ready
+       OR NOT ('operational_semantic_acl_manifest_v7' = ANY(v_preflight.security_failures)) THEN
+        RAISE EXCEPTION 'Hosted preflight accepted weakened reconciliation-window semantics.';
+    END IF;
+    EXECUTE 'ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints
+        DROP CONSTRAINT stripe_live_checkpoint_window_contract';
+    EXECUTE $restore$
+        ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints
+        ADD CONSTRAINT stripe_live_checkpoint_window_contract CHECK (
+            event_window_started_at IS NULL
+            OR (
+                event_window_started_at = TIMESTAMPTZ '2026-07-13 00:00:00+00'
+                AND event_window_ended_at IS NOT NULL
+                AND event_window_ended_at >= event_window_started_at
+            )
+        )
+    $restore$;
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF NOT v_preflight.ready THEN
+        RAISE EXCEPTION 'Hosted preflight did not recover after exact CHECK restoration: %',
+            v_preflight.security_failures;
     END IF;
 
     EXECUTE 'CREATE POLICY injected_permissive_contract_policy
@@ -1108,6 +1157,22 @@ BEGIN
        OR NOT ('policy_manifest' = ANY(v_preflight.security_failures)) THEN
         RAISE EXCEPTION 'Hosted preflight accepted an injected policy-manifest drift.';
     END IF;
+
+    GRANT TRIGGER ON TABLE public.studio_payment_accounts TO authenticated;
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF v_preflight.ready
+       OR NOT ('operational_semantic_acl_manifest_v7' = ANY(v_preflight.security_failures)) THEN
+        RAISE EXCEPTION 'Hosted preflight accepted an unexpected studio-payment browser privilege.';
+    END IF;
+    REVOKE TRIGGER ON TABLE public.studio_payment_accounts FROM authenticated;
+
+    GRANT TRUNCATE ON TABLE public.stripe_events TO service_role;
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF v_preflight.ready
+       OR NOT ('operational_semantic_acl_manifest_v7' = ANY(v_preflight.security_failures)) THEN
+        RAISE EXCEPTION 'Hosted preflight accepted an excessive Stripe-event service privilege.';
+    END IF;
+    REVOKE TRUNCATE ON TABLE public.stripe_events FROM service_role;
 
     EXECUTE format(
         'GRANT UPDATE ON SEQUENCE %s TO service_role',

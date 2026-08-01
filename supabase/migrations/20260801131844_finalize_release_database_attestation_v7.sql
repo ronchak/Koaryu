@@ -1,327 +1,35 @@
-#!/usr/bin/env node
+-- Converge the two runtime-dependent table ACLs to one explicit least-privilege
+-- policy, then replace the hosted drift signal with a locale- and timezone-stable
+-- V7 manifest. Release authority remains the independently executed raw catalog
+-- verifier; this database helper is an operational readiness signal only.
 
-import { createHash } from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import process from "node:process";
-import readline from "node:readline/promises";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+REVOKE ALL PRIVILEGES ON TABLE public.stripe_events
+    FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.stripe_events
+    TO service_role;
 
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPOSITORY_ROOT = path.resolve(SCRIPT_DIR, "..");
+REVOKE ALL PRIVILEGES ON TABLE public.studio_payment_accounts
+    FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.studio_payment_accounts
+    TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.studio_payment_accounts
+    TO service_role;
 
-export const ROLLOUT = Object.freeze({
-  cliVersion: "2.95.4",
-  stagingRef: "nxgsektqsgrtyfhawxbc",
-  productionRef: "mimguepumzsgmcaycdsh",
-  preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 100,
-  finalPendingVersions: Object.freeze([
-    "20260727100000",
-    "20260727110000",
-    "20260801050957",
-    "20260801060000",
-    "20260801070000",
-    "20260801080000",
-    "20260801090000",
-    "20260801091000",
-    "20260801092000",
-    "20260801093000",
-    "20260801094000",
-    "20260801105313",
-    "20260801112153",
-    "20260801115044",
-    "20260801123112",
-    "20260801131844",
-  ]),
-  requiredAncestry: Object.freeze([
-    "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
-    "a615bdfc9755b6c3e611e9f8829fdaf387b4f981",
-    "0294fdbd2eecc72a8204222c244b7874fe35ada4",
-    "accbb1f9c1bc87fa511f3c2bcafb9aeebafa33e2",
-    "d0c5159dd4ce7bf3ca9a126fa39577959e7ba15a",
-    "8fc0cdd74466cd0e4292c0e94a84d682c8748010",
-    "413b29d911eb98a6b6372469f1c3edf83ec545ee",
-  ]),
-  migrations: Object.freeze([
-    Object.freeze({
-      filename: "20260727100000_atomic_studio_comp_management.sql",
-      sha256: "2cd1e15dbe5a8224a0e4829bc92c6b01aae4699006d603d613d18cb4bc82c5c6",
-    }),
-    Object.freeze({
-      filename: "20260727110000_order_billing_events_after_studio_comps.sql",
-      sha256: "22faa79522ba2018780fb260401cd23830df553ee3faf0546b2af689eb51bfc0",
-    }),
-  ]),
-});
+ALTER FUNCTION public.koaryu_release_schema_preflight_v2()
+    RENAME TO koaryu_release_schema_preflight_v6;
+ALTER FUNCTION public.koaryu_release_schema_preflight_v6() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v6()
+    FROM PUBLIC, anon, authenticated, service_role;
 
-export const EXPECTED_OPERATIONAL_MANIFEST =
-  "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
+CREATE FUNCTION private.koaryu_release_operational_manifest_v7()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+SET TimeZone = 'UTC'
+AS $v7$
 
-export const EXPECTED_OPERATIONAL_READINESS =
-  "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v7";
-
-export const EXPECTED_CATALOG_STATE =
-  "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
-  "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
-  "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=48:8a881fd7e66621ec59432e2b010d500863f00e076ebb84bbc95f6e14b4b6d047:0;" +
-  "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
-  "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
-  "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
-  "scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;" +
-  "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
-  "table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;" +
-  "tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;" +
-  "triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0";
-
-export function validateOperationalManifest(value) {
-  if (value !== EXPECTED_OPERATIONAL_MANIFEST) {
-    throw new RolloutError(`Operational semantic/ACL manifest mismatch: ${value}.`);
-  }
-  return value;
-}
-
-export function validateOperationalReadiness(value) {
-  if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V7 operational readiness did not match the exact release state.");
-  }
-  return value;
-}
-
-export const OPERATIONAL_READINESS_SQL = `
-select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
-       array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
-       coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
-  as operational_readiness
-from public.koaryu_release_schema_preflight_v2()
-`;
-
-const HISTORY_SCHEMA_SQL = `
-select
-  count(*) filter (where column_name ~* '(hash|checksum|digest)')::text
-  || ':' ||
-  count(*) filter (
-    where column_name = 'statements'
-      and data_type = 'ARRAY'
-      and udt_name = '_text'
-  )::text
-  || ':' ||
-  count(*) filter (where column_name = 'version')::text
-  || ':' ||
-  count(*) filter (where column_name = 'name')::text
-  || ':' ||
-  count(*) filter (where column_name not in ('version', 'name', 'statements'))::text
-  as history_schema
-from information_schema.columns
-where table_schema = 'supabase_migrations'
-  and table_name = 'schema_migrations'
-`;
-
-const HISTORY_SQL = `
-select count(*)::text || ':' ||
-       md5(string_agg(version || ':' || name, '|' order by version))
-  as history_state
-from supabase_migrations.schema_migrations
-`;
-
-const TARGET_HISTORY_SQL = `
-select coalesce(
-         string_agg(version || ':' || name, '|' order by version),
-         ''
-       ) as target_history
-from supabase_migrations.schema_migrations
-where version >= '20260727100000'
-`;
-
-const OBJECT_COUNTS_SQL = `
-select
-  (select count(*)
-     from pg_proc p
-     join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public'
-      and p.proname in (
-        'preserve_studio_comp_provenance',
-        'set_studio_comp_atomic',
-        'clear_studio_comp_for_billing_event'
-      ))::text
-  || ':' ||
-  (select count(*)
-     from pg_trigger t
-     join pg_class c on c.oid = t.tgrelid
-     join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public'
-      and c.relname = 'studio_subscriptions'
-      and t.tgname = 'preserve_studio_comp_provenance_on_metadata_update'
-      and not t.tgisinternal)::text
-  as object_counts
-`;
-
-const FUNCTION_STATE_SQL = `
-with expected(signature, expected_config, service_execute) as (
-  values
-    (
-      'public.preserve_studio_comp_provenance()',
-      array['search_path=pg_catalog']::text[],
-      false
-    ),
-    (
-      'public.set_studio_comp_atomic(uuid, boolean, text, uuid, text, boolean)',
-      array['search_path=public, pg_temp']::text[],
-      true
-    ),
-    (
-      'public.clear_studio_comp_for_billing_event(uuid, bigint)',
-      array['search_path=public, pg_temp']::text[],
-      true
-    )
-),
-actual as (
-  select
-    format('%I.%I(%s)', n.nspname, p.proname, oidvectortypes(p.proargtypes)) as signature,
-    md5(pg_get_functiondef(p.oid)) as definition_md5,
-    owner.rolname as owner_name,
-    p.prosecdef,
-    p.proconfig,
-    exists (
-      select 1
-        from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
-       where acl.grantee = 0
-         and acl.privilege_type = 'EXECUTE'
-    ) as public_execute,
-    has_function_privilege('anon', p.oid, 'EXECUTE') as anon_execute,
-    has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_execute,
-    exists (
-      select 1
-        from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
-        join pg_roles granted on granted.oid = acl.grantee
-       where granted.rolname = 'service_role'
-         and acl.privilege_type = 'EXECUTE'
-         and not acl.is_grantable
-    ) as service_execute,
-    exists (
-      select 1
-        from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
-        left join pg_roles granted on granted.oid = acl.grantee
-       where acl.privilege_type = 'EXECUTE'
-         and acl.grantee <> p.proowner
-         and not (
-           granted.rolname = 'service_role'
-           and p.proname in (
-             'set_studio_comp_atomic',
-             'clear_studio_comp_for_billing_event'
-           )
-           and not acl.is_grantable
-         )
-    ) as unexpected_execute_grant
-  from pg_proc p
-  join pg_namespace n on n.oid = p.pronamespace
-  join pg_roles owner on owner.oid = p.proowner
-  where n.nspname = 'public'
-    and p.proname in (
-      'preserve_studio_comp_provenance',
-      'set_studio_comp_atomic',
-      'clear_studio_comp_for_billing_event'
-    )
-),
-compared as (
-  select
-    e.signature,
-    a.definition_md5,
-    a.owner_name,
-    a.prosecdef,
-    a.proconfig,
-    a.public_execute,
-    a.anon_execute,
-    a.authenticated_execute,
-    a.service_execute,
-    a.unexpected_execute_grant,
-    e.expected_config,
-    e.service_execute as expected_service_execute
-  from expected e
-  full join actual a using (signature)
-)
-select
-  count(definition_md5)::text || ':' ||
-  coalesce(
-    md5(string_agg(
-      signature || ':' || definition_md5 || ':' || owner_name || ':' ||
-      prosecdef::text || ':' || array_to_string(proconfig, ',') || ':' ||
-      public_execute::text || ':' || anon_execute::text || ':' ||
-      authenticated_execute::text || ':' || service_execute::text,
-      '|' order by signature
-    )),
-    md5('')
-  ) || ':' ||
-  count(*) filter (
-    where definition_md5 is null
-       or owner_name <> 'postgres'
-       or prosecdef
-       or proconfig is distinct from expected_config
-       or public_execute
-       or anon_execute
-       or authenticated_execute
-       or service_execute is distinct from expected_service_execute
-       or unexpected_execute_grant
-  )::text as function_state
-from compared
-`;
-
-const TRIGGER_STATE_SQL = `
-with actual as (
-  select
-    t.oid,
-    md5(pg_get_triggerdef(t.oid)) as definition_md5,
-    t.tgenabled,
-    t.tgtype,
-    t.tgattr::text as trigger_attributes,
-    metadata.attnum::text as metadata_attribute,
-    table_owner.rolname as table_owner,
-    fn_namespace.nspname as function_schema,
-    fn.proname as function_name,
-    oidvectortypes(fn.proargtypes) as function_arguments
-  from pg_trigger t
-  join pg_class c on c.oid = t.tgrelid
-  join pg_namespace n on n.oid = c.relnamespace
-  join pg_roles table_owner on table_owner.oid = c.relowner
-  join pg_proc fn on fn.oid = t.tgfoid
-  join pg_namespace fn_namespace on fn_namespace.oid = fn.pronamespace
-  join pg_attribute metadata
-    on metadata.attrelid = c.oid
-   and metadata.attname = 'metadata'
-   and not metadata.attisdropped
-  where n.nspname = 'public'
-    and c.relname = 'studio_subscriptions'
-    and t.tgname = 'preserve_studio_comp_provenance_on_metadata_update'
-    and not t.tgisinternal
-)
-select
-  count(*)::text || ':' ||
-  coalesce(
-    md5(string_agg(definition_md5 || ':' || table_owner, '|' order by definition_md5)),
-    md5('')
-  ) || ':' ||
-  count(*) filter (
-    where tgenabled <> 'O'
-       or tgtype <> 19
-       or trigger_attributes <> metadata_attribute
-       or table_owner <> 'postgres'
-       or function_schema <> 'public'
-       or function_name <> 'preserve_studio_comp_provenance'
-       or function_arguments <> ''
-  )::text as trigger_state
-from actual
-`;
-
-export const CATALOG_STATE_SQL = `
-with runtime_settings as materialized (
-  select set_config('TimeZone', 'UTC', true)
-),
-required_tables(schema_name, table_name, rls_enabled, service_privileges) as (
+with required_tables(schema_name, table_name, rls_enabled, service_privileges) as (
   values
     ('public', 'studio_live_billing_authorizations', true, 'SELECT'),
     ('public', 'stripe_live_billing_reconciliation_checkpoints', true, 'SELECT'),
@@ -544,14 +252,12 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.record_operational_alert_heartbeat(text, text, text)', 'search_path=public, pg_temp', false, true),
     ('public.operational_alert_heartbeats(text)', 'search_path=public, pg_temp', false, true),
     ('public.koaryu_release_schema_preflight()', 'search_path=pg_catalog', true, true),
-    ('public.koaryu_release_schema_preflight_v2()', 'search_path=pg_catalog', true, true),
     ('public.koaryu_release_schema_preflight_v6()', 'search_path=pg_catalog', true, false),
     ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v4()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v5()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v6()', 'search_path=pg_catalog', false, false),
-    ('private.koaryu_release_operational_manifest_v7()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -631,7 +337,6 @@ trigger_actual as (
     join pg_namespace function_namespace on function_namespace.oid = function.pronamespace
     join required_triggers required
       on required.table_name = relation.relname and required.trigger_name = trigger.tgname
-    cross join runtime_settings
    where namespace.nspname = 'public'
 ),
 trigger_compared as (
@@ -666,7 +371,6 @@ index_actual as (
     join pg_class table_relation on table_relation.oid = index.indrelid
     join pg_namespace namespace on namespace.oid = table_relation.relnamespace
     join required_indexes required on required.index_name = index_relation.relname
-    cross join runtime_settings
    where namespace.nspname = 'public'
 ),
 index_compared as (
@@ -826,7 +530,6 @@ constraint_actual as (
           on attribute.attrelid = constraint_state.conrelid
          and attribute.attnum = key_position.attnum
     ) columns on true
-    cross join runtime_settings
    where namespace.nspname = 'public'
 ),
 constraint_compared as (
@@ -846,7 +549,6 @@ scoped_index_definitions as (
     join pg_namespace namespace on namespace.oid = table_relation.relnamespace
     join scoped_definition_tables covered
       on covered.schema_name = namespace.nspname and covered.table_name = table_relation.relname
-    cross join runtime_settings
 ),
 scoped_constraint_definitions as (
   select namespace.nspname as schema_name, relation.relname as table_name,
@@ -859,7 +561,6 @@ scoped_constraint_definitions as (
     join pg_namespace namespace on namespace.oid = relation.relnamespace
     join scoped_definition_tables covered
       on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
-    cross join runtime_settings
 ),
 states as (
   select 'tables' as category, count(*)::integer as object_count,
@@ -922,751 +623,105 @@ states as (
          count(*) filter (where not convalidated)::integer
     from scoped_constraint_definitions
 )
-select string_agg(category || '=' || object_count::text || ':' || state_digest || ':' || failures::text, ';' order by category collate "C") as catalog_state
-from states
-`;
+select encode(
+         extensions.digest(
+           convert_to(string_agg(category || '=' || object_count::text || ':' || state_digest || ':' || failures::text, ';' order by category collate "C"), 'UTF8'),
+           'sha256'
+         ),
+         'hex'
+       )
+  from states
+$v7$;
 
-class RolloutError extends Error {}
+ALTER FUNCTION private.koaryu_release_operational_manifest_v7() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.koaryu_release_operational_manifest_v7()
+    FROM PUBLIC, anon, authenticated, service_role;
 
-function digest(algorithm, value) {
-  return createHash(algorithm).update(value).digest("hex");
-}
+CREATE FUNCTION public.koaryu_release_schema_preflight_v2()
+RETURNS TABLE (
+    ready BOOLEAN,
+    migration_count INTEGER,
+    migration_head TEXT,
+    pending_versions TEXT[],
+    security_failures TEXT[],
+    manifest_version TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = pg_catalog
+AS $preflight$
+DECLARE
+    v_count INTEGER;
+    v_head TEXT;
+    v_pending TEXT[];
+    v_baseline TEXT;
+    v_prior RECORD;
+    v_failures TEXT[] := ARRAY[]::TEXT[];
+BEGIN
+    SELECT * INTO v_prior
+      FROM public.koaryu_release_schema_preflight_v6();
 
-function hashFile(filename) {
-  return digest("sha256", fs.readFileSync(filename));
-}
-
-function assertPlainText(name, value) {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new RolloutError(`${name} is required.`);
-  }
-  if (!/^[\x20-\x7e]+$/.test(value) || value.trim() !== value) {
-    throw new RolloutError(`${name} must be plain printable ASCII without surrounding whitespace.`);
-  }
-  return value;
-}
-
-export function assertSafeCredentialedTransport(env) {
-  const trustOverrideNames = new Set([
-    "CURL_CA_BUNDLE",
-    "NODE_EXTRA_CA_CERTS",
-    "NODE_TLS_REJECT_UNAUTHORIZED",
-    "PGSSLMODE",
-    "PGSSLROOTCERT",
-    "REQUESTS_CA_BUNDLE",
-    "SSL_CERT_DIR",
-    "SSL_CERT_FILE",
-  ]);
-  const overrideNames = Object.keys(env).filter(
-    (name) =>
-      /^(?:https?|all|ftp)_proxy$/i.test(name) ||
-      name === "GIT_PROXY_COMMAND" ||
-      trustOverrideNames.has(name),
-  );
-  const active = overrideNames.filter(
-    (name) => typeof env[name] === "string" && env[name].length > 0,
-  );
-  if (active.length > 0) {
-    throw new RolloutError(
-      `Refusing credentialed work while ambient proxy or TLS trust override variables are present: ${active.sort().join(", ")}.`,
+    -- V7 supersedes only V6's exact-head and runtime-divergent manifest
+    -- signals. Every independent history/object/security failure survives.
+    v_failures := array_remove(
+        array_remove(v_prior.security_failures, 'migration_history_v6'),
+        'operational_semantic_acl_manifest_v6'
     );
-  }
-}
 
-export function parseArguments(argv) {
-  const result = {
-    mode: "inspect",
-    target: null,
-    candidateSha: null,
-    confirmProject: null,
-    approvalRecord: null,
-    inspectionToken: null,
-    expectedProviderFingerprint: null,
-    confirmedRestoreWindow: null,
-    restoreDecisionAuthority: null,
-    approveStagingApply: false,
-    humanProductionOperator: false,
-  };
-  const valueOptions = new Map([
-    ["--mode", "mode"],
-    ["--target", "target"],
-    ["--candidate-sha", "candidateSha"],
-    ["--confirm-project", "confirmProject"],
-    ["--approval-record", "approvalRecord"],
-    ["--inspection-token", "inspectionToken"],
-    ["--expected-provider-fingerprint", "expectedProviderFingerprint"],
-    ["--confirmed-restore-window", "confirmedRestoreWindow"],
-    ["--restore-decision-authority", "restoreDecisionAuthority"],
-  ]);
-  const booleanOptions = new Map([
-    ["--approve-staging-apply", "approveStagingApply"],
-    ["--human-production-operator", "humanProductionOperator"],
-  ]);
-  const seen = new Set();
+    SELECT count(*)::INTEGER, max(version),
+           array_agg(version ORDER BY version COLLATE "C")
+             FILTER (WHERE version >= '20260727100000'),
+           count(*) FILTER (WHERE version < '20260727100000')::TEXT || ':' ||
+             md5(string_agg(version || ':' || name, '|' ORDER BY version COLLATE "C")
+                 FILTER (WHERE version < '20260727100000'))
+      INTO v_count, v_head, v_pending, v_baseline
+      FROM supabase_migrations.schema_migrations;
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const option = argv[index];
-    if (seen.has(option)) {
-      throw new RolloutError(`Duplicate option: ${option}`);
-    }
-    seen.add(option);
-    if (valueOptions.has(option)) {
-      const value = argv[index + 1];
-      if (value === undefined || value.startsWith("--")) {
-        throw new RolloutError(`${option} requires a value.`);
-      }
-      result[valueOptions.get(option)] = assertPlainText(option, value);
-      index += 1;
-      continue;
-    }
-    if (booleanOptions.has(option)) {
-      result[booleanOptions.get(option)] = true;
-      continue;
-    }
-    throw new RolloutError(`Unknown option: ${option}`);
-  }
+    IF v_count <> 100
+       OR v_head <> '20260801131844'
+       OR v_pending IS DISTINCT FROM ARRAY[
+           '20260727100000',
+           '20260727110000',
+           '20260801050957',
+           '20260801060000',
+           '20260801070000',
+           '20260801080000',
+           '20260801090000',
+           '20260801091000',
+           '20260801092000',
+           '20260801093000',
+           '20260801094000',
+           '20260801105313',
+           '20260801112153',
+           '20260801115044',
+           '20260801123112',
+           '20260801131844'
+       ]::TEXT[]
+       OR v_baseline <> '84:57ae4269ef4d75c249d59ef297661a3a' THEN
+        v_failures := array_append(v_failures, 'migration_history_v7');
+    END IF;
 
-  if (!new Set(["packet", "inspect", "dry-run", "apply"]).has(result.mode)) {
-    throw new RolloutError("--mode must be packet, inspect, dry-run, or apply.");
-  }
-  if (result.mode !== "packet" && !new Set(["staging", "production"]).has(result.target)) {
-    throw new RolloutError("--target must be staging or production.");
-  }
-  if (result.mode === "packet" && result.target !== null) {
-    throw new RolloutError("--mode packet is local-only and must not specify --target.");
-  }
-  if (!/^[0-9a-f]{40}$/.test(result.candidateSha ?? "")) {
-    throw new RolloutError("--candidate-sha must be a full lowercase 40-character commit SHA.");
-  }
-  if (
-    result.expectedProviderFingerprint !== null &&
-    !/^functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=[a-z0-9_=;:]+$/.test(
-      result.expectedProviderFingerprint,
-    )
-  ) {
-    throw new RolloutError("--expected-provider-fingerprint has an invalid shape.");
-  }
-  if (result.inspectionToken !== null && !/^[0-9a-f]{64}$/.test(result.inspectionToken)) {
-    throw new RolloutError("--inspection-token has an invalid shape.");
-  }
-  if (new Set(["packet", "inspect"]).has(result.mode) && result.inspectionToken !== null) {
-    throw new RolloutError("--inspection-token is created by inspect and cannot be supplied to inspect.");
-  }
-  if (new Set(["dry-run", "apply"]).has(result.mode) && result.inspectionToken === null) {
-    throw new RolloutError("Target inspection evidence is required through --inspection-token.");
-  }
-  if (result.mode !== "apply") {
-    const applyOnly = [
-      result.confirmProject,
-      result.approvalRecord,
-      result.confirmedRestoreWindow,
-      result.restoreDecisionAuthority,
-      result.approveStagingApply,
-      result.humanProductionOperator,
-    ];
-    if (applyOnly.some(Boolean)) {
-      throw new RolloutError("Apply authorization options are valid only with --mode apply.");
-    }
-  }
-  if (new Set(["packet", "dry-run"]).has(result.mode) && result.expectedProviderFingerprint) {
-    throw new RolloutError(
-      "--expected-provider-fingerprint is valid only for inspection comparison or production apply.",
-    );
-  }
-  return result;
-}
+    IF private.koaryu_release_operational_manifest_v7()
+       <> 'd621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79' THEN
+        v_failures := array_append(v_failures, 'operational_semantic_acl_manifest_v7');
+    END IF;
 
-export function validateApplyAuthorization(config) {
-  if (config.mode !== "apply") return;
-  const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
-  if (config.confirmProject !== projectRef) {
-    throw new RolloutError(`--confirm-project must exactly equal the pinned ${config.target} ref.`);
-  }
-  assertPlainText("--approval-record", config.approvalRecord);
-  if (config.target === "staging") {
-    if (
-      !config.approveStagingApply ||
-      config.humanProductionOperator ||
-      config.expectedProviderFingerprint ||
-      config.confirmedRestoreWindow ||
-      config.restoreDecisionAuthority
-    ) {
-      throw new RolloutError(
-        "Staging apply requires --approve-staging-apply and must not use production-only authorization fields.",
-      );
-    }
-    return;
-  }
-  if (!config.humanProductionOperator) {
-    throw new RolloutError("Production apply requires --human-production-operator.");
-  }
-  if (!config.expectedProviderFingerprint) {
-    throw new RolloutError(
-      "Production apply requires the approved staging --expected-provider-fingerprint.",
-    );
-  }
-  assertPlainText("--confirmed-restore-window", config.confirmedRestoreWindow);
-  assertPlainText("--restore-decision-authority", config.restoreDecisionAuthority);
-}
+    RETURN QUERY SELECT
+        cardinality(v_failures) = 0,
+        v_count,
+        v_head,
+        COALESCE(v_pending, ARRAY[]::TEXT[]),
+        v_failures,
+        'release-db-attestation-v7';
+END;
+$preflight$;
 
-export function buildInspectionToken(packet, target, state) {
-  return digest(
-    "sha256",
-    [packet.candidateSha, packet.postHistory, packet.sourceManifestSha256, target, state].join("|"),
-  );
-}
+ALTER FUNCTION public.koaryu_release_schema_preflight_v2() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v2()
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v2()
+    TO service_role;
 
-export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCommand) {
-  const actualSha = commandRunner("git", ["-C", sourceRoot, "rev-parse", "HEAD"], {
-    label: "candidate SHA read",
-  }).trim();
-  if (actualSha !== candidateSha) {
-    throw new RolloutError(
-      `Candidate SHA mismatch: expected ${candidateSha}, found ${actualSha}.`,
-    );
-  }
-
-  for (const requiredSha of ROLLOUT.requiredAncestry) {
-    commandRunner("git", ["-C", sourceRoot, "merge-base", "--is-ancestor", requiredSha, candidateSha], {
-      label: `required ancestry check for ${requiredSha}`,
-    });
-  }
-
-  const migrationsDirectory = path.join(sourceRoot, "supabase", "migrations");
-  const filenames = fs
-    .readdirSync(migrationsDirectory)
-    .filter((name) => name.endsWith(".sql"))
-    .sort();
-  if (filenames.length < 86) {
-    throw new RolloutError(`Candidate must contain at least 86 migrations, found ${filenames.length}.`);
-  }
-  for (const filename of filenames) {
-    if (!/^[0-9]{14}_[A-Za-z0-9_]+\.sql$/.test(filename)) {
-      throw new RolloutError(`Invalid migration filename in candidate: ${filename}`);
-    }
-  }
-
-  const orderedHistory = filenames
-    .map((filename) => {
-      const separator = filename.indexOf("_");
-      return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-    })
-    .join("|");
-  const preHistory = `84:${digest("md5", filenames.slice(0, 84)
-    .map((filename) => {
-      const separator = filename.indexOf("_");
-      return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-    })
-    .join("|"))}`;
-  const postHistory = `${filenames.length}:${digest("md5", orderedHistory)}`;
-  if (preHistory !== ROLLOUT.preHistory) {
-    throw new RolloutError("Candidate's first 84 migration names do not match the production baseline.");
-  }
-  const expectedTail = ROLLOUT.migrations.map(({ filename }) => filename);
-  if (JSON.stringify(filenames.slice(84, 86)) !== JSON.stringify(expectedTail)) {
-    throw new RolloutError("The July studio-comp pair must be the first two migrations after baseline 84.");
-  }
-
-  for (const migration of ROLLOUT.migrations) {
-    const actualHash = hashFile(path.join(migrationsDirectory, migration.filename));
-    if (actualHash !== migration.sha256) {
-      throw new RolloutError(`Source hash mismatch for ${migration.filename}.`);
-    }
-  }
-
-  const pendingMigrations = filenames.slice(84);
-  const pendingVersions = pendingMigrations.map((filename) => filename.slice(0, 14));
-  const pendingManifest = pendingMigrations.map((filename) => ({
-    filename,
-    sha256: hashFile(path.join(migrationsDirectory, filename)),
-  }));
-  return {
-    candidateSha,
-    migrationCount: filenames.length,
-    postHistory,
-    postTargetHistory: pendingMigrations
-      .map((filename) => {
-        const separator = filename.indexOf("_");
-        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
-      })
-      .join("|"),
-    pendingMigrations,
-    integrationComplete:
-      filenames.length === ROLLOUT.finalMigrationCount &&
-      JSON.stringify(pendingVersions) === JSON.stringify(ROLLOUT.finalPendingVersions),
-    sourceManifestSha256: digest(
-      "sha256",
-      pendingManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
-    ),
-    pendingManifest,
-  };
-}
-
-export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint = null) {
-  const {
-    history,
-    targetHistory,
-    objectCounts,
-    functionState,
-    triggerState,
-    catalogState,
-    operationalReadiness,
-  } = snapshot;
-  if (snapshot.historySchema !== "0:1:1:1:0") {
-    throw new RolloutError(
-      "Supabase migration history did not have the expected no-hash/statement-array shape.",
-    );
-  }
-  if (history === ROLLOUT.preHistory) {
-    if (targetHistory !== "" || objectCounts !== "0:0") {
-      throw new RolloutError(
-        "Migration history is pre-state but studio-comp objects already exist; stop for drift review.",
-      );
-    }
-    return { state: "pre", providerFingerprint: null };
-  }
-  if (history === packet.postHistory) {
-    if (!packet.integrationComplete) {
-      throw new RolloutError(
-        "Candidate does not contain the exact final 100-migration sequence; post-state cannot be certified.",
-      );
-    }
-    if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
-      throw new RolloutError("Post-state history does not have the exact expected studio-comp objects.");
-    }
-    if (!/^3:[0-9a-f]{32}:0$/.test(functionState ?? "")) {
-      throw new RolloutError("Function owner, definition, security, search path, or ACL checks failed.");
-    }
-    if (!/^1:[0-9a-f]{32}:0$/.test(triggerState ?? "")) {
-      throw new RolloutError("Trigger definition, binding, enabled state, or metadata column check failed.");
-    }
-    validateCatalogState(catalogState);
-    validateOperationalReadiness(operationalReadiness);
-    const providerFingerprint =
-      `functions=${functionState};trigger=${triggerState};catalog=${catalogState}`;
-    if (expectedProviderFingerprint && providerFingerprint !== expectedProviderFingerprint) {
-      throw new RolloutError("Provider fingerprint does not match the approved staging evidence.");
-    }
-    return { state: "post", providerFingerprint };
-  }
-  throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-state or post-state.`,
-  );
-}
-
-export function validateCatalogState(catalogState) {
-  const expectedCatalog = new Map(
-    EXPECTED_CATALOG_STATE.split(";").map((part) => {
-      const match = /^([a-z_]+)=([0-9]+):([0-9a-f]{64}):0$/.exec(part);
-      return [match[1], [Number(match[2]), match[3]]];
-    }),
-  );
-  const catalogParts = (catalogState ?? "").split(";");
-  if (catalogParts.length !== expectedCatalog.size) {
-    throw new RolloutError("Required pending-migration catalog fingerprint is incomplete.");
-  }
-  for (const part of catalogParts) {
-    const match = /^([a-z_]+)=([0-9]+):([0-9a-f]{64}):([0-9]+)$/.exec(part);
-    const expected = match ? expectedCatalog.get(match[1]) : null;
-    if (
-      !match ||
-      expected?.[0] !== Number(match[2]) ||
-      expected?.[1] !== match[3] ||
-      match[4] !== "0"
-    ) {
-      throw new RolloutError(
-        `Repository-pinned raw catalog manifest mismatch: ${catalogState}.`,
-      );
-    }
-  }
-  if (new Set(catalogParts.map((part) => part.split("=")[0])).size !== expectedCatalog.size) {
-    throw new RolloutError("Required pending-migration catalog categories are duplicated.");
-  }
-  return catalogState;
-}
-
-export function extractPendingMigrations(output) {
-  return [...output.matchAll(/\b(20[0-9]{12}_[A-Za-z0-9_]+\.sql)\b/g)].map(
-    (match) => match[1],
-  );
-}
-
-export function assertExactPendingMigrations(output, packet) {
-  const expected = packet.pendingMigrations;
-  const actual = extractPendingMigrations(output);
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new RolloutError(
-      `Dry-run migration set mismatch: expected ${expected.join(", ")}; found ${actual.join(", ") || "none"}.`,
-    );
-  }
-  return actual;
-}
-
-function runCommand(command, args, { cwd = REPOSITORY_ROOT, env = process.env, label = command } = {}) {
-  const result = spawnSync(command, args, {
-    cwd,
-    env,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.error || result.status !== 0) {
-    throw new RolloutError(`${label} failed (exit ${result.status ?? "unavailable"}).`);
-  }
-  return result.stdout;
-}
-
-export function parseSingleValueCsv(output, expectedHeader) {
-  const malformed = (reason) => {
-    throw new RolloutError(`${expectedHeader} query returned ${reason}.`);
-  };
-  if (typeof output !== "string") {
-    malformed("an unexpected CSV shape");
-  }
-  if (/[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/.test(output)) {
-    malformed("noncanonical control characters");
-  }
-
-  const records = [];
-  let record = [];
-  let field = "";
-  let state = "start";
-  let justEndedRecord = false;
-
-  const endField = () => {
-    record.push(field);
-    field = "";
-    state = "start";
-  };
-  const endRecord = () => {
-    endField();
-    records.push(record);
-    record = [];
-    justEndedRecord = true;
-  };
-
-  for (let index = 0; index < output.length;) {
-    const character = output[index];
-    justEndedRecord = false;
-
-    if (state === "quoted") {
-      if (character === '"') {
-        if (output[index + 1] === '"') {
-          field += '"';
-          index += 2;
-        } else {
-          state = "after_quote";
-          index += 1;
-        }
-      } else if (character === "\r") {
-        if (output[index + 1] !== "\n") {
-          malformed("a malformed CSV record ending");
-        }
-        field += "\r\n";
-        index += 2;
-      } else {
-        field += character;
-        index += 1;
-      }
-      continue;
-    }
-
-    if (state === "after_quote") {
-      if (character === ",") {
-        endField();
-        index += 1;
-      } else if (character === "\n") {
-        endRecord();
-        index += 1;
-      } else if (character === "\r" && output[index + 1] === "\n") {
-        endRecord();
-        index += 2;
-      } else {
-        malformed("malformed CSV quoting");
-      }
-      continue;
-    }
-
-    if (character === '"') {
-      if (state !== "start") {
-        malformed("malformed CSV quoting");
-      }
-      state = "quoted";
-      index += 1;
-    } else if (character === ",") {
-      endField();
-      index += 1;
-    } else if (character === "\n") {
-      endRecord();
-      index += 1;
-    } else if (character === "\r") {
-      if (output[index + 1] !== "\n") {
-        malformed("a malformed CSV record ending");
-      }
-      endRecord();
-      index += 2;
-    } else {
-      field += character;
-      state = "unquoted";
-      index += 1;
-    }
-  }
-
-  if (state === "quoted") {
-    malformed("malformed CSV quoting");
-  }
-  if (!justEndedRecord) {
-    endRecord();
-  }
-  if (
-    records.length !== 2 ||
-    records[0].length !== 1 ||
-    records[0][0] !== expectedHeader ||
-    records[1].length !== 1
-  ) {
-    malformed("an unexpected CSV shape");
-  }
-  return records[1][0];
-}
-
-function querySingleValue(sourceRoot, sql, header, env) {
-  const output = runCommand(
-    "supabase",
-    ["db", "query", "--linked", "--agent=no", "--output", "csv", sql],
-    { cwd: sourceRoot, env, label: `${header} read` },
-  );
-  return parseSingleValueCsv(output, header);
-}
-
-export function readRemoteState(
-  sourceRoot,
-  packet,
-  env,
-  expectedProviderFingerprint = null,
-  query = querySingleValue,
-) {
-  const snapshot = {
-    historySchema: query(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
-    history: query(sourceRoot, HISTORY_SQL, "history_state", env),
-    targetHistory: query(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
-    objectCounts: query(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
-    functionState: null,
-    triggerState: null,
-    catalogState: null,
-    operationalReadiness: null,
-  };
-  if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
-    snapshot.functionState = query(
-      sourceRoot,
-      FUNCTION_STATE_SQL,
-      "function_state",
-      env,
-    );
-    snapshot.triggerState = query(
-      sourceRoot,
-      TRIGGER_STATE_SQL,
-      "trigger_state",
-      env,
-    );
-    snapshot.catalogState = query(
-      sourceRoot,
-      CATALOG_STATE_SQL,
-      "catalog_state",
-      env,
-    );
-    snapshot.operationalReadiness = query(
-      sourceRoot,
-      OPERATIONAL_READINESS_SQL,
-      "operational_readiness",
-      env,
-    );
-  }
-  return classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint);
-}
-
-function assertLinkedProjectRef(sourceRoot, expectedRef) {
-  const refPath = path.join(sourceRoot, "supabase", ".temp", "project-ref");
-  const raw = fs.readFileSync(refPath, "utf8");
-  if (raw !== expectedRef && raw !== `${expectedRef}\n`) {
-    throw new RolloutError("Saved Supabase project ref is missing, noncanonical, or mismatched.");
-  }
-}
-
-function runDryRun(sourceRoot, packet, env) {
-  const output = runCommand(
-    "supabase",
-    ["db", "push", "--linked", "--dry-run", "--agent=no"],
-    { cwd: sourceRoot, env, label: "Supabase migration dry-run" },
-  );
-  return assertExactPendingMigrations(output, packet);
-}
-
-export function buildProductionConfirmationPhrase(packet) {
-  return [
-    "APPLY",
-    packet.pendingMigrations.length,
-    "MIGRATIONS FROM",
-    packet.candidateSha,
-    "MANIFEST",
-    packet.sourceManifestSha256,
-    "TO",
-    ROLLOUT.productionRef,
-  ].join(" ");
-}
-
-async function confirmProductionApply(packet) {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new RolloutError("Production apply requires an interactive human terminal.");
-  }
-  const expected = buildProductionConfirmationPhrase(packet);
-  const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await prompt.question(`Type exactly '${expected}' to continue: `);
-  prompt.close();
-  if (answer !== expected) {
-    throw new RolloutError("Production confirmation did not match exactly.");
-  }
-}
-
-function usage() {
-  return `Usage:
-  node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>
-  node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --candidate-sha <full-sha> [--mode <inspect|dry-run|apply>]
-
-Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
-  --confirm-project <exact-ref> --approval-record <durable-id-or-url>
-  staging:    --approve-staging-apply
-  production: --human-production-operator --expected-provider-fingerprint <staging-fingerprint>
-              --confirmed-restore-window <window-or-record>
-              --restore-decision-authority <named-person>
-
-inspect is the default mode. Agents must never use production apply.`;
-}
-
-export async function main(argv = process.argv.slice(2), env = process.env) {
-  const config = parseArguments(argv);
-  validateApplyAuthorization(config);
-
-  if (config.mode !== "packet") {
-    assertSafeCredentialedTransport(env);
-  }
-
-  const cliVersion = runCommand("supabase", ["--version"], { env, label: "Supabase CLI version read" })
-    .split("\n")[0];
-  if (cliVersion !== ROLLOUT.cliVersion) {
-    throw new RolloutError(
-      `Supabase CLI version mismatch: expected ${ROLLOUT.cliVersion}, found ${cliVersion}.`,
-    );
-  }
-
-  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-studio-comp-rollout-"));
-  const sourceRoot = path.join(temporaryRoot, "candidate");
-  let worktreeAdded = false;
-  try {
-    runCommand("git", ["worktree", "add", "--detach", sourceRoot, config.candidateSha], {
-      label: "detached candidate worktree creation",
-    });
-    worktreeAdded = true;
-    const packet = verifySourceTree(sourceRoot, config.candidateSha);
-    if (config.mode === "packet") {
-      console.log(`candidate_sha=${packet.candidateSha}`);
-      console.log(`cli_version=${ROLLOUT.cliVersion}`);
-      console.log(`pre_history=${ROLLOUT.preHistory}`);
-      console.log(`post_history=${packet.postHistory}`);
-      console.log(`pending_migrations=${packet.pendingMigrations.join(",")}`);
-      console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
-      console.log(`integration_complete=${packet.integrationComplete}`);
-      console.log("remote_content_hashes=absent");
-      return;
-    }
-
-    const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
-    if (!packet.integrationComplete) {
-      throw new RolloutError(
-        "Provider inspection requires the exact final 100-migration candidate through 131844.",
-      );
-    }
-    runCommand(
-      "supabase",
-      ["link", "--project-ref", projectRef, "--yes", "--agent=no"],
-      { cwd: sourceRoot, env, label: "Supabase project link" },
-    );
-    assertLinkedProjectRef(sourceRoot, projectRef);
-
-    const before = readRemoteState(
-      sourceRoot,
-      packet,
-      env,
-      config.mode === "inspect" ? config.expectedProviderFingerprint : null,
-    );
-    const inspectionToken = buildInspectionToken(packet, config.target, before.state);
-    if (config.mode === "inspect") {
-      console.log(`target=${config.target}`);
-      console.log(`project_ref=${projectRef}`);
-      console.log(`candidate_sha=${packet.candidateSha}`);
-      console.log(`post_history=${packet.postHistory}`);
-      console.log(`pending_migrations=${packet.pendingMigrations.join(",")}`);
-      console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
-      console.log("remote_content_hashes=absent");
-      console.log(`state=${before.state}`);
-      console.log(`inspection_token=${inspectionToken}`);
-      if (before.providerFingerprint) {
-        console.log(`provider_fingerprint=${before.providerFingerprint}`);
-      }
-      return;
-    }
-    if (before.state !== "pre") {
-      throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
-    }
-    if (config.inspectionToken !== inspectionToken) {
-      throw new RolloutError(
-        "--inspection-token does not match the preceding inspection's candidate, target, and state.",
-      );
-    }
-
-    const pending = runDryRun(sourceRoot, packet, env);
-    console.log(`dry_run_migrations=${pending.join(",")}`);
-    if (config.mode === "dry-run") return;
-
-    if (config.target === "production") {
-      await confirmProductionApply(packet);
-    }
-    try {
-      runCommand("supabase", ["db", "push", "--linked", "--agent=no"], {
-        cwd: sourceRoot,
-        env,
-        label: "Supabase migration apply",
-      });
-    } catch (error) {
-      throw new RolloutError(
-        `Migration apply failed and may have changed remote state. Stop and inspect; do not revert history or objects. ${error.message}`,
-      );
-    }
-    const after = readRemoteState(sourceRoot, packet, env, config.expectedProviderFingerprint);
-    if (after.state !== "post") {
-      throw new RolloutError("Migration apply did not reach the exact expected post-state.");
-    }
-    console.log(`target=${config.target}`);
-    console.log(`project_ref=${projectRef}`);
-    console.log(`candidate_sha=${packet.candidateSha}`);
-    console.log(`post_history=${packet.postHistory}`);
-    console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
-    console.log("state=post");
-    console.log(`provider_fingerprint=${after.providerFingerprint}`);
-  } finally {
-    if (worktreeAdded) {
-      spawnSync("git", ["worktree", "remove", "--force", sourceRoot], {
-        cwd: REPOSITORY_ROOT,
-        encoding: "utf8",
-        stdio: "ignore",
-      });
-    }
-    fs.rmSync(temporaryRoot, { recursive: true, force: true });
-  }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(`Studio-comp migration rollout refused: ${error.message}`);
-    console.error(usage());
-    process.exitCode = error instanceof RolloutError ? 1 : 2;
-  });
-}
+COMMENT ON FUNCTION public.koaryu_release_schema_preflight_v2() IS
+    'Operational exact-head V7 drift signal with runtime-invariant semantic ordering and exact least-privilege ACL state. Release authority remains the repository-pinned raw-catalog verifier; hosted exposed-schema and schema ACL readback remain separate operator gates.';
