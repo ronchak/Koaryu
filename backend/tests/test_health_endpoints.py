@@ -27,7 +27,7 @@ class HealthEndpointTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 expected_status = "ready" if path.endswith("/ready") else "ok"
                 self.assertEqual(response.json()["status"], expected_status)
-                self.assertEqual(response.json()["environment"], "development")
+                self.assertEqual(response.json()["environment"], "test")
                 self.assertIsNone(response.json()["commit_sha"])
                 self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
 

@@ -265,7 +265,10 @@ describe("studio-comp migration rollout guard", () => {
       sourceManifestSha256: "a".repeat(64),
     };
     const phrase = buildProductionConfirmationPhrase(expandedPacket);
-    assert.match(phrase, /APPLY 3 MIGRATIONS FROM/);
+    assert.match(
+      phrase,
+      new RegExp(`APPLY ${expandedPacket.pendingMigrations.length} MIGRATIONS FROM`),
+    );
     assert.match(phrase, new RegExp(candidateSha));
     assert.match(phrase, /MANIFEST a{64}/);
     assert.match(phrase, new RegExp(`${ROLLOUT.productionRef}$`));
