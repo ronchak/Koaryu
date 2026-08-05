@@ -71,8 +71,8 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | Refresh | Billing data GET set | Admin / Front Desk | Reads local state; Connect status may refresh a local projection from a provider read | Supported read |
 | Tabs and review steps | Client navigation | Admin / Front Desk | None | Supported navigation |
 | Overview metrics and status | Billing list/status GETs | Admin / Front Desk; platform detail Admin | Read and bounded projection repair | Supported read |
-| Koaryu Core checkout | `POST /platform-billing/checkout` | Admin | Stripe customer/session, local pending metadata, audit | Non-preview control disabled; live `FAIL-CLOSED` |
-| Customer portal | `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Non-preview control disabled; live `FAIL-CLOSED` |
+| Koaryu Core checkout | `POST /platform-billing/checkout` | Admin | Stripe customer/session, local pending metadata, audit | Shown only when the exact studio reports the Core mutation capability; live `FAIL-CLOSED` |
+| Customer portal | `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Shown only when the exact studio reports the Core mutation capability and has a Stripe customer; live `FAIL-CLOSED` |
 | Connect payments | `POST /billing/connect/onboarding-link` | Admin | May create Connect account/link, update local account row, audit | Non-preview control disabled; live `FAIL-CLOSED` |
 | Stripe dashboard | `POST /billing/connect/dashboard-link` | Admin | Creates Stripe login link and audit | Non-preview control disabled; live `FAIL-CLOSED` |
 | Reconnect Stripe | `POST /billing/connect/reset` | Admin | Locally clears the account association and audits | Removed from UI; hidden dangerous action |
@@ -101,8 +101,8 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | --- | --- | --- | --- |
 | `GET /platform-billing/status` | Admin | Reads and may repair local platform-subscription projection | Admin-only read |
 | `GET /platform-billing/email-usage` | Admin | Local usage read | Admin-only read |
-| `POST /platform-billing/checkout` | Admin | Stripe customer/Checkout Session, pending metadata, audit | Hidden; live `FAIL-CLOSED` |
-| `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Hidden; live `FAIL-CLOSED` |
+| `POST /platform-billing/checkout` | Admin | Stripe customer/Checkout Session, pending metadata, audit | Capability-gated; live `FAIL-CLOSED` |
+| `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Capability- and customer-gated; live `FAIL-CLOSED` |
 | `GET /billing/connect/status` | Admin / Front Desk | Local read; may retrieve Stripe account and refresh projection | Supported read |
 | `POST /billing/connect/onboarding-link` | Admin | Stripe account/link creation, local account projection, audit | Hidden; live `FAIL-CLOSED` |
 | `POST /billing/connect/sync` | Admin | Stripe account read and local projection | Hidden Admin-only reconciliation |
@@ -248,11 +248,11 @@ The domain write and audit insert are not one database transaction. After an amb
 
 ## Independent production approvals and live activation gate
 
-Application deployment, production migration, and live Stripe activation are three independent approvals. Live Stripe activation is not currently approved.
+Application deployment, production migration, and live Stripe activation are three independent approvals. On 2026-08-04, the product owner approved live Koaryu Core Checkout and Customer Portal activation. That approval is limited to the `core_subscription` scope and does not approve Connect onboarding, Connect payments, tuition collection, refunds, or other Stripe mutations. Activation is not complete until the production migration, exact-candidate deployment, reconciliation checkpoint, and studio authorization gates below are satisfied.
 
-`LIVE_BILLING_ENABLED` remains `false` by default and live activation is still unapproved. The durable authorization source and central mutation policy are defined in `stripe-live-billing-rollout.md`: the global flag alone is insufficient, and runtime also requires an unexpired exact-studio scope, current account binding/readiness, and an exact-candidate all-clear reconciliation checkpoint.
+`LIVE_BILLING_ENABLED` remains `false` by default until the approved activation is executed. The durable authorization source and central mutation policy are defined in `stripe-live-billing-rollout.md`: the global flag alone is insufficient, and runtime also requires an unexpired exact-studio scope and an exact-candidate all-clear reconciliation checkpoint. Connect scopes additionally require current account binding and readiness.
 
-A future activation request must name each exact transition and prove in Stripe test mode:
+Activation execution must name each exact transition and prove in Stripe test mode:
 
 - authorization;
 - double-click and retry behavior;

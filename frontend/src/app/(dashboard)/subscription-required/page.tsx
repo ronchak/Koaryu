@@ -1,14 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRight, CheckCircle2, CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { useConfigStore } from "@/lib/store";
-import type { AuthResponse, PlatformBillingStatus } from "@/types";
+import type {
+  AuthResponse,
+  BillingLinkResponse,
+  BillingSystemStatus,
+  PlatformBillingStatus,
+} from "@/types";
+
+const LIVE_STRIPE_SUBSCRIPTION_STATUSES = new Set([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "paused",
+]);
+
+function createCheckoutRequestKey() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `core-checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function formatMoney(cents: number, currency = "usd") {
   return new Intl.NumberFormat("en-US", {
@@ -33,13 +53,24 @@ export default function SubscriptionRequiredPage() {
   const { clearSubscriptionRequired } = useConfigStore();
   const [authProfile, setAuthProfile] = useState<AuthResponse | null>(null);
   const [billingStatus, setBillingStatus] = useState<PlatformBillingStatus | null>(null);
+  const [billingSystemStatus, setBillingSystemStatus] = useState<BillingSystemStatus | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [billingAction, setBillingAction] = useState<"checkout" | "portal" | null>(null);
   const [error, setError] = useState("");
+  const checkoutRequestKeyRef = useRef<string | null>(null);
 
   const isAdmin = authProfile?.role === "admin";
   const price = billingStatus ? formatMoney(billingStatus.monthly_price_cents, billingStatus.currency) : "$27";
   const currentStatus = billingStatus?.status || "incomplete";
   const showAdminBillingDetails = isAdmin && billingStatus !== null;
+  const coreBillingEnabled = billingSystemStatus?.mutation_capabilities.core_subscription === true;
+  const hasLiveStripeSubscription = Boolean(
+    billingStatus?.stripe_subscription_id
+      && LIVE_STRIPE_SUBSCRIPTION_STATUSES.has(currentStatus)
+  );
+  const canStartCheckout = coreBillingEnabled && !hasLiveStripeSubscription;
+  const canOpenPortal = coreBillingEnabled && Boolean(billingStatus?.stripe_customer_id);
 
   const statusTone = useMemo(() => {
     if (hasAccess(billingStatus)) return "text-success";
@@ -60,6 +91,7 @@ export default function SubscriptionRequiredPage() {
         router.replace("/login");
         return;
       }
+      setAuthToken(session.access_token);
 
       try {
         const profile = await api.get<AuthResponse>("/auth/me", session.access_token, {
@@ -89,6 +121,19 @@ export default function SubscriptionRequiredPage() {
           // document navigation guarantees a fresh authenticated bootstrap for
           // every newly gated dataset before the dashboard renders.
           window.location.replace("/dashboard");
+          return;
+        }
+
+        try {
+          const systemStatus = await api.get<BillingSystemStatus>(
+            "/billing/system/status",
+            session.access_token
+          );
+          if (!mounted) return;
+          setBillingSystemStatus(systemStatus);
+        } catch {
+          if (!mounted) return;
+          setError("Self-service billing is unavailable right now. Contact Koaryu support for help.");
         }
       } catch {
         if (!mounted) return;
@@ -105,6 +150,34 @@ export default function SubscriptionRequiredPage() {
       mounted = false;
     };
   }, [clearSubscriptionRequired, router]);
+
+  async function openBillingLink(action: "checkout" | "portal") {
+    if (!authToken || !coreBillingEnabled || billingAction) return;
+    setBillingAction(action);
+    setError("");
+    try {
+      const headers: Record<string, string> = {};
+      if (action === "checkout") {
+        checkoutRequestKeyRef.current ??= createCheckoutRequestKey();
+        headers["Idempotency-Key"] = checkoutRequestKeyRef.current;
+      }
+      const link = await api.post<BillingLinkResponse>(
+        `/platform-billing/${action}`,
+        action === "checkout"
+          ? { success_url: window.location.href, cancel_url: window.location.href }
+          : { return_url: window.location.href },
+        authToken,
+        { timeoutMs: 30000, headers }
+      );
+      if (action === "checkout") {
+        checkoutRequestKeyRef.current = null;
+      }
+      window.location.assign(link.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Stripe billing could not be opened.");
+      setBillingAction(null);
+    }
+  }
 
   return (
     <>
@@ -132,11 +205,14 @@ export default function SubscriptionRequiredPage() {
                 <div className="grid gap-8 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
                   <div>
                     <h2 className="max-w-[780px] text-4xl font-semibold leading-tight text-text-primary sm:text-5xl">
-                      Support can restore workspace access safely.
+                      {coreBillingEnabled
+                        ? "Restore access through secure Stripe billing."
+                        : "Support can restore workspace access safely."}
                     </h2>
                     <p className="mt-5 max-w-[680px] text-base leading-7 text-text-secondary">
-                      Koaryu support can review the studio subscription without changing student,
-                      staff, attendance, or payment records.
+                      {coreBillingEnabled
+                        ? "Start or manage the Koaryu Core subscription without changing student, staff, attendance, or tuition records."
+                        : "Koaryu support can review the studio subscription without changing student, staff, attendance, or payment records."}
                     </p>
                   </div>
 
@@ -161,13 +237,25 @@ export default function SubscriptionRequiredPage() {
               <div className="grid gap-6 border-b border-border py-8 md:grid-cols-3">
                 <div className="space-y-2">
                   <CheckCircle2 className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-medium text-text-primary">Support-mediated recovery</p>
-                  <p className="text-sm leading-6 text-text-secondary">No unsupported checkout control is presented.</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {coreBillingEnabled ? "Self-service recovery" : "Support-mediated recovery"}
+                  </p>
+                  <p className="text-sm leading-6 text-text-secondary">
+                    {coreBillingEnabled
+                      ? "Authorized studio admins can open Stripe-hosted billing."
+                      : "No unsupported checkout control is presented."}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <CheckCircle2 className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-medium text-text-primary">Live Stripe remains disabled</p>
-                  <p className="text-sm leading-6 text-text-secondary">Provider writes are currently unavailable.</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {coreBillingEnabled ? "Stripe capability verified" : "Live Stripe remains disabled"}
+                  </p>
+                  <p className="text-sm leading-6 text-text-secondary">
+                    {coreBillingEnabled
+                      ? "The backend authorized Koaryu Core billing for this studio."
+                      : "Provider writes are currently unavailable."}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <CheckCircle2 className="h-4 w-4 text-accent" />
@@ -200,8 +288,9 @@ export default function SubscriptionRequiredPage() {
               <div className="min-w-0">
                 {isAdmin ? (
                   <p className="text-sm text-text-secondary">
-                    Koaryu Core checkout and portal actions are currently disabled.
-                    Contact support to restore access for this studio.
+                    {coreBillingEnabled
+                      ? "Use Stripe Checkout to start Koaryu Core or open the customer portal to manage existing billing."
+                      : "Koaryu Core checkout and portal actions are currently disabled. Contact support to restore access for this studio."}
                   </p>
                 ) : (
                   <p className="text-sm text-text-secondary">
@@ -212,7 +301,31 @@ export default function SubscriptionRequiredPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button asChild variant="primary" size="lg">
+                {isAdmin && canStartCheckout ? (
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    isLoading={billingAction === "checkout"}
+                    disabled={billingAction !== null}
+                    onClick={() => void openBillingLink("checkout")}
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    {billingAction === "checkout" ? "Opening Stripe..." : "Start Koaryu Core"}
+                  </Button>
+                ) : null}
+                {isAdmin && canOpenPortal ? (
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    isLoading={billingAction === "portal"}
+                    disabled={billingAction !== null}
+                    onClick={() => void openBillingLink("portal")}
+                  >
+                    <ArrowUpRight className="h-4 w-4" />
+                    {billingAction === "portal" ? "Opening Stripe..." : "Customer portal"}
+                  </Button>
+                ) : null}
+                <Button asChild variant={coreBillingEnabled ? "secondary" : "primary"} size="lg">
                   <a href="mailto:support@koaryu.app?subject=Koaryu%20Core%20access">
                     Contact Koaryu support
                   </a>
