@@ -38,8 +38,10 @@ function pinnedJson(payload, status = 200, headers = {}) {
 
 describe("account deletion cron backend binding", () => {
   let httpsRequests;
+  let localRequests;
   let deadManRequests;
   let httpsRequest;
+  let localRequest;
   let deadManSender;
 
   beforeEach(() => {
@@ -58,9 +60,14 @@ describe("account deletion cron backend binding", () => {
     process.env.VERCEL_TARGET_ENV = "staging";
     delete process.env.VERCEL_ENV;
     httpsRequests = [];
+    localRequests = [];
     deadManRequests = [];
     httpsRequest = async (options) => {
       httpsRequests.push(options);
+      return pinnedJson({ processed: 0 });
+    };
+    localRequest = async (options) => {
+      localRequests.push(options);
       return pinnedJson({ processed: 0 });
     };
     deadManSender = async (options) => {
@@ -78,6 +85,7 @@ describe("account deletion cron backend binding", () => {
 
   const invoke = (incoming = request()) => handleAccountDeletionCron(incoming, {
     httpsRequest,
+    localRequest,
     deadManSender,
   });
 
@@ -159,6 +167,21 @@ describe("account deletion cron backend binding", () => {
     assert.equal(httpsRequests[0].headers.Authorization, undefined);
     assert.equal(httpsRequests[0].timeoutMs, 20_000);
     assert.equal(httpsRequests[0].maxResponseBytes, 64 * 1024);
+  });
+
+  it("uses the bounded local requester for an exact development backend", async () => {
+    process.env.VERCEL_TARGET_ENV = "development";
+    process.env.BACKEND_API_URL = "http://localhost:8001/api/v1";
+
+    const response = await invoke();
+
+    assert.equal(response.status, 200);
+    assert.equal(httpsRequests.length, 0);
+    assert.equal(localRequests.length, 1);
+    assert.equal(
+      localRequests[0].url,
+      "http://localhost:8001/api/v1/internal/account-deletions/process-due",
+    );
   });
 
   it("preflights dead-man configuration before worker invocation", async () => {

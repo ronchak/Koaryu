@@ -3,7 +3,10 @@ import {
   sendDeadManCheckIn,
   validateDeadManCheckInConfiguration,
 } from "../../../../../lib/dead-man-check-in.ts";
-import { configuredBackendApiBase } from "../../../../../lib/backend-api-target.ts";
+import {
+  boundedLocalBackendRequest,
+  configuredBackendApiBase,
+} from "../../../../../lib/backend-api-target.ts";
 import { isSafeHeaderSecret } from "../../../../../lib/header-secret.ts";
 import {
   parsePinnedJson,
@@ -26,9 +29,11 @@ export async function handleAccountDeletionCron(
   request: NextRequest,
   {
     httpsRequest = pinnedHttpsRequest,
+    localRequest = boundedLocalBackendRequest,
     deadManSender = sendDeadManCheckIn,
   }: {
     httpsRequest?: typeof pinnedHttpsRequest;
+    localRequest?: typeof boundedLocalBackendRequest;
     deadManSender?: typeof sendDeadManCheckIn;
   } = {},
 ) {
@@ -71,9 +76,10 @@ export async function handleAccountDeletionCron(
   }
 
   const target = `${backendApiBase}/internal/account-deletions/process-due`;
+  const backendRequest = backendApiBase.startsWith("http://") ? localRequest : httpsRequest;
 
   try {
-    const upstream = await httpsRequest({
+    const upstream = await backendRequest({
       url: target,
       method: "POST",
       headers: {

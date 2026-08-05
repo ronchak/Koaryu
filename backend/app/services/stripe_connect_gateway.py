@@ -181,7 +181,7 @@ class StripeConnectGateway:
                 bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
-            if bootstrap_context or exc.code != "accounts_v2_access_blocked":
+            if exc.code != "accounts_v2_access_blocked":
                 self._raise_connect_account_error(exc, "create a connected account")
 
         return self._create_account_v1(
@@ -189,6 +189,7 @@ class StripeConnectGateway:
             business_name=business_name,
             business_entity_type=business_entity_type,
             account_generation=account_generation,
+            bootstrap_context=bootstrap_context,
         )
 
     def upload_branding_file(
@@ -285,14 +286,18 @@ class StripeConnectGateway:
                 bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
-            if bootstrap_context or exc.code != "accounts_v2_access_blocked":
+            if exc.code != "accounts_v2_access_blocked":
                 self._raise_connect_account_error(exc, "create an onboarding link")
 
         return self._create_legacy_onboarding_link(
             account_id=account_id,
             refresh_url=refresh_url,
             return_url=return_url,
-            idempotency_key=idempotency_key,
+            idempotency_key=(
+                bootstrap_context.initial_link_idempotency_key
+                if bootstrap_context
+                else idempotency_key
+            ),
         )
 
     def _create_legacy_onboarding_link(
@@ -404,6 +409,7 @@ class StripeConnectGateway:
         business_name: str,
         business_entity_type: str = "company",
         account_generation: int = 1,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
         stripe = self._stripe()
         try:
@@ -416,7 +422,11 @@ class StripeConnectGateway:
                     "card_payments": {"requested": True},
                     "transfers": {"requested": True},
                 },
-                **self._request_options(idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}"),
+                **self._request_options(idempotency_key=(
+                    bootstrap_context.account_create_idempotency_key
+                    if bootstrap_context
+                    else f"koaryu-connect-account-{studio_id}-g{account_generation}"
+                )),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):

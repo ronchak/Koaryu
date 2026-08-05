@@ -2,7 +2,10 @@ import {
   sendDeadManCheckIn,
   validateDeadManCheckInConfiguration,
 } from "../../../../../lib/dead-man-check-in.ts";
-import { configuredBackendApiBase } from "../../../../../lib/backend-api-target.ts";
+import {
+  boundedLocalBackendRequest,
+  configuredBackendApiBase,
+} from "../../../../../lib/backend-api-target.ts";
 import { isSafeHeaderSecret } from "../../../../../lib/header-secret.ts";
 import {
   parsePinnedJson,
@@ -88,9 +91,11 @@ export async function handleOperationalAlertCron(
   request: Request,
   {
     httpsRequest = pinnedHttpsRequest,
+    localRequest = boundedLocalBackendRequest,
     deadManSender = sendDeadManCheckIn,
   }: {
     httpsRequest?: typeof pinnedHttpsRequest;
+    localRequest?: typeof boundedLocalBackendRequest;
     deadManSender?: typeof sendDeadManCheckIn;
   } = {},
 ) {
@@ -138,7 +143,8 @@ export async function handleOperationalAlertCron(
   }
 
   try {
-    const upstream = await httpsRequest({
+    const backendRequest = backendBase.startsWith("http://") ? localRequest : httpsRequest;
+    const upstream = await backendRequest({
       url: `${backendBase}/internal/operational-alerts/evaluate`,
       method: "POST",
       headers: { "X-Internal-Secret": workerSecret },

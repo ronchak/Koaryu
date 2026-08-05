@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.studio_live_billing_authorizations import ConnectOnboardingBootstrapContext
+
 from tests.billing_lifecycle_helpers import (
     BillingInvoiceCreate,
     BillingInvoiceResponse,
@@ -637,6 +639,47 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertNotIn("business_details", payload["identity"])
         self.assertEqual(payload["metadata"]["business_entity_type"], "individual")
 
+    def test_bootstrap_connect_account_falls_back_to_accounts_v1_when_accounts_v2_blocked(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
+        calls = []
+
+        class _LegacyAccount:
+            @staticmethod
+            def create(**payload):
+                calls.append(payload)
+                return {"id": "acct_v1"}
+
+        class _LegacyStripe:
+            Account = _LegacyAccount()
+
+        def fake_v2_post(*_args, **_kwargs):
+            raise _StripeV2RequestError(code="accounts_v2_access_blocked", message="blocked")
+
+        bootstrap_context = ConnectOnboardingBootstrapContext(
+            bootstrap_id="11111111-1111-4111-8111-111111111111",
+            account_generation=2,
+            initial_link_context_sha256="b" * 64,
+            account_create_idempotency_key="koaryu-connect-account-studio_1-g2",
+            initial_link_idempotency_key="koaryu-connect-onboarding-studio_1-g2-" + "c" * 24,
+        )
+        service._stripe_v2_post = fake_v2_post
+        service._stripe = lambda: _LegacyStripe
+
+        account = service.create_connect_account(
+            studio_id="studio_1",
+            business_name="River City Martial Arts",
+            contact_email="owner@example.com",
+            business_entity_type="company",
+            account_generation=2,
+            bootstrap_context=bootstrap_context,
+        )
+
+        self.assertEqual(account["id"], "acct_v1")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["idempotency_key"], bootstrap_context.account_create_idempotency_key)
+        self.assertEqual(calls[0]["metadata"]["studio_id"], "studio_1")
+
     def test_connect_onboarding_link_uses_accounts_v2_account_links(self):
         service = StripeService()
         service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
@@ -705,6 +748,44 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
             "type": "account_onboarding",
             "idempotency_key": "ordinary-link-key",
         })
+
+    def test_bootstrap_onboarding_link_falls_back_to_accounts_v1_with_stored_idempotency(self):
+        service = StripeService()
+        service.settings = type("Settings", (), {"STRIPE_SECRET_KEY": "sk_test_123"})()
+        calls = []
+
+        class _LegacyAccountLink:
+            @staticmethod
+            def create(**payload):
+                calls.append(payload)
+                return {"url": "https://connect.stripe.test/setup/acct_v1"}
+
+        class _LegacyStripe:
+            AccountLink = _LegacyAccountLink()
+
+        def fake_v2_post(*_args, **_kwargs):
+            raise _StripeV2RequestError(code="accounts_v2_access_blocked", message="blocked")
+
+        bootstrap_context = ConnectOnboardingBootstrapContext(
+            bootstrap_id="11111111-1111-4111-8111-111111111111",
+            account_generation=2,
+            initial_link_context_sha256="b" * 64,
+            account_create_idempotency_key="koaryu-connect-account-studio_1-g2",
+            initial_link_idempotency_key="koaryu-connect-onboarding-studio_1-g2-" + "c" * 24,
+        )
+        service._stripe_v2_post = fake_v2_post
+        service._stripe = lambda: _LegacyStripe
+
+        link = service.create_connect_onboarding_link(
+            account_id="acct_v1",
+            studio_id="studio_1",
+            refresh_url="https://app.koaryu.test/billing/connect/refresh",
+            return_url="https://app.koaryu.test/billing?connect=return",
+            bootstrap_context=bootstrap_context,
+        )
+
+        self.assertEqual(link["url"], "https://connect.stripe.test/setup/acct_v1")
+        self.assertEqual(calls[0]["idempotency_key"], bootstrap_context.initial_link_idempotency_key)
 
     def test_connected_account_branding_update_uses_accounts_v2(self):
         service = StripeService()

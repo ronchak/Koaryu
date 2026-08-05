@@ -54,8 +54,10 @@ function pinnedJson(payload, status = 200) {
 
 describe("operational alert cron proxy", () => {
   let httpsRequests;
+  let localRequests;
   let deadManRequests;
   let httpsRequest;
+  let localRequest;
   let deadManSender;
 
   beforeEach(() => {
@@ -72,10 +74,15 @@ describe("operational alert cron proxy", () => {
     process.env.VERCEL_GIT_COMMIT_SHA = "a".repeat(40);
     process.env.VERCEL_TARGET_ENV = "staging";
     httpsRequests = [];
+    localRequests = [];
     deadManRequests = [];
     httpsRequest = async (options) => {
       httpsRequests.push(options);
       return pinnedJson(validUpstreamBody());
+    };
+    localRequest = async (options) => {
+      localRequests.push(options);
+      return pinnedJson({ ...validUpstreamBody(), environment: "development" });
     };
     deadManSender = async (options) => {
       deadManRequests.push(options);
@@ -92,6 +99,7 @@ describe("operational alert cron proxy", () => {
 
   const invoke = (incoming = request()) => handleOperationalAlertCron(incoming, {
     httpsRequest,
+    localRequest,
     deadManSender,
   });
 
@@ -170,6 +178,21 @@ describe("operational alert cron proxy", () => {
     assert.equal(body.unsafe, undefined);
     assert.equal(deadManRequests.length, 1);
     assert.equal(result.headers.get("cache-control"), "no-store, private");
+  });
+
+  it("uses the bounded local requester for an exact development backend", async () => {
+    process.env.VERCEL_TARGET_ENV = "development";
+    process.env.BACKEND_API_URL = "http://127.0.0.1:8001/api/v1";
+
+    const result = await invoke();
+
+    assert.equal(result.status, 200);
+    assert.equal(httpsRequests.length, 0);
+    assert.equal(localRequests.length, 1);
+    assert.equal(
+      localRequests[0].url,
+      "http://127.0.0.1:8001/api/v1/internal/operational-alerts/evaluate",
+    );
   });
 
   it("does not send dead-man success for failed, inconsistent, or unrecorded drains", async (context) => {
