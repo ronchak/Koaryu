@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import {
   ROLLOUT,
   EXPECTED_CATALOG_STATE,
+  EXPECTED_HISTORY_SCHEMA,
   EXPECTED_OPERATIONAL_MANIFEST,
   EXPECTED_OPERATIONAL_READINESS,
   assertExactPendingMigrations,
@@ -16,10 +17,13 @@ import {
   buildProductionConfirmationPhrase,
   classifyStateSnapshot,
   extractPendingMigrations,
+  formatDiagnosisReport,
   formatNonSuccessProbeState,
+  main,
   parseSingleValueCsv,
   parseArguments,
   readRemoteState,
+  readRemoteDiagnosis,
   runCommand,
   validateApplyAuthorization,
   validateOperationalManifest,
@@ -37,6 +41,13 @@ const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
   `catalog=${validCatalogState}`;
+const extendedHistoryColumns = JSON.stringify([
+  { column_name: "version", data_type: "text", udt_name: "text" },
+  { column_name: "name", data_type: "text", udt_name: "text" },
+  { column_name: "statements", data_type: "ARRAY", udt_name: "_text" },
+  { column_name: "created_by", data_type: "text", udt_name: "text" },
+  { column_name: "idempotency_key", data_type: "text", udt_name: "text" },
+]);
 
 function candidatePacket() {
   return verifySourceTree(repositoryRoot, candidateSha);
@@ -73,6 +84,20 @@ function postSnapshot(packet, overrides = {}) {
     operationalReadiness: EXPECTED_OPERATIONAL_READINESS,
     ...overrides,
   };
+}
+
+function assertReadOnlySql(sql) {
+  const normalized = sql.trim();
+  const executableSql = normalized
+    .replace(/'(?:''|[^'])*'/gs, "''")
+    .replace(/--[^\r\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(normalized, /^(?:select|with)\b/i);
+  assert.doesNotMatch(
+    executableSql,
+    /\b(?:insert|update|delete|merge|create|alter|drop|truncate|grant|revoke|call|do)\b/i,
+  );
+  assert.ok(!executableSql.replace(/;\s*$/, "").includes(";"));
 }
 
 describe("studio-comp migration rollout guard", () => {
@@ -192,6 +217,66 @@ describe("studio-comp migration rollout guard", () => {
       ]),
       /valid only for inspection comparison or production apply/,
     );
+  });
+
+  it("accepts diagnose only with a pinned target and full candidate SHA", () => {
+    for (const target of ["staging", "production"]) {
+      const config = parseArguments([
+        "--mode", "diagnose", "--target", target, "--candidate-sha", candidateSha,
+      ]);
+      assert.equal(config.mode, "diagnose");
+      assert.equal(config.target, target);
+      assert.equal(config.candidateSha, candidateSha);
+      assert.equal(config.inspectionToken, null);
+      assert.equal(config.expectedProviderFingerprint, null);
+    }
+    assert.throws(
+      () => parseArguments(["--mode", "diagnose", "--candidate-sha", candidateSha]),
+      /--target must be staging or production/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--mode", "diagnose", "--target", "staging", "--candidate-sha", "da2e02c",
+      ]),
+      /full lowercase 40-character/,
+    );
+  });
+
+  it("keeps diagnose outside inspection-token and fingerprint surfaces", () => {
+    assert.throws(
+      () => parseArguments([
+        "--mode", "diagnose", "--target", "staging", "--candidate-sha", candidateSha,
+        "--inspection-token", "a".repeat(64),
+      ]),
+      /cannot be supplied with --mode diagnose/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--mode", "diagnose", "--target", "production", "--candidate-sha", candidateSha,
+        "--expected-provider-fingerprint", validFingerprint,
+      ]),
+      /valid only for inspection comparison or production apply/,
+    );
+  });
+
+  it("rejects every apply authorization option for diagnose", () => {
+    const applyOnlyOptions = [
+      ["--confirm-project", ROLLOUT.stagingRef],
+      ["--approval-record", "director-phase-b-approval"],
+      ["--confirmed-restore-window", "2026-08-08T18:00:00Z/PITR-confirmed"],
+      ["--restore-decision-authority", "Ronak Chakraborty"],
+      ["--approve-staging-apply"],
+      ["--human-production-operator"],
+    ];
+    for (const option of applyOnlyOptions) {
+      assert.throws(
+        () => parseArguments([
+          "--mode", "diagnose", "--target", "staging", "--candidate-sha", candidateSha,
+          ...option,
+        ]),
+        /Apply authorization options are valid only with --mode apply/,
+      );
+    }
   });
 
   it("rejects control characters and normalization-dependent values", () => {
@@ -460,6 +545,346 @@ describe("studio-comp migration rollout guard", () => {
     });
   });
 
+  it("diagnoses an extended divergent history schema with ordered read-only metadata", () => {
+    const packet = candidatePacket();
+    const values = new Map([
+      ["history_schema", "0:1:1:1:2"],
+      ["history_state", ROLLOUT.preHistory],
+      ["target_history", ""],
+      ["object_counts", "0:0"],
+      ["history_columns", extendedHistoryColumns],
+      ["migration_row_count", "84"],
+      ["migration_newest_version", "20260710123456"],
+    ]);
+    const calls = [];
+
+    const diagnosis = readRemoteDiagnosis(
+      repositoryRoot,
+      packet,
+      {},
+      (_root, sql, header) => {
+        calls.push({ sql, header });
+        assertReadOnlySql(sql);
+        assert.ok(values.has(header), `unexpected diagnosis query header ${header}`);
+        return values.get(header);
+      },
+    );
+
+    const divergenceDetail =
+      "Supabase migration history did not have the expected no-hash/statement-array shape.";
+    assert.deepEqual(diagnosis, {
+      state: "diverged",
+      detail: divergenceDetail,
+      historySchemaActual: "0:1:1:1:2",
+      historyColumns: extendedHistoryColumns,
+      migrationRowCount: "84",
+      migrationNewestVersion: "20260710123456",
+    });
+    assert.deepEqual(calls.map(({ header }) => header), [
+      "history_schema",
+      "history_state",
+      "target_history",
+      "object_counts",
+      "history_columns",
+      "migration_row_count",
+      "migration_newest_version",
+    ]);
+    const newestVersionSql = calls.find(
+      ({ header }) => header === "migration_newest_version",
+    ).sql;
+    assert.match(
+      newestVersionSql,
+      /max\(to_jsonb\(schema_migration\)->>'version'\)/,
+    );
+
+    const report = formatDiagnosisReport(
+      {
+        target: "staging",
+        projectRef: ROLLOUT.stagingRef,
+        candidateSha,
+      },
+      diagnosis,
+    );
+    assert.equal(report, [
+      "target=staging",
+      `project_ref=${ROLLOUT.stagingRef}`,
+      `candidate_sha=${candidateSha}`,
+      "remote_content_hashes=absent",
+      "history_schema_actual=0:1:1:1:2",
+      `history_schema_expected=${EXPECTED_HISTORY_SCHEMA}`,
+      `history_columns=${extendedHistoryColumns}`,
+      "migration_row_count=84",
+      "migration_newest_version=20260710123456",
+      `state=DIVERGED(${divergenceDetail})`,
+    ].join("\n"));
+    assert.ok(!report.includes("inspection_token"));
+  });
+
+  it("diagnoses reachable pre and post states without minting an inspection token", () => {
+    const packet = candidatePacket();
+    const cases = [
+      {
+        snapshot: preSnapshot(),
+        expected: { state: "pre", providerFingerprint: null },
+      },
+      {
+        snapshot: postSnapshot(packet),
+        expected: { state: "post", providerFingerprint: validFingerprint },
+      },
+    ];
+
+    for (const { snapshot, expected } of cases) {
+      const values = new Map([
+        ["history_schema", snapshot.historySchema],
+        ["history_state", snapshot.history],
+        ["target_history", snapshot.targetHistory],
+        ["object_counts", snapshot.objectCounts],
+        ["function_state", snapshot.functionState],
+        ["trigger_state", snapshot.triggerState],
+        ["catalog_state", snapshot.catalogState],
+        ["operational_readiness", snapshot.operationalReadiness],
+        ["history_columns", extendedHistoryColumns],
+        ["migration_row_count", expected.state === "pre" ? "84" : "100"],
+        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : "20260801131844"],
+      ]);
+      const headers = [];
+      const diagnosis = readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, sql, header) => {
+        headers.push(header);
+        assertReadOnlySql(sql);
+        return values.get(header);
+      });
+
+      assert.deepEqual(
+        { state: diagnosis.state, providerFingerprint: diagnosis.providerFingerprint },
+        expected,
+      );
+      assert.equal(diagnosis.historySchemaActual, EXPECTED_HISTORY_SCHEMA);
+      assert.deepEqual(headers.slice(-3), [
+        "history_columns",
+        "migration_row_count",
+        "migration_newest_version",
+      ]);
+      const report = formatDiagnosisReport(
+        { target: "production", projectRef: ROLLOUT.productionRef, candidateSha },
+        diagnosis,
+      );
+      assert.match(report, new RegExp(`state=${expected.state}(?:\\n|$)`));
+      assert.ok(!report.includes("inspection_token"));
+      if (expected.state === "post") {
+        assert.ok(report.endsWith(`provider_fingerprint=${validFingerprint}`));
+      }
+    }
+  });
+
+  it("returns no partial diagnosis metadata for timeout or connectivity query failures", { timeout: 3_000 }, () => {
+    const packet = candidatePacket();
+    let timeoutError;
+    let connectivityError;
+    assert.throws(
+      () => runCommand(process.execPath, ["-e", "setTimeout(() => {}, 5_000)"], {
+        cwd: repositoryRoot,
+        env: {},
+        label: "diagnosis timeout fixture",
+        timeout: 100,
+      }),
+      (error) => {
+        timeoutError = error;
+        return error.message.includes("UNKNOWN(timeout)");
+      },
+    );
+    assert.throws(
+      () => runCommand(process.execPath, ["-e", "process.exit(7)"], {
+        cwd: repositoryRoot,
+        env: {},
+        label: "diagnosis connectivity fixture",
+      }),
+      (error) => {
+        connectivityError = error;
+        return !error.message.includes("UNKNOWN(timeout)");
+      },
+    );
+
+    for (const [reason, queryError] of [
+      ["timeout", timeoutError],
+      ["connectivity", connectivityError],
+    ]) {
+      const classificationSql = [];
+      const classificationFailure = readRemoteDiagnosis(
+        repositoryRoot,
+        packet,
+        {},
+        (_root, sql) => {
+          classificationSql.push(sql);
+          assertReadOnlySql(sql);
+          throw queryError;
+        },
+      );
+      assert.deepEqual(classificationFailure, { state: "unknown", reason });
+
+      const preValues = new Map([
+        ["history_schema", EXPECTED_HISTORY_SCHEMA],
+        ["history_state", ROLLOUT.preHistory],
+        ["target_history", ""],
+        ["object_counts", "0:0"],
+        ["history_columns", extendedHistoryColumns],
+        ["migration_row_count", "84"],
+      ]);
+      const metadataHeaders = [];
+      const failureHeader = reason === "timeout" ? "history_columns" : "migration_newest_version";
+      const metadataFailure = readRemoteDiagnosis(
+        repositoryRoot,
+        packet,
+        {},
+        (_root, sql, header) => {
+          metadataHeaders.push(header);
+          assertReadOnlySql(sql);
+          if (header === failureHeader) throw queryError;
+          return preValues.get(header);
+        },
+      );
+      assert.deepEqual(metadataFailure, { state: "unknown", reason });
+      for (const field of [
+        "historySchemaActual",
+        "historyColumns",
+        "migrationRowCount",
+        "migrationNewestVersion",
+      ]) {
+        assert.ok(!Object.hasOwn(metadataFailure, field));
+      }
+      const report = formatDiagnosisReport(
+        { target: "staging", projectRef: ROLLOUT.stagingRef, candidateSha },
+        metadataFailure,
+      );
+      assert.equal(report, [
+        "target=staging",
+        `project_ref=${ROLLOUT.stagingRef}`,
+        `candidate_sha=${candidateSha}`,
+        "remote_content_hashes=absent",
+        `state=UNKNOWN(${reason})`,
+      ].join("\n"));
+      assert.doesNotMatch(report, /history_schema_|history_columns|migration_row_count|migration_newest_version/);
+      assert.ok(classificationSql.length > 0);
+      assert.ok(metadataHeaders.includes(failureHeader));
+    }
+  });
+
+  it("rethrows unrelated diagnosis query implementation errors", () => {
+    const packet = candidatePacket();
+    const queryError = new Error("unexpected diagnosis query implementation failure");
+    const preValues = new Map([
+      ["history_schema", EXPECTED_HISTORY_SCHEMA],
+      ["history_state", ROLLOUT.preHistory],
+      ["target_history", ""],
+      ["object_counts", "0:0"],
+    ]);
+
+    assert.throws(
+      () => readRemoteDiagnosis(repositoryRoot, packet, {}, () => {
+        throw queryError;
+      }),
+      (error) => error === queryError,
+    );
+    assert.throws(
+      () => readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, _sql, header) => {
+        if (header === "history_columns") throw queryError;
+        return preValues.get(header);
+      }),
+      (error) => error === queryError,
+    );
+  });
+
+  it("returns from main diagnosis before token, dry-run, or apply behavior", async () => {
+    const commands = [];
+    const output = [];
+    let linkedRefAsserted = false;
+    const packet = { ...candidatePacket(), integrationComplete: false };
+    const divergenceDetail =
+      "Supabase migration history did not have the expected no-hash/statement-array shape.";
+    const diagnosis = {
+      state: "diverged",
+      detail: divergenceDetail,
+      historySchemaActual: "0:1:1:1:2",
+      historyColumns: extendedHistoryColumns,
+      migrationRowCount: "84",
+      migrationNewestVersion: "20260710123456",
+    };
+
+    await main(
+      ["--mode", "diagnose", "--target", "staging", "--candidate-sha", candidateSha],
+      {},
+      {
+        commandRunner(command, args) {
+          commands.push([command, ...args]);
+          if (command === "supabase" && args[0] === "--version") return `${ROLLOUT.cliVersion}\n`;
+          if (command === "git" && args[0] === "worktree") return "";
+          if (command === "supabase" && args[0] === "link") return "";
+          throw new Error(`unexpected command ${command} ${args.join(" ")}`);
+        },
+        sourceVerifier(_sourceRoot, actualCandidateSha) {
+          assert.equal(actualCandidateSha, candidateSha);
+          return packet;
+        },
+        linkedRefAsserter(_sourceRoot, projectRef) {
+          linkedRefAsserted = true;
+          assert.equal(projectRef, ROLLOUT.stagingRef);
+        },
+        diagnosisReader(_sourceRoot, actualPacket, env) {
+          assert.equal(actualPacket, packet);
+          assert.deepEqual(env, {});
+          return diagnosis;
+        },
+        output(line) {
+          output.push(line);
+        },
+      },
+    );
+
+    assert.equal(linkedRefAsserted, true);
+    assert.deepEqual(commands.map((parts) => parts.slice(0, 2)), [
+      ["supabase", "--version"],
+      ["git", "worktree"],
+      ["supabase", "link"],
+    ]);
+    assert.ok(commands.every((parts) => !parts.includes("push")));
+    const report = output.join("\n");
+    assert.ok(report.endsWith(`state=DIVERGED(${divergenceDetail})`));
+    assert.ok(!report.includes("inspection_token"));
+    assert.ok(!report.includes("dry_run_migrations"));
+  });
+
+  it("prints only UNKNOWN identity state and rejects main diagnosis on query failure", async () => {
+    const output = [];
+    const packet = { ...candidatePacket(), integrationComplete: false };
+    await assert.rejects(
+      main(
+        ["--mode", "diagnose", "--target", "production", "--candidate-sha", candidateSha],
+        {},
+        {
+          commandRunner(command, args) {
+            if (command === "supabase" && args[0] === "--version") return `${ROLLOUT.cliVersion}\n`;
+            if (command === "git" && args[0] === "worktree") return "";
+            if (command === "supabase" && args[0] === "link") return "";
+            throw new Error(`unexpected command ${command} ${args.join(" ")}`);
+          },
+          sourceVerifier() {
+            return packet;
+          },
+          linkedRefAsserter() {},
+          diagnosisReader() {
+            return { state: "unknown", reason: "connectivity" };
+          },
+          output(line) {
+            output.push(line);
+          },
+        },
+      ),
+      /Diagnosis refused: state=UNKNOWN\(connectivity\)\./,
+    );
+    const report = output.join("\n");
+    assert.ok(report.endsWith("state=UNKNOWN(connectivity)"));
+    assert.doesNotMatch(report, /inspection_token|history_schema_|history_columns|migration_row_/);
+  });
+
   it("formats each structured non-success probe result without success or token fields", () => {
     const divergedDetail =
       "Unexpected migration history 82:0123456789abcdef0123456789abcdef; expected exact pre-state or post-state.";
@@ -530,7 +955,27 @@ describe("studio-comp migration rollout guard", () => {
     assert.notEqual(stagingToken, buildInspectionToken(packet, "production", "pre"));
     assert.throws(
       () => parseArguments([
+        "--mode", "packet", "--candidate-sha", candidateSha,
+        "--inspection-token", stagingToken,
+      ]),
+      /cannot be supplied to inspect/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--mode", "inspect", "--target", "staging", "--candidate-sha", candidateSha,
+        "--inspection-token", stagingToken,
+      ]),
+      /cannot be supplied to inspect/,
+    );
+    assert.throws(
+      () => parseArguments([
         "--target", "staging", "--candidate-sha", candidateSha, "--mode", "dry-run",
+      ]),
+      /Target inspection evidence/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--target", "staging", "--candidate-sha", candidateSha, "--mode", "apply",
       ]),
       /Target inspection evidence/,
     );
