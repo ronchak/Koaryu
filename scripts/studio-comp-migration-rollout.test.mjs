@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -8,7 +9,6 @@ import { describe, it } from "node:test";
 import {
   ROLLOUT,
   EXPECTED_CATALOG_STATE,
-  EXPECTED_HISTORY_SCHEMA,
   TOLERATED_HISTORY_COLUMNS,
   EXPECTED_OPERATIONAL_MANIFEST,
   EXPECTED_OPERATIONAL_READINESS,
@@ -27,7 +27,9 @@ import {
   readRemoteState,
   readRemoteDiagnosis,
   runCommand,
+  runDryRun,
   validateApplyAuthorization,
+  validateHistoryColumnMetadata,
   validateOperationalManifest,
   validateOperationalReadiness,
   verifySourceTree,
@@ -43,13 +45,42 @@ const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
   `catalog=${validCatalogState}`;
-const extendedHistoryColumns = JSON.stringify([
-  { column_name: "version", data_type: "text", udt_name: "text" },
-  { column_name: "name", data_type: "text", udt_name: "text" },
-  { column_name: "statements", data_type: "ARRAY", udt_name: "_text" },
-  { column_name: "created_by", data_type: "text", udt_name: "text" },
-  { column_name: "idempotency_key", data_type: "text", udt_name: "text" },
+
+function historyColumn(column_name, data_type, udt_name, overrides = {}) {
+  return {
+    column_name,
+    data_type,
+    udt_name,
+    is_nullable: "YES",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+    ...overrides,
+  };
+}
+
+const minimalHistoryColumns = [
+  historyColumn("version", "text", "text", { is_nullable: "NO" }),
+  historyColumn("statements", "ARRAY", "_text"),
+  historyColumn("name", "text", "text"),
+];
+const stagingHistoryColumns = [
+  ...minimalHistoryColumns,
+  historyColumn("created_by", "text", "text"),
+  historyColumn("idempotency_key", "text", "text"),
+  historyColumn("rollback", "ARRAY", "_text"),
+];
+const extendedHistoryColumns = JSON.stringify(stagingHistoryColumns);
+const divergentHistoryColumns = JSON.stringify([
+  ...stagingHistoryColumns,
+  historyColumn("foo", "text", "text"),
 ]);
+
+function replaceHistoryColumn(columns, name, overrides) {
+  return columns.map((column) =>
+    column.column_name === name ? { ...column, ...overrides } : column
+  );
+}
 
 function candidatePacket() {
   return verifySourceTree(repositoryRoot, candidateSha);
@@ -62,7 +93,7 @@ function singleValueCsv(header, value, recordEnding = "\n") {
 
 function preSnapshot(overrides = {}) {
   return {
-    historySchema: "0:1:1:1:0",
+    historyColumns: minimalHistoryColumns,
     history: ROLLOUT.preHistory,
     targetHistory: "",
     objectCounts: "0:0",
@@ -76,7 +107,7 @@ function preSnapshot(overrides = {}) {
 
 function postSnapshot(packet, overrides = {}) {
   return {
-    historySchema: "0:1:1:1:0",
+    historyColumns: minimalHistoryColumns,
     history: packet.postHistory,
     targetHistory: packet.postTargetHistory,
     objectCounts: "3:1",
@@ -352,58 +383,143 @@ describe("studio-comp migration rollout guard", () => {
     assert.ok(elapsedMs < 2_000, `timeout returned control after ${elapsedMs.toFixed(0)} ms`);
   });
 
-  it("does not treat migration history as content identity", () => {
-    const packet = candidatePacket();
-    assert.throws(
-      () => classifyStateSnapshot(preSnapshot({ historySchema: "1:1" }), packet),
-      /no-hash\/statement-array shape/,
-    );
-    assert.equal(preSnapshot().historySchema, "0:1:1:1:0");
+  it("accepts the reviewed minimal shape and every optional-column subset", () => {
+    for (let mask = 0; mask < 2 ** TOLERATED_HISTORY_COLUMNS.length; mask += 1) {
+      const columns = [
+        ...minimalHistoryColumns,
+        ...stagingHistoryColumns.slice(minimalHistoryColumns.length).filter((_column, index) =>
+          (mask & (1 << index)) !== 0
+        ),
+      ];
+      assert.deepEqual(validateHistoryColumnMetadata(columns), { accepted: true });
+    }
   });
 
-  it("tolerates Supabase CLI bookkeeping columns without widening the guard", () => {
-    const packet = candidatePacket();
+  it("has no SQL name-exclusion predicate left to invert", () => {
     const source = fs.readFileSync(
       path.join(repositoryRoot, "scripts", "studio-comp-migration-rollout.mjs"),
       "utf8",
     );
-
-    // The tolerated names must be excluded from the unrecognised-column counter,
-    // so a target carrying them still reports the exact expected shape.
     assert.deepEqual(TOLERATED_HISTORY_COLUMNS, [
       "created_by",
       "idempotency_key",
       "rollback",
     ]);
-    for (const column of TOLERATED_HISTORY_COLUMNS) {
-      assert.ok(
-        source.includes(`'${column}'`),
-        `${column} must be excluded by name in HISTORY_SCHEMA_SQL`,
+    assert.doesNotMatch(source, /HISTORY_SCHEMA_SQL/);
+    assert.doesNotMatch(source, /column_name\s+not\s+in/i);
+    assert.doesNotMatch(source, /count\(\*\)\s+filter[\s\S]*history_schema/i);
+  });
+
+  it("rejects the rollback integer NOT NULL counterexample with nullability detail", () => {
+    const result = validateHistoryColumnMetadata(
+      replaceHistoryColumn(stagingHistoryColumns, "rollback", {
+        data_type: "integer",
+        udt_name: "int4",
+        is_nullable: "NO",
+      }),
+    );
+    assert.equal(result.accepted, false);
+    assert.match(result.reason, /rollback.*nullability/i);
+  });
+
+  it("rejects defaults, generated columns, and identity columns for every optional column", () => {
+    for (const name of TOLERATED_HISTORY_COLUMNS) {
+      const defaultResult = validateHistoryColumnMetadata(
+        replaceHistoryColumn(stagingHistoryColumns, name, {
+          column_default: "'unexpected'::text",
+        }),
       );
+      assert.equal(defaultResult.accepted, false);
+      assert.match(defaultResult.reason, new RegExp(`${name}.*default`, "i"));
+
+      const generatedResult = validateHistoryColumnMetadata(
+        replaceHistoryColumn(stagingHistoryColumns, name, { is_generated: "ALWAYS" }),
+      );
+      assert.equal(generatedResult.accepted, false);
+      assert.match(generatedResult.reason, new RegExp(`${name}.*generated`, "i"));
+
+      const identityResult = validateHistoryColumnMetadata(
+        replaceHistoryColumn(stagingHistoryColumns, name, { is_identity: "YES" }),
+      );
+      assert.equal(identityResult.accepted, false);
+      assert.match(identityResult.reason, new RegExp(`${name}.*identity`, "i"));
     }
+  });
 
-    // Observed staging shape once the tolerated columns stop being counted.
-    assert.deepEqual(classifyStateSnapshot(preSnapshot(), packet), {
-      state: "pre",
-      providerFingerprint: null,
+  it("rejects every insertion-relevant definition mutation for every known column", () => {
+    for (const column of stagingHistoryColumns) {
+      const mutations = [
+        [{ data_type: "integer", udt_name: "int4" }, /type\/UDT/i],
+        [{ is_nullable: column.is_nullable === "YES" ? "NO" : "YES" }, /nullability/i],
+        [{ column_default: "'unexpected'::text" }, /default/i],
+        [{ is_generated: "ALWAYS" }, /generated status/i],
+        [{ is_identity: "YES" }, /identity status/i],
+      ];
+      for (const [overrides, reasonPattern] of mutations) {
+        const result = validateHistoryColumnMetadata(
+          replaceHistoryColumn(stagingHistoryColumns, column.column_name, overrides),
+        );
+        assert.equal(result.accepted, false);
+        assert.match(result.reason, new RegExp(column.column_name, "i"));
+        assert.match(result.reason, reasonPattern);
+      }
+    }
+  });
+
+  it("rejects prohibited and unrecognised history columns by name", () => {
+    for (const [columnName, reasonPattern] of [
+      ["content_hash", /hash\/checksum\/digest/i],
+      ["foo", /unrecognised history column foo/i],
+    ]) {
+      const result = validateHistoryColumnMetadata([
+        ...minimalHistoryColumns,
+        historyColumn(columnName, "text", "text"),
+      ]);
+      assert.equal(result.accepted, false);
+      assert.match(result.reason, reasonPattern);
+    }
+  });
+
+  it("rejects each missing required history column", () => {
+    for (const name of ["version", "statements", "name"]) {
+      const result = validateHistoryColumnMetadata(
+        minimalHistoryColumns.filter((column) => column.column_name !== name),
+      );
+      assert.equal(result.accepted, false);
+      assert.match(result.reason, new RegExp(`missing required history column ${name}`, "i"));
+    }
+  });
+
+  it("rejects statements unless it is the exact nullable _text ARRAY definition", () => {
+    for (const overrides of [
+      { data_type: "text", udt_name: "text" },
+      { data_type: "ARRAY", udt_name: "_varchar" },
+      { is_nullable: "NO" },
+    ]) {
+      const result = validateHistoryColumnMetadata(
+        replaceHistoryColumn(minimalHistoryColumns, "statements", overrides),
+      );
+      assert.equal(result.accepted, false);
+      assert.match(result.reason, /history column statements definition mismatch/i);
+    }
+  });
+
+  it("applies the exact history-column prerequisite to both pre- and post-state", () => {
+    const packet = candidatePacket();
+    const unsafeColumns = replaceHistoryColumn(stagingHistoryColumns, "rollback", {
+      is_nullable: "NO",
     });
-
-    // An unrecognised extra column is still a refusal.
     assert.throws(
-      () => classifyStateSnapshot(preSnapshot({ historySchema: "0:1:1:1:1" }), packet),
-      /no-hash\/statement-array shape/,
+      () => classifyStateSnapshot(preSnapshot({ historyColumns: unsafeColumns }), packet),
+      /rollback.*nullability/i,
     );
-
-    // A hash/checksum/digest column is still a refusal.
     assert.throws(
-      () => classifyStateSnapshot(preSnapshot({ historySchema: "1:1:1:1:0" }), packet),
-      /no-hash\/statement-array shape/,
-    );
-
-    // A missing `_text` statements array is still a refusal.
-    assert.throws(
-      () => classifyStateSnapshot(preSnapshot({ historySchema: "0:0:1:1:0" }), packet),
-      /no-hash\/statement-array shape/,
+      () => classifyStateSnapshot(
+        postSnapshot(packet, { historyColumns: unsafeColumns }),
+        packet,
+        validFingerprint,
+      ),
+      /rollback.*nullability/i,
     );
   });
 
@@ -478,7 +594,7 @@ describe("studio-comp migration rollout guard", () => {
   it("invokes V7 for apparent post-state but not for the migration-84 pre-state", () => {
     const packet = candidatePacket();
     const postValues = new Map([
-      ["history_schema", "0:1:1:1:0"],
+      ["history_columns", extendedHistoryColumns],
       ["history_state", packet.postHistory],
       ["target_history", packet.postTargetHistory],
       ["object_counts", "3:1"],
@@ -503,7 +619,7 @@ describe("studio-comp migration rollout guard", () => {
 
     const preHeaders = [];
     const preValues = new Map([
-      ["history_schema", "0:1:1:1:0"],
+      ["history_columns", extendedHistoryColumns],
       ["history_state", ROLLOUT.preHistory],
       ["target_history", ""],
       ["object_counts", "0:0"],
@@ -573,7 +689,7 @@ describe("studio-comp migration rollout guard", () => {
     const packet = candidatePacket();
     const observedHistory = "82:0123456789abcdef0123456789abcdef";
     const values = new Map([
-      ["history_schema", "0:1:1:1:0"],
+      ["history_columns", JSON.stringify(minimalHistoryColumns)],
       ["history_state", observedHistory],
       ["target_history", ""],
       ["object_counts", "0:0"],
@@ -596,11 +712,10 @@ describe("studio-comp migration rollout guard", () => {
   it("diagnoses an extended divergent history schema with ordered read-only metadata", () => {
     const packet = candidatePacket();
     const values = new Map([
-      ["history_schema", "0:1:1:1:2"],
+      ["history_columns", divergentHistoryColumns],
       ["history_state", ROLLOUT.preHistory],
       ["target_history", ""],
       ["object_counts", "0:0"],
-      ["history_columns", extendedHistoryColumns],
       ["migration_row_count", "84"],
       ["migration_newest_version", "20260710123456"],
     ]);
@@ -619,24 +734,31 @@ describe("studio-comp migration rollout guard", () => {
     );
 
     const divergenceDetail =
-      "Supabase migration history did not have the expected no-hash/statement-array shape.";
+      "Supabase migration history schema rejected: Unrecognised history column foo.";
     assert.deepEqual(diagnosis, {
       state: "diverged",
       detail: divergenceDetail,
-      historySchemaActual: "0:1:1:1:2",
-      historyColumns: extendedHistoryColumns,
+      historyColumns: divergentHistoryColumns,
       migrationRowCount: "84",
       migrationNewestVersion: "20260710123456",
     });
     assert.deepEqual(calls.map(({ header }) => header), [
-      "history_schema",
+      "history_columns",
       "history_state",
       "target_history",
       "object_counts",
-      "history_columns",
       "migration_row_count",
       "migration_newest_version",
     ]);
+    const historyColumnsSql = calls.find(({ header }) => header === "history_columns").sql;
+    for (const property of [
+      "is_nullable",
+      "column_default",
+      "is_generated",
+      "is_identity",
+    ]) {
+      assert.match(historyColumnsSql, new RegExp(`'${property}', ${property}`));
+    }
     const newestVersionSql = calls.find(
       ({ header }) => header === "migration_newest_version",
     ).sql;
@@ -658,14 +780,56 @@ describe("studio-comp migration rollout guard", () => {
       `project_ref=${ROLLOUT.stagingRef}`,
       `candidate_sha=${candidateSha}`,
       "remote_content_hashes=absent",
-      "history_schema_actual=0:1:1:1:2",
-      `history_schema_expected=${EXPECTED_HISTORY_SCHEMA}`,
-      `history_columns=${extendedHistoryColumns}`,
+      `history_columns=${divergentHistoryColumns}`,
       "migration_row_count=84",
       "migration_newest_version=20260710123456",
       `state=DIVERGED(${divergenceDetail})`,
     ].join("\n"));
     assert.ok(!report.includes("inspection_token"));
+  });
+
+  it("rejects incomplete or noncanonical history-column diagnosis metadata", () => {
+    const packet = candidatePacket();
+    const baseValues = new Map([
+      ["history_state", ROLLOUT.preHistory],
+      ["target_history", ""],
+      ["object_counts", "0:0"],
+      ["migration_row_count", "84"],
+      ["migration_newest_version", "20260710123456"],
+    ]);
+    const validColumn = historyColumn("version", "text", "text", {
+      is_nullable: "NO",
+    });
+    const invalidColumns = [
+      { ...validColumn, is_nullable: "MAYBE" },
+      { ...validColumn, column_default: 1 },
+      { ...validColumn, is_generated: "SOMETIMES" },
+      { ...validColumn, is_identity: "MAYBE" },
+      Object.fromEntries(
+        Object.entries(validColumn).filter(([property]) => property !== "column_default"),
+      ),
+    ];
+
+    for (const column of invalidColumns) {
+      const diagnosis = readRemoteDiagnosis(
+        repositoryRoot,
+        packet,
+        {},
+        (_root, sql, header) => {
+          assertReadOnlySql(sql);
+          if (header === "history_columns") {
+            return JSON.stringify(
+              minimalHistoryColumns.map((candidate) =>
+                candidate.column_name === "version" ? column : candidate
+              ),
+            );
+          }
+          return baseValues.get(header);
+        },
+      );
+      assert.equal(diagnosis.state, "diverged");
+      assert.match(diagnosis.detail, /seven-field shape|definition mismatch/);
+    }
   });
 
   it("diagnoses reachable pre and post states without minting an inspection token", () => {
@@ -683,7 +847,7 @@ describe("studio-comp migration rollout guard", () => {
 
     for (const { snapshot, expected } of cases) {
       const values = new Map([
-        ["history_schema", snapshot.historySchema],
+        ["history_columns", extendedHistoryColumns],
         ["history_state", snapshot.history],
         ["target_history", snapshot.targetHistory],
         ["object_counts", snapshot.objectCounts],
@@ -691,7 +855,6 @@ describe("studio-comp migration rollout guard", () => {
         ["trigger_state", snapshot.triggerState],
         ["catalog_state", snapshot.catalogState],
         ["operational_readiness", snapshot.operationalReadiness],
-        ["history_columns", extendedHistoryColumns],
         ["migration_row_count", expected.state === "pre" ? "84" : "100"],
         ["migration_newest_version", expected.state === "pre" ? "20260710123456" : "20260801131844"],
       ]);
@@ -706,9 +869,8 @@ describe("studio-comp migration rollout guard", () => {
         { state: diagnosis.state, providerFingerprint: diagnosis.providerFingerprint },
         expected,
       );
-      assert.equal(diagnosis.historySchemaActual, EXPECTED_HISTORY_SCHEMA);
-      assert.deepEqual(headers.slice(-3), [
-        "history_columns",
+      assert.equal(diagnosis.historyColumns, extendedHistoryColumns);
+      assert.deepEqual(headers.slice(-2), [
         "migration_row_count",
         "migration_newest_version",
       ]);
@@ -770,11 +932,10 @@ describe("studio-comp migration rollout guard", () => {
       assert.deepEqual(classificationFailure, { state: "unknown", reason });
 
       const preValues = new Map([
-        ["history_schema", EXPECTED_HISTORY_SCHEMA],
+        ["history_columns", extendedHistoryColumns],
         ["history_state", ROLLOUT.preHistory],
         ["target_history", ""],
         ["object_counts", "0:0"],
-        ["history_columns", extendedHistoryColumns],
         ["migration_row_count", "84"],
       ]);
       const metadataHeaders = [];
@@ -792,7 +953,6 @@ describe("studio-comp migration rollout guard", () => {
       );
       assert.deepEqual(metadataFailure, { state: "unknown", reason });
       for (const field of [
-        "historySchemaActual",
         "historyColumns",
         "migrationRowCount",
         "migrationNewestVersion",
@@ -810,7 +970,7 @@ describe("studio-comp migration rollout guard", () => {
         "remote_content_hashes=absent",
         `state=UNKNOWN(${reason})`,
       ].join("\n"));
-      assert.doesNotMatch(report, /history_schema_|history_columns|migration_row_count|migration_newest_version/);
+      assert.doesNotMatch(report, /history_columns|migration_row_count|migration_newest_version/);
       assert.ok(classificationSql.length > 0);
       assert.ok(metadataHeaders.includes(failureHeader));
     }
@@ -820,7 +980,7 @@ describe("studio-comp migration rollout guard", () => {
     const packet = candidatePacket();
     const queryError = new Error("unexpected diagnosis query implementation failure");
     const preValues = new Map([
-      ["history_schema", EXPECTED_HISTORY_SCHEMA],
+      ["history_columns", extendedHistoryColumns],
       ["history_state", ROLLOUT.preHistory],
       ["target_history", ""],
       ["object_counts", "0:0"],
@@ -847,12 +1007,11 @@ describe("studio-comp migration rollout guard", () => {
     let linkedRefAsserted = false;
     const packet = { ...candidatePacket(), integrationComplete: false };
     const divergenceDetail =
-      "Supabase migration history did not have the expected no-hash/statement-array shape.";
+      "Supabase migration history schema rejected: Unrecognised history column foo.";
     const diagnosis = {
       state: "diverged",
       detail: divergenceDetail,
-      historySchemaActual: "0:1:1:1:2",
-      historyColumns: extendedHistoryColumns,
+      historyColumns: divergentHistoryColumns,
       migrationRowCount: "84",
       migrationNewestVersion: "20260710123456",
     };
@@ -1041,6 +1200,33 @@ describe("studio-comp migration rollout guard", () => {
       () => assertExactPendingMigrations(`${exact}\n20260728120000_unapproved.sql`, packet),
       /Dry-run migration set mismatch/,
     );
+  });
+
+  it("parses the pinned CLI dry-run migration list from stderr", (t) => {
+    const packet = candidatePacket();
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-dry-run-cli-"));
+    const fakeBin = path.join(temporaryRoot, "bin");
+    const fakeSupabase = path.join(fakeBin, "supabase");
+    fs.mkdirSync(fakeBin);
+    fs.writeFileSync(
+      fakeSupabase,
+      [
+        "#!/usr/bin/env node",
+        `process.stdout.write(${JSON.stringify("Dry run completed without applying migrations.\n")});`,
+        `process.stderr.write(${JSON.stringify(
+          ["Would push these migrations:", ...packet.pendingMigrations].join("\n") + "\n",
+        )});`,
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+
+    const pending = runDryRun(repositoryRoot, packet, {
+      ...process.env,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    });
+
+    assert.deepEqual(pending, packet.pendingMigrations);
   });
 
   it("gates staging apply on exact project, inspection, and durable approval", () => {
