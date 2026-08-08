@@ -66,6 +66,8 @@ export const EXPECTED_OPERATIONAL_READINESS =
   ROLLOUT.finalPendingVersions.join(",") +
   "|0||release-db-attestation-v7";
 
+export const EXPECTED_HISTORY_SCHEMA = "0:1:1:1:0";
+
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
@@ -121,6 +123,34 @@ select
 from information_schema.columns
 where table_schema = 'supabase_migrations'
   and table_name = 'schema_migrations'
+`;
+
+const HISTORY_COLUMNS_SQL = `
+select coalesce(
+         json_agg(
+           json_build_object(
+             'column_name', column_name,
+             'data_type', data_type,
+             'udt_name', udt_name
+           )
+           order by ordinal_position
+         )::text,
+         '[]'
+       ) as history_columns
+from information_schema.columns
+where table_schema = 'supabase_migrations'
+  and table_name = 'schema_migrations'
+`;
+
+const MIGRATION_ROW_COUNT_SQL = `
+select count(*)::text as migration_row_count
+from supabase_migrations.schema_migrations
+`;
+
+const MIGRATION_NEWEST_VERSION_SQL = `
+select coalesce(max(to_jsonb(schema_migration)->>'version'), '')
+  as migration_newest_version
+from supabase_migrations.schema_migrations as schema_migration
 `;
 
 const HISTORY_SQL = `
@@ -1240,7 +1270,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     catalogState,
     operationalReadiness,
   } = snapshot;
-  if (snapshot.historySchema !== "0:1:1:1:0") {
+  if (snapshot.historySchema !== EXPECTED_HISTORY_SCHEMA) {
     throw new RolloutError(
       "Supabase migration history did not have the expected no-hash/statement-array shape.",
     );
@@ -1545,6 +1575,127 @@ export function readRemoteState(
   }
 }
 
+function validateHistoryColumns(value) {
+  let columns;
+  try {
+    columns = JSON.parse(value);
+  } catch {
+    throw new RolloutError("history_columns query returned malformed JSON.");
+  }
+  if (
+    !Array.isArray(columns) ||
+    columns.some((column) =>
+      column === null ||
+      typeof column !== "object" ||
+      Array.isArray(column) ||
+      JSON.stringify(Object.keys(column).sort()) !==
+        JSON.stringify(["column_name", "data_type", "udt_name"]) ||
+      typeof column.column_name !== "string" ||
+      typeof column.data_type !== "string" ||
+      typeof column.udt_name !== "string"
+    )
+  ) {
+    throw new RolloutError("history_columns query returned an unexpected JSON shape.");
+  }
+  return JSON.stringify(columns);
+}
+
+function validateMigrationRowCount(value) {
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) {
+    throw new RolloutError("migration_row_count query returned a non-integer value.");
+  }
+  return value;
+}
+
+function validateMigrationNewestVersion(value) {
+  if (typeof value !== "string" || /[\r\n\x00-\x1f\x7f]/.test(value)) {
+    throw new RolloutError("migration_newest_version query returned a noncanonical value.");
+  }
+  return value;
+}
+
+export function readRemoteDiagnosis(
+  sourceRoot,
+  packet,
+  env,
+  query = querySingleValue,
+) {
+  let historySchemaActual = null;
+  const classification = readRemoteState(
+    sourceRoot,
+    packet,
+    env,
+    null,
+    (queryRoot, sql, header, queryEnv) => {
+      const value = query(queryRoot, sql, header, queryEnv);
+      if (header === "history_schema") historySchemaActual = value;
+      return value;
+    },
+  );
+  if (classification.state === "unknown") return classification;
+
+  let historyColumns;
+  let migrationRowCount;
+  let migrationNewestVersion;
+  try {
+    historyColumns = query(sourceRoot, HISTORY_COLUMNS_SQL, "history_columns", env);
+    migrationRowCount = query(
+      sourceRoot,
+      MIGRATION_ROW_COUNT_SQL,
+      "migration_row_count",
+      env,
+    );
+    migrationNewestVersion = query(
+      sourceRoot,
+      MIGRATION_NEWEST_VERSION_SQL,
+      "migration_newest_version",
+      env,
+    );
+  } catch (error) {
+    if (!(error instanceof RolloutError)) {
+      throw error;
+    }
+    return {
+      state: "unknown",
+      reason: error.message.includes("UNKNOWN(timeout)") ? "timeout" : "connectivity",
+    };
+  }
+
+  return {
+    ...classification,
+    historySchemaActual,
+    historyColumns: validateHistoryColumns(historyColumns),
+    migrationRowCount: validateMigrationRowCount(migrationRowCount),
+    migrationNewestVersion: validateMigrationNewestVersion(migrationNewestVersion),
+  };
+}
+
+export function formatDiagnosisReport({ target, projectRef, candidateSha }, diagnosis) {
+  const lines = [
+    `target=${target}`,
+    `project_ref=${projectRef}`,
+    `candidate_sha=${candidateSha}`,
+    "remote_content_hashes=absent",
+  ];
+  const nonSuccessStateLine = formatNonSuccessProbeState(diagnosis);
+  if (diagnosis.state === "unknown") {
+    lines.push(nonSuccessStateLine);
+    return lines.join("\n");
+  }
+  lines.push(
+    `history_schema_actual=${diagnosis.historySchemaActual}`,
+    `history_schema_expected=${EXPECTED_HISTORY_SCHEMA}`,
+    `history_columns=${diagnosis.historyColumns}`,
+    `migration_row_count=${diagnosis.migrationRowCount}`,
+    `migration_newest_version=${diagnosis.migrationNewestVersion}`,
+    nonSuccessStateLine ?? `state=${diagnosis.state}`,
+  );
+  if (diagnosis.state === "post" && diagnosis.providerFingerprint) {
+    lines.push(`provider_fingerprint=${diagnosis.providerFingerprint}`);
+  }
+  return lines.join("\n");
+}
+
 function assertLinkedProjectRef(sourceRoot, expectedRef) {
   const refPath = path.join(sourceRoot, "supabase", ".temp", "project-ref");
   const raw = fs.readFileSync(refPath, "utf8");
@@ -1593,6 +1744,7 @@ function usage() {
   node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>
   node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --candidate-sha <full-sha> [--mode <inspect|diagnose|dry-run|apply>]
 
+diagnose performs linked, read-only SELECT diagnosis and needs no inspection token.
 Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
   --confirm-project <exact-ref> --approval-record <durable-id-or-url>
   staging:    --approve-staging-apply
@@ -1603,7 +1755,17 @@ Dry-run and apply require the inspection_token from a preceding inspect. Apply a
 inspect is the default mode. Agents must never use production apply.`;
 }
 
-export async function main(argv = process.argv.slice(2), env = process.env) {
+export async function main(
+  argv = process.argv.slice(2),
+  env = process.env,
+  {
+    commandRunner = runCommand,
+    sourceVerifier = verifySourceTree,
+    linkedRefAsserter = assertLinkedProjectRef,
+    diagnosisReader = readRemoteDiagnosis,
+    output = console.log,
+  } = {},
+) {
   const config = parseArguments(argv);
   validateApplyAuthorization(config);
 
@@ -1611,7 +1773,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     assertSafeCredentialedTransport(env);
   }
 
-  const cliVersion = runCommand("supabase", ["--version"], { env, label: "Supabase CLI version read" })
+  const cliVersion = commandRunner("supabase", ["--version"], {
+    env,
+    label: "Supabase CLI version read",
+  })
     .split("\n")[0];
   if (cliVersion !== ROLLOUT.cliVersion) {
     throw new RolloutError(
@@ -1623,11 +1788,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const sourceRoot = path.join(temporaryRoot, "candidate");
   let worktreeAdded = false;
   try {
-    runCommand("git", ["worktree", "add", "--detach", sourceRoot, config.candidateSha], {
+    commandRunner("git", ["worktree", "add", "--detach", sourceRoot, config.candidateSha], {
       label: "detached candidate worktree creation",
     });
     worktreeAdded = true;
-    const packet = verifySourceTree(sourceRoot, config.candidateSha);
+    const packet = sourceVerifier(sourceRoot, config.candidateSha);
     if (config.mode === "packet") {
       console.log(`candidate_sha=${packet.candidateSha}`);
       console.log(`cli_version=${ROLLOUT.cliVersion}`);
@@ -1641,17 +1806,34 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     }
 
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
-    if (!packet.integrationComplete) {
+    if (config.mode !== "diagnose" && !packet.integrationComplete) {
       throw new RolloutError(
         "Provider inspection requires the exact final 100-migration candidate through 131844.",
       );
     }
-    runCommand(
+    commandRunner(
       "supabase",
       ["link", "--project-ref", projectRef, "--yes", "--agent=no"],
       { cwd: sourceRoot, env, label: "Supabase project link" },
     );
-    assertLinkedProjectRef(sourceRoot, projectRef);
+    linkedRefAsserter(sourceRoot, projectRef);
+
+    if (config.mode === "diagnose") {
+      const diagnosis = diagnosisReader(sourceRoot, packet, env);
+      const report = formatDiagnosisReport(
+        {
+          target: config.target,
+          projectRef,
+          candidateSha: packet.candidateSha,
+        },
+        diagnosis,
+      );
+      for (const line of report.split("\n")) output(line);
+      if (diagnosis.state === "unknown") {
+        throw new RolloutError(`Diagnosis refused: ${formatNonSuccessProbeState(diagnosis)}.`);
+      }
+      return;
+    }
 
     const before = readRemoteState(
       sourceRoot,
