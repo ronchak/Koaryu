@@ -43,6 +43,20 @@ function expectedTarget(options) {
   return { environment, expectedSha, frontendOrigin, backendApi, ...target };
 }
 
+function stripeRehearsalExpectation(options, environment) {
+  if (options.expectedStripeMode === undefined) {
+    return undefined;
+  }
+  const expectedStripeMode = requiredString("expected Stripe mode", options.expectedStripeMode);
+  if (expectedStripeMode !== "test") {
+    throw new Error("expected Stripe mode must be test for the hosted Stripe rehearsal.");
+  }
+  if (environment !== "staging") {
+    throw new Error("hosted Stripe rehearsal verification requires the pinned staging pair.");
+  }
+  return expectedStripeMode;
+}
+
 function verifyPayload(name, payload, { service, environment, expectedSha, status }) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error(`${name} did not return a JSON object.`);
@@ -54,6 +68,12 @@ function verifyPayload(name, payload, { service, environment, expectedSha, statu
     || (status !== undefined && payload.status !== status)
   ) {
     throw new Error(`${name} does not report the exact expected release identity.`);
+  }
+}
+
+function verifyStripeMode(name, payload, expectedStripeMode) {
+  if (payload.configured_stripe_mode !== expectedStripeMode) {
+    throw new Error(`${name} does not report configured Stripe mode ${expectedStripeMode}.`);
   }
 }
 
@@ -73,6 +93,7 @@ async function fetchJson(url, { fetchImpl, headers }) {
 
 export async function verifyDeployedRelease(options, dependencies = {}) {
   const target = expectedTarget(options);
+  const expectedStripeMode = stripeRehearsalExpectation(options, target.environment);
   const fetchImpl = dependencies.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== "function") {
     throw new Error("fetch is unavailable.");
@@ -100,6 +121,9 @@ export async function verifyDeployedRelease(options, dependencies = {}) {
     expectedSha: target.expectedSha,
     status: "ready",
   });
+  if (expectedStripeMode) {
+    verifyStripeMode("backend /health/ready", backendRoot, expectedStripeMode);
+  }
 
   const backendApi = await fetchJson(`${target.backendApi}/health/ready`, { fetchImpl });
   verifyPayload("backend /api/v1/health/ready", backendApi, {
@@ -108,6 +132,9 @@ export async function verifyDeployedRelease(options, dependencies = {}) {
     expectedSha: target.expectedSha,
     status: "ready",
   });
+  if (expectedStripeMode) {
+    verifyStripeMode("backend /api/v1/health/ready", backendApi, expectedStripeMode);
+  }
 
   return {
     verified: true,
@@ -115,6 +142,15 @@ export async function verifyDeployedRelease(options, dependencies = {}) {
     expected_sha: target.expectedSha,
     frontend: { service: frontend.service, environment: frontend.environment, commit_sha: frontend.commit_sha },
     backend: { service: backendApi.service, environment: backendApi.environment, commit_sha: backendApi.commit_sha },
+    ...(expectedStripeMode
+      ? {
+        stripe_rehearsal: {
+          configured_mode: expectedStripeMode,
+          backend_root_mode: backendRoot.configured_stripe_mode,
+          backend_api_mode: backendApi.configured_stripe_mode,
+        },
+      }
+      : {}),
   };
 }
 
@@ -133,6 +169,7 @@ export function parseReleaseVerifierArgs(argv) {
     environment: values.environment,
     frontendOrigin: values["frontend-origin"],
     backendApi: values["backend-api"],
+    expectedStripeMode: values["expected-stripe-mode"],
     frontendBypassSecret: process.env.KOARYU_FRONTEND_VERIFY_BYPASS_SECRET,
   };
 }

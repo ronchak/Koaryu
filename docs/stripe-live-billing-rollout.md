@@ -97,6 +97,19 @@ An all-clear reconciliation JSON may be recorded only through `record-checkpoint
 
 ## Exact-candidate test-provider rehearsal
 
+Before opening the browser, run the pinned staging preflight below. Stop on any failure and do not use production:
+
+```bash
+npm run verify:deployed-release -- \
+  --environment staging \
+  --expected-sha <40-character-candidate-sha> \
+  --frontend-origin https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app \
+  --backend-api https://koaryu-staging.onrender.com/api/v1 \
+  --expected-stripe-mode test
+```
+
+Follow the execution-order capture instructions in [the Stripe test-provider rehearsal worksheet](stripe-test-provider-rehearsal-capture.md). It records only sanitized evidence and remains test mode only.
+
 Do not call the synthetic local Connect smoke provider proof. On a director-approved exact release candidate, first verify `/health/ready` returns the expected SHA and the backend is configured for Stripe test mode. Exercise hosted onboarding and the required test lifecycle through the candidate, capturing only IDs, status, explicit studio/account/scope, idempotency keys, webhook event IDs, and readback outcomes. Then validate the sanitized evidence:
 
 ```bash
