@@ -47,21 +47,30 @@ def main() -> None:
         return
 
     stripe_service = StripeService()
-    icon_file_id = (
-        stripe_service.upload_branding_file(file_path=str(args.icon_path), purpose="business_icon")
-        if args.icon_path
-        else None
-    )
-    logo_file_id = (
-        stripe_service.upload_branding_file(file_path=str(args.logo_path), purpose="business_logo")
-        if args.logo_path
-        else None
-    )
-
     for row in rows:
+        studio_id = row["studio_id"]
         account_id = row["stripe_connected_account_id"]
+        icon_file_id = (
+            stripe_service.upload_branding_file(
+                file_path=str(args.icon_path),
+                purpose="business_icon",
+                studio_id=studio_id,
+            )
+            if args.icon_path
+            else None
+        )
+        logo_file_id = (
+            stripe_service.upload_branding_file(
+                file_path=str(args.logo_path),
+                purpose="business_logo",
+                studio_id=studio_id,
+            )
+            if args.logo_path
+            else None
+        )
         stripe_service.update_connect_account_branding(
             account_id=account_id,
+            studio_id=studio_id,
             primary_color=args.primary_color,
             secondary_color=args.secondary_color,
             icon_file_id=icon_file_id,
