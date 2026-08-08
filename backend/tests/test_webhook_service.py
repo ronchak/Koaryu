@@ -69,7 +69,7 @@ class _FakeSupabase(RpcBackedSupabase):
         })
         return [{"claim_status": "claimed", "event_row": dict(row)}]
 
-    def _rpc_finish_stripe_event_processing(self, params: dict) -> list[dict]:
+    def _rpc_finish_stripe_event_processing_v2(self, params: dict) -> list[dict]:
         for row in self.tables["stripe_events"]:
             if row.get("id") == params["p_event_id"] and row.get("processing_token") == params["p_processing_token"]:
                 row["processing_status"] = params["p_status"]
@@ -81,6 +81,9 @@ class _FakeSupabase(RpcBackedSupabase):
                     else row.get("processed_at")
                 )
                 row["error"] = params["p_error"] if params["p_status"] == "failed" else None
+                row["error_reference"] = (
+                    params["p_error_reference"] if params["p_status"] == "failed" else None
+                )
                 return [{"updated": True, "event_row": dict(row)}]
         return [{"updated": False, "event_row": None}]
 
@@ -108,7 +111,7 @@ class _RpcWebhookSupabase(RpcBackedSupabase):
                 "event_row": {"id": "row_1"},
         }]
 
-    def _rpc_finish_stripe_event_processing(self, params: dict) -> list[dict]:
+    def _rpc_finish_stripe_event_processing_v2(self, params: dict) -> list[dict]:
         return [{
             "updated": True,
             "event_row": {"id": params["p_event_id"], "processing_status": params["p_status"]},
@@ -452,6 +455,7 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(_FakeBillingService.calls, 1)
         self.assertEqual(rows[0]["processing_status"], "failed")
         self.assertEqual(rows[0]["error"], "unexpected_processing_error")
+        self.assertRegex(rows[0]["error_reference"], r"^[0-9a-f]{32}$")
         self.assertNotIn("raw provider secret detail", rows[0]["error"])
 
     def test_live_mutation_interlock_keeps_webhook_failed_and_retryable(self):
@@ -515,7 +519,7 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(_FakeBillingService.calls, 1)
         self.assertEqual(
             [name for name, _params in supabase.rpc_calls],
-            ["claim_stripe_event_for_processing", "finish_stripe_event_processing"],
+            ["claim_stripe_event_for_processing", "finish_stripe_event_processing_v2"],
         )
         self.assertEqual(supabase.rpc_calls[0][1]["p_stripe_account_id"], "acct_1")
 
@@ -553,10 +557,37 @@ class WebhookServiceTest(unittest.TestCase):
             event = service.construct_webhook_event(
                 payload=b"{}",
                 signature="sig",
-                secret="whsec_first, whsec_second",
+                secret="whsec_first,whsec_second",
             )
 
         self.assertEqual(event["id"], "evt_1")
+
+    def test_construct_webhook_event_rejects_noncanonical_secrets_before_sdk(self):
+        invalid_values = (
+            " whsec_first",
+            "whsec_first ",
+            ",whsec_first",
+            "whsec_first,",
+            "whsec_first, whsec_second",
+            "whsec_first\tvalue",
+            "whsec_first\rvalue",
+            "whsec_first\nwhsec_second",
+            "whsec_first,,whsec_second",
+        )
+        service = StripeService()
+
+        for secret in invalid_values:
+            with self.subTest(value_kind=repr(secret)):
+                with patch.object(service, "_stripe") as stripe_module:
+                    with self.assertRaisesRegex(RuntimeError, "webhook secret") as error:
+                        service.construct_webhook_event(
+                            payload=b"{}",
+                            signature="sig",
+                            secret=secret,
+                        )
+
+                self.assertNotIn(secret, str(error.exception))
+                stripe_module.assert_not_called()
 
     def test_construct_webhook_event_accepts_real_stripe_sdk_signature(self):
         payload = b'{"id":"evt_real_sdk","object":"event"}'
@@ -605,7 +636,7 @@ class WebhookServiceTest(unittest.TestCase):
                 service.construct_webhook_event(
                     payload=b"{}",
                     signature="sig",
-                    secret="whsec_first\nwhsec_third",
+                    secret="whsec_first,whsec_third",
                 )
 
         self.assertEqual(raised.exception.status_code, 400)

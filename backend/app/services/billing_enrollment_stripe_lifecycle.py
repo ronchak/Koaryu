@@ -76,6 +76,7 @@ class BillingEnrollmentStripeLifecycle:
                     ) + 1
                     stripe_service.update_connected_subscription_item(
                         account_id=account["stripe_connected_account_id"],
+                        studio_id=studio_id,
                         subscription_item_id=existing_item_id,
                         quantity=quantity,
                         proration_behavior="none",
@@ -89,6 +90,7 @@ class BillingEnrollmentStripeLifecycle:
                 else:
                     item = stripe_service.create_connected_subscription_item(
                         account_id=account["stripe_connected_account_id"],
+                        studio_id=studio_id,
                         subscription_id=group["stripe_subscription_id"],
                         price_id=plan["stripe_price_id"],
                         metadata={
@@ -106,6 +108,7 @@ class BillingEnrollmentStripeLifecycle:
             else:
                 subscription = stripe_service.create_connected_subscription(
                     account_id=account["stripe_connected_account_id"],
+                    studio_id=studio_id,
                     customer_id=payer["stripe_customer_id"],
                     price_id=plan["stripe_price_id"],
                     collection_method="charge_automatically" if enrollment.get("collection_mode") == "autopay" else "send_invoice",
@@ -297,7 +300,12 @@ class BillingEnrollmentStripeLifecycle:
             remaining = self._remaining_enrollments_for_subscription(enrollment)
             if not remaining and subscription_id:
                 if account_id:
-                    self.stripe_service_cls().cancel_connected_subscription(account_id=account_id, subscription_id=subscription_id)
+                    self.stripe_service_cls().cancel_connected_subscription(
+                        account_id=account_id,
+                        studio_id=enrollment["studio_id"],
+                        subscription_id=subscription_id,
+                        idempotency_key=self._idempotency_key("subscription-cancel", subscription_id),
+                    )
                 if group_id:
                     (
                         self.supabase.table("billing_subscriptions")
@@ -317,6 +325,7 @@ class BillingEnrollmentStripeLifecycle:
                 if remaining_same_item:
                     self.stripe_service_cls().update_connected_subscription_item(
                         account_id=account_id,
+                        studio_id=enrollment["studio_id"],
                         subscription_item_id=item_id,
                         quantity=remaining_same_item,
                         proration_behavior="none",
@@ -327,7 +336,12 @@ class BillingEnrollmentStripeLifecycle:
                         ),
                     )
                 else:
-                    self.stripe_service_cls().delete_connected_subscription_item(account_id=account_id, subscription_item_id=item_id)
+                    self.stripe_service_cls().delete_connected_subscription_item(
+                        account_id=account_id,
+                        studio_id=enrollment["studio_id"],
+                        subscription_item_id=item_id,
+                        idempotency_key=self._idempotency_key("subscription-item-delete", item_id),
+                    )
         finally:
             if group_id and lock_token:
                 self._release_subscription_quantity_sync_lock(enrollment["studio_id"], group_id, lock_token)

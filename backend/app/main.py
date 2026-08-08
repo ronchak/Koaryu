@@ -8,15 +8,16 @@ from app.api.v1.router import router as v1_router
 
 settings = get_settings()
 settings.validate_runtime_configuration()
-allowed_origins = {settings.FRONTEND_URL}
+frontend_origin = settings.validated_frontend_origin()
+allowed_origins = {frontend_origin}
 
-if settings.FRONTEND_URL.startswith("http://localhost:"):
+if frontend_origin.startswith("http://localhost:"):
     allowed_origins.add(
-        settings.FRONTEND_URL.replace("http://localhost:", "http://127.0.0.1:")
+        frontend_origin.replace("http://localhost:", "http://127.0.0.1:")
     )
-elif settings.FRONTEND_URL.startswith("http://127.0.0.1:"):
+elif frontend_origin.startswith("http://127.0.0.1:"):
     allowed_origins.add(
-        settings.FRONTEND_URL.replace("http://127.0.0.1:", "http://localhost:")
+        frontend_origin.replace("http://127.0.0.1:", "http://localhost:")
     )
 
 app = FastAPI(

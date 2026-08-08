@@ -183,6 +183,8 @@ INITDB="$PG_BIN_DIR/initdb"
 PG_CTL="$PG_BIN_DIR/pg_ctl"
 PSQL="$PG_BIN_DIR/psql"
 
+node "$ROOT_DIR/scripts/check-supabase-contract-inventory.mjs"
+
 shopt -s nullglob
 migration_files=("$MIGRATION_DIR"/*.sql)
 verification_files=("$VERIFICATION_DIR"/*.sql)
@@ -410,6 +412,252 @@ for migration_file in "${migration_files[@]}"; do
   fi
 done
 
+echo "[operational manifest] RUN database-observable semantic and ACL signal"
+operational_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_operational_manifest_v7();
+"
+)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateOperationalManifest } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalManifest(process.argv[1]);" \
+    "$operational_manifest"
+); then
+  echo "[operational manifest] PASS database-observable semantic and ACL signal"
+else
+  status=$?
+  echo "[operational manifest] FAIL database-observable semantic and ACL signal (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[catalog] RUN deterministic pending-object security fingerprint"
+catalog_state="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
+    "$catalog_state"
+); then
+  echo "[catalog] PASS deterministic pending-object security fingerprint"
+else
+  status=$?
+  echo "[catalog] FAIL deterministic pending-object security fingerprint (exit $status)" >&2
+  exit "$status"
+fi
+
+assert_attestation_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local expected_v2_ready="$3"
+  local result=""
+  local drifted_catalog_state=""
+  local actual_v2_ready=""
+
+  echo "[attestation negative] RUN $label"
+  result="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    (
+      cd "$ROOT_DIR"
+      node --input-type=module --eval \
+        "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
+    )
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v2();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
+  actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+
+  if (
+    cd "$ROOT_DIR"
+    node --input-type=module --eval \
+      "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
+      "$drifted_catalog_state" >/dev/null 2>&1
+  ); then
+    echo "[attestation negative] FAIL raw catalog accepted $label" >&2
+    exit 1
+  fi
+  if [[ "$actual_v2_ready" != "$expected_v2_ready" ]]; then
+    echo "[attestation negative] FAIL V2 readiness result for $label" >&2
+    exit 1
+  fi
+  echo "[attestation negative] PASS $label"
+}
+
+assert_attestation_rejects \
+  "stored function-body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN false; END;' WHERE oid = 'private.live_billing_event_is_in_scope(text,text)'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery response RPC body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN; END;' WHERE oid = 'public.record_connect_onboarding_bootstrap_initial_link_response(uuid,uuid,text,integer,text,text,text,text,text,text)'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "V2 self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v2()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V4 helper self-body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v4()'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "V5 helper self-body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v5()'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "V6 helper self-body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v6()'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "V7 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v7()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "checkpoint trigger-definition drift" \
+  "ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints DISABLE TRIGGER enforce_live_billing_checkpoint_processed_events;" \
+  "f"
+assert_attestation_rejects \
+  "bootstrap index-definition drift" \
+  "DROP INDEX public.idx_stripe_connect_onboarding_bootstraps_generation_once;" \
+  "f"
+assert_attestation_rejects \
+  "bootstrap CHECK-expression drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.stripe_connect_onboarding_bootstraps'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "UTC-normalized reconciliation window CHECK drift" \
+  "ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints DROP CONSTRAINT stripe_live_checkpoint_window_contract; ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints ADD CONSTRAINT stripe_live_checkpoint_window_contract CHECK (event_window_started_at IS NULL OR event_window_ended_at IS NOT NULL);" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery column drift" \
+  "ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP COLUMN initial_link_support_required_at CASCADE;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery CHECK drift" \
+  "ALTER TABLE public.stripe_connect_onboarding_bootstraps DROP CONSTRAINT stripe_connect_onboarding_bootstraps_receipt_expiry;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery index drift" \
+  "DROP INDEX public.idx_stripe_connect_onboarding_bootstraps_delivery_receipt;" \
+  "f"
+assert_attestation_rejects \
+  "private identity UNIQUE drift" \
+  "ALTER TABLE private.stripe_connect_account_identity_guards DROP CONSTRAINT stripe_connect_account_identity_guards_mapped_studio_id_key;" \
+  "f"
+assert_attestation_rejects \
+  "private identity FK drift" \
+  "ALTER TABLE private.stripe_connect_account_identity_guards DROP CONSTRAINT stripe_connect_account_identity_guards_mapped_studio_id_fkey;" \
+  "f"
+assert_attestation_rejects \
+  "private identity CHECK drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'private.stripe_connect_account_identity_guards'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE private.stripe_connect_account_identity_guards DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "public Connect mapping FK drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.studio_payment_accounts'::regclass AND contype = 'f' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.studio_payment_accounts DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "public Connect exclusion CHECK drift" \
+  "DO \$koaryu\$ DECLARE v_constraint name; BEGIN SELECT conname INTO v_constraint FROM pg_constraint WHERE conrelid = 'public.stripe_connect_account_dispositions'::regclass AND contype = 'c' ORDER BY conname LIMIT 1; EXECUTE format('ALTER TABLE public.stripe_connect_account_dispositions DROP CONSTRAINT %I', v_constraint); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "required service-role table ACL drift" \
+  "REVOKE SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "unexpected custom-role table ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "service-role table GRANT OPTION drift" \
+  "GRANT SELECT ON TABLE public.stripe_live_billing_reconciliation_account_evidence TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "anon private-column ACL drift" \
+  "GRANT SELECT (stripe_connected_account_id) ON TABLE private.stripe_connect_account_identity_guards TO anon;" \
+  "f"
+assert_attestation_rejects \
+  "authenticated private-column ACL drift" \
+  "GRANT UPDATE (mapped_studio_id) ON TABLE private.stripe_connect_account_identity_guards TO authenticated;" \
+  "f"
+assert_attestation_rejects \
+  "unexpected custom-role private-column ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT (excluded) ON TABLE private.stripe_connect_account_identity_guards TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "service-role public-column GRANT OPTION drift" \
+  "GRANT UPDATE (grant_reason) ON TABLE public.studio_live_billing_authorizations TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "unexpected custom-role public-column GRANT OPTION drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT (error_reference) ON TABLE public.stripe_events TO koaryu_attestation_custom_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "studio payment account custom-role ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT ON TABLE public.studio_payment_accounts TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "studio payment account service-role GRANT OPTION drift" \
+  "GRANT SELECT ON TABLE public.studio_payment_accounts TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "studio payment account browser structural ACL drift" \
+  "GRANT TRIGGER ON TABLE public.studio_payment_accounts TO authenticated;" \
+  "f"
+assert_attestation_rejects \
+  "Stripe event custom-role ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT SELECT ON TABLE public.stripe_events TO koaryu_attestation_custom_role;" \
+  "f"
+assert_attestation_rejects \
+  "Stripe event service-role GRANT OPTION drift" \
+  "GRANT SELECT ON TABLE public.stripe_events TO service_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "Stripe event excessive service-role ACL drift" \
+  "GRANT TRUNCATE ON TABLE public.stripe_events TO service_role;" \
+  "f"
+assert_attestation_rejects \
+  "required service-role RPC ACL drift" \
+  "REVOKE EXECUTE ON FUNCTION public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid,uuid,text,integer,text,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery required service-role RPC ACL drift" \
+  "REVOKE EXECUTE ON FUNCTION public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(uuid,text,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "Connect delivery unexpected custom-role RPC GRANT OPTION drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; GRANT EXECUTE ON FUNCTION public.record_connect_onboarding_bootstrap_initial_link_response(uuid,uuid,text,integer,text,text,text,text,text,text) TO koaryu_attestation_custom_role WITH GRANT OPTION;" \
+  "f"
+assert_attestation_rejects \
+  "forbidden browser/PUBLIC ACL drift" \
+  "GRANT SELECT ON TABLE public.stripe_connect_onboarding_bootstraps TO anon;" \
+  "f"
+assert_attestation_rejects \
+  "unexpected custom-role sequence ACL drift" \
+  "CREATE ROLE koaryu_attestation_custom_role NOLOGIN; DO \$koaryu\$ BEGIN EXECUTE format('GRANT SELECT ON SEQUENCE %s TO koaryu_attestation_custom_role', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence')::REGCLASS); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "service-role sequence GRANT OPTION drift" \
+  "DO \$koaryu\$ BEGIN EXECUTE format('GRANT USAGE ON SEQUENCE %s TO service_role WITH GRANT OPTION', pg_get_serial_sequence('public.stripe_events', 'live_billing_ingest_sequence')::REGCLASS); END \$koaryu\$;" \
+  "f"
+assert_attestation_rejects \
+  "unmanifested permissive policy drift" \
+  "CREATE POLICY koaryu_harness_forbidden_permissive_policy ON public.studio_live_billing_authorizations AS PERMISSIVE FOR SELECT TO anon USING (true);" \
+  "f"
+
+echo "[concurrency] RUN Connect identity mapping/exclusion invariant"
+if bash "$ROOT_DIR/scripts/verify-connect-identity-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT" postgres postgres; then
+  echo "[concurrency] PASS Connect identity mapping/exclusion invariant"
+else
+  status=$?
+  echo "[concurrency] FAIL Connect identity mapping/exclusion invariant (exit $status)" >&2
+  exit "$status"
+fi
+
 verification_total=${#verification_files[@]}
 verification_index=0
 for verification_file in "${verification_files[@]}"; do
@@ -425,5 +673,16 @@ for verification_file in "${verification_files[@]}"; do
     exit "$status"
   fi
 done
+
+echo "[concurrency] RUN operational alert clear/completion serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-operational-alert-clear-complete-race.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS operational alert clear/completion serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL operational alert clear/completion serialization (exit $status)" >&2
+  exit "$status"
+fi
 
 echo "PASS: $migration_total migrations and $verification_total Supabase contracts verified on ephemeral PostgreSQL 17."

@@ -7,6 +7,8 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException, status
 
+from app.services.studio_live_billing_authorizations import ConnectOnboardingBootstrapContext
+
 
 STRIPE_ACCOUNTS_V2_VERSION = "2026-05-27.preview"
 
@@ -21,7 +23,71 @@ class _StripeV2RequestError(Exception):
 StripeLoader = Callable[[], Any]
 RequestOptionsBuilder = Callable[..., dict[str, str]]
 StripeV2Request = Callable[..., dict[str, Any]]
-MutationAuthorizer = Callable[[str], Any]
+MutationAuthorizer = Callable[..., Any]
+
+
+def build_connect_onboarding_link_v2_payload(
+    *,
+    account_id: str,
+    refresh_url: str,
+    return_url: str,
+) -> dict[str, Any]:
+    return {
+        "account": account_id,
+        "use_case": {
+            "type": "account_onboarding",
+            "account_onboarding": {
+                "configurations": ["merchant"],
+                "collection_options": {"fields": "eventually_due"},
+                "refresh_url": refresh_url,
+                "return_url": return_url,
+            },
+        },
+    }
+
+
+def build_connect_account_v2_payload(
+    *,
+    studio_id: str,
+    business_name: str,
+    contact_email: Optional[str],
+    business_entity_type: str,
+) -> dict[str, Any]:
+    identity: dict[str, Any] = {
+        "country": "us",
+        "entity_type": business_entity_type,
+    }
+    if business_entity_type == "company":
+        identity["business_details"] = {"registered_name": business_name}
+    payload: dict[str, Any] = {
+        "display_name": business_name,
+        "dashboard": "full",
+        "identity": identity,
+        "configuration": {
+            "merchant": {"capabilities": {"card_payments": {"requested": True}}},
+        },
+        "defaults": {
+            "currency": "usd",
+            "responsibilities": {
+                "fees_collector": "stripe",
+                "losses_collector": "stripe",
+            },
+            "profile": {
+                "doing_business_as": business_name,
+                "product_description": "Martial arts tuition and membership payments",
+            },
+            "locales": ["en-US"],
+        },
+        "metadata": {
+            "studio_id": studio_id,
+            "product": "koaryu_payments",
+            "business_entity_type": business_entity_type,
+        },
+        "include": ["configuration.merchant", "identity", "defaults", "requirements"],
+    }
+    if contact_email:
+        payload["contact_email"] = contact_email
+    return payload
 
 
 def stripe_v2_request(
@@ -103,8 +169,8 @@ class StripeConnectGateway:
         contact_email: Optional[str] = None,
         business_entity_type: str = "company",
         account_generation: int = 1,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
-        self._authorize_mutation("connect_account.create")
         try:
             return self._create_account_v2(
                 studio_id=studio_id,
@@ -112,6 +178,7 @@ class StripeConnectGateway:
                 contact_email=contact_email,
                 business_entity_type=business_entity_type,
                 account_generation=account_generation,
+                bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
             if exc.code != "accounts_v2_access_blocked":
@@ -122,26 +189,40 @@ class StripeConnectGateway:
             business_name=business_name,
             business_entity_type=business_entity_type,
             account_generation=account_generation,
+            bootstrap_context=bootstrap_context,
         )
 
-    def upload_branding_file(self, *, file_path: str, purpose: str) -> str:
-        self._authorize_mutation("connect_branding_file.create")
+    def upload_branding_file(
+        self,
+        *,
+        file_path: str,
+        purpose: str,
+        studio_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> str:
+        self._authorize_mutation("connect_branding_file.create", studio_id=studio_id)
         stripe = self._stripe()
         path = Path(file_path)
         with path.open("rb") as handle:
-            uploaded = stripe.File.create(file=handle, purpose=purpose)
+            uploaded = stripe.File.create(
+                file=handle,
+                purpose=purpose,
+                **self._request_options(idempotency_key=idempotency_key),
+            )
         return uploaded["id"] if isinstance(uploaded, dict) else uploaded.id
 
     def update_branding(
         self,
         *,
         account_id: str,
+        studio_id: Optional[str] = None,
         primary_color: str,
         secondary_color: str,
         icon_file_id: Optional[str] = None,
         logo_file_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Any:
-        self._authorize_mutation("connect_account.branding.update")
+        self._authorize_mutation("connect_account.branding.update", studio_id=studio_id, account_id=account_id)
         branding = {
             "primary_color": primary_color,
             "secondary_color": secondary_color,
@@ -158,7 +239,10 @@ class StripeConnectGateway:
                     "configuration": {"merchant": {"branding": branding}},
                     "include": ["configuration.merchant"],
                 },
-                idempotency_key=f"koaryu-connect-branding-{account_id}",
+                operation="connect_account.branding.update",
+                studio_id=studio_id,
+                account_id=account_id,
+                idempotency_key=idempotency_key or f"koaryu-connect-branding-{account_id}",
             )
         except _StripeV2RequestError as exc:
             if exc.code != "accounts_v2_access_blocked":
@@ -169,7 +253,7 @@ class StripeConnectGateway:
             return stripe.Account.modify(
                 account_id,
                 settings={"branding": branding},
-                **self._request_options(idempotency_key=f"koaryu-connect-branding-{account_id}"),
+                **self._request_options(idempotency_key=idempotency_key or f"koaryu-connect-branding-{account_id}"),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):
@@ -180,25 +264,26 @@ class StripeConnectGateway:
         self,
         *,
         account_id: str,
+        studio_id: Optional[str] = None,
         refresh_url: str,
         return_url: str,
+        idempotency_key: Optional[str] = None,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
-        self._authorize_mutation("connect_onboarding_link.create")
         try:
             return self._stripe_v2_post(
                 "/v2/core/account_links",
-                {
-                    "account": account_id,
-                    "use_case": {
-                        "type": "account_onboarding",
-                        "account_onboarding": {
-                            "configurations": ["merchant"],
-                            "collection_options": {"fields": "eventually_due"},
-                            "refresh_url": refresh_url,
-                            "return_url": return_url,
-                        },
-                    },
-                },
+                build_connect_onboarding_link_v2_payload(
+                    account_id=account_id,
+                    refresh_url=refresh_url,
+                    return_url=return_url,
+                ),
+                operation="connect_onboarding_link.create",
+                studio_id=studio_id,
+                account_id=account_id,
+                idempotency_key=(bootstrap_context.initial_link_idempotency_key
+                                 if bootstrap_context else idempotency_key),
+                bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
             if exc.code != "accounts_v2_access_blocked":
@@ -208,6 +293,11 @@ class StripeConnectGateway:
             account_id=account_id,
             refresh_url=refresh_url,
             return_url=return_url,
+            idempotency_key=(
+                bootstrap_context.initial_link_idempotency_key
+                if bootstrap_context
+                else idempotency_key
+            ),
         )
 
     def _create_legacy_onboarding_link(
@@ -216,6 +306,7 @@ class StripeConnectGateway:
         account_id: str,
         refresh_url: str,
         return_url: str,
+        idempotency_key: Optional[str] = None,
     ):
         stripe = self._stripe()
         try:
@@ -224,14 +315,15 @@ class StripeConnectGateway:
                 refresh_url=refresh_url,
                 return_url=return_url,
                 type="account_onboarding",
+                **self._request_options(idempotency_key=idempotency_key),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):
                 self._raise_connect_account_error(exc, "create an onboarding link")
             raise
 
-    def create_dashboard_link(self, *, account_id: str):
-        return {"url": self.create_dashboard_url(account_id=account_id)}
+    def create_dashboard_link(self, *, account_id: str, studio_id: str):
+        return {"url": self.create_dashboard_url(account_id=account_id, studio_id=studio_id)}
 
     def retrieve_account(self, *, account_id: Optional[str] = None):
         stripe = self._stripe()
@@ -244,7 +336,7 @@ class StripeConnectGateway:
                 self._raise_connect_account_error(exc, "retrieve a connected account")
             raise
 
-    def create_dashboard_url(self, *, account_id: str) -> str:
+    def create_dashboard_url(self, *, account_id: str, studio_id: str) -> str:
         stripe = self._stripe()
         try:
             connected_account = stripe.Account.retrieve(account_id)
@@ -256,7 +348,7 @@ class StripeConnectGateway:
             if dashboard_type == "full" or account_type == "standard":
                 return self._account_holder_dashboard_url()
 
-            return self._create_legacy_dashboard_login_url(account_id=account_id)
+            return self._create_legacy_dashboard_login_url(account_id=account_id, studio_id=studio_id)
         except Exception as exc:
             if self._is_stripe_exception(exc):
                 self._raise_connect_account_error(exc, "open the connected account dashboard")
@@ -266,8 +358,12 @@ class StripeConnectGateway:
         mode_segment = "/test" if self.settings.STRIPE_SECRET_KEY.startswith("sk_test_") else ""
         return f"https://dashboard.stripe.com{mode_segment}"
 
-    def _create_legacy_dashboard_login_url(self, *, account_id: str) -> str:
-        self._authorize_mutation("connect_dashboard_login_link.create")
+    def _create_legacy_dashboard_login_url(self, *, account_id: str, studio_id: str) -> str:
+        self._authorize_mutation(
+            "connect_dashboard_login_link.create",
+            account_id=account_id,
+            studio_id=studio_id,
+        )
         stripe = self._stripe()
         try:
             link = stripe.Account.create_login_link(account_id)
@@ -285,50 +381,25 @@ class StripeConnectGateway:
         contact_email: Optional[str] = None,
         business_entity_type: str = "company",
         account_generation: int = 1,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ) -> dict[str, Any]:
-        identity: dict[str, Any] = {
-            "country": "us",
-            "entity_type": business_entity_type,
-        }
-        if business_entity_type == "company":
-            identity["business_details"] = {"registered_name": business_name}
-
-        payload: dict[str, Any] = {
-            "display_name": business_name,
-            "dashboard": "full",
-            "identity": identity,
-            "configuration": {
-                "merchant": {
-                    "capabilities": {
-                        "card_payments": {"requested": True},
-                    },
-                },
-            },
-            "defaults": {
-                "currency": "usd",
-                "responsibilities": {
-                    "fees_collector": "stripe",
-                    "losses_collector": "stripe",
-                },
-                "profile": {
-                    "doing_business_as": business_name,
-                    "product_description": "Martial arts tuition and membership payments",
-                },
-                "locales": ["en-US"],
-            },
-            "metadata": {
-                "studio_id": studio_id,
-                "product": "koaryu_payments",
-                "business_entity_type": business_entity_type,
-            },
-            "include": ["configuration.merchant", "identity", "defaults", "requirements"],
-        }
-        if contact_email:
-            payload["contact_email"] = contact_email
+        payload = build_connect_account_v2_payload(
+            studio_id=studio_id,
+            business_name=business_name,
+            contact_email=contact_email,
+            business_entity_type=business_entity_type,
+        )
         return self._stripe_v2_post(
             "/v2/core/accounts",
             payload,
-            idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}",
+            operation="connect_account.create",
+            studio_id=studio_id,
+            idempotency_key=(
+                bootstrap_context.account_create_idempotency_key
+                if bootstrap_context
+                else f"koaryu-connect-account-{studio_id}-g{account_generation}"
+            ),
+            bootstrap_context=bootstrap_context,
         )
 
     def _create_account_v1(
@@ -338,6 +409,7 @@ class StripeConnectGateway:
         business_name: str,
         business_entity_type: str = "company",
         account_generation: int = 1,
+        bootstrap_context: Optional[ConnectOnboardingBootstrapContext] = None,
     ):
         stripe = self._stripe()
         try:
@@ -350,7 +422,11 @@ class StripeConnectGateway:
                     "card_payments": {"requested": True},
                     "transfers": {"requested": True},
                 },
-                **self._request_options(idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}"),
+                **self._request_options(idempotency_key=(
+                    bootstrap_context.account_create_idempotency_key
+                    if bootstrap_context
+                    else f"koaryu-connect-account-{studio_id}-g{account_generation}"
+                )),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):

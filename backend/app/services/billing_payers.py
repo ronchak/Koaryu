@@ -120,16 +120,21 @@ class BillingPayerManager:
         if customer_id:
             stripe_service.update_connected_customer(
                 account_id=account_id,
+                studio_id=payer["studio_id"],
                 customer_id=customer_id,
                 name=payer.get("display_name") or "Koaryu payer",
                 email=payer.get("email"),
                 phone=payer.get("phone"),
                 address=address,
                 metadata=metadata,
+                idempotency_key=self._idempotency_key(
+                    "payer-customer-update", payer["id"], str(payer.get("updated_at") or ""),
+                ),
             )
         else:
             customer = stripe_service.create_connected_customer(
                 account_id=account_id,
+                studio_id=payer["studio_id"],
                 name=payer.get("display_name") or "Koaryu payer",
                 email=payer.get("email"),
                 phone=payer.get("phone"),
@@ -213,8 +218,12 @@ class BillingPayerManager:
             stripe_service = self.stripe_service_cls()
             stripe_service.set_connected_customer_default_payment_method(
                 account_id=account_id,
+                studio_id=studio_id,
                 customer_id=customer_id,
                 payment_method_id=payment_method_id,
+                idempotency_key=self._idempotency_key(
+                    "payer-default-payment-method", payer_id, payment_method_id,
+                ),
             )
             customer = stripe_service.retrieve_connected_customer(
                 account_id=account_id,

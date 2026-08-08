@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
-import ipaddress
 import json
 import os
 import sys
@@ -19,16 +18,22 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
-from supabase import create_client
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = ROOT_DIR / "backend"
 BACKEND_ENV = ROOT_DIR / "backend" / ".env"
 DEFAULT_ENDPOINT = "http://127.0.0.1:8001/api/v1/webhooks/stripe/connect"
+STAGING_ENDPOINT = "https://koaryu-staging.onrender.com/api/v1/webhooks/stripe/connect"
+LOCAL_SUPABASE_URL = "http://127.0.0.1:54321"
+STAGING_SUPABASE_URL = "https://nxgsektqsgrtyfhawxbc.supabase.co"
+PRODUCTION_SUPABASE_URL = "https://mimguepumzsgmcaycdsh.supabase.co"
+
+sys.path.insert(0, str(BACKEND_DIR))
+from app.db.supabase import create_supabase_client  # noqa: E402
 
 
 def _load_environment() -> None:
@@ -51,19 +56,6 @@ def _connect_webhook_secret() -> str:
     return secrets[0]
 
 
-def _is_loopback_endpoint(endpoint: str) -> bool:
-    parsed = urlparse(endpoint)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
-    hostname = parsed.hostname.lower()
-    if hostname == "localhost" or hostname.endswith(".localhost"):
-        return True
-    try:
-        return ipaddress.ip_address(hostname).is_loopback
-    except ValueError:
-        return False
-
-
 def _require_safety_confirmation(args: argparse.Namespace) -> None:
     if not args.confirm_stateful_target:
         raise SystemExit(
@@ -73,11 +65,32 @@ def _require_safety_confirmation(args: argparse.Namespace) -> None:
             "disposable/local target."
         )
 
-    if not _is_loopback_endpoint(args.endpoint) and not args.allow_remote_endpoint:
-        raise SystemExit(
-            "Refusing to post the smoke webhook to a non-loopback endpoint. Use "
-            "--allow-remote-endpoint only for an explicitly intended remote test target."
-        )
+    environment = str(os.environ.get("ENVIRONMENT") or "").strip().lower()
+    supabase_url = str(os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+    stripe_keys = [
+        str(os.environ.get(name) or "").strip()
+        for name in ("STRIPE_SECRET_KEY", "STRIPE_RESTRICTED_KEY")
+    ]
+    if (
+        environment == "production"
+        or supabase_url == PRODUCTION_SUPABASE_URL
+        or any(key.startswith(("sk_live_", "rk_live_")) for key in stripe_keys)
+    ):
+        raise SystemExit("Production configuration is permanently denied for the synthetic Connect smoke.")
+
+    expected = {
+        "local": ("development", LOCAL_SUPABASE_URL, DEFAULT_ENDPOINT),
+        "staging": ("staging", STAGING_SUPABASE_URL, STAGING_ENDPOINT),
+    }[args.target]
+    expected_environment, expected_supabase_url, expected_endpoint = expected
+    if environment != expected_environment or supabase_url != expected_supabase_url:
+        raise SystemExit(f"Loaded configuration does not match the pinned {args.target} target.")
+    if args.endpoint != expected_endpoint:
+        raise SystemExit(f"Webhook endpoint does not match the pinned {args.target} target.")
+    if not stripe_keys[0].startswith("sk_test_"):
+        raise SystemExit("Synthetic Connect smoke requires an explicit Stripe test secret key.")
+    if stripe_keys[1] and not stripe_keys[1].startswith("rk_test_"):
+        raise SystemExit("Synthetic Connect smoke restricted key must remain in test mode.")
 
     if not args.account and not args.allow_newest_account:
         raise SystemExit(
@@ -87,9 +100,7 @@ def _require_safety_confirmation(args: argparse.Namespace) -> None:
 
 
 def _supabase_client():
-    url = _require_env("SUPABASE_URL")
-    key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
-    return create_client(url, key)
+    return create_supabase_client()
 
 
 def _first_connect_account(account_id: str | None) -> dict[str, Any]:
@@ -167,7 +178,7 @@ def _post(endpoint: str, secret: str, payload: bytes) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test Koaryu's Stripe Connect webhook route.")
-    parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT, help=f"Webhook URL. Default: {DEFAULT_ENDPOINT}")
+    parser.add_argument("--target", choices=("local", "staging"), required=True)
     parser.add_argument("--account", help="Stripe connected account id to target. Defaults to newest local account row.")
     parser.add_argument("--event-id", default=f"evt_koaryu_connect_smoke_{uuid.uuid4().hex[:24]}")
     parser.add_argument(
@@ -180,15 +191,11 @@ def main() -> int:
         action="store_true",
         help="Allow choosing the newest connected account row when --account is omitted.",
     )
-    parser.add_argument(
-        "--allow-remote-endpoint",
-        action="store_true",
-        help="Allow posting the synthetic webhook to a non-loopback endpoint.",
-    )
     args = parser.parse_args()
 
-    _require_safety_confirmation(args)
     _load_environment()
+    args.endpoint = DEFAULT_ENDPOINT if args.target == "local" else STAGING_ENDPOINT
+    _require_safety_confirmation(args)
     secret = _connect_webhook_secret()
     account = _first_connect_account(args.account)
     payload = _event_payload(account, args.event_id)

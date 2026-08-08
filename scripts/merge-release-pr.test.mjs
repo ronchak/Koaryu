@@ -55,7 +55,7 @@ function validRenderService() {
     type: "web_service",
     serviceDetails: {
       url: "https://koaryu.onrender.com",
-      healthCheckPath: "/health",
+      healthCheckPath: "/health/ready",
     },
     autoDeployTrigger: "off",
     autoDeploy: "no",
@@ -196,6 +196,16 @@ for (const [name, options, expectedError] of [
     "wrong canonical Render identity",
     { renderPayload: { ...validRenderService(), repo: "https://github.com/attacker/Koaryu" } },
     /canonical production repository/,
+  ],
+  [
+    "stale Render liveness health path",
+    {
+      renderPayload: {
+        ...validRenderService(),
+        serviceDetails: { ...validRenderService().serviceDetails, healthCheckPath: "/health" },
+      },
+    },
+    /readiness health path/,
   ],
   ["missing Render branch", { renderPayload: { ...validRenderService(), branch: undefined } }, /not main/],
   ["null Render branch", { renderPayload: { ...validRenderService(), branch: null } }, /not main/],

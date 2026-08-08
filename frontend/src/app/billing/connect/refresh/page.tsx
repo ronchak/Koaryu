@@ -5,8 +5,15 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import {
+  acknowledgeConnectOnboardingBeforeNavigation,
+  createConnectOnboardingRequestKey,
+} from "@/lib/billing-connect-delivery";
 import { createClient } from "@/lib/supabase/client";
-import type { BillingLinkResponse } from "@/types";
+import type {
+  ConnectOnboardingDeliveryAckResponse,
+  ConnectOnboardingLinkResponse,
+} from "@/types";
 
 function connectReturnUrl() {
   return `${window.location.origin}/billing?connect=return`;
@@ -30,18 +37,32 @@ export default function StripeConnectRefreshPage() {
           throw new Error("Sign in again to continue Stripe onboarding.");
         }
 
-        const link = await api.post<BillingLinkResponse>(
+        const link = await api.post<ConnectOnboardingLinkResponse>(
           "/billing/connect/onboarding-link",
           {
             return_url: connectReturnUrl(),
             refresh_url: connectRefreshUrl(),
           },
           session.access_token,
-          { timeoutMs: 30000 }
+          {
+            timeoutMs: 30000,
+            headers: { "Idempotency-Key": createConnectOnboardingRequestKey() },
+          }
         );
 
         if (!cancelled) {
-          window.location.assign(link.url);
+          await acknowledgeConnectOnboardingBeforeNavigation(
+            link,
+            async (receipt) => {
+              await api.post<ConnectOnboardingDeliveryAckResponse>(
+                "/billing/connect/onboarding-link/acknowledge",
+                { receipt },
+                session.access_token,
+                { timeoutMs: 30000 },
+              );
+            },
+            (url) => window.location.assign(url),
+          );
         }
       } catch (err) {
         if (!cancelled) {

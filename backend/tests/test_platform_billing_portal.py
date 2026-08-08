@@ -17,15 +17,18 @@ class PlatformBillingPortalTest(PlatformBillingServiceTestCase):
             "comped": False,
         }]
         service = self.service(rows)
+        keys = []
 
         class FakeStripeService:
-            def create_customer_portal_session(self, *, customer_id, return_url):
+            def create_customer_portal_session(self, *, customer_id, return_url, studio_id=None, idempotency_key=None):
+                keys.append(idempotency_key)
                 return {"url": f"https://billing.stripe.test/session?customer={customer_id}&return={return_url}"}
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
             response = asyncio.run(service.create_portal_link("studio_1", "user_1", "https://koaryu.test/billing"))
 
         self.assertIn("https://billing.stripe.test/session", response.url)
+        self.assertEqual(keys, ["koaryu:core-portal:studio_1:cus_123"])
 
     def test_create_portal_repairs_stale_customer_and_blocks_for_checkout(self):
         rows = [{
@@ -42,10 +45,10 @@ class PlatformBillingPortalTest(PlatformBillingServiceTestCase):
             __module__ = "stripe.error"
 
         class FakeStripeService:
-            def create_customer_portal_session(self, *, customer_id, return_url):
+            def create_customer_portal_session(self, *, customer_id, return_url, studio_id=None, idempotency_key=None):
                 raise NoSuchCustomerError("No such customer: cus_deleted")
 
-            def create_customer(self, *, name, metadata, idempotency_key=None):
+            def create_customer(self, *, name, metadata, studio_id=None, idempotency_key=None):
                 return {"id": "cus_new"}
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):

@@ -24,6 +24,8 @@ from app.schemas.billing import (
     BillingInvoiceResponse,
     BillingSystemStatusResponse,
     BillingSubscriptionResponse,
+    ConnectOnboardingDeliveryAckResponse,
+    ConnectOnboardingLinkResponse,
     ExportJobCreate,
     ExportJobResponse,
     ExternalPaymentCreate,
@@ -83,13 +85,25 @@ class BillingService(BillingPrivateFacadeMixin):
         refresh_url: Optional[str] = None,
         return_url: Optional[str] = None,
         business_entity_type: Optional[str] = None,
-    ) -> BillingLinkResponse:
+        request_idempotency_key: Optional[str] = None,
+    ) -> ConnectOnboardingLinkResponse:
         return await self._connect_actions().create_onboarding_link(
             studio_id,
             actor_id,
             refresh_url=refresh_url,
             return_url=return_url,
             business_entity_type=business_entity_type,
+            request_idempotency_key=request_idempotency_key,
+        )
+
+    async def acknowledge_connect_onboarding_link_delivery(
+        self,
+        studio_id: str,
+        receipt: str,
+    ) -> ConnectOnboardingDeliveryAckResponse:
+        return await self._connect_actions().acknowledge_onboarding_link_delivery(
+            studio_id,
+            receipt,
         )
 
     async def sync_connect_account(self, studio_id: str) -> StudioPaymentAccountResponse:

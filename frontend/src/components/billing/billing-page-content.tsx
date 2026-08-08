@@ -10,10 +10,10 @@ export function BillingPageContent({
   activeTab,
   billingSetupCompleteCount,
   billingSetupSteps,
+  billingProviderCopy,
   connectEntityModal,
   error,
   isLiveRestricted,
-  isPreviewMode,
   isLoading,
   isRefreshDisabled,
   message,
@@ -32,9 +32,9 @@ export function BillingPageContent({
       <BillingPageFrame
         activeTab={activeTab}
         completedStepCount={billingSetupCompleteCount}
+        billingBoundaryMessage={billingProviderCopy.boundary}
         error={error}
         isLiveRestricted={isLiveRestricted}
-        isPreviewMode={isPreviewMode}
         isLoading={isLoading}
         isRefreshDisabled={isRefreshDisabled}
         message={message}

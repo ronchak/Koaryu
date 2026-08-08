@@ -20,6 +20,7 @@ import type {
   StudioPaymentAccount,
 } from "@/types";
 import type { BillingPlan } from "@/types";
+import type { BillingProviderCopy } from "@/lib/billing-policy";
 
 type BillingPeriodCopy = {
   label: string;
@@ -86,6 +87,7 @@ export function BillingOverviewTab({
   currentMonthPaymentCount,
   billingPeriod,
   billingPlatform,
+  billingProviderCopy,
   canManageKoaryuSubscription,
   canOpenCustomerPortal,
   canOpenStripeDashboard,
@@ -103,7 +105,8 @@ export function BillingOverviewTab({
   paymentCohortAvailable,
   stripePaymentTotal,
   studentsLoaded,
-  providerMutationsEnabled,
+  coreProviderMutationsEnabled,
+  connectOnboardingEnabled,
 }: {
   activeStudents: number;
   activeSubscriptionCount: number;
@@ -112,6 +115,7 @@ export function BillingOverviewTab({
   currentMonthPaymentCount: number;
   billingPeriod: BillingPeriodCopy;
   billingPlatform: PlatformBillingStatus | null;
+  billingProviderCopy: BillingProviderCopy;
   canManageKoaryuSubscription: boolean;
   canOpenCustomerPortal: boolean;
   canOpenStripeDashboard: boolean;
@@ -129,7 +133,8 @@ export function BillingOverviewTab({
   paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
   studentsLoaded: boolean;
-  providerMutationsEnabled: boolean;
+  coreProviderMutationsEnabled: boolean;
+  connectOnboardingEnabled: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -193,8 +198,8 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={providerMutationsEnabled ? undefined : "Live Stripe checkout is currently disabled."}
+              disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
+              title={coreProviderMutationsEnabled ? undefined : billingProviderCopy.coreSubscription}
               isLoading={isLoadingAction("checkout")}
               onClick={() => void openBillingLink("/platform-billing/checkout", {
                 success_url: window.location.href,
@@ -207,10 +212,10 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
+              disabled={!coreProviderMutationsEnabled || !canOpenCustomerPortal || isActionLoading}
               isLoading={isLoadingAction("portal")}
-              title={!providerMutationsEnabled
-                ? "Live Stripe portal access is currently disabled."
+              title={!coreProviderMutationsEnabled
+                ? billingProviderCopy.coreSubscription
                 : canOpenCustomerPortal
                   ? undefined
                   : "Available after Koaryu Core checkout creates a Stripe customer."}
@@ -247,6 +252,9 @@ export function BillingOverviewTab({
             <div>
               <p className="text-xs text-muted">UTC-month Stripe payment cohort</p>
               <p className="mt-1 text-sm text-text-primary">{formatMoney(stripePaymentTotal)}</p>
+              <p className="mt-1 text-[11px] text-muted">
+                {billingProviderCopy.connectPayments}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted">UTC-month external payment cohort</p>
@@ -282,8 +290,8 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={providerMutationsEnabled ? undefined : "Stripe Connect activation is currently disabled."}
+              disabled={!connectOnboardingEnabled || !canManageKoaryuSubscription || isActionLoading}
+              title={connectOnboardingEnabled ? undefined : billingProviderCopy.connectOnboarding}
               isLoading={isLoadingAction("connect")}
               onClick={onConnectClick}
             >
@@ -293,10 +301,10 @@ export function BillingOverviewTab({
             <Button
               variant="secondary"
               size="sm"
-              disabled={!providerMutationsEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+              disabled={!connectOnboardingEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
               isLoading={isLoadingAction("dashboard")}
-              title={!providerMutationsEnabled
-                ? "Stripe dashboard link creation is currently disabled."
+              title={!connectOnboardingEnabled
+                ? billingProviderCopy.connectOnboarding
                 : canOpenStripeDashboard
                   ? "Open Stripe to review account status, requirements, payments, and payouts."
                   : "Available after Stripe Connect creates an account."}

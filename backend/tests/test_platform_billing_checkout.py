@@ -15,7 +15,7 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
         calls = []
 
         class FakeStripeService:
-            def create_customer(self, *, name, metadata, idempotency_key=None):
+            def create_customer(self, *, name, metadata, studio_id=None, idempotency_key=None):
                 calls.append(("customer", name, metadata, idempotency_key))
                 return {"id": "cus_123"}
 

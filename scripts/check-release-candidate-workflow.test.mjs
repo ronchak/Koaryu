@@ -38,6 +38,27 @@ test("release-candidate workflow rejects a missing required suite", () => {
   );
 });
 
+test("release-candidate workflow requires the exact-SHA verifier tests", () => {
+  const weakened = workflow.replace(
+    "node --test scripts/verify-deployed-release.test.mjs",
+    "node --test scripts/unrelated-release-test.mjs",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /verify-deployed-release\.test\.mjs/,
+  );
+});
+
+test("release-candidate repository controls require complete history", () => {
+  const weakened = workflow.replace("          fetch-depth: 0\n", "");
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /fetch complete history/,
+  );
+});
+
 test("release-candidate workflow rejects a missing aggregate dependency", () => {
   const weakened = workflow.replace("      - database\n", "");
 

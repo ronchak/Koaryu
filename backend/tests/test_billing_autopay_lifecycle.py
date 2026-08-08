@@ -398,10 +398,12 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(response.autopay_status, "disabled")
         self.assertEqual(_FakeStripeService.subscription_update_calls, [{
             "account_id": "acct_1",
+            "studio_id": "studio_1",
             "subscription_id": "sub_1",
             "collection_method": "send_invoice",
             "days_until_due": 7,
             "default_payment_method": "",
+            "idempotency_key": "koaryu:autopay-disable:sub_1",
         }])
         subscription = service.supabase.tables["billing_subscriptions"][0]
         self.assertEqual(subscription["collection_mode"], "invoice_link")
@@ -960,7 +962,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(service.supabase.tables["billing_subscriptions"][0]["status"], "canceled")
         self.assertEqual(_FakeStripeService.subscription_cancel_calls, [{
             "account_id": "acct_1",
+            "studio_id": "studio_1",
             "subscription_id": "sub_1",
+            "idempotency_key": "koaryu:subscription-cancel:sub_1",
         }])
         self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [])
         self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])
@@ -1009,7 +1013,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(response.status, "canceled")
         self.assertEqual(_FakeStripeService.subscription_cancel_calls, [{
             "account_id": "acct_old",
+            "studio_id": "studio_1",
             "subscription_id": "sub_1",
+            "idempotency_key": "koaryu:subscription-cancel:sub_1",
         }])
         self.assertEqual(service.supabase.tables["billing_subscriptions"][0]["status"], "canceled")
 
@@ -1129,7 +1135,9 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertNotIn("stripe_detach_pending", enrollment["metadata"])
         self.assertEqual(_FakeStripeService.subscription_cancel_calls[-1], {
             "account_id": "acct_1",
+            "studio_id": "studio_1",
             "subscription_id": "sub_1",
+            "idempotency_key": "koaryu:subscription-cancel:sub_1",
         })
 
     def test_cancel_one_of_multiple_subscription_enrollments_deletes_only_that_item(self):
@@ -1197,5 +1205,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
         self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [{
             "account_id": "acct_1",
+            "studio_id": "studio_1",
             "subscription_item_id": "si_1",
+            "idempotency_key": "koaryu:subscription-item-delete:si_1",
         }])

@@ -8,13 +8,17 @@ const pageSource = readFileSync(
 );
 
 describe("subscription-required billing contract", () => {
-  it("keeps the page read-only and routes blocked studios to support", () => {
-    assert.doesNotMatch(pageSource, /api\.post/);
-    assert.doesNotMatch(pageSource, /platform-billing\/(?:checkout|portal)/);
-    assert.doesNotMatch(pageSource, /window\.location\.assign/);
-    assert.doesNotMatch(pageSource, /30-day Stripe trial|checkout is completed|Start or restore/);
+  it("shows Stripe-hosted recovery only when the backend authorizes Core billing", () => {
+    assert.match(pageSource, /api\.post<BillingLinkResponse>/);
+    assert.match(pageSource, /`\/platform-billing\/\$\{action\}`/);
+    assert.match(pageSource, /window\.location\.assign\(link\.url\)/);
+    assert.match(pageSource, /billingSystemStatus\?\.mutation_capabilities\.core_subscription === true/);
+    assert.match(pageSource, /canStartCheckout \?/);
+    assert.match(pageSource, /canOpenPortal \?/);
+    assert.match(pageSource, /Idempotency-Key/);
     assert.doesNotMatch(pageSource, /loadError instanceof Error/);
     assert.match(pageSource, /api\.get<PlatformBillingStatus>/);
+    assert.match(pageSource, /api\.get<BillingSystemStatus>/);
     assert.match(pageSource, /if \(profile\.role !== "admin"\) \{\s*return;\s*\}/);
     assert.ok(
       pageSource.indexOf('profile.role !== "admin"')
@@ -24,6 +28,8 @@ describe("subscription-required billing contract", () => {
     assert.match(pageSource, /Billing details are limited to studio administrators/);
     assert.match(pageSource, /No subscription status, price, or payment details are shown/);
     assert.match(pageSource, /checkout and portal actions are currently disabled/i);
+    assert.match(pageSource, /Start Koaryu Core/);
+    assert.match(pageSource, /Customer portal/);
     assert.match(pageSource, /mailto:support@koaryu\.app/);
   });
 });

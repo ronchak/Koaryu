@@ -181,11 +181,13 @@ class StripeWebhookService:
         *,
         error: Optional[str] = None,
     ) -> bool:
-        result = execute_required_rpc(self.supabase, "finish_stripe_event_processing", {
+        error_reference = uuid.uuid4().hex if status == "failed" else None
+        result = execute_required_rpc(self.supabase, "finish_stripe_event_processing_v2", {
             "p_event_id": row_id,
             "p_processing_token": processing_token,
             "p_status": status,
             "p_error": error,
+            "p_error_reference": error_reference,
         })
         row = first_rpc_row(result) or {}
         return bool(row.get("updated"))

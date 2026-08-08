@@ -9,6 +9,7 @@ from uuid import uuid4
 from supabase import Client
 
 from app.schemas.billing import (
+    BillingMutationCapabilitiesResponse,
     BillingSystemCheck,
     BillingSystemStatusResponse,
     BillingWebhookHealthResponse,
@@ -21,10 +22,14 @@ from app.services.stripe_mutation_policy import (
     configured_stripe_mode,
     expected_stripe_livemode,
 )
+from app.services.studio_live_billing_authorizations import StudioLiveBillingAuthorizationStore
 
 
 BILLING_WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
-BILLING_WEBHOOK_RECENT_WITHIN = timedelta(days=35)
+# This status hint must not turn the July 20 stream into current delivery proof.
+# Live mutation permits use the stronger provider-attested checkpoint and fresh
+# platform/per-account evidence in the atomic database authorization RPC.
+BILLING_WEBHOOK_RECENT_WITHIN = timedelta(hours=24)
 BILLING_WEBHOOK_CLOCK_SKEW = timedelta(minutes=5)
 
 
@@ -56,7 +61,7 @@ class BillingSystemStatusReporter:
                 detail=detail,
             ))
 
-        self._add_configuration_checks(add_check)
+        self._add_configuration_checks(add_check, studio_id=studio_id)
 
         try:
             account_response = await self.payment_account_loader(studio_id)
@@ -120,7 +125,52 @@ class BillingSystemStatusReporter:
 
         stripe_mode = configured_stripe_mode(self.settings)
         ready_for_configured_mode = all(check.status == "pass" for check in checks)
-        live_payments_authorized = StripeMutationPolicy(self.settings).live_payments_authorized()
+        live_payments_authorized = StripeMutationPolicy(
+            self.settings,
+            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+        ).live_payments_authorized(studio_id=studio_id)
+        account_id = account_response.stripe_connected_account_id
+        mutation_policy = StripeMutationPolicy(
+            self.settings,
+            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+        )
+        onboarding_authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
+        live_billing_enabled = getattr(self.settings, "LIVE_BILLING_ENABLED", False) is True
+        onboarding_preflight_state = (
+            onboarding_authorization_store.connect_onboarding_preflight_state(
+                studio_id=studio_id,
+            )
+            if stripe_mode == "live" and live_billing_enabled
+            else None
+        )
+        connect_onboarding_authorized = (
+            onboarding_preflight_state == "eligible"
+            if onboarding_preflight_state is not None
+            else self._mutation_authorized(
+                mutation_policy,
+                "connect_onboarding_link.create" if account_id else "connect_account.create",
+                studio_id,
+                account_id,
+            )
+        )
+        if stripe_mode == "live" and not live_billing_enabled:
+            connect_onboarding_authorized = False
+        if stripe_mode == "live" and account_id and onboarding_preflight_state == "none":
+            connect_onboarding_authorized = self._mutation_authorized(
+                mutation_policy,
+                "connect_onboarding_link.create",
+                studio_id,
+                account_id,
+            )
+        mutation_capabilities = BillingMutationCapabilitiesResponse(
+            core_subscription=self._mutation_authorized(
+                mutation_policy, "core_checkout_session.create", studio_id, None,
+            ),
+            connect_onboarding=connect_onboarding_authorized,
+            connect_payments=self._mutation_authorized(
+                mutation_policy, "connected_invoice.create", studio_id, account_id,
+            ),
+        )
         return BillingSystemStatusResponse(
             studio_id=studio_id,
             configured_stripe_mode=stripe_mode,
@@ -135,8 +185,22 @@ class BillingSystemStatusReporter:
             payment_account=account_response,
             platform_webhooks=platform_webhooks,
             connect_webhooks=connect_webhooks,
+            mutation_capabilities=mutation_capabilities,
             checks=checks,
         )
+
+    @staticmethod
+    def _mutation_authorized(
+        policy: StripeMutationPolicy,
+        operation: str,
+        studio_id: str,
+        account_id: Optional[str],
+    ) -> bool:
+        try:
+            policy.issue_permit(operation, studio_id=studio_id, account_id=account_id)
+            return True
+        except Exception:
+            return False
 
     def webhook_health(self, account_id: Optional[str]) -> BillingWebhookHealthResponse:
         try:
@@ -243,7 +307,7 @@ class BillingSystemStatusReporter:
             return query.eq("stripe_account_id", account_id)
         return query.is_("stripe_account_id", "null")
 
-    def _add_configuration_checks(self, add_check: Callable[..., None]) -> None:
+    def _add_configuration_checks(self, add_check: Callable[..., None], *, studio_id: str) -> None:
         stripe_mode = configured_stripe_mode(self.settings)
         add_check(
             "Stripe mode and API key",
@@ -252,7 +316,10 @@ class BillingSystemStatusReporter:
             if stripe_mode is not None
             else "STRIPE_MODE is missing or does not match STRIPE_SECRET_KEY.",
         )
-        live_payments_authorized = StripeMutationPolicy(self.settings).live_payments_authorized()
+        live_payments_authorized = StripeMutationPolicy(
+            self.settings,
+            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+        ).live_payments_authorized(studio_id=studio_id)
         mutations_authorized = stripe_mode == "test" or (
             stripe_mode == "live" and live_payments_authorized
         )

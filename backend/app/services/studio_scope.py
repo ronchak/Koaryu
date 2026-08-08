@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import HTTPException, status
 from supabase import Client
 
-from app.core.config import get_settings
+from app.core.config import PERMISSIVE_ENVIRONMENTS, get_settings
 
 ACTIVE_PLATFORM_SUBSCRIPTION_STATUSES = {"active", "trialing", "comped"}
 SUBSCRIPTION_REQUIRED_DETAIL = {
@@ -153,7 +153,7 @@ def _is_noncritical_access_repair_error(exc: Exception) -> bool:
         isinstance(exc, HTTPException)
         and exc.status_code == status.HTTP_409_CONFLICT
         and exc.detail == MISSING_STRIPE_CONFIGURATION_DETAIL
-        and environment == "development"
+        and environment in PERMISSIVE_ENVIRONMENTS
     )
 
 

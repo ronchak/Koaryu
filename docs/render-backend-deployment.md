@@ -16,7 +16,7 @@ Expected service settings:
 - Root directory: `backend`
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Bootstrap health check path: `/health`; switch explicitly to `/health/live` only after the approved artifact containing that endpoint is live
+- Health check path: `/health/ready`
 - Automatic production deploys: off; deploy one reviewed commit explicitly
 
 Render should use Python `3.11`. The backend includes both `backend/runtime.txt` (`python-3.11.9`) and `backend/.python-version` (`3.11`) so Render does not default to a newer Python release that lacks compatible wheels for pinned dependencies.
@@ -43,6 +43,7 @@ BILLING_PLATFORM_FEE_BPS=50
 STRIPE_MODE=live
 LIVE_BILLING_ENABLED=false
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
+SUPABASE_DEVELOPMENT_PROJECT_REF=
 SUPABASE_ALLOW_LEGACY_HS256=false
 ```
 
@@ -58,17 +59,54 @@ STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
+OPERATIONAL_ALERT_WORKER_SECRET=
+OPERATIONAL_ALERT_PRIMARY_URL=
+OPERATIONAL_ALERT_PRIMARY_HOST=
+OPERATIONAL_ALERT_PRIMARY_URL_SHA256=
+OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET=
+OPERATIONAL_ALERT_PRIMARY_ACK_SECRET=
+OPERATIONAL_ALERT_BACKUP_URL=
+OPERATIONAL_ALERT_BACKUP_HOST=
+OPERATIONAL_ALERT_BACKUP_URL_SHA256=
+OPERATIONAL_ALERT_BACKUP_BEARER_SECRET=
+OPERATIONAL_ALERT_BACKUP_ACK_SECRET=
 ```
 
-`STRIPE_CONNECT_WEBHOOK_SECRET` can contain multiple comma-separated `whsec_...` values. Use this when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`.
+Keep `OPERATIONAL_ALERTS_ENABLED=false` in production until the primary/backup humans, receipt-bearing receiver, exact URL fingerprints, acknowledgement credentials, Vercel scheduler plan, independent dead-man provider, retention, staging rehearsal, and explicit enable approval are complete. The committed evaluator schedule is a `204` no-op while disabled. See [Operational Alerts](operational-alerts.md).
+
+`STRIPE_PLATFORM_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET` each support one or more comma-separated `whsec_...` values. Use platform rotation while replacing a platform signing secret. Use Connect rotation for signing-secret replacement or when Stripe has both a Connect account-lifecycle destination and a Connected accounts resource-event destination pointed at `/api/v1/webhooks/stripe/connect`. Candidates are tried in order and must not be empty or contain surrounding whitespace or control characters.
 
 Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
 
-Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. Keep `LIVE_BILLING_ENABLED=false`. Matching live webhook events continue through signature verification and reconciliation while outbound live Stripe mutations remain closed. Wrong-mode or malformed-mode events are rejected before storage. Live Connect events for an account not mapped to `studio_payment_accounts` are durably marked `unmapped_live_connect_account` without changing product state and return `503` so Stripe keeps retrying until the mapping exists.
+Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. Keep `LIVE_BILLING_ENABLED=false` until the separately approved one-studio rollout in `stripe-live-billing-rollout.md`. Matching live webhook events continue through signature verification and reconciliation while outbound live Stripe mutations remain closed. Wrong-mode or malformed-mode events are rejected before storage. Live Connect events for an account not mapped to `studio_payment_accounts` are durably marked `unmapped_live_connect_account` without changing product state and return `503` so Stripe keeps retrying until the mapping exists.
 
 ### Hosted Runtime Guard
 
-When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critical service configuration during import. The service refuses to boot if any of the following are blank, placeholder-shaped, too short for a hosted secret, or invalid for that environment:
+FastAPI validates the Supabase service-role target and ambient proxy state in
+every environment during import and readiness checks. The shared client factory
+repeats the validation immediately before calling the SDK, so standalone Python
+operator tools cannot bypass startup. Production accepts only
+`https://mimguepumzsgmcaycdsh.supabase.co`; staging accepts only
+`https://nxgsektqsgrtyfhawxbc.supabase.co`. Development may use the canonical
+local URL, a shipped placeholder, or an explicitly pinned non-production hosted
+project. Test may use only the local URL or placeholders.
+
+Raw ASCII controls, including TAB, CR, and LF, are rejected before URL parsing.
+Hosted URLs must be the canonical lowercase
+`https://<project-ref>.supabase.co` form with no credentials, port, path, query,
+fragment, whitespace, or trailing slash. Local use is deliberately restricted
+to `http://127.0.0.1:54321`.
+
+Service-role use also refuses active `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`
+configuration, including lowercase variants and operating-system proxy
+settings. `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `SSL_CERT_FILE`, and
+`SSL_CERT_DIR` overrides (including lowercase variants) are refused as well;
+`NO_PROXY` is not an exception. Supabase-py 2.9.0 constructs separate Auth,
+PostgREST, Storage, and Functions HTTPX clients and has no common option for
+setting `trust_env=False`, so this release fails closed instead of patching SDK
+internals.
+
+When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, the service also refuses to boot if any of the following are blank, placeholder-shaped, too short for a hosted secret, or invalid for that environment:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -80,9 +118,9 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, FastAPI validates critic
 - `ACCOUNT_DELETION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
-`SUPABASE_URL` and `FRONTEND_URL` must be public HTTPS URLs in production. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode, mismatched keys, and `LIVE_BILLING_ENABLED=true` because no durable live mutation authorization source exists yet. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
+`SUPABASE_URL` must be a public HTTPS URL in production. Production requires the exact canonical `FRONTEND_URL=https://koaryu.app`; paths, query strings, fragments, userinfo, ports, whitespace, and control characters are rejected before CORS or staff-invite redirects use it. Both Stripe webhook-secret settings use the same exact comma-rotation format: nonempty candidates without surrounding whitespace or control characters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode and mismatched keys. If `LIVE_BILLING_ENABLED=true`, startup additionally requires an exact validated `RENDER_GIT_COMMIT`; runtime still denies every mutation without the matching unexpired checkpoint and studio scope. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
 
-Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. Development and test remain permissive for local fixtures. An unknown or misspelled `ENVIRONMENT` fails closed.
+Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
 
 Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
 
@@ -141,7 +179,15 @@ curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. Readiness rechecks runtime configuration but does not yet probe Supabase or Stripe network availability.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V2-named database preflight. It returns 503 unless Supabase reports exactly 100 migrations, head `20260801131844`, the sixteen expected pending versions after the production baseline, manifest version `release-db-attestation-v7`, and no required-object/security failure. Missing RPCs, timeouts, provider errors, and schema 84 all fail closed without exposing provider detail. The repository-pinned operator raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+
+Promote the database first. Do not route the new backend to a Supabase project
+until the final staging fingerprint and preflight pass. The exact-head manifest
+includes the billing, Connect delivery, and alert security surfaces; an application
+deploy that reaches schema 84 or any partial 85-99 state remains unhealthy.
+Local PostgreSQL does not prove hosted PostgREST exposed schemas or actual schema
+ACLs; authenticated operator readback must separately prove `private` is not
+exposed and the hosted schema ACL state matches the approved release gate.
 
 If the build succeeds but the live backend still looks old or unreachable, inspect the Render deploy logs under the runtime/startup section after the build phase.
 
@@ -163,6 +209,16 @@ Do not route `/` through frontend auth middleware just to warm Render. The landi
 ## Release Verification
 
 Before tagging or announcing a release:
+
+After both providers report the candidate deployed, run the pinned GET-only verifier before any performance capture:
+
+```bash
+npm run verify:deployed-release -- \
+  --environment production \
+  --expected-sha "$RELEASE_SHA" \
+  --frontend-origin https://koaryu.app \
+  --backend-api https://koaryu.onrender.com/api/v1
+```
 
 ```bash
 cd backend
@@ -252,6 +308,10 @@ payment_intent.processing
 payment_intent.succeeded
 payment_intent.payment_failed
 charge.refunded
+charge.refund.updated
+refund.created
+refund.failed
+refund.updated
 charge.dispute.created
 charge.dispute.updated
 charge.dispute.closed
@@ -281,7 +341,7 @@ npm run dev:stripe-connect-smoke -- --confirm-stateful-target --account acct_...
 
 The smoke test signs a synthetic Connect `account.updated` event with `STRIPE_CONNECT_WEBHOOK_SECRET`, posts it to `/api/v1/webhooks/stripe/connect`, and posts the same event again. A passing result returns `processed` first and `already_processed` second, proving the local route, signature validation, projector entrypoint, and `stripe_events` dedupe table.
 
-This script reads `backend/.env` and root `.env`, uses `SUPABASE_SERVICE_ROLE_KEY`, and mutates local billing/webhook rows through the running backend. Pass `--confirm-stateful-target` only after confirming those env files and the backend are pointed at the intended disposable/local target. Pass `--account acct_...` so the smoke cannot silently choose whichever connected account row happens to be newest. Non-loopback webhook endpoints are blocked unless `--allow-remote-endpoint` is supplied for an explicitly intended remote smoke.
+This script reads `backend/.env` and root `.env`, uses `SUPABASE_SERVICE_ROLE_KEY`, and mutates billing/webhook rows through the running backend. Production environment labels, the production Supabase URL, and all live Stripe keys are permanently denied. `--target local` requires the exact development/local-Supabase/loopback binding; `--target staging` requires the exact staging environment, project, and Connect URL. There is no arbitrary remote URL override. Pass `--confirm-stateful-target` only after verifying the intended disposable target, and pass `--account acct_...` so the smoke cannot silently choose the newest row.
 
 For true Stripe delivery in local development, use the Stripe CLI or a trusted HTTPS tunnel:
 

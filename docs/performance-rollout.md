@@ -40,7 +40,34 @@ npm --prefix frontend run analyze
 
 ## Production Smoke
 
-After Render and Vercel deploy the same commit:
+After Render and Vercel deploy the same commit, verify the public release identity before capturing any performance data:
+
+```bash
+npm run verify:deployed-release -- \
+  --environment production \
+  --expected-sha "$RELEASE_SHA" \
+  --frontend-origin https://koaryu.app \
+  --backend-api https://koaryu.onrender.com/api/v1
+```
+
+The verifier performs GET-only probes against pinned Koaryu targets, rejects redirects, and requires the frontend plus both Render readiness paths to report the same full SHA. A mismatch invalidates subsequent performance evidence.
+
+The dashboard-ready measurement is timestamped immediately when the stable readiness marker appears; the optional network-idle wait happens afterward and is not included. Evidence is rejected unless both `/dashboard/bootstrap` and `/dashboard/summary` return successfully and each supplies at least one allowlisted finite, nonnegative `Server-Timing` duration.
+
+For a privacy-safe authenticated dashboard capture, create a Playwright storage-state file through the existing approved sign-in workflow, then run:
+
+```bash
+npm run capture:dashboard-performance -- \
+  --environment production \
+  --expected-sha "$RELEASE_SHA" \
+  --frontend-origin https://koaryu.app \
+  --backend-api https://koaryu.onrender.com/api/v1 \
+  --storage-state /absolute/private/path/storage-state.json
+```
+
+The harness verifies the exact SHA before Chromium and again after the browser closes, so an alias move during capture invalidates the result. It waits for the dashboard's explicit ready marker (successful bootstrap plus summary state), requires successful 2xx bootstrap and summary responses and resource timings, rejects every non-finite required metric, and fails if any write or unknown-origin request was blocked. It emits only aggregate timing labels; it does not emit URLs, query strings, response bodies, tenant/user identifiers, credentials, or storage state. Keep the storage-state file private and delete it through the approved local secret-handling workflow after capture.
+
+Then complete the functional smoke:
 
 1. Visit `/health` on the deployed backend and `/api/v1/health` through the configured API base.
 2. Sign in as a studio user with Koaryu Core access.
@@ -68,6 +95,7 @@ Known tradeoffs:
 - Derived Students views still use the full roster because inactivity and new-student filters depend on schedule/attendance-derived accuracy.
 - Dashboard summary is fail-soft in bootstrap. If it fails, the route should still load and later client data can fill in.
 - Production console performance logging is intentionally manual. There is no third-party telemetry sink in this pass.
+- The evidence harness is an operator-run point-in-time capture, not durable telemetry or an SLO monitor. Speed Insights and other retained/paid sinks remain uninstalled pending destination, sampling, retention, privacy, and cost decisions.
 
 ## Rollback Steps
 

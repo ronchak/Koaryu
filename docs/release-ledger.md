@@ -125,6 +125,69 @@ Operator: `Codex release orchestrator`
 - The restore drill still lacks an authenticated tenant-safe application read. The current Supabase Free plan has no proven native daily-backup or PITR entitlement, so the provisional RPO of 24 hours and RTO of 4 hours remain unproven planning targets.
 - The backup key remains in macOS Keychain. Copying it to a physically controlled recovery flash drive remains a human-only action; no key material belongs in this repository or release evidence.
 
+## Studio-Comp Migration Rollout Packet — 2026-07-31
+
+- Phase: A tooling and documentation only; provider mutation remains locked.
+- Inspected source baseline: `da2e02c250643d9d39be0bb0c76764ad4ba48605` with 86 migrations and 29 local SQL contracts.
+- Fixed production pre-state: 84 ordered migration identities, digest `57ae4269ef4d75c249d59ef297661a3a`, through `20260713173000_fail_closed_ambiguous_staff_rls`.
+- Provisional source packet: `84 -> 86`; pending pair `20260727100000_atomic_studio_comp_management.sql`, `20260727110000_order_billing_events_after_studio_comps.sql`; manifest SHA-256 `ab6dfd24935124f825fe578d063789f2db40900afa52d7f49240b49d3d390fe0`.
+- Identity limitation: Supabase migration history has `version`, `name`, and parsed `statements`, but no intrinsic content hash; the packet does not claim that remote version rows prove source-file identity. Final proof requires exact version sequence plus staging/production function, trigger, ownership, security, search-path, and ACL equality.
+- Regeneration rule: after Owner 3/4 migrations integrate, regenerate the exact `84 -> N` packet from the immutable final candidate. Do not reuse the provisional 86-migration post-state.
+- Compatibility boundary: both July files are transaction-compatible additive/replacement DDL, but the pair is not atomic across files. It is schema-compatible with reported production application `6596cc5`; the comp feature is not operationally compatible because that application still clears `comped` directly and never calls the new ordering RPC.
+- Staging state: provider health was read-only confirmed separately; the latest migration-list attempt returned `INVALID_ARGUMENT`, and a prior direct SQL attempt reportedly timed out. Staging inspection must succeed once before any dry-run or application. No retry loop, provider write, contract execution, or Auth fixture occurred in Phase A.
+- Production gate: agents never execute production migration or contract SQL. Human application remains blocked on staging rehearsal/fingerprint, exact final candidate and pending set, explicit approval, confirmed PITR/restore window, and a named restore decision authority.
+- Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
+- Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
+
+## Database-Parity Remediation Candidate — 2026-08-01
+
+- Scope: repository-only remediation; no staging or production provider read,
+  migration, contract execution, Auth fixture, or other provider mutation was
+  performed.
+- Final required database identity: 100 migrations, head
+  `20260801131844_finalize_release_database_attestation_v7.sql`, with exact pending
+  versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
+  01090000, 01091000, 01092000, 01093000, 01094000, 01105313, 01112153,
+  01115044, 01123112, and 01131844 after the fixed
+  84-migration production baseline.
+- Security repair: revoke browser/PUBLIC access to the new identity sequences;
+  serialize Connect mapping/exclusion identities through one private guard row
+  and database constraint; prove both opposite-direction races with concurrent
+  transactions.
+- Promotion guard: Render health uses `/health/ready`; hosted readiness calls a
+  service-role-only exact-head/object preflight and fails closed on provider
+  errors. Schema 84 cannot receive healthy traffic from the new backend.
+- Catalog proof: deterministic sorted identities and security-relevant catalog
+  properties cover the currently integrated pending tables/RLS, policies,
+  exact ACLs and stored function bodies, complete trigger/index definitions,
+  sequences, columns, and scoped CHECK/UNIQUE/FK definitions. PostgreSQL catalog
+  rendering, not provider UI pretty-printing, is pinned. The policy manifest rejects
+  missing, extra, permissive, role/command, and canonical predicate drift.
+- Integration gate: migrations `20260801070000` (billing), `20260801080000`
+  (alerts), `20260801090000` (parity), `20260801091000` (Connect bootstrap),
+  `20260801092000` (semantic attestation), `20260801093000` (Connect recovery),
+  `20260801094000` (ACL/readiness attestation), `20260801105313` (Connect
+  delivery retirement), `20260801112153` (V4 attestation), `20260801115044`
+  (V5 column-ACL attestation), `20260801123112` (alert-delivery lint repair
+  and V6 attestation), and `20260801131844` (runtime-invariant V7 and explicit
+  least-privilege ACL convergence) are ordered 89-100. The packet reports
+  `integration_complete=true` only for the exact 84-to-100 history and sixteen
+  expected pending versions. The semantic catalog and hosted preflight include
+  the security-relevant billing and alert tables/RLS, grants, functions,
+  triggers, indexes, sequences, columns, and constraints. Complete sorted
+  table/sequence ACL grantor, grantee, privilege, and grantability rows reject
+  custom-role and grant-option drift, including on `studio_payment_accounts`
+  and `stripe_events`. A separate column-ACL manifest covers every ordinary,
+  non-dropped column across all fourteen scoped tables, including empty
+  `attacl`, and rejects explicit custom/browser grants and grant-option drift.
+  Apparent-post linked inspection also requires exact V7 output before
+  certification. Hosted exposed-schema and schema-ACL readback remain a
+  separate provider/operator gate that local PostgreSQL cannot certify. The exact 32-file SQL
+  contract inventory fails CI on missing or unexpected verification files.
+- Recovery: any partial history, catalog mismatch, readiness failure, or guard
+  conflict halts. Preserve applied state and recover only with reviewed
+  forward-only migration work; production restore remains disaster recovery.
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.
