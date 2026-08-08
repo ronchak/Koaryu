@@ -12,9 +12,11 @@ import {
   assertExactPendingMigrations,
   assertSafeCredentialedTransport,
   buildInspectionToken,
+  buildInspectionTokenForAcceptedState,
   buildProductionConfirmationPhrase,
   classifyStateSnapshot,
   extractPendingMigrations,
+  formatNonSuccessProbeState,
   parseSingleValueCsv,
   parseArguments,
   readRemoteState,
@@ -456,6 +458,48 @@ describe("studio-comp migration rollout guard", () => {
       state: "diverged",
       detail: `Unexpected migration history ${observedHistory}; expected exact pre-state or post-state.`,
     });
+  });
+
+  it("formats each structured non-success probe result without success or token fields", () => {
+    const divergedDetail =
+      "Unexpected migration history 82:0123456789abcdef0123456789abcdef; expected exact pre-state or post-state.";
+    const cases = [
+      [{ state: "unknown", reason: "timeout" }, "state=UNKNOWN(timeout)"],
+      [{ state: "unknown", reason: "connectivity" }, "state=UNKNOWN(connectivity)"],
+      [{ state: "diverged", detail: divergedDetail }, `state=DIVERGED(${divergedDetail})`],
+    ];
+
+    for (const [result, expectedLine] of cases) {
+      const report = formatNonSuccessProbeState(result);
+      assert.equal(report, expectedLine);
+      assert.ok(!report.includes("inspection_token"));
+      assert.ok(!/state=(?:pre|post)/.test(report));
+    }
+    assert.equal(formatNonSuccessProbeState({ state: "pre", providerFingerprint: null }), null);
+    assert.equal(
+      formatNonSuccessProbeState({ state: "post", providerFingerprint: validFingerprint }),
+      null,
+    );
+  });
+
+  it("makes an inspection token available only for accepted probe states", () => {
+    const packet = candidatePacket();
+    for (const state of ["pre", "post"]) {
+      assert.equal(
+        buildInspectionTokenForAcceptedState(packet, "staging", { state }),
+        buildInspectionToken(packet, "staging", state),
+      );
+    }
+    for (const result of [
+      { state: "unknown", reason: "timeout" },
+      { state: "unknown", reason: "connectivity" },
+      { state: "diverged", detail: "Unexpected migration history 82:0123456789abcdef0123456789abcdef." },
+    ]) {
+      assert.throws(
+        () => buildInspectionTokenForAcceptedState(packet, "staging", result),
+        /accepted pre or post probe state/,
+      );
+    }
   });
 
   it("surfaces an unrelated query implementation error instead of laundering it", () => {

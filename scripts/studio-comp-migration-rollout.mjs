@@ -1117,6 +1117,27 @@ export function buildInspectionToken(packet, target, state) {
   );
 }
 
+export function formatNonSuccessProbeState(result) {
+  if (result?.state === "pre" || result?.state === "post") return null;
+  if (
+    result?.state === "unknown" &&
+    (result.reason === "timeout" || result.reason === "connectivity")
+  ) {
+    return `state=UNKNOWN(${result.reason})`;
+  }
+  if (result?.state === "diverged" && typeof result.detail === "string" && result.detail.length > 0) {
+    return `state=DIVERGED(${result.detail})`;
+  }
+  throw new RolloutError("Remote probe returned an unsupported non-success result.");
+}
+
+export function buildInspectionTokenForAcceptedState(packet, target, result) {
+  if (result?.state !== "pre" && result?.state !== "post") {
+    throw new RolloutError("Inspection tokens require an accepted pre or post probe state.");
+  }
+  return buildInspectionToken(packet, target, result.state);
+}
+
 export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCommand) {
   const actualSha = commandRunner("git", ["-C", sourceRoot, "rev-parse", "HEAD"], {
     label: "candidate SHA read",
@@ -1632,7 +1653,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       env,
       config.mode === "inspect" ? config.expectedProviderFingerprint : null,
     );
-    const inspectionToken = buildInspectionToken(packet, config.target, before.state);
+    const nonSuccessStateLine = formatNonSuccessProbeState(before);
     if (config.mode === "inspect") {
       console.log(`target=${config.target}`);
       console.log(`project_ref=${projectRef}`);
@@ -1641,6 +1662,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       console.log(`pending_migrations=${packet.pendingMigrations.join(",")}`);
       console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
       console.log("remote_content_hashes=absent");
+      if (nonSuccessStateLine !== null) {
+        console.log(nonSuccessStateLine);
+        throw new RolloutError(`Inspection refused: ${nonSuccessStateLine}.`);
+      }
+      const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
       console.log(`state=${before.state}`);
       console.log(`inspection_token=${inspectionToken}`);
       if (before.providerFingerprint) {
@@ -1648,9 +1674,14 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       }
       return;
     }
+    if (nonSuccessStateLine !== null) {
+      console.log(nonSuccessStateLine);
+      throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
+    }
     if (before.state !== "pre") {
       throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
     }
+    const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
     if (config.inspectionToken !== inspectionToken) {
       throw new RolloutError(
         "--inspection-token does not match the preceding inspection's candidate, target, and state.",
@@ -1676,6 +1707,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       );
     }
     const after = readRemoteState(sourceRoot, packet, env, config.expectedProviderFingerprint);
+    const nonSuccessAfterStateLine = formatNonSuccessProbeState(after);
+    if (nonSuccessAfterStateLine !== null) {
+      console.log(nonSuccessAfterStateLine);
+    }
     if (after.state !== "post") {
       throw new RolloutError("Migration apply did not reach the exact expected post-state.");
     }
