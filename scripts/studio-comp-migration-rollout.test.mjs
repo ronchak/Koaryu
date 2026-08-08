@@ -194,6 +194,66 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
+  it("accepts diagnose only with a pinned target and full candidate SHA", () => {
+    for (const target of ["staging", "production"]) {
+      const config = parseArguments([
+        "--mode", "diagnose", "--target", target, "--candidate-sha", candidateSha,
+      ]);
+      assert.equal(config.mode, "diagnose");
+      assert.equal(config.target, target);
+      assert.equal(config.candidateSha, candidateSha);
+      assert.equal(config.inspectionToken, null);
+      assert.equal(config.expectedProviderFingerprint, null);
+    }
+    assert.throws(
+      () => parseArguments(["--mode", "diagnose", "--candidate-sha", candidateSha]),
+      /--target must be staging or production/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--mode", "diagnose", "--target", "staging", "--candidate-sha", "da2e02c",
+      ]),
+      /full lowercase 40-character/,
+    );
+  });
+
+  it("keeps diagnose outside inspection-token and fingerprint surfaces", () => {
+    assert.throws(
+      () => parseArguments([
+        "--mode", "diagnose", "--target", "staging", "--candidate-sha", candidateSha,
+        "--inspection-token", "a".repeat(64),
+      ]),
+      /cannot be supplied with --mode diagnose/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--mode", "diagnose", "--target", "production", "--candidate-sha", candidateSha,
+        "--expected-provider-fingerprint", validFingerprint,
+      ]),
+      /valid only for inspection comparison or production apply/,
+    );
+  });
+
+  it("rejects every apply authorization option for diagnose", () => {
+    const applyOnlyOptions = [
+      ["--confirm-project", ROLLOUT.stagingRef],
+      ["--approval-record", "director-phase-b-approval"],
+      ["--confirmed-restore-window", "2026-08-08T18:00:00Z/PITR-confirmed"],
+      ["--restore-decision-authority", "Ronak Chakraborty"],
+      ["--approve-staging-apply"],
+      ["--human-production-operator"],
+    ];
+    for (const option of applyOnlyOptions) {
+      assert.throws(
+        () => parseArguments([
+          "--mode", "diagnose", "--target", "staging", "--candidate-sha", candidateSha,
+          ...option,
+        ]),
+        /Apply authorization options are valid only with --mode apply/,
+      );
+    }
+  });
+
   it("rejects control characters and normalization-dependent values", () => {
     for (const value of [
       `${ROLLOUT.stagingRef}\t`,
@@ -530,7 +590,27 @@ describe("studio-comp migration rollout guard", () => {
     assert.notEqual(stagingToken, buildInspectionToken(packet, "production", "pre"));
     assert.throws(
       () => parseArguments([
+        "--mode", "packet", "--candidate-sha", candidateSha,
+        "--inspection-token", stagingToken,
+      ]),
+      /cannot be supplied to inspect/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--mode", "inspect", "--target", "staging", "--candidate-sha", candidateSha,
+        "--inspection-token", stagingToken,
+      ]),
+      /cannot be supplied to inspect/,
+    );
+    assert.throws(
+      () => parseArguments([
         "--target", "staging", "--candidate-sha", candidateSha, "--mode", "dry-run",
+      ]),
+      /Target inspection evidence/,
+    );
+    assert.throws(
+      () => parseArguments([
+        "--target", "staging", "--candidate-sha", candidateSha, "--mode", "apply",
       ]),
       /Target inspection evidence/,
     );

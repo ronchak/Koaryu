@@ -1027,8 +1027,8 @@ export function parseArguments(argv) {
     throw new RolloutError(`Unknown option: ${option}`);
   }
 
-  if (!new Set(["packet", "inspect", "dry-run", "apply"]).has(result.mode)) {
-    throw new RolloutError("--mode must be packet, inspect, dry-run, or apply.");
+  if (!new Set(["packet", "inspect", "diagnose", "dry-run", "apply"]).has(result.mode)) {
+    throw new RolloutError("--mode must be packet, inspect, diagnose, dry-run, or apply.");
   }
   if (result.mode !== "packet" && !new Set(["staging", "production"]).has(result.target)) {
     throw new RolloutError("--target must be staging or production.");
@@ -1053,6 +1053,9 @@ export function parseArguments(argv) {
   if (new Set(["packet", "inspect"]).has(result.mode) && result.inspectionToken !== null) {
     throw new RolloutError("--inspection-token is created by inspect and cannot be supplied to inspect.");
   }
+  if (result.mode === "diagnose" && result.inspectionToken !== null) {
+    throw new RolloutError("--inspection-token cannot be supplied with --mode diagnose.");
+  }
   if (new Set(["dry-run", "apply"]).has(result.mode) && result.inspectionToken === null) {
     throw new RolloutError("Target inspection evidence is required through --inspection-token.");
   }
@@ -1069,7 +1072,10 @@ export function parseArguments(argv) {
       throw new RolloutError("Apply authorization options are valid only with --mode apply.");
     }
   }
-  if (new Set(["packet", "dry-run"]).has(result.mode) && result.expectedProviderFingerprint) {
+  if (
+    new Set(["packet", "diagnose", "dry-run"]).has(result.mode) &&
+    result.expectedProviderFingerprint
+  ) {
     throw new RolloutError(
       "--expected-provider-fingerprint is valid only for inspection comparison or production apply.",
     );
@@ -1585,7 +1591,7 @@ async function confirmProductionApply(packet) {
 function usage() {
   return `Usage:
   node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>
-  node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --candidate-sha <full-sha> [--mode <inspect|dry-run|apply>]
+  node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --candidate-sha <full-sha> [--mode <inspect|diagnose|dry-run|apply>]
 
 Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
   --confirm-project <exact-ref> --approval-record <durable-id-or-url>
