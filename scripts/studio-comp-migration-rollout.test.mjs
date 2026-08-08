@@ -45,12 +45,28 @@ const validFingerprint =
   "functions=3:0123456789abcdef0123456789abcdef:0;" +
   "trigger=1:fedcba9876543210fedcba9876543210:0;" +
   `catalog=${validCatalogState}`;
+
+function historyColumn(column_name, data_type, udt_name, overrides = {}) {
+  return {
+    column_name,
+    data_type,
+    udt_name,
+    is_nullable: "YES",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+    ...overrides,
+  };
+}
+
 const extendedHistoryColumns = JSON.stringify([
-  { column_name: "version", data_type: "text", udt_name: "text" },
-  { column_name: "name", data_type: "text", udt_name: "text" },
-  { column_name: "statements", data_type: "ARRAY", udt_name: "_text" },
-  { column_name: "created_by", data_type: "text", udt_name: "text" },
-  { column_name: "idempotency_key", data_type: "text", udt_name: "text" },
+  historyColumn("version", "text", "text", { is_nullable: "NO" }),
+  historyColumn("name", "text", "text"),
+  historyColumn("statements", "ARRAY", "_text"),
+  historyColumn("created_by", "text", "text"),
+  historyColumn("idempotency_key", "text", "text", {
+    column_default: "NULL::text",
+  }),
 ]);
 
 function candidatePacket() {
@@ -639,6 +655,15 @@ describe("studio-comp migration rollout guard", () => {
       "migration_row_count",
       "migration_newest_version",
     ]);
+    const historyColumnsSql = calls.find(({ header }) => header === "history_columns").sql;
+    for (const property of [
+      "is_nullable",
+      "column_default",
+      "is_generated",
+      "is_identity",
+    ]) {
+      assert.match(historyColumnsSql, new RegExp(`'${property}', ${property}`));
+    }
     const newestVersionSql = calls.find(
       ({ header }) => header === "migration_newest_version",
     ).sql;
@@ -668,6 +693,41 @@ describe("studio-comp migration rollout guard", () => {
       `state=DIVERGED(${divergenceDetail})`,
     ].join("\n"));
     assert.ok(!report.includes("inspection_token"));
+  });
+
+  it("rejects incomplete or noncanonical history-column diagnosis metadata", () => {
+    const packet = candidatePacket();
+    const baseValues = new Map([
+      ["history_schema", EXPECTED_HISTORY_SCHEMA],
+      ["history_state", ROLLOUT.preHistory],
+      ["target_history", ""],
+      ["object_counts", "0:0"],
+      ["migration_row_count", "84"],
+      ["migration_newest_version", "20260710123456"],
+    ]);
+    const validColumn = historyColumn("version", "text", "text", {
+      is_nullable: "NO",
+    });
+    const invalidColumns = [
+      { ...validColumn, is_nullable: "MAYBE" },
+      { ...validColumn, column_default: 1 },
+      { ...validColumn, is_generated: "SOMETIMES" },
+      { ...validColumn, is_identity: "MAYBE" },
+      Object.fromEntries(
+        Object.entries(validColumn).filter(([property]) => property !== "column_default"),
+      ),
+    ];
+
+    for (const column of invalidColumns) {
+      assert.throws(
+        () => readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, sql, header) => {
+          assertReadOnlySql(sql);
+          if (header === "history_columns") return JSON.stringify([column]);
+          return baseValues.get(header);
+        }),
+        /history_columns query returned an unexpected JSON shape/,
+      );
+    }
   });
 
   it("diagnoses reachable pre and post states without minting an inspection token", () => {

@@ -145,7 +145,11 @@ select coalesce(
            json_build_object(
              'column_name', column_name,
              'data_type', data_type,
-             'udt_name', udt_name
+             'udt_name', udt_name,
+             'is_nullable', is_nullable,
+             'column_default', column_default,
+             'is_generated', is_generated,
+             'is_identity', is_identity
            )
            order by ordinal_position
          )::text,
@@ -1607,10 +1611,22 @@ function validateHistoryColumns(value) {
       typeof column !== "object" ||
       Array.isArray(column) ||
       JSON.stringify(Object.keys(column).sort()) !==
-        JSON.stringify(["column_name", "data_type", "udt_name"]) ||
+        JSON.stringify([
+          "column_default",
+          "column_name",
+          "data_type",
+          "is_generated",
+          "is_identity",
+          "is_nullable",
+          "udt_name",
+        ]) ||
       typeof column.column_name !== "string" ||
       typeof column.data_type !== "string" ||
-      typeof column.udt_name !== "string"
+      typeof column.udt_name !== "string" ||
+      !new Set(["YES", "NO"]).has(column.is_nullable) ||
+      !(column.column_default === null || typeof column.column_default === "string") ||
+      !new Set(["ALWAYS", "NEVER"]).has(column.is_generated) ||
+      !new Set(["YES", "NO"]).has(column.is_identity)
     )
   ) {
     throw new RolloutError("history_columns query returned an unexpected JSON shape.");
