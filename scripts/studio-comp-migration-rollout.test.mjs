@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,7 @@ import {
   readRemoteState,
   readRemoteDiagnosis,
   runCommand,
+  runDryRun,
   validateApplyAuthorization,
   validateOperationalManifest,
   validateOperationalReadiness,
@@ -1041,6 +1043,33 @@ describe("studio-comp migration rollout guard", () => {
       () => assertExactPendingMigrations(`${exact}\n20260728120000_unapproved.sql`, packet),
       /Dry-run migration set mismatch/,
     );
+  });
+
+  it("parses the pinned CLI dry-run migration list from stderr", (t) => {
+    const packet = candidatePacket();
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-dry-run-cli-"));
+    const fakeBin = path.join(temporaryRoot, "bin");
+    const fakeSupabase = path.join(fakeBin, "supabase");
+    fs.mkdirSync(fakeBin);
+    fs.writeFileSync(
+      fakeSupabase,
+      [
+        "#!/usr/bin/env node",
+        `process.stdout.write(${JSON.stringify("Dry run completed without applying migrations.\n")});`,
+        `process.stderr.write(${JSON.stringify(
+          ["Would push these migrations:", ...packet.pendingMigrations].join("\n") + "\n",
+        )});`,
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+
+    const pending = runDryRun(repositoryRoot, packet, {
+      ...process.env,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    });
+
+    assert.deepEqual(pending, packet.pendingMigrations);
   });
 
   it("gates staging apply on exact project, inspection, and durable approval", () => {

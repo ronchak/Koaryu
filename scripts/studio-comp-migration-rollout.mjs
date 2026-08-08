@@ -1382,10 +1382,14 @@ export function runCommand(
     env = process.env,
     label = command,
     timeout = DEFAULT_COMMAND_TIMEOUT_MS,
+    capture = "stdout",
   } = {},
 ) {
   if (!Number.isSafeInteger(timeout) || timeout <= 0) {
     throw new RolloutError("runCommand timeout must be a positive integer.");
+  }
+  if (!new Set(["stdout", "stderr"]).has(capture)) {
+    throw new RolloutError("runCommand capture must be stdout or stderr.");
   }
   const result = spawnSync(command, args, {
     cwd,
@@ -1400,7 +1404,7 @@ export function runCommand(
   if (result.error || result.status !== 0) {
     throw new RolloutError(`${label} failed (exit ${result.status ?? "unavailable"}).`);
   }
-  return result.stdout;
+  return result[capture];
 }
 
 export function parseSingleValueCsv(output, expectedHeader) {
@@ -1718,11 +1722,16 @@ function assertLinkedProjectRef(sourceRoot, expectedRef) {
   }
 }
 
-function runDryRun(sourceRoot, packet, env) {
+export function runDryRun(sourceRoot, packet, env) {
   const output = runCommand(
     "supabase",
     ["db", "push", "--linked", "--dry-run", "--agent=no"],
-    { cwd: sourceRoot, env, label: "Supabase migration dry-run" },
+    {
+      cwd: sourceRoot,
+      env,
+      label: "Supabase migration dry-run",
+      capture: "stderr",
+    },
   );
   return assertExactPendingMigrations(output, packet);
 }
