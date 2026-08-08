@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
@@ -8,6 +9,7 @@ import {
   ROLLOUT,
   EXPECTED_CATALOG_STATE,
   EXPECTED_HISTORY_SCHEMA,
+  TOLERATED_HISTORY_COLUMNS,
   EXPECTED_OPERATIONAL_MANIFEST,
   EXPECTED_OPERATIONAL_READINESS,
   assertExactPendingMigrations,
@@ -357,6 +359,52 @@ describe("studio-comp migration rollout guard", () => {
       /no-hash\/statement-array shape/,
     );
     assert.equal(preSnapshot().historySchema, "0:1:1:1:0");
+  });
+
+  it("tolerates Supabase CLI bookkeeping columns without widening the guard", () => {
+    const packet = candidatePacket();
+    const source = fs.readFileSync(
+      path.join(repositoryRoot, "scripts", "studio-comp-migration-rollout.mjs"),
+      "utf8",
+    );
+
+    // The tolerated names must be excluded from the unrecognised-column counter,
+    // so a target carrying them still reports the exact expected shape.
+    assert.deepEqual(TOLERATED_HISTORY_COLUMNS, [
+      "created_by",
+      "idempotency_key",
+      "rollback",
+    ]);
+    for (const column of TOLERATED_HISTORY_COLUMNS) {
+      assert.ok(
+        source.includes(`'${column}'`),
+        `${column} must be excluded by name in HISTORY_SCHEMA_SQL`,
+      );
+    }
+
+    // Observed staging shape once the tolerated columns stop being counted.
+    assert.deepEqual(classifyStateSnapshot(preSnapshot(), packet), {
+      state: "pre",
+      providerFingerprint: null,
+    });
+
+    // An unrecognised extra column is still a refusal.
+    assert.throws(
+      () => classifyStateSnapshot(preSnapshot({ historySchema: "0:1:1:1:1" }), packet),
+      /no-hash\/statement-array shape/,
+    );
+
+    // A hash/checksum/digest column is still a refusal.
+    assert.throws(
+      () => classifyStateSnapshot(preSnapshot({ historySchema: "1:1:1:1:0" }), packet),
+      /no-hash\/statement-array shape/,
+    );
+
+    // A missing `_text` statements array is still a refusal.
+    assert.throws(
+      () => classifyStateSnapshot(preSnapshot({ historySchema: "0:0:1:1:0" }), packet),
+      /no-hash\/statement-array shape/,
+    );
   });
 
   it("accepts only exact pre-state or semantically valid exact post-state", () => {

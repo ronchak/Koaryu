@@ -104,6 +104,17 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
 from public.koaryu_release_schema_preflight_v2()
 `;
 
+// Supabase CLI releases after the pinned 2.95.4 add these bookkeeping columns to
+// supabase_migrations.schema_migrations. They carry no migration identity, so the
+// final counter below ignores them by name while still counting any unrecognised
+// column. Every guard that matters is unchanged: zero hash/checksum/digest
+// columns, a `_text` statements array, and both version and name present.
+export const TOLERATED_HISTORY_COLUMNS = Object.freeze([
+  "created_by",
+  "idempotency_key",
+  "rollback",
+]);
+
 const HISTORY_SCHEMA_SQL = `
 select
   count(*) filter (where column_name ~* '(hash|checksum|digest)')::text
@@ -118,7 +129,10 @@ select
   || ':' ||
   count(*) filter (where column_name = 'name')::text
   || ':' ||
-  count(*) filter (where column_name not in ('version', 'name', 'statements'))::text
+  count(*) filter (
+    where column_name not in ('version', 'name', 'statements')
+      and column_name not in ('created_by', 'idempotency_key', 'rollback')
+  )::text
   as history_schema
 from information_schema.columns
 where table_schema = 'supabase_migrations'
