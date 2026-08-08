@@ -6,6 +6,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.services.release_schema_readiness import assert_hosted_release_schema_ready
+from app.services.stripe_mutation_policy import configured_stripe_mode
 
 router = APIRouter()
 COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -26,13 +27,18 @@ def _set_health_headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store, max-age=0"
 
 
-def _health_payload(state: str) -> dict[str, str | None]:
-    return {
+def _health_payload(
+    state: str, *, configured_mode: str | None = None
+) -> dict[str, str | None]:
+    payload = {
         "status": state,
         "version": "1.0.0",
         "service": "koaryu-api",
         **_safe_deployment_metadata(),
     }
+    if state == "ready":
+        payload["configured_stripe_mode"] = configured_mode
+    return payload
 
 
 @router.get("/health")
@@ -64,7 +70,7 @@ async def health_ready(response: Response):
             detail="Runtime configuration is not ready.",
             headers={"Cache-Control": "no-store, max-age=0"},
         ) from exc
-    return _health_payload("ready")
+    return _health_payload("ready", configured_mode=configured_stripe_mode(settings))
 
 
 @router.head("/health/ready", include_in_schema=False)
