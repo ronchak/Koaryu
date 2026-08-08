@@ -362,7 +362,196 @@ function renderScalar(block, key) {
   return match?.[1].trim().replace(/^(?:'([^']*)'|"([^"]*)")$/, "$1$2") ?? null;
 }
 
-export function validateProviderDeploymentControls(renderSource, vercelConfig) {
+function normalizedContractText(source) {
+  return typeof source === "string" ? source.replace(/\s+/g, " ").trim() : "";
+}
+
+function validateDocumentContract(path, source, requirements) {
+  const text = normalizedContractText(source);
+  return requirements
+    .filter((requirement) => !requirement.pattern.test(text))
+    .map((requirement) => `${path}: ${requirement.diagnostic}`);
+}
+
+function rejectDocumentClaims(path, source, forbiddenClaims) {
+  const text = normalizedContractText(source);
+  return forbiddenClaims
+    .filter((claim) => claim.pattern.test(text))
+    .map((claim) => `${path}: ${claim.diagnostic}`);
+}
+
+export function validateOperationalAlertCadence(
+  vercelConfig,
+  operationalAlertsSource,
+  releaseControlsSource,
+) {
+  const failures = [];
+  const crons = vercelConfig?.crons;
+  const expectedCrons = [
+    {
+      path: "/api/cron/account-deletions/process-due",
+      schedule: "0 8 * * *",
+      diagnostic: "the account-deletion cron contract must be preserved exactly once at 0 8 * * *",
+    },
+    {
+      path: "/api/cron/operational-alerts/evaluate",
+      schedule: "0 9 * * *",
+      diagnostic: "the operational-alert Vercel backup cron must appear exactly once at daily 09:00 UTC (0 9 * * *)",
+    },
+  ];
+
+  if (!Array.isArray(crons)) {
+    failures.push("frontend/vercel.json: crons must be an array containing exactly the two approved entries");
+  } else {
+    if (crons.length !== expectedCrons.length) {
+      failures.push("frontend/vercel.json: crons must contain exactly the two approved entries and no others");
+    }
+    for (const expected of expectedCrons) {
+      const matches = crons.filter(
+        (cron) => cron?.path === expected.path && cron?.schedule === expected.schedule,
+      );
+      const samePath = crons.filter((cron) => cron?.path === expected.path);
+      if (matches.length !== 1 || samePath.length !== 1) {
+        failures.push(`frontend/vercel.json: ${expected.diagnostic}`);
+      }
+    }
+    const hasOnlyExactObjects = crons.every((cron) => (
+      cron
+      && typeof cron === "object"
+      && !Array.isArray(cron)
+      && Object.keys(cron).sort().join(",") === "path,schedule"
+      && expectedCrons.some(
+        (expected) => cron.path === expected.path && cron.schedule === expected.schedule,
+      )
+    ));
+    if (!hasOnlyExactObjects) {
+      failures.push("frontend/vercel.json: crons must contain only the approved path/schedule objects");
+    }
+  }
+
+  if (operationalAlertsSource !== undefined) {
+    failures.push(...validateDocumentContract(
+      "docs/operational-alerts.md",
+      operationalAlertsSource,
+      [
+        {
+          pattern: /primary trigger is an external scheduler on the director-operated home server/i,
+          diagnostic: "must identify the director-operated external scheduler as the primary trigger",
+        },
+        {
+          pattern: /director-operated home server(?:'s|’s) external scheduler[^.]*every five minutes/i,
+          diagnostic: "must require the external primary scheduler to run every five minutes",
+        },
+        {
+          pattern: /committed Vercel cron is a daily 09:00 UTC backup/i,
+          diagnostic: "must identify Vercel as the daily 09:00 UTC backup",
+        },
+        {
+          pattern: /changes the trigger source, not the required five-minute cadence/i,
+          diagnostic: "must state that the trigger source changes without weakening the required five-minute cadence",
+        },
+        {
+          pattern: /call `https:\/\/<production-frontend-origin>\/api\/cron\/operational-alerts\/evaluate` every five minutes/i,
+          diagnostic: "must preserve the exact external trigger URL and five-minute invocation contract",
+        },
+        {
+          pattern: /every five minutes with method `GET`/i,
+          diagnostic: "must preserve GET as the external trigger method",
+        },
+        {
+          pattern: /header `Authorization: Bearer \$CRON_SECRET`/,
+          diagnostic: "must preserve the Authorization: Bearer $CRON_SECRET header contract",
+        },
+        {
+          pattern: /Expect `204` while disabled and `200` when enabled/i,
+          diagnostic: "must preserve disabled 204 and enabled 200 response expectations",
+        },
+        {
+          pattern: /35-second request timeout/i,
+          diagnostic: "must preserve the 35-second external trigger timeout",
+        },
+        {
+          pattern: /No retry may start concurrently with an in-flight evaluation/i,
+          diagnostic: "must forbid retries concurrent with an in-flight evaluation",
+        },
+        {
+          pattern: /scheduler executions must be serialized/i,
+          diagnostic: "must require serialized external scheduler execution",
+        },
+        {
+          pattern: /external scheduler(?:'s|’s) restricted secret store is an additional custody location for `CRON_SECRET` and must be included in every `CRON_SECRET` rotation/i,
+          diagnostic: "must include the external scheduler secret store in CRON_SECRET custody and every rotation",
+        },
+      ],
+    ));
+    failures.push(...rejectDocumentClaims(
+      "docs/operational-alerts.md",
+      operationalAlertsSource,
+      [
+        {
+          pattern: /Confirm the Vercel plan supports the committed five-minute cron/i,
+          diagnostic: "must not leave Vercel five-minute plan support as an open activation gate",
+        },
+        {
+          pattern: /Vercel (?:cron|scheduler) is the (?:five-minute )?primary/i,
+          diagnostic: "must not identify Vercel as the primary evaluator trigger",
+        },
+      ],
+    ));
+  }
+
+  if (releaseControlsSource !== undefined) {
+    failures.push(...validateDocumentContract(
+      "docs/release-candidate-controls.md",
+      releaseControlsSource,
+      [
+        {
+          pattern: /primary trigger is the director-operated home server(?:'s|’s) external scheduler at the required five-minute cadence/i,
+          diagnostic: "must preserve the external primary trigger at the required five-minute cadence",
+        },
+        {
+          pattern: /committed Vercel cron is a daily 09:00 UTC backup/i,
+          diagnostic: "must preserve the daily 09:00 UTC Vercel backup",
+        },
+        {
+          pattern: /resolves the Vercel funded-plan gate by moving the primary trigger source, not by weakening the cadence/i,
+          diagnostic: "must preserve the funded-plan resolution by moving the trigger source without weakening cadence",
+        },
+        {
+          pattern: /Nobody may weaken the five-minute cadence merely to make a preview deploy/i,
+          diagnostic: "must preserve the explicit preview-deploy cadence warning",
+        },
+      ],
+    ));
+    failures.push(...rejectDocumentClaims(
+      "docs/release-candidate-controls.md",
+      releaseControlsSource,
+      [
+        {
+          pattern: /Vercel plan support for the committed five-minute operational-alert cron remains a funded operator gate/i,
+          diagnostic: "must not retain the obsolete open Vercel funded-plan gate",
+        },
+        {
+          pattern: /funded-plan gate remains (?:open|unresolved)/i,
+          diagnostic: "must not contradict the resolved Vercel funded-plan decision",
+        },
+        {
+          pattern: /Vercel (?:cron|scheduler) is the (?:five-minute )?primary/i,
+          diagnostic: "must not identify Vercel as the primary evaluator trigger",
+        },
+      ],
+    ));
+  }
+
+  return failures;
+}
+
+export function validateProviderDeploymentControls(
+  renderSource,
+  vercelConfig,
+  operationalAlertsSource,
+  releaseControlsSource,
+) {
   const failures = [];
   const productionService = renderServiceBlock(renderSource, "koaryu");
   if (!productionService) {
@@ -388,7 +577,7 @@ export function validateProviderDeploymentControls(renderSource, vercelConfig) {
     }
     if (deploymentEnabled["codex/launch-readiness-candidate"] !== false) {
       failures.push(
-        "frontend/vercel.json: the launch candidate preview must stay disabled until the five-minute cron plan gate is funded",
+        "frontend/vercel.json: the launch candidate preview must stay disabled under the documented manual-promotion controls",
       );
     }
     for (const [pattern, enabled] of Object.entries(deploymentEnabled)) {
@@ -401,18 +590,11 @@ export function validateProviderDeploymentControls(renderSource, vercelConfig) {
     }
   }
 
-  const deletionCron = vercelConfig?.crons?.find(
-    (cron) => cron?.path === "/api/cron/account-deletions/process-due",
-  );
-  if (deletionCron?.schedule !== "0 8 * * *") {
-    failures.push("frontend/vercel.json: the account-deletion cron contract must be preserved");
-  }
-  const alertCron = vercelConfig?.crons?.find(
-    (cron) => cron?.path === "/api/cron/operational-alerts/evaluate",
-  );
-  if (alertCron?.schedule !== "*/5 * * * *") {
-    failures.push("frontend/vercel.json: operational alert evaluation must use the exact five-minute schedule");
-  }
+  failures.push(...validateOperationalAlertCadence(
+    vercelConfig,
+    operationalAlertsSource,
+    releaseControlsSource,
+  ));
   return failures;
 }
 
@@ -490,11 +672,28 @@ export function runEnvExampleCheck() {
     backendPlaceholderKeys,
     renderExampleValues,
   ));
+  let operationalAlertsSource;
+  let releaseControlsSource;
+  try {
+    operationalAlertsSource = readFileSync(resolve(ROOT, "docs/operational-alerts.md"), "utf8");
+  } catch (error) {
+    failures.push(`docs/operational-alerts.md: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    releaseControlsSource = readFileSync(resolve(ROOT, "docs/release-candidate-controls.md"), "utf8");
+  } catch (error) {
+    failures.push(`docs/release-candidate-controls.md: ${error instanceof Error ? error.message : String(error)}`);
+  }
   try {
     const vercelConfig = JSON.parse(
       readFileSync(resolve(ROOT, "frontend/vercel.json"), "utf8"),
     );
-    failures.push(...validateProviderDeploymentControls(renderSource, vercelConfig));
+    failures.push(...validateProviderDeploymentControls(
+      renderSource,
+      vercelConfig,
+      operationalAlertsSource,
+      releaseControlsSource,
+    ));
   } catch (error) {
     failures.push(
       `frontend/vercel.json: ${error instanceof Error ? error.message : String(error)}`,

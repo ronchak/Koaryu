@@ -10,9 +10,31 @@ import {
   isSecretLikeKey,
   parseEnvText,
   validateEnvExample,
+  validateOperationalAlertCadence,
   validateProviderDeploymentControls,
   validateRenderManifest,
 } from "./check-env-examples.mjs";
+
+const reviewedVercelConfig = {
+  crons: [
+    { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
+    { path: "/api/cron/operational-alerts/evaluate", schedule: "0 9 * * *" },
+  ],
+};
+
+const reviewedOperationalAlerts = `
+The primary trigger is an external scheduler on the director-operated home server; the committed Vercel cron is a daily 09:00 UTC backup.
+This changes the trigger source, not the required five-minute cadence.
+The provider-independent external trigger contract is: call \`https://<production-frontend-origin>/api/cron/operational-alerts/evaluate\` every five minutes with method \`GET\`, header \`Authorization: Bearer $CRON_SECRET\`, and a 35-second request timeout. Expect \`204\` while disabled and \`200\` when enabled. No retry may start concurrently with an in-flight evaluation, and scheduler executions must be serialized.
+The external scheduler's restricted secret store is an additional custody location for \`CRON_SECRET\` and must be included in every \`CRON_SECRET\` rotation.
+Configure the director-operated home server's external scheduler to invoke the trigger every five minutes.
+`;
+
+const reviewedReleaseControls = `
+The operational-alert evaluator's primary trigger is the director-operated home server's external scheduler at the required five-minute cadence; the committed Vercel cron is a daily 09:00 UTC backup.
+This resolves the Vercel funded-plan gate by moving the primary trigger source, not by weakening the cadence.
+Nobody may weaken the five-minute cadence merely to make a preview deploy.
+`;
 
 describe("environment example validation", () => {
   it("accepts deliberate placeholders and rejects real-looking secrets", () => {
@@ -169,7 +191,7 @@ services:
       },
       crons: [
         { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
-        { path: "/api/cron/operational-alerts/evaluate", schedule: "*/5 * * * *" },
+        { path: "/api/cron/operational-alerts/evaluate", schedule: "0 9 * * *" },
       ],
     };
 
@@ -219,7 +241,164 @@ services:
     };
 
     assert.ok(validateProviderDeploymentControls(renderSource, vercelConfig).some(
-      (failure) => failure.includes("exact five-minute schedule"),
+      (failure) => failure.includes("daily 09:00 UTC"),
     ));
+  });
+
+  it("accepts the reviewed external-primary and daily-Vercel-backup contract", () => {
+    assert.deepEqual(validateOperationalAlertCadence(
+      reviewedVercelConfig,
+      reviewedOperationalAlerts,
+      reviewedReleaseControls,
+    ), []);
+  });
+
+  it("rejects an obsolete or otherwise wrong operational-alert Vercel schedule", () => {
+    for (const schedule of ["*/5 * * * *", "0 * * * *"]) {
+      const vercelConfig = structuredClone(reviewedVercelConfig);
+      vercelConfig.crons[1].schedule = schedule;
+      const failures = validateOperationalAlertCadence(
+        vercelConfig,
+        reviewedOperationalAlerts,
+        reviewedReleaseControls,
+      );
+      assert.ok(failures.some((failure) => failure.includes("daily 09:00 UTC")), schedule);
+    }
+  });
+
+  it("rejects extra and duplicate Vercel crons", () => {
+    const extra = structuredClone(reviewedVercelConfig);
+    extra.crons.push({ path: "/api/cron/unapproved", schedule: "0 10 * * *" });
+    assert.ok(validateOperationalAlertCadence(extra).some(
+      (failure) => failure.includes("exactly the two approved entries"),
+    ));
+
+    const duplicate = structuredClone(reviewedVercelConfig);
+    duplicate.crons[1] = { ...duplicate.crons[0] };
+    const failures = validateOperationalAlertCadence(duplicate);
+    assert.ok(failures.some((failure) => failure.includes("account-deletion") && failure.includes("exactly once")));
+    assert.ok(failures.some((failure) => failure.includes("operational-alert") && failure.includes("exactly once")));
+  });
+
+  it("rejects missing external-primary five-minute language", () => {
+    const source = reviewedOperationalAlerts
+      .replace("The primary trigger is an external scheduler on the director-operated home server", "Vercel is the primary trigger")
+      .replace("every five minutes.\n", "every hour.\n");
+    const failures = validateOperationalAlertCadence(
+      reviewedVercelConfig,
+      source,
+      reviewedReleaseControls,
+    );
+
+    assert.ok(failures.some((failure) => failure.includes("external scheduler as the primary trigger")));
+    assert.ok(failures.some((failure) => failure.includes("run every five minutes")));
+  });
+
+  it("rejects missing daily 09:00 UTC Vercel backup language", () => {
+    const source = reviewedOperationalAlerts.replace(
+      "the committed Vercel cron is a daily 09:00 UTC backup",
+      "the committed Vercel cron is a frequent primary",
+    );
+    assert.ok(validateOperationalAlertCadence(
+      reviewedVercelConfig,
+      source,
+      reviewedReleaseControls,
+    ).some((failure) => failure.includes("daily 09:00 UTC backup")));
+  });
+
+  it("rejects operational documentation that omits the unchanged five-minute cadence", () => {
+    const source = reviewedOperationalAlerts.replace(
+      "This changes the trigger source, not the required five-minute cadence.",
+      "This changes the evaluation cadence.",
+    );
+    assert.ok(validateOperationalAlertCadence(
+      reviewedVercelConfig,
+      source,
+      reviewedReleaseControls,
+    ).some((failure) => failure.includes("without weakening")));
+  });
+
+  it("rejects each missing external trigger-contract detail", () => {
+    const cases = [
+      ["https://<production-frontend-origin>/api/cron/operational-alerts/evaluate", "https://example.test/wrong", "exact external trigger URL"],
+      ["method `GET`", "method `POST`", "trigger method"],
+      ["Authorization: Bearer $CRON_SECRET", "X-Cron: token", "Authorization"],
+      ["Expect `204` while disabled and `200` when enabled", "Expect success", "response expectations"],
+      ["35-second request timeout", "60-second request timeout", "35-second"],
+      ["No retry may start concurrently with an in-flight evaluation", "Retries may overlap an in-flight evaluation", "forbid retries"],
+      ["scheduler executions must be serialized", "scheduler executions may overlap", "serialized"],
+    ];
+
+    for (const [contract, drift, diagnostic] of cases) {
+      const source = reviewedOperationalAlerts.replace(contract, drift);
+      assert.ok(validateOperationalAlertCadence(
+        reviewedVercelConfig,
+        source,
+        reviewedReleaseControls,
+      ).some((failure) => failure.includes(diagnostic)), contract);
+    }
+  });
+
+  it("rejects missing CRON_SECRET custody and rotation language", () => {
+    const source = reviewedOperationalAlerts.replace(
+      "The external scheduler's restricted secret store is an additional custody location for `CRON_SECRET` and must be included in every `CRON_SECRET` rotation.",
+      "Keep scheduler credentials private.",
+    );
+    assert.ok(validateOperationalAlertCadence(
+      reviewedVercelConfig,
+      source,
+      reviewedReleaseControls,
+    ).some((failure) => failure.includes("custody") && failure.includes("rotation")));
+  });
+
+  it("rejects stale or missing funded-plan resolution-without-weakening language", () => {
+    for (const replacement of [
+      "The funded-plan gate remains unresolved.",
+      "This resolves the Vercel funded-plan gate by weakening the cadence.",
+    ]) {
+      const source = reviewedReleaseControls.replace(
+        "This resolves the Vercel funded-plan gate by moving the primary trigger source, not by weakening the cadence.",
+        replacement,
+      );
+      assert.ok(validateOperationalAlertCadence(
+        reviewedVercelConfig,
+        reviewedOperationalAlerts,
+        source,
+      ).some((failure) => failure.includes("without weakening cadence")));
+    }
+  });
+
+  it("rejects release-control drift in the primary, backup, or preview warning", () => {
+    const cases = [
+      ["external scheduler at the required five-minute cadence", "Vercel scheduler at an hourly cadence", "external primary trigger"],
+      ["daily 09:00 UTC backup", "hourly primary", "daily 09:00 UTC Vercel backup"],
+      ["Nobody may weaken the five-minute cadence merely to make a preview deploy.", "Preview deploys may use a weaker cadence.", "preview-deploy cadence warning"],
+    ];
+
+    for (const [contract, drift, diagnostic] of cases) {
+      const source = reviewedReleaseControls.replace(contract, drift);
+      assert.ok(validateOperationalAlertCadence(
+        reviewedVercelConfig,
+        reviewedOperationalAlerts,
+        source,
+      ).some((failure) => failure.includes(diagnostic)), contract);
+    }
+  });
+
+  it("rejects contradictory stale claims even when the canonical contract remains", () => {
+    const operationalFailures = validateOperationalAlertCadence(
+      reviewedVercelConfig,
+      `${reviewedOperationalAlerts}\nConfirm the Vercel plan supports the committed five-minute cron.`,
+      reviewedReleaseControls,
+    );
+    assert.ok(operationalFailures.some((failure) => failure.includes("open activation gate")));
+
+    const releaseFailures = validateOperationalAlertCadence(
+      reviewedVercelConfig,
+      reviewedOperationalAlerts,
+      `${reviewedReleaseControls}\nThe funded-plan gate remains unresolved. Vercel scheduler is the five-minute primary.`,
+    );
+    assert.ok(releaseFailures.some((failure) => failure.includes("resolved Vercel funded-plan")));
+    assert.ok(releaseFailures.some((failure) => failure.includes("must not identify Vercel as the primary")));
   });
 });
