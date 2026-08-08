@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIR, "..");
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 
 export const ROLLOUT = Object.freeze({
   cliVersion: "2.95.4",
@@ -1302,13 +1303,29 @@ export function assertExactPendingMigrations(output, packet) {
   return actual;
 }
 
-function runCommand(command, args, { cwd = REPOSITORY_ROOT, env = process.env, label = command } = {}) {
+export function runCommand(
+  command,
+  args,
+  {
+    cwd = REPOSITORY_ROOT,
+    env = process.env,
+    label = command,
+    timeout = DEFAULT_COMMAND_TIMEOUT_MS,
+  } = {},
+) {
+  if (!Number.isSafeInteger(timeout) || timeout <= 0) {
+    throw new RolloutError("runCommand timeout must be a positive integer.");
+  }
   const result = spawnSync(command, args, {
     cwd,
     env,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    timeout,
   });
+  if (result.error?.code === "ETIMEDOUT") {
+    throw new RolloutError(`${label} failed: UNKNOWN(timeout) after ${timeout} ms.`);
+  }
   if (result.error || result.status !== 0) {
     throw new RolloutError(`${label} failed (exit ${result.status ?? "unavailable"}).`);
   }

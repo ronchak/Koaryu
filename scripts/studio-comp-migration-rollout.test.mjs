@@ -18,6 +18,7 @@ import {
   parseSingleValueCsv,
   parseArguments,
   readRemoteState,
+  runCommand,
   validateApplyAuthorization,
   validateOperationalManifest,
   validateOperationalReadiness,
@@ -226,6 +227,40 @@ describe("studio-comp migration rollout guard", () => {
         NODE_EXTRA_CA_CERTS: "",
       }),
     );
+  });
+
+  it("reports a bounded command timeout as UNKNOWN(timeout) before returning output", { timeout: 3_000 }, () => {
+    const timeoutMs = 100;
+    const startedAt = process.hrtime.bigint();
+    let returnedOutput = false;
+
+    assert.throws(
+      () => {
+        const output = runCommand(
+          process.execPath,
+          ["-e", "setTimeout(() => {}, 5_000)"],
+          {
+            cwd: repositoryRoot,
+            env: {},
+            label: "slow timeout test command",
+            timeout: timeoutMs,
+          },
+        );
+        returnedOutput = true;
+        return output;
+      },
+      (error) => {
+        assert.equal(
+          error.message,
+          `slow timeout test command failed: UNKNOWN(timeout) after ${timeoutMs} ms.`,
+        );
+        return true;
+      },
+    );
+
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    assert.equal(returnedOutput, false);
+    assert.ok(elapsedMs < 2_000, `timeout returned control after ${elapsedMs.toFixed(0)} ms`);
   });
 
   it("does not treat migration history as content identity", () => {
