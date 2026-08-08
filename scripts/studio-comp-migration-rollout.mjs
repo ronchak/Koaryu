@@ -1461,43 +1461,61 @@ export function readRemoteState(
   expectedProviderFingerprint = null,
   query = querySingleValue,
 ) {
-  const snapshot = {
-    historySchema: query(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
-    history: query(sourceRoot, HISTORY_SQL, "history_state", env),
-    targetHistory: query(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
-    objectCounts: query(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
-    functionState: null,
-    triggerState: null,
-    catalogState: null,
-    operationalReadiness: null,
-  };
-  if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
-    snapshot.functionState = query(
-      sourceRoot,
-      FUNCTION_STATE_SQL,
-      "function_state",
-      env,
-    );
-    snapshot.triggerState = query(
-      sourceRoot,
-      TRIGGER_STATE_SQL,
-      "trigger_state",
-      env,
-    );
-    snapshot.catalogState = query(
-      sourceRoot,
-      CATALOG_STATE_SQL,
-      "catalog_state",
-      env,
-    );
-    snapshot.operationalReadiness = query(
-      sourceRoot,
-      OPERATIONAL_READINESS_SQL,
-      "operational_readiness",
-      env,
-    );
+  let snapshot;
+  try {
+    snapshot = {
+      historySchema: query(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
+      history: query(sourceRoot, HISTORY_SQL, "history_state", env),
+      targetHistory: query(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
+      objectCounts: query(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
+      functionState: null,
+      triggerState: null,
+      catalogState: null,
+      operationalReadiness: null,
+    };
+    if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
+      snapshot.functionState = query(
+        sourceRoot,
+        FUNCTION_STATE_SQL,
+        "function_state",
+        env,
+      );
+      snapshot.triggerState = query(
+        sourceRoot,
+        TRIGGER_STATE_SQL,
+        "trigger_state",
+        env,
+      );
+      snapshot.catalogState = query(
+        sourceRoot,
+        CATALOG_STATE_SQL,
+        "catalog_state",
+        env,
+      );
+      snapshot.operationalReadiness = query(
+        sourceRoot,
+        OPERATIONAL_READINESS_SQL,
+        "operational_readiness",
+        env,
+      );
+    }
+  } catch (error) {
+    if (!(error instanceof RolloutError)) {
+      throw error;
+    }
+    return {
+      state: "unknown",
+      reason: error.message.includes("UNKNOWN(timeout)") ? "timeout" : "connectivity",
+    };
   }
-  return classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint);
+  try {
+    return classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint);
+  } catch (error) {
+    if (!(error instanceof RolloutError)) {
+      throw error;
+    }
+    return { state: "diverged", detail: error.message };
+  }
 }
 
 function assertLinkedProjectRef(sourceRoot, expectedRef) {

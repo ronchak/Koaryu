@@ -383,6 +383,93 @@ describe("studio-comp migration rollout guard", () => {
     assert.ok(!preHeaders.includes("operational_readiness"));
   });
 
+  it("returns only UNKNOWN(timeout) for a typed timeout during remote query acquisition", () => {
+    const packet = candidatePacket();
+    let timeoutError;
+    assert.throws(
+      () => runCommand(
+        process.execPath,
+        ["-e", "setTimeout(() => {}, 5_000)"],
+        {
+          cwd: repositoryRoot,
+          env: {},
+          label: "remote query timeout fixture",
+          timeout: 100,
+        },
+      ),
+      (error) => {
+        timeoutError = error;
+        return error.message.includes("UNKNOWN(timeout)");
+      },
+    );
+
+    assert.deepEqual(
+      readRemoteState(repositoryRoot, packet, {}, null, () => {
+        throw timeoutError;
+      }),
+      { state: "unknown", reason: "timeout" },
+    );
+  });
+
+  it("returns only connectivity for a typed non-timeout runner query failure", () => {
+    const packet = candidatePacket();
+    let queryError;
+    assert.throws(
+      () => runCommand(process.execPath, ["-e", "process.exit(7)"], {
+        cwd: repositoryRoot,
+        env: {},
+        label: "remote query connectivity fixture",
+      }),
+      (error) => {
+        queryError = error;
+        return !error.message.includes("UNKNOWN(timeout)");
+      },
+    );
+
+    assert.deepEqual(
+      readRemoteState(repositoryRoot, packet, {}, null, () => {
+        throw queryError;
+      }),
+      { state: "unknown", reason: "connectivity" },
+    );
+  });
+
+  it("returns diverged for a reachable 82-migration history with the exact refusal detail", () => {
+    const packet = candidatePacket();
+    const observedHistory = "82:0123456789abcdef0123456789abcdef";
+    const values = new Map([
+      ["history_schema", "0:1:1:1:0"],
+      ["history_state", observedHistory],
+      ["target_history", ""],
+      ["object_counts", "0:0"],
+    ]);
+
+    const result = readRemoteState(
+      repositoryRoot,
+      packet,
+      {},
+      null,
+      (_root, _sql, header) => values.get(header),
+    );
+
+    assert.deepEqual(result, {
+      state: "diverged",
+      detail: `Unexpected migration history ${observedHistory}; expected exact pre-state or post-state.`,
+    });
+  });
+
+  it("surfaces an unrelated query implementation error instead of laundering it", () => {
+    const packet = candidatePacket();
+    const queryError = new Error("unexpected query implementation failure");
+
+    assert.throws(
+      () => readRemoteState(repositoryRoot, packet, {}, null, () => {
+        throw queryError;
+      }),
+      (error) => error === queryError,
+    );
+  });
+
   it("refuses to certify post-state before the exact 100-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
