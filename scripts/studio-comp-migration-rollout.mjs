@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIR, "..");
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 
 export const ROLLOUT = Object.freeze({
   cliVersion: "2.95.4",
@@ -1116,6 +1117,27 @@ export function buildInspectionToken(packet, target, state) {
   );
 }
 
+export function formatNonSuccessProbeState(result) {
+  if (result?.state === "pre" || result?.state === "post") return null;
+  if (
+    result?.state === "unknown" &&
+    (result.reason === "timeout" || result.reason === "connectivity")
+  ) {
+    return `state=UNKNOWN(${result.reason})`;
+  }
+  if (result?.state === "diverged" && typeof result.detail === "string" && result.detail.length > 0) {
+    return `state=DIVERGED(${result.detail})`;
+  }
+  throw new RolloutError("Remote probe returned an unsupported non-success result.");
+}
+
+export function buildInspectionTokenForAcceptedState(packet, target, result) {
+  if (result?.state !== "pre" && result?.state !== "post") {
+    throw new RolloutError("Inspection tokens require an accepted pre or post probe state.");
+  }
+  return buildInspectionToken(packet, target, result.state);
+}
+
 export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCommand) {
   const actualSha = commandRunner("git", ["-C", sourceRoot, "rev-parse", "HEAD"], {
     label: "candidate SHA read",
@@ -1302,13 +1324,29 @@ export function assertExactPendingMigrations(output, packet) {
   return actual;
 }
 
-function runCommand(command, args, { cwd = REPOSITORY_ROOT, env = process.env, label = command } = {}) {
+export function runCommand(
+  command,
+  args,
+  {
+    cwd = REPOSITORY_ROOT,
+    env = process.env,
+    label = command,
+    timeout = DEFAULT_COMMAND_TIMEOUT_MS,
+  } = {},
+) {
+  if (!Number.isSafeInteger(timeout) || timeout <= 0) {
+    throw new RolloutError("runCommand timeout must be a positive integer.");
+  }
   const result = spawnSync(command, args, {
     cwd,
     env,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    timeout,
   });
+  if (result.error?.code === "ETIMEDOUT") {
+    throw new RolloutError(`${label} failed: UNKNOWN(timeout) after ${timeout} ms.`);
+  }
   if (result.error || result.status !== 0) {
     throw new RolloutError(`${label} failed (exit ${result.status ?? "unavailable"}).`);
   }
@@ -1444,43 +1482,61 @@ export function readRemoteState(
   expectedProviderFingerprint = null,
   query = querySingleValue,
 ) {
-  const snapshot = {
-    historySchema: query(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
-    history: query(sourceRoot, HISTORY_SQL, "history_state", env),
-    targetHistory: query(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
-    objectCounts: query(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
-    functionState: null,
-    triggerState: null,
-    catalogState: null,
-    operationalReadiness: null,
-  };
-  if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
-    snapshot.functionState = query(
-      sourceRoot,
-      FUNCTION_STATE_SQL,
-      "function_state",
-      env,
-    );
-    snapshot.triggerState = query(
-      sourceRoot,
-      TRIGGER_STATE_SQL,
-      "trigger_state",
-      env,
-    );
-    snapshot.catalogState = query(
-      sourceRoot,
-      CATALOG_STATE_SQL,
-      "catalog_state",
-      env,
-    );
-    snapshot.operationalReadiness = query(
-      sourceRoot,
-      OPERATIONAL_READINESS_SQL,
-      "operational_readiness",
-      env,
-    );
+  let snapshot;
+  try {
+    snapshot = {
+      historySchema: query(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
+      history: query(sourceRoot, HISTORY_SQL, "history_state", env),
+      targetHistory: query(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
+      objectCounts: query(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
+      functionState: null,
+      triggerState: null,
+      catalogState: null,
+      operationalReadiness: null,
+    };
+    if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
+      snapshot.functionState = query(
+        sourceRoot,
+        FUNCTION_STATE_SQL,
+        "function_state",
+        env,
+      );
+      snapshot.triggerState = query(
+        sourceRoot,
+        TRIGGER_STATE_SQL,
+        "trigger_state",
+        env,
+      );
+      snapshot.catalogState = query(
+        sourceRoot,
+        CATALOG_STATE_SQL,
+        "catalog_state",
+        env,
+      );
+      snapshot.operationalReadiness = query(
+        sourceRoot,
+        OPERATIONAL_READINESS_SQL,
+        "operational_readiness",
+        env,
+      );
+    }
+  } catch (error) {
+    if (!(error instanceof RolloutError)) {
+      throw error;
+    }
+    return {
+      state: "unknown",
+      reason: error.message.includes("UNKNOWN(timeout)") ? "timeout" : "connectivity",
+    };
   }
-  return classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint);
+  try {
+    return classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint);
+  } catch (error) {
+    if (!(error instanceof RolloutError)) {
+      throw error;
+    }
+    return { state: "diverged", detail: error.message };
+  }
 }
 
 function assertLinkedProjectRef(sourceRoot, expectedRef) {
@@ -1597,7 +1653,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       env,
       config.mode === "inspect" ? config.expectedProviderFingerprint : null,
     );
-    const inspectionToken = buildInspectionToken(packet, config.target, before.state);
+    const nonSuccessStateLine = formatNonSuccessProbeState(before);
     if (config.mode === "inspect") {
       console.log(`target=${config.target}`);
       console.log(`project_ref=${projectRef}`);
@@ -1606,6 +1662,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       console.log(`pending_migrations=${packet.pendingMigrations.join(",")}`);
       console.log(`source_manifest_sha256=${packet.sourceManifestSha256}`);
       console.log("remote_content_hashes=absent");
+      if (nonSuccessStateLine !== null) {
+        console.log(nonSuccessStateLine);
+        throw new RolloutError(`Inspection refused: ${nonSuccessStateLine}.`);
+      }
+      const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
       console.log(`state=${before.state}`);
       console.log(`inspection_token=${inspectionToken}`);
       if (before.providerFingerprint) {
@@ -1613,9 +1674,14 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       }
       return;
     }
+    if (nonSuccessStateLine !== null) {
+      console.log(nonSuccessStateLine);
+      throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
+    }
     if (before.state !== "pre") {
       throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
     }
+    const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
     if (config.inspectionToken !== inspectionToken) {
       throw new RolloutError(
         "--inspection-token does not match the preceding inspection's candidate, target, and state.",
@@ -1641,6 +1707,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       );
     }
     const after = readRemoteState(sourceRoot, packet, env, config.expectedProviderFingerprint);
+    const nonSuccessAfterStateLine = formatNonSuccessProbeState(after);
+    if (nonSuccessAfterStateLine !== null) {
+      console.log(nonSuccessAfterStateLine);
+    }
     if (after.state !== "post") {
       throw new RolloutError("Migration apply did not reach the exact expected post-state.");
     }
