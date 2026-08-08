@@ -66,8 +66,6 @@ export const EXPECTED_OPERATIONAL_READINESS =
   ROLLOUT.finalPendingVersions.join(",") +
   "|0||release-db-attestation-v7";
 
-export const EXPECTED_HISTORY_SCHEMA = "0:1:1:1:0";
-
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
@@ -104,40 +102,165 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
 from public.koaryu_release_schema_preflight_v2()
 `;
 
-// Supabase CLI releases after the pinned 2.95.4 add these bookkeeping columns to
-// supabase_migrations.schema_migrations. They carry no migration identity, so the
-// final counter below ignores them by name while still counting any unrecognised
-// column. Every guard that matters is unchanged: zero hash/checksum/digest
-// columns, a `_text` statements array, and both version and name present.
 export const TOLERATED_HISTORY_COLUMNS = Object.freeze([
   "created_by",
   "idempotency_key",
   "rollback",
 ]);
 
-const HISTORY_SCHEMA_SQL = `
-select
-  count(*) filter (where column_name ~* '(hash|checksum|digest)')::text
-  || ':' ||
-  count(*) filter (
-    where column_name = 'statements'
-      and data_type = 'ARRAY'
-      and udt_name = '_text'
-  )::text
-  || ':' ||
-  count(*) filter (where column_name = 'version')::text
-  || ':' ||
-  count(*) filter (where column_name = 'name')::text
-  || ':' ||
-  count(*) filter (
-    where column_name not in ('version', 'name', 'statements')
-      and column_name not in ('created_by', 'idempotency_key', 'rollback')
-  )::text
-  as history_schema
-from information_schema.columns
-where table_schema = 'supabase_migrations'
-  and table_name = 'schema_migrations'
-`;
+const REQUIRED_HISTORY_COLUMNS = Object.freeze(["version", "statements", "name"]);
+const HISTORY_COLUMN_KEYS = Object.freeze([
+  "column_default",
+  "column_name",
+  "data_type",
+  "is_generated",
+  "is_identity",
+  "is_nullable",
+  "udt_name",
+]);
+
+const HISTORY_COLUMN_DEFINITIONS = Object.freeze({
+  version: Object.freeze({
+    column_name: "version",
+    data_type: "text",
+    udt_name: "text",
+    is_nullable: "NO",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+  }),
+  statements: Object.freeze({
+    column_name: "statements",
+    data_type: "ARRAY",
+    udt_name: "_text",
+    is_nullable: "YES",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+  }),
+  name: Object.freeze({
+    column_name: "name",
+    data_type: "text",
+    udt_name: "text",
+    is_nullable: "YES",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+  }),
+  created_by: Object.freeze({
+    column_name: "created_by",
+    data_type: "text",
+    udt_name: "text",
+    is_nullable: "YES",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+  }),
+  idempotency_key: Object.freeze({
+    column_name: "idempotency_key",
+    data_type: "text",
+    udt_name: "text",
+    is_nullable: "YES",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+  }),
+  rollback: Object.freeze({
+    column_name: "rollback",
+    data_type: "ARRAY",
+    udt_name: "_text",
+    is_nullable: "YES",
+    column_default: null,
+    is_generated: "NEVER",
+    is_identity: "NO",
+  }),
+});
+
+function historySchemaRejection(reason) {
+  return { accepted: false, reason };
+}
+
+export function validateHistoryColumnMetadata(columns) {
+  if (!Array.isArray(columns)) {
+    return historySchemaRejection("History-column metadata must be an array");
+  }
+
+  const columnsByName = new Map();
+  for (const [index, column] of columns.entries()) {
+    if (
+      column === null ||
+      typeof column !== "object" ||
+      Array.isArray(column) ||
+      typeof column.column_name !== "string" ||
+      JSON.stringify(Object.keys(column).sort()) !== JSON.stringify(HISTORY_COLUMN_KEYS)
+    ) {
+      return historySchemaRejection(
+        `History-column metadata at index ${index} must have the exact seven-field shape`,
+      );
+    }
+    if (/(?:hash|checksum|digest)/i.test(column.column_name)) {
+      return historySchemaRejection(
+        `History column ${column.column_name} is a prohibited hash/checksum/digest column`,
+      );
+    }
+    if (!Object.hasOwn(HISTORY_COLUMN_DEFINITIONS, column.column_name)) {
+      return historySchemaRejection(`Unrecognised history column ${column.column_name}`);
+    }
+    if (columnsByName.has(column.column_name)) {
+      return historySchemaRejection(`Duplicate history column ${column.column_name}`);
+    }
+    columnsByName.set(column.column_name, column);
+  }
+
+  for (const name of REQUIRED_HISTORY_COLUMNS) {
+    if (!columnsByName.has(name)) {
+      return historySchemaRejection(`Missing required history column ${name}`);
+    }
+  }
+
+  for (const [name, column] of columnsByName) {
+    const expected = HISTORY_COLUMN_DEFINITIONS[name];
+    const mismatches = [];
+    if (column.data_type !== expected.data_type || column.udt_name !== expected.udt_name) {
+      mismatches.push(
+        `type/UDT expected ${expected.data_type}/${expected.udt_name} but received ` +
+          `${String(column.data_type)}/${String(column.udt_name)}`,
+      );
+    }
+    if (column.is_nullable !== expected.is_nullable) {
+      mismatches.push(
+        `nullability expected ${expected.is_nullable} but received ${String(column.is_nullable)}`,
+      );
+    }
+    if (column.column_default !== expected.column_default) {
+      mismatches.push(
+        `default expected null but received ${JSON.stringify(column.column_default)}`,
+      );
+    }
+    if (column.is_generated !== expected.is_generated) {
+      mismatches.push(
+        `generated status expected ${expected.is_generated} but received ` +
+          `${String(column.is_generated)}`,
+      );
+    }
+    if (column.is_identity !== expected.is_identity) {
+      mismatches.push(
+        `identity status expected ${expected.is_identity} but received ` +
+          `${String(column.is_identity)}`,
+      );
+    }
+    if (mismatches.length > 0) {
+      return historySchemaRejection(
+        `History column ${name} definition mismatch: ${mismatches.join("; ")}`,
+      );
+    }
+  }
+
+  // CLI 2.95.4 inserts only (version, name, statements). Any optional column is
+  // therefore pinned to staging's reviewed nullable definition so an omitted
+  // value remains valid; the null default also refuses unreviewed schema drift.
+  return { accepted: true };
+}
 
 const HISTORY_COLUMNS_SQL = `
 select coalesce(
@@ -1288,9 +1411,10 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     catalogState,
     operationalReadiness,
   } = snapshot;
-  if (snapshot.historySchema !== EXPECTED_HISTORY_SCHEMA) {
+  const historySchema = validateHistoryColumnMetadata(snapshot.historyColumns);
+  if (!historySchema.accepted) {
     throw new RolloutError(
-      "Supabase migration history did not have the expected no-hash/statement-array shape.",
+      `Supabase migration history schema rejected: ${historySchema.reason}.`,
     );
   }
   if (history === ROLLOUT.preHistory) {
@@ -1543,7 +1667,7 @@ export function readRemoteState(
   let snapshot;
   try {
     snapshot = {
-      historySchema: query(sourceRoot, HISTORY_SCHEMA_SQL, "history_schema", env),
+      historyColumns: query(sourceRoot, HISTORY_COLUMNS_SQL, "history_columns", env),
       history: query(sourceRoot, HISTORY_SQL, "history_state", env),
       targetHistory: query(sourceRoot, TARGET_HISTORY_SQL, "target_history", env),
       objectCounts: query(sourceRoot, OBJECT_COUNTS_SQL, "object_counts", env),
@@ -1588,7 +1712,11 @@ export function readRemoteState(
     };
   }
   try {
-    return classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint);
+    return classifyStateSnapshot(
+      { ...snapshot, historyColumns: parseHistoryColumns(snapshot.historyColumns) },
+      packet,
+      expectedProviderFingerprint,
+    );
   } catch (error) {
     if (!(error instanceof RolloutError)) {
       throw error;
@@ -1597,41 +1725,17 @@ export function readRemoteState(
   }
 }
 
-function validateHistoryColumns(value) {
+function parseHistoryColumns(value) {
   let columns;
   try {
     columns = JSON.parse(value);
   } catch {
     throw new RolloutError("history_columns query returned malformed JSON.");
   }
-  if (
-    !Array.isArray(columns) ||
-    columns.some((column) =>
-      column === null ||
-      typeof column !== "object" ||
-      Array.isArray(column) ||
-      JSON.stringify(Object.keys(column).sort()) !==
-        JSON.stringify([
-          "column_default",
-          "column_name",
-          "data_type",
-          "is_generated",
-          "is_identity",
-          "is_nullable",
-          "udt_name",
-        ]) ||
-      typeof column.column_name !== "string" ||
-      typeof column.data_type !== "string" ||
-      typeof column.udt_name !== "string" ||
-      !new Set(["YES", "NO"]).has(column.is_nullable) ||
-      !(column.column_default === null || typeof column.column_default === "string") ||
-      !new Set(["ALWAYS", "NEVER"]).has(column.is_generated) ||
-      !new Set(["YES", "NO"]).has(column.is_identity)
-    )
-  ) {
+  if (!Array.isArray(columns)) {
     throw new RolloutError("history_columns query returned an unexpected JSON shape.");
   }
-  return JSON.stringify(columns);
+  return columns;
 }
 
 function validateMigrationRowCount(value) {
@@ -1654,7 +1758,7 @@ export function readRemoteDiagnosis(
   env,
   query = querySingleValue,
 ) {
-  let historySchemaActual = null;
+  let historyColumnsActual = null;
   const classification = readRemoteState(
     sourceRoot,
     packet,
@@ -1662,17 +1766,15 @@ export function readRemoteDiagnosis(
     null,
     (queryRoot, sql, header, queryEnv) => {
       const value = query(queryRoot, sql, header, queryEnv);
-      if (header === "history_schema") historySchemaActual = value;
+      if (header === "history_columns") historyColumnsActual = value;
       return value;
     },
   );
   if (classification.state === "unknown") return classification;
 
-  let historyColumns;
   let migrationRowCount;
   let migrationNewestVersion;
   try {
-    historyColumns = query(sourceRoot, HISTORY_COLUMNS_SQL, "history_columns", env);
     migrationRowCount = query(
       sourceRoot,
       MIGRATION_ROW_COUNT_SQL,
@@ -1697,8 +1799,7 @@ export function readRemoteDiagnosis(
 
   return {
     ...classification,
-    historySchemaActual,
-    historyColumns: validateHistoryColumns(historyColumns),
+    historyColumns: JSON.stringify(parseHistoryColumns(historyColumnsActual)),
     migrationRowCount: validateMigrationRowCount(migrationRowCount),
     migrationNewestVersion: validateMigrationNewestVersion(migrationNewestVersion),
   };
@@ -1717,8 +1818,6 @@ export function formatDiagnosisReport({ target, projectRef, candidateSha }, diag
     return lines.join("\n");
   }
   lines.push(
-    `history_schema_actual=${diagnosis.historySchemaActual}`,
-    `history_schema_expected=${EXPECTED_HISTORY_SCHEMA}`,
     `history_columns=${diagnosis.historyColumns}`,
     `migration_row_count=${diagnosis.migrationRowCount}`,
     `migration_newest_version=${diagnosis.migrationNewestVersion}`,
