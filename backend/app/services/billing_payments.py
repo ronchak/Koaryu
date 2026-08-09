@@ -337,6 +337,7 @@ class BillingPaymentManager:
         try:
             self.stripe_service_cls().pay_connected_invoice(
                 account_id=invoice["stripe_account_id"],
+                studio_id=studio_id,
                 invoice_id=invoice["stripe_invoice_id"],
                 paid_out_of_band=True,
                 idempotency_key=self._idempotency_key("external-invoice-pay", payment["id"]),
@@ -390,6 +391,7 @@ class BillingPaymentManager:
 
         refund = self.stripe_service_cls().create_connected_refund(
             account_id=payment["stripe_account_id"],
+            studio_id=studio_id,
             charge_id=payment["stripe_charge_id"],
             amount=amount,
             reason=data.reason,
@@ -403,9 +405,16 @@ class BillingPaymentManager:
             ),
         )
         row = self._project_refund(refund, payment["stripe_account_id"])
-        self._audit(studio_id, actor_id, "billing.payment_refunded", payment_id, {
+        refund_status = str(row.get("status") or "pending")
+        audit_action = (
+            "billing.payment_refunded"
+            if refund_status == "succeeded"
+            else "billing.payment_refund_requested"
+        )
+        self._audit(studio_id, actor_id, audit_action, payment_id, {
             "amount_cents": amount,
             "stripe_refund_id": row.get("stripe_refund_id"),
+            "status": refund_status,
         })
         return BillingRefundResponse(**row)
 

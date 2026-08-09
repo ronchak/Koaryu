@@ -150,6 +150,13 @@ class _FakeStripeService:
     subscription_response = None
     payment_intent_response = None
 
+    def __init__(self, *, supabase=None):
+        self.supabase = supabase
+        self.settings = type("Settings", (), {
+            "STRIPE_MODE": "test",
+            "STRIPE_SECRET_KEY": "sk_test_123",
+        })()
+
     @classmethod
     def reset(cls):
         cls.connect_account_calls = []
@@ -180,11 +187,22 @@ class _FakeStripeService:
         self.__class__.connect_account_calls.append(payload)
         return {"id": "acct_created"}
 
-    def create_connect_onboarding_link(self, *, account_id: str, refresh_url: str, return_url: str):
+    def create_connect_onboarding_link(
+        self,
+        *,
+        account_id: str,
+        studio_id: str,
+        refresh_url: str,
+        return_url: str,
+        idempotency_key=None,
+        bootstrap_context=None,
+    ):
         self.__class__.onboarding_calls.append({
             "account_id": account_id,
             "refresh_url": refresh_url,
             "return_url": return_url,
+            "idempotency_key": idempotency_key,
+            "bootstrap_context": bootstrap_context,
         })
         return {"url": f"https://connect.stripe.test/setup/{account_id}"}
 
@@ -229,7 +247,7 @@ class _FakeStripeService:
         self.__class__.connected_invoice_item_calls.append(payload)
         return {"id": "ii_created"}
 
-    def finalize_connected_invoice(self, *, account_id: str, invoice_id: str):
+    def finalize_connected_invoice(self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: str | None = None):
         self.__class__.finalize_invoice_calls.append({
             "account_id": account_id,
             "invoice_id": invoice_id,
@@ -247,7 +265,7 @@ class _FakeStripeService:
             "created": 200,
         }
 
-    def pay_connected_invoice(self, *, account_id: str, invoice_id: str, idempotency_key: str):
+    def pay_connected_invoice(self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: str):
         self.__class__.pay_invoice_calls.append({
             "account_id": account_id,
             "invoice_id": invoice_id,
@@ -267,7 +285,7 @@ class _FakeStripeService:
             "created": 200,
         }
 
-    def send_connected_invoice(self, *, account_id: str, invoice_id: str):
+    def send_connected_invoice(self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: str | None = None):
         self.__class__.send_invoice_calls.append({
             "account_id": account_id,
             "invoice_id": invoice_id,
@@ -276,6 +294,7 @@ class _FakeStripeService:
             raise self.__class__.send_invoice_error
         return self.__class__.send_invoice_response or self.finalize_connected_invoice(
             account_id=account_id,
+            studio_id=studio_id,
             invoice_id=invoice_id,
         )
 

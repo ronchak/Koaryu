@@ -26,6 +26,7 @@ import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
 import {
   areProviderMutationsEnabled,
   canManageRoutineBilling,
+  resolveBillingProviderCopy,
 } from "@/lib/billing-policy";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import {
@@ -94,7 +95,6 @@ export function useBillingPageController({
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
   const canManageStudioBilling = currentRole === "admin";
   const canManageRoutineBillingActions = canManageRoutineBilling(currentRole);
-  const providerMutationsEnabled = areProviderMutationsEnabled(isPreviewMode);
   const isLiveRestricted = !isPreviewMode && currentRole !== null && !canViewStudioBilling;
   const shouldSettleEarly = shouldSettleBillingLoadEarly({
     isPreviewMode,
@@ -105,6 +105,7 @@ export function useBillingPageController({
     router.replace("/subscription-required");
   }, [markSubscriptionRequired, router]);
   const {
+    billingSystemStatus,
     enrollments,
     exportJobs,
     hasBillingLoadSettled,
@@ -129,6 +130,25 @@ export function useBillingPageController({
     setMessage,
     shouldSettleEarly,
     token,
+  });
+  const coreProviderMutationsEnabled = areProviderMutationsEnabled(
+    isPreviewMode,
+    billingSystemStatus?.mutation_capabilities.core_subscription
+  );
+  const connectOnboardingEnabled = areProviderMutationsEnabled(
+    isPreviewMode,
+    billingSystemStatus?.mutation_capabilities.connect_onboarding
+  );
+  const connectPaymentsEnabled = areProviderMutationsEnabled(
+    isPreviewMode,
+    billingSystemStatus?.mutation_capabilities.connect_payments
+  );
+  const billingProviderCopy = resolveBillingProviderCopy({
+    isPreviewMode,
+    providerMode: billingSystemStatus?.configured_stripe_mode,
+    coreSubscription: coreProviderMutationsEnabled,
+    connectOnboarding: connectOnboardingEnabled,
+    connectPayments: connectPaymentsEnabled,
   });
   const showPrimaryBillingLoading = shouldShowBillingLoading({
     isPreviewMode,
@@ -252,7 +272,7 @@ export function useBillingPageController({
       title: "Review payment status",
       description: paymentsReady
         ? "Review the studio's existing Stripe status without changing provider state."
-        : "External payments can be tracked while live Stripe activation remains unavailable.",
+        : billingProviderCopy.connectPayments,
       complete: paymentsReady,
       onSelect: () => setActiveTab("overview"),
       actionLabel: paymentsReady ? "Review status" : "Review setup",
@@ -295,6 +315,7 @@ export function useBillingPageController({
     hasFamilyAccounts,
     hasStudentBilling,
     paymentsReady,
+    billingProviderCopy.connectPayments,
     setActiveTab,
   ]);
   const billingSetupCompleteCount = billingSetupSteps.filter((step) => step.complete).length;
@@ -329,7 +350,7 @@ export function useBillingPageController({
       return;
     }
     const timer = window.setTimeout(() => {
-      void refreshConnectStatus({ sync: canManageStudioBilling && providerMutationsEnabled })
+      void refreshConnectStatus({ sync: canManageStudioBilling })
         .finally(() => {
           skipNextNormalBillingRefreshRef.current = true;
           setConnectReturnPending(false);
@@ -341,7 +362,6 @@ export function useBillingPageController({
     canManageStudioBilling,
     connectReturnPending,
     currentRole,
-    providerMutationsEnabled,
     refreshConnectStatus,
     router,
     searchParams,
@@ -414,10 +434,10 @@ export function useBillingPageController({
       activeTab,
       billingSetupCompleteCount,
       billingSetupSteps,
+      billingProviderCopy,
       connectEntityModal,
       error: auxiliaryReadiness.error || error,
       isLiveRestricted,
-      isPreviewMode,
       isLoading,
       isRefreshDisabled: isPreviewMode || isLoading || !canViewStudioBilling,
       message,
@@ -442,6 +462,7 @@ export function useBillingPageController({
         billingPeriod,
         billingPlans,
         billingPlatform,
+        billingProviderCopy,
         billingStudentOptions,
         canManageKoaryuSubscription,
         canManageRoutineBilling: canManageRoutineBillingActions,
@@ -457,7 +478,8 @@ export function useBillingPageController({
         hasStripeConnectedAccount,
         isEnrollmentPayerSelectDisabled,
         isPreviewMode,
-        providerMutationsEnabled,
+        coreProviderMutationsEnabled,
+        connectOnboardingEnabled,
         invoiceController,
         koaryuFeeBasis,
         onConnectClick: handleConnectClick,

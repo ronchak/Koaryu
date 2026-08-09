@@ -81,7 +81,12 @@ export function DashboardPageContent({
           ) : isInitialDashboardLoading ? (
             <DashboardLoadingPanel />
           ) : (
-            <>
+            <div
+              className="contents"
+              data-koaryu-dashboard-ready={
+                hasDashboardSummary && !rosterSummaryPending ? "true" : undefined
+              }
+            >
               <DashboardOwnerBriefPanel
                 ownerBrief={ownerBrief}
                 todayLabel={todayLabel}
@@ -138,7 +143,7 @@ export function DashboardPageContent({
                 hasDashboardSummary={hasDashboardSummary}
                 hasPartialStudentSample={hasPartialStudentSample}
               />
-            </>
+            </div>
           )}
         </div>
       </div>

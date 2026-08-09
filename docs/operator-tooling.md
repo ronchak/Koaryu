@@ -1,5 +1,9 @@
 # Operator Tooling Inventory
 
+## Studio live billing authorization and reconciliation
+
+`backend/scripts/live_billing_authorizations.py` is the service-role-only status, drift, grant, revoke, account-disposition, and reconciliation-checkpoint tool. Writes are dry-run by default and require exact project plus interactive confirmation. `backend/scripts/stripe_reconciliation_report.py` is a sanitized read-only provider/local reporter. Offline output and the separately labeled staging probe are permanently checkpoint-ineligible; production collection and checkpoint recording each independently pin the exact production `/health/ready` URL and candidate SHA. `scripts/verify-stripe-provider-rehearsal.py` validates exact-candidate test-mode evidence without contacting a provider. See `docs/stripe-live-billing-rollout.md` for the authority split, expiry and candidate binding, the July 20 silence hypotheses, hard six-account/seven-event blockers, secret-rotation gate, and preregistered canary abort/promote criteria.
+
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
 
 ## Database contract verification
@@ -30,7 +34,44 @@ Use these targets according to their safety boundary:
 
 Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
 
-Do not infer the database target from `ENVIRONMENT`. The current `backend/.env` combines `ENVIRONMENT=development` with a `SUPABASE_URL` for the production project. Resolve and verify the Supabase hostname or project ref itself before any database operation. This exact mismatch is why `backend/scripts/comp_studio.py` requires `--expect-project` for writes: the environment label alone does not establish a scratch database.
+Python service-role clients validate both the environment label and the exact
+Supabase target before construction. Production and staging accept only their
+pinned Koaryu project URLs. Test accepts only the canonical local URL
+`http://127.0.0.1:54321` or a shipped placeholder. Development accepts those
+same safe forms or one hosted non-production project whose ref exactly matches
+`SUPABASE_DEVELOPMENT_PROJECT_REF`; neither Koaryu production nor staging can be
+authorized by that setting. Unknown environment labels and non-canonical URLs
+fail closed.
+
+The same boundary refuses active `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`
+configuration, including lowercase variants and operating-system proxy
+settings. It also refuses `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`,
+`SSL_CERT_FILE`, and `SSL_CERT_DIR` overrides, including lowercase variants.
+`NO_PROXY` is not an exception. The pinned Supabase client creates separate
+Auth, PostgREST, Storage, and Functions HTTPX clients and exposes no common
+`trust_env=False` option, so rejecting ambient transport configuration is the
+smallest maintainable policy until that dependency boundary changes.
+
+These checks cover the API, shared backend scripts, and the Connect smoke
+helper. Supabase CLI, direct `SUPABASE_DB_URL`, and `psql` operations remain
+outside this Python boundary, so continue resolving their target explicitly.
+`backend/scripts/comp_studio.py` additionally requires `--expect-project` for
+writes.
+
+## Studio-comp migration rollout
+
+Use [the specialized rollout packet](studio-comp-migration-rollout.md) to
+generate and inspect the exact production-baseline-to-candidate migration set.
+The runner defaults to read-only inspection, derives an `84 -> N` packet from an
+immutable candidate, and refuses partial history/object states or ambient proxy
+or TLS trust override variables before credentialed work. It names refused
+variables without printing values and does not treat Supabase version/name
+history as proof of source-file identity.
+
+Agents may not run its production apply mode. Staging inspection must precede a
+dry-run or application, and production application requires a named human,
+durable approval, confirmed restore window, restore decision authority, and the
+approved staging provider fingerprint.
 
 ## Studio platform comp access
 

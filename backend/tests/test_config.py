@@ -1,4 +1,7 @@
+import hashlib
+import traceback
 import unittest
+from unittest.mock import patch
 
 from app.core.config import Settings
 
@@ -12,7 +15,7 @@ def _synthetic_webhook_secret(scope: str) -> str:
 
 
 VALID_PRODUCTION_SETTINGS = {
-    "SUPABASE_URL": "https://project.supabase.co",
+    "SUPABASE_URL": "https://mimguepumzsgmcaycdsh.supabase.co",
     "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_1234567890abcdefghijklmnopqrstuvwxyz",
     "SUPABASE_JWT_SECRET": "jwt-secret-1234567890abcdefghijklmnopqrstuvwxyz",
     "FRONTEND_URL": "https://koaryu.app",
@@ -39,12 +42,174 @@ VALID_STAGING_SETTINGS = {
 }
 
 
+class CandidateSettings(Settings):
+    """Include the candidate-only alert credential without copying its feature."""
+
+    OPERATIONAL_ALERT_WORKER_SECRET: str = ""
+
+
+def _alert_activation_settings():
+    primary = "https://alerts.example.com/primary"
+    backup = "https://alerts.example.com/backup"
+    return {
+        "OPERATIONAL_ALERTS_ENABLED": True,
+        "OPERATIONAL_ALERT_WORKER_SECRET": "w" * 40,
+        "OPERATIONAL_ALERT_PRIMARY_URL": primary,
+        "OPERATIONAL_ALERT_PRIMARY_HOST": "alerts.example.com",
+        "OPERATIONAL_ALERT_PRIMARY_URL_SHA256": hashlib.sha256(primary.encode()).hexdigest(),
+        "OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET": "p" * 40,
+        "OPERATIONAL_ALERT_PRIMARY_ACK_SECRET": "a" * 40,
+        "OPERATIONAL_ALERT_BACKUP_URL": backup,
+        "OPERATIONAL_ALERT_BACKUP_HOST": "alerts.example.com",
+        "OPERATIONAL_ALERT_BACKUP_URL_SHA256": hashlib.sha256(backup.encode()).hexdigest(),
+        "OPERATIONAL_ALERT_BACKUP_BEARER_SECRET": "b" * 40,
+        "OPERATIONAL_ALERT_BACKUP_ACK_SECRET": "c" * 40,
+    }
+
+
 class HostedConfigValidationTest(unittest.TestCase):
     def test_development_allows_placeholder_defaults(self):
         Settings(ENVIRONMENT="development").validate_runtime_configuration()
 
     def test_test_environment_allows_placeholder_defaults(self):
         Settings(ENVIRONMENT="test").validate_runtime_configuration()
+
+    def test_frontend_origin_preserves_canonical_local_and_staging_forms(self):
+        for environment, url in (
+            ("development", "http://localhost:4000"),
+            ("test", "http://127.0.0.1:4000"),
+            (
+                "staging",
+                "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app",
+            ),
+        ):
+            with self.subTest(environment=environment, url=url):
+                self.assertEqual(
+                    Settings(
+                        ENVIRONMENT=environment,
+                        FRONTEND_URL=url,
+                    ).validated_frontend_origin(),
+                    url,
+                )
+
+    def test_production_readiness_requires_exact_canonical_frontend_origin(self):
+        unsafe_origins = (
+            " https://koaryu.app",
+            "https://koaryu.app ",
+            "https://koaryu.app\t",
+            "https://koaryu.app\r",
+            "https://koaryu.app\n",
+            "https://koaryu.app/",
+            "https://koaryu.app/auth/callback",
+            "https://koaryu.app?",
+            "https://koaryu.app?next=/billing",
+            "https://koaryu.app#",
+            "https://koaryu.app#fragment",
+            "https://user@koaryu.app",
+            "https://koaryu.app@evil.example",
+            "https://koaryu.app:443",
+            "https://koaryu.app:unsafe-port",
+            "https://evil.example",
+        )
+
+        for url in unsafe_origins:
+            with self.subTest(url_kind=repr(url)):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    **{**VALID_PRODUCTION_SETTINGS, "FRONTEND_URL": url},
+                )
+                with self.assertRaisesRegex(RuntimeError, "FRONTEND_URL") as error:
+                    settings.validate_runtime_configuration()
+
+                rendered_error = "".join(
+                    traceback.format_exception(error.exception)
+                )
+                self.assertNotIn(url, rendered_error)
+
+    def test_readiness_rejects_malformed_webhook_secrets_before_permissive_return(self):
+        first = _synthetic_webhook_secret("connect_first")
+        second = _synthetic_webhook_secret("connect_second")
+        malformed_values = (
+            f" {first}",
+            f"{first} ",
+            f",{first}",
+            f"{first},",
+            f"{first}, {second}",
+            f"{first} ,{second}",
+            f"{first}\t,{second}",
+            f"{first}\r,{second}",
+            f"{first}\n{second}",
+            f"{first},,{second}",
+        )
+
+        for name in (
+            "STRIPE_PLATFORM_WEBHOOK_SECRET",
+            "STRIPE_CONNECT_WEBHOOK_SECRET",
+        ):
+            for value in malformed_values:
+                with self.subTest(name=name, value_kind=repr(value)):
+                    settings = Settings(
+                        ENVIRONMENT="production",
+                        **{**VALID_PRODUCTION_SETTINGS, name: value},
+                    )
+                    with self.assertRaisesRegex(RuntimeError, name) as error:
+                        settings.validate_runtime_configuration()
+
+                    self.assertNotIn(value, str(error.exception))
+
+    def test_readiness_preserves_canonical_platform_and_connect_rotation_lists(self):
+        first = _synthetic_webhook_secret("rotation_first")
+        second = _synthetic_webhook_secret("rotation_second")
+
+        for name in (
+            "STRIPE_PLATFORM_WEBHOOK_SECRET",
+            "STRIPE_CONNECT_WEBHOOK_SECRET",
+        ):
+            with self.subTest(name=name):
+                settings = Settings(
+                    ENVIRONMENT="production",
+                    **{
+                        **VALID_PRODUCTION_SETTINGS,
+                        name: f"{first},{second}",
+                    },
+                )
+                with patch("app.core.config.validate_no_ambient_supabase_transport"):
+                    settings.validate_runtime_configuration()
+
+    def test_readiness_rejects_malformed_header_bound_credentials(self):
+        header_bound_fields = (
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "STRIPE_SECRET_KEY",
+            "STRIPE_RESTRICTED_KEY",
+            "ACCOUNT_DELETION_WORKER_SECRET",
+            "OPERATIONAL_ALERT_WORKER_SECRET",
+            "OPERATIONAL_ALERT_PRIMARY_BEARER_SECRET",
+            "OPERATIONAL_ALERT_PRIMARY_ACK_SECRET",
+            "OPERATIONAL_ALERT_BACKUP_BEARER_SECRET",
+            "OPERATIONAL_ALERT_BACKUP_ACK_SECRET",
+            "SUPPORT_TRIAGE_SECRET",
+        )
+        malformed_values = (
+            " leading-whitespace",
+            "trailing-whitespace ",
+            "embedded\tcontrol",
+            "embedded\rcontrol",
+            "embedded\ncontrol",
+            "embedded\x7fcontrol",
+        )
+
+        for name in header_bound_fields:
+            for value in malformed_values:
+                with self.subTest(name=name, value_kind=repr(value)):
+                    with patch.dict("os.environ", {}, clear=True):
+                        settings = CandidateSettings(
+                            ENVIRONMENT="development",
+                            **{name: value},
+                        )
+                        with self.assertRaisesRegex(RuntimeError, name) as error:
+                            settings.validate_runtime_configuration()
+
+                    self.assertNotIn(value, str(error.exception))
 
     def test_unknown_environment_fails_closed(self):
         with self.assertRaisesRegex(RuntimeError, "ENVIRONMENT must be"):
@@ -53,7 +218,7 @@ class HostedConfigValidationTest(unittest.TestCase):
     def test_production_rejects_missing_live_settings(self):
         settings = Settings(
             ENVIRONMENT="production",
-            SUPABASE_URL="https://placeholder.supabase.co",
+            SUPABASE_URL="https://mimguepumzsgmcaycdsh.supabase.co",
             SUPABASE_SERVICE_ROLE_KEY="placeholder-key",
             SUPABASE_JWT_SECRET="placeholder-secret",
             FRONTEND_URL="https://koaryu.app",
@@ -115,7 +280,7 @@ class HostedConfigValidationTest(unittest.TestCase):
             },
         )
 
-        with self.assertRaisesRegex(RuntimeError, "SUPABASE_URL must be a public HTTPS URL"):
+        with self.assertRaisesRegex(RuntimeError, "cannot use the local Supabase project"):
             settings.validate_production_configuration()
 
     def test_production_rejects_short_internal_secrets(self):
@@ -189,7 +354,7 @@ class HostedConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Stripe live restricted key in production"):
             settings.validate_production_configuration()
 
-    def test_production_rejects_live_billing_switch_without_durable_authorization(self):
+    def test_production_live_billing_requires_exact_deployment_sha(self):
         settings = Settings(
             ENVIRONMENT="production",
             **{
@@ -198,7 +363,10 @@ class HostedConfigValidationTest(unittest.TestCase):
             },
         )
 
-        with self.assertRaisesRegex(RuntimeError, "durable live mutation authorization"):
+        with patch.dict("os.environ", {}, clear=True), self.assertRaisesRegex(RuntimeError, "RENDER_GIT_COMMIT"):
+            settings.validate_production_configuration()
+
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=True):
             settings.validate_production_configuration()
 
     def test_production_requires_jwt_secret_only_when_legacy_hs256_is_enabled(self):
@@ -230,6 +398,82 @@ class HostedConfigValidationTest(unittest.TestCase):
 
         settings.validate_runtime_configuration()
 
+    def test_staging_accepts_exact_operational_alert_activation(self):
+        settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                **_alert_activation_settings(),
+            },
+        )
+
+        settings.validate_runtime_configuration()
+
+    def test_staging_rejects_alerts_without_dedicated_secret(self):
+        settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                **_alert_activation_settings(),
+                "OPERATIONAL_ALERT_WORKER_SECRET": "short",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "OPERATIONAL_ALERT_WORKER_SECRET"):
+            settings.validate_runtime_configuration()
+
+    def test_staging_rejects_documented_alert_secret_placeholder(self):
+        settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                **_alert_activation_settings(),
+                "OPERATIONAL_ALERT_WORKER_SECRET": (
+                    "long-random-secret-for-operational-alert-evaluation"
+                ),
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "OPERATIONAL_ALERT_WORKER_SECRET"):
+            settings.validate_runtime_configuration()
+
+    def test_production_accepts_complete_fail_closed_alert_activation(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                **_alert_activation_settings(),
+            },
+        )
+
+        settings.validate_runtime_configuration()
+
+    def test_production_rejects_alert_activation_with_fingerprint_drift(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                **_alert_activation_settings(),
+                "OPERATIONAL_ALERT_PRIMARY_URL_SHA256": "0" * 64,
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "PRIMARY_URL, host allowlist, and fingerprint"):
+            settings.validate_runtime_configuration()
+
+    def test_production_rejects_alert_destination_outside_exact_host_allowlist(self):
+        settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                **_alert_activation_settings(),
+                "OPERATIONAL_ALERT_PRIMARY_HOST": "other.example.com",
+            },
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "PRIMARY_URL, host allowlist"):
+            settings.validate_runtime_configuration()
+
     def test_staging_rejects_production_destinations(self):
         for name, value in (
             ("SUPABASE_URL", "https://mimguepumzsgmcaycdsh.supabase.co"),
@@ -243,7 +487,12 @@ class HostedConfigValidationTest(unittest.TestCase):
                         name: value,
                     },
                 )
-                with self.assertRaisesRegex(RuntimeError, f"{name} must match Koaryu's pinned staging"):
+                expected = (
+                    "pinned staging Supabase project"
+                    if name == "SUPABASE_URL"
+                    else "FRONTEND_URL must match Koaryu's pinned staging"
+                )
+                with self.assertRaisesRegex(RuntimeError, expected):
                     settings.validate_runtime_configuration()
 
     def test_staging_rejects_live_stripe_keys(self):

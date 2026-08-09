@@ -26,7 +26,6 @@ import {
   type SetupStep,
 } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
-import { BILLING_BOUNDARY_MESSAGE } from "@/lib/billing-policy";
 
 export type BillingTab = "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
 export type BillingSetupStep = SetupStep;
@@ -42,11 +41,11 @@ const BILLING_TABS: SegmentedTab<BillingTab>[] = [
 
 export function BillingPageFrame({
   activeTab,
+  billingBoundaryMessage,
   children,
   completedStepCount,
   error,
   isLiveRestricted,
-  isPreviewMode,
   isLoading,
   isRefreshDisabled,
   message,
@@ -59,11 +58,11 @@ export function BillingPageFrame({
   showLoading,
 }: {
   activeTab: BillingTab;
+  billingBoundaryMessage: string;
   children: ReactNode;
   completedStepCount: number;
   error: string;
   isLiveRestricted: boolean;
-  isPreviewMode: boolean;
   isLoading: boolean;
   isRefreshDisabled: boolean;
   message: string;
@@ -112,9 +111,7 @@ export function BillingPageFrame({
               />
 
               <section className="rounded-[6px] border border-warning/40 bg-warning/5 p-4 text-xs text-text-secondary">
-                {isPreviewMode
-                  ? "Preview mode uses demo-only billing actions and does not change provider state."
-                  : BILLING_BOUNDARY_MESSAGE}
+                {billingBoundaryMessage}
               </section>
 
               {showContent ? children : null}

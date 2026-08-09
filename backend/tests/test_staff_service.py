@@ -1,11 +1,13 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from gotrue.errors import AuthApiError
 from postgrest.exceptions import APIError as PostgrestAPIError
 
+from app.core.config import KOARYU_PRODUCTION_FRONTEND_URL, Settings
 from app.schemas.staff import StaffInviteCreate
 from app.services.staff_service import SINGLE_STUDIO_MEMBERSHIP_DETAIL, StaffService
 from tests.fakes.supabase import TableBackedSupabase
@@ -116,13 +118,20 @@ class StaffServiceInviteTest(unittest.TestCase):
         supabase = FakeSupabase()
         service = StaffService(supabase)
 
-        response = asyncio.run(
-            service.invite_staff(
-                StaffInviteCreate(email="Instructor@Example.com", role="instructor"),
-                "studio_1",
-                "admin_1",
+        with patch(
+            "app.services.staff_service.get_settings",
+            return_value=Settings(
+                ENVIRONMENT="production",
+                FRONTEND_URL=KOARYU_PRODUCTION_FRONTEND_URL,
+            ),
+        ):
+            response = asyncio.run(
+                service.invite_staff(
+                    StaffInviteCreate(email="Instructor@Example.com", role="instructor"),
+                    "studio_1",
+                    "admin_1",
+                )
             )
-        )
 
         operation_names = [operation[0] for operation in supabase.operations]
         self.assertLess(operation_names.index("insert"), operation_names.index("auth_invite"))
@@ -131,6 +140,36 @@ class StaffServiceInviteTest(unittest.TestCase):
         self.assertEqual(supabase.tables["staff_roles"][0]["invited_email"], "instructor@example.com")
         self.assertEqual(response.user_id, "user_invited")
         self.assertEqual(response.status, "pending")
+        self.assertIn(
+            (
+                "auth_invite",
+                "instructor@example.com",
+                {"redirect_to": "https://koaryu.app/auth/callback"},
+            ),
+            supabase.operations,
+        )
+
+    def test_invalid_frontend_origin_fails_before_invite_side_effects(self):
+        supabase = FakeSupabase()
+        service = StaffService(supabase)
+        settings = Settings(
+            ENVIRONMENT="production",
+            FRONTEND_URL="https://koaryu.app@evil.example",
+        )
+
+        with (
+            patch("app.services.staff_service.get_settings", return_value=settings),
+            self.assertRaisesRegex(RuntimeError, "FRONTEND_URL"),
+        ):
+            asyncio.run(
+                service.invite_staff(
+                    StaffInviteCreate(email="instructor@example.com", role="instructor"),
+                    "studio_1",
+                    "admin_1",
+                )
+            )
+
+        self.assertEqual(supabase.operations, [])
 
     def test_invite_link_rejects_existing_membership_in_another_studio_and_cleans_up(self):
         supabase = FakeSupabase()

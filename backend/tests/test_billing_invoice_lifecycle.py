@@ -39,6 +39,36 @@ def _unique_conflict() -> PostgrestAPIError:
         "hint": "",
     })
 
+
+def _settled_payment_tables() -> dict[str, list[dict]]:
+    return {
+        "billing_refunds": [],
+        "billing_disputes": [],
+        "billing_payments": [{
+            "id": "payment_1", "studio_id": "studio_1", "payer_id": "payer_1",
+            "invoice_id": "invoice_1", "stripe_account_id": "acct_1",
+            "stripe_charge_id": "ch_1", "stripe_payment_intent_id": "pi_1",
+            "status": "succeeded", "amount_cents": 200, "refunded_amount_cents": 0,
+        }],
+        "billing_invoices": [{
+            "id": "invoice_1", "studio_id": "studio_1", "payer_id": "payer_1",
+            "stripe_invoice_id": "in_1", "stripe_account_id": "acct_1",
+            "stripe_payment_intent_id": "pi_1", "status": "paid",
+            "amount_due_cents": 200, "amount_paid_cents": 200,
+            "amount_remaining_cents": 0, "currency": "usd",
+            "paid_at": "2026-05-18T00:00:00Z", "application_fee_amount_cents": 0,
+            "external": False,
+        }],
+        "billing_payers": [{
+            "id": "payer_1", "studio_id": "studio_1", "billing_status": "current",
+            "balance_cents": 0,
+        }],
+        "studio_payment_accounts": [{
+            "studio_id": "studio_1", "stripe_connected_account_id": "acct_1",
+        }],
+    }
+
+
 class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
     def test_interval_mapping_for_stripe_prices(self):
         service = self.service()
@@ -1035,7 +1065,7 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
             }],
         })
 
-        payment = service._link_disputes_to_payment({
+        payment = service._link_adjustments_to_payment({
             "id": "payment_1",
             "studio_id": "studio_1",
             "stripe_account_id": "acct_1",
@@ -1123,6 +1153,72 @@ class BillingInvoiceLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertIsNone(invoice["paid_at"])
         self.assertEqual(payer["balance_cents"], 200)
         self.assertEqual(payer["billing_status"], "past_due")
+
+    def test_succeeded_refund_is_idempotent_and_does_not_regress(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+        refund = {
+            "id": "re_1", "charge": "ch_1", "payment_intent": "pi_1",
+            "amount": 50, "status": "succeeded",
+            "metadata": {"studio_id": "studio_1"},
+        }
+
+        for event in (
+            {"type": "refund.updated", "account": "acct_1", "data": {"object": refund}},
+            {"type": "refund.updated", "account": "acct_1", "data": {"object": refund}},
+            {"type": "refund.created", "account": "acct_1", "data": {"object": {**refund, "status": "pending"}}},
+        ):
+            service.project_connect_event(event)
+
+        payment = service.supabase.tables["billing_payments"][0]
+        invoice = service.supabase.tables["billing_invoices"][0]
+        self.assertEqual(len(service.supabase.tables["billing_refunds"]), 1)
+        self.assertEqual(service.supabase.tables["billing_refunds"][0]["status"], "succeeded")
+        self.assertEqual(payment["refunded_amount_cents"], 50)
+        self.assertEqual(invoice["status"], "partially_refunded")
+        self.assertEqual(invoice["amount_remaining_cents"], 50)
+
+    def test_late_payment_intent_backlinks_existing_refund(self):
+        service = self.service()
+        tables = _settled_payment_tables()
+        tables["billing_refunds"] = [{
+            "id": "refund_1", "studio_id": "studio_1", "stripe_account_id": "acct_1",
+            "stripe_charge_id": "ch_1", "stripe_payment_intent_id": None,
+            "payment_id": None, "amount_cents": 50, "status": "succeeded",
+        }]
+        service.supabase = _FakeSupabase(tables)
+
+        service._project_payment_intent({
+            "id": "pi_1", "status": "succeeded", "amount": 200,
+            "amount_received": 200, "application_fee_amount": 1, "currency": "usd",
+            "customer": "cus_1", "invoice": "in_1", "latest_charge": "ch_1",
+            "payment_method_types": ["card"], "metadata": {},
+        }, "acct_1", "payment_intent.succeeded")
+
+        refund = service.supabase.tables["billing_refunds"][0]
+        self.assertEqual(refund["payment_id"], "payment_1")
+        self.assertEqual(refund["stripe_payment_intent_id"], "pi_1")
+        self.assertEqual(service.supabase.tables["billing_payments"][0]["refunded_amount_cents"], 50)
+
+    def test_terminal_won_dispute_does_not_regress_or_reverse_balance(self):
+        service = self.service()
+        service.supabase = _FakeSupabase(_settled_payment_tables())
+        dispute = {
+            "id": "dp_1", "charge": "ch_1", "amount": 200,
+            "status": "won", "reason": "fraudulent",
+            "metadata": {"studio_id": "studio_1"},
+        }
+        service.project_connect_event({
+            "type": "charge.dispute.closed", "account": "acct_1", "data": {"object": dispute},
+        })
+        service.project_connect_event({
+            "type": "charge.dispute.updated", "account": "acct_1",
+            "data": {"object": {**dispute, "status": "under_review"}},
+        })
+
+        self.assertEqual(service.supabase.tables["billing_disputes"][0]["status"], "won")
+        self.assertEqual(service.supabase.tables["billing_payments"][0]["status"], "succeeded")
+        self.assertEqual(service.supabase.tables["billing_invoices"][0]["amount_remaining_cents"], 0)
 
     def test_refund_projection_updates_invoice_and_payer_balance(self):
         service = self.service()

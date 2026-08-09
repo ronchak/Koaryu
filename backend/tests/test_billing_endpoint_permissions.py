@@ -4,7 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Response, status
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import billing as billing_endpoints
@@ -21,6 +21,7 @@ from app.schemas.billing import (
     BillingReconcileRequest,
     BillingRefundCreate,
     ConnectOnboardingLinkRequest,
+    ConnectOnboardingDeliveryAckRequest,
     ExportJobCreate,
     ExternalPaymentCreate,
     StudentBillingEnrollmentCreate,
@@ -70,6 +71,17 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 lambda: billing_endpoints.create_connect_onboarding_link(
                     ConnectOnboardingLinkRequest(),
                     BackgroundTasks(),
+                    Response(),
+                    user_id="front_desk_1",
+                    requested_studio_id="studio_1",
+                    supabase=object(),
+                ),
+            ),
+            (
+                "acknowledge_connect_onboarding_link_delivery",
+                lambda: billing_endpoints.acknowledge_connect_onboarding_link_delivery(
+                    ConnectOnboardingDeliveryAckRequest(receipt="r" * 64),
+                    Response(),
                     user_id="front_desk_1",
                     requested_studio_id="studio_1",
                     supabase=object(),

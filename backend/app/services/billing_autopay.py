@@ -82,6 +82,7 @@ class BillingAutopayManager:
             return BillingLinkResponse(url=return_url)
         link = self.stripe_service_cls().create_setup_checkout_session(
             account_id=account["stripe_connected_account_id"],
+            studio_id=studio_id,
             customer_id=payer["stripe_customer_id"],
             success_url=self._safe_redirect_url(data.success_url or data.return_url, f"{frontend_url}/billing?autopay=success"),
             cancel_url=self._safe_redirect_url(data.cancel_url or data.return_url, f"{frontend_url}/billing?autopay=cancelled"),
@@ -145,10 +146,12 @@ class BillingAutopayManager:
                     )
                 stripe_service.update_connected_subscription(
                     account_id=account_id,
+                    studio_id=studio_id,
                     subscription_id=subscription_id,
                     collection_method="send_invoice",
                     days_until_due=7,
                     default_payment_method="",
+                    idempotency_key=self._idempotency_key("autopay-disable", subscription_id),
                 )
 
             rewired_ids.append(subscription["id"])

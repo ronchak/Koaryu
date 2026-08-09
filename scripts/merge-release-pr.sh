@@ -95,8 +95,8 @@ validate_render_provider_control() {
     || "$service_root_dir" != "backend" \
     || "$service_type" != "web_service" \
     || "$service_url" != "https://koaryu.onrender.com" \
-    || "$health_check_path" != "/health" ]]; then
-    echo "Refusing merge: Render readback does not match the canonical production repository, service, URL, and bootstrap health path." >&2
+    || "$health_check_path" != "/health/ready" ]]; then
+    echo "Refusing merge: Render readback does not match the canonical production repository, service, URL, and readiness health path." >&2
     exit 1
   fi
   if [[ "$has_control" != "true" || "$control_is_off" != "true" ]]; then

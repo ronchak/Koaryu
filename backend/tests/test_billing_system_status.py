@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from app.schemas.billing import StudioPaymentAccountResponse
 from app.services.billing_system_status import BillingSystemStatusReporter
-from tests.fakes.supabase import TableBackedSupabase
+from tests.fakes.supabase import RpcBackedSupabase, TableBackedSupabase
 
 TEST_STRIPE_LIVE_KEY = "_".join(("sk", "live", "configured"))
 
@@ -22,6 +23,34 @@ class _ConnectAccounts:
 class _FailingConnectAccounts(_ConnectAccounts):
     def ensure_row(self, studio_id: str) -> dict:
         raise RuntimeError("stored-connect-secret-detail")
+
+
+class _PreflightSupabase(RpcBackedSupabase):
+    def __init__(
+        self,
+        tables: dict,
+        *,
+        begin: bool,
+        resume: bool = False,
+        resume_phase: str = "none",
+    ):
+        super().__init__(tables)
+        self.begin = begin
+        self.resume = resume
+        self.resume_phase = resume_phase
+
+    def _rpc_preflight_connect_onboarding_bootstrap_begin(self, params):
+        return [{"eligible": self.begin, "studio_id": params["p_studio_id"]}]
+
+    def _rpc_preflight_connect_onboarding_bootstrap_resume(self, params):
+        return [{
+            "eligible": self.resume,
+            "studio_id": params["p_studio_id"],
+            "phase": self.resume_phase,
+        }]
+
+    def _rpc_authorize_studio_live_billing_mutation_atomic(self, _params):
+        return []
 
 
 def _settings(
@@ -119,11 +148,94 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertTrue(response.ready_for_configured_mode)
         self.assertFalse(response.live_payments_authorized)
         self.assertFalse(response.ready_for_live_payments)
+        self.assertTrue(response.mutation_capabilities.core_subscription)
+        self.assertTrue(response.mutation_capabilities.connect_onboarding)
+        self.assertTrue(response.mutation_capabilities.connect_payments)
         self.assertTrue(BillingSystemStatusReporter.is_stale_webhook_processing({
             "processing_status": "processing",
             "processing_started_at": None,
             "created_at": (now - timedelta(minutes=11)).isoformat(),
         }))
+
+    def test_live_accountless_onboarding_capability_uses_read_only_begin_preflight(self):
+        now = datetime.now(timezone.utc)
+        tables = {
+            "studio_payment_accounts": [{"studio_id": "studio_1"}],
+            "stripe_events": [_processed_event(account_id=None, observed_at=now)],
+        }
+        supabase = _PreflightSupabase(tables, begin=True)
+
+        async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
+            return StudioPaymentAccountResponse(studio_id="studio_1")
+
+        reporter = BillingSystemStatusReporter(
+            supabase,
+            settings=_settings(live_billing_enabled=True),
+            connect_accounts=_ConnectAccounts(),
+            payment_account_loader=load_account,
+        )
+        before = {name: [dict(row) for row in rows] for name, rows in supabase.tables.items()}
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+            response = asyncio.run(reporter.get_system_status("studio_1"))
+
+        self.assertTrue(response.mutation_capabilities.connect_onboarding)
+        self.assertEqual(supabase.tables, before)
+        self.assertEqual(
+            [name for name, _params in supabase.rpc_calls if name.startswith("preflight_connect_")],
+            ["preflight_connect_onboarding_bootstrap_begin"],
+        )
+        serialized = response.model_dump_json()
+        self.assertNotIn("idempotency", serialized)
+        self.assertNotIn("recovery_context", serialized)
+        self.assertNotIn("bootstrap_id", serialized)
+
+    def test_live_onboarding_capability_fails_closed_on_preflight_drift_or_global_disable(self):
+        async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
+            return StudioPaymentAccountResponse(studio_id="studio_1")
+
+        for live_enabled, begin in ((True, False), (False, True)):
+            with self.subTest(live_enabled=live_enabled, begin=begin):
+                supabase = _PreflightSupabase(
+                    {"studio_payment_accounts": [{"studio_id": "studio_1"}], "stripe_events": []},
+                    begin=begin,
+                )
+                reporter = BillingSystemStatusReporter(
+                    supabase,
+                    settings=_settings(live_billing_enabled=live_enabled),
+                    connect_accounts=_ConnectAccounts(),
+                    payment_account_loader=load_account,
+                )
+                with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+                    response = asyncio.run(reporter.get_system_status("studio_1"))
+                self.assertFalse(response.mutation_capabilities.connect_onboarding)
+
+    def test_live_mapped_account_does_not_fallback_when_bootstrap_requires_support(self):
+        supabase = _PreflightSupabase(
+            {"studio_payment_accounts": [{"studio_id": "studio_1"}], "stripe_events": []},
+            begin=False,
+            resume=False,
+            resume_phase="support_required",
+        )
+
+        async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
+            return _ready_account()
+
+        reporter = BillingSystemStatusReporter(
+            supabase,
+            settings=_settings(live_billing_enabled=True),
+            connect_accounts=_ConnectAccounts(),
+            payment_account_loader=load_account,
+        )
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+            response = asyncio.run(reporter.get_system_status("studio_1"))
+
+        self.assertFalse(response.mutation_capabilities.connect_onboarding)
+        onboarding_authorize_calls = [
+            params for name, params in supabase.rpc_calls
+            if name == "authorize_studio_live_billing_mutation_atomic"
+            and params.get("p_operation") == "connect_onboarding_link.create"
+        ]
+        self.assertEqual(onboarding_authorize_calls, [])
 
     def test_readiness_fails_closed_on_pending_backlog(self):
         now = datetime.now(timezone.utc)

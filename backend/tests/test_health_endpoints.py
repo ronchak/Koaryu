@@ -27,7 +27,7 @@ class HealthEndpointTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 expected_status = "ready" if path.endswith("/ready") else "ok"
                 self.assertEqual(response.json()["status"], expected_status)
-                self.assertEqual(response.json()["environment"], "development")
+                self.assertEqual(response.json()["environment"], "test")
                 self.assertIsNone(response.json()["commit_sha"])
                 self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
 
@@ -62,6 +62,58 @@ class HealthEndpointTest(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Runtime configuration is not ready.")
         self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
         self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", response.text)
+
+    def test_hosted_readiness_requires_exact_database_head(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="production",
+            validate_runtime_configuration=lambda: None,
+        )
+        with (
+            patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
+            patch(
+                "app.api.v1.endpoints.health.assert_hosted_release_schema_ready",
+                side_effect=RuntimeError("schema 84 and private provider detail"),
+            ),
+        ):
+            response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "Runtime configuration is not ready.")
+        self.assertNotIn("schema 84", response.text)
+
+    def test_hosted_readiness_accepts_only_successful_database_preflight(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="staging",
+            validate_runtime_configuration=lambda: None,
+        )
+        with (
+            patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
+            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready") as preflight,
+        ):
+            response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 200)
+        preflight.assert_called_once_with()
+
+    def test_readiness_reports_only_the_sanitized_configured_stripe_mode(self):
+        stripe_secret_key = "sk_test_not_a_real_provider_credential"
+        settings = SimpleNamespace(
+            ENVIRONMENT="staging",
+            STRIPE_MODE="test",
+            STRIPE_SECRET_KEY=stripe_secret_key,
+            validate_runtime_configuration=lambda: None,
+        )
+        with (
+            patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
+            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready"),
+        ):
+            for path in ("/health/ready", "/api/v1/health/ready"):
+                with self.subTest(path=path):
+                    response = self.client.get(path)
+
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.json()["configured_stripe_mode"], "test")
+                    self.assertNotIn(stripe_secret_key, response.text)
 
 
 if __name__ == "__main__":

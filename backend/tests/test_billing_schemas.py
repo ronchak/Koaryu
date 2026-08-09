@@ -6,6 +6,7 @@ from app.schemas.billing import (
     BillingInvoiceCreate,
     BillingInvoiceItemCreate,
     ConnectOnboardingLinkRequest,
+    ConnectOnboardingDeliveryAckRequest,
     BillingPlanCreate,
     BillingPlanUpdate,
     BillingPayerAutopaySetupRequest,
@@ -74,6 +75,19 @@ class BillingRequestSchemaTest(unittest.TestCase):
             ConnectOnboardingLinkRequest(success_url="https://app.koaryu.test/billing")
 
         self.assertIn("Extra inputs are not permitted", str(context.exception))
+
+    def test_connect_delivery_ack_accepts_only_a_bounded_urlsafe_receipt(self):
+        self.assertEqual(
+            ConnectOnboardingDeliveryAckRequest(receipt="r" * 64).receipt,
+            "r" * 64,
+        )
+        for payload in (
+            {"receipt": "short"},
+            {"receipt": "r" * 64, "studio_id": "studio_2"},
+            {"receipt": "r" * 42 + "!"},
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                ConnectOnboardingDeliveryAckRequest.model_validate(payload)
 
     def test_platform_checkout_request_rejects_connect_fields(self):
         with self.assertRaises(ValidationError) as context:

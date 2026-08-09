@@ -203,6 +203,12 @@ export interface ApiBillingLinkResponse {
   url: string;
 }
 
+export interface ApiBillingMutationCapabilitiesResponse {
+  core_subscription: boolean;
+  connect_onboarding: boolean;
+  connect_payments: boolean;
+}
+
 export interface ApiBillingPayerAutopaySetupRequest {
   success_url?: string | null;
   cancel_url?: string | null;
@@ -435,6 +441,7 @@ export interface ApiBillingSystemStatusResponse {
   payment_account: ApiStudioPaymentAccountResponse;
   platform_webhooks: ApiBillingWebhookHealthResponse;
   connect_webhooks: ApiBillingWebhookHealthResponse;
+  mutation_capabilities: ApiBillingMutationCapabilitiesResponse;
   checks: ApiBillingSystemCheck[];
 }
 
@@ -558,10 +565,23 @@ export interface ApiClassTemplateUpdate {
   is_active?: boolean | null;
 }
 
+export interface ApiConnectOnboardingDeliveryAckRequest {
+  receipt: string;
+}
+
+export interface ApiConnectOnboardingDeliveryAckResponse {
+  acknowledged: boolean;
+}
+
 export interface ApiConnectOnboardingLinkRequest {
   return_url?: string | null;
   refresh_url?: string | null;
   business_entity_type?: "company" | "individual" | null;
+}
+
+export interface ApiConnectOnboardingLinkResponse {
+  pending_url: string;
+  delivery_receipt?: string | null;
 }
 
 export interface ApiCsvImportActionOptions {
@@ -1001,6 +1021,25 @@ export interface ApiLeadUpdate {
   follow_up_date?: string | null;
   notes?: string | null;
   lost_reason?: "no_show" | "price_objection" | "timing" | "no_response" | "other" | null;
+}
+
+export interface ApiOperationalAlertAcknowledgementResponse {
+  episode_id: string;
+  lifecycle_event: "acknowledged" | "already_acknowledged" | "closed";
+  acknowledged: boolean;
+  acknowledged_by_role?: "primary" | "backup" | null;
+}
+
+export interface ApiOperationalAlertEvaluationResponse {
+  environment: "development" | "test" | "staging" | "production";
+  mode: "https";
+  metrics: Record<string, number>;
+  lifecycle_events: Record<string, string>;
+  deliveries_claimed: number;
+  deliveries_delivered: number;
+  deliveries_failed: number;
+  heartbeat_recorded: boolean;
+  heartbeat_sequence: number;
 }
 
 export interface ApiPlatformBillingStatusResponse {

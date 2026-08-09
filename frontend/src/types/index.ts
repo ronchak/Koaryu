@@ -54,12 +54,15 @@ export type InvoiceStatus = ApiContracts.ApiBillingInvoiceResponse["status"];
 export type PaymentStatus = ApiContracts.ApiBillingPaymentResponse["status"];
 
 export type BillingLinkResponse = ApiContracts.ApiBillingLinkResponse;
+export type ConnectOnboardingLinkResponse = ApiContracts.ApiConnectOnboardingLinkResponse;
+export type ConnectOnboardingDeliveryAckResponse = ApiContracts.ApiConnectOnboardingDeliveryAckResponse;
 export type BillingActionRequest =
   & ApiContracts.ApiConnectOnboardingLinkRequest
   & ApiContracts.ApiPlatformCheckoutRequest
   & ApiContracts.ApiPlatformPortalRequest;
 export type EmailUsage = ApiContracts.ApiEmailUsageResponse;
 export type PlatformBillingStatus = ApiContracts.ApiPlatformBillingStatusResponse;
+export type BillingSystemStatus = ApiContracts.ApiBillingSystemStatusResponse;
 export type StudioPaymentAccount = ApiContracts.ApiStudioPaymentAccountResponse;
 export type BillingPlanProgram = ApiContracts.ApiBillingPlanProgramResponse;
 export type BillingPlan = ApiContracts.ApiBillingPlanResponse;

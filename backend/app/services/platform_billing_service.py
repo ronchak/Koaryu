@@ -460,7 +460,9 @@ class PlatformBillingService:
         try:
             session = stripe_service.create_customer_portal_session(
                 customer_id=customer_id,
+                studio_id=studio_id,
                 return_url=safe_redirect_url(return_url, f"{frontend_url}/billing", self.settings.FRONTEND_URL),
+                idempotency_key=build_idempotency_key("core-portal", studio_id, customer_id),
             )
         except Exception as exc:
             if not self._is_missing_stripe_customer_error(exc):
@@ -582,6 +584,7 @@ class PlatformBillingService:
         customer = stripe_service.create_customer(
             name=studio.get("name") or "Koaryu studio",
             metadata={"studio_id": studio_id, "product": "koaryu_core"},
+            studio_id=studio_id,
             idempotency_key=build_idempotency_key("core-customer", studio_id),
         )
         customer_id = customer["id"] if isinstance(customer, dict) else customer.id

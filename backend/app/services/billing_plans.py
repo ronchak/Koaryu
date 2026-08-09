@@ -151,14 +151,19 @@ class BillingPlanManager:
         if product_id:
             stripe_service.update_connected_product(
                 account_id=account_id,
+                studio_id=plan["studio_id"],
                 product_id=product_id,
                 name=plan["name"],
                 description=plan.get("description"),
                 metadata=product_metadata,
+                idempotency_key=self._idempotency_key(
+                    "plan-product-update", plan["id"], str(plan.get("updated_at") or ""),
+                ),
             )
         else:
             product = stripe_service.create_connected_product(
                 account_id=account_id,
+                studio_id=plan["studio_id"],
                 name=plan["name"],
                 description=plan.get("description"),
                 metadata=product_metadata,
@@ -186,6 +191,7 @@ class BillingPlanManager:
             lookup_key = f"koaryu_{plan['studio_id']}_{plan['id']}_v{version}"
             price = stripe_service.create_connected_price(
                 account_id=account_id,
+                studio_id=plan["studio_id"],
                 product_id=product_id,
                 unit_amount=int(plan.get("amount_cents") or 0),
                 currency=plan.get("currency") or "usd",

@@ -16,6 +16,8 @@ directly and verifies it before running:
   and generated API contract verification;
 - a fresh local migration replay, database lint, and the broad Supabase contract
   suite;
+- an exact SQL-contract inventory check and real concurrent opposite-direction
+  Connect mapping/exclusion transactions against the ephemeral database;
 - merge-safe full-history and exact-worktree Gitleaks, Bandit, and CodeQL static analysis; and
 - an aggregate fail-closed `Release candidate gate` job.
 
@@ -33,9 +35,26 @@ npm run check:release-workflow
 
 ## Provider Promotion Controls
 
-Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'`. The bootstrap change keeps Render's process health check on the backward-compatible `/health`; switch the provider to `/health/live` only after the approved artifact containing that endpoint is already live.
+Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'` and routes provider health to `/health/ready`.
+
+Database promotion precedes application promotion. Hosted readiness calls the
+service-role-only Supabase preflight and requires the exact final migration count
+100, head `20260801131844`, pending sequence, manifest version
+`release-db-attestation-v7`, and required-object/security proof. Schema 84, a
+partial 85-99 state, a missing final migration manifest, or any
+provider/RPC error returns 503, so the new backend cannot be promoted healthy
+against an earlier database head.
+
+The local PostgreSQL proof does not certify hosted PostgREST exposed-schema
+configuration or actual schema ACL state. Authenticated operator readback must
+separately prove that `private` is not exposed and that hosted schema ACLs match
+the approved release gate before promotion.
 
 `npm run check:env-examples` fails if either repository provider control drifts or if the account-deletion cron is removed. Repository text cannot prove Render's current service setting: before the bootstrap merge, an authenticated operator must turn production auto-deploy off through Render and capture an authenticated readback. The guarded merge command independently rechecks that live provider state and refuses to merge without it. After the fixed candidate passes staging, deploy or promote that exact SHA explicitly, read back Vercel `/api/version` and Render `/health/ready`, and compare both full SHAs with the release ledger before assigning production traffic.
+
+The exact `codex/launch-readiness-candidate` branch does not auto-deploy to Vercel. GitHub CI performs its production frontend build. The operational-alert evaluator's primary trigger is the director-operated home server's external scheduler at the required five-minute cadence; the committed Vercel cron is a daily 09:00 UTC backup. This resolves the Vercel funded-plan gate by moving the primary trigger source, not by weakening the cadence. Nobody may weaken the five-minute cadence merely to make a preview deploy. Deploy the approved exact SHA through the database-first manual promotion path.
+
+Use `npm run verify:deployed-release -- --environment <staging|production> --expected-sha <full-sha> --frontend-origin <pinned-origin> --backend-api <pinned-api-v1>` for the application-reported readback. It requires both Render readiness routes and Vercel to report one exact full SHA. Run it before browser smoke or performance capture; evidence from a mismatched pair or mutable alias is invalid. Authenticated provider deployment metadata remains a separate required readback.
 
 ## Main-Branch Ruleset
 

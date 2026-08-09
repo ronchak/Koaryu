@@ -24,6 +24,7 @@ const requiredSnippets = [
   "github/codeql-action/analyze@v4",
   "npm run check:env-examples",
   "npm run audit:support-privacy",
+  "node --test scripts/verify-deployed-release.test.mjs",
 ];
 
 export function validateReleaseCandidateWorkflow(source) {
@@ -51,6 +52,15 @@ export function validateReleaseCandidateWorkflow(source) {
   )?.length ?? 0;
   if (exactCheckoutCount < 5) {
     errors.push("Every job must check out the exact pull-request head SHA.");
+  }
+
+  const repositoryControlsStart = source.indexOf("  repository-controls:");
+  const frontendStart = source.indexOf("  frontend:", repositoryControlsStart + 1);
+  const repositoryControlsBlock = source.slice(repositoryControlsStart, frontendStart);
+  if (!repositoryControlsBlock.includes("fetch-depth: 0")) {
+    errors.push(
+      "Repository controls must fetch complete history for immutable ancestry checks.",
+    );
   }
 
   if (!source.includes("if: ${{ always() }}")) {
