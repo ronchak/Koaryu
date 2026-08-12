@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 import time
 import unittest
@@ -11,7 +12,10 @@ from unittest.mock import patch
 
 import stripe
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
+from app.core.deps import get_supabase
+from app.main import app
 from app.services.stripe_service import StripeService
 from app.services.stripe_mutation_policy import (
     LIVE_MUTATIONS_DISABLED_DETAIL,
@@ -137,12 +141,15 @@ class _FakeBillingService:
 
 class _FakePlatformBillingService:
     hydrate_calls = []
+    raise_during_projection = None
 
     def __init__(self, supabase):
         self.supabase = supabase
 
     def project_subscription_event(self, event, *, hydrate_subscription: bool = True):
         self.__class__.hydrate_calls.append((event["id"], hydrate_subscription))
+        if self.__class__.raise_during_projection:
+            raise self.__class__.raise_during_projection
 
 
 class _FakeWebhook:
@@ -765,3 +772,180 @@ class WebhookServiceTest(unittest.TestCase):
                 )
 
         self.assertEqual(raised.exception.status_code, 400)
+
+
+class WebhookRouteIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        self.rows = []
+        self.supabase = _FakeSupabase(self.rows)
+        self.client = TestClient(app, raise_server_exceptions=False)
+        app.dependency_overrides[get_supabase] = lambda: self.supabase
+        stripe_settings_patcher = patch(
+            "app.services.stripe_service.get_settings",
+            return_value=_FakeSettings(),
+        )
+        stripe_settings_patcher.start()
+        self.addCleanup(stripe_settings_patcher.stop)
+        _FakeBillingService.calls = 0
+        _FakeBillingService.raise_during_projection = None
+        _FakePlatformBillingService.hydrate_calls = []
+        _FakePlatformBillingService.raise_during_projection = None
+
+    def tearDown(self):
+        app.dependency_overrides.clear()
+        _FakeBillingService.raise_during_projection = None
+        _FakePlatformBillingService.raise_during_projection = None
+
+    @staticmethod
+    def _signed_event(event: dict, secret: str) -> tuple[bytes, str]:
+        payload = json.dumps(event, separators=(",", ":")).encode()
+        timestamp = int(time.time())
+        signed_payload = f"{timestamp}.{payload.decode()}".encode()
+        signature = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+        return payload, f"t={timestamp},v1={signature}"
+
+    def _post_event(self, route: str, event: dict, secret: str):
+        payload, signature = self._signed_event(event, secret)
+        return self.client.post(
+            f"/api/v1/webhooks/stripe/{route}",
+            content=payload,
+            headers={"Stripe-Signature": signature},
+        )
+
+    def test_platform_event_is_reclaimed_when_retried_on_platform_route(self):
+        event = {
+            "id": "evt_platform_route_retry",
+            "object": "event",
+            "type": "customer.subscription.updated",
+            "livemode": True,
+            "data": {"object": {"id": "sub_1"}},
+        }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                with patch(
+                    "app.services.webhook_service.PlatformBillingService",
+                    _FakePlatformBillingService,
+                ):
+                    wrong_route = self._post_event(
+                        "connect",
+                        event,
+                        _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                    )
+                    self.assertEqual(wrong_route.status_code, 400)
+                    self.assertEqual(
+                        wrong_route.json()["detail"],
+                        "Platform events must be delivered to the platform webhook route.",
+                    )
+                    self.assertEqual(len(self.rows), 1)
+                    self.assertEqual(self.rows[0]["processing_status"], "failed")
+                    self.assertEqual(self.rows[0]["error"], "wrong_route_platform_event")
+                    retried = self._post_event(
+                        "platform",
+                        event,
+                        _FakeSettings.STRIPE_PLATFORM_WEBHOOK_SECRET,
+                    )
+
+        self.assertEqual(retried.status_code, 200)
+        self.assertEqual(retried.json(), {"received": True, "status": "processed"})
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(
+            _FakePlatformBillingService.hydrate_calls,
+            [("evt_platform_route_retry", True)],
+        )
+        self.assertEqual(len(self.rows), 1)
+        self.assertEqual(self.rows[0]["processing_status"], "processed")
+        self.assertIsNone(self.rows[0]["stripe_account_id"])
+        self.assertIsNone(self.rows[0]["error"])
+
+    def test_connect_event_is_reclaimed_when_retried_on_connect_route(self):
+        event = {
+            "id": "evt_connect_route_retry",
+            "object": "event",
+            "account": "acct_1",
+            "type": "account.updated",
+            "livemode": True,
+            "data": {"object": {"id": "acct_1"}},
+        }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                with patch(
+                    "app.services.webhook_service.PlatformBillingService",
+                    _FakePlatformBillingService,
+                ):
+                    wrong_route = self._post_event(
+                        "platform",
+                        event,
+                        _FakeSettings.STRIPE_PLATFORM_WEBHOOK_SECRET,
+                    )
+                    self.assertEqual(wrong_route.status_code, 400)
+                    self.assertEqual(
+                        wrong_route.json()["detail"],
+                        "Connected-account events must be delivered to the Connect webhook route.",
+                    )
+                    self.assertEqual(len(self.rows), 1)
+                    self.assertEqual(self.rows[0]["processing_status"], "failed")
+                    self.assertEqual(self.rows[0]["error"], "wrong_route_connect_event")
+                    retried = self._post_event(
+                        "connect",
+                        event,
+                        _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                    )
+
+        self.assertEqual(retried.status_code, 200)
+        self.assertEqual(retried.json(), {"received": True, "status": "processed"})
+        self.assertEqual(_FakeBillingService.calls, 1)
+        self.assertEqual(_FakePlatformBillingService.hydrate_calls, [])
+        self.assertEqual(len(self.rows), 1)
+        self.assertEqual(self.rows[0]["processing_status"], "processed")
+        self.assertEqual(self.rows[0]["stripe_account_id"], "acct_1")
+        self.assertIsNone(self.rows[0]["error"])
+
+    def test_platform_route_reclaims_provider_retry_after_projection_failure(self):
+        event = {
+            "id": "evt_platform_projection_retry",
+            "object": "event",
+            "type": "invoice.paid",
+            "livemode": True,
+            "data": {"object": {"id": "in_1"}},
+        }
+        _FakePlatformBillingService.raise_during_projection = RuntimeError(
+            "transient platform projection failure"
+        )
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch(
+                "app.services.webhook_service.PlatformBillingService",
+                _FakePlatformBillingService,
+            ):
+                first_attempt = self._post_event(
+                    "platform",
+                    event,
+                    _FakeSettings.STRIPE_PLATFORM_WEBHOOK_SECRET,
+                )
+                self.assertEqual(first_attempt.status_code, 500)
+                self.assertEqual(first_attempt.json()["detail"], "Internal server error.")
+                self.assertNotIn("transient platform projection failure", first_attempt.text)
+                self.assertEqual(self.rows[0]["processing_status"], "failed")
+                self.assertEqual(self.rows[0]["error"], "unexpected_processing_error")
+
+                _FakePlatformBillingService.raise_during_projection = None
+                retried = self._post_event(
+                    "platform",
+                    event,
+                    _FakeSettings.STRIPE_PLATFORM_WEBHOOK_SECRET,
+                )
+
+        self.assertEqual(retried.status_code, 200)
+        self.assertEqual(retried.json(), {"received": True, "status": "processed"})
+        self.assertEqual(
+            _FakePlatformBillingService.hydrate_calls,
+            [
+                ("evt_platform_projection_retry", True),
+                ("evt_platform_projection_retry", True),
+            ],
+        )
+        self.assertEqual(len(self.rows), 1)
+        self.assertEqual(self.rows[0]["processing_status"], "processed")
+        self.assertIsNone(self.rows[0]["error"])
