@@ -61,6 +61,7 @@ describe("deployment version route", () => {
       NEXT_PUBLIC_SITE_URL: "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app",
       VERCEL_ENV: "preview",
       VERCEL_GIT_COMMIT_SHA: "b".repeat(40),
+      VERCEL_TARGET_ENV: "preview",
     });
 
     assert.deepEqual(metadata, {

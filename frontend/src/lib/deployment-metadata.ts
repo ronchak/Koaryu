@@ -15,11 +15,10 @@ function safeCommitSha(value: string | undefined) {
 export function getDeploymentMetadata(env: NodeJS.ProcessEnv = process.env) {
   const targetEnvironment = safeEnvironment(env.VERCEL_TARGET_ENV);
   const vercelEnvironment = safeEnvironment(env.VERCEL_ENV);
-  const environment = targetEnvironment
-    ?? (vercelEnvironment === "preview" && env.NEXT_PUBLIC_SITE_URL === STAGING_SITE_URL
-      ? "staging"
-      : vercelEnvironment)
-    ?? "local";
+  const providerEnvironment = targetEnvironment ?? vercelEnvironment;
+  const environment = providerEnvironment === "preview" && env.NEXT_PUBLIC_SITE_URL === STAGING_SITE_URL
+    ? "staging"
+    : providerEnvironment ?? "local";
 
   return {
     service: "koaryu-frontend",
