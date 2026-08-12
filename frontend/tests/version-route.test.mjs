@@ -6,6 +6,7 @@ import { getDeploymentMetadata } from "../src/lib/deployment-metadata.ts";
 
 const ORIGINAL_ENV = {
   VERCEL_ENV: process.env.VERCEL_ENV,
+  VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF,
   VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA,
   VERCEL_TARGET_ENV: process.env.VERCEL_TARGET_ENV,
 };
@@ -53,5 +54,33 @@ describe("deployment version route", () => {
       commit_sha: null,
     });
     assert.doesNotMatch(JSON.stringify(metadata), /secret-bearing|unsafe-environment/);
+  });
+
+  it("identifies the branch-scoped Vercel staging deployment", () => {
+    const metadata = getDeploymentMetadata({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "staging",
+      VERCEL_GIT_COMMIT_SHA: "b".repeat(40),
+    });
+
+    assert.deepEqual(metadata, {
+      service: "koaryu-frontend",
+      environment: "staging",
+      commit_sha: "b".repeat(40),
+    });
+  });
+
+  it("keeps other Vercel preview branches classified as preview", () => {
+    const metadata = getDeploymentMetadata({
+      VERCEL_ENV: "preview",
+      VERCEL_GIT_COMMIT_REF: "codex/stripe-webhook-e2e",
+      VERCEL_GIT_COMMIT_SHA: "c".repeat(40),
+    });
+
+    assert.deepEqual(metadata, {
+      service: "koaryu-frontend",
+      environment: "preview",
+      commit_sha: "c".repeat(40),
+    });
   });
 });
