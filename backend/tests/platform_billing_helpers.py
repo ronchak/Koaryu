@@ -19,10 +19,18 @@ class FakeSupabase(RpcBackedSupabase):
     POSTGRES_END_EVENT_EPOCH = 9224318016000
 
     def __init__(self, rows: list[dict]):
+        studio_ids = {"studio_1"} | {
+            str(row["studio_id"])
+            for row in rows
+            if row.get("studio_id")
+        }
         super().__init__({
             "studio_subscriptions": rows,
             "email_usage_events": [],
-            "studios": [{"id": "studio_1", "name": "Koaryu Test Studio"}],
+            "studios": [
+                {"id": studio_id, "name": "Koaryu Test Studio"}
+                for studio_id in sorted(studio_ids)
+            ],
             "audit_logs": [],
         })
         self.on_update_query = self._apply_studio_subscription_update
