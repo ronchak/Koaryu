@@ -5,8 +5,8 @@ import { GET } from "../src/app/api/version/route.ts";
 import { getDeploymentMetadata } from "../src/lib/deployment-metadata.ts";
 
 const ORIGINAL_ENV = {
+  NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   VERCEL_ENV: process.env.VERCEL_ENV,
-  VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF,
   VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA,
   VERCEL_TARGET_ENV: process.env.VERCEL_TARGET_ENV,
 };
@@ -58,8 +58,8 @@ describe("deployment version route", () => {
 
   it("identifies the branch-scoped Vercel staging deployment", () => {
     const metadata = getDeploymentMetadata({
+      NEXT_PUBLIC_SITE_URL: "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app",
       VERCEL_ENV: "preview",
-      VERCEL_GIT_COMMIT_REF: "staging",
       VERCEL_GIT_COMMIT_SHA: "b".repeat(40),
     });
 
@@ -72,8 +72,8 @@ describe("deployment version route", () => {
 
   it("keeps other Vercel preview branches classified as preview", () => {
     const metadata = getDeploymentMetadata({
+      NEXT_PUBLIC_SITE_URL: "https://koaryu-git-codex-stripe-web.example.vercel.app",
       VERCEL_ENV: "preview",
-      VERCEL_GIT_COMMIT_REF: "codex/stripe-webhook-e2e",
       VERCEL_GIT_COMMIT_SHA: "c".repeat(40),
     });
 
