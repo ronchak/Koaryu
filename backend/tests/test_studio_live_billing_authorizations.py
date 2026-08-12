@@ -10,6 +10,7 @@ from app.services.studio_live_billing_authorizations import (
     LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL,
     LIVE_SCOPE_DENIED_DETAIL,
     StudioLiveBillingAuthorizationStore,
+    new_connect_onboarding_bootstrap_context,
 )
 from tests.fakes.supabase import RpcBackedSupabase
 
@@ -79,6 +80,40 @@ class _AuthorizationSupabase(RpcBackedSupabase):
 
 
 class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
+    def test_new_bootstrap_context_has_reproducible_provider_keys(self):
+        values = {
+            "studio_id": "studio_1",
+            "account_generation": 2,
+            "refresh_url": "https://app.koaryu.test/billing/connect/refresh",
+            "return_url": "https://app.koaryu.test/billing?connect=return",
+        }
+
+        first = new_connect_onboarding_bootstrap_context(**values)
+        repeated = new_connect_onboarding_bootstrap_context(**values)
+
+        self.assertEqual(first, repeated)
+        self.assertEqual(first.account_create_idempotency_key, "koaryu-connect-account-studio_1-g2")
+        self.assertEqual(
+            first.initial_link_idempotency_key,
+            f"koaryu-connect-onboarding-studio_1-g2-{first.initial_link_context_sha256[:24]}",
+        )
+
+    def test_new_bootstrap_context_changes_link_key_with_generation_or_route_context(self):
+        common = {
+            "studio_id": "studio_1",
+            "refresh_url": "https://app.koaryu.test/billing/connect/refresh",
+            "return_url": "https://app.koaryu.test/billing?connect=return",
+        }
+        first = new_connect_onboarding_bootstrap_context(account_generation=1, **common)
+        next_generation = new_connect_onboarding_bootstrap_context(account_generation=2, **common)
+        changed_return = new_connect_onboarding_bootstrap_context(
+            account_generation=1,
+            **{**common, "return_url": "https://app.koaryu.test/billing?connect=other"},
+        )
+
+        self.assertNotEqual(first.initial_link_idempotency_key, next_generation.initial_link_idempotency_key)
+        self.assertNotEqual(first.initial_link_idempotency_key, changed_return.initial_link_idempotency_key)
+
     def test_live_authorization_delegates_exact_context_to_atomic_rpc(self):
         supabase = _AuthorizationSupabase([{
             "authorized": True,
