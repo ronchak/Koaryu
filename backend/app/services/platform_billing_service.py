@@ -494,6 +494,9 @@ class PlatformBillingService:
             studio_id = metadata.get("studio_id")
             if not studio_id:
                 return
+            if not self._studio_exists(studio_id):
+                self._log_orphaned_subscription_event(event_type)
+                return
             row = self._ensure_subscription_row(studio_id)
             stale_for_subscription_state = self._is_stale_subscription_event(row, event_created)
             stale_for_payment_state = self._is_stale_invoice_payment_event(row, event_created)
@@ -538,6 +541,9 @@ class PlatformBillingService:
                 studio_id = row.get("studio_id") if row else None
             if not studio_id:
                 return
+            if not self._studio_exists(studio_id):
+                self._log_orphaned_subscription_event(event_type)
+                return
             row = self._ensure_subscription_row(studio_id)
             if self._is_stale_subscription_event(row, event_created):
                 return
@@ -560,6 +566,25 @@ class PlatformBillingService:
             update = {"last_payment_status": status_value}
             self._mark_invoice_payment_event_created(update, row, event_created)
             self._update_subscription_row(row["studio_id"], update)
+
+    def _studio_exists(self, studio_id: str) -> bool:
+        result = (
+            self.supabase.table("studios")
+            .select("id")
+            .eq("id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+
+    @staticmethod
+    def _log_orphaned_subscription_event(event_type: str) -> None:
+        logger.warning(
+            "Ignored Stripe platform subscription event for a deleted studio; "
+            "reference=%s; event_type=%s",
+            uuid4().hex,
+            event_type,
+        )
 
     def _ensure_subscription_row(self, studio_id: str) -> dict[str, Any]:
         result = (

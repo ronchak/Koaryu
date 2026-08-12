@@ -76,6 +76,35 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             self.assertNotIn(sensitive_value, repr(log_record.__dict__))
         self.assertEqual(rows[0]["status"], "incomplete")
 
+    def test_subscription_event_for_deleted_studio_is_ignored_without_inserting(self):
+        rows = []
+        service = self.service(rows)
+        service.supabase.tables["studios"] = []
+
+        with self.assertLogs("app.services.platform_billing_service", level="WARNING") as captured_logs:
+            service.project_subscription_event(self.subscription_event(created=100))
+
+        self.assertEqual(rows, [])
+        self.assertRegex(
+            captured_logs.records[0].getMessage(),
+            r"^Ignored Stripe platform subscription event for a deleted studio; "
+            r"reference=[0-9a-f]{32}; event_type=customer\.subscription\.updated$",
+        )
+        self.assertNotIn("studio_1", repr(captured_logs.records[0].__dict__))
+
+    def test_checkout_event_for_deleted_studio_is_ignored_without_hydration(self):
+        rows = []
+        service = self.service(rows)
+        service.supabase.tables["studios"] = []
+
+        with self.assertLogs("app.services.platform_billing_service", level="WARNING") as captured_logs:
+            with patch("app.services.platform_billing_service.StripeService") as stripe_service:
+                service.project_subscription_event(self.checkout_event(created=100))
+
+        self.assertEqual(rows, [])
+        stripe_service.assert_not_called()
+        self.assertIn("event_type=checkout.session.completed", captured_logs.records[0].getMessage())
+
     def test_project_subscription_uses_item_period_bounds_and_clears_trial_fields(self):
         rows = [{
             "studio_id": "studio_1",

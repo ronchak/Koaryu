@@ -81,7 +81,6 @@ def new_connect_onboarding_bootstrap_context(
     return_url: str,
     recovery_context: Optional[dict[str, Any]] = None,
 ) -> ConnectOnboardingBootstrapContext:
-    idempotency_nonce = secrets.token_hex(12)
     link_context = connect_initial_link_context_sha256(
         studio_id=studio_id,
         account_generation=account_generation,
@@ -93,7 +92,7 @@ def new_connect_onboarding_bootstrap_context(
         initial_link_context_sha256=link_context,
         account_create_idempotency_key=f"koaryu-connect-account-{studio_id}-g{account_generation}",
         initial_link_idempotency_key=(
-            f"koaryu-connect-onboarding-{studio_id}-g{account_generation}-{idempotency_nonce}"
+            f"koaryu-connect-onboarding-{studio_id}-g{account_generation}-{link_context[:24]}"
         ),
         recovery_context=recovery_context,
     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import logging
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -351,6 +352,125 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["processing_status"], "processed")
         self.assertIsNone(rows[0]["error"])
 
+    def test_accountless_platform_event_on_connect_route_is_quarantined_as_wrong_route(self):
+        rows = []
+        _FakeBillingService.calls = 0
+
+        class FakeStripeService:
+            def construct_webhook_event(self, *, payload, signature, secret):
+                return {
+                    "id": "evt_platform_on_connect",
+                    "type": "customer.subscription.updated",
+                    "livemode": True,
+                    "data": {"object": {"id": "sub_1"}},
+                }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.StripeService", FakeStripeService):
+                with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                    with self.assertRaises(HTTPException) as raised:
+                        asyncio.run(
+                            StripeWebhookService(_FakeSupabase(rows)).handle_connect_webhook(
+                                b'{"id":"evt_platform_on_connect"}',
+                                "sig",
+                            )
+                        )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["stripe_account_id"], None)
+        self.assertEqual(rows[0]["processing_status"], "failed")
+        self.assertEqual(rows[0]["error"], "wrong_route_platform_event")
+
+    def test_accountless_connect_only_event_is_quarantined_as_missing_context(self):
+        rows = []
+        _FakeBillingService.calls = 0
+
+        class FakeStripeService:
+            def construct_webhook_event(self, *, payload, signature, secret):
+                return {
+                    "id": "evt_missing_connect_context",
+                    "type": "invoice.created",
+                    "livemode": True,
+                    "data": {"object": {"id": "in_1"}},
+                }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.StripeService", FakeStripeService):
+                with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                    with self.assertRaises(HTTPException) as raised:
+                        asyncio.run(
+                            StripeWebhookService(_FakeSupabase(rows)).handle_connect_webhook(
+                                b'{"id":"evt_missing_connect_context"}',
+                                "sig",
+                            )
+                        )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["processing_status"], "failed")
+        self.assertEqual(rows[0]["error"], "missing_connect_account_context")
+
+    def test_account_object_id_cannot_replace_top_level_connect_context(self):
+        rows = []
+        _FakeBillingService.calls = 0
+
+        class FakeStripeService:
+            def construct_webhook_event(self, *, payload, signature, secret):
+                return {
+                    "id": "evt_account_without_context",
+                    "type": "account.updated",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_1"}},
+                }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.StripeService", FakeStripeService):
+                with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                    with self.assertRaises(HTTPException) as raised:
+                        asyncio.run(
+                            StripeWebhookService(_FakeSupabase(rows)).handle_connect_webhook(
+                                b'{"id":"evt_account_without_context"}',
+                                "sig",
+                            )
+                        )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["stripe_account_id"], None)
+        self.assertEqual(rows[0]["error"], "missing_connect_account_context")
+
+    def test_connected_account_event_on_platform_route_is_quarantined_as_wrong_route(self):
+        rows = []
+        _FakePlatformBillingService.hydrate_calls = []
+
+        class FakeStripeService:
+            def construct_webhook_event(self, *, payload, signature, secret):
+                return {
+                    "id": "evt_connect_on_platform",
+                    "account": "acct_1",
+                    "type": "customer.subscription.updated",
+                    "livemode": True,
+                    "data": {"object": {"id": "sub_1"}},
+                }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.StripeService", FakeStripeService):
+                with patch("app.services.webhook_service.PlatformBillingService", _FakePlatformBillingService):
+                    with self.assertRaises(HTTPException) as raised:
+                        asyncio.run(
+                            StripeWebhookService(_FakeSupabase(rows)).handle_platform_webhook(
+                                b'{"id":"evt_connect_on_platform"}',
+                                "sig",
+                            )
+                        )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(_FakePlatformBillingService.hydrate_calls, [])
+        self.assertEqual(rows[0]["stripe_account_id"], "acct_1")
+        self.assertEqual(rows[0]["processing_status"], "failed")
+        self.assertEqual(rows[0]["error"], "wrong_route_connect_event")
+
     def test_matching_live_connect_event_projects_while_live_mutations_are_closed(self):
         rows = []
         _FakeBillingService.calls = 0
@@ -447,8 +567,9 @@ class WebhookServiceTest(unittest.TestCase):
         _FakeBillingService.calls = 0
         _FakeBillingService.raise_during_projection = RuntimeError("raw provider secret detail")
         try:
-            with self.assertRaises(RuntimeError):
-                self.handle_connect_event(rows)
+            with self.assertLogs("app.services.webhook_service", logging.ERROR) as logs:
+                with self.assertRaises(RuntimeError):
+                    self.handle_connect_event(rows)
         finally:
             _FakeBillingService.raise_during_projection = None
 
@@ -457,6 +578,10 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(rows[0]["error"], "unexpected_processing_error")
         self.assertRegex(rows[0]["error_reference"], r"^[0-9a-f]{32}$")
         self.assertNotIn("raw provider secret detail", rows[0]["error"])
+        self.assertIn("event_id=evt_1", logs.output[0])
+        self.assertIn(f"reference={rows[0]['error_reference']}", logs.output[0])
+        self.assertIn("exception_type=RuntimeError", logs.output[0])
+        self.assertNotIn("raw provider secret detail", logs.output[0])
 
     def test_live_mutation_interlock_keeps_webhook_failed_and_retryable(self):
         rows = []

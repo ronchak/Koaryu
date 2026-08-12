@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 import uuid
 from datetime import timedelta
 from typing import Any, Optional
@@ -24,12 +26,25 @@ WEBHOOK_FAILURE_STRIPE_ERROR = "stripe_error"
 WEBHOOK_FAILURE_DATABASE_ERROR = "database_projection_error"
 WEBHOOK_FAILURE_UNEXPECTED_ERROR = "unexpected_processing_error"
 WEBHOOK_FAILURE_UNMAPPED_LIVE_CONNECT_ACCOUNT = "unmapped_live_connect_account"
+WEBHOOK_FAILURE_MISSING_CONNECT_ACCOUNT_CONTEXT = "missing_connect_account_context"
+WEBHOOK_FAILURE_WRONG_ROUTE_PLATFORM_EVENT = "wrong_route_platform_event"
+WEBHOOK_FAILURE_WRONG_ROUTE_CONNECT_EVENT = "wrong_route_connect_event"
 WEBHOOK_FAILURE_LIVE_MUTATION_BLOCKED = "live_mutation_blocked"
+PLATFORM_WEBHOOK_EVENT_TYPES = {
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.paid",
+    "invoice.payment_failed",
+}
+WEBHOOK_LOG_VALUE_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 WEBHOOK_MODE_MISMATCH_DETAIL = "Stripe webhook mode does not match configured STRIPE_MODE."
 WEBHOOK_INVALID_LIVEMODE_DETAIL = "Stripe webhook livemode must be a boolean."
 WEBHOOK_CONFIGURATION_MISMATCH_DETAIL = (
     "Stripe webhook configuration must have a matching STRIPE_MODE and secret key."
 )
+logger = logging.getLogger(__name__)
 
 
 class StripeWebhookService:
@@ -43,7 +58,8 @@ class StripeWebhookService:
             signature=signature,
             secret=self.settings.STRIPE_PLATFORM_WEBHOOK_SECRET,
         )
-        return self._store_and_process(event, stripe_account_id=None, processor="platform")
+        account_id = self._event_get(event, "account")
+        return self._store_and_process(event, stripe_account_id=account_id, processor="platform")
 
     async def handle_connect_webhook(self, payload: bytes, signature: Optional[str]) -> WebhookProcessResponse:
         event = StripeService().construct_webhook_event(
@@ -111,7 +127,33 @@ class StripeWebhookService:
         if not row_id:
             return WebhookProcessResponse(status="ignored")
 
-        if processor != "platform" and livemode and not self._is_mapped_connect_account(stripe_account_id):
+        if processor == "platform" and stripe_account_id:
+            self._quarantine_permanent_route_failure(
+                row_id=row_id,
+                claim_token=claim_token,
+                error=WEBHOOK_FAILURE_WRONG_ROUTE_CONNECT_EVENT,
+                detail="Connected-account events must be delivered to the Connect webhook route.",
+            )
+
+        if processor == "connect" and not stripe_account_id:
+            route_failure = (
+                WEBHOOK_FAILURE_WRONG_ROUTE_PLATFORM_EVENT
+                if event_type in PLATFORM_WEBHOOK_EVENT_TYPES
+                else WEBHOOK_FAILURE_MISSING_CONNECT_ACCOUNT_CONTEXT
+            )
+            detail = (
+                "Platform events must be delivered to the platform webhook route."
+                if route_failure == WEBHOOK_FAILURE_WRONG_ROUTE_PLATFORM_EVENT
+                else "Connect webhook events must include connected-account context."
+            )
+            self._quarantine_permanent_route_failure(
+                row_id=row_id,
+                claim_token=claim_token,
+                error=route_failure,
+                detail=detail,
+            )
+
+        if processor == "connect" and livemode and not self._is_mapped_connect_account(stripe_account_id):
             if not self._finish_event_processing(
                 row_id,
                 claim_token,
@@ -136,8 +178,41 @@ class StripeWebhookService:
                 raise RuntimeError("Webhook processing lease was lost before the event could be marked processed.")
             return WebhookProcessResponse(status="processed")
         except Exception as exc:
-            self._finish_event_processing(row_id, claim_token, "failed", error=self._failure_code(exc))
+            failure_code = self._failure_code(exc)
+            error_reference = uuid.uuid4().hex
+            failure_recorded = self._finish_event_processing(
+                row_id,
+                claim_token,
+                "failed",
+                error=failure_code,
+                error_reference=error_reference,
+            )
+            logger.error(
+                "Stripe webhook processing failed reference=%s event_id=%s event_type=%s "
+                "processor=%s error_code=%s exception_type=%s failure_recorded=%s",
+                error_reference,
+                self._safe_log_value(event_id),
+                self._safe_log_value(event_type),
+                processor,
+                failure_code,
+                type(exc).__name__,
+                failure_recorded,
+            )
             raise
+
+    def _quarantine_permanent_route_failure(
+        self,
+        *,
+        row_id: str,
+        claim_token: str,
+        error: str,
+        detail: str,
+    ) -> None:
+        if not self._finish_event_processing(row_id, claim_token, "failed", error=error):
+            raise RuntimeError(
+                "Webhook processing lease was lost before the route failure could be quarantined."
+            )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
     def _is_mapped_connect_account(self, stripe_account_id: Optional[str]) -> bool:
         if not stripe_account_id:
@@ -180,8 +255,12 @@ class StripeWebhookService:
         status: str,
         *,
         error: Optional[str] = None,
+        error_reference: Optional[str] = None,
     ) -> bool:
-        error_reference = uuid.uuid4().hex if status == "failed" else None
+        if status == "failed" and error_reference is None:
+            error_reference = uuid.uuid4().hex
+        elif status != "failed":
+            error_reference = None
         result = execute_required_rpc(self.supabase, "finish_stripe_event_processing_v2", {
             "p_event_id": row_id,
             "p_processing_token": processing_token,
@@ -191,6 +270,11 @@ class StripeWebhookService:
         })
         row = first_rpc_row(result) or {}
         return bool(row.get("updated"))
+
+    @staticmethod
+    def _safe_log_value(value: Any) -> str:
+        normalized = str(value or "")
+        return normalized if WEBHOOK_LOG_VALUE_PATTERN.fullmatch(normalized) else "redacted_invalid_identifier"
 
     @staticmethod
     def _failure_code(exc: Exception) -> str:
@@ -210,14 +294,7 @@ class StripeWebhookService:
 
     def _connect_account_id_for_event(self, event: Any) -> Optional[str]:
         account_id = self._event_get(event, "account")
-        if account_id:
-            return account_id
-        event_dict = self._event_to_dict(event)
-        event_type = event_dict.get("type") or ""
-        if event_type not in {"account.updated", "account.application.deauthorized"}:
-            return None
-        data_object = ((event_dict.get("data") or {}).get("object") or {})
-        return data_object.get("id")
+        return str(account_id) if account_id else None
 
     @staticmethod
     def _event_to_dict(event: Any) -> dict[str, Any]:
