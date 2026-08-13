@@ -93,6 +93,11 @@ venv/bin/python scripts/live_billing_authorizations.py revoke \
 
 `account-disposition` is event/account specific. `excluded` means a verified non-Koaryu or retired account; `unresolved` removes that exclusion. The RPC refuses to exclude a currently mapped account.
 
+In live mode, the Connect webhook handler acknowledges events for an explicitly excluded,
+unmapped account with `200` and records them as `ignored`. An unknown unmapped account
+continues to fail closed with `503` until it is mapped or reviewed and excluded. A mapped
+account always follows normal projection even if contradictory disposition data exists.
+
 An all-clear reconciliation JSON may be recorded only through `record-checkpoint`. The CLI hashes the exact report bytes and independently re-probes the pinned production readiness URL. The database binds the exact candidate, bounded event window, local ingest watermark, platform proof, and every account/generation proof, and bounds checkpoint expiry to 24 hours. Runtime compares that candidate to its deployed `RENDER_GIT_COMMIT` and rechecks current database state atomically.
 
 ## Exact-candidate test-provider rehearsal
