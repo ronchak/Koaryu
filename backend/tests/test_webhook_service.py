@@ -887,9 +887,15 @@ class WebhookServiceTest(unittest.TestCase):
 
 
 class WebhookRouteIntegrationTest(unittest.TestCase):
+    BILLING_EVENT_TYPES = (
+        "invoice.created",
+        "invoice.finalized",
+        "invoice.paid",
+        "payment_intent.succeeded",
+    )
+
     def setUp(self):
-        self.rows = []
-        self.supabase = _FakeSupabase(self.rows)
+        self._reset_route_state()
         self.client = TestClient(app, raise_server_exceptions=False)
         app.dependency_overrides[get_supabase] = lambda: self.supabase
         stripe_settings_patcher = patch(
@@ -905,8 +911,35 @@ class WebhookRouteIntegrationTest(unittest.TestCase):
 
     def tearDown(self):
         app.dependency_overrides.clear()
+        _FakeBillingService.mutate_during_projection = None
         _FakeBillingService.raise_during_projection = None
         _FakePlatformBillingService.raise_during_projection = None
+
+    def _reset_route_state(self, *, mapped_account_ids=("acct_1",)):
+        self.rows = []
+        self.supabase = _FakeSupabase(
+            self.rows,
+            mapped_account_ids=mapped_account_ids,
+        )
+        _FakeBillingService.calls = 0
+        _FakeBillingService.mutate_during_projection = None
+        _FakeBillingService.raise_during_projection = None
+        _FakePlatformBillingService.hydrate_calls = []
+        _FakePlatformBillingService.raise_during_projection = None
+
+    @staticmethod
+    def _billing_event(event_type: str, event_id: str, *, account_id: str | None = None):
+        object_prefix = "pi" if event_type.startswith("payment_intent.") else "in"
+        event = {
+            "id": event_id,
+            "object": "event",
+            "type": event_type,
+            "livemode": True,
+            "data": {"object": {"id": f"{object_prefix}_{event_id}"}},
+        }
+        if account_id:
+            event["account"] = account_id
+        return event
 
     @staticmethod
     def _signed_event(event: dict, secret: str) -> tuple[bytes, str]:
@@ -923,6 +956,166 @@ class WebhookRouteIntegrationTest(unittest.TestCase):
             content=payload,
             headers={"Stripe-Signature": signature},
         )
+
+    def test_invoice_and_payment_route_matrix_reclaims_and_deduplicates(self):
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()), patch(
+            "app.services.webhook_service.BillingService",
+            _FakeBillingService,
+        ), patch(
+            "app.services.webhook_service.PlatformBillingService",
+            _FakePlatformBillingService,
+        ):
+            for event_type in self.BILLING_EVENT_TYPES:
+                with self.subTest(event_type=event_type, scope="platform"):
+                    self._reset_route_state()
+                    event_id = f"evt_platform_{event_type.replace('.', '_')}"
+                    event = self._billing_event(event_type, event_id)
+
+                    wrong_route = self._post_event(
+                        "connect",
+                        event,
+                        _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                    )
+                    self.assertEqual(wrong_route.status_code, 400)
+                    self.assertEqual(_FakeBillingService.calls, 0)
+                    self.assertEqual(_FakePlatformBillingService.hydrate_calls, [])
+                    self.assertEqual(len(self.rows), 1)
+                    self.assertEqual(self.rows[0]["processing_status"], "failed")
+                    expected_error = (
+                        "wrong_route_platform_event"
+                        if event_type == "invoice.paid"
+                        else "missing_connect_account_context"
+                    )
+                    expected_detail = (
+                        "Platform events must be delivered to the platform webhook route."
+                        if event_type == "invoice.paid"
+                        else "Connect webhook events must include connected-account context."
+                    )
+                    self.assertEqual(wrong_route.json()["detail"], expected_detail)
+                    self.assertEqual(self.rows[0]["error"], expected_error)
+
+                    recovered = self._post_event(
+                        "platform",
+                        event,
+                        _FakeSettings.STRIPE_PLATFORM_WEBHOOK_SECRET,
+                    )
+                    duplicate = self._post_event(
+                        "platform",
+                        event,
+                        _FakeSettings.STRIPE_PLATFORM_WEBHOOK_SECRET,
+                    )
+
+                    self.assertEqual(recovered.status_code, 200)
+                    self.assertEqual(duplicate.status_code, 200)
+                    self.assertEqual(
+                        recovered.json(),
+                        {"received": True, "status": "processed"},
+                    )
+                    self.assertEqual(
+                        duplicate.json(),
+                        {"received": True, "status": "already_processed"},
+                    )
+                    self.assertEqual(
+                        _FakePlatformBillingService.hydrate_calls,
+                        [(event_id, True)],
+                    )
+                    self.assertEqual(_FakeBillingService.calls, 0)
+                    self.assertEqual(len(self.rows), 1)
+                    self.assertEqual(self.rows[0]["processing_status"], "processed")
+                    self.assertIsNone(self.rows[0]["stripe_account_id"])
+                    self.assertIsNone(self.rows[0]["error"])
+
+                with self.subTest(event_type=event_type, scope="connect"):
+                    self._reset_route_state()
+                    event_id = f"evt_connect_{event_type.replace('.', '_')}"
+                    event = self._billing_event(
+                        event_type,
+                        event_id,
+                        account_id="acct_1",
+                    )
+
+                    wrong_route = self._post_event(
+                        "platform",
+                        event,
+                        _FakeSettings.STRIPE_PLATFORM_WEBHOOK_SECRET,
+                    )
+                    self.assertEqual(wrong_route.status_code, 400)
+                    self.assertEqual(
+                        wrong_route.json()["detail"],
+                        "Connected-account events must be delivered to the Connect webhook route.",
+                    )
+                    self.assertEqual(_FakeBillingService.calls, 0)
+                    self.assertEqual(_FakePlatformBillingService.hydrate_calls, [])
+                    self.assertEqual(len(self.rows), 1)
+                    self.assertEqual(self.rows[0]["processing_status"], "failed")
+                    self.assertEqual(self.rows[0]["error"], "wrong_route_connect_event")
+
+                    recovered = self._post_event(
+                        "connect",
+                        event,
+                        _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                    )
+                    duplicate = self._post_event(
+                        "connect",
+                        event,
+                        _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                    )
+
+                    self.assertEqual(recovered.status_code, 200)
+                    self.assertEqual(duplicate.status_code, 200)
+                    self.assertEqual(
+                        recovered.json(),
+                        {"received": True, "status": "processed"},
+                    )
+                    self.assertEqual(
+                        duplicate.json(),
+                        {"received": True, "status": "already_processed"},
+                    )
+                    self.assertEqual(_FakeBillingService.calls, 1)
+                    self.assertEqual(_FakePlatformBillingService.hydrate_calls, [])
+                    self.assertEqual(len(self.rows), 1)
+                    self.assertEqual(self.rows[0]["processing_status"], "processed")
+                    self.assertEqual(self.rows[0]["stripe_account_id"], "acct_1")
+                    self.assertIsNone(self.rows[0]["error"])
+
+    def test_invoice_and_payment_unknown_account_matrix_stays_unprojected(self):
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()), patch(
+            "app.services.webhook_service.BillingService",
+            _FakeBillingService,
+        ), patch(
+            "app.services.webhook_service.PlatformBillingService",
+            _FakePlatformBillingService,
+        ):
+            for event_type in self.BILLING_EVENT_TYPES:
+                with self.subTest(event_type=event_type):
+                    self._reset_route_state(mapped_account_ids=())
+                    event_id = f"evt_unknown_{event_type.replace('.', '_')}"
+                    event = self._billing_event(
+                        event_type,
+                        event_id,
+                        account_id="acct_unknown",
+                    )
+
+                    for _attempt in range(2):
+                        response = self._post_event(
+                            "connect",
+                            event,
+                            _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                        )
+                        self.assertEqual(response.status_code, 503)
+                        self.assertEqual(response.headers["Retry-After"], "60")
+                        self.assertEqual(
+                            response.json()["detail"],
+                            "Connect account mapping is not ready. Retry this webhook after the account is mapped.",
+                        )
+
+                    self.assertEqual(_FakeBillingService.calls, 0)
+                    self.assertEqual(_FakePlatformBillingService.hydrate_calls, [])
+                    self.assertEqual(len(self.rows), 1)
+                    self.assertEqual(self.rows[0]["stripe_event_id"], event_id)
+                    self.assertEqual(self.rows[0]["stripe_account_id"], "acct_unknown")
+                    self.assertEqual(self.rows[0]["processing_status"], "failed")
+                    self.assertEqual(self.rows[0]["error"], "unmapped_live_connect_account")
 
     def test_platform_event_is_reclaimed_when_retried_on_platform_route(self):
         event = {
