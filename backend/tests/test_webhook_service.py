@@ -79,6 +79,8 @@ class _FakeSupabase(RpcBackedSupabase):
             return [{"claim_status": "already_processed", "event_row": dict(row)}]
         if row.get("processing_status") == "processing" and not self._is_stale(row):
             return [{"claim_status": "already_processing", "event_row": dict(row)}]
+        if row.get("processing_status") not in {"pending", "processing", "failed"}:
+            return [{"claim_status": "already_processing", "event_row": dict(row)}]
         row.update({
             "processing_status": "processing",
             "processing_token": params["p_processing_token"],
@@ -408,6 +410,40 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(_FakeBillingService.calls, 0)
         self.assertEqual(rows[0]["processing_status"], "ignored")
         self.assertIsNone(rows[0]["error"])
+
+        with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+            duplicate = service._store_and_process(
+                {
+                    "id": "evt_retired_account",
+                    "account": "acct_retired",
+                    "type": "account.application.deauthorized",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_retired"}},
+                },
+                stripe_account_id="acct_retired",
+                processor="connect",
+            )
+
+        self.assertEqual(duplicate.status, "ignored")
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["processing_status"], "ignored")
+
+        service.supabase.tables["stripe_connect_account_dispositions"].clear()
+        with self.assertRaises(HTTPException) as raised:
+            service._store_and_process(
+                {
+                    "id": "evt_retired_account",
+                    "account": "acct_retired",
+                    "type": "account.application.deauthorized",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_retired"}},
+                },
+                stripe_account_id="acct_retired",
+                processor="connect",
+            )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(rows[0]["processing_status"], "ignored")
 
     def test_mapped_live_connect_event_projects_even_with_stale_exclusion_fixture(self):
         rows = []
@@ -1006,6 +1042,19 @@ class WebhookRouteIntegrationTest(unittest.TestCase):
         self.assertEqual(len(self.rows), 1)
         self.assertEqual(self.rows[0]["processing_status"], "ignored")
         self.assertIsNone(self.rows[0]["error"])
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                duplicate = self._post_event(
+                    "connect",
+                    event,
+                    _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                )
+
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(duplicate.json(), {"received": True, "status": "ignored"})
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(len(self.rows), 1)
 
     def test_platform_route_reclaims_provider_retry_after_projection_failure(self):
         event = {

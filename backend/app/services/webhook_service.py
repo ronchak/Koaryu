@@ -113,6 +113,14 @@ class StripeWebhookService:
         if claim_status == "already_processed":
             return WebhookProcessResponse(status="already_processed")
         if claim_status == "already_processing":
+            if (
+                claimed_event
+                and claimed_event.get("processing_status") == "ignored"
+                and processor == "connect"
+                and livemode
+                and self._is_excluded_connect_account(stripe_account_id)
+            ):
+                return WebhookProcessResponse(status="ignored")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Webhook event is already processing. Retry after the processing lease expires.",
