@@ -26,7 +26,13 @@ from tests.fakes.supabase import RpcBackedSupabase
 
 
 class _FakeSupabase(RpcBackedSupabase):
-    def __init__(self, rows, *, mapped_account_ids=("acct_1",)):
+    def __init__(
+        self,
+        rows,
+        *,
+        mapped_account_ids=("acct_1",),
+        excluded_account_ids=(),
+    ):
         super().__init__({
             "stripe_events": rows,
             "studio_payment_accounts": [
@@ -35,6 +41,13 @@ class _FakeSupabase(RpcBackedSupabase):
                     "stripe_connected_account_id": account_id,
                 }
                 for index, account_id in enumerate(mapped_account_ids, start=1)
+            ],
+            "stripe_connect_account_dispositions": [
+                {
+                    "stripe_connected_account_id": account_id,
+                    "excluded": True,
+                }
+                for account_id in excluded_account_ids
             ],
         })
 
@@ -65,6 +78,8 @@ class _FakeSupabase(RpcBackedSupabase):
         if row.get("processing_status") == "processed":
             return [{"claim_status": "already_processed", "event_row": dict(row)}]
         if row.get("processing_status") == "processing" and not self._is_stale(row):
+            return [{"claim_status": "already_processing", "event_row": dict(row)}]
+        if row.get("processing_status") not in {"pending", "processing", "failed"}:
             return [{"claim_status": "already_processing", "event_row": dict(row)}]
         row.update({
             "processing_status": "processing",
@@ -173,10 +188,20 @@ class _FakeSettings:
 
 
 class WebhookServiceTest(unittest.TestCase):
-    def service(self, rows, *, mapped_account_ids=("acct_1",)):
+    def service(
+        self,
+        rows,
+        *,
+        mapped_account_ids=("acct_1",),
+        excluded_account_ids=(),
+    ):
         with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
             return StripeWebhookService(
-                _FakeSupabase(rows, mapped_account_ids=mapped_account_ids)
+                _FakeSupabase(
+                    rows,
+                    mapped_account_ids=mapped_account_ids,
+                    excluded_account_ids=excluded_account_ids,
+                )
             )
 
     def handle_connect_event(self, rows):
@@ -358,6 +383,93 @@ class WebhookServiceTest(unittest.TestCase):
         self.assertEqual(_FakeBillingService.calls, 1)
         self.assertEqual(rows[0]["processing_status"], "processed")
         self.assertIsNone(rows[0]["error"])
+
+    def test_excluded_unmapped_live_connect_event_is_ignored_without_projection(self):
+        rows = []
+        service = self.service(
+            rows,
+            mapped_account_ids=(),
+            excluded_account_ids=("acct_retired",),
+        )
+        _FakeBillingService.calls = 0
+
+        with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+            result = service._store_and_process(
+                {
+                    "id": "evt_retired_account",
+                    "account": "acct_retired",
+                    "type": "account.application.deauthorized",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_retired"}},
+                },
+                stripe_account_id="acct_retired",
+                processor="connect",
+            )
+
+        self.assertEqual(result.status, "ignored")
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["processing_status"], "ignored")
+        self.assertIsNone(rows[0]["error"])
+
+        with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+            duplicate = service._store_and_process(
+                {
+                    "id": "evt_retired_account",
+                    "account": "acct_retired",
+                    "type": "account.application.deauthorized",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_retired"}},
+                },
+                stripe_account_id="acct_retired",
+                processor="connect",
+            )
+
+        self.assertEqual(duplicate.status, "ignored")
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(rows[0]["processing_status"], "ignored")
+
+        service.supabase.tables["stripe_connect_account_dispositions"].clear()
+        with self.assertRaises(HTTPException) as raised:
+            service._store_and_process(
+                {
+                    "id": "evt_retired_account",
+                    "account": "acct_retired",
+                    "type": "account.application.deauthorized",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_retired"}},
+                },
+                stripe_account_id="acct_retired",
+                processor="connect",
+            )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(rows[0]["processing_status"], "ignored")
+
+    def test_mapped_live_connect_event_projects_even_with_stale_exclusion_fixture(self):
+        rows = []
+        service = self.service(
+            rows,
+            mapped_account_ids=("acct_1",),
+            excluded_account_ids=("acct_1",),
+        )
+        _FakeBillingService.calls = 0
+
+        with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+            result = service._store_and_process(
+                {
+                    "id": "evt_mapped_account",
+                    "account": "acct_1",
+                    "type": "account.updated",
+                    "livemode": True,
+                    "data": {"object": {"id": "acct_1"}},
+                },
+                stripe_account_id="acct_1",
+                processor="connect",
+            )
+
+        self.assertEqual(result.status, "processed")
+        self.assertEqual(_FakeBillingService.calls, 1)
+        self.assertEqual(rows[0]["processing_status"], "processed")
 
     def test_accountless_platform_event_on_connect_route_is_quarantined_as_wrong_route(self):
         rows = []
@@ -901,6 +1013,48 @@ class WebhookRouteIntegrationTest(unittest.TestCase):
         self.assertEqual(self.rows[0]["processing_status"], "processed")
         self.assertEqual(self.rows[0]["stripe_account_id"], "acct_1")
         self.assertIsNone(self.rows[0]["error"])
+
+    def test_excluded_unmapped_connect_event_returns_success_and_is_ignored(self):
+        self.supabase.tables["stripe_connect_account_dispositions"].append({
+            "stripe_connected_account_id": "acct_retired",
+            "excluded": True,
+        })
+        event = {
+            "id": "evt_retired_account_route",
+            "object": "event",
+            "account": "acct_retired",
+            "type": "account.application.deauthorized",
+            "livemode": True,
+            "data": {"object": {"id": "acct_retired"}},
+        }
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                response = self._post_event(
+                    "connect",
+                    event,
+                    _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"received": True, "status": "ignored"})
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(len(self.rows), 1)
+        self.assertEqual(self.rows[0]["processing_status"], "ignored")
+        self.assertIsNone(self.rows[0]["error"])
+
+        with patch("app.services.webhook_service.get_settings", return_value=_FakeSettings()):
+            with patch("app.services.webhook_service.BillingService", _FakeBillingService):
+                duplicate = self._post_event(
+                    "connect",
+                    event,
+                    _FakeSettings.STRIPE_CONNECT_WEBHOOK_SECRET,
+                )
+
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(duplicate.json(), {"received": True, "status": "ignored"})
+        self.assertEqual(_FakeBillingService.calls, 0)
+        self.assertEqual(len(self.rows), 1)
 
     def test_platform_route_reclaims_provider_retry_after_projection_failure(self):
         event = {

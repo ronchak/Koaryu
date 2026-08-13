@@ -113,6 +113,14 @@ class StripeWebhookService:
         if claim_status == "already_processed":
             return WebhookProcessResponse(status="already_processed")
         if claim_status == "already_processing":
+            if (
+                claimed_event
+                and claimed_event.get("processing_status") == "ignored"
+                and processor == "connect"
+                and livemode
+                and self._is_excluded_connect_account(stripe_account_id)
+            ):
+                return WebhookProcessResponse(status="ignored")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Webhook event is already processing. Retry after the processing lease expires.",
@@ -154,6 +162,13 @@ class StripeWebhookService:
             )
 
         if processor == "connect" and livemode and not self._is_mapped_connect_account(stripe_account_id):
+            if self._is_excluded_connect_account(stripe_account_id):
+                if not self._finish_event_processing(row_id, claim_token, "ignored"):
+                    raise RuntimeError(
+                        "Webhook processing lease was lost before the excluded account event "
+                        "could be ignored."
+                    )
+                return WebhookProcessResponse(status="ignored")
             if not self._finish_event_processing(
                 row_id,
                 claim_token,
@@ -221,6 +236,19 @@ class StripeWebhookService:
             self.supabase.table("studio_payment_accounts")
             .select("studio_id")
             .eq("stripe_connected_account_id", stripe_account_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(response.data)
+
+    def _is_excluded_connect_account(self, stripe_account_id: Optional[str]) -> bool:
+        if not stripe_account_id:
+            return False
+        response = (
+            self.supabase.table("stripe_connect_account_dispositions")
+            .select("stripe_connected_account_id")
+            .eq("stripe_connected_account_id", stripe_account_id)
+            .eq("excluded", True)
             .limit(1)
             .execute()
         )
