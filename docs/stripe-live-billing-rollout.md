@@ -63,6 +63,41 @@ venv/bin/python scripts/stripe_reconciliation_report.py \
 
 The collection must receive the exact candidate SHA from `https://koaryu.onrender.com/health/ready`. `record-checkpoint` independently repeats that pinned production readiness probe immediately before it can call the database writer; staging or offline evidence cannot be recorded.
 
+### Historical eight-event route reconciliation
+
+Use this bounded read-only procedure when reviewing the seven historical accountless
+invoice/payment deliveries and the deleted-studio subscription update. It is evidence
+collection only: do not resend an event, replay a payload, edit an endpoint, change an
+account mapping, or record a checkpoint as part of this procedure.
+
+1. Record the expected 40-character backend SHA, then read
+   `https://koaryu.onrender.com/health/ready`. Stop if `commit_sha` differs or readiness
+   is not healthy.
+2. Run the production `--collect-read-only` reconciliation command above with that
+   exact SHA. Preserve the sanitized report bytes and its SHA-256 digest.
+3. In Stripe live mode, inspect each of the eight event IDs. Record only the event ID,
+   type, creation time, top-level account context (present or absent), destination
+   endpoint, HTTP delivery result, and latest delivery time. Do not copy payloads,
+   customer details, payment methods, or addresses.
+4. Confirm the seven invoice/payment events are limited to `invoice.created`,
+   `invoice.finalized`, `invoice.paid`, and `payment_intent.succeeded`, have no
+   top-level connected-account context, and were delivered to the endpoint shown by
+   Stripe. Confirm the subscription event is `customer.subscription.updated` and
+   separately record its endpoint and delivery result.
+5. Read the matching `stripe_events` rows by exact event ID. For every row, record only
+   `stripe_event_id`, `type`, `stripe_account_id`, `livemode`, `processing_status`,
+   sanitized `error`, `error_reference`, `created_at`, and `processed_at`. Confirm no
+   row acquired a connected-account ID from object metadata.
+6. For accountless invoice/payment rows, confirm there is no tenant invoice, payment,
+   payer, or subscription projection attributable to the wrong Connect route. For the
+   deleted-studio subscription event, confirm the deleted studio still has no studio,
+   subscription, or payment-account row and that no other studio was updated.
+7. Compare Stripe delivery evidence, the local rows, and the exact deployed SHA. Any
+   missing event, unexpected account context, nonterminal local state, tenant write,
+   endpoint mismatch, or uncorrelated delivery keeps tuition collection blocked and
+   requires a separately approved remediation. A clean comparison proves only this
+   bounded webhook history; it does not authorize live billing or money movement.
+
 Treat the reported July 20 explanations as hypotheses. If provider events continued but local receipt stopped, investigate endpoint delivery, routing, and signing-secret verification. If both stopped, provider inactivity, mode mismatch, or incomplete collection remain possible. No replay or backfill is allowed from this report. First confirm the exact event-ID uniqueness/claim path and handler projection are idempotent; then obtain a separate replay approval with an event allowlist.
 
 The six currently unmapped live-event accounts and all seven failed live events make `checkpoint_eligible=false`. Do not grant any scope or bind a live authorization until each account is mapped to its rightful studio or explicitly excluded with provenance, and each failed event has an event-specific disposition plus idempotent reconciliation proof. Never blanket-ignore unmapped accounts.
