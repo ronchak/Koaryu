@@ -316,12 +316,12 @@ BEGIN
       AND studio_id = v_studio;
 
     UPDATE public.student_program_memberships
-    SET current_belt_rank_id = v_green_rank
+    SET current_belt_rank_id = v_second_rank
     WHERE student_id = v_student_after_rank
       AND program_id = v_program;
 
     UPDATE public.students
-    SET current_belt_rank_id = v_green_rank
+    SET current_belt_rank_id = v_second_rank
     WHERE id = v_student_after_rank
       AND studio_id = v_studio;
 
@@ -331,7 +331,7 @@ BEGIN
     )
     VALUES (
         v_ended_student, v_studio, 'Ended', 'Rank', 'inactive',
-        v_program, v_green_rank
+        v_program, v_second_rank
     );
 
     INSERT INTO public.student_program_memberships (
@@ -340,7 +340,7 @@ BEGIN
     )
     VALUES (
         v_studio, v_ended_student, v_program, 'ended', CURRENT_DATE,
-        v_green_rank
+        v_second_rank
     );
 
     SELECT synced.ranks
@@ -360,18 +360,18 @@ BEGIN
                 'is_tip', false
             ),
             jsonb_build_object(
-                'id', v_second_rank,
-                'name', 'Yellow',
-                'color_hex', '#facc15',
-                'min_classes', 10,
-                'min_months', 2,
+                'id', v_green_rank,
+                'name', 'Green',
+                'color_hex', '#22c55e',
+                'min_classes', 12,
+                'min_months', 3,
                 'requires_approval', true,
                 'is_tip', false
             )
         )
     ) AS synced;
 
-    v_replacement_rank := v_second_rank;
+    v_replacement_rank := v_first_rank;
 
     IF EXISTS (
         SELECT 1
@@ -379,7 +379,7 @@ BEGIN
         WHERE student_id IN (v_student_before_rank, v_student_after_rank)
           AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
     ) THEN
-        RAISE EXCEPTION 'Deleting a tip or later belt did not move active memberships to the nearest preceding full belt.';
+        RAISE EXCEPTION 'Deleting a middle belt group did not move active memberships to the preceding surviving full belt.';
     END IF;
 
     IF EXISTS (
@@ -388,7 +388,7 @@ BEGIN
         WHERE id IN (v_student_before_rank, v_student_after_rank)
           AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
     ) THEN
-        RAISE EXCEPTION 'Deleting a tip or later belt did not move primary student ranks to the nearest preceding full belt.';
+        RAISE EXCEPTION 'Deleting a middle belt group did not move primary student ranks to the preceding surviving full belt.';
     END IF;
 
     IF EXISTS (
