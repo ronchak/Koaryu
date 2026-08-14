@@ -9,7 +9,7 @@ BEGIN
         'public.mutate_student_program_membership_atomic(uuid,uuid,uuid,text,uuid,jsonb)',
         'public.mutate_students_bulk_atomic(uuid,uuid,uuid[],text,text[],text[],text)',
         'public.soft_delete_student_atomic(uuid,uuid,uuid)',
-        'public.reserve_core_checkout_atomic(uuid)',
+        'public.reserve_core_checkout_v2_atomic(uuid)',
         'public.publish_core_checkout_atomic(uuid,uuid,bigint,text,text,bigint)',
         'public.release_core_checkout_reservation_atomic(uuid,uuid,bigint)',
         'public.accept_core_checkout_subscription_atomic(uuid,uuid,bigint,text,text,bigint)'
@@ -26,6 +26,13 @@ BEGIN
             RAISE EXCEPTION 'Browser role can execute %', v_signature;
         END IF;
     END LOOP;
+    IF has_function_privilege(
+        'service_role',
+        'public.reserve_core_checkout_atomic(uuid)'::REGPROCEDURE,
+        'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'service_role can still execute retired reserve_core_checkout_atomic(uuid)';
+    END IF;
 END $$;
 
 DO $$
@@ -163,9 +170,12 @@ BEGIN
 
     INSERT INTO public.studio_subscriptions (studio_id, status, comped, metadata)
     VALUES (v_studio, 'incomplete', FALSE, '{}'::JSONB);
-    SELECT * INTO v_checkout FROM public.reserve_core_checkout_atomic(v_studio);
-    IF v_checkout.outcome <> 'reserved' OR v_checkout.reservation_token IS NULL THEN
-        RAISE EXCEPTION 'Core checkout did not reserve a studio-scoped epoch.';
+    SELECT * INTO v_checkout FROM public.reserve_core_checkout_v2_atomic(v_studio);
+    IF v_checkout.outcome <> 'reserved'
+       OR v_checkout.reservation_token IS NULL
+       OR v_checkout.trial_period_days <> 30 THEN
+        RAISE EXCEPTION 'Core checkout did not atomically reserve a first-trial epoch: %',
+            row_to_json(v_checkout);
     END IF;
     SELECT * INTO v_publish FROM public.publish_core_checkout_atomic(
         v_studio, v_checkout.reservation_token, v_checkout.checkout_epoch,
@@ -182,17 +192,34 @@ BEGIN
         RAISE EXCEPTION 'Core checkout acceptance did not commit.';
     END IF;
     SELECT * INTO v_second_checkout
-    FROM public.reserve_core_checkout_atomic(v_studio);
-    IF v_second_checkout.outcome <> 'active' THEN
+    FROM public.reserve_core_checkout_v2_atomic(v_studio);
+    IF v_second_checkout.outcome <> 'active'
+       OR v_second_checkout.trial_period_days IS NOT NULL THEN
         RAISE EXCEPTION 'A completed checkout binding was reopened before projection: %',
             row_to_json(v_second_checkout);
+    END IF;
+    UPDATE public.studio_subscriptions
+    SET stripe_subscription_id = 'sub_older', status = 'canceled'
+    WHERE studio_id = v_studio;
+    BEGIN
+        UPDATE public.studio_subscriptions SET comped = TRUE WHERE studio_id = v_studio;
+        RAISE EXCEPTION 'Comp grant crossed an accepted but unprojected subscription.';
+    EXCEPTION
+        WHEN SQLSTATE 'P0001' THEN NULL;
+    END;
+    IF EXISTS (
+        SELECT 1 FROM public.studio_subscriptions
+        WHERE studio_id = v_studio AND comped IS TRUE
+    ) THEN
+        RAISE EXCEPTION 'Rejected comp grant changed subscription state.';
     END IF;
     UPDATE public.studio_subscriptions
     SET stripe_subscription_id = 'sub_contract', status = 'canceled'
     WHERE studio_id = v_studio;
     SELECT * INTO v_second_checkout
-    FROM public.reserve_core_checkout_atomic(v_studio);
+    FROM public.reserve_core_checkout_v2_atomic(v_studio);
     IF v_second_checkout.outcome <> 'reserved'
+       OR v_second_checkout.trial_period_days IS NOT NULL
        OR public.accept_core_checkout_subscription_atomic(
             v_studio, v_checkout.reservation_token, v_checkout.checkout_epoch,
             'cs_contract', 'sub_contract', 10
@@ -227,7 +254,11 @@ BEGIN
        OR public.accept_core_checkout_completion_atomic(
             v_studio, v_second_checkout.reservation_token, v_second_checkout.checkout_epoch,
             'cs_contract_2', 1
-       ) THEN
+       )
+       OR public.accept_core_checkout_subscription_atomic(
+            v_studio, v_checkout.reservation_token, v_checkout.checkout_epoch,
+            'cs_contract', 'sub_contract', 10
+       ) <> 'invalid' THEN
         RAISE EXCEPTION 'Comp grant did not invalidate the published checkout epoch.';
     END IF;
 

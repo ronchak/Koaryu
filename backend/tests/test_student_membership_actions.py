@@ -3,13 +3,20 @@ from __future__ import annotations
 import asyncio
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
+
+from app.schemas.student import StudentProgramMembershipCreate
 from app.services.student_membership_actions import StudentMembershipActions
 from tests.fakes.supabase import TableBackedSupabase
 
 
 class FakeMembershipStore:
-    pass
+    @staticmethod
+    def membership_write_payload(payload):
+        return payload
 
 
 class RecordingResponseBuilder:
@@ -48,6 +55,38 @@ class StudentMembershipActionsTenantScopeTest(unittest.TestCase):
 
         self.assertEqual(active_ids, ["program_1"])
         self.assertEqual(response_builder.calls, [("student_1", "studio_1")])
+
+    def test_add_maps_concurrent_student_deletion_to_not_found(self):
+        actions = StudentMembershipActions(
+            TableBackedSupabase(),
+            FakeMembershipStore(),
+            RecordingResponseBuilder(),
+        )
+        actions._ensure_student_exists = lambda *_args: None
+        missing_student = PostgrestAPIError({
+            "code": "P0002",
+            "message": "Student not found.",
+            "details": "",
+            "hint": "",
+        })
+
+        with (
+            patch("app.services.student_membership_actions.ProgramService.ensure_program_active"),
+            patch(
+                "app.services.student_membership_actions.execute_required_rpc",
+                side_effect=missing_student,
+            ),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            asyncio.run(actions.add(
+                "student_1",
+                StudentProgramMembershipCreate(program_id="program_1"),
+                "studio_1",
+                "actor_1",
+            ))
+
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(raised.exception.detail, "Student not found")
 
 
 if __name__ == "__main__":

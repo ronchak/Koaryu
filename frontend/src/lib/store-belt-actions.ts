@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { api } from "@/lib/api";
 import {
+  beltLadderMatchesSyncPayload,
   buildBeltLadderSyncPayload,
   buildPreviewBeltLadderFromRanks,
   buildPreviewPromotion,
@@ -204,11 +205,21 @@ export function useStoreBeltActions({
     const nextSubRankTerm = desiredSubRankTerm || ladder.sub_rank_term || "Stripe";
     const syncPayload = buildBeltLadderSyncPayload(ranks, nextSubRankTerm);
 
-    const syncedLadder = await api.post<BeltLadder>(
-      `/belts/ladders/${ladder.id}/sync`,
-      syncPayload,
-      liveRequest.token
-    );
+    let syncedLadder: BeltLadder;
+    try {
+      syncedLadder = await api.post<BeltLadder>(
+        `/belts/ladders/${ladder.id}/sync`,
+        syncPayload,
+        liveRequest.token
+      );
+    } catch (error) {
+      const refreshedLadders = await api.get<BeltLadder[]>("/belts/ladders", liveRequest.token);
+      const committedLadder = refreshedLadders.find((item) => item.id === ladder.id);
+      if (!committedLadder || !beltLadderMatchesSyncPayload(committedLadder, syncPayload)) {
+        throw error;
+      }
+      syncedLadder = committedLadder;
+    }
     if (!liveRequest.isCurrent()) {
       return;
     }

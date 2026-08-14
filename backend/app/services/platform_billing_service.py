@@ -377,12 +377,6 @@ class PlatformBillingService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.",
             )
-        trial_period_days = (
-            30
-            if not row_metadata(row).get("core_trial_consumed")
-            and not row.get("stripe_subscription_id")
-            else None
-        )
         studio = self._get_studio(studio_id)
         customer_id = row.get("stripe_customer_id")
         stripe_service = StripeService()
@@ -406,7 +400,7 @@ class PlatformBillingService:
         normalize_idempotency_key(idempotency_key)
         reservation = first_rpc_row(execute_required_rpc(
             self.supabase,
-            "reserve_core_checkout_atomic",
+            "reserve_core_checkout_v2_atomic",
             {"p_studio_id": studio_id},
         )) or {}
         reservation_outcome = reservation.get("outcome")
@@ -423,6 +417,10 @@ class PlatformBillingService:
         checkout_epoch = reservation.get("checkout_epoch")
         if reservation_outcome != "reserved" or not reservation_token or checkout_epoch is None:
             raise HTTPException(status_code=500, detail="Failed to reserve Koaryu Core checkout.")
+        trial_period_days = reservation.get("trial_period_days")
+        if trial_period_days not in (None, 30):
+            self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
+            raise HTTPException(status_code=500, detail="Koaryu Core checkout returned invalid trial eligibility.")
         checkout_key = build_core_checkout_idempotency_key(
             studio_id,
             str(reservation_token),
@@ -446,13 +444,17 @@ class PlatformBillingService:
             customer_id = self._create_platform_customer(stripe_service, studio_id, studio)
             reservation = first_rpc_row(execute_required_rpc(
                 self.supabase,
-                "reserve_core_checkout_atomic",
+                "reserve_core_checkout_v2_atomic",
                 {"p_studio_id": studio_id},
             )) or {}
             reservation_token = reservation.get("reservation_token")
             checkout_epoch = reservation.get("checkout_epoch")
             if reservation.get("outcome") != "reserved" or not reservation_token or checkout_epoch is None:
                 raise HTTPException(status_code=409, detail="Koaryu Core checkout state changed. Start checkout again.")
+            trial_period_days = reservation.get("trial_period_days")
+            if trial_period_days not in (None, 30):
+                self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
+                raise HTTPException(status_code=500, detail="Koaryu Core checkout returned invalid trial eligibility.")
             checkout_key = build_core_checkout_idempotency_key(
                 studio_id,
                 str(reservation_token),

@@ -2,6 +2,9 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
+from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
+
 from app.schemas.belt import DemoteStudent, PromoteStudent
 from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.belt_service import BeltService
@@ -78,6 +81,30 @@ class FakeSupabase(RpcBackedSupabase):
 
 
 class BeltServiceTest(unittest.TestCase):
+    def test_delete_assigned_rank_returns_conflict_with_sync_guidance(self):
+        supabase = FakeSupabase({"belt_ranks": []})
+        supabase.table_failures["belt_ranks"] = PostgrestAPIError({
+            "code": "P0001",
+            "message": "Assigned belt ranks must be deleted through sync_belt_ladder_ranks.",
+            "details": "",
+            "hint": "",
+        })
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(BeltService(supabase).delete_rank(FROM_RANK_ID, STUDIO_ID))
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("full belt ladder", raised.exception.detail)
+
+    def test_delete_unassigned_rank_remains_available(self):
+        supabase = FakeSupabase({
+            "belt_ranks": [{"id": FROM_RANK_ID, "studio_id": STUDIO_ID}],
+        })
+
+        asyncio.run(BeltService(supabase).delete_rank(FROM_RANK_ID, STUDIO_ID))
+
+        self.assertEqual(supabase.tables["belt_ranks"], [])
+
     def test_promote_student_records_promotion_through_atomic_rpc(self):
         supabase = FakeSupabase({
             "belt_ranks": [

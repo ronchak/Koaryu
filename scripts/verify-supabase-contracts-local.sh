@@ -458,10 +458,10 @@ echo "[student-rank manifest] PASS database-observable writer signal"
 echo "[critical-surface manifest] RUN checkout and promotion identity signal"
 critical_surface_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_critical_surface_manifest_v15();
+SELECT private.koaryu_release_critical_surface_manifest_v16();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:ea9595fd9c1c661c983d580be9beafdb0b794743dc43caef31a0a53f32f07149" ]]; then
+if [[ "$critical_surface_manifest" != "0:800957d36c16a6b5db75e2c8188916eabacda33e642481dce013ea215ae7f4de" ]]; then
   echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi

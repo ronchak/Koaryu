@@ -244,7 +244,7 @@ export function applyPreviewStudentUpdate(
       program_color_hex: program?.color_hex,
       status: "active" as const,
       started_at: membershipStartWasSupplied
-        ? membershipStart
+        ? membershipStart ?? existing?.started_at ?? null
         : existing?.started_at ?? membershipStart,
       ended_at: null,
       current_belt_rank_id: currentBeltRankId,

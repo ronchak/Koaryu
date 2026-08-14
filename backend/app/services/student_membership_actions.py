@@ -43,14 +43,19 @@ class StudentMembershipActions:
     ) -> StudentProgramMembershipResponse:
         self._ensure_student_exists(student_id, studio_id)
         ProgramService(self.supabase).ensure_program_active(studio_id, data.program_id)
-        result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
-            "p_student_id": student_id,
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_operation": "add",
-            "p_membership_id": None,
-            "p_payload": self.membership_store.membership_write_payload(data.model_dump()),
-        })
+        try:
+            result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
+                "p_student_id": student_id,
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_operation": "add",
+                "p_membership_id": None,
+                "p_payload": self.membership_store.membership_write_payload(data.model_dump()),
+            })
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) == "P0002":
+                raise HTTPException(status_code=404, detail="Student not found") from exc
+            raise
         row = first_rpc_row(result)
         if not row:
             raise HTTPException(status_code=500, detail="Failed to add student program membership")

@@ -180,6 +180,77 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             "sub_old",
         )
 
+    def test_comped_archived_acceptance_is_rejected_by_both_event_families(self):
+        token = "00000000-0000-4000-8000-000000000001"
+        archived = {
+            "state": "completed",
+            "token": token,
+            "epoch": 1,
+            "id": "cs_comped",
+            "accepted_subscription_id": "sub_comped",
+            "completed_event_created": 100,
+        }
+        events = [
+            {
+                "created": 100,
+                "type": "checkout.session.completed",
+                "data": {"object": {
+                    "id": "cs_comped",
+                    "customer": "cus_123",
+                    "subscription": "sub_comped",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            },
+            {
+                "created": 100,
+                "type": "customer.subscription.updated",
+                "data": {"object": {
+                    "id": "sub_comped",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            },
+        ]
+
+        for event in events:
+            with self.subTest(event_type=event["type"]):
+                rows = [{
+                    "studio_id": "studio_1",
+                    "stripe_customer_id": "cus_123",
+                    "stripe_subscription_id": None,
+                    "status": "comped",
+                    "comped": True,
+                    "metadata": {
+                        "core_trial_consumed": True,
+                        "core_checkout_epoch": 2,
+                        "core_checkout_acceptances": {"sub_comped": dict(archived)},
+                    },
+                }]
+                service = self.service(rows)
+                service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+                canceled = []
+
+                class FakeStripeService:
+                    def cancel_core_subscription(self, **payload):
+                        canceled.append(payload["subscription_id"])
+
+                with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+                    service.project_subscription_event(event, hydrate_subscription=False)
+
+                self.assertEqual(canceled, ["sub_comped"])
+                self.assertTrue(rows[0]["comped"])
+                self.assertEqual(rows[0]["status"], "comped")
+
     def test_tokenized_subscription_event_accepts_before_checkout_completion(self):
         token = "00000000-0000-4000-8000-000000000001"
         rows = [{

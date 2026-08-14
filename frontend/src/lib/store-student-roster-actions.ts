@@ -218,7 +218,7 @@ export function useStoreStudentRosterActions({
       commitStudents(nextStudents);
       return nextStudents;
     } catch (error) {
-      if (request.isCurrent()) {
+      if (request.isCurrent() && refreshRequestSequenceRef.current === requestSequence) {
         setStudentsLoadError(
           error instanceof Error ? error.message : "Failed to load students."
         );

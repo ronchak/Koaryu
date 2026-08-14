@@ -447,7 +447,15 @@ class BeltService:
         return BeltRankResponse(**result.data[0])
 
     async def delete_rank(self, rank_id: str, studio_id: str) -> None:
-        self.supabase.table("belt_ranks").delete().eq("id", rank_id).eq("studio_id", studio_id).execute()
+        try:
+            self.supabase.table("belt_ranks").delete().eq("id", rank_id).eq("studio_id", studio_id).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) == "P0001":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Assigned ranks must be removed by saving the full belt ladder.",
+                ) from exc
+            raise
 
     # ---- Eligibility ----
 

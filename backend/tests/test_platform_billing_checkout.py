@@ -95,6 +95,51 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
         )
         self.assertEqual(rows[0]["metadata"]["core_checkout_session"]["id"], "cs_new")
 
+    def test_trial_decision_uses_locked_subscription_state_not_stale_service_snapshot(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {},
+        }]
+        service = self.service(rows)
+        checkout_payloads = []
+
+        def project_accepted_terminal_subscription():
+            rows[0]["stripe_subscription_id"] = "sub_accepted"
+            rows[0]["status"] = "canceled"
+            rows[0]["metadata"] = {
+                "core_trial_consumed": True,
+                "core_checkout_epoch": 1,
+                "core_checkout_session": {
+                    "state": "completed",
+                    "token": "00000000-0000-4000-8000-000000000001",
+                    "epoch": 1,
+                    "id": "cs_accepted",
+                    "accepted_subscription_id": "sub_accepted",
+                },
+            }
+
+        service.supabase.before_reserve_core_checkout = project_accepted_terminal_subscription
+
+        class FakeStripeService:
+            def create_core_checkout_session(self, **payload):
+                checkout_payloads.append(payload)
+                return {
+                    "id": "cs_after_projection",
+                    "url": "https://checkout.stripe.test/after-projection",
+                    "expires_at": 9999999999,
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(response.url, "https://checkout.stripe.test/after-projection")
+        self.assertIsNone(checkout_payloads[0]["trial_period_days"])
+        self.assertEqual(rows[0]["metadata"]["core_checkout_epoch"], 2)
+
     def test_create_checkout_uses_idempotent_customer_and_session_keys(self):
         rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]
         service = self.service(rows)
@@ -159,6 +204,51 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
 
         self.assertEqual(response.url, "https://checkout.stripe.test/returning")
         self.assertIsNone(checkout_payloads[0]["trial_period_days"])
+
+    def test_missing_customer_retry_redecides_trial_under_second_reservation_lock(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_deleted",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {},
+        }]
+        service = self.service(rows)
+        checkout_payloads = []
+
+        class NoSuchCustomerError(Exception):
+            __module__ = "stripe.error"
+            code = "resource_missing"
+            param = "customer"
+
+        def consume_trial_before_second_reservation():
+            rows[0]["stripe_subscription_id"] = "sub_prior"
+            rows[0]["status"] = "canceled"
+            rows[0]["metadata"]["core_trial_consumed"] = True
+
+        class FakeStripeService:
+            def create_customer(self, **_payload):
+                return {"id": "cus_repaired"}
+
+            def create_core_checkout_session(self, **payload):
+                checkout_payloads.append(payload)
+                if len(checkout_payloads) == 1:
+                    service.supabase.before_reserve_core_checkout = consume_trial_before_second_reservation
+                    raise NoSuchCustomerError("No such customer: cus_deleted")
+                return {
+                    "id": "cs_repaired",
+                    "url": "https://checkout.stripe.test/repaired",
+                    "expires_at": 9999999999,
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(response.url, "https://checkout.stripe.test/repaired")
+        self.assertEqual(checkout_payloads[0]["trial_period_days"], 30)
+        self.assertIsNone(checkout_payloads[1]["trial_period_days"])
+        self.assertEqual(checkout_payloads[1]["checkout_epoch"], 2)
 
     def test_create_checkout_repairs_missing_live_subscription_before_opening_new_session(self):
         rows = [{

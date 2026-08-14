@@ -512,11 +512,10 @@ SELECT count(*) FROM public.sync_belt_ladder_ranks(
   '$STUDIO_ID'::uuid,
   'Tip',
   jsonb_build_array(jsonb_build_object(
-    'id', '$SECOND_RANK_ID'::uuid,
-    'name', 'Yellow',
-    'color_hex', '#facc15',
-    'min_classes', 10,
-    'min_months', 2,
+    'name', 'Replacement White',
+    'color_hex', '#f8fafc',
+    'min_classes', 0,
+    'min_months', 0,
     'requires_approval', false,
     'is_tip', false
   ))
@@ -539,15 +538,18 @@ fi
 profile_pid=""
 
 secondary_delete_state="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
-SELECT membership.current_belt_rank_id::text || ':' ||
+SELECT rank.name || ':' ||
        student.program_id::text || ':' ||
-       (student.current_belt_rank_id IS NULL)::text
+       (student.current_belt_rank_id IS NULL)::text || ':' ||
+       (SELECT count(*) FROM public.belt_ranks
+        WHERE id IN ('$FIRST_RANK_ID'::uuid, '$SECOND_RANK_ID'::uuid, '$FOURTH_RANK_ID'::uuid))::text
 FROM public.student_program_memberships membership
 JOIN public.students student ON student.id = membership.student_id
+JOIN public.belt_ranks rank ON rank.id = membership.current_belt_rank_id
 WHERE membership.id = '$MEMBERSHIP_ID'::uuid;
 SQL
 )"
-if [[ "$secondary_delete_state" != "$SECOND_RANK_ID:$SECOND_PROGRAM_ID:true" ]]; then
+if [[ "$secondary_delete_state" != "Replacement White:$SECOND_PROGRAM_ID:true:0" ]]; then
   echo "FAIL: secondary-membership rank deletion did not converge without changing the primary program" >&2
   exit 1
 fi

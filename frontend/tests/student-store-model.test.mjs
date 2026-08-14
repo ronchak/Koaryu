@@ -332,8 +332,16 @@ describe("student store model", () => {
       [program("kids")],
       options,
     );
+    const cleared = applyPreviewStudentUpdate(
+      existingStudent,
+      { membership_start_date: null, program_ids: ["kids", "nogi"] },
+      [program("kids"), program("nogi")],
+      { ...options, idFactory: () => "new-nogi-membership" },
+    );
 
     assert.equal(omitted.program_memberships?.[0]?.started_at, "2026-05-01");
     assert.equal(changed.program_memberships?.[0]?.started_at, "2026-05-10");
+    assert.equal(cleared.program_memberships?.[0]?.started_at, "2026-05-01");
+    assert.equal(cleared.program_memberships?.[1]?.started_at, null);
   });
 });

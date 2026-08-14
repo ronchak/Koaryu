@@ -36,6 +36,7 @@ class FakeSupabase(RpcBackedSupabase):
         })
         self.on_update_query = self._apply_studio_subscription_update
         self._core_checkout_lock = Lock()
+        self.before_reserve_core_checkout = None
 
     def _subscription_row(self, studio_id: str) -> dict:
         return next(
@@ -43,15 +44,19 @@ class FakeSupabase(RpcBackedSupabase):
             if row.get("studio_id") == studio_id
         )
 
-    def _rpc_reserve_core_checkout_atomic(self, params: dict) -> list[dict]:
+    def _rpc_reserve_core_checkout_v2_atomic(self, params: dict) -> list[dict]:
         with self._core_checkout_lock:
+            if self.before_reserve_core_checkout is not None:
+                callback = self.before_reserve_core_checkout
+                self.before_reserve_core_checkout = None
+                callback()
             row = self._subscription_row(params["p_studio_id"])
             if row.get("comped") or row.get("status") == "comped":
-                return [{"outcome": "comped"}]
+                return [{"outcome": "comped", "trial_period_days": None}]
             if row.get("stripe_subscription_id") and row.get("status") in {
                 "active", "trialing", "past_due", "unpaid", "paused",
             }:
-                return [{"outcome": "active"}]
+                return [{"outcome": "active", "trial_period_days": None}]
             metadata = dict(row.get("metadata") or {})
             session = metadata.get("core_checkout_session")
             acceptances = dict(metadata.get("core_checkout_acceptances") or {})
@@ -65,7 +70,7 @@ class FakeSupabase(RpcBackedSupabase):
                     row.get("stripe_subscription_id") != accepted_subscription_id
                     or row.get("status") not in {"canceled", "incomplete_expired"}
                 ):
-                    return [{"outcome": "active"}]
+                    return [{"outcome": "active", "trial_period_days": None}]
                 acceptances[accepted_subscription_id] = dict(session)
                 metadata["core_checkout_acceptances"] = acceptances
             if (
@@ -81,6 +86,7 @@ class FakeSupabase(RpcBackedSupabase):
                     "session_id": session.get("id"),
                     "session_url": session.get("url"),
                     "expires_at": session.get("expires_at"),
+                    "trial_period_days": None,
                 }]
             if isinstance(metadata.get("core_checkout_reservation"), dict):
                 reservation = metadata["core_checkout_reservation"]
@@ -88,7 +94,14 @@ class FakeSupabase(RpcBackedSupabase):
                     "outcome": "in_progress",
                     "reservation_token": reservation["token"],
                     "checkout_epoch": reservation["epoch"],
+                    "trial_period_days": None,
                 }]
+            trial_period_days = (
+                30
+                if row.get("stripe_subscription_id") is None
+                and metadata.get("core_trial_consumed", False) is False
+                else None
+            )
             epoch = int(metadata.get("core_checkout_epoch") or 0) + 1
             token = f"00000000-0000-4000-8000-{epoch:012d}"
             metadata["core_checkout_epoch"] = epoch
@@ -101,6 +114,7 @@ class FakeSupabase(RpcBackedSupabase):
                 "outcome": "reserved",
                 "reservation_token": token,
                 "checkout_epoch": epoch,
+                "trial_period_days": trial_period_days,
             }]
 
     def _rpc_publish_core_checkout_atomic(self, params: dict) -> list[dict]:
@@ -153,6 +167,8 @@ class FakeSupabase(RpcBackedSupabase):
             metadata = dict(row.get("metadata") or {})
             session = dict(metadata.get("core_checkout_session") or {})
             acceptances = dict(metadata.get("core_checkout_acceptances") or {})
+            if row.get("comped") or row.get("status") == "comped":
+                return "invalid"
             accepted = acceptances.get(params["p_subscription_id"])
             archived_binding = (
                 isinstance(accepted, dict)
@@ -182,8 +198,7 @@ class FakeSupabase(RpcBackedSupabase):
                 row["metadata"] = metadata
                 return "already_accepted"
             if (
-                row.get("comped")
-                or session.get("state") != "published"
+                session.get("state") != "published"
                 or session.get("token") != params["p_reservation_token"]
                 or session.get("epoch") != params["p_checkout_epoch"]
                 or (

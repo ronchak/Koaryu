@@ -88,6 +88,31 @@ export function buildBeltLadderSyncPayload(
   };
 }
 
+export function beltLadderMatchesSyncPayload(
+  ladder: BeltLadder,
+  payload: BeltLadderSyncPayload
+): boolean {
+  if ((ladder.sub_rank_term || "Stripe") !== payload.sub_rank_term) {
+    return false;
+  }
+  const ranks = [...(ladder.ranks || [])].sort((left, right) => left.display_order - right.display_order);
+  if (ranks.length !== payload.ranks.length) {
+    return false;
+  }
+  return payload.ranks.every((expected, index) => {
+    const actual = ranks[index];
+    return (!expected.id || actual.id === expected.id)
+      && actual.name === expected.name
+      && actual.color_hex.toLowerCase() === expected.color_hex.toLowerCase()
+      && actual.display_order === expected.display_order
+      && actual.min_classes === expected.min_classes
+      && actual.min_months === expected.min_months
+      && actual.requires_approval === expected.requires_approval
+      && actual.is_tip === expected.is_tip
+      && (actual.tip_color_hex ?? null) === expected.tip_color_hex;
+  });
+}
+
 export function updatePreviewLadderSubRankTerm(
   currentLadders: BeltLadder[],
   preferredLadderId: string | null | undefined,
