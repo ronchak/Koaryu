@@ -71,6 +71,13 @@ export function formatPhoneInput(value: string) {
 
   const digits = value.replace(/\D/g, "");
   if (digits.length === 0) return "";
+  const isDigitsOnly = /^\d+$/.test(value);
+  const isGeneratedDomesticFormat = /^\(\d{3}\)(?: \d{0,3}(?:-\d{0,4})?)?$/.test(value);
+  const isCompleteDomesticFormat = /^[\d\s().-]+$/.test(value)
+    && (digits.length === 10 || (digits.length === 11 && digits.startsWith("1")));
+  if (!isDigitsOnly && !isGeneratedDomesticFormat && !isCompleteDomesticFormat) {
+    return value;
+  }
   if (digits.length > 10) {
     if (digits.length === 11 && digits.startsWith("1")) {
       return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
@@ -81,6 +88,15 @@ export function formatPhoneInput(value: string) {
   if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
 
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+function formatInitialPhoneInput(value: string) {
+  if (!value || value.trimStart().startsWith("+")) return value;
+
+  const digits = value.replace(/\D/g, "");
+  const isCompleteDomesticFormat = /^[\d\s().-]+$/.test(value)
+    && (digits.length === 10 || (digits.length === 11 && digits.startsWith("1")));
+  return isCompleteDomesticFormat ? formatPhoneInput(value) : value;
 }
 
 export function buildInitialStudentFormFields(initialData?: StudentFormInitialData): StudentFormFields {
@@ -103,18 +119,18 @@ export function buildInitialStudentFormFields(initialData?: StudentFormInitialDa
     notes: initialData?.notes || "",
     tags: initialData?.tags?.join(", ") || "",
     email: initialData?.email || "",
-    phone: formatPhoneInput(initialData?.phone || ""),
+    phone: formatInitialPhoneInput(initialData?.phone || ""),
     addressLine1: initialData?.address_line1 || "",
     city: initialData?.address_city || "",
     state: initialData?.address_state || "",
     zip: initialData?.address_zip || "",
     emergencyName: initialData?.emergency_contact_name || "",
-    emergencyPhone: formatPhoneInput(initialData?.emergency_contact_phone || ""),
+    emergencyPhone: formatInitialPhoneInput(initialData?.emergency_contact_phone || ""),
     emergencyRelation: initialData?.emergency_contact_relation || "",
     guardianFirst: guardian?.first_name || "",
     guardianLast: guardian?.last_name || "",
     guardianEmail: guardian?.email || "",
-    guardianPhone: formatPhoneInput(guardian?.phone || ""),
+    guardianPhone: formatInitialPhoneInput(guardian?.phone || ""),
     guardianRelation: guardian?.relation || "",
   };
 }

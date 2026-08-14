@@ -228,9 +228,10 @@ export function applyPreviewStudentUpdate(
     const program = programs.find((item) => item.id === programId);
     const hasExplicitPrimaryRank = index === 0 && Object.hasOwn(data, "current_belt_rank_id");
     const currentBeltRankId = hasExplicitPrimaryRank
-      ? data.current_belt_rank_id ?? undefined
-      : existing?.current_belt_rank_id
-        ?? findPreviewStartingRankId(programId, beltLadders, beltRanks);
+      ? data.current_belt_rank_id
+      : existing
+        ? existing.current_belt_rank_id
+        : findPreviewStartingRankId(programId, beltLadders, beltRanks);
 
     return {
       ...existing,

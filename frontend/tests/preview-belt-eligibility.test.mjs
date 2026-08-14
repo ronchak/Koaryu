@@ -120,6 +120,40 @@ describe("preview belt eligibility", () => {
     });
   });
 
+  it("uses an unranked secondary membership instead of the primary program rank", () => {
+    const rows = buildPreviewEligibilityForLadder({
+      ladderId: ladder.id,
+      beltLadders: [ladder],
+      beltRanks: ranks,
+      students: [
+        student("multi-program", {
+          program_id: "program-karate",
+          current_belt_rank_id: "karate-black",
+          program_memberships: [
+            {
+              ...student("multi-program").program_memberships[0],
+              id: "multi-program-karate-membership",
+              program_id: "program-karate",
+              current_belt_rank_id: "karate-black",
+            },
+            {
+              ...student("multi-program").program_memberships[0],
+              id: "multi-program-bjj-membership",
+              program_id: "program-bjj",
+              current_belt_rank_id: null,
+            },
+          ],
+        }),
+      ],
+      nowMs: Date.parse("2026-05-31T00:00:00.000Z"),
+    });
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].student_program_membership_id, "multi-program-bjj-membership");
+    assert.equal(rows[0].current_rank_id, null);
+    assert.equal(rows[0].next_rank_id, "white");
+  });
+
   it("preserves seeded progress only while the student's rank transition still matches", () => {
     const rows = buildPreviewEligibilityForLadder({
       ladderId: ladder.id,

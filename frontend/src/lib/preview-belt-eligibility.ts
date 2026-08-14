@@ -110,7 +110,9 @@ export function buildPreviewEligibilityForLadder({
     membership: StudentProgramMembership | null,
   ) => {
     const programId = membership?.program_id ?? student.program_id;
-    const currentRankId = membership?.current_belt_rank_id ?? student.current_belt_rank_id;
+    const currentRankId = membership
+      ? membership.current_belt_rank_id
+      : student.current_belt_rank_id;
     const currentRank = currentRankId ? rankById.get(currentRankId) : undefined;
 
     if (currentRankId && !currentRank) return;

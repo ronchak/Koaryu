@@ -265,4 +265,37 @@ describe("student store model", () => {
     assert.equal(updated.program_memberships?.[0]?.status, "active");
     assert.equal(updated.program_memberships?.[0]?.current_belt_rank_id, "kids-blue");
   });
+
+  it("preserves an intentionally unranked preview membership on unrelated edits", () => {
+    const updated = applyPreviewStudentUpdate(
+      student("student-1", {
+        program_id: "kids",
+        current_belt_rank_id: null,
+        program_memberships: [
+          {
+            id: "kids-membership",
+            studio_id: "mock-studio",
+            student_id: "student-1",
+            program_id: "kids",
+            status: "active",
+            started_at: "2026-05-01",
+            current_belt_rank_id: null,
+            created_at: "2026-05-01T00:00:00.000Z",
+            updated_at: "2026-05-01T00:00:00.000Z",
+          },
+        ],
+      }),
+      { phone: "(555) 123-4567", program_ids: ["kids"] },
+      [program("kids")],
+      {
+        beltLadders: [ladder("kids-ladder", "kids", [rank("kids-white", "kids-ladder", 0)])],
+        idFactory: () => "unused-membership",
+        now: new Date("2026-05-24T12:00:00.000Z"),
+      }
+    );
+
+    assert.equal(updated.current_belt_rank_id, null);
+    assert.equal(updated.program_memberships?.[0]?.id, "kids-membership");
+    assert.equal(updated.program_memberships?.[0]?.current_belt_rank_id, null);
+  });
 });
