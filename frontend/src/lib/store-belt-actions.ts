@@ -18,7 +18,7 @@ import {
   type PromotionHistoryRequests,
 } from "@/lib/store-promotion-history";
 import { KEYS, localId, save } from "@/lib/store-storage";
-import { MOCK_BELT_LADDER, MOCK_ELIGIBILITY } from "@/lib/mock-data";
+import { MOCK_BELT_LADDER } from "@/lib/mock-data";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type {
   BeltLadder,
@@ -34,7 +34,6 @@ interface UseStoreBeltActionsArgs {
   beginLiveAuthRequest: BeginLiveAuthRequest;
   beltLaddersRef: StoreRef<BeltLadder[]>;
   beltRanksRef: StoreRef<BeltRank[]>;
-  commitEligibilityRows: (ladderId: string | null, rows: EligibilityEntry[]) => void;
   commitPromotionHistoryCache: (studentId: string, items: Promotion[]) => void;
   currentLadderIdRef: StoreRef<string | null>;
   isPreviewMode: boolean;
@@ -60,7 +59,6 @@ export function useStoreBeltActions({
   beginLiveAuthRequest,
   beltLaddersRef,
   beltRanksRef,
-  commitEligibilityRows,
   commitPromotionHistoryCache,
   currentLadderIdRef,
   isPreviewMode,
@@ -80,10 +78,6 @@ export function useStoreBeltActions({
   studentsRef,
   subRankTerm,
 }: UseStoreBeltActionsArgs) {
-  const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
-    return ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [];
-  }, []);
-
   const refreshBelts = useCallback(async (preferredLadderId?: string | null) => {
     if (isPreviewMode) {
       return;
@@ -109,12 +103,9 @@ export function useStoreBeltActions({
   const setCurrentLadder = useCallback(async (ladderId: string) => {
     if (isPreviewMode) {
       const selectedLadder = applyLadderSelection(beltLaddersRef.current, ladderId);
-      commitEligibilityRows(
-        selectedLadder?.id ?? null,
-        previewEligibilityForLadder(selectedLadder?.id)
-      );
       setEligibilityPendingLadderId(null);
       setEligibilityLoadError(null);
+      await loadEligibilityForLadder(selectedLadder?.id ?? null, { force: true });
       return;
     }
 
@@ -128,10 +119,8 @@ export function useStoreBeltActions({
   }, [
     applyLadderSelection,
     beltLaddersRef,
-    commitEligibilityRows,
     isPreviewMode,
     loadEligibilityForLadder,
-    previewEligibilityForLadder,
     refreshBeltsRef,
     setEligibilityLoadError,
     setEligibilityPendingLadderId,

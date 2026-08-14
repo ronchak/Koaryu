@@ -14,6 +14,8 @@ import {
   fetchStudentPage,
 } from "@/lib/store-student-pages";
 import type {
+  BeltLadder,
+  BeltRank,
   Program,
   Student,
   StudentCreate,
@@ -28,6 +30,8 @@ type CommitStudents = (
 
 interface UseStoreStudentRosterActionsOptions {
   beginLiveAuthRequest: BeginLiveAuthRequest;
+  beltLaddersRef: StoreRef<BeltLadder[]>;
+  beltRanksRef: StoreRef<BeltRank[]>;
   commitStudents: CommitStudents;
   isPreviewMode: boolean;
   onStudentMutation: () => void;
@@ -42,6 +46,8 @@ interface UseStoreStudentRosterActionsOptions {
 
 export function useStoreStudentRosterActions({
   beginLiveAuthRequest,
+  beltLaddersRef,
+  beltRanksRef,
   commitStudents,
   isPreviewMode,
   onStudentMutation,
@@ -56,6 +62,8 @@ export function useStoreStudentRosterActions({
   const addStudent = useCallback(async (data: StudentCreate): Promise<Student> => {
     if (isPreviewMode) {
       const newStudent = buildPreviewStudent(data, programsRef.current, {
+        beltLadders: beltLaddersRef.current,
+        beltRanks: beltRanksRef.current,
         idFactory: localId,
       });
       persistStudents([newStudent, ...studentsRef.current]);
@@ -73,6 +81,8 @@ export function useStoreStudentRosterActions({
     return result;
   }, [
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     commitStudents,
     isPreviewMode,
     onStudentMutation,

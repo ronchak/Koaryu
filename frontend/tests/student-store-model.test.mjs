@@ -45,6 +45,36 @@ function idFactory() {
   return () => ids[index++] ?? `id-${index}`;
 }
 
+function rank(id, ladderId, displayOrder, overrides = {}) {
+  return {
+    id,
+    ladder_id: ladderId,
+    studio_id: "mock-studio",
+    name: id,
+    color_hex: "#FFFFFF",
+    display_order: displayOrder,
+    min_classes: 0,
+    min_months: 0,
+    requires_approval: false,
+    is_tip: false,
+    created_at: "2026-05-24T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function ladder(id, programId, ranks) {
+  return {
+    id,
+    studio_id: "mock-studio",
+    name: id,
+    program_id: programId,
+    sub_rank_term: "Stripe",
+    ranks,
+    created_at: "2026-05-24T00:00:00.000Z",
+    updated_at: "2026-05-24T00:00:00.000Z",
+  };
+}
+
 describe("student store model", () => {
   it("normalizes bulk student ids and tags before API/store updates", () => {
     assert.deepEqual(normalizeStudentIds([" s-1 ", "", "s-2", "s-1"]), ["s-1", "s-2"]);
@@ -91,6 +121,13 @@ describe("student store model", () => {
       },
       [program("kids", { name: "Kids BJJ" }), program("nogi", { name: "No-Gi", color_hex: "#F59E0B" })],
       {
+        beltLadders: [
+          ladder("kids-ladder", "kids", [
+            rank("kids-tip", "kids-ladder", -1, { is_tip: true }),
+            rank("kids-white", "kids-ladder", 0),
+          ]),
+          ladder("nogi-ladder", "nogi", [rank("nogi-white", "nogi-ladder", 0)]),
+        ],
         idFactory: idFactory(),
         now: new Date("2026-05-24T12:00:00.000Z"),
         nowMs: new Date("2026-05-24T12:00:00.000Z").getTime(),
@@ -112,8 +149,36 @@ describe("student store model", () => {
       ]),
       [
         ["membership-1", "student-1", "kids", "Kids BJJ", "white"],
-        ["membership-2", "student-1", "nogi", "No-Gi", undefined],
+        ["membership-2", "student-1", "nogi", "No-Gi", "nogi-white"],
       ]
+    );
+  });
+
+  it("defaults each preview program membership to its first full belt", () => {
+    const built = buildPreviewStudent(
+      {
+        legal_first_name: "Noa",
+        legal_last_name: "Kim",
+        program_ids: ["kids", "nogi"],
+      },
+      [program("kids"), program("nogi")],
+      {
+        beltLadders: [
+          ladder("kids-ladder", "kids", [
+            rank("kids-tip", "kids-ladder", -1, { is_tip: true }),
+            rank("kids-white", "kids-ladder", 2),
+          ]),
+          ladder("nogi-ladder", "nogi", [rank("nogi-white", "nogi-ladder", 0)]),
+        ],
+        idFactory: idFactory(),
+        now: new Date("2026-05-24T12:00:00.000Z"),
+      }
+    );
+
+    assert.equal(built.current_belt_rank_id, "kids-white");
+    assert.deepEqual(
+      built.program_memberships?.map((membership) => membership.current_belt_rank_id),
+      ["kids-white", "nogi-white"]
     );
   });
 });

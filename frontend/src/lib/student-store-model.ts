@@ -1,4 +1,11 @@
-import type { Program, Student, StudentCreate, StudentStatus } from "@/types";
+import type {
+  BeltLadder,
+  BeltRank,
+  Program,
+  Student,
+  StudentCreate,
+  StudentStatus,
+} from "@/types";
 
 const MINOR_AGE_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
 
@@ -54,14 +61,35 @@ export function applyStatusToStudents(
   });
 }
 
+export function findPreviewStartingRankId(
+  programId: string,
+  beltLadders: BeltLadder[],
+  beltRanks: BeltRank[],
+): string | undefined {
+  const ladder = beltLadders.find((candidate) => candidate.program_id === programId);
+  if (!ladder) return undefined;
+
+  const currentRanks = beltRanks.filter((rank) => rank.ladder_id === ladder.id);
+  const ranks = currentRanks.length > 0 ? currentRanks : ladder.ranks || [];
+  return [...ranks]
+    .filter((rank) => !rank.is_tip)
+    .sort((left, right) =>
+      left.display_order - right.display_order || left.id.localeCompare(right.id)
+    )[0]?.id;
+}
+
 export function buildPreviewStudent(
   data: StudentCreate,
   programs: Program[],
   {
+    beltLadders = [],
+    beltRanks = [],
     idFactory,
     now = new Date(),
     nowMs = Date.now(),
   }: {
+    beltLadders?: BeltLadder[];
+    beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
     nowMs?: number;
@@ -74,6 +102,14 @@ export function buildPreviewStudent(
       : ["program-unassigned"];
   const nowIso = now.toISOString();
   const membershipStart = data.membership_start_date || nowIso.split("T")[0];
+  const rankIdsByProgram = new Map(
+    selectedProgramIds.map((programId, index) => [
+      programId,
+      index === 0 && data.current_belt_rank_id
+        ? data.current_belt_rank_id
+        : findPreviewStartingRankId(programId, beltLadders, beltRanks),
+    ])
+  );
   const newStudent: Student = {
     id: idFactory(),
     studio_id: "mock-studio",
@@ -98,7 +134,7 @@ export function buildPreviewStudent(
     status: (data.status as StudentStatus) || "active",
     membership_start_date: membershipStart,
     program_id: selectedProgramIds[0],
-    current_belt_rank_id: data.current_belt_rank_id,
+    current_belt_rank_id: rankIdsByProgram.get(selectedProgramIds[0]),
     notes: data.notes,
     tags: data.tags || [],
     guardians: (data.guardians || []).map((guardian, index) => ({
@@ -122,7 +158,7 @@ export function buildPreviewStudent(
         status: "active" as const,
         started_at: membershipStart,
         ended_at: null,
-        current_belt_rank_id: programId === selectedProgramIds[0] ? data.current_belt_rank_id : undefined,
+        current_belt_rank_id: rankIdsByProgram.get(programId),
         created_at: nowIso,
         updated_at: nowIso,
       };

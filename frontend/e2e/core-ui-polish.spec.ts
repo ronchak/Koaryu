@@ -95,3 +95,24 @@ coreUiTest("prepopulates standard belt names and exposes working drag handles", 
 
   await expectHealthyPage(page, pageErrors);
 });
+
+coreUiTest("adds a program student at the starting belt and refreshes eligibility", async ({ page }) => {
+  const pageErrors = collectPageErrors(page);
+  await signInToPreview(page);
+
+  await page.goto(`${FRONTEND_URL}/students`);
+  await page.getByRole("button", { name: "Add student", exact: true }).click();
+  await page.getByLabel("Legal first name *").fill("Eligibility");
+  await page.getByLabel("Legal last name *").fill("Check");
+  await page.getByRole("checkbox", { name: "Brazilian Jiu-Jitsu Core" }).check();
+  await page.locator("form").getByRole("button", { name: "Add student", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Add student", exact: true })).toHaveCount(0);
+
+  await page.goto(`${FRONTEND_URL}/belt-tracker`);
+  const studentRow = page.getByRole("row").filter({ hasText: "Eligibility Check" });
+  await expect(studentRow).toBeVisible();
+  await expect(studentRow).toContainText("White Belt");
+  await expect(studentRow).toContainText("Red Tip 1");
+
+  await expectHealthyPage(page, pageErrors);
+});

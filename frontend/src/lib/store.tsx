@@ -22,6 +22,7 @@ import {
 import { fetchStudentPage } from "@/lib/store-student-pages";
 import { useSyncedRefValue } from "@/lib/store-ref-sync";
 import { invalidateEligibilityAfterStudentMutation } from "@/lib/store-eligibility-invalidation";
+import { buildPreviewEligibilityForLadder } from "@/lib/preview-belt-eligibility";
 import {
   applyLiveStudioDataResetRefs,
   buildSubscriptionAccessRestoreState,
@@ -742,9 +743,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         primaryEligibilityLadderId: MOCK_BELT_LADDER.id,
         primaryEligibilityRows: MOCK_ELIGIBILITY,
       });
+      const hydratedStudents = load(KEYS.students, MOCK_STUDENTS);
+      const hydratedEligibility = buildPreviewEligibilityForLadder({
+        ladderId: hydratedLadderState.eligibilityLadderId,
+        beltLadders: hydratedLadderState.hydratedLadders,
+        beltRanks: hydratedLadderState.hydratedLadders.find(
+          (ladder) => ladder.id === hydratedLadderState.eligibilityLadderId
+        )?.ranks || [],
+        students: hydratedStudents,
+        seedRows: hydratedLadderState.eligibilityRows,
+      });
 
       setStudioNameState(load(KEYS.studioName, "My Studio"));
-      commitStudents(load(KEYS.students, MOCK_STUDENTS));
+      commitStudents(hydratedStudents);
       setPrograms(load(KEYS.programs, MOCK_PROGRAMS));
       setProgramsLoaded(true);
       setProgramsLoadError(null);
@@ -754,7 +765,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       applyLadderSelection(hydratedLadderState.hydratedLadders, hydratedLadderState.eligibilityLadderId);
       commitEligibilityRows(
         hydratedLadderState.eligibilityLadderId,
-        hydratedLadderState.eligibilityRows
+        hydratedEligibility
       );
       setEligibilityPendingLadderId(null);
       setEligibilityLoadError(null);
@@ -772,7 +783,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
-    return ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [];
+    return buildPreviewEligibilityForLadder({
+      ladderId,
+      beltLadders: beltLaddersRef.current,
+      beltRanks: beltRanksRef.current,
+      students: studentsRef.current,
+      seedRows: ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [],
+    });
   }, []);
 
   const fetchEligibilityForLadder = useCallback(async (
@@ -1347,6 +1364,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
+    studentsRef.current = next;
     commitStudents(next);
     if (isPreviewMode) save(KEYS.students, next);
   }, [commitStudents, isPreviewMode]);
@@ -1423,6 +1441,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateStudent,
   } = useStoreStudentRosterActions({
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     commitStudents,
     isPreviewMode,
     onStudentMutation,
@@ -1511,7 +1531,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beginLiveAuthRequest,
     beltLaddersRef,
     beltRanksRef,
-    commitEligibilityRows,
     commitPromotionHistoryCache,
     currentLadderIdRef,
     isPreviewMode,
