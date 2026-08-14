@@ -101,28 +101,28 @@ export const EXPECTED_RETAINED_OPERATIONAL_READINESS =
 
 export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
   "true|104|20260814114500|" +
-  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
   "|0||release-db-attestation-v11";
 
 export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
   "true|102|20260814103046|" +
-    ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
+    ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
     "|0||release-db-attestation-v9",
 ]);
 
 export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
   "true|103|20260814105424|" +
-  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
   "|0||release-db-attestation-v10";
 
 export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
-  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
