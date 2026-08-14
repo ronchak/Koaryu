@@ -226,6 +226,61 @@ class StudentCrudActionsTest(unittest.TestCase):
 
         self.assertEqual(student["current_belt_rank_id"], "rank-white")
 
+    def test_rank_only_update_keeps_current_primary_program_first(self):
+        supabase = FakeStudentWriteSupabase({
+            "programs": [
+                {"id": "program-1", "studio_id": "studio-1"},
+                {"id": "program-2", "studio_id": "studio-1"},
+            ],
+            "students": [{
+                "id": "student-1",
+                "studio_id": "studio-1",
+                "legal_first_name": "Aiko",
+                "legal_last_name": "Tanaka",
+                "program_id": "program-2",
+                "status": "active",
+                "tags": [],
+                "created_at": "2026-05-20T00:00:00+00:00",
+                "updated_at": "2026-05-20T00:00:00+00:00",
+            }],
+            "student_program_memberships": [],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        })
+        memberships = [
+            StudentProgramMembershipResponse(
+                id="membership-1",
+                studio_id="studio-1",
+                student_id="student-1",
+                program_id="program-1",
+                status="active",
+                created_at="2026-05-01T00:00:00+00:00",
+                updated_at="2026-05-01T00:00:00+00:00",
+            ),
+            StudentProgramMembershipResponse(
+                id="membership-2",
+                studio_id="studio-1",
+                student_id="student-1",
+                program_id="program-2",
+                status="active",
+                created_at="2026-05-20T00:00:00+00:00",
+                updated_at="2026-05-20T00:00:00+00:00",
+            ),
+        ]
+        actions = build_actions(supabase, memberships=memberships)
+
+        student = asyncio.run(actions.update_student(
+            "student-1",
+            StudentUpdate(current_belt_rank_id="rank-black"),
+            "studio-1",
+            "actor-1",
+        ))
+
+        params = supabase.rpc_calls[0][1]
+        self.assertEqual(params["p_program_ids"], ["program-2", "program-1"])
+        self.assertEqual(student["program_id"], "program-2")
+
     def assert_no_direct_operational_writes(self, supabase):
         operational_tables = {
             "students",

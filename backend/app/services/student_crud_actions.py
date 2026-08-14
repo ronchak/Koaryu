@@ -118,7 +118,20 @@ class StudentCrudActions:
                 if membership.status in {"active", "paused"} and not membership.ended_at
             ]
             if active_program_ids:
-                program_ids = active_program_ids
+                primary_program_id = self._current_primary_program_id(
+                    student_id,
+                    studio_id,
+                )
+                program_ids = (
+                    [primary_program_id]
+                    + [
+                        program_id
+                        for program_id in active_program_ids
+                        if program_id != primary_program_id
+                    ]
+                    if primary_program_id in active_program_ids
+                    else active_program_ids
+                )
 
         result = execute_required_rpc(self.supabase, "write_student_profile_atomic", {
             "p_student_id": student_id,
@@ -135,6 +148,23 @@ class StudentCrudActions:
             raise HTTPException(status_code=404, detail="Student not found")
 
         return self._write_response(student, studio_id)
+
+    def _current_primary_program_id(
+        self,
+        student_id: str,
+        studio_id: str,
+    ) -> str | None:
+        result = (
+            self.supabase.table("students")
+            .select("program_id")
+            .eq("id", student_id)
+            .eq("studio_id", studio_id)
+            .is_("deleted_at", "null")
+            .maybe_single()
+            .execute()
+        )
+        row = result.data if result else None
+        return row.get("program_id") if isinstance(row, dict) else None
 
     def _write_response(self, student: dict, studio_id: str) -> StudentResponse:
         memberships = self.fetch_memberships_for_student(student["id"], studio_id)
