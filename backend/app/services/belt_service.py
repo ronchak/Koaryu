@@ -163,7 +163,14 @@ class BeltService:
             return []
 
         if not include_names:
-            return [PromotionResponse(**row) for row in promotion_rows]
+            return [
+                PromotionResponse(
+                    **row,
+                    from_rank_name=row.get("from_rank_name_snapshot"),
+                    to_rank_name=row.get("to_rank_name_snapshot"),
+                )
+                for row in promotion_rows
+            ]
 
         student_ids = sorted(
             {

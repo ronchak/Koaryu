@@ -751,6 +751,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         primaryEligibilityRows: MOCK_ELIGIBILITY,
       });
       const hydratedStudents = load(KEYS.students, MOCK_STUDENTS);
+      const hydratedPromotionHistory = load(KEYS.promotionHistory, {});
       const hydratedEligibility = buildPreviewEligibilityForLadder({
         ladderId: hydratedLadderState.eligibilityLadderId,
         beltLadders: hydratedLadderState.hydratedLadders,
@@ -759,10 +760,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         )?.ranks || [],
         students: hydratedStudents,
         seedRows: hydratedLadderState.eligibilityRows,
+        promotionHistoryByStudent: toPromotionHistoryByStudent(hydratedPromotionHistory),
       });
 
       setStudioNameState(load(KEYS.studioName, "My Studio"));
       commitStudents(hydratedStudents);
+      promotionHistoryCacheRef.current = hydratedPromotionHistory;
+      setPromotionHistoryCache(hydratedPromotionHistory);
       setPrograms(load(KEYS.programs, MOCK_PROGRAMS));
       setProgramsLoaded(true);
       setProgramsLoadError(null);

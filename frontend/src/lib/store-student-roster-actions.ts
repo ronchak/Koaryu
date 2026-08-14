@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { api } from "@/lib/api";
 import { markPerformance, measurePerformance, startStudentPagePerformanceSpan } from "@/lib/performance";
@@ -59,6 +59,7 @@ export function useStoreStudentRosterActions({
   studentsRef,
   token,
 }: UseStoreStudentRosterActionsOptions) {
+  const refreshRequestSequenceRef = useRef(0);
   const addStudent = useCallback(async (data: StudentCreate): Promise<Student> => {
     if (isPreviewMode) {
       const newStudent = buildPreviewStudent(data, programsRef.current, {
@@ -199,6 +200,8 @@ export function useStoreStudentRosterActions({
     }
 
     const request = beginLiveAuthRequest();
+    const requestSequence = refreshRequestSequenceRef.current + 1;
+    refreshRequestSequenceRef.current = requestSequence;
 
     try {
       markPerformance("students.refresh_started");
@@ -209,7 +212,7 @@ export function useStoreStudentRosterActions({
         "students.refresh_started",
         "students.refresh_finished"
       );
-      if (!request.isCurrent()) {
+      if (!request.isCurrent() || refreshRequestSequenceRef.current !== requestSequence) {
         return nextStudents;
       }
       commitStudents(nextStudents);

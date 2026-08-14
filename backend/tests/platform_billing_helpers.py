@@ -54,7 +54,12 @@ class FakeSupabase(RpcBackedSupabase):
                 return [{"outcome": "active"}]
             metadata = dict(row.get("metadata") or {})
             session = metadata.get("core_checkout_session")
-            if isinstance(session, dict) and session.get("url") and int(session.get("expires_at") or 0) > 999999999:
+            if (
+                isinstance(session, dict)
+                and session.get("state") == "published"
+                and session.get("url")
+                and int(session.get("expires_at") or 0) > 999999999
+            ):
                 return [{
                     "outcome": "existing",
                     "reservation_token": session.get("token"),
@@ -128,16 +133,45 @@ class FakeSupabase(RpcBackedSupabase):
             row["metadata"] = metadata
             return True
 
-    def _rpc_accept_core_checkout_completion_atomic(self, params: dict) -> bool:
+    def _rpc_accept_core_checkout_subscription_atomic(self, params: dict) -> str:
         with self._core_checkout_lock:
             row = self._subscription_row(params["p_studio_id"])
-            session = (row.get("metadata") or {}).get("core_checkout_session") or {}
-            return bool(
-                not row.get("comped")
-                and session.get("token") == params["p_reservation_token"]
+            metadata = dict(row.get("metadata") or {})
+            session = dict(metadata.get("core_checkout_session") or {})
+            exact_binding = (
+                session.get("token") == params["p_reservation_token"]
                 and session.get("epoch") == params["p_checkout_epoch"]
-                and session.get("id") == params["p_session_id"]
+                and session.get("accepted_subscription_id") == params["p_subscription_id"]
+                and (
+                    params.get("p_session_id") is None
+                    or session.get("id") == params["p_session_id"]
+                )
             )
+            if session.get("state") == "completed" and exact_binding:
+                return "already_accepted"
+            if (
+                row.get("comped")
+                or session.get("state") != "published"
+                or session.get("token") != params["p_reservation_token"]
+                or session.get("epoch") != params["p_checkout_epoch"]
+                or (
+                    params.get("p_session_id") is not None
+                    and session.get("id") != params["p_session_id"]
+                )
+                or not params.get("p_subscription_id")
+            ):
+                return "invalid"
+            session.pop("url", None)
+            session.pop("expires_at", None)
+            session.update({
+                "state": "completed",
+                "accepted_subscription_id": params["p_subscription_id"],
+                "completed_event_created": params.get("p_event_created"),
+            })
+            metadata["core_checkout_session"] = session
+            metadata["core_trial_consumed"] = True
+            row["metadata"] = metadata
+            return "accepted"
 
     @staticmethod
     def _parse_timestamp(value: str):

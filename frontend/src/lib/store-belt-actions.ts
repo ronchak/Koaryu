@@ -215,10 +215,16 @@ export function useStoreBeltActions({
     const nextLadders = upsertBeltLadder(beltLaddersRef.current, syncedLadder);
     applyLadderSelection(nextLadders, syncedLadder.id);
 
-    await Promise.all([
+    const reconciliation = await Promise.allSettled([
       refreshStudents(),
       loadEligibilityForLadder(syncedLadder.id, { force: true }),
     ]);
+    if (reconciliation.some((result) => result.status === "rejected")) {
+      throw Object.assign(
+        new Error("Program ranks were saved, but refreshed data could not be loaded."),
+        { committed: true },
+      );
+    }
   }, [
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -299,7 +305,7 @@ export function useStoreBeltActions({
       isGenerationCurrent: (generation) => generation === promotionHistoryGenerationRef.current,
       beginLiveAuthRequest,
       fetchPromotionHistory: (requestedStudentId, authToken) => api.get<Promotion[]>(
-        `/belts/promotions?student_id=${encodeURIComponent(requestedStudentId)}&include_names=false`,
+        `/belts/promotions?student_id=${encodeURIComponent(requestedStudentId)}&include_names=true`,
         authToken,
         {
           timeoutMs: 6000,
@@ -368,7 +374,7 @@ export function useStoreBeltActions({
 
     commitLivePromotionHistoryItem(data.student_id, result);
 
-    await Promise.all([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
+    await Promise.allSettled([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
     return result;
   }, [
     beginLiveAuthRequest,

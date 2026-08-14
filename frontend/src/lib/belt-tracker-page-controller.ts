@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { RankFormData } from "@/components/belt-tracker/rank-form-modal";
 import { useBeltRankDrag } from "@/components/belt-tracker/use-belt-rank-drag";
-import { api } from "@/lib/api";
 import {
   appendTipToGroup,
   buildBeltTrackerProgramState,
@@ -22,26 +21,23 @@ import type {
   BeltsStoreContextValue,
   ConfigStoreContextValue,
   ProgramsStoreContextValue,
-  StudentsStoreContextValue,
 } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
-import type { EligibilityEntry, Promotion } from "@/types";
+import type { EligibilityEntry } from "@/types";
 
 type BeltTrackerPageControllerOptions = {
   beltStore: BeltsStoreContextValue;
-  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
+  config: Pick<ConfigStoreContextValue, "currentRole">;
   programsStore: Pick<
     ProgramsStoreContextValue,
     "programs" | "programsLoaded" | "programsLoadError" | "refreshPrograms"
   >;
-  studentsStore: Pick<StudentsStoreContextValue, "refreshStudents">;
 };
 
 export function useBeltTrackerPageController({
   beltStore,
   config,
   programsStore,
-  studentsStore,
 }: BeltTrackerPageControllerOptions) {
   const {
     beltLadders,
@@ -58,11 +54,9 @@ export function useBeltTrackerPageController({
     setCurrentLadder,
     subRankTerm: storeSubRankTerm,
   } = beltStore;
-  const { isPreviewMode, token } = config;
   const canConfigureBelts = hasStaffPermission(config.currentRole, "configure_belts");
   const canPromoteStudents = hasStaffPermission(config.currentRole, "promote_students");
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
-  const { refreshStudents } = studentsStore;
 
   const [tab, setTab] = useState<"eligibility" | "ladder">("eligibility");
   const visibleTab = canConfigureBelts ? tab : "eligibility";
@@ -275,7 +269,12 @@ export function useBeltTrackerPageController({
       setActionMessage("Program ranks saved.");
     } catch (error) {
       console.error("Failed to save belt ranks", error);
-      setSaveError("Could not save ladder changes. Please try again.");
+      if (error instanceof Error && (error as Error & { committed?: boolean }).committed) {
+        setDirty(false);
+        setActionMessage("Program ranks saved. Refresh needed to show the latest student ranks.");
+      } else {
+        setSaveError("Could not save ladder changes. Please try again.");
+      }
     } finally {
       setIsSaving(false);
     }
@@ -343,24 +342,9 @@ export function useBeltTrackerPageController({
     setIsPromoting(true);
     setPromotionError(null);
     try {
-      if (isPreviewMode) {
-        await promoteStudent(
-          buildPromotionRequestBody(promoteEntry, targetRankId, promotionNotes)
-        );
-      } else {
-        if (!token) {
-          throw new Error("Not authenticated");
-        }
-        await api.post<Promotion>(
-          "/belts/promote",
-          buildPromotionRequestBody(promoteEntry, targetRankId, promotionNotes),
-          token
-        );
-        await Promise.all([
-          refreshStudents().catch(() => []),
-          currentLadderId ? setCurrentLadder(currentLadderId) : Promise.resolve(),
-        ]);
-      }
+      await promoteStudent(
+        buildPromotionRequestBody(promoteEntry, targetRankId, promotionNotes)
+      );
       setActionMessage(`${promoteEntry.student_name} promoted to ${promoteEntry.next_rank_name}.`);
       setPromoteEntry(null);
       setPromotionNotes("");

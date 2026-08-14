@@ -437,7 +437,7 @@ starting_belt_manifest="$(
 SELECT private.koaryu_release_starting_belt_manifest_v9();
 "
 )"
-if [[ "$starting_belt_manifest" != "0:9eb0b668ca7b3d2856bb2c118fdcd759127bea1ce9222b5ec030356b27b4d611" ]]; then
+if [[ "$starting_belt_manifest" != "0:9c1c8ea5e7ab6ce0d34d5654d17b056faba89234f0f2b945ff147c0462711be9" ]]; then
   echo "[starting-belt manifest] FAIL database-observable invariant signal: $starting_belt_manifest" >&2
   exit 1
 fi

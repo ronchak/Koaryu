@@ -1,4 +1,6 @@
 from supabase import Client
+from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.student import BulkStatusUpdate, BulkTagUpdate
 from app.services.supabase_rpc import execute_required_rpc
@@ -17,13 +19,10 @@ class StudentBulkActions:
         student_ids = list(dict.fromkeys(data.student_ids))
         tags_to_add = list(dict.fromkeys(tag.strip() for tag in data.tags_to_add if tag.strip()))
         tags_to_remove = sorted({tag.strip() for tag in data.tags_to_remove if tag.strip()})
-        result = execute_required_rpc(self.supabase, "mutate_students_bulk_atomic", {
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_student_ids": student_ids,
-            "p_operation": "tags",
-            "p_tags_to_add": tags_to_add,
-            "p_tags_to_remove": tags_to_remove,
+        result = self._mutate({
+            "p_studio_id": studio_id, "p_actor_id": actor_id,
+            "p_student_ids": student_ids, "p_operation": "tags",
+            "p_tags_to_add": tags_to_add, "p_tags_to_remove": tags_to_remove,
             "p_status": None,
         })
         return int(result.data or 0)
@@ -35,7 +34,7 @@ class StudentBulkActions:
         actor_id: str,
     ) -> int:
         student_ids = list(dict.fromkeys(data.student_ids))
-        result = execute_required_rpc(self.supabase, "mutate_students_bulk_atomic", {
+        result = self._mutate({
             "p_studio_id": studio_id,
             "p_actor_id": actor_id,
             "p_student_ids": student_ids,
@@ -45,3 +44,11 @@ class StudentBulkActions:
             "p_status": data.status,
         })
         return int(result.data or 0)
+
+    def _mutate(self, payload: dict):
+        try:
+            return execute_required_rpc(self.supabase, "mutate_students_bulk_atomic", payload)
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) == "P0002":
+                raise HTTPException(status_code=404, detail="One or more students were not found") from exc
+            raise

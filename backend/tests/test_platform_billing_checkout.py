@@ -46,7 +46,35 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
             "koaryu:core-checkout:studio_1:1:00000000-0000-4000-8000-000000000001",
         )
         self.assertEqual(calls[1][1]["checkout_epoch"], 1)
+        self.assertEqual(calls[1][1]["trial_period_days"], 30)
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
+
+    def test_create_checkout_does_not_repeat_trial_after_prior_subscription(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": "sub_canceled",
+            "status": "canceled",
+            "comped": False,
+            "metadata": {"core_trial_consumed": True},
+        }]
+        service = self.service(rows)
+        checkout_payloads = []
+
+        class FakeStripeService:
+            def create_core_checkout_session(self, **payload):
+                checkout_payloads.append(payload)
+                return {
+                    "id": "cs_returning",
+                    "url": "https://checkout.stripe.test/returning",
+                    "expires_at": 9999999999,
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(response.url, "https://checkout.stripe.test/returning")
+        self.assertIsNone(checkout_payloads[0]["trial_period_days"])
 
     def test_create_checkout_repairs_missing_live_subscription_before_opening_new_session(self):
         rows = [{

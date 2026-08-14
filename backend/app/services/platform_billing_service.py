@@ -377,6 +377,12 @@ class PlatformBillingService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.",
             )
+        trial_period_days = (
+            30
+            if not row_metadata(row).get("core_trial_consumed")
+            and not row.get("stripe_subscription_id")
+            else None
+        )
         studio = self._get_studio(studio_id)
         customer_id = row.get("stripe_customer_id")
         stripe_service = StripeService()
@@ -428,6 +434,7 @@ class PlatformBillingService:
                 studio_id=studio_id,
                 reservation_token=str(reservation_token),
                 checkout_epoch=int(checkout_epoch),
+                trial_period_days=trial_period_days,
                 idempotency_key=checkout_key,
                 **checkout_urls,
             )
@@ -456,6 +463,7 @@ class PlatformBillingService:
                 studio_id=studio_id,
                 reservation_token=str(reservation_token),
                 checkout_epoch=int(checkout_epoch),
+                trial_period_days=trial_period_days,
                 idempotency_key=checkout_key,
                 **checkout_urls,
             )
@@ -557,19 +565,27 @@ class PlatformBillingService:
             checkout_epoch = metadata.get("core_checkout_epoch")
             session_id = self._stripe_id(data_object.get("id"))
             accepted = not bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
-            if reservation_token and checkout_epoch is not None and session_id:
+            if (
+                reservation_token
+                and checkout_epoch is not None
+                and session_id
+                and subscription_id
+            ):
                 accepted_result = execute_required_rpc(
                     self.supabase,
-                    "accept_core_checkout_completion_atomic",
+                    "accept_core_checkout_subscription_atomic",
                     {
                         "p_studio_id": studio_id,
                         "p_reservation_token": reservation_token,
                         "p_checkout_epoch": int(checkout_epoch),
                         "p_session_id": session_id,
+                        "p_subscription_id": subscription_id,
                         "p_event_created": event_created,
                     },
                 )
-                accepted = bool(getattr(accepted_result, "data", accepted_result))
+                accepted = getattr(accepted_result, "data", accepted_result) in {
+                    "accepted", "already_accepted",
+                }
             if not accepted:
                 if subscription_id:
                     StripeService().cancel_core_subscription(
@@ -582,7 +598,16 @@ class PlatformBillingService:
                         ),
                     )
                 return
-            update = {"metadata": merge_metadata(row, {PENDING_CHECKOUT_METADATA_KEY: None})}
+            if reservation_token:
+                row = self._ensure_subscription_row(studio_id)
+                stale_for_subscription_state = self._is_stale_subscription_event(row, event_created)
+                stale_for_payment_state = self._is_stale_invoice_payment_event(row, event_created)
+            update: dict[str, Any] = {}
+            if not reservation_token:
+                update["metadata"] = merge_metadata(
+                    row,
+                    {PENDING_CHECKOUT_METADATA_KEY: None},
+                )
             if not stale_for_payment_state:
                 update["last_payment_status"] = data_object.get("payment_status")
                 self._mark_invoice_payment_event_created(update, row, event_created)
@@ -626,6 +651,38 @@ class PlatformBillingService:
                 self._log_orphaned_subscription_event(event_type)
                 return
             row = self._ensure_subscription_row(studio_id)
+            reservation_token = metadata.get("core_checkout_reservation_token")
+            checkout_epoch = metadata.get("core_checkout_epoch")
+            subscription_id = self._stripe_id(data_object.get("id"))
+            if reservation_token and checkout_epoch is not None and subscription_id:
+                accepted_result = execute_required_rpc(
+                    self.supabase,
+                    "accept_core_checkout_subscription_atomic",
+                    {
+                        "p_studio_id": studio_id,
+                        "p_reservation_token": reservation_token,
+                        "p_checkout_epoch": int(checkout_epoch),
+                        "p_session_id": None,
+                        "p_subscription_id": subscription_id,
+                        "p_event_created": event_created,
+                    },
+                )
+                accepted = getattr(accepted_result, "data", accepted_result) in {
+                    "accepted", "already_accepted",
+                }
+                if not accepted:
+                    if event_type != "customer.subscription.deleted":
+                        StripeService().cancel_core_subscription(
+                            subscription_id=subscription_id,
+                            studio_id=studio_id,
+                            idempotency_key=build_idempotency_key(
+                                "core-checkout-invalid-subscription",
+                                studio_id,
+                                subscription_id,
+                            ),
+                        )
+                    return
+                row = self._ensure_subscription_row(studio_id)
             if self._is_stale_subscription_event(row, event_created):
                 return
             update = self._project_subscription(data_object, clear_comp=True)

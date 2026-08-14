@@ -127,6 +127,8 @@ export function StudentDetailSections({
                             isTip={fromRank.is_tip}
                             tipColorHex={fromRank.tip_color_hex ?? undefined}
                           />
+                        ) : promotion.from_rank_name ? (
+                          <span className="text-xs text-text-primary">{promotion.from_rank_name}</span>
                         ) : (
                           <span className="text-xs text-muted">Unranked</span>
                         )}

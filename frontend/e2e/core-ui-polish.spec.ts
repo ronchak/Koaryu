@@ -6,10 +6,14 @@ const frontendTarget = new URL(FRONTEND_URL);
 if (coreUiEnabled && !["localhost", "127.0.0.1"].includes(frontendTarget.hostname)) {
   throw new Error("KOARYU_CORE_UI_E2E is preview-stateful and may run only against loopback.");
 }
+if (coreUiEnabled && process.env.KOARYU_E2E_DATA_PLANE !== "disposable-preview") {
+  throw new Error("KOARYU_CORE_UI_E2E requires KOARYU_E2E_DATA_PLANE=disposable-preview.");
+}
 const coreUiTest = coreUiEnabled ? test : test.skip;
 
 async function signInToPreview(page: Page) {
   await page.goto(`${FRONTEND_URL}/login`);
+  await expect(page.locator("html")).toHaveAttribute("data-koaryu-data-plane", "disposable-preview");
   await page.getByLabel("Email").fill("demo@koaryu.local");
   await page.getByLabel("Password").fill("preview-password");
   await Promise.all([

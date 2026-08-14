@@ -12,7 +12,7 @@ BEGIN
         'public.reserve_core_checkout_atomic(uuid)',
         'public.publish_core_checkout_atomic(uuid,uuid,bigint,text,text,bigint)',
         'public.release_core_checkout_reservation_atomic(uuid,uuid,bigint)',
-        'public.accept_core_checkout_completion_atomic(uuid,uuid,bigint,text,bigint)'
+        'public.accept_core_checkout_subscription_atomic(uuid,uuid,bigint,text,text,bigint)'
     ] LOOP
         v_rpc := to_regprocedure(v_signature);
         IF v_rpc IS NULL THEN

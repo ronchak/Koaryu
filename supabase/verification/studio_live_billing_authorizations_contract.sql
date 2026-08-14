@@ -1108,7 +1108,7 @@ BEGIN
 
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF private.koaryu_release_starting_belt_manifest_v9()
-       <> '0:9eb0b668ca7b3d2856bb2c118fdcd759127bea1ce9222b5ec030356b27b4d611' THEN
+       <> '0:9c1c8ea5e7ab6ce0d34d5654d17b056faba89234f0f2b945ff147c0462711be9' THEN
         RAISE EXCEPTION 'Starting-belt V9 manifest mismatch; got %',
             private.koaryu_release_starting_belt_manifest_v9();
     END IF;
@@ -1118,8 +1118,8 @@ BEGIN
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 106
-       OR v_preflight.migration_head <> '20260814170000'
+       OR v_preflight.migration_count <> 107
+       OR v_preflight.migration_head <> '20260814183000'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
@@ -1128,10 +1128,10 @@ BEGIN
            '20260801112153', '20260801115044', '20260801123112',
            '20260801131844', '20260814043325', '20260814103046',
            '20260814105424', '20260814114500', '20260814152000',
-           '20260814170000'
+           '20260814170000', '20260814183000'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v13' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v14' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 
@@ -1184,7 +1184,7 @@ BEGIN
         FOR SELECT TO authenticated USING (false)';
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF v_preflight.ready
-       OR NOT ('policy_manifest' = ANY(v_preflight.security_failures)) THEN
+       OR NOT ('operational_semantic_acl_manifest_v7' = ANY(v_preflight.security_failures)) THEN
         RAISE EXCEPTION 'Hosted preflight accepted an injected policy-manifest drift.';
     END IF;
 
@@ -1210,7 +1210,7 @@ BEGIN
     );
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF v_preflight.ready
-       OR NOT ('sequence_acl' = ANY(v_preflight.security_failures)) THEN
+       OR NOT ('operational_semantic_acl_manifest_v7' = ANY(v_preflight.security_failures)) THEN
         RAISE EXCEPTION 'Hosted preflight accepted injected service-role sequence UPDATE.';
     END IF;
 END $$;

@@ -463,9 +463,9 @@ if [[ "$removal_state" != "ended:$SECOND_PROGRAM_ID:true" ]]; then
   exit 1
 fi
 
-# The direct-delete trigger must also lock a student whose affected membership
-# is secondary; filtering only by the legacy primary program would reintroduce
-# the membership-before-student cycle for multi-program students.
+# Public ladder sync must prelock students whose affected rank is held through
+# a secondary membership before it locks/deletes ranks. Otherwise this exact
+# profile-first start order forms student->rank versus rank->student.
 "$PSQL_BINARY" "${psql_args[@]}" <<SQL
 INSERT INTO public.belt_ranks (
   id, ladder_id, studio_id, name, color_hex, display_order, min_classes,
@@ -507,27 +507,7 @@ fi
 set +e
 secondary_delete_output="$("$PSQL_BINARY" "${psql_args[@]}" 2>&1 <<SQL
 SET statement_timeout = '6s';
-DELETE FROM public.belt_ranks WHERE id = '$FOURTH_RANK_ID'::uuid;
-SQL
-)"
-secondary_delete_status=$?
-set -e
-if [[ $secondary_delete_status -eq 0 ]] || [[ "$secondary_delete_output" != *"must be deleted through sync_belt_ladder_ranks"* ]]; then
-  echo "FAIL: assigned secondary-membership direct rank deletion was not rejected safely" >&2
-  echo "$secondary_delete_output" >&2
-  exit 1
-fi
-if ! wait "$profile_pid"; then
-  profile_pid=""
-  echo "FAIL: profile write failed while secondary-rank deletion was waiting" >&2
-  sed -n '1,160p' "$PROFILE_LOG" >&2
-  exit 1
-fi
-profile_pid=""
-
-"$PSQL_BINARY" "${psql_args[@]}" >/dev/null <<SQL
-SELECT count(*)
-FROM public.sync_belt_ladder_ranks(
+SELECT count(*) FROM public.sync_belt_ladder_ranks(
   '$LADDER_ID'::uuid,
   '$STUDIO_ID'::uuid,
   'Tip',
@@ -542,6 +522,21 @@ FROM public.sync_belt_ladder_ranks(
   ))
 );
 SQL
+)"
+secondary_delete_status=$?
+set -e
+if [[ $secondary_delete_status -ne 0 ]]; then
+  echo "FAIL: secondary-program ladder sync did not serialize behind profile replacement" >&2
+  echo "$secondary_delete_output" >&2
+  exit 1
+fi
+if ! wait "$profile_pid"; then
+  profile_pid=""
+  echo "FAIL: profile write failed while secondary-rank deletion was waiting" >&2
+  sed -n '1,160p' "$PROFILE_LOG" >&2
+  exit 1
+fi
+profile_pid=""
 
 secondary_delete_state="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
 SELECT membership.current_belt_rank_id::text || ':' ||
@@ -557,4 +552,4 @@ if [[ "$secondary_delete_state" != "$SECOND_RANK_ID:$SECOND_PROGRAM_ID:true" ]];
   exit 1
 fi
 
-echo "PASS: profile, rank-plan, membership PATCH/removal serialize; assigned direct rank deletion fails before inverse locking."
+echo "PASS: profile, rank-plan, membership PATCH/removal, and secondary-program full sync serialize without inverse locking."

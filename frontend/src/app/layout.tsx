@@ -81,6 +81,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-koaryu-data-plane={process.env.NEXT_PUBLIC_PREVIEW_MODE === "true" ? "disposable-preview" : "live"}
       data-theme="dark"
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full`}

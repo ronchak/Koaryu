@@ -209,13 +209,13 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("requires the exact V13 operational readiness output", () => {
+  it("requires the exact V14 operational readiness output", () => {
     assert.equal(
       validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS),
       EXPECTED_OPERATIONAL_READINESS,
     );
     for (const value of [null, "", "true|101|20260814043325", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
-      assert.throws(() => validateOperationalReadiness(value), /V13 operational readiness/);
+      assert.throws(() => validateOperationalReadiness(value), /V14 operational readiness/);
     }
   });
 
@@ -235,12 +235,12 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(WRITER_RETURN_CONTRACT_STATE_SQL, /TABLE\(student_id uuid, guardian_imported boolean\)/);
   });
 
-  it("decodes the pinned CLI single-field CSV contract before exact V13 validation", () => {
+  it("decodes the pinned CLI single-field CSV contract before exact V14 validation", () => {
     const quotedReadiness = singleValueCsv(
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|106\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|107\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -277,14 +277,16 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-106 packet from immutable ancestry and source hashes", () => {
+  it("derives an exact 100-to-107 packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 106);
+    assert.equal(packet.migrationCount, 107);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
     assert.match(packet.attestedHistory, /^104:[0-9a-f]{32}$/);
+    assert.match(packet.returnAttestedHistory, /^105:[0-9a-f]{32}$/);
+    assert.match(packet.retainedHistory, /^106:[0-9a-f]{32}$/);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(
       packet.pendingMigrations.length,
@@ -713,21 +715,21 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("rejects missing, malformed, or non-ready V13 output before post certification", () => {
+  it("rejects missing, malformed, or non-ready V14 output before post certification", () => {
     const packet = candidatePacket();
     for (const operationalReadiness of [
       null,
       "",
       EXPECTED_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_OPERATIONAL_READINESS.replace("|106|", "|105|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("20260814170000", "20260814152000"),
+      EXPECTED_OPERATIONAL_READINESS.replace("|107|", "|106|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("20260814183000", "20260814170000"),
       EXPECTED_OPERATIONAL_READINESS.replace("20260801105313,", ""),
       EXPECTED_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v13", "release-db-attestation-v12"),
+      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v14", "release-db-attestation-v13"),
     ]) {
       assert.throws(
         () => classifyStateSnapshot(postSnapshot(packet, { operationalReadiness }), packet),
-        /V13 operational readiness/,
+        /V14 operational readiness/,
       );
     }
   });
@@ -904,7 +906,7 @@ describe("studio-comp migration rollout guard", () => {
 
     assert.deepEqual(result, {
       state: "diverged",
-      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, or post-state.`,
+      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, or post-state.`,
     });
   });
 
@@ -1336,7 +1338,7 @@ describe("studio-comp migration rollout guard", () => {
 
   it("makes an inspection token available only for accepted probe states", () => {
     const packet = candidatePacket();
-    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "post"]) {
+    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "post"]) {
       assert.equal(
         buildInspectionTokenForAcceptedState(packet, "staging", { state }),
         buildInspectionToken(packet, "staging", state),
@@ -1349,7 +1351,7 @@ describe("studio-comp migration rollout guard", () => {
     ]) {
       assert.throws(
         () => buildInspectionTokenForAcceptedState(packet, "staging", result),
-        /accepted pre, intermediate, recovery, convergence, attested, or post probe state/,
+        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, or post probe state/,
       );
     }
   });
@@ -1366,16 +1368,16 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 106-migration integration", () => {
+  it("refuses to certify post-state before the exact 107-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 106-migration sequence/,
+      /exact final 107-migration sequence/,
     );
   });
 
-  it("selects exact remaining migrations from intermediate, recovery, convergence, and attested states", () => {
+  it("selects exact remaining migrations through retained state", () => {
     const packet = candidatePacket();
     const intermediateRemaining = packetForAcceptedState(packet, "intermediate");
     assert.deepEqual(intermediateRemaining.pendingMigrations, packet.pendingMigrations.slice(1));
@@ -1391,10 +1393,14 @@ describe("studio-comp migration rollout guard", () => {
     const attestedRemaining = packetForAcceptedState(packet, "attested");
     assert.deepEqual(attestedRemaining.pendingMigrations, packet.pendingMigrations.slice(4));
     assert.deepEqual(attestedRemaining.pendingManifest, packet.pendingManifest.slice(4));
+    const returnAttestedRemaining = packetForAcceptedState(packet, "return-attested");
+    assert.deepEqual(returnAttestedRemaining.pendingMigrations, packet.pendingMigrations.slice(5));
+    const retainedRemaining = packetForAcceptedState(packet, "retained");
+    assert.deepEqual(retainedRemaining.pendingMigrations, packet.pendingMigrations.slice(6));
     assert.equal(packetForAcceptedState(packet, "pre"), packet);
     assert.throws(
       () => packetForAcceptedState(packet, "post"),
-      /pre, intermediate, recovery, convergence, or attested state/,
+      /pre, intermediate, recovery, convergence, attested, return-attested, or retained state/,
     );
   });
 
@@ -1406,7 +1412,7 @@ describe("studio-comp migration rollout guard", () => {
         new RegExp(`Apply is disabled from ${state} state`),
       );
     }
-    for (const state of ["pre", "attested"]) {
+    for (const state of ["pre", "attested", "return-attested", "retained"]) {
       assert.doesNotThrow(() => assertApplyableState("apply", state));
     }
   });

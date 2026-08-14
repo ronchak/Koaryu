@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 from supabase import Client
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.student import (
     StudentProgramMembershipCreate,
@@ -67,14 +68,19 @@ class StudentMembershipActions:
         update_dict = self.membership_store.membership_write_payload(data.model_dump(exclude_unset=True))
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
-        result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
-            "p_student_id": student_id,
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_operation": "update",
-            "p_membership_id": membership_id,
-            "p_payload": update_dict,
-        })
+        try:
+            result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
+                "p_student_id": student_id,
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_operation": "update",
+                "p_membership_id": membership_id,
+                "p_payload": update_dict,
+            })
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) == "P0002":
+                raise HTTPException(status_code=404, detail="Student program membership not found") from exc
+            raise
         row = first_rpc_row(result)
         if not row:
             raise HTTPException(status_code=404, detail="Student program membership not found")
@@ -88,14 +94,19 @@ class StudentMembershipActions:
         actor_id: str,
     ) -> None:
         self._ensure_student_exists(student_id, studio_id)
-        result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
-            "p_student_id": student_id,
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_operation": "remove",
-            "p_membership_id": membership_id,
-            "p_payload": {},
-        })
+        try:
+            result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
+                "p_student_id": student_id,
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_operation": "remove",
+                "p_membership_id": membership_id,
+                "p_payload": {},
+            })
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) == "P0002":
+                raise HTTPException(status_code=404, detail="Student program membership not found") from exc
+            raise
         if not first_rpc_row(result):
             raise HTTPException(status_code=404, detail="Student program membership not found")
 

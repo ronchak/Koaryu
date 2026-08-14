@@ -202,7 +202,11 @@ export function BillingOverviewTab({
               size="sm"
               disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading}
               title={!coreCheckoutAvailable
-                ? "Koaryu Core access is comped for this studio. No checkout is required."
+                ? billingPlatform?.comped || billingPlatform?.status === "comped"
+                  ? "Koaryu Core access is comped for this studio. No checkout is required."
+                  : billingPlatform && ["active", "trialing", "past_due", "unpaid", "paused"].includes(billingPlatform.status)
+                    ? "Koaryu Core billing already exists. Use the billing portal to manage it."
+                    : "Koaryu Core checkout is currently unavailable."
                 : coreProviderMutationsEnabled
                   ? undefined
                   : billingProviderCopy.coreSubscription}

@@ -684,6 +684,7 @@ class StripeService:
         cancel_url: str,
         reservation_token: str,
         checkout_epoch: int,
+        trial_period_days: Optional[int] = None,
         idempotency_key: Optional[str] = None,
     ):
         if not self.settings.STRIPE_KOARYU_CORE_PRICE_ID:
@@ -692,19 +693,21 @@ class StripeService:
                 detail="Koaryu Core Stripe price is not configured.",
             )
         stripe = self._stripe()
+        subscription_data: dict[str, Any] = {
+            "metadata": {
+                "studio_id": studio_id,
+                "product": "koaryu_core",
+                "core_checkout_reservation_token": reservation_token,
+                "core_checkout_epoch": str(checkout_epoch),
+            },
+        }
+        if trial_period_days is not None:
+            subscription_data["trial_period_days"] = trial_period_days
         return stripe.checkout.Session.create(
             customer=customer_id,
             mode="subscription",
             line_items=[{"price": self.settings.STRIPE_KOARYU_CORE_PRICE_ID, "quantity": 1}],
-            subscription_data={
-                "trial_period_days": 30,
-                "metadata": {
-                    "studio_id": studio_id,
-                    "product": "koaryu_core",
-                    "core_checkout_reservation_token": reservation_token,
-                    "core_checkout_epoch": str(checkout_epoch),
-                },
-            },
+            subscription_data=subscription_data,
             metadata={
                 "studio_id": studio_id,
                 "product": "koaryu_core",
