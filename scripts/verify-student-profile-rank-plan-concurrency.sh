@@ -1,14 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-  echo "Usage: scripts/verify-student-profile-rank-plan-concurrency.sh <psql> <socket-dir> <port>" >&2
+if [[ $# -eq 3 ]]; then
+  PSQL_BINARY="$1"
+  connection_args=(
+    --host="$2"
+    --port="$3"
+    --username=postgres
+    --dbname=postgres
+    --no-password
+  )
+elif [[ $# -eq 0 ]]; then
+  PSQL_BINARY="$(command -v psql || true)"
+  if [[ -z "$PSQL_BINARY" ]]; then
+    echo "PostgreSQL psql is required for the student profile concurrency check." >&2
+    exit 127
+  fi
+  db_url="$({ supabase status -o json 2>/dev/null || true; } | python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin)["DB_URL"]
+except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+if not isinstance(value, str) or not value.startswith(("postgres://", "postgresql://")):
+    raise SystemExit(1)
+print(value)
+')" || {
+    echo "Unable to resolve the local Supabase database URL." >&2
+    exit 1
+  }
+  connection_args=("$db_url")
+else
+  echo "Usage: scripts/verify-student-profile-rank-plan-concurrency.sh [psql host port]" >&2
   exit 2
 fi
 
-PSQL_BINARY="$1"
-SOCKET_DIR="$2"
-DB_PORT="$3"
 OWNER_ID="00000000-0000-4000-8000-000000009201"
 STUDIO_ID="00000000-0000-4000-8000-000000009202"
 PROGRAM_ID="00000000-0000-4000-8000-000000009203"
@@ -29,11 +57,7 @@ rm -f "$MARKER_PATH"
 rm -f "$DELETE_MARKER_PATH"
 
 psql_args=(
-  --host="$SOCKET_DIR"
-  --port="$DB_PORT"
-  --username=postgres
-  --dbname=postgres
-  --no-password
+  "${connection_args[@]}"
   --no-psqlrc
   --set=ON_ERROR_STOP=1
   --quiet
