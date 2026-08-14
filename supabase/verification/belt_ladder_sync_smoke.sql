@@ -305,6 +305,20 @@ BEGIN
         RAISE EXCEPTION 'Clearing an existing rank during an update was rewritten to the starting belt.';
     END IF;
 
+    UPDATE public.belt_ranks
+    SET name = 'White Edited'
+    WHERE id = v_first_rank
+      AND studio_id = v_studio;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'An unrelated belt edit rewrote a deliberately unranked membership.';
+    END IF;
+
     UPDATE public.student_program_memberships
     SET current_belt_rank_id = v_tip_rank
     WHERE student_id = v_student_before_rank
@@ -407,6 +421,73 @@ BEGIN
           AND current_belt_rank_id IS NOT NULL
     ) THEN
         RAISE EXCEPTION 'Deleting a rank reassigned an inactive student without an active membership.';
+    END IF;
+
+    SELECT synced.ranks
+    INTO v_ranks
+    FROM public.sync_belt_ladder_ranks(
+        v_ladder,
+        v_studio,
+        'Tip',
+        jsonb_build_array(
+            jsonb_build_object(
+                'id', v_green_rank,
+                'name', 'Green',
+                'color_hex', '#22c55e',
+                'min_classes', 12,
+                'min_months', 3,
+                'requires_approval', true,
+                'is_tip', false
+            )
+        )
+    ) AS synced;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id IN (v_student_before_rank, v_student_after_rank)
+          AND current_belt_rank_id IS DISTINCT FROM v_green_rank
+    ) OR EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id IN (v_student_before_rank, v_student_after_rank)
+          AND current_belt_rank_id IS DISTINCT FROM v_green_rank
+    ) THEN
+        RAISE EXCEPTION 'Deleting the starting belt did not move active students to the surviving first full belt.';
+    END IF;
+
+    SELECT synced.ranks
+    INTO v_ranks
+    FROM public.sync_belt_ladder_ranks(
+        v_ladder,
+        v_studio,
+        'Tip',
+        jsonb_build_array(
+            jsonb_build_object(
+                'name', 'Blue',
+                'color_hex', '#2563eb',
+                'min_classes', 0,
+                'min_months', 0,
+                'requires_approval', false,
+                'is_tip', false
+            )
+        )
+    ) AS synced;
+
+    v_replacement_rank := (v_ranks->0->>'id')::UUID;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id IN (v_student_before_rank, v_student_after_rank)
+          AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
+    ) OR EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id IN (v_student_before_rank, v_student_after_rank)
+          AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
+    ) THEN
+        RAISE EXCEPTION 'Replacing every full belt did not assign active students to the new starting belt.';
     END IF;
 
     BEGIN

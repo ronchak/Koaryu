@@ -27,6 +27,7 @@ interface UseStoreStudentImportActionsOptions {
   beltRanksRef: StoreRef<BeltRank[]>;
   commitStudents: CommitStudents;
   isPreviewMode: boolean;
+  onStudentMutation: () => void;
   persistStudents: (next: Student[]) => void;
   programsRef: StoreRef<Program[]>;
   refreshBeltsRef: StoreRef<((preferredLadderId?: string | null) => Promise<void>) | null>;
@@ -41,6 +42,7 @@ export function useStoreStudentImportActions({
   beltRanksRef,
   commitStudents,
   isPreviewMode,
+  onStudentMutation,
   persistStudents,
   programsRef,
   refreshBeltsRef,
@@ -68,6 +70,7 @@ export function useStoreStudentImportActions({
       });
       if (execution.importedStudents.length > 0) {
         persistStudents(execution.students);
+        onStudentMutation();
       }
       return execution.result;
     }
@@ -153,6 +156,10 @@ export function useStoreStudentImportActions({
       }
     }
 
+    if (liveRequest.isCurrent() && shouldRefreshBelts) {
+      onStudentMutation();
+    }
+
     if (refreshWarnings.length > 0) {
       return refreshWarnings.reduce(
         (nextResult, warning) => withCsvImportRefreshWarning(nextResult, warning),
@@ -167,6 +174,7 @@ export function useStoreStudentImportActions({
     beltRanksRef,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     programsRef,
     refreshBeltsRef,

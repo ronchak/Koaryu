@@ -19,9 +19,11 @@ export const ROLLOUT = Object.freeze({
   productionRef: "mimguepumzsgmcaycdsh",
   baselineMigrationCount: 100,
   preHistory: "100:359058cc127e57a47e429f6271453acf",
-  finalMigrationCount: 101,
+  intermediateMigrationCount: 101,
+  finalMigrationCount: 102,
   releasePendingVersions: Object.freeze([
     "20260814043325",
+    "20260814103046",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -41,6 +43,7 @@ export const ROLLOUT = Object.freeze({
     "20260801123112",
     "20260801131844",
     "20260814043325",
+    "20260814103046",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -67,20 +70,25 @@ export const EXPECTED_OPERATIONAL_MANIFEST =
   "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|101|20260814043325|" +
+  "true|102|20260814103046|" +
   ROLLOUT.finalPendingVersions.join(",") +
+  "|0||release-db-attestation-v9";
+
+export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
+  "true|101|20260814043325|" +
+  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=48:8e7d248573cad153b5ff4b524ba83d438a8377704a4cd22671a6d47979e214da:0;" +
+  "functions=49:1acac99187cbf1a8e80402d9f818a0e119827a25087fb85a16f0c3aed00f4ac7:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -99,7 +107,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V8 operational readiness did not match the exact release state.");
+    throw new RolloutError("V9 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -734,6 +742,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_operational_manifest_v5()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v6()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v7()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
+    ('private.koaryu_release_starting_belt_manifest_v9()', 'search_path=pg_catalog', false, false),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -1305,7 +1314,11 @@ export function buildInspectionToken(packet, target, state) {
 }
 
 export function formatNonSuccessProbeState(result) {
-  if (result?.state === "pre" || result?.state === "post") return null;
+  if (
+    result?.state === "pre" ||
+    result?.state === "intermediate" ||
+    result?.state === "post"
+  ) return null;
   if (
     result?.state === "unknown" &&
     (result.reason === "timeout" || result.reason === "connectivity")
@@ -1319,8 +1332,12 @@ export function formatNonSuccessProbeState(result) {
 }
 
 export function buildInspectionTokenForAcceptedState(packet, target, result) {
-  if (result?.state !== "pre" && result?.state !== "post") {
-    throw new RolloutError("Inspection tokens require an accepted pre or post probe state.");
+  if (
+    result?.state !== "pre" &&
+    result?.state !== "intermediate" &&
+    result?.state !== "post"
+  ) {
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
 }
@@ -1373,6 +1390,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     .join("|"),
   )}`;
   const postHistory = `${filenames.length}:${digest("md5", orderedHistory)}`;
+  const intermediateHistory = `${ROLLOUT.intermediateMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.intermediateMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -1400,6 +1426,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     candidateSha,
     migrationCount: filenames.length,
     postHistory,
+    intermediateHistory,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -1407,6 +1434,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
     postTargetHistory: filenames.slice(84)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    intermediateTargetHistory: filenames.slice(84, ROLLOUT.intermediateMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1421,6 +1454,24 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       pendingManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
     ),
     pendingManifest,
+  };
+}
+
+export function packetForAcceptedState(packet, state) {
+  if (state === "pre") return packet;
+  if (state !== "intermediate") {
+    throw new RolloutError("A migration packet can only be selected from pre or intermediate state.");
+  }
+  const pendingMigrations = packet.pendingMigrations.slice(-1);
+  const pendingManifest = packet.pendingManifest.slice(-1);
+  return {
+    ...packet,
+    pendingMigrations,
+    pendingManifest,
+    sourceManifestSha256: digest(
+      "sha256",
+      pendingManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
+    ),
   };
 }
 
@@ -1451,10 +1502,24 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     }
     return { state: "pre", providerFingerprint: null };
   }
+  if (history === packet.intermediateHistory) {
+    if (
+      targetHistory !== packet.intermediateTargetHistory ||
+      objectCounts !== "3:1"
+    ) {
+      throw new RolloutError(
+        "Migration history is intermediate but the exact V8 target history or studio-comp objects are missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS) {
+      throw new RolloutError("V8 operational readiness did not match the exact intermediate state.");
+    }
+    return { state: "intermediate", providerFingerprint: null };
+  }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 101-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 102-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1476,7 +1541,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact ${ROLLOUT.baselineMigrationCount}-migration pre-state or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, or post-state.`,
   );
 }
 
@@ -1724,7 +1789,11 @@ export function readRemoteState(
     }
     if (
       snapshot.objectCounts === "3:1" &&
-      (snapshot.history === ROLLOUT.preHistory || snapshot.history === packet.postHistory)
+      (
+        snapshot.history === ROLLOUT.preHistory ||
+        snapshot.history === packet.intermediateHistory ||
+        snapshot.history === packet.postHistory
+      )
     ) {
       snapshot.operationalReadiness = query(
         sourceRoot,
@@ -1977,7 +2046,7 @@ export async function main(
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (config.mode !== "diagnose" && !packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 101-migration candidate through 043325.",
+        "Provider inspection requires the exact final 102-migration candidate through 103046.",
       );
     }
     commandRunner(
@@ -2026,6 +2095,11 @@ export async function main(
       const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
       console.log(`state=${before.state}`);
       console.log(`inspection_token=${inspectionToken}`);
+      if (before.state !== "post") {
+        const remainingPacket = packetForAcceptedState(packet, before.state);
+        console.log(`remaining_migrations=${remainingPacket.pendingMigrations.join(",")}`);
+        console.log(`remaining_manifest_sha256=${remainingPacket.sourceManifestSha256}`);
+      }
       if (before.providerFingerprint) {
         console.log(`provider_fingerprint=${before.providerFingerprint}`);
       }
@@ -2037,9 +2111,9 @@ export async function main(
         `${config.mode} requires the exact ${ROLLOUT.baselineMigrationCount}-migration pre-state.`,
       );
     }
-    if (before.state !== "pre") {
+    if (before.state !== "pre" && before.state !== "intermediate") {
       throw new RolloutError(
-        `${config.mode} requires the exact ${ROLLOUT.baselineMigrationCount}-migration pre-state.`,
+        `${config.mode} requires an exact accepted pre- or intermediate state.`,
       );
     }
     const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
@@ -2049,12 +2123,13 @@ export async function main(
       );
     }
 
-    const pending = runDryRun(sourceRoot, packet, env);
+    const remainingPacket = packetForAcceptedState(packet, before.state);
+    const pending = runDryRun(sourceRoot, remainingPacket, env);
     console.log(`dry_run_migrations=${pending.join(",")}`);
     if (config.mode === "dry-run") return;
 
     if (config.target === "production") {
-      await confirmProductionApply(packet);
+      await confirmProductionApply(remainingPacket);
     }
     try {
       runCommand("supabase", ["db", "push", "--linked", "--agent=no"], {

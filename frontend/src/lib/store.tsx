@@ -1453,6 +1453,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beltRanksRef,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     programsRef,
     refreshBeltsRef,

@@ -431,6 +431,18 @@ else
   exit "$status"
 fi
 
+echo "[starting-belt manifest] RUN database-observable invariant signal"
+starting_belt_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_starting_belt_manifest_v9();
+"
+)"
+if [[ "$starting_belt_manifest" != "0:367516cc9b324bca35445f07c1f4d7e58e897e189edaa334c520e55aed9618a2" ]]; then
+  echo "[starting-belt manifest] FAIL database-observable invariant signal: $starting_belt_manifest" >&2
+  exit 1
+fi
+echo "[starting-belt manifest] PASS database-observable invariant signal"
+
 echo "[catalog] RUN deterministic pending-object security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"
@@ -487,6 +499,23 @@ assert_attestation_rejects() {
   echo "[attestation negative] PASS $label"
 }
 
+assert_preflight_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local actual_v2_ready=""
+
+  echo "[attestation negative] RUN $label"
+  actual_v2_ready="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v2();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  if [[ "$actual_v2_ready" != "f" ]]; then
+    echo "[attestation negative] FAIL V2 readiness result for $label" >&2
+    exit 1
+  fi
+  echo "[attestation negative] PASS $label"
+}
+
 assert_attestation_rejects \
   "stored function-body drift" \
   "UPDATE pg_proc SET prosrc = 'BEGIN RETURN false; END;' WHERE oid = 'private.live_billing_event_is_in_scope(text,text)'::regprocedure;" \
@@ -514,6 +543,16 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "V7 helper self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v7()'::regprocedure;" \
+  "t"
+assert_preflight_rejects \
+  "starting-belt function-body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN NULL; END;' WHERE oid = 'public.backfill_starting_belt_after_rank_delete()'::regprocedure;"
+assert_preflight_rejects \
+  "starting-belt trigger-definition drift" \
+  "ALTER TABLE public.belt_ranks DISABLE TRIGGER backfill_starting_belt_after_rank_delete_trigger;"
+assert_attestation_rejects \
+  "V9 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_starting_belt_manifest_v9()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \

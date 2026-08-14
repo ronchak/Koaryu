@@ -145,14 +145,14 @@ Operator: `Codex release orchestrator`
   100-migration V7 state, digest `359058cc127e57a47e429f6271453acf`,
   through `20260801131844_finalize_release_database_attestation_v7.sql`.
 - Staging rehearsal: the guarded dry-run and apply advanced only migration 101.
-  Fresh inspection certified the exact V8 post-state and provider fingerprint;
+  Fresh inspection certified the exact V8 intermediate state and provider fingerprint;
   linked lint returned no errors, and the belt-ladder plus account-control SQL
   contracts passed transactionally. Production remained at the V7 pre-state.
-- Final required database identity: 101 migrations, head
-  `20260814043325_default_program_memberships_to_starting_belt.sql`. That file
-  is the sole pending release migration from the observed 100-state baseline;
-  the V8 readiness response still attests the complete historical 85-through-101
-  sequence.
+- Final required database identity: 102 migrations, head
+  `20260814103046_finalize_starting_belt_invariant_attestation.sql`. Production
+  has migrations 101 and 102 pending; staging has only 102 pending. The V9
+  readiness response attests the complete historical 85-through-102 sequence
+  and the starting-belt function/trigger invariant.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
   and database constraint; prove both opposite-direction races with concurrent
@@ -174,9 +174,10 @@ Operator: `Codex release orchestrator`
   (V5 column-ACL attestation), `20260801123112` (alert-delivery lint repair
   and V6 attestation), and `20260801131844` (runtime-invariant V7 and explicit
   least-privilege ACL convergence) are ordered 89-100; `20260814043325`
-  adds the starting-belt membership invariant and advances exact-head readiness
-  to V8 at migration 101. The packet reports
-  `integration_complete=true` only for the exact 84-to-101 history and seventeen
+  adds the starting-belt membership invariant and advances readiness to V8 at
+  migration 101; `20260814103046` repairs whole-statement belt replacement and
+  advances exact-head readiness to V9 at migration 102. The packet reports
+  `integration_complete=true` only for the exact 84-to-102 history and eighteen
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
@@ -185,7 +186,7 @@ Operator: `Codex release orchestrator`
   and `stripe_events`. A separate column-ACL manifest covers every ordinary,
   non-dropped column across all fourteen scoped tables, including empty
   `attacl`, and rejects explicit custom/browser grants and grant-option drift.
-  Apparent-post linked inspection also requires exact V8 output before
+  Apparent-post linked inspection also requires exact V9 output before
   certification. Hosted exposed-schema and schema-ACL readback remain a
   separate provider/operator gate that local PostgreSQL cannot certify. The exact 32-file SQL
   contract inventory fails CI on missing or unexpected verification files.
