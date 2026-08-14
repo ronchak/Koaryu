@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import {
-  beltLadderMatchesSyncPayload,
   buildBeltLadderSyncPayload,
   buildPreviewBeltLadderFromRanks,
   buildPreviewPromotion,
@@ -12,6 +11,7 @@ import {
   updatePreviewLadderSubRankTerm,
   upsertBeltLadder,
 } from "@/lib/belt-store-model";
+import type { BeltLadderSyncPayload } from "@/lib/belt-store-model";
 import {
   buildPromotionHistoryWithPrependedItem,
   buildPromotionHistoryWithPrependedItemIfCached,
@@ -81,7 +81,15 @@ export function useStoreBeltActions({
   studentsRef,
   subRankTerm,
 }: UseStoreBeltActionsArgs) {
-  const refreshBelts = useCallback(async (preferredLadderId?: string | null) => {
+  const pendingLadderSyncsRef = useRef(new Map<string, {
+    fingerprint: string;
+    request: BeltLadderSyncPayload & { operation_id: string };
+  }>());
+
+  const refreshBelts = useCallback(async (
+    preferredLadderId?: string | null,
+    options?: { requireEligibility?: boolean }
+  ) => {
     if (isPreviewMode) {
       return;
     }
@@ -96,7 +104,12 @@ export function useStoreBeltActions({
       beltLaddersRes,
       preferredLadderId ?? currentLadderIdRef.current
     );
-    await loadEligibilityForLadder(selectedLadder?.id ?? null, { force: true }).catch(() => undefined);
+    const eligibilityRefresh = loadEligibilityForLadder(selectedLadder?.id ?? null, { force: true });
+    if (options?.requireEligibility) {
+      await eligibilityRefresh;
+    } else {
+      await eligibilityRefresh.catch(() => undefined);
+    }
   }, [applyLadderSelection, beginLiveAuthRequest, currentLadderIdRef, isPreviewMode, loadEligibilityForLadder]);
 
   useEffect(() => {
@@ -204,21 +217,49 @@ export function useStoreBeltActions({
     }
     const nextSubRankTerm = desiredSubRankTerm || ladder.sub_rank_term || "Stripe";
     const syncPayload = buildBeltLadderSyncPayload(ranks, nextSubRankTerm);
+    const fingerprint = JSON.stringify(syncPayload);
 
-    let syncedLadder: BeltLadder;
-    try {
-      syncedLadder = await api.post<BeltLadder>(
+    let syncedLadder: BeltLadder | undefined;
+    const pendingSync = pendingLadderSyncsRef.current.get(ladder.id);
+    if (pendingSync) {
+      const resolvedPendingSync = await api.post<BeltLadder>(
         `/belts/ladders/${ladder.id}/sync`,
-        syncPayload,
+        pendingSync.request,
         liveRequest.token
       );
-    } catch (error) {
-      const refreshedLadders = await api.get<BeltLadder[]>("/belts/ladders", liveRequest.token);
-      const committedLadder = refreshedLadders.find((item) => item.id === ladder.id);
-      if (!committedLadder || !beltLadderMatchesSyncPayload(committedLadder, syncPayload)) {
-        throw error;
+      pendingLadderSyncsRef.current.delete(ladder.id);
+      if (pendingSync.fingerprint === fingerprint) {
+        syncedLadder = resolvedPendingSync;
       }
-      syncedLadder = committedLadder;
+    }
+
+    if (!syncedLadder) {
+      const request = {
+        ...syncPayload,
+        operation_id: crypto.randomUUID(),
+      };
+      pendingLadderSyncsRef.current.set(ladder.id, { fingerprint, request });
+      try {
+        syncedLadder = await api.post<BeltLadder>(
+          `/belts/ladders/${ladder.id}/sync`,
+          request,
+          liveRequest.token
+        );
+      } catch (firstError) {
+        try {
+          // The database operation ID serializes this retry behind an original
+          // request that may still be committing.  A later user retry resolves
+          // the same pending operation before it can submit a new payload.
+          syncedLadder = await api.post<BeltLadder>(
+            `/belts/ladders/${ladder.id}/sync`,
+            request,
+            liveRequest.token
+          );
+        } catch {
+          throw firstError;
+        }
+      }
+      pendingLadderSyncsRef.current.delete(ladder.id);
     }
     if (!liveRequest.isCurrent()) {
       return;
@@ -385,7 +426,16 @@ export function useStoreBeltActions({
 
     commitLivePromotionHistoryItem(data.student_id, result);
 
-    await Promise.allSettled([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
+    const reconciliation = await Promise.allSettled([
+      refreshStudents(),
+      refreshBelts(currentLadderIdRef.current, { requireEligibility: true }),
+    ]);
+    if (reconciliation.some((item) => item.status === "rejected")) {
+      throw Object.assign(
+        new Error("Promotion was recorded, but refreshed data could not be loaded."),
+        { committed: true },
+      );
+    }
     return result;
   }, [
     beginLiveAuthRequest,
@@ -431,7 +481,16 @@ export function useStoreBeltActions({
     delete promotionHistoryRequestsRef.current[data.student_id];
     commitLivePromotionHistoryItem(data.student_id, result);
 
-    await Promise.allSettled([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
+    const reconciliation = await Promise.allSettled([
+      refreshStudents(),
+      refreshBelts(currentLadderIdRef.current, { requireEligibility: true }),
+    ]);
+    if (reconciliation.some((item) => item.status === "rejected")) {
+      throw Object.assign(
+        new Error("Demotion was recorded, but refreshed data could not be loaded."),
+        { committed: true },
+      );
+    }
     return result;
   }, [
     beginLiveAuthRequest,

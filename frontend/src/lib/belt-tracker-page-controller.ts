@@ -350,7 +350,15 @@ export function useBeltTrackerPageController({
       setPromotionNotes("");
     } catch (error) {
       console.error("Failed to promote student", error);
-      setPromotionError("Could not record the promotion. Please try again.");
+      if (error instanceof Error && (error as Error & { committed?: boolean }).committed) {
+        setActionMessage(
+          `${promoteEntry.student_name} was promoted. Refresh needed to show the latest ranks.`
+        );
+        setPromoteEntry(null);
+        setPromotionNotes("");
+      } else {
+        setPromotionError("Could not record the promotion. Please try again.");
+      }
     } finally {
       promotionInFlightRef.current = false;
       setIsPromoting(false);
@@ -397,7 +405,15 @@ export function useBeltTrackerPageController({
       setDemotionReason("");
     } catch (error) {
       console.error("Failed to demote student", error);
-      setDemotionError("Could not record the demotion. Please try again.");
+      if (error instanceof Error && (error as Error & { committed?: boolean }).committed) {
+        setActionMessage(
+          `${demoteEntry.student_name} was demoted. Refresh needed to show the latest ranks.`
+        );
+        setDemoteEntry(null);
+        setDemotionReason("");
+      } else {
+        setDemotionError("Could not record the demotion. Please try again.");
+      }
     } finally {
       demotionInFlightRef.current = false;
       setIsDemoting(false);

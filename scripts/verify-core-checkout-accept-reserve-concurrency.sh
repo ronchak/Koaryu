@@ -178,7 +178,7 @@ CROSS JOIN public.studio_subscriptions subscription
 WHERE subscription.studio_id = '$STUDIO_ID'::uuid;
 SQL
 )"
-if [[ "$terminal_state" != "reserved:none:already_accepted:sub_concurrency" ]]; then
+if [[ "$terminal_state" != "reserved:none:historical_replay:sub_concurrency" ]]; then
   echo "FAIL: terminal checkout did not retain append-only replay proof: $terminal_state" >&2
   exit 1
 fi

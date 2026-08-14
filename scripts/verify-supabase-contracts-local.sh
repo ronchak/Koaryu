@@ -461,7 +461,7 @@ critical_surface_manifest="$(
 SELECT private.koaryu_release_critical_surface_manifest_v16();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:800957d36c16a6b5db75e2c8188916eabacda33e642481dce013ea215ae7f4de" ]]; then
+if [[ "$critical_surface_manifest" != "0:fcd9cbc4250f131ae6eb9b3eb22ec6da0075045702c88788f54e75f14fe24e44" ]]; then
   echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi
@@ -502,7 +502,7 @@ assert_attestation_rejects() {
       node --input-type=module --eval \
         "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v2();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v3();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
   actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
@@ -531,7 +531,7 @@ assert_preflight_rejects() {
   echo "[attestation negative] RUN $label"
   actual_v2_ready="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v2();\nROLLBACK;\n'
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v3();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   if [[ "$actual_v2_ready" != "f" ]]; then
     echo "[attestation negative] FAIL V2 readiness result for $label" >&2
@@ -550,7 +550,7 @@ assert_attestation_rejects \
   "f"
 assert_attestation_rejects \
   "V2 self-body drift (external authority only)" \
-  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v2()'::regprocedure;" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v3()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
   "V4 helper self-body drift" \

@@ -1,4 +1,5 @@
 from typing import Annotated, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -72,6 +73,7 @@ class BeltRankSyncItem(BeltRankCreate):
 
 
 class BeltLadderSyncRequest(BaseModel):
+    operation_id: UUID
     sub_rank_term: Optional[str] = None
     ranks: list[BeltRankSyncItem] = Field(default_factory=list)
 

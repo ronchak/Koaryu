@@ -6,6 +6,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 from app.schemas.student import (
+    GuardianResponse,
     StudentCreate,
     StudentProgramMembershipResponse,
     StudentResponse,
@@ -24,13 +25,11 @@ class StudentCrudActions:
         membership_store: StudentProgramMembershipStore,
         prepare_student_write: Callable[..., dict],
         row_to_response: Callable[..., StudentResponse],
-        fetch_memberships_for_student: Callable[..., list[StudentProgramMembershipResponse]],
     ):
         self.supabase = supabase
         self.membership_store = membership_store
         self.prepare_student_write = prepare_student_write
         self.row_to_response = row_to_response
-        self.fetch_memberships_for_student = fetch_memberships_for_student
 
     async def create_student(
         self, data: StudentCreate, studio_id: str, actor_id: str
@@ -56,7 +55,7 @@ class StudentCrudActions:
         student_dict["studio_id"] = studio_id
         student_dict = self.prepare_student_write(student_dict, set_default_is_minor=True)
 
-        result = execute_required_rpc(self.supabase, "write_student_profile_atomic", {
+        result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
             "p_student_id": student_id,
             "p_studio_id": studio_id,
             "p_actor_id": actor_id,
@@ -66,10 +65,10 @@ class StudentCrudActions:
             "p_replace_programs": True,
             "p_audit_action": "student.created",
         })
-        student = first_rpc_row(result)
-        if not student:
+        payload = first_rpc_row(result)
+        if not payload or not isinstance(payload.get("result_student"), dict):
             raise HTTPException(status_code=500, detail="Failed to create student")
-        return self._write_response(student, studio_id)
+        return self._write_response(payload)
 
     async def get_student(self, student_id: str, studio_id: str) -> StudentResponse:
         result = (
@@ -109,7 +108,7 @@ class StudentCrudActions:
         )
 
         update_dict = self.prepare_student_write(update_dict, set_default_is_minor=False)
-        result = execute_required_rpc(self.supabase, "write_student_profile_atomic", {
+        result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
             "p_student_id": student_id,
             "p_studio_id": studio_id,
             "p_actor_id": actor_id,
@@ -119,32 +118,27 @@ class StudentCrudActions:
             "p_replace_programs": program_ids is not None,
             "p_audit_action": "student.updated",
         })
-        student = first_rpc_row(result)
-        if not student:
+        payload = first_rpc_row(result)
+        if not payload or not isinstance(payload.get("result_student"), dict):
             raise HTTPException(status_code=404, detail="Student not found")
 
-        return self._write_response(student, studio_id)
+        return self._write_response(payload)
 
-    def _write_response(self, student: dict, studio_id: str) -> StudentResponse:
-        memberships = self.fetch_memberships_for_student(student["id"], studio_id)
-        if not student.get("current_belt_rank_id"):
-            primary_membership = next(
-                (
-                    membership
-                    for membership in memberships
-                    if membership.program_id == student.get("program_id")
-                    and membership.status in {"active", "paused"}
-                    and not membership.ended_at
-                    and membership.current_belt_rank_id
-                ),
-                None,
-            )
-            if primary_membership:
-                student = {
-                    **student,
-                    "current_belt_rank_id": primary_membership.current_belt_rank_id,
-                }
-        return self.row_to_response(student, memberships=memberships)
+    def _write_response(self, payload: dict) -> StudentResponse:
+        guardians = [
+            GuardianResponse.model_validate(row)
+            for row in payload.get("result_guardians") or []
+        ]
+        memberships = [
+            StudentProgramMembershipResponse.model_validate(row)
+            for row in payload.get("result_program_memberships") or []
+        ]
+        return self.row_to_response(
+            payload["result_student"],
+            guardians=guardians,
+            memberships=memberships,
+            photo_url=None,
+        )
 
     async def soft_delete_student(
         self, student_id: str, studio_id: str, actor_id: str

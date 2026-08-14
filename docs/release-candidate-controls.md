@@ -38,12 +38,17 @@ npm run check:release-workflow
 Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'` and routes provider health to `/health/ready`.
 
 Database promotion precedes application promotion. Hosted readiness calls the
-service-role-only Supabase preflight and requires the exact final migration count
+service-role-only V3 Supabase preflight and requires the exact final migration count
 109, head `20260814213000`, pending sequence, manifest version
 `release-db-attestation-v16`, and required-object/security proof. Schema 84, a
 partial 85-108 state, a missing final migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.
+
+Migration 109 retains the deployed `origin/main` V2 readiness and V1 reservation
+signatures for the mixed-version database-first window. The V2 compatibility
+response is V7-shaped and reports ready only when the candidate V3 preflight
+proves exact V16 state; the new backend never uses the compatibility path.
 
 The local PostgreSQL proof does not certify hosted PostgREST exposed-schema
 configuration or actual schema ACL state. Authenticated operator readback must

@@ -145,7 +145,7 @@ export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=55:acc0c96b9d520a0487fce1d2020ea74c54d93c616bcc9efdc134ee2263114c7b:0;" +
+  "functions=57:745c88cf413050ed6c6b9e552787372e03abf60a28add6852d348c0e8dba45d3:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -174,7 +174,7 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
-from public.koaryu_release_schema_preflight_v2()
+from public.koaryu_release_schema_preflight_v3()
 `;
 
 export const EXPECTED_WRITER_RETURN_CONTRACT_STATE =
@@ -823,6 +823,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.operational_alert_heartbeats(text)', 'search_path=public, pg_temp', false, true),
     ('public.koaryu_release_schema_preflight()', 'search_path=pg_catalog', true, true),
     ('public.koaryu_release_schema_preflight_v2()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v3()', 'search_path=pg_catalog', true, true),
     ('public.koaryu_release_schema_preflight_v6()', 'search_path=pg_catalog', true, false),
     ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
@@ -834,6 +835,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_student_rank_writer_manifest_v11()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_student_rank_writer_manifest_v13()', 'search_path=pg_catalog', false, false),
     ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
+    ('public.write_student_profile_v2_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public', false, true),
     ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=public, pg_temp', false, true),
     ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=pg_catalog, public, private', false, true),
     ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=public, pg_temp', false, true),

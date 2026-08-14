@@ -135,7 +135,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 raise AssertionError("an archived accepted binding must replay successfully")
 
         checkout_event = {
-            "created": 100,
+            "created": 201,
             "type": "checkout.session.completed",
             "data": {"object": {
                 "id": "cs_old",
@@ -150,7 +150,7 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
             }},
         }
         subscription_event = {
-            "created": 100,
+            "created": 202,
             "type": "customer.subscription.updated",
             "data": {"object": {
                 "id": "sub_old",
@@ -250,6 +250,83 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 self.assertEqual(canceled, ["sub_comped"])
                 self.assertTrue(rows[0]["comped"])
                 self.assertEqual(rows[0]["status"], "comped")
+
+    def test_explicit_core_comp_override_accepts_only_bound_subscription_replay(self):
+        token = "00000000-0000-4000-8000-000000000001"
+        archived = {
+            "state": "completed",
+            "token": token,
+            "epoch": 1,
+            "id": "cs_override",
+            "accepted_subscription_id": "sub_override",
+            "completed_event_created": 100,
+        }
+        events = [
+            {
+                "created": 300,
+                "type": "checkout.session.completed",
+                "data": {"object": {
+                    "id": "cs_override",
+                    "customer": "cus_123",
+                    "subscription": "sub_override",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            },
+            {
+                "created": 301,
+                "type": "customer.subscription.updated",
+                "data": {"object": {
+                    "id": "sub_override",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            },
+        ]
+
+        for event in events:
+            with self.subTest(event_type=event["type"]):
+                rows = [{
+                    "studio_id": "studio_1",
+                    "stripe_customer_id": "cus_123",
+                    "stripe_subscription_id": "sub_override",
+                    "status": "active",
+                    "comped": True,
+                    "metadata": {
+                        "core_checkout_epoch": 2,
+                        "core_checkout_acceptances": {"sub_override": dict(archived)},
+                        "comp": {
+                            "state": "granted",
+                            "live_subscription_override": True,
+                            "live_subscription_override_subscription_id": "sub_override",
+                        },
+                    },
+                }]
+                service = self.service(rows)
+                service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+
+                class CancellationMustNotRun:
+                    def cancel_core_subscription(self, **_payload):
+                        raise AssertionError("the explicitly retained subscription must not be canceled")
+
+                with patch(
+                    "app.services.platform_billing_service.StripeService",
+                    CancellationMustNotRun,
+                ):
+                    service.project_subscription_event(event, hydrate_subscription=False)
+
+                self.assertTrue(rows[0]["comped"])
+                self.assertEqual(rows[0]["stripe_subscription_id"], "sub_override")
+                self.assertEqual(rows[0]["status"], "active")
 
     def test_tokenized_subscription_event_accepts_before_checkout_completion(self):
         token = "00000000-0000-4000-8000-000000000001"

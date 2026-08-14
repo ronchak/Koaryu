@@ -167,8 +167,6 @@ class FakeSupabase(RpcBackedSupabase):
             metadata = dict(row.get("metadata") or {})
             session = dict(metadata.get("core_checkout_session") or {})
             acceptances = dict(metadata.get("core_checkout_acceptances") or {})
-            if row.get("comped") or row.get("status") == "comped":
-                return "invalid"
             accepted = acceptances.get(params["p_subscription_id"])
             archived_binding = (
                 isinstance(accepted, dict)
@@ -181,8 +179,6 @@ class FakeSupabase(RpcBackedSupabase):
                     or accepted.get("id") == params["p_session_id"]
                 )
             )
-            if archived_binding:
-                return "already_accepted"
             exact_binding = (
                 session.get("token") == params["p_reservation_token"]
                 and session.get("epoch") == params["p_checkout_epoch"]
@@ -192,6 +188,20 @@ class FakeSupabase(RpcBackedSupabase):
                     or session.get("id") == params["p_session_id"]
                 )
             )
+            if row.get("comped") or row.get("status") == "comped":
+                comp = metadata.get("comp") or {}
+                override_matches = (
+                    comp.get("live_subscription_override") is True
+                    and comp.get("live_subscription_override_subscription_id")
+                    == params["p_subscription_id"]
+                    and row.get("stripe_subscription_id") == params["p_subscription_id"]
+                    and row.get("status") in {"active", "trialing", "past_due", "unpaid", "paused"}
+                    and (archived_binding or exact_binding)
+                )
+                if not override_matches:
+                    return "invalid"
+            if archived_binding:
+                return "historical_replay"
             if session.get("state") == "completed" and exact_binding:
                 acceptances[params["p_subscription_id"]] = dict(session)
                 metadata["core_checkout_acceptances"] = acceptances

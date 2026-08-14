@@ -9,10 +9,14 @@ BEGIN
         'public.mutate_student_program_membership_atomic(uuid,uuid,uuid,text,uuid,jsonb)',
         'public.mutate_students_bulk_atomic(uuid,uuid,uuid[],text,text[],text[],text)',
         'public.soft_delete_student_atomic(uuid,uuid,uuid)',
+        'public.reserve_core_checkout_atomic(uuid)',
         'public.reserve_core_checkout_v2_atomic(uuid)',
         'public.publish_core_checkout_atomic(uuid,uuid,bigint,text,text,bigint)',
         'public.release_core_checkout_reservation_atomic(uuid,uuid,bigint)',
-        'public.accept_core_checkout_subscription_atomic(uuid,uuid,bigint,text,text,bigint)'
+        'public.accept_core_checkout_subscription_atomic(uuid,uuid,bigint,text,text,bigint)',
+        'public.set_studio_comp_v2_atomic(uuid,boolean,text,uuid,text,boolean)',
+        'public.sync_belt_ladder_ranks_v2(uuid,uuid,uuid,uuid,text,jsonb)',
+        'public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)'
     ] LOOP
         v_rpc := to_regprocedure(v_signature);
         IF v_rpc IS NULL THEN
@@ -26,13 +30,6 @@ BEGIN
             RAISE EXCEPTION 'Browser role can execute %', v_signature;
         END IF;
     END LOOP;
-    IF has_function_privilege(
-        'service_role',
-        'public.reserve_core_checkout_atomic(uuid)'::REGPROCEDURE,
-        'EXECUTE'
-    ) THEN
-        RAISE EXCEPTION 'service_role can still execute retired reserve_core_checkout_atomic(uuid)';
-    END IF;
 END $$;
 
 DO $$
@@ -57,6 +54,13 @@ DECLARE
     v_deleted BOOLEAN;
     v_metadata JSONB;
     v_bulk_count INTEGER;
+    v_override_studio UUID := gen_random_uuid();
+    v_unbound_override_studio UUID := gen_random_uuid();
+    v_override_token UUID := gen_random_uuid();
+    v_comp_result RECORD;
+    v_sync_operation UUID := gen_random_uuid();
+    v_sync_result RECORD;
+    v_student_write RECORD;
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -95,6 +99,24 @@ BEGIN
     ) VALUES
         (v_membership_one, v_studio, v_student, v_program_one, 'active', CURRENT_DATE, v_white),
         (v_membership_two, v_studio, v_student, v_program_two, 'active', CURRENT_DATE, NULL);
+
+    SELECT * INTO v_student_write
+    FROM public.write_student_profile_v2_atomic(
+        v_student,
+        v_studio,
+        v_owner,
+        jsonb_build_object('notes', 'atomic response'),
+        NULL,
+        '[]'::JSONB,
+        FALSE,
+        'student.updated'
+    );
+    IF v_student_write.result_student->>'id' IS DISTINCT FROM v_student::TEXT
+       OR v_student_write.result_student->>'notes' IS DISTINCT FROM 'atomic response'
+       OR jsonb_array_length(v_student_write.result_guardians) <> 0
+       OR jsonb_array_length(v_student_write.result_program_memberships) <> 2 THEN
+        RAISE EXCEPTION 'Student V2 writer did not return the committed related response atomically.';
+    END IF;
 
     SELECT * INTO v_result
     FROM public.mutate_student_program_membership_atomic(
@@ -139,6 +161,51 @@ BEGIN
             (SELECT count(*) FROM public.audit_logs
              WHERE entity_id = v_student AND action = 'student.tags.bulk_updated');
     END IF;
+
+    SELECT * INTO v_sync_result
+    FROM public.sync_belt_ladder_ranks_v2(
+        v_ladder,
+        v_studio,
+        v_owner,
+        v_sync_operation,
+        'Stripe',
+        jsonb_build_array(
+            jsonb_build_object('id', v_white, 'name', 'White Belt', 'color_hex', '#FFFFFF', 'display_order', 0, 'min_classes', 0, 'min_months', 0, 'requires_approval', FALSE, 'is_tip', FALSE, 'tip_color_hex', NULL),
+            jsonb_build_object('id', v_yellow, 'name', 'Yellow Belt', 'color_hex', '#FFFF00', 'display_order', 1, 'min_classes', 0, 'min_months', 0, 'requires_approval', FALSE, 'is_tip', FALSE, 'tip_color_hex', NULL),
+            jsonb_build_object('id', v_black, 'name', 'Black Belt', 'color_hex', '#000000', 'display_order', 2, 'min_classes', 0, 'min_months', 0, 'requires_approval', FALSE, 'is_tip', FALSE, 'tip_color_hex', NULL)
+        )
+    );
+    SELECT * INTO v_sync_result
+    FROM public.sync_belt_ladder_ranks_v2(
+        v_ladder,
+        v_studio,
+        v_owner,
+        v_sync_operation,
+        'Stripe',
+        jsonb_build_array(
+            jsonb_build_object('id', v_white, 'name', 'White Belt', 'color_hex', '#FFFFFF', 'display_order', 0, 'min_classes', 0, 'min_months', 0, 'requires_approval', FALSE, 'is_tip', FALSE, 'tip_color_hex', NULL),
+            jsonb_build_object('id', v_yellow, 'name', 'Yellow Belt', 'color_hex', '#FFFF00', 'display_order', 1, 'min_classes', 0, 'min_months', 0, 'requires_approval', FALSE, 'is_tip', FALSE, 'tip_color_hex', NULL),
+            jsonb_build_object('id', v_black, 'name', 'Black Belt', 'color_hex', '#000000', 'display_order', 2, 'min_classes', 0, 'min_months', 0, 'requires_approval', FALSE, 'is_tip', FALSE, 'tip_color_hex', NULL)
+        )
+    );
+    IF v_sync_result.id <> v_ladder OR (
+        SELECT count(*)
+        FROM public.audit_logs audit
+        WHERE audit.studio_id = v_studio
+          AND audit.action = 'belt_ladder.synced'
+          AND audit.entity_id = v_ladder
+          AND audit.metadata->>'operation_id' = v_sync_operation::TEXT
+    ) <> 1 THEN
+        RAISE EXCEPTION 'Retry-safe ladder sync did not atomically retain one audit receipt.';
+    END IF;
+    BEGIN
+        PERFORM public.sync_belt_ladder_ranks_v2(
+            v_ladder, v_studio, v_owner, v_sync_operation, 'Tip', '[]'::JSONB
+        );
+        RAISE EXCEPTION 'Ladder operation ID accepted a different payload.';
+    EXCEPTION
+        WHEN SQLSTATE '22023' THEN NULL;
+    END;
 
     INSERT INTO public.promotions (
         id, studio_id, student_id, from_rank_id, to_rank_id, promoted_by, notes
@@ -220,10 +287,10 @@ BEGIN
     FROM public.reserve_core_checkout_v2_atomic(v_studio);
     IF v_second_checkout.outcome <> 'reserved'
        OR v_second_checkout.trial_period_days IS NOT NULL
-       OR public.accept_core_checkout_subscription_atomic(
+          OR public.accept_core_checkout_subscription_atomic(
             v_studio, v_checkout.reservation_token, v_checkout.checkout_epoch,
             'cs_contract', 'sub_contract', 10
-          ) <> 'already_accepted'
+          ) <> 'historical_replay'
        OR NOT EXISTS (
             SELECT 1
             FROM public.studio_subscriptions subscription
@@ -271,6 +338,91 @@ BEGIN
         WHERE entity_id = v_student AND action = 'student.deleted'
     ) THEN
         RAISE EXCEPTION 'Soft delete and audit did not commit atomically.';
+    END IF;
+
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES (
+        v_override_studio,
+        'Release UI Core Override Contract',
+        'release-ui-core-override-' || replace(v_override_studio::TEXT, '-', ''),
+        v_owner
+    );
+    INSERT INTO public.studio_subscriptions (
+        studio_id, status, stripe_subscription_id, comped, metadata
+    ) VALUES (
+        v_override_studio,
+        'active',
+        'sub_override_contract',
+        FALSE,
+        jsonb_build_object(
+            'core_checkout_epoch', 1,
+            'core_trial_consumed', TRUE,
+            'core_checkout_session', jsonb_build_object(
+                'state', 'completed',
+                'token', v_override_token,
+                'epoch', 1,
+                'id', 'cs_override_contract',
+                'accepted_subscription_id', 'sub_override_contract'
+            ),
+            'core_checkout_acceptances', jsonb_build_object(
+                'sub_override_contract', jsonb_build_object(
+                    'state', 'completed',
+                    'token', v_override_token,
+                    'epoch', 1,
+                    'id', 'cs_override_contract',
+                    'accepted_subscription_id', 'sub_override_contract'
+                )
+            )
+        )
+    );
+    BEGIN
+        PERFORM public.set_studio_comp_v2_atomic(
+            v_override_studio, TRUE, 'contract refusal', v_owner, NULL, FALSE
+        );
+        RAISE EXCEPTION 'Live Core subscription comp succeeded without explicit override.';
+    EXCEPTION
+        WHEN SQLSTATE 'P0C01' THEN NULL;
+    END;
+
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES (
+        v_unbound_override_studio,
+        'Release UI Unbound Override Contract',
+        'release-ui-unbound-override-' || replace(v_unbound_override_studio::TEXT, '-', ''),
+        v_owner
+    );
+    INSERT INTO public.studio_subscriptions (
+        studio_id, status, stripe_subscription_id, comped, metadata
+    ) VALUES (
+        v_unbound_override_studio, 'active', 'sub_unbound_contract', FALSE, '{}'::JSONB
+    );
+    BEGIN
+        PERFORM public.set_studio_comp_v2_atomic(
+            v_unbound_override_studio, TRUE, 'unsafe contract override', v_owner, NULL, TRUE
+        );
+        RAISE EXCEPTION 'Unbound live subscription comp override unexpectedly succeeded.';
+    EXCEPTION
+        WHEN SQLSTATE 'P0C02' THEN NULL;
+    END;
+
+    SELECT * INTO v_comp_result
+    FROM public.set_studio_comp_v2_atomic(
+        v_override_studio, TRUE, 'contract override', v_owner, NULL, TRUE
+    );
+    IF v_comp_result.outcome <> 'applied'
+       OR v_comp_result.comped IS NOT TRUE
+       OR v_comp_result.metadata->'comp'->>'live_subscription_override' <> 'true'
+       OR v_comp_result.metadata->'comp'->>'live_subscription_override_subscription_id'
+            <> 'sub_override_contract'
+       OR public.accept_core_checkout_subscription_atomic(
+            v_override_studio, v_override_token, 1,
+            'cs_override_contract', 'sub_override_contract', 20
+          ) <> 'historical_replay'
+       OR public.accept_core_checkout_subscription_atomic(
+            v_override_studio, v_override_token, 1,
+            NULL, 'sub_override_contract', 21
+          ) <> 'historical_replay' THEN
+        RAISE EXCEPTION 'Explicit live Core subscription comp override did not preserve exact replay.';
     END IF;
 
     RAISE NOTICE 'Koaryu release UI atomic contract verification passed.';

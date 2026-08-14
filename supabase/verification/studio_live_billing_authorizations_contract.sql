@@ -225,6 +225,9 @@ BEGIN
         IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v2()', 'EXECUTE') THEN
             RAISE EXCEPTION '% can execute the hosted V2 schema preflight.', v_role;
         END IF;
+        IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v3()', 'EXECUTE') THEN
+            RAISE EXCEPTION '% can execute the hosted V3 schema preflight.', v_role;
+        END IF;
         IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v6()', 'EXECUTE') THEN
             RAISE EXCEPTION '% can execute the retired hosted V6 schema preflight.', v_role;
         END IF;
@@ -259,6 +262,18 @@ BEGIN
           CROSS JOIN LATERAL aclexplode(coalesce(
               function.proacl, acldefault('f', function.proowner)
           )) acl
+         WHERE function.oid = 'public.koaryu_release_schema_preflight_v3()'::REGPROCEDURE
+           AND acl.grantee = 0
+           AND acl.privilege_type = 'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'PUBLIC can execute the hosted V3 schema preflight.';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM pg_proc function
+          CROSS JOIN LATERAL aclexplode(coalesce(
+              function.proacl, acldefault('f', function.proowner)
+          )) acl
          WHERE function.oid = 'public.koaryu_release_schema_preflight_v6()'::REGPROCEDURE
            AND acl.grantee = 0
            AND acl.privilege_type = 'EXECUTE'
@@ -270,6 +285,9 @@ BEGIN
     END IF;
     IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight_v2()', 'EXECUTE') THEN
         RAISE EXCEPTION 'service_role cannot execute the hosted V2 schema preflight.';
+    END IF;
+    IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight_v3()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'service_role cannot execute the hosted V3 schema preflight.';
     END IF;
     IF has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE')
        OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE')
@@ -1106,7 +1124,7 @@ BEGIN
         RAISE EXCEPTION 'Live-billing authorization audit evidence is incomplete.';
     END IF;
 
-    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v3();
     IF private.koaryu_release_starting_belt_manifest_v9()
        <> '0:9c1c8ea5e7ab6ce0d34d5654d17b056faba89234f0f2b945ff147c0462711be9' THEN
         RAISE EXCEPTION 'Starting-belt V9 manifest mismatch; got %',
@@ -1118,7 +1136,7 @@ BEGIN
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v16()
-       <> '0:800957d36c16a6b5db75e2c8188916eabacda33e642481dce013ea215ae7f4de' THEN
+       <> '0:fcd9cbc4250f131ae6eb9b3eb22ec6da0075045702c88788f54e75f14fe24e44' THEN
         RAISE EXCEPTION 'Critical-surface V16 manifest mismatch; got %',
             private.koaryu_release_critical_surface_manifest_v16();
     END IF;
@@ -1139,6 +1157,23 @@ BEGIN
        OR cardinality(v_preflight.security_failures) <> 0
        OR v_preflight.manifest_version <> 'release-db-attestation-v16' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
+    END IF;
+
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF NOT v_preflight.ready
+       OR v_preflight.migration_count <> 100
+       OR v_preflight.migration_head <> '20260801131844'
+       OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
+           '20260727100000', '20260727110000', '20260801050957',
+           '20260801060000', '20260801070000', '20260801080000',
+           '20260801090000', '20260801091000', '20260801092000',
+           '20260801093000', '20260801094000', '20260801105313',
+           '20260801112153', '20260801115044', '20260801123112',
+           '20260801131844'
+       ]::TEXT[]
+       OR cardinality(v_preflight.security_failures) <> 0
+       OR v_preflight.manifest_version <> 'release-db-attestation-v7' THEN
+        RAISE EXCEPTION 'Deployed predecessor V7 compatibility preflight failed on exact V16.';
     END IF;
 
     EXECUTE 'ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints

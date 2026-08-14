@@ -585,7 +585,10 @@ class PlatformBillingService:
                         "p_event_created": event_created,
                     },
                 )
-                accepted = getattr(accepted_result, "data", accepted_result) in {
+                acceptance_outcome = getattr(accepted_result, "data", accepted_result)
+                if acceptance_outcome == "historical_replay":
+                    return
+                accepted = acceptance_outcome in {
                     "accepted", "already_accepted",
                 }
             if not accepted:
@@ -669,7 +672,10 @@ class PlatformBillingService:
                         "p_event_created": event_created,
                     },
                 )
-                accepted = getattr(accepted_result, "data", accepted_result) in {
+                acceptance_outcome = getattr(accepted_result, "data", accepted_result)
+                if acceptance_outcome == "historical_replay":
+                    return
+                accepted = acceptance_outcome in {
                     "accepted", "already_accepted",
                 }
                 if not accepted:

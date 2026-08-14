@@ -386,28 +386,18 @@ class BeltService:
 
         try:
             result = self.supabase.rpc(
-                "sync_belt_ladder_ranks",
+                "sync_belt_ladder_ranks_v2",
                 {
                     "p_ladder_id": ladder_id,
                     "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_operation_id": str(data.operation_id),
                     "p_sub_rank_term": sub_rank_term,
                     "p_ranks": sync_payload,
                 },
             ).execute()
         except Exception as exc:
             self._raise_sync_error(exc)
-
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "belt_ladder.synced",
-            "entity_type": "belt_ladder",
-            "entity_id": ladder_id,
-            "metadata": {
-                "rank_count": len(sync_payload),
-                "sub_rank_term": sub_rank_term,
-            },
-        }).execute()
 
         return self._build_synced_ladder_response(result.data)
 

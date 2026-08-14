@@ -155,9 +155,13 @@ Operator: `Codex release orchestrator`
   lock ordering, then migration 108 to preserve accepted checkout history and
   attest the promotion columns themselves. A final review found the trial
   duration was still derived before the reservation lock, so migration 109
-  moved that decision into a versioned row-locked RPC, retired the old writer,
-  and made accepted checkout versus operator comp grants fail closed in either
-  lock order. Staging is at exact 108; production
+  moved that decision into a versioned row-locked RPC and made accepted checkout
+  versus operator comp grants fail closed in either lock order. Exact-head
+  review then required mixed-version service-role compatibility, historical
+  replay isolation, exact live-comp provenance, and atomic idempotent belt-ladder
+  audit plus atomic student write responses; migration 109 now carries those
+  contracts while the candidate uses the versioned writers and V3 readiness.
+  Staging is at exact 108; production
   remained at the V7 pre-state.
 - Final required database identity: 109 migrations, head
   `20260814213000_lock_core_trial_decision_to_reservation.sql`. Production has
@@ -204,8 +208,10 @@ Operator: `Codex release orchestrator`
   preserves every accepted binding across later checkout epochs and attests the
   six promotion rank/snapshot column identities at V15; `20260814213000`
   atomically decides trial eligibility under the checkout-reservation lock,
-  serializes checkout acceptance against operator comps, retires the old
-  writer, and advances readiness to V16. The packet reports
+  serializes checkout acceptance against operator comps, preserves the
+  predecessor service-role signatures for database-first cutover, isolates
+  historical replay, binds explicit live-comp provenance, makes belt-ladder
+  sync/audit idempotent, and advances candidate readiness to V3/V16. The packet reports
   `integration_complete=true` only for
   the exact 84-to-109 history and twenty-five
   expected pending versions. The semantic catalog and hosted preflight include

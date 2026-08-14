@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  beltLadderMatchesSyncPayload,
   buildBeltLadderSyncPayload,
   buildPreviewBeltLadderFromRanks,
   buildPreviewPromotion,
@@ -143,26 +142,6 @@ describe("belt store model", () => {
         },
       ],
     });
-  });
-
-  it("recognizes an exact authoritative ladder after an ambiguous sync response", () => {
-    const payload = buildBeltLadderSyncPayload(
-      [rank("local-new-rank", { name: "White", color_hex: "#FFFFFF" })],
-      "Tip",
-    );
-    const committed = {
-      ...ladder("ladder-1", { sub_rank_term: "Tip" }),
-      ranks: [rank("11111111-1111-4111-8111-111111111111", { name: "White", color_hex: "#ffffff" })],
-    };
-
-    assert.equal(beltLadderMatchesSyncPayload(committed, payload), true);
-    assert.equal(
-      beltLadderMatchesSyncPayload(
-        { ...committed, ranks: [rank("22222222-2222-4222-8222-222222222222", { name: "Blue" })] },
-        payload,
-      ),
-      false,
-    );
   });
 
   it("updates preview sub-rank term only when a ladder is selected", () => {

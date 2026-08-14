@@ -28,8 +28,8 @@ Therefore:
   student-rank writer body/ACL manifest, V12 writer return-contract manifest,
   V13 retained-membership rank manifest, V14 critical RPC/trigger/FK manifest,
   the V15 checkout-binding/promotion-column manifest, and the V16 locked
-  trial-decision manifest, exposed through
-  the stable V2-named RPC is an operational drift/readiness signal, not proof
+  trial-decision manifest, exposed through the candidate V3 RPC is an
+  operational drift/readiness signal, not proof
   against a malicious database administrator;
 - the mutable parsed `statements` array is not treated as file identity.
 
@@ -99,8 +99,9 @@ complete sorted grantor, grantee (including `PUBLIC` and custom roles),
 privilege, and grantability state, so extra grants and `WITH GRANT OPTION` drift
 change the pinned proof. This ACL scope explicitly includes the release-critical
 `studio_payment_accounts` mapping and `stripe_events` ingestion tables. The
-external verifier also attests the stable V2-named public RPC, its retired V6
-predecessor, the V7 and earlier manifest helpers, the repaired alert-delivery
+external verifier also attests the candidate V3 public readiness RPC, the V2
+mixed-version compatibility RPC, its retired V6 predecessor, the V7 and earlier
+manifest helpers, the repaired alert-delivery
 claim function, and their bodies/configuration/ACLs without asking V7 to attest
 its own body. Migration 99 changes only the
 ambiguous expired-lease conflict target to the named
@@ -129,12 +130,13 @@ Migration 108 preserves every accepted checkout binding across
 later subscription epochs, blocks new checkout until the accepted subscription
 has a terminal projection, and advances readiness to V15 with exact type,
 nullability, default, identity, and generated-state attestation for the six
-promotion rank/snapshot columns. Migration 109 retires the old
+promotion rank/snapshot columns. Migration 109 adds the candidate V2
 checkout-reservation writer, returns the one-time trial decision from the same
-row-locked V2 reservation RPC that creates the checkout epoch, and makes
-checkout acceptance versus operator comp grants fail closed in both lock
-orders. It closes the stale service-snapshot and accepted-but-unprojected comp
-races and advances readiness to V16. Never certify
+row lock that creates the checkout epoch, and makes checkout acceptance versus
+operator comp grants fail closed in both lock orders. It preserves the
+predecessor service-role signatures during database-first cutover, isolates
+historical replay, binds explicit live-comp provenance, makes ladder sync and
+audit idempotent, and advances candidate readiness to V3/V16. Never certify
 an earlier head; regenerate the packet
 from the exact immutable release commit so
 all candidate migration hashes and counts remain current. Hosted PostgREST
@@ -187,7 +189,7 @@ The August release files have the following operational profile:
 | 106 | Replaces the profile writer and rank-delete trigger; wraps the belt-plan writer so assigned-rank deletion is authorized only after its students-first pre-lock; adds atomic membership, bulk, delete, and Core-checkout RPCs; adds four promotion snapshot columns; backfills historical promotion names/colors; replaces two promotion FKs with `ON DELETE SET NULL`; and adds promotion/comp triggers. The promotion `ALTER TABLE` and FK validation can take strong table locks, while the snapshot backfill row-locks matching promotions. | Existing public RPC signatures remain; promotion responses now allow deleted historical rank IDs. Assigned ranks can no longer be deleted directly and must go through `sync_belt_ladder_ranks`. Deploy database-first because new backend membership and checkout flows require the new service-role RPCs. | One migration transaction. Failure rolls back migration 106, but provider timeout is treated as ambiguous: re-inspect catalog/history before retry. If 105 committed first, preserve it and repair forward with immutable 106 or a reviewed migration. |
 | 107 | Replaces Core checkout acceptance/reservation functions, records durable one-time trial and accepted-subscription proof, prelocks every target-program membership holder before ladder sync, and adds the V14 critical-surface manifest. | Requires the new backend and remains database-first. Existing completed subscriptions are preserved; old acceptance RPC execution is revoked. | One migration transaction. Exact V13 state is guarded and may resume with immutable 107 after fresh inspection and dry-run. |
 | 108 | Replaces Core checkout reservation/acceptance so completed bindings remain terminal until exact terminal projection, archives accepted bindings for later webhook replay, and adds the V15 critical-surface manifest with exact promotion-column state. | Requires the new backend and remains database-first. Returning canceled subscriptions may start a new epoch without receiving a second trial. | One migration transaction. Exact V14 state is guarded and may resume with immutable 108 after fresh inspection and dry-run. |
-| 109 | Adds the V2 checkout-reservation RPC, computes trial eligibility under the subscription row lock, serializes checkout acceptance against operator comp grants in both lock orders, revokes service execution from the retired reservation RPC, and advances the critical-surface/readiness manifests to V16. | Requires the new backend and remains database-first. Core self-checkout stays disabled until the new backend is deployed after database promotion. | One migration transaction. Exact V15 state is guarded and may resume with immutable 109 after fresh inspection and dry-run. |
+| 109 | Adds the V2 checkout-reservation RPC, computes trial eligibility under the subscription row lock, serializes checkout acceptance against operator comp grants in both lock orders, preserves archived acceptance without projecting historical provider state, binds explicit live-subscription comp overrides to the exact accepted Core subscription, makes belt-ladder mutation plus audit an idempotent atomic operation, returns student write response data from the write transaction, and advances the critical-surface/readiness manifests to V16. | Requires the new backend and remains database-first. The predecessor reservation, student-writer, and V2 readiness signatures remain service-role callable only for mixed-version cutover and rollback; the candidate uses the versioned writers and readiness V3. Core self-checkout stays disabled until the new backend is deployed after database promotion. | One migration transaction. Exact V15 state is guarded and may resume with immutable 109 after fresh inspection and dry-run. |
 
 Before staging apply, record cardinalities for `student_program_memberships`,
 active unranked memberships eligible for the 101 backfill, `students`,
@@ -292,14 +294,16 @@ application:
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. invoke the service-role-only V2-named readiness RPC during every apparent-post
+3. invoke the service-role-only V3 readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
    `release-db-attestation-v16`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
-   malformed quoting halt without reflecting returned data;
+   malformed quoting halt without reflecting returned data; also attest the V2
+   deployed-predecessor compatibility signature and its V7-shaped response, which may
+   report ready only when the V3 check proves exact V16;
 4. record the emitted provider fingerprint;
 5. run linked lint and approved contracts only on staging;
 6. test PostgREST service-role execution and browser-role denial, then capture

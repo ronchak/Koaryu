@@ -59,7 +59,7 @@ def validate_release_schema_preflight(row: Any) -> None:
 def assert_hosted_release_schema_ready() -> None:
     result = execute_required_rpc(
         get_supabase_client(),
-        "koaryu_release_schema_preflight_v2",
+        "koaryu_release_schema_preflight_v3",
         {},
     )
     validate_release_schema_preflight(first_rpc_row(result))

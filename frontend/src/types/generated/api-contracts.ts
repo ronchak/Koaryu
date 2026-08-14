@@ -84,6 +84,7 @@ export interface ApiBeltLadderResponse {
 }
 
 export interface ApiBeltLadderSyncRequest {
+  operation_id: string;
   sub_rank_term?: string | null;
   ranks?: ApiBeltRankSyncItem[];
 }

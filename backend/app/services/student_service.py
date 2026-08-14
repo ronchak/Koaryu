@@ -75,7 +75,6 @@ class StudentService:
             membership_store=self._program_memberships(),
             prepare_student_write=self._prepare_student_write,
             row_to_response=self.row_to_response,
-            fetch_memberships_for_student=self._fetch_memberships_for_student,
         )
 
     # ---- Helpers ----

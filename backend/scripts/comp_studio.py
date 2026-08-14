@@ -27,6 +27,7 @@ AUTH_PAGE_SIZE = 100
 MAX_REASON_LENGTH = 500
 RECOGNIZED_ENVIRONMENTS = {"development", "test", "staging", "production"}
 LIVE_SUBSCRIPTION_REFUSAL_SQLSTATE = "P0C01"
+UNBOUND_LIVE_SUBSCRIPTION_OVERRIDE_SQLSTATE = "P0C02"
 LIVE_SUBSCRIPTION_WARNING = (
     "WARNING: This studio has a live Stripe subscription. A comp is only an "
     "access override; provider billing continues."
@@ -588,7 +589,7 @@ def _change_comp(
     _confirm_execute(args, settings, stdin, stdout)
     try:
         result = supabase.rpc(
-            "set_studio_comp_atomic",
+            "set_studio_comp_v2_atomic",
             {
                 "p_studio_id": studio["id"],
                 "p_comped": args.command == "grant",
@@ -605,6 +606,11 @@ def _change_comp(
             raise CompStudioError(
                 f"{LIVE_SUBSCRIPTION_WARNING} Re-run with "
                 "--override-live-subscription only if continued billing is intended."
+            ) from exc
+        if getattr(exc, "code", None) == UNBOUND_LIVE_SUBSCRIPTION_OVERRIDE_SQLSTATE:
+            raise CompStudioError(
+                "The live subscription is not the exact accepted Core checkout "
+                "binding, so Koaryu cannot safely preserve it through a comp grant."
             ) from exc
         raise CompStudioError(f"Atomic comp change failed: {exc}") from exc
 
