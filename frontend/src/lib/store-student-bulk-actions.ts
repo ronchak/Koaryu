@@ -151,6 +151,7 @@ export function useStoreStudentBulkActions({
     if (isPreviewMode) {
       const selectedIdSet = new Set(normalizedStudentIds);
       persistStudents(applyStatusToStudents(studentsRef.current, normalizedStudentIds, status));
+      onStudentMutation();
 
       return {
         updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,

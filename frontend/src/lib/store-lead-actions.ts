@@ -9,10 +9,12 @@ import {
 import { refreshLiveLeadDataset } from "@/lib/store-lead-refresh-model";
 import { localId } from "@/lib/store-storage";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
-import type { Lead, Program, Student } from "@/types";
+import type { BeltLadder, BeltRank, Lead, Program, Student } from "@/types";
 
 interface UseStoreLeadActionsOptions {
   beginLiveAuthRequest: BeginLiveAuthRequest;
+  beltLaddersRef: StoreRef<BeltLadder[]>;
+  beltRanksRef: StoreRef<BeltRank[]>;
   isPreviewMode: boolean;
   leadsRef: StoreRef<Lead[]>;
   onStudentMutation: () => void;
@@ -28,6 +30,8 @@ interface UseStoreLeadActionsOptions {
 
 export function useStoreLeadActions({
   beginLiveAuthRequest,
+  beltLaddersRef,
+  beltRanksRef,
   isPreviewMode,
   leadsRef,
   onStudentMutation,
@@ -116,11 +120,14 @@ export function useStoreLeadActions({
 
     if (isPreviewMode) {
       const conversion = buildPreviewLeadConversion(lead, programsRef.current, {
+        beltLadders: beltLaddersRef.current,
+        beltRanks: beltRanksRef.current,
         idFactory: localId,
       });
 
       persistStudents([conversion.student, ...studentsRef.current]);
       persistLeads(leadsRef.current.map((item) => (item.id === leadId ? conversion.lead : item)));
+      onStudentMutation();
 
       return {
         lead: conversion.lead,
@@ -160,6 +167,8 @@ export function useStoreLeadActions({
     };
   }, [
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     isPreviewMode,
     leadsRef,
     onStudentMutation,

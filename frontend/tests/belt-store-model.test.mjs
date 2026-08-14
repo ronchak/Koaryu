@@ -163,7 +163,21 @@ describe("belt store model", () => {
       [
         student("student-1", {
           preferred_name: "A",
+          program_id: "bjj",
           current_belt_rank_id: "white",
+          program_memberships: [
+            {
+              id: "membership-1",
+              studio_id: "mock-studio",
+              student_id: "student-1",
+              program_id: "bjj",
+              status: "active",
+              started_at: "2026-05-01",
+              current_belt_rank_id: "white",
+              created_at: "2026-05-01T00:00:00.000Z",
+              updated_at: "2026-05-01T00:00:00.000Z",
+            },
+          ],
         }),
         student("student-2", { current_belt_rank_id: "white" }),
       ],
@@ -205,6 +219,14 @@ describe("belt store model", () => {
       ["student-1", "blue", "2026-05-24T12:00:00.000Z"],
       ["student-2", "white", "2026-05-01T00:00:00.000Z"],
     ]);
+    assert.deepEqual(
+      result.students[0].program_memberships?.map((membership) => [
+        membership.id,
+        membership.current_belt_rank_id,
+        membership.updated_at,
+      ]),
+      [["membership-1", "blue", "2026-05-24T12:00:00.000Z"]]
+    );
   });
 
   it("keeps preview promotion validation errors explicit", () => {

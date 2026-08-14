@@ -128,6 +128,32 @@ describe("lead store model", () => {
       }),
       [program("kids", { name: "Kids BJJ", color_hex: "#F59E0B" })],
       {
+        beltLadders: [
+          {
+            id: "kids-ladder",
+            studio_id: "mock-studio",
+            name: "Kids BJJ",
+            program_id: "kids",
+            sub_rank_term: "Stripe",
+            ranks: [
+              {
+                id: "kids-white",
+                ladder_id: "kids-ladder",
+                studio_id: "mock-studio",
+                name: "White Belt",
+                color_hex: "#FFFFFF",
+                display_order: 0,
+                min_classes: 0,
+                min_months: 0,
+                requires_approval: false,
+                is_tip: false,
+                created_at: "2026-05-01T00:00:00.000Z",
+              },
+            ],
+            created_at: "2026-05-01T00:00:00.000Z",
+            updated_at: "2026-05-01T00:00:00.000Z",
+          },
+        ],
         idFactory: idFactory(["student-1", "membership-1", "guardian-1"]),
         now: new Date("2026-05-24T12:00:00.000Z"),
       }
@@ -152,6 +178,7 @@ describe("lead store model", () => {
         status: conversion.student.status,
         membership_start_date: conversion.student.membership_start_date,
         program_id: conversion.student.program_id,
+        current_belt_rank_id: conversion.student.current_belt_rank_id,
         notes: conversion.student.notes,
         tags: conversion.student.tags,
       },
@@ -164,6 +191,7 @@ describe("lead store model", () => {
         status: "active",
         membership_start_date: "2026-05-24",
         program_id: "kids",
+        current_belt_rank_id: "kids-white",
         notes: "Trial completed",
         tags: ["converted-lead"],
       }
@@ -177,7 +205,7 @@ describe("lead store model", () => {
         membership.program_color_hex,
         membership.current_belt_rank_id,
       ]),
-      [["membership-1", "student-1", "kids", "Kids BJJ", "#F59E0B", null]]
+      [["membership-1", "student-1", "kids", "Kids BJJ", "#F59E0B", "kids-white"]]
     );
     assert.deepEqual(
       conversion.student.guardians.map((guardian) => [

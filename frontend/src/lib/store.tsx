@@ -1504,6 +1504,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateLead,
   } = useStoreLeadActions({
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     isPreviewMode,
     leadsRef,
     onStudentMutation,

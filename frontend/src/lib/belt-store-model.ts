@@ -135,6 +135,7 @@ export function buildPreviewPromotion(
   }
 
   const nowIso = now.toISOString();
+  const rankById = new Map(ranks.map((rank) => [rank.id, rank]));
   const promotion: Promotion = {
     id: idFactory(),
     studio_id: student.studio_id,
@@ -153,7 +154,22 @@ export function buildPreviewPromotion(
     promotion,
     students: students.map((item) =>
       item.id === studentId
-        ? { ...item, current_belt_rank_id: toRankId, updated_at: nowIso }
+        ? {
+            ...item,
+            current_belt_rank_id: toRankId,
+            program_memberships: item.program_memberships?.map((membership) => {
+              const membershipRank = membership.current_belt_rank_id
+                ? rankById.get(membership.current_belt_rank_id)
+                : null;
+              const belongsToTargetLadder = membershipRank?.ladder_id === targetRank.ladder_id;
+              const isUnrankedPrimary = !membership.current_belt_rank_id
+                && membership.program_id === item.program_id;
+              return membership.status === "active" && (belongsToTargetLadder || isUnrankedPrimary)
+                ? { ...membership, current_belt_rank_id: toRankId, updated_at: nowIso }
+                : membership;
+            }),
+            updated_at: nowIso,
+          }
         : item
     ),
   };

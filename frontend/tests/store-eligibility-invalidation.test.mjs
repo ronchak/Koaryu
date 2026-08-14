@@ -30,6 +30,26 @@ describe("student eligibility invalidation", () => {
     );
   });
 
+  it("invalidates preview eligibility after bulk status changes and lead conversion", () => {
+    const bulkActionsSource = readFileSync(
+      new URL("../src/lib/store-student-bulk-actions.ts", import.meta.url),
+      "utf8"
+    );
+    const leadActionsSource = readFileSync(
+      new URL("../src/lib/store-lead-actions.ts", import.meta.url),
+      "utf8"
+    );
+
+    assert.match(
+      bulkActionsSource,
+      /if \(isPreviewMode\)[\s\S]*persistStudents\(applyStatusToStudents[\s\S]*onStudentMutation\(\);/
+    );
+    assert.match(
+      leadActionsSource,
+      /if \(isPreviewMode\)[\s\S]*persistStudents\(\[conversion\.student, \.\.\.studentsRef\.current\]\);[\s\S]*persistLeads[\s\S]*onStudentMutation\(\);/
+    );
+  });
+
   it("clears stale rows and force-refreshes the selected ladder", async () => {
     const eligibilityCacheRef = { current: { "ladder-1": [{ student_id: "old" }] } };
     const currentLadderIdRef = { current: "ladder-1" };

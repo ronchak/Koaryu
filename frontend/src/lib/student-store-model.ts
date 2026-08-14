@@ -5,6 +5,7 @@ import type {
   Student,
   StudentCreate,
   StudentStatus,
+  StudentUpdate,
 } from "@/types";
 
 const MINOR_AGE_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
@@ -173,4 +174,84 @@ export function buildPreviewStudent(
   }));
 
   return newStudent;
+}
+
+export function applyPreviewStudentUpdate(
+  student: Student,
+  data: StudentUpdate,
+  programs: Program[],
+  {
+    beltLadders = [],
+    beltRanks = [],
+    idFactory,
+    now = new Date(),
+  }: {
+    beltLadders?: BeltLadder[];
+    beltRanks?: BeltRank[];
+    idFactory: () => string;
+    now?: Date;
+  }
+): Student {
+  const nowIso = now.toISOString();
+  const hasProgramUpdate = Object.hasOwn(data, "program_ids") || Object.hasOwn(data, "program_id");
+  const baseStudent = {
+    ...student,
+    ...data,
+    legal_first_name: data.legal_first_name ?? student.legal_first_name,
+    legal_last_name: data.legal_last_name ?? student.legal_last_name,
+    status: data.status ?? student.status,
+    tags: data.tags ?? student.tags,
+    updated_at: nowIso,
+  };
+
+  if (!hasProgramUpdate) {
+    return baseStudent;
+  }
+
+  const selectedProgramIds = data.program_ids?.length
+    ? data.program_ids
+    : data.program_id
+      ? [data.program_id]
+      : ["program-unassigned"];
+  const existingMemberships = new Map(
+    (student.program_memberships || [])
+      .filter((membership) => membership.status === "active")
+      .map((membership) => [membership.program_id, membership])
+  );
+  const membershipStart = data.membership_start_date
+    || student.membership_start_date
+    || nowIso.split("T")[0];
+  const memberships = selectedProgramIds.map((programId, index) => {
+    const existing = existingMemberships.get(programId);
+    const program = programs.find((item) => item.id === programId);
+    const hasExplicitPrimaryRank = index === 0 && Object.hasOwn(data, "current_belt_rank_id");
+    const currentBeltRankId = hasExplicitPrimaryRank
+      ? data.current_belt_rank_id ?? undefined
+      : existing?.current_belt_rank_id
+        ?? findPreviewStartingRankId(programId, beltLadders, beltRanks);
+
+    return {
+      ...existing,
+      id: existing?.id ?? idFactory(),
+      studio_id: student.studio_id,
+      student_id: student.id,
+      program_id: programId,
+      program_name: program?.name,
+      program_color_hex: program?.color_hex,
+      status: "active" as const,
+      started_at: existing?.started_at ?? membershipStart,
+      ended_at: null,
+      current_belt_rank_id: currentBeltRankId,
+      created_at: existing?.created_at ?? nowIso,
+      updated_at: nowIso,
+    };
+  });
+
+  return {
+    ...baseStudent,
+    membership_start_date: membershipStart,
+    program_id: selectedProgramIds[0],
+    current_belt_rank_id: memberships[0]?.current_belt_rank_id,
+    program_memberships: memberships,
+  };
 }

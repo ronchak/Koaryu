@@ -6,7 +6,7 @@ import {
   buildPreviewStudentListPage,
   type StudentListQuery,
 } from "@/lib/student-list-page";
-import { buildPreviewStudent } from "@/lib/student-store-model";
+import { applyPreviewStudentUpdate, buildPreviewStudent } from "@/lib/student-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import { localId } from "@/lib/store-storage";
 import {
@@ -99,15 +99,11 @@ export function useStoreStudentRosterActions({
         if (student.id !== id) {
           return student;
         }
-        updatedStudent = {
-            ...student,
-            ...data,
-            legal_first_name: data.legal_first_name ?? student.legal_first_name,
-            legal_last_name: data.legal_last_name ?? student.legal_last_name,
-            status: data.status ?? student.status,
-            tags: data.tags ?? student.tags,
-            updated_at: new Date().toISOString(),
-          };
+        updatedStudent = applyPreviewStudentUpdate(student, data, programsRef.current, {
+          beltLadders: beltLaddersRef.current,
+          beltRanks: beltRanksRef.current,
+          idFactory: localId,
+        });
         return updatedStudent;
       });
       persistStudents(next);
@@ -131,10 +127,13 @@ export function useStoreStudentRosterActions({
     return result;
   }, [
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     commitStudents,
     isPreviewMode,
     onStudentMutation,
     persistStudents,
+    programsRef,
     studentsMayBePartial,
     studentsRef,
   ]);
