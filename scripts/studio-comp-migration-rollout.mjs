@@ -21,11 +21,13 @@ export const ROLLOUT = Object.freeze({
   preHistory: "100:359058cc127e57a47e429f6271453acf",
   intermediateMigrationCount: 101,
   recoveryMigrationCount: 102,
-  finalMigrationCount: 103,
+  convergenceMigrationCount: 103,
+  finalMigrationCount: 104,
   releasePendingVersions: Object.freeze([
     "20260814043325",
     "20260814103046",
     "20260814105424",
+    "20260814114500",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -47,6 +49,7 @@ export const ROLLOUT = Object.freeze({
     "20260814043325",
     "20260814103046",
     "20260814105424",
+    "20260814114500",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -73,34 +76,36 @@ export const EXPECTED_OPERATIONAL_MANIFEST =
   "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|103|20260814105424|" +
+  "true|104|20260814114500|" +
   ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v10";
+  "|0||release-db-attestation-v11";
 
 export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
   "true|102|20260814103046|" +
-    ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+    ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
     "|0||release-db-attestation-v9",
-  "false|102|20260814103046|" +
-    ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
-    "|1|starting_belt_invariant_manifest_v9|release-db-attestation-v9",
 ]);
+
+export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
+  "true|103|20260814105424|" +
+  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  "|0||release-db-attestation-v10";
 
 export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
-  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=49:58147b8ba11839829769ea1eb0a8bee57e51690cc5e77cb5004d8369cc6ca0dc:0;" +
+  "functions=54:29dcfe2a88b43a050d40c15748a162943f52d6c908a7a2d587b3edbb3ee8f193:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -119,7 +124,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V10 operational readiness did not match the exact release state.");
+    throw new RolloutError("V11 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -755,6 +760,11 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_operational_manifest_v6()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v7()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
     ('private.koaryu_release_starting_belt_manifest_v9()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_student_rank_writer_manifest_v11()', 'search_path=pg_catalog', false, false),
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=public, pg_temp', false, true),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=pg_catalog, public, private', false, true),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=public, pg_temp', false, true),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
@@ -1330,6 +1340,7 @@ export function formatNonSuccessProbeState(result) {
     result?.state === "pre" ||
     result?.state === "intermediate" ||
     result?.state === "recovery" ||
+    result?.state === "convergence" ||
     result?.state === "post"
   ) return null;
   if (
@@ -1349,9 +1360,10 @@ export function buildInspectionTokenForAcceptedState(packet, target, result) {
     result?.state !== "pre" &&
     result?.state !== "intermediate" &&
     result?.state !== "recovery" &&
+    result?.state !== "convergence" &&
     result?.state !== "post"
   ) {
-    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, or post probe state.");
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
 }
@@ -1422,6 +1434,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
   )}`;
+  const convergenceHistory = `${ROLLOUT.convergenceMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.convergenceMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -1451,6 +1472,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     postHistory,
     intermediateHistory,
     recoveryHistory,
+    convergenceHistory,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -1475,6 +1497,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
+    convergenceTargetHistory: filenames.slice(84, ROLLOUT.convergenceMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -1489,9 +1517,13 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
 
 export function packetForAcceptedState(packet, state) {
   if (state === "pre") return packet;
-  const consumedMigrations = state === "intermediate" ? 1 : state === "recovery" ? 2 : null;
+  const consumedMigrations =
+    state === "intermediate" ? 1
+      : state === "recovery" ? 2
+        : state === "convergence" ? 3
+          : null;
   if (consumedMigrations === null) {
-    throw new RolloutError("A migration packet can only be selected from pre, intermediate, or recovery state.");
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, or convergence state.");
   }
   const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
   const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
@@ -1553,15 +1585,26 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
         "Migration history is recovery-state but the exact V9 target history or studio-comp objects are missing.",
       );
     }
-    if (!EXPECTED_RECOVERY_OPERATIONAL_READINESS.includes(operationalReadiness)) {
-      throw new RolloutError("V9 operational readiness did not match an accepted recovery state.");
+    if (operationalReadiness !== EXPECTED_RECOVERY_OPERATIONAL_READINESS[0]) {
+      throw new RolloutError("V9 operational readiness did not match the exact recovery state.");
     }
     return { state: "recovery", providerFingerprint: null };
+  }
+  if (history === packet.convergenceHistory) {
+    if (targetHistory !== packet.convergenceTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError(
+        "Migration history is convergence-state but the exact V10 target history or studio-comp objects are missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_CONVERGENCE_OPERATIONAL_READINESS) {
+      throw new RolloutError("V10 operational readiness did not match the exact convergence state.");
+    }
+    return { state: "convergence", providerFingerprint: null };
   }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 103-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 104-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1583,7 +1626,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, or post-state.`,
   );
 }
 
@@ -1835,6 +1878,7 @@ export function readRemoteState(
         snapshot.history === ROLLOUT.preHistory ||
         snapshot.history === packet.intermediateHistory ||
         snapshot.history === packet.recoveryHistory ||
+        snapshot.history === packet.convergenceHistory ||
         snapshot.history === packet.postHistory
       )
     ) {
@@ -2089,7 +2133,7 @@ export async function main(
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (config.mode !== "diagnose" && !packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 103-migration candidate through 105424.",
+        "Provider inspection requires the exact final 104-migration candidate through 114500.",
       );
     }
     commandRunner(
@@ -2157,10 +2201,11 @@ export async function main(
     if (
       before.state !== "pre" &&
       before.state !== "intermediate" &&
-      before.state !== "recovery"
+      before.state !== "recovery" &&
+      before.state !== "convergence"
     ) {
       throw new RolloutError(
-        `${config.mode} requires an exact accepted pre-, intermediate-, or recovery state.`,
+        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, or convergence state.`,
       );
     }
     const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);

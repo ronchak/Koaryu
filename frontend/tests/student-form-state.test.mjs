@@ -144,7 +144,7 @@ describe("student form state", () => {
     assert.equal(payload.program_id, "program-a");
     assert.deepEqual(payload.program_ids, ["program-a", "program-b"]);
     assert.deepEqual(payload.tags, ["youth", "leadership"]);
-    assert.equal(payload.current_belt_rank_id, "rank-a");
+    assert.equal(Object.hasOwn(payload, "current_belt_rank_id"), false);
     assert.equal(Object.hasOwn(payload, "guardians"), false);
   });
 
@@ -209,7 +209,7 @@ describe("student form state", () => {
       },
     ]);
     assert.equal(Object.hasOwn(updatePayload, "guardians"), false);
-    assert.equal(updatePayload.current_belt_rank_id, "rank-a");
+    assert.equal(Object.hasOwn(updatePayload, "current_belt_rank_id"), false);
     assert.equal(updatePayload.preferred_name, null);
   });
 });

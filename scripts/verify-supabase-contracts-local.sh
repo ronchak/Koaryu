@@ -550,9 +550,19 @@ assert_preflight_rejects \
 assert_preflight_rejects \
   "starting-belt trigger-definition drift" \
   "ALTER TABLE public.belt_ranks DISABLE TRIGGER backfill_starting_belt_after_rank_delete_trigger;"
+assert_preflight_rejects \
+  "student profile wrapper body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN NULL; END;' WHERE oid = 'public.write_student_profile_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)'::regprocedure;"
+assert_preflight_rejects \
+  "student import private writer body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN; END;' WHERE oid = 'private.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])'::regprocedure;"
 assert_attestation_rejects \
   "V9 helper self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_starting_belt_manifest_v9()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V11 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_student_rank_writer_manifest_v11()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \

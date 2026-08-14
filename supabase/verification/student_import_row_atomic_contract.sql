@@ -10,6 +10,8 @@ DECLARE
     v_studio_b UUID := gen_random_uuid();
     v_program_a UUID := gen_random_uuid();
     v_program_b UUID := gen_random_uuid();
+    v_ladder_b UUID := gen_random_uuid();
+    v_starting_rank_b UUID := gen_random_uuid();
     v_import_run_b UUID := gen_random_uuid();
     v_conflicting_student UUID := gen_random_uuid();
     v_new_student UUID := gen_random_uuid();
@@ -222,6 +224,60 @@ BEGIN
 
     IF v_count <> 1 THEN
         RAISE EXCEPTION 'Cross-studio guardian import conflict changed existing guardian ownership or data.';
+    END IF;
+
+    INSERT INTO public.belt_ladders (id, studio_id, name, program_id)
+    VALUES (v_ladder_b, v_studio_b, 'Tenant B Import Ladder', v_program_b);
+
+    INSERT INTO public.belt_ranks (
+        id, studio_id, ladder_id, name, display_order, is_tip
+    ) VALUES (
+        v_starting_rank_b, v_studio_b, v_ladder_b, 'White Belt', 0, FALSE
+    );
+
+    PERFORM 1
+      FROM public.import_student_row_atomic(
+          jsonb_build_object(
+              'id', v_new_student,
+              'studio_id', v_studio_b,
+              'legal_first_name', 'Defaulted',
+              'legal_last_name', 'Student',
+              'status', 'active',
+              'tags', '[]'::JSONB
+          ),
+          v_studio_b,
+          v_import_run_b,
+          'tenant-b-token',
+          3,
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          ARRAY[v_program_b]
+      );
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_new_student
+          AND studio_id = v_studio_b
+          AND program_id = v_program_b
+          AND current_belt_rank_id = v_starting_rank_b
+          AND status = 'active'
+          AND ended_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Rankless import did not default its active membership to the starting belt.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_new_student
+          AND studio_id = v_studio_b
+          AND program_id = v_program_b
+          AND current_belt_rank_id = v_starting_rank_b
+    ) THEN
+        RAISE EXCEPTION 'Rankless import did not preserve the starting belt on the compatibility student row.';
     END IF;
 
     RAISE NOTICE 'Koaryu atomic student import RPC contract verification passed.';

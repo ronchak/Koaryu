@@ -188,7 +188,7 @@ export function buildStudentCreatePayload(
 
 export function buildStudentUpdatePayload(
   fields: StudentFormFields,
-  initialData?: StudentFormInitialData,
+  _initialData?: StudentFormInitialData,
   options?: { includeLifecycleFields?: boolean }
 ): StudentUpdate {
   const payload: StudentUpdate = {
@@ -216,7 +216,6 @@ export function buildStudentUpdatePayload(
     payload.membership_start_date = fields.membershipStart || null;
     payload.program_id = fields.programIds[0] || null;
     payload.program_ids = fields.programIds;
-    payload.current_belt_rank_id = initialData?.current_belt_rank_id ?? null;
   }
 
   return payload;

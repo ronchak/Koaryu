@@ -144,16 +144,17 @@ Operator: `Codex release orchestrator`
 - Read-only inspection confirmed both staging and production at the healthy
   100-migration V7 state, digest `359058cc127e57a47e429f6271453acf`,
   through `20260801131844_finalize_release_database_attestation_v7.sql`.
-- Staging rehearsal: guarded applies advanced migrations 101 and 102. The 102
+- Staging rehearsal: guarded applies advanced migrations 101 through 103. The 102
   post-check found one hosted-only historical `service_role` EXECUTE grant on a
   trigger-only function, so the release halted and added forward-only migration
-  103. Production remained at the V7 pre-state.
-- Final required database identity: 103 migrations, head
-  `20260814105424_converge_starting_belt_invariant_and_acl.sql`. Production has
-  migrations 101 through 103 pending; staging has only 103 pending. The V10
-  readiness response attests the complete historical 85-through-103 sequence,
+  103. The exact-head review then identified two writer-path gaps, so forward-only
+  migration 104 was added. Production remained at the V7 pre-state.
+- Final required database identity: 104 migrations, head
+  `20260814114500_converge_student_rank_writers_and_attestation.sql`. Production has
+  migrations 101 through 104 pending; staging has only 104 pending. The V11
+  readiness response attests the complete historical 85-through-104 sequence,
   the starting-belt function/trigger invariant, and the converged trigger-only
-  function ACLs.
+  function ACLs plus both public/private student profile and import writer pairs.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
   and database constraint; prove both opposite-direction races with concurrent
@@ -181,9 +182,11 @@ Operator: `Codex release orchestrator`
   deliberately unranked memberships across plan edits and unrelated deletes,
   replaces carried ranks when a student changes primary programs, removes
   historical direct grants from trigger-only functions, and advances exact-head
-  readiness to V10 at migration 103. The packet reports
+  readiness to V10 at migration 103; `20260814114500` reconciles rankless CSV
+  imports after their final compatibility-field write, attests both public/private
+  student writer pairs, and advances readiness to V11 at migration 104. The packet reports
   `integration_complete=true` only for
-  the exact 84-to-103 history and nineteen
+  the exact 84-to-104 history and twenty
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
@@ -192,7 +195,7 @@ Operator: `Codex release orchestrator`
   and `stripe_events`. A separate column-ACL manifest covers every ordinary,
   non-dropped column across all fourteen scoped tables, including empty
   `attacl`, and rejects explicit custom/browser grants and grant-option drift.
-  Apparent-post linked inspection also requires exact V10 output before
+  Apparent-post linked inspection also requires exact V11 output before
   certification. Hosted exposed-schema and schema-ACL readback remain a
   separate provider/operator gate that local PostgreSQL cannot certify. The exact 32-file SQL
   contract inventory fails CI on missing or unexpected verification files.
