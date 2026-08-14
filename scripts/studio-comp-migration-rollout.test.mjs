@@ -11,6 +11,7 @@ import {
   EXPECTED_CATALOG_STATE,
   TOLERATED_HISTORY_COLUMNS,
   EXPECTED_OPERATIONAL_MANIFEST,
+  EXPECTED_PRE_OPERATIONAL_READINESS,
   EXPECTED_OPERATIONAL_READINESS,
   assertExactPendingMigrations,
   assertSafeCredentialedTransport,
@@ -92,15 +93,16 @@ function singleValueCsv(header, value, recordEnding = "\n") {
 }
 
 function preSnapshot(overrides = {}) {
+  const packet = candidatePacket();
   return {
     historyColumns: minimalHistoryColumns,
     history: ROLLOUT.preHistory,
-    targetHistory: "",
-    objectCounts: "0:0",
+    targetHistory: packet.preTargetHistory,
+    objectCounts: "3:1",
     functionState: null,
     triggerState: null,
     catalogState: null,
-    operationalReadiness: null,
+    operationalReadiness: EXPECTED_PRE_OPERATIONAL_READINESS,
     ...overrides,
   };
 }
@@ -194,21 +196,20 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 84-to-N packet from immutable ancestry and source hashes", () => {
+  it("derives an exact 100-to-101 packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(packet.migrationCount, 101);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
-    assert.equal(packet.pendingMigrations.length, packet.migrationCount - 84);
-    assert.deepEqual(
-      packet.pendingMigrations.slice(0, 2),
-      ROLLOUT.migrations.map(({ filename }) => filename),
+    assert.equal(
+      packet.pendingMigrations.length,
+      packet.migrationCount - ROLLOUT.baselineMigrationCount,
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
     assert.equal(packet.integrationComplete, true);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
-      ROLLOUT.finalPendingVersions,
+      ROLLOUT.releasePendingVersions,
     );
   });
 
@@ -535,7 +536,14 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.throws(
       () => classifyStateSnapshot(preSnapshot({ objectCounts: "1:0" }), packet),
-      /objects already exist/,
+      /exact V7 target history or studio-comp objects/,
+    );
+    assert.throws(
+      () => classifyStateSnapshot(
+        preSnapshot({ operationalReadiness: EXPECTED_PRE_OPERATIONAL_READINESS.replace(/^true/, "false") }),
+        packet,
+      ),
+      /V7 operational readiness/,
     );
     assert.throws(
       () => classifyStateSnapshot(
@@ -591,7 +599,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("invokes V8 for apparent post-state but not for the migration-84 pre-state", () => {
+  it("validates V7 readiness for the 100-migration pre-state and V8 for post-state", () => {
     const packet = candidatePacket();
     const postValues = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -621,8 +629,9 @@ describe("studio-comp migration rollout guard", () => {
     const preValues = new Map([
       ["history_columns", extendedHistoryColumns],
       ["history_state", ROLLOUT.preHistory],
-      ["target_history", ""],
-      ["object_counts", "0:0"],
+      ["target_history", packet.preTargetHistory],
+      ["object_counts", "3:1"],
+      ["operational_readiness", EXPECTED_PRE_OPERATIONAL_READINESS],
     ]);
     assert.deepEqual(
       readRemoteState(repositoryRoot, packet, {}, null, (_root, _sql, header) => {
@@ -631,7 +640,7 @@ describe("studio-comp migration rollout guard", () => {
       }),
       { state: "pre", providerFingerprint: null },
     );
-    assert.ok(!preHeaders.includes("operational_readiness"));
+    assert.equal(preHeaders.at(-1), "operational_readiness");
   });
 
   it("returns only UNKNOWN(timeout) for a typed timeout during remote query acquisition", () => {
@@ -705,7 +714,9 @@ describe("studio-comp migration rollout guard", () => {
 
     assert.deepEqual(result, {
       state: "diverged",
-      detail: `Unexpected migration history ${observedHistory}; expected exact pre-state or post-state.`,
+      detail:
+        `Unexpected migration history ${observedHistory}; expected exact ` +
+        `${ROLLOUT.baselineMigrationCount}-migration pre-state or post-state.`,
     });
   });
 

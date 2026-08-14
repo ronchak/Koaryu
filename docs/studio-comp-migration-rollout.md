@@ -2,8 +2,8 @@
 
 Status: **Phase A tooling only; provider mutation locked**
 
-This packet reconciles the production 84-migration baseline with the immutable
-101-migration release candidate. It is specialized to this rollout, not a
+This packet reconciles the production and staging 100-migration V7 baseline
+with the immutable 101-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -37,11 +37,12 @@ production fingerprint mismatch halts the rollout.
 The fixed production pre-state is:
 
 ```text
-84:57ae4269ef4d75c249d59ef297661a3a
+100:359058cc127e57a47e429f6271453acf
 ```
 
-The only certifiable post-state is migration count 101, head
-`20260814043325`, with this exact pending version sequence:
+The only authorized release migration is `20260814043325`. The only
+certifiable post-state is migration count 101 at that head. Its V8 readiness
+signal retains the complete migration-85-through-101 sequence:
 
 ```text
 20260727100000
@@ -63,9 +64,11 @@ The only certifiable post-state is migration count 101, head
 20260814043325
 ```
 
-The checker derives filenames and source hashes from the final candidate, then
-requires this exact sequence and reports `integration_complete=true` only at
-101 migrations with these seventeen versions. The 070000/091000/093000/105313
+The checker derives filenames and source hashes from the final candidate, pins
+the first 100 identities to the observed V7 baseline, and reports
+`integration_complete=true` only when `20260814043325` is the sole release
+pending migration and the 101-state readiness contract contains the seventeen
+historical versions above. The 070000/091000/093000/105313
 billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
 definitions, sequences, columns, and all scoped CHECK/UNIQUE/FK definitions are
@@ -108,8 +111,9 @@ exact source files:
 - `20260727110000_order_billing_events_after_studio_comps.sql` — SHA-256
   `22faa79522ba2018780fb260401cd23830df553ee3faf0546b2af689eb51bfc0`
 
-They must be the first two migrations after baseline migration 84. Every later
-candidate migration becomes part of the exact pending set and dry-run assertion.
+They remain pinned as the first two migrations after historical migration 84.
+They are already present in the 100-state baseline; only migration 101 belongs
+to the current dry-run and apply set.
 
 ## Transaction and old-application classification
 
@@ -157,7 +161,7 @@ node scripts/studio-comp-migration-rollout.mjs \
 Record the exact output. It pins the CLI, fixed pre-history, immutable Git
 ancestry, complete pending set, every candidate migration hash, and the source
 manifest hash. Any missing migration, unexpected version, or migration after
-123112 halts before credentials are used.
+043325 halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
@@ -179,8 +183,9 @@ node scripts/studio-comp-migration-rollout.mjs \
 
 The command is unavailable until the packet reports
 `integration_complete=true`. Acceptance then requires `state=pre`, the pinned staging ref
-`nxgsektqsgrtyfhawxbc`, the exact 84-row history, no July functions/trigger, and
-an `inspection_token`. If staging is behind, ahead, partially applied, or has
+`nxgsektqsgrtyfhawxbc`, the exact 100-row V7 history, the complete historical
+target sequence, the expected studio-comp objects, exact V7 readiness, and an
+`inspection_token`. If staging is behind, ahead, partially applied, or has
 manual objects, stop. Rebuild or catch-up needs a separate packet.
 
 Only after recording that inspection may the read-only rehearsal run:
@@ -193,8 +198,8 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-The dry-run must report the exact seventeen pending versions above, with their final
-candidate filenames and hashes. A missing, extra, reordered, or unparseable
+The dry-run must report only `20260814043325_default_program_memberships_to_starting_belt.sql`
+with its final candidate hash. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
 Staging application remains locked until the director approves Phase B. The
@@ -228,10 +233,10 @@ durable approval record, and `--approve-staging-apply`. After application:
 7. only in the separately approved provider-smoke phase, create and remove the
    disposable staging Auth actor and synthetic studio data.
 
-No staging provider read, dry-run, migration, contract, or Auth mutation was
-performed while authoring this Phase A packet. The latest staging migration-list
-attempt returned `INVALID_ARGUMENT`; a prior direct SQL attempt reportedly timed
-out. Do not loop retries.
+Before this release, read-only inspection confirmed staging and production both
+at the exact healthy 100-migration V7 baseline. Record the current release's
+staging dry-run, apply, post-state fingerprint, and contract results in the
+durable approval record before the human production step.
 
 ## Human-only production gate
 
@@ -273,13 +278,12 @@ history sequence, object count, security/ACL, fingerprint, proxy, inspection
 token, dry-run set, restore field, or confirmation mismatch.
 
 If apply fails, inspect before doing anything else. Preserve any applied history
-and objects. If migration 85 exists without 86, do not deploy application code
-that calls the missing RPC. After review, either apply the still-pending immutable
-migration or add a new forward corrective migration. Never mark history reverted,
-drop the trigger/functions, or use a production restore as ordinary rollback.
+and objects. After review, either apply the still-pending immutable migration or
+add a new forward corrective migration. Never mark history reverted, drop the
+trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 100 head and
+database-first: Render `/health/ready` remains 503 until the exact 101 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

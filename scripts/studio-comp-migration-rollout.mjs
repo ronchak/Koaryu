@@ -17,8 +17,12 @@ export const ROLLOUT = Object.freeze({
   cliVersion: "2.95.4",
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
-  preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
+  baselineMigrationCount: 100,
+  preHistory: "100:359058cc127e57a47e429f6271453acf",
   finalMigrationCount: 101,
+  releasePendingVersions: Object.freeze([
+    "20260814043325",
+  ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -66,6 +70,11 @@ export const EXPECTED_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
   ROLLOUT.finalPendingVersions.join(",") +
   "|0||release-db-attestation-v8";
+
+export const EXPECTED_PRE_OPERATIONAL_READINESS =
+  "true|100|20260801131844|" +
+  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
@@ -1337,8 +1346,10 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     .readdirSync(migrationsDirectory)
     .filter((name) => name.endsWith(".sql"))
     .sort();
-  if (filenames.length < 86) {
-    throw new RolloutError(`Candidate must contain at least 86 migrations, found ${filenames.length}.`);
+  if (filenames.length < ROLLOUT.finalMigrationCount) {
+    throw new RolloutError(
+      `Candidate must contain at least ${ROLLOUT.finalMigrationCount} migrations, found ${filenames.length}.`,
+    );
   }
   for (const filename of filenames) {
     if (!/^[0-9]{14}_[A-Za-z0-9_]+\.sql$/.test(filename)) {
@@ -1352,15 +1363,20 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
     })
     .join("|");
-  const preHistory = `84:${digest("md5", filenames.slice(0, 84)
+  const preHistory = `${ROLLOUT.baselineMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.baselineMigrationCount)
     .map((filename) => {
       const separator = filename.indexOf("_");
       return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
     })
-    .join("|"))}`;
+    .join("|"),
+  )}`;
   const postHistory = `${filenames.length}:${digest("md5", orderedHistory)}`;
   if (preHistory !== ROLLOUT.preHistory) {
-    throw new RolloutError("Candidate's first 84 migration names do not match the production baseline.");
+    throw new RolloutError(
+      `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
+    );
   }
   const expectedTail = ROLLOUT.migrations.map(({ filename }) => filename);
   if (JSON.stringify(filenames.slice(84, 86)) !== JSON.stringify(expectedTail)) {
@@ -1374,7 +1390,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     }
   }
 
-  const pendingMigrations = filenames.slice(84);
+  const pendingMigrations = filenames.slice(ROLLOUT.baselineMigrationCount);
   const pendingVersions = pendingMigrations.map((filename) => filename.slice(0, 14));
   const pendingManifest = pendingMigrations.map((filename) => ({
     filename,
@@ -1384,7 +1400,13 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     candidateSha,
     migrationCount: filenames.length,
     postHistory,
-    postTargetHistory: pendingMigrations
+    preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    postTargetHistory: filenames.slice(84)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1393,7 +1415,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
-      JSON.stringify(pendingVersions) === JSON.stringify(ROLLOUT.finalPendingVersions),
+      JSON.stringify(pendingVersions) === JSON.stringify(ROLLOUT.releasePendingVersions),
     sourceManifestSha256: digest(
       "sha256",
       pendingManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
@@ -1419,10 +1441,13 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     );
   }
   if (history === ROLLOUT.preHistory) {
-    if (targetHistory !== "" || objectCounts !== "0:0") {
+    if (targetHistory !== packet.preTargetHistory || objectCounts !== "3:1") {
       throw new RolloutError(
-        "Migration history is pre-state but studio-comp objects already exist; stop for drift review.",
+        "Migration history is pre-state but the exact V7 target history or studio-comp objects are missing.",
       );
+    }
+    if (operationalReadiness !== EXPECTED_PRE_OPERATIONAL_READINESS) {
+      throw new RolloutError("V7 operational readiness did not match the exact production baseline.");
     }
     return { state: "pre", providerFingerprint: null };
   }
@@ -1451,7 +1476,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-state or post-state.`,
+    `Unexpected migration history ${history}; expected exact ${ROLLOUT.baselineMigrationCount}-migration pre-state or post-state.`,
   );
 }
 
@@ -1696,6 +1721,11 @@ export function readRemoteState(
         "catalog_state",
         env,
       );
+    }
+    if (
+      snapshot.objectCounts === "3:1" &&
+      (snapshot.history === ROLLOUT.preHistory || snapshot.history === packet.postHistory)
+    ) {
       snapshot.operationalReadiness = query(
         sourceRoot,
         OPERATIONAL_READINESS_SQL,
@@ -2003,10 +2033,14 @@ export async function main(
     }
     if (nonSuccessStateLine !== null) {
       console.log(nonSuccessStateLine);
-      throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
+      throw new RolloutError(
+        `${config.mode} requires the exact ${ROLLOUT.baselineMigrationCount}-migration pre-state.`,
+      );
     }
     if (before.state !== "pre") {
-      throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
+      throw new RolloutError(
+        `${config.mode} requires the exact ${ROLLOUT.baselineMigrationCount}-migration pre-state.`,
+      );
     }
     const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
     if (config.inspectionToken !== inspectionToken) {

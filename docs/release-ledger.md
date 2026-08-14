@@ -139,24 +139,23 @@ Operator: `Codex release orchestrator`
 - Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
 - Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
 
-## Database-Parity Remediation Candidate — updated 2026-08-13
+## Database-Parity Remediation Candidate — updated 2026-08-14
 
-- Scope: repository-only remediation; no staging or production provider read,
-  migration, contract execution, Auth fixture, or other provider mutation was
-  performed.
+- Read-only inspection confirmed both staging and production at the healthy
+  100-migration V7 state, digest `359058cc127e57a47e429f6271453acf`,
+  through `20260801131844_finalize_release_database_attestation_v7.sql`.
 - Final required database identity: 101 migrations, head
-  `20260814043325_default_program_memberships_to_starting_belt.sql`, with exact pending
-  versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
-  01090000, 01091000, 01092000, 01093000, 01094000, 01105313, 01112153,
-  01115044, 01123112, 01131844, and 14043325 after the fixed
-  84-migration production baseline.
+  `20260814043325_default_program_memberships_to_starting_belt.sql`. That file
+  is the sole pending release migration from the observed 100-state baseline;
+  the V8 readiness response still attests the complete historical 85-through-101
+  sequence.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
   and database constraint; prove both opposite-direction races with concurrent
   transactions.
 - Promotion guard: Render health uses `/health/ready`; hosted readiness calls a
   service-role-only exact-head/object preflight and fails closed on provider
-  errors. Schema 84 cannot receive healthy traffic from the new backend.
+  errors. Schema 100 cannot receive healthy traffic from the new backend.
 - Catalog proof: deterministic sorted identities and security-relevant catalog
   properties cover the currently integrated pending tables/RLS, policies,
   exact ACLs and stored function bodies, complete trigger/index definitions,
