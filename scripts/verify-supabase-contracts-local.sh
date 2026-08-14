@@ -711,6 +711,17 @@ else
   exit "$status"
 fi
 
+echo "[concurrency] RUN student profile/rank-plan lock ordering"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-student-profile-rank-plan-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS student profile/rank-plan lock ordering"
+else
+  status=$?
+  echo "[concurrency] FAIL student profile/rank-plan lock ordering (exit $status)" >&2
+  exit "$status"
+fi
+
 verification_total=${#verification_files[@]}
 verification_index=0
 for verification_file in "${verification_files[@]}"; do

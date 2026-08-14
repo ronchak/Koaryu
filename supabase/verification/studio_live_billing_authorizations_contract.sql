@@ -1113,7 +1113,7 @@ BEGIN
             private.koaryu_release_starting_belt_manifest_v9();
     END IF;
     IF private.koaryu_release_student_rank_writer_manifest_v13()
-       <> '0:dc6367b391430446f5c93638f1f46777828db9b54889d57ba72db9670ccd1e17' THEN
+       <> '0:aa5dc399fd88062aaf27ab6b0c0af0fc9411058d5ca8ae041977eb2dab286276' THEN
         RAISE EXCEPTION 'Student-rank writer V13 manifest mismatch; got %',
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;

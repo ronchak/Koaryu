@@ -26,6 +26,14 @@ DECLARE
     v_result public.students%ROWTYPE;
 BEGIN
     IF p_replace_programs AND cardinality(p_program_ids) > 0 THEN
+        -- Match every belt-plan writer's students-then-memberships lock order.
+        -- The private writer locks this row again later in the same transaction.
+        PERFORM 1
+        FROM public.students student
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id
+        FOR UPDATE;
+
         SELECT COALESCE(
             jsonb_object_agg(
                 locked.program_id::TEXT,
@@ -205,7 +213,7 @@ invalid AS (
         ) +
         count(*) FILTER (
             WHERE manifest.v11_manifest IS DISTINCT FROM
-              '0:ab551348b1c89f0bda600d3195e1f4556d4164035cd72272c29ae5d6b00674f3'
+              '0:459284b442ab037dbcf5c3bf54e9929caafc1ba891c2ea1044d6de016c983d90'
         ) AS invalid_count
     FROM function_compared function
     CROSS JOIN manifest_state manifest
@@ -317,7 +325,7 @@ BEGIN
     END IF;
 
     IF private.koaryu_release_student_rank_writer_manifest_v13()
-       <> '0:dc6367b391430446f5c93638f1f46777828db9b54889d57ba72db9670ccd1e17' THEN
+       <> '0:aa5dc399fd88062aaf27ab6b0c0af0fc9411058d5ca8ae041977eb2dab286276' THEN
         v_failures := array_append(v_failures, 'student_rank_writer_manifest_v13');
     END IF;
 
