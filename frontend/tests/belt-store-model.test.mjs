@@ -171,7 +171,7 @@ describe("belt store model", () => {
               studio_id: "mock-studio",
               student_id: "student-1",
               program_id: "bjj",
-              status: "active",
+              status: "paused",
               started_at: "2026-05-01",
               current_belt_rank_id: "white",
               created_at: "2026-05-01T00:00:00.000Z",
@@ -227,6 +227,7 @@ describe("belt store model", () => {
       ]),
       [["membership-1", "blue", "2026-05-24T12:00:00.000Z"]]
     );
+    assert.equal(result.students[0].program_memberships?.[0]?.status, "paused");
   });
 
   it("keeps preview promotion validation errors explicit", () => {

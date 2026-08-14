@@ -215,7 +215,9 @@ export function applyPreviewStudentUpdate(
       : ["program-unassigned"];
   const existingMemberships = new Map(
     (student.program_memberships || [])
-      .filter((membership) => membership.status === "active")
+      .filter((membership) => (
+        membership.status === "active" || membership.status === "paused"
+      ) && !membership.ended_at)
       .map((membership) => [membership.program_id, membership])
   );
   const membershipStart = data.membership_start_date

@@ -164,7 +164,10 @@ export function buildPreviewPromotion(
               const belongsToTargetLadder = membershipRank?.ladder_id === targetRank.ladder_id;
               const isUnrankedPrimary = !membership.current_belt_rank_id
                 && membership.program_id === item.program_id;
-              return membership.status === "active" && (belongsToTargetLadder || isUnrankedPrimary)
+              const isCurrentMembership = (
+                membership.status === "active" || membership.status === "paused"
+              ) && !membership.ended_at;
+              return isCurrentMembership && (belongsToTargetLadder || isUnrankedPrimary)
                 ? { ...membership, current_belt_rank_id: toRankId, updated_at: nowIso }
                 : membership;
             }),

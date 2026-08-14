@@ -196,7 +196,7 @@ describe("student store model", () => {
             student_id: "student-1",
             program_id: "kids",
             program_name: "Kids BJJ",
-            status: "active",
+            status: "paused",
             started_at: "2026-05-01",
             current_belt_rank_id: "kids-blue",
             created_at: "2026-05-01T00:00:00.000Z",
@@ -243,7 +243,7 @@ describe("student store model", () => {
             studio_id: "mock-studio",
             student_id: "student-1",
             program_id: "kids",
-            status: "active",
+            status: "paused",
             started_at: "2026-05-01",
             current_belt_rank_id: "kids-blue",
             created_at: "2026-05-01T00:00:00.000Z",
@@ -262,6 +262,7 @@ describe("student store model", () => {
     assert.equal(updated.legal_first_name, "Avery");
     assert.equal(updated.current_belt_rank_id, "kids-blue");
     assert.equal(updated.program_memberships?.[0]?.id, "kids-membership");
+    assert.equal(updated.program_memberships?.[0]?.status, "active");
     assert.equal(updated.program_memberships?.[0]?.current_belt_rank_id, "kids-blue");
   });
 });
