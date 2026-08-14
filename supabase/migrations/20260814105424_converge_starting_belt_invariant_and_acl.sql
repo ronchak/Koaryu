@@ -65,6 +65,118 @@ BEGIN
 END;
 $$;
 
+-- Keep explicit cross-program rank validation strict while allowing the atomic
+-- profile RPC to distinguish an omitted rank from an explicitly supplied one.
+-- The implementation remains private; the stable public wrapper clears only a
+-- carried rank when the caller changes the primary program without naming a
+-- replacement.
+ALTER FUNCTION public.write_student_profile_atomic(
+    UUID, UUID, UUID, JSONB, UUID[], JSONB, BOOLEAN, TEXT
+) SET SCHEMA private;
+
+CREATE FUNCTION public.write_student_profile_atomic(
+    p_student_id UUID,
+    p_studio_id UUID,
+    p_actor_id UUID,
+    p_student JSONB,
+    p_program_ids UUID[] DEFAULT NULL,
+    p_guardians JSONB DEFAULT '[]'::JSONB,
+    p_replace_programs BOOLEAN DEFAULT FALSE,
+    p_audit_action TEXT DEFAULT 'student.updated'
+)
+RETURNS public.students
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public, private
+AS $$
+DECLARE
+    v_student JSONB := p_student;
+    v_existing_program_id UUID;
+    v_result public.students%ROWTYPE;
+BEGIN
+    IF p_replace_programs
+       AND cardinality(p_program_ids) > 0
+       AND p_student IS NOT NULL
+       AND jsonb_typeof(p_student) = 'object'
+       AND NOT (p_student ? 'current_belt_rank_id') THEN
+        SELECT student.program_id
+        INTO v_existing_program_id
+        FROM public.students student
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id;
+
+        IF FOUND AND v_existing_program_id IS DISTINCT FROM p_program_ids[1] THEN
+            v_student := jsonb_set(
+                v_student,
+                '{current_belt_rank_id}',
+                'null'::JSONB,
+                TRUE
+            );
+        END IF;
+    END IF;
+
+    SELECT *
+    INTO v_result
+    FROM private.write_student_profile_atomic(
+        p_student_id,
+        p_studio_id,
+        p_actor_id,
+        v_student,
+        p_program_ids,
+        p_guardians,
+        p_replace_programs,
+        p_audit_action
+    );
+
+    RETURN v_result;
+END;
+$$;
+
+ALTER FUNCTION private.write_student_profile_atomic(
+    UUID, UUID, UUID, JSONB, UUID[], JSONB, BOOLEAN, TEXT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.write_student_profile_atomic(
+    UUID, UUID, UUID, JSONB, UUID[], JSONB, BOOLEAN, TEXT
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.write_student_profile_atomic(
+    UUID, UUID, UUID, JSONB, UUID[], JSONB, BOOLEAN, TEXT
+) TO service_role;
+
+ALTER FUNCTION public.write_student_profile_atomic(
+    UUID, UUID, UUID, JSONB, UUID[], JSONB, BOOLEAN, TEXT
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.write_student_profile_atomic(
+    UUID, UUID, UUID, JSONB, UUID[], JSONB, BOOLEAN, TEXT
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.write_student_profile_atomic(
+    UUID, UUID, UUID, JSONB, UUID[], JSONB, BOOLEAN, TEXT
+) TO service_role;
+
+-- The primary membership is the compatibility source of truth for the legacy
+-- student rank. Overwrite a stale rank from a previous primary program and
+-- propagate an explicit active-membership clear as NULL.
+CREATE OR REPLACE FUNCTION public.sync_primary_student_rank_from_membership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+    IF NEW.status IN ('active', 'paused')
+       AND NEW.ended_at IS NULL THEN
+        UPDATE public.students
+        SET current_belt_rank_id = NEW.current_belt_rank_id,
+            updated_at = NOW()
+        WHERE id = NEW.student_id
+          AND studio_id = NEW.studio_id
+          AND program_id = NEW.program_id
+          AND current_belt_rank_id IS DISTINCT FROM NEW.current_belt_rank_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
 -- A rank holder moves to the nearest preceding surviving full belt, falling
 -- forward only when no predecessor survives. During a multi-row delete this
 -- may temporarily select another row scheduled for deletion; that row's own
@@ -581,7 +693,7 @@ BEGIN
     END IF;
 
     IF private.koaryu_release_starting_belt_manifest_v9()
-       <> '0:7e8dc46f3e4a514f694fe4ea3a1559928397c6e2cee8af2a09e5c3d07129e8b7' THEN
+       <> '0:872d8e3159278a82fc8d72f248d6b131ec8e87d679de19b0e889ab83eb39e653' THEN
         v_failures := array_append(v_failures, 'starting_belt_invariant_manifest_v9');
     END IF;
 
@@ -602,4 +714,4 @@ GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v2()
     TO service_role;
 
 COMMENT ON FUNCTION public.koaryu_release_schema_preflight_v2() IS
-    'Operational exact-head V10 drift signal. V10 preserves deliberate unranked memberships, converges the trigger-only starting-belt ACL, retains the V9 invariant manifest, and advances migration history.';
+    'Operational exact-head V10 drift signal. V10 preserves deliberate unranked memberships, converges primary-program rank state and trigger-only ACLs, retains the V9 invariant manifest, and advances migration history.';

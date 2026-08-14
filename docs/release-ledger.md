@@ -179,8 +179,9 @@ Operator: `Codex release orchestrator`
   migration 101; `20260814103046` repairs whole-statement belt replacement and
   advances readiness to V9 at migration 102; `20260814105424` preserves
   deliberately unranked memberships across plan edits and unrelated deletes,
-  removes historical direct grants from trigger-only functions, and advances
-  exact-head readiness to V10 at migration 103. The packet reports
+  replaces carried ranks when a student changes primary programs, removes
+  historical direct grants from trigger-only functions, and advances exact-head
+  readiness to V10 at migration 103. The packet reports
   `integration_complete=true` only for
   the exact 84-to-103 history and nineteen
   expected pending versions. The semantic catalog and hosted preflight include

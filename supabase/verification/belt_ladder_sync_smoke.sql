@@ -302,6 +302,11 @@ BEGIN
         FROM public.student_program_memberships
         WHERE student_id = v_student_before_rank
           AND current_belt_rank_id IS NOT NULL
+    ) OR EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
     ) THEN
         RAISE EXCEPTION 'Clearing an existing rank during an update was rewritten to the starting belt.';
     END IF;
@@ -315,6 +320,11 @@ BEGIN
         SELECT 1
         FROM public.student_program_memberships
         WHERE student_id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
+    ) OR EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_student_before_rank
           AND current_belt_rank_id IS NOT NULL
     ) THEN
         RAISE EXCEPTION 'An unrelated belt edit rewrote a deliberately unranked membership.';
@@ -336,6 +346,11 @@ BEGIN
         SELECT 1
         FROM public.student_program_memberships
         WHERE student_id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
+    ) OR EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_student_before_rank
           AND current_belt_rank_id IS NOT NULL
     ) THEN
         RAISE EXCEPTION 'Deleting an unrelated belt rewrote a deliberately unranked membership.';
@@ -506,6 +521,11 @@ BEGIN
         SELECT 1
         FROM public.student_program_memberships
         WHERE student_id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
+    ) OR EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_student_before_rank
           AND current_belt_rank_id IS NOT NULL
     ) THEN
         RAISE EXCEPTION 'Saving a one-belt plan rewrote a deliberately unranked membership.';

@@ -103,8 +103,9 @@ belt and advances the intermediate readiness result to V8. Migration 102 repairs
 whole-statement starting-belt replacement and adds the V9 function/trigger
 attestation while retaining the V7 billing semantic/ACL manifest. Migration 103
 preserves deliberately unranked memberships during one-belt plan edits and
-unrelated deletes, converges hosted historical grants on trigger-only functions,
-and advances the exact-head readiness signal to V10. Never certify
+unrelated deletes, reconciles the legacy rank when a student changes primary
+programs, converges hosted historical grants on trigger-only functions, and
+advances the exact-head readiness signal to V10. Never certify
 an earlier head; regenerate the packet
 from the exact immutable release commit so
 all candidate migration hashes and counts remain current. Hosted PostgREST
