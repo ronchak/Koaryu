@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { buildPreviewEligibilityForLadder } from "../src/lib/preview-belt-eligibility.ts";
+import {
+  setPromotionHistoryCacheItems,
+  toPromotionHistoryByStudent,
+} from "../src/lib/store-promotion-history.ts";
+import { KEYS, load, save } from "../src/lib/store-storage.ts";
 
 const ranks = [
   {
@@ -235,5 +240,54 @@ describe("preview belt eligibility", () => {
     assert.equal(rows[0].days_at_rank, 0);
     assert.equal(rows[0].classes_met, false);
     assert.equal(rows[0].time_met, false);
+  });
+
+  it("keeps the promotion anchor after preview storage reload", () => {
+    const previousWindow = globalThis.window;
+    const values = new Map();
+    globalThis.window = {};
+    globalThis.localStorage = {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key),
+      key: (index) => [...values.keys()][index] ?? null,
+      get length() { return values.size; },
+      clear: () => values.clear(),
+    };
+
+    try {
+      const promotedAt = "2026-06-01T00:00:00.000Z";
+      const cache = setPromotionHistoryCacheItems({}, "reloaded", [{
+        id: "persisted-promotion",
+        studio_id: "mock-studio",
+        student_id: "reloaded",
+        student_program_membership_id: "reloaded-membership",
+        program_id: "program-bjj",
+        from_rank_id: null,
+        to_rank_id: "white",
+        promoted_at: promotedAt,
+      }], Date.parse(promotedAt));
+      save(KEYS.promotionHistory, cache);
+      const reloadedCache = load(KEYS.promotionHistory, {});
+
+      const rows = buildPreviewEligibilityForLadder({
+        ladderId: ladder.id,
+        beltLadders: [ladder],
+        beltRanks: ranks,
+        students: [student("reloaded")],
+        promotionHistoryByStudent: toPromotionHistoryByStudent(reloadedCache),
+        nowMs: Date.parse("2026-06-01T12:00:00.000Z"),
+      });
+
+      assert.equal(rows[0].days_at_rank, 0);
+      assert.equal(rows[0].time_met, false);
+    } finally {
+      if (previousWindow === undefined) {
+        delete globalThis.window;
+      } else {
+        globalThis.window = previousWindow;
+      }
+      delete globalThis.localStorage;
+    }
   });
 });

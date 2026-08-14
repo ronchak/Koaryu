@@ -18,6 +18,7 @@ export const PREVIEW_PLATFORM: PlatformBillingStatus = {
   currency: "usd",
   status: "active",
   comped: false,
+  can_start_checkout: false,
   trial_start: null,
   trial_end: null,
   current_period_start: "2026-04-01T00:00:00Z",

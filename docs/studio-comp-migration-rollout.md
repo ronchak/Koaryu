@@ -136,11 +136,12 @@ They are already present in the 100-state baseline. Production must apply
 migrations 101 through 106; staging, already at exact V11 attested migration
 104, must dry-run and apply only migrations 105 and 106 in order.
 
-Historical intermediate migrations 101 and 103 remain read-only inspectable,
-but apply is deliberately disabled from those states because their readiness
-versions do not attest the complete object surface needed for safe forward
-recovery. Only exact pre-state 100, recovery state 102, or attested state 104
-may enter apply after a matching inspection token and dry-run.
+Historical intermediate migrations 101 through 103 remain read-only
+inspectable, but apply is deliberately disabled from intermediate 101,
+recovery 102, and convergence 103. Those readiness versions do not attest the
+complete object surface needed for safe forward recovery. Only exact pre-state
+100 or attested state 104 may enter apply after a matching inspection token and
+dry-run; post-state 106 is inspect-only and has nothing left to apply.
 
 ## Transaction and old-application classification
 
@@ -153,6 +154,25 @@ PostgreSQL 17 harness applies each file in its own single transaction.
   take a table-level DDL lock.
 - `20260727110000` creates/replaces one invoker function and its privileges. It
   performs no table or product-data update.
+
+The August release files have the following operational profile:
+
+| Migration | Locks and data work | Old-application compatibility | Partial failure / recovery |
+| --- | --- | --- | --- |
+| 101 | Replaces rank/membership functions and three triggers, then updates every active unranked membership whose program has a starting rank. Function/trigger DDL takes catalog and table locks; the backfill takes row locks on matching memberships and may update their primary student rows through the trigger. | Additive schema, but old application reads can immediately observe default starting ranks. | One migration transaction. If committed alone, state 101 is inspect-only; apply is blocked until an operator repairs forward to attested 104. |
+| 102 | Replaces the starting-rank backfill, adds one delete trigger and the V9 manifest. No standalone product-data scan. | Additive and compatible with old callers; belt-rank deletion semantics become stricter. | One migration transaction. State 102 is a recovery classification only; automated apply is blocked because its manifest does not attest the later writer surface. |
+| 103 | Replaces profile/rank functions and ACLs. No standalone product-data scan, but function and trigger DDL can wait on active writers. | RPC signatures remain stable. Old callers continue to work and receive corrected rank preservation. | One migration transaction. State 103 is inspect-only convergence; repair forward to 104 before any further apply. |
+| 104 | Adds stable public/private import wrappers, replaces the readiness RPC, and adds the V11 manifest. No product-data scan. | Additive, signature-compatible wrappers; safe for the old application. | One migration transaction. This is the only accepted partial attested apply origin. |
+| 105 | Adds the V12 return-contract manifest and replaces readiness. No table data or trigger changes. | Read-only attestation change; application-compatible. | One migration transaction. A failure after 105 leaves an unaccepted 105 partial head. Re-inspect and apply immutable 106 only after operator review; do not repair history. |
+| 106 | Replaces the profile writer and rank-delete trigger; wraps the belt-plan writer so assigned-rank deletion is authorized only after its students-first pre-lock; adds atomic membership, bulk, delete, and Core-checkout RPCs; adds four promotion snapshot columns; backfills historical promotion names/colors; replaces two promotion FKs with `ON DELETE SET NULL`; and adds promotion/comp triggers. The promotion `ALTER TABLE` and FK validation can take strong table locks, while the snapshot backfill row-locks matching promotions. | Existing public RPC signatures remain; promotion responses now allow deleted historical rank IDs. Assigned ranks can no longer be deleted directly and must go through `sync_belt_ladder_ranks`. Deploy database-first because new backend membership and checkout flows require the new service-role RPCs. | One migration transaction. Failure rolls back migration 106, but provider timeout is treated as ambiguous: re-inspect catalog/history before retry. If 105 committed first, preserve it and repair forward with immutable 106 or a reviewed migration. |
+
+Before staging apply, record cardinalities for `student_program_memberships`,
+active unranked memberships eligible for the 101 backfill, `students`,
+`promotions`, and promotion rows missing any applicable rank snapshot. Record
+the wall-clock duration of each migration and the longest observed lock wait
+from provider logs. The durable release record must contain those counts and
+timings; a blank field is a failed gate. Production sizing uses staging timing
+plus production read-only cardinalities, never an assumed small-table shortcut.
 
 The two files are not one atomic unit. A remote failure may leave migration 85
 applied while 86 is absent. The runner reports every apply failure as potentially

@@ -12,13 +12,21 @@ DB_PORT="$3"
 OWNER_ID="00000000-0000-4000-8000-000000009201"
 STUDIO_ID="00000000-0000-4000-8000-000000009202"
 PROGRAM_ID="00000000-0000-4000-8000-000000009203"
+SECOND_PROGRAM_ID="00000000-0000-4000-8000-000000009209"
 LADDER_ID="00000000-0000-4000-8000-000000009204"
 STUDENT_ID="00000000-0000-4000-8000-000000009205"
+MEMBERSHIP_ID="00000000-0000-4000-8000-000000009210"
+SECOND_MEMBERSHIP_ID="00000000-0000-4000-8000-000000009211"
 FIRST_RANK_ID="00000000-0000-4000-8000-000000009206"
 SECOND_RANK_ID="00000000-0000-4000-8000-000000009207"
+THIRD_RANK_ID="00000000-0000-4000-8000-000000009208"
+FOURTH_RANK_ID="00000000-0000-4000-8000-000000009212"
 MARKER_PATH="$(mktemp /tmp/koaryu-student-lock-order.XXXXXX)"
 RANK_PLAN_LOG="$(mktemp /tmp/koaryu-rank-plan-lock-order.XXXXXX)"
+DELETE_MARKER_PATH="$(mktemp /tmp/koaryu-rank-delete-lock-order.XXXXXX)"
+PROFILE_LOG="$(mktemp /tmp/koaryu-profile-lock-order.XXXXXX)"
 rm -f "$MARKER_PATH"
+rm -f "$DELETE_MARKER_PATH"
 
 psql_args=(
   --host="$SOCKET_DIR"
@@ -32,10 +40,15 @@ psql_args=(
 )
 
 rank_plan_pid=""
+profile_pid=""
 cleanup() {
   if [[ -n "$rank_plan_pid" ]] && kill -0 "$rank_plan_pid" 2>/dev/null; then
     kill "$rank_plan_pid" 2>/dev/null || true
     wait "$rank_plan_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$profile_pid" ]] && kill -0 "$profile_pid" 2>/dev/null; then
+    kill "$profile_pid" 2>/dev/null || true
+    wait "$profile_pid" 2>/dev/null || true
   fi
   "$PSQL_BINARY" "${psql_args[@]}" >/dev/null 2>&1 <<SQL || true
 DELETE FROM public.audit_logs WHERE studio_id = '$STUDIO_ID'::uuid;
@@ -47,7 +60,7 @@ DELETE FROM public.programs WHERE studio_id = '$STUDIO_ID'::uuid;
 DELETE FROM public.studios WHERE id = '$STUDIO_ID'::uuid;
 DELETE FROM auth.users WHERE id = '$OWNER_ID'::uuid;
 SQL
-  rm -f "$MARKER_PATH" "$RANK_PLAN_LOG"
+  rm -f "$MARKER_PATH" "$RANK_PLAN_LOG" "$DELETE_MARKER_PATH" "$PROFILE_LOG"
 }
 trap cleanup EXIT
 
@@ -61,7 +74,9 @@ INSERT INTO auth.users (
 INSERT INTO public.studios (id, name, slug, owner_id)
 VALUES ('$STUDIO_ID'::uuid, 'Student Lock Order Contract', 'student-lock-order-contract', '$OWNER_ID'::uuid);
 INSERT INTO public.programs (id, studio_id, name)
-VALUES ('$PROGRAM_ID'::uuid, '$STUDIO_ID'::uuid, 'Lock Order Program');
+VALUES
+  ('$PROGRAM_ID'::uuid, '$STUDIO_ID'::uuid, 'Lock Order Program'),
+  ('$SECOND_PROGRAM_ID'::uuid, '$STUDIO_ID'::uuid, 'Second Lock Order Program');
 INSERT INTO public.belt_ladders (id, studio_id, name, program_id)
 VALUES ('$LADDER_ID'::uuid, '$STUDIO_ID'::uuid, 'Lock Order Ladder', '$PROGRAM_ID'::uuid);
 INSERT INTO public.belt_ranks (
@@ -77,9 +92,10 @@ INSERT INTO public.students (
   '$PROGRAM_ID'::uuid, '$FIRST_RANK_ID'::uuid
 );
 INSERT INTO public.student_program_memberships (
-  studio_id, student_id, program_id, status, current_belt_rank_id
+  id, studio_id, student_id, program_id, status, current_belt_rank_id
 ) VALUES (
-  '$STUDIO_ID'::uuid, '$STUDENT_ID'::uuid, '$PROGRAM_ID'::uuid, 'active', '$FIRST_RANK_ID'::uuid
+  '$MEMBERSHIP_ID'::uuid, '$STUDIO_ID'::uuid, '$STUDENT_ID'::uuid,
+  '$PROGRAM_ID'::uuid, 'active', '$FIRST_RANK_ID'::uuid
 );
 SQL
 
@@ -178,4 +194,367 @@ if [[ "$final_state" != "$SECOND_RANK_ID:$SECOND_RANK_ID:0" ]]; then
   exit 1
 fi
 
-echo "PASS: profile writes serialize behind rank-plan saves with students-before-memberships lock order."
+"$PSQL_BINARY" "${psql_args[@]}" <<SQL
+INSERT INTO public.belt_ranks (
+  id, ladder_id, studio_id, name, color_hex, display_order, min_classes,
+  min_months, requires_approval, is_tip
+) VALUES (
+  '$THIRD_RANK_ID'::uuid, '$LADDER_ID'::uuid, '$STUDIO_ID'::uuid,
+  'Orange', '#fb923c', 3, 20, 4, false, false
+);
+UPDATE public.student_program_memberships
+SET current_belt_rank_id = '$THIRD_RANK_ID'::uuid
+WHERE studio_id = '$STUDIO_ID'::uuid
+  AND student_id = '$STUDENT_ID'::uuid
+  AND program_id = '$PROGRAM_ID'::uuid;
+UPDATE public.students
+SET current_belt_rank_id = '$THIRD_RANK_ID'::uuid
+WHERE studio_id = '$STUDIO_ID'::uuid
+  AND id = '$STUDENT_ID'::uuid;
+SQL
+
+# A direct DELETE reaches the rank trigger without the belt-plan RPC's
+# pre-locks. It must wait on the student before touching the membership, or it
+# forms the inverse cycle with a profile writer that already owns the student.
+"$PSQL_BINARY" "${psql_args[@]}" >"$PROFILE_LOG" 2>&1 <<SQL &
+BEGIN;
+SELECT 1 FROM public.students WHERE id = '$STUDENT_ID'::uuid FOR UPDATE;
+\! touch "$DELETE_MARKER_PATH"
+SELECT pg_sleep(2);
+SELECT (public.write_student_profile_atomic(
+  '$STUDENT_ID'::uuid,
+  '$STUDIO_ID'::uuid,
+  '$OWNER_ID'::uuid,
+  jsonb_build_object('notes', 'direct delete concurrency contract'),
+  ARRAY['$PROGRAM_ID'::uuid],
+  '[]'::jsonb,
+  true,
+  'student.updated'
+)).id;
+COMMIT;
+SQL
+profile_pid="$!"
+
+for _ in {1..100}; do
+  if [[ -f "$DELETE_MARKER_PATH" ]]; then
+    break
+  fi
+  if ! kill -0 "$profile_pid" 2>/dev/null; then
+    wait "$profile_pid" || true
+    echo "FAIL: profile session exited before taking the student lock" >&2
+    sed -n '1,120p' "$PROFILE_LOG" >&2
+    exit 1
+  fi
+  sleep 0.05
+done
+
+if [[ ! -f "$DELETE_MARKER_PATH" ]]; then
+  echo "FAIL: profile session did not reach the direct-delete synchronization point" >&2
+  exit 1
+fi
+
+set +e
+delete_output="$("$PSQL_BINARY" "${psql_args[@]}" 2>&1 <<SQL
+SET statement_timeout = '6s';
+DELETE FROM public.belt_ranks
+WHERE id = '$THIRD_RANK_ID'::uuid
+  AND studio_id = '$STUDIO_ID'::uuid;
+SQL
+)"
+delete_status=$?
+set -e
+
+if [[ $delete_status -eq 0 ]] || [[ "$delete_output" != *"must be deleted through sync_belt_ladder_ranks"* ]]; then
+  echo "FAIL: assigned direct rank deletion was not rejected before waiting on the profile write" >&2
+  echo "$delete_output" >&2
+  exit 1
+fi
+
+if ! wait "$profile_pid"; then
+  profile_pid=""
+  echo "FAIL: profile write failed while direct rank deletion was waiting" >&2
+  sed -n '1,120p' "$PROFILE_LOG" >&2
+  exit 1
+fi
+profile_pid=""
+
+"$PSQL_BINARY" "${psql_args[@]}" >/dev/null <<SQL
+SELECT count(*)
+FROM public.sync_belt_ladder_ranks(
+  '$LADDER_ID'::uuid,
+  '$STUDIO_ID'::uuid,
+  'Tip',
+  jsonb_build_array(jsonb_build_object(
+    'id', '$SECOND_RANK_ID'::uuid,
+    'name', 'Yellow',
+    'color_hex', '#facc15',
+    'min_classes', 10,
+    'min_months', 2,
+    'requires_approval', false,
+    'is_tip', false
+  ))
+);
+SQL
+
+final_state="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
+SELECT student.current_belt_rank_id::text || ':' ||
+       membership.current_belt_rank_id::text || ':' ||
+       (SELECT count(*) FROM public.belt_ranks WHERE id = '$THIRD_RANK_ID'::uuid)::text
+FROM public.students student
+JOIN public.student_program_memberships membership
+  ON membership.student_id = student.id
+ AND membership.studio_id = student.studio_id
+ AND membership.program_id = student.program_id
+WHERE student.id = '$STUDENT_ID'::uuid;
+SQL
+)"
+
+if [[ "$final_state" != "$SECOND_RANK_ID:$SECOND_RANK_ID:0" ]]; then
+  echo "FAIL: serialized profile/direct-delete writes did not converge on the surviving rank" >&2
+  exit 1
+fi
+
+# Membership PATCH uses the same atomic RPC as removal. It must wait at the
+# student row behind a profile replacement and then update the compatibility
+# student row in the same transaction.
+rm -f "$DELETE_MARKER_PATH"
+"$PSQL_BINARY" "${psql_args[@]}" >"$PROFILE_LOG" 2>&1 <<SQL &
+BEGIN;
+SELECT 1 FROM public.students WHERE id = '$STUDENT_ID'::uuid FOR UPDATE;
+\! touch "$DELETE_MARKER_PATH"
+SELECT pg_sleep(2);
+SELECT (public.write_student_profile_atomic(
+  '$STUDENT_ID'::uuid,
+  '$STUDIO_ID'::uuid,
+  '$OWNER_ID'::uuid,
+  jsonb_build_object('notes', 'membership patch concurrency contract'),
+  ARRAY['$PROGRAM_ID'::uuid],
+  '[]'::jsonb,
+  true,
+  'student.updated'
+)).id;
+COMMIT;
+SQL
+profile_pid="$!"
+
+for _ in {1..100}; do
+  [[ -f "$DELETE_MARKER_PATH" ]] && break
+  sleep 0.05
+done
+if [[ ! -f "$DELETE_MARKER_PATH" ]]; then
+  echo "FAIL: profile session did not reach the membership-patch synchronization point" >&2
+  exit 1
+fi
+
+set +e
+membership_patch_output="$("$PSQL_BINARY" "${psql_args[@]}" 2>&1 <<SQL
+SET statement_timeout = '6s';
+SELECT id FROM public.mutate_student_program_membership_atomic(
+  '$STUDENT_ID'::uuid, '$STUDIO_ID'::uuid, '$OWNER_ID'::uuid,
+  'update', '$MEMBERSHIP_ID'::uuid, jsonb_build_object('status', 'paused')
+);
+SQL
+)"
+membership_patch_status=$?
+set -e
+if [[ $membership_patch_status -ne 0 ]]; then
+  echo "FAIL: membership PATCH did not serialize behind the profile replacement" >&2
+  echo "$membership_patch_output" >&2
+  exit 1
+fi
+if ! wait "$profile_pid"; then
+  profile_pid=""
+  echo "FAIL: profile write failed while membership PATCH was waiting" >&2
+  sed -n '1,160p' "$PROFILE_LOG" >&2
+  exit 1
+fi
+profile_pid=""
+
+membership_state="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
+SELECT membership.status || ':' ||
+       (student.current_belt_rank_id IS NOT DISTINCT FROM membership.current_belt_rank_id)::text
+FROM public.student_program_memberships membership
+JOIN public.students student ON student.id = membership.student_id
+WHERE membership.id = '$MEMBERSHIP_ID'::uuid;
+SQL
+)"
+if [[ "$membership_state" != "paused:true" ]]; then
+  echo "FAIL: serialized membership PATCH did not converge with the student compatibility row" >&2
+  exit 1
+fi
+
+"$PSQL_BINARY" "${psql_args[@]}" <<SQL
+UPDATE public.student_program_memberships SET status = 'active'
+WHERE id = '$MEMBERSHIP_ID'::uuid;
+INSERT INTO public.student_program_memberships (
+  id, studio_id, student_id, program_id, status
+) VALUES (
+  '$SECOND_MEMBERSHIP_ID'::uuid, '$STUDIO_ID'::uuid, '$STUDENT_ID'::uuid,
+  '$SECOND_PROGRAM_ID'::uuid, 'active'
+);
+SQL
+
+# Removing the ranked primary membership must likewise serialize behind a
+# profile replacement, end exactly that membership, and choose the remaining
+# active program without an intermediate committed state.
+rm -f "$DELETE_MARKER_PATH"
+"$PSQL_BINARY" "${psql_args[@]}" >"$PROFILE_LOG" 2>&1 <<SQL &
+BEGIN;
+SELECT 1 FROM public.students WHERE id = '$STUDENT_ID'::uuid FOR UPDATE;
+\! touch "$DELETE_MARKER_PATH"
+SELECT pg_sleep(2);
+SELECT (public.write_student_profile_atomic(
+  '$STUDENT_ID'::uuid,
+  '$STUDIO_ID'::uuid,
+  '$OWNER_ID'::uuid,
+  jsonb_build_object('notes', 'membership removal concurrency contract'),
+  ARRAY['$PROGRAM_ID'::uuid, '$SECOND_PROGRAM_ID'::uuid],
+  '[]'::jsonb,
+  true,
+  'student.updated'
+)).id;
+COMMIT;
+SQL
+profile_pid="$!"
+
+for _ in {1..100}; do
+  [[ -f "$DELETE_MARKER_PATH" ]] && break
+  sleep 0.05
+done
+if [[ ! -f "$DELETE_MARKER_PATH" ]]; then
+  echo "FAIL: profile session did not reach the membership-removal synchronization point" >&2
+  exit 1
+fi
+
+set +e
+membership_remove_output="$("$PSQL_BINARY" "${psql_args[@]}" 2>&1 <<SQL
+SET statement_timeout = '6s';
+SELECT id FROM public.mutate_student_program_membership_atomic(
+  '$STUDENT_ID'::uuid, '$STUDIO_ID'::uuid, '$OWNER_ID'::uuid,
+  'remove', '$MEMBERSHIP_ID'::uuid, '{}'::jsonb
+);
+SQL
+)"
+membership_remove_status=$?
+set -e
+if [[ $membership_remove_status -ne 0 ]]; then
+  echo "FAIL: membership removal did not serialize behind the profile replacement" >&2
+  echo "$membership_remove_output" >&2
+  exit 1
+fi
+if ! wait "$profile_pid"; then
+  profile_pid=""
+  echo "FAIL: profile write failed while membership removal was waiting" >&2
+  sed -n '1,160p' "$PROFILE_LOG" >&2
+  exit 1
+fi
+profile_pid=""
+
+removal_state="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
+SELECT removed.status || ':' || student.program_id::text || ':' ||
+       (student.current_belt_rank_id IS NULL)::text
+FROM public.student_program_memberships removed
+JOIN public.students student ON student.id = removed.student_id
+WHERE removed.id = '$MEMBERSHIP_ID'::uuid;
+SQL
+)"
+if [[ "$removal_state" != "ended:$SECOND_PROGRAM_ID:true" ]]; then
+  echo "FAIL: serialized membership removal did not select the remaining active program" >&2
+  exit 1
+fi
+
+# The direct-delete trigger must also lock a student whose affected membership
+# is secondary; filtering only by the legacy primary program would reintroduce
+# the membership-before-student cycle for multi-program students.
+"$PSQL_BINARY" "${psql_args[@]}" <<SQL
+INSERT INTO public.belt_ranks (
+  id, ladder_id, studio_id, name, color_hex, display_order, min_classes,
+  min_months, requires_approval, is_tip
+) VALUES (
+  '$FOURTH_RANK_ID'::uuid, '$LADDER_ID'::uuid, '$STUDIO_ID'::uuid,
+  'Purple', '#a855f7', 4, 30, 6, false, false
+);
+UPDATE public.student_program_memberships
+SET status = 'active', ended_at = NULL, current_belt_rank_id = '$FOURTH_RANK_ID'::uuid
+WHERE id = '$MEMBERSHIP_ID'::uuid;
+SQL
+
+rm -f "$DELETE_MARKER_PATH"
+"$PSQL_BINARY" "${psql_args[@]}" >"$PROFILE_LOG" 2>&1 <<SQL &
+BEGIN;
+SELECT 1 FROM public.students WHERE id = '$STUDENT_ID'::uuid FOR UPDATE;
+\! touch "$DELETE_MARKER_PATH"
+SELECT pg_sleep(2);
+SELECT (public.write_student_profile_atomic(
+  '$STUDENT_ID'::uuid, '$STUDIO_ID'::uuid, '$OWNER_ID'::uuid,
+  jsonb_build_object('notes', 'secondary rank delete concurrency contract'),
+  ARRAY['$SECOND_PROGRAM_ID'::uuid, '$PROGRAM_ID'::uuid],
+  '[]'::jsonb, true, 'student.updated'
+)).id;
+COMMIT;
+SQL
+profile_pid="$!"
+
+for _ in {1..100}; do
+  [[ -f "$DELETE_MARKER_PATH" ]] && break
+  sleep 0.05
+done
+if [[ ! -f "$DELETE_MARKER_PATH" ]]; then
+  echo "FAIL: profile session did not reach the secondary-rank-delete synchronization point" >&2
+  exit 1
+fi
+
+set +e
+secondary_delete_output="$("$PSQL_BINARY" "${psql_args[@]}" 2>&1 <<SQL
+SET statement_timeout = '6s';
+DELETE FROM public.belt_ranks WHERE id = '$FOURTH_RANK_ID'::uuid;
+SQL
+)"
+secondary_delete_status=$?
+set -e
+if [[ $secondary_delete_status -eq 0 ]] || [[ "$secondary_delete_output" != *"must be deleted through sync_belt_ladder_ranks"* ]]; then
+  echo "FAIL: assigned secondary-membership direct rank deletion was not rejected safely" >&2
+  echo "$secondary_delete_output" >&2
+  exit 1
+fi
+if ! wait "$profile_pid"; then
+  profile_pid=""
+  echo "FAIL: profile write failed while secondary-rank deletion was waiting" >&2
+  sed -n '1,160p' "$PROFILE_LOG" >&2
+  exit 1
+fi
+profile_pid=""
+
+"$PSQL_BINARY" "${psql_args[@]}" >/dev/null <<SQL
+SELECT count(*)
+FROM public.sync_belt_ladder_ranks(
+  '$LADDER_ID'::uuid,
+  '$STUDIO_ID'::uuid,
+  'Tip',
+  jsonb_build_array(jsonb_build_object(
+    'id', '$SECOND_RANK_ID'::uuid,
+    'name', 'Yellow',
+    'color_hex', '#facc15',
+    'min_classes', 10,
+    'min_months', 2,
+    'requires_approval', false,
+    'is_tip', false
+  ))
+);
+SQL
+
+secondary_delete_state="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
+SELECT membership.current_belt_rank_id::text || ':' ||
+       student.program_id::text || ':' ||
+       (student.current_belt_rank_id IS NULL)::text
+FROM public.student_program_memberships membership
+JOIN public.students student ON student.id = membership.student_id
+WHERE membership.id = '$MEMBERSHIP_ID'::uuid;
+SQL
+)"
+if [[ "$secondary_delete_state" != "$SECOND_RANK_ID:$SECOND_PROGRAM_ID:true" ]]; then
+  echo "FAIL: secondary-membership rank deletion did not converge without changing the primary program" >&2
+  exit 1
+fi
+
+echo "PASS: profile, rank-plan, membership PATCH/removal serialize; assigned direct rank deletion fails before inverse locking."

@@ -23,9 +23,9 @@ export function areProviderMutationsEnabled(
 }
 
 export function canStartCoreCheckout(
-  billingPlatform: Pick<PlatformBillingStatus, "comped" | "status"> | null
+  billingPlatform: Pick<PlatformBillingStatus, "can_start_checkout"> | null
 ): boolean {
-  return billingPlatform?.comped !== true && billingPlatform?.status !== "comped";
+  return billingPlatform?.can_start_checkout === true;
 }
 
 function scopedCopy(

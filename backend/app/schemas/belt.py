@@ -104,7 +104,7 @@ class PromotionResponse(BaseModel):
     student_program_membership_id: Optional[str] = None
     program_id: Optional[str] = None
     from_rank_id: Optional[str] = None
-    to_rank_id: str
+    to_rank_id: Optional[str] = None
     promoted_by: Optional[str] = None
     notes: Optional[str] = None
     promoted_at: str

@@ -2,6 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 
 const FRONTEND_URL = process.env.KOARYU_E2E_FRONTEND_URL || "http://localhost:4000";
 const coreUiEnabled = process.env.KOARYU_CORE_UI_E2E === "true";
+const frontendTarget = new URL(FRONTEND_URL);
+if (coreUiEnabled && !["localhost", "127.0.0.1"].includes(frontendTarget.hostname)) {
+  throw new Error("KOARYU_CORE_UI_E2E is preview-stateful and may run only against loopback.");
+}
 const coreUiTest = coreUiEnabled ? test : test.skip;
 
 async function signInToPreview(page: Page) {

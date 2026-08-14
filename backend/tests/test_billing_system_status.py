@@ -61,6 +61,7 @@ def _settings(
     core_self_checkout_enabled: bool = False,
 ):
     return type("Settings", (), {
+        "ENVIRONMENT": "production",
         "STRIPE_MODE": stripe_mode,
         "LIVE_BILLING_ENABLED": live_billing_enabled,
         "CORE_SELF_CHECKOUT_ENABLED": core_self_checkout_enabled,

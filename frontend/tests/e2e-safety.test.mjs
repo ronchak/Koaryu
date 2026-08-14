@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
 const atomicBeltLadderSpecPath = new URL("../e2e/atomic-belt-ladder.spec.ts", import.meta.url);
+const coreUiPolishSpecPath = new URL("../e2e/core-ui-polish.spec.ts", import.meta.url);
 const frontendReadmePath = new URL("../README.md", import.meta.url);
 
 describe("stateful Playwright e2e safety", () => {
@@ -18,6 +19,14 @@ describe("stateful Playwright e2e safety", () => {
     assert.equal(spec.includes("TEST_LOGIN_PASSWORD"), false);
     assert.equal(spec.includes("Date.now()"), false);
     assert.equal(spec.includes("console.log"), false);
+  });
+
+  it("restricts the preview-stateful Core UI check to loopback", async () => {
+    const spec = await readFile(coreUiPolishSpecPath, "utf8");
+
+    assert.match(spec, /KOARYU_CORE_UI_E2E/);
+    assert.match(spec, /\["localhost", "127\.0\.0\.1"\]/);
+    assert.match(spec, /may run only against loopback/);
   });
 
   it("documents disposable-account usage for the stateful e2e check", async () => {

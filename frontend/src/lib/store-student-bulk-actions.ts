@@ -90,7 +90,8 @@ export function useStoreStudentBulkActions({
         liveRequest.token
       );
     } catch (error) {
-      if (liveRequest.isCurrent() && shouldRefreshFullRoster) {
+      if (liveRequest.isCurrent()) {
+        onStudentMutation();
         try {
           await refreshStudents();
         } catch (refreshError) {
@@ -125,6 +126,7 @@ export function useStoreStudentBulkActions({
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     refreshStudents,
     studentsMayBePartial,
@@ -168,7 +170,8 @@ export function useStoreStudentBulkActions({
         liveRequest.token
       );
     } catch (error) {
-      if (liveRequest.isCurrent() && shouldRefreshFullRoster) {
+      if (liveRequest.isCurrent()) {
+        onStudentMutation();
         try {
           await refreshStudents();
         } catch (refreshError) {

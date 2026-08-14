@@ -214,8 +214,14 @@ class BeltService:
             PromotionResponse(
                 **row,
                 student_name=students_by_id.get(row["student_id"]),
-                from_rank_name=ranks_by_id.get(row.get("from_rank_id")),
-                to_rank_name=ranks_by_id.get(row["to_rank_id"]),
+                from_rank_name=(
+                    row.get("from_rank_name_snapshot")
+                    or ranks_by_id.get(row.get("from_rank_id"))
+                ),
+                to_rank_name=(
+                    row.get("to_rank_name_snapshot")
+                    or ranks_by_id.get(row.get("to_rank_id"))
+                ),
             )
             for row in promotion_rows
         ]

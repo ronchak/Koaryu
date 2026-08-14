@@ -28,14 +28,13 @@ from app.services.platform_billing_helpers import (
     build_core_checkout_idempotency_key,
     build_idempotency_key,
     merge_metadata,
-    pending_checkout_metadata_update,
-    pending_checkout_url,
+    normalize_idempotency_key,
     row_metadata,
     safe_redirect_url,
     status_response,
 )
 from app.services.platform_subscription_projection import PlatformSubscriptionProjector
-from app.services.supabase_rpc import execute_required_rpc
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 from app.services.stripe_service import StripeService
 
 
@@ -398,54 +397,102 @@ class PlatformBillingService:
                 self.settings.FRONTEND_URL,
             ),
         }
-        pending_url = pending_checkout_url(row)
-        if pending_url:
+        normalize_idempotency_key(idempotency_key)
+        reservation = first_rpc_row(execute_required_rpc(
+            self.supabase,
+            "reserve_core_checkout_atomic",
+            {"p_studio_id": studio_id},
+        )) or {}
+        reservation_outcome = reservation.get("outcome")
+        if reservation_outcome == "existing" and reservation.get("session_url"):
             self._audit(studio_id, actor_id, "platform_billing.checkout_reused", studio_id, {"customer_id": customer_id})
-            return BillingLinkResponse(url=pending_url)
+            return BillingLinkResponse(url=reservation["session_url"])
+        if reservation_outcome == "comped":
+            raise HTTPException(status_code=409, detail="Koaryu Core access is comped for this studio. No checkout is required.")
+        if reservation_outcome == "active":
+            raise HTTPException(status_code=409, detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.")
+        if reservation_outcome == "in_progress":
+            raise HTTPException(status_code=409, detail="Koaryu Core checkout is already being prepared. Try again in a moment.")
+        reservation_token = reservation.get("reservation_token")
+        checkout_epoch = reservation.get("checkout_epoch")
+        if reservation_outcome != "reserved" or not reservation_token or checkout_epoch is None:
+            raise HTTPException(status_code=500, detail="Failed to reserve Koaryu Core checkout.")
         checkout_key = build_core_checkout_idempotency_key(
             studio_id,
-            customer_id,
-            checkout_urls,
-            idempotency_key,
-            self.settings.STRIPE_KOARYU_CORE_PRICE_ID,
+            str(reservation_token),
+            int(checkout_epoch),
         )
         try:
             session = stripe_service.create_core_checkout_session(
                 customer_id=customer_id,
                 studio_id=studio_id,
+                reservation_token=str(reservation_token),
+                checkout_epoch=int(checkout_epoch),
                 idempotency_key=checkout_key,
                 **checkout_urls,
             )
         except Exception as exc:
             if not self._is_missing_stripe_customer_error(exc):
+                self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
                 raise
+            self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
             customer_id = self._create_platform_customer(stripe_service, studio_id, studio)
+            reservation = first_rpc_row(execute_required_rpc(
+                self.supabase,
+                "reserve_core_checkout_atomic",
+                {"p_studio_id": studio_id},
+            )) or {}
+            reservation_token = reservation.get("reservation_token")
+            checkout_epoch = reservation.get("checkout_epoch")
+            if reservation.get("outcome") != "reserved" or not reservation_token or checkout_epoch is None:
+                raise HTTPException(status_code=409, detail="Koaryu Core checkout state changed. Start checkout again.")
             checkout_key = build_core_checkout_idempotency_key(
                 studio_id,
-                customer_id,
-                checkout_urls,
-                idempotency_key,
-                self.settings.STRIPE_KOARYU_CORE_PRICE_ID,
+                str(reservation_token),
+                int(checkout_epoch),
             )
             session = stripe_service.create_core_checkout_session(
                 customer_id=customer_id,
                 studio_id=studio_id,
+                reservation_token=str(reservation_token),
+                checkout_epoch=int(checkout_epoch),
                 idempotency_key=checkout_key,
                 **checkout_urls,
             )
         session_url = session["url"] if isinstance(session, dict) else session.url
         session_id = session.get("id") if isinstance(session, dict) else getattr(session, "id", None)
         expires_at = session.get("expires_at") if isinstance(session, dict) else getattr(session, "expires_at", None)
-        pending_update = pending_checkout_metadata_update(
-            row,
-            session_id=session_id,
-            session_url=session_url,
-            expires_at=expires_at,
-        )
-        if pending_update:
-            self._update_subscription_row(row["studio_id"], pending_update)
+        published = first_rpc_row(execute_required_rpc(
+            self.supabase,
+            "publish_core_checkout_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_reservation_token": str(reservation_token),
+                "p_checkout_epoch": int(checkout_epoch),
+                "p_session_id": session_id,
+                "p_session_url": session_url,
+                "p_expires_at": expires_at,
+            },
+        )) or {}
+        if published.get("outcome") != "published":
+            if session_id:
+                stripe_service.expire_core_checkout_session(
+                    session_id=session_id,
+                    studio_id=studio_id,
+                    idempotency_key=build_idempotency_key("core-checkout-expire", studio_id, session_id),
+                )
+            if published.get("outcome") == "existing" and published.get("session_url"):
+                return BillingLinkResponse(url=published["session_url"])
+            raise HTTPException(status_code=409, detail="Koaryu Core checkout was invalidated. Start again if payment is still required.")
         self._audit(studio_id, actor_id, "platform_billing.checkout_created", studio_id, {"customer_id": customer_id})
         return BillingLinkResponse(url=session_url)
+
+    def _release_core_checkout_reservation(self, studio_id: str, token: str, epoch: int) -> None:
+        execute_required_rpc(self.supabase, "release_core_checkout_reservation_atomic", {
+            "p_studio_id": studio_id,
+            "p_reservation_token": token,
+            "p_checkout_epoch": epoch,
+        })
 
     async def create_portal_link(
         self,
@@ -506,6 +553,35 @@ class PlatformBillingService:
             stale_for_subscription_state = self._is_stale_subscription_event(row, event_created)
             stale_for_payment_state = self._is_stale_invoice_payment_event(row, event_created)
             subscription_id = self._stripe_id(data_object.get("subscription"))
+            reservation_token = metadata.get("core_checkout_reservation_token")
+            checkout_epoch = metadata.get("core_checkout_epoch")
+            session_id = self._stripe_id(data_object.get("id"))
+            accepted = not bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
+            if reservation_token and checkout_epoch is not None and session_id:
+                accepted_result = execute_required_rpc(
+                    self.supabase,
+                    "accept_core_checkout_completion_atomic",
+                    {
+                        "p_studio_id": studio_id,
+                        "p_reservation_token": reservation_token,
+                        "p_checkout_epoch": int(checkout_epoch),
+                        "p_session_id": session_id,
+                        "p_event_created": event_created,
+                    },
+                )
+                accepted = bool(getattr(accepted_result, "data", accepted_result))
+            if not accepted:
+                if subscription_id:
+                    StripeService().cancel_core_subscription(
+                        subscription_id=subscription_id,
+                        studio_id=studio_id,
+                        idempotency_key=build_idempotency_key(
+                            "core-checkout-invalid-subscription",
+                            studio_id,
+                            subscription_id,
+                        ),
+                    )
+                return
             update = {"metadata": merge_metadata(row, {PENDING_CHECKOUT_METADATA_KEY: None})}
             if not stale_for_payment_state:
                 update["last_payment_status"] = data_object.get("payment_status")

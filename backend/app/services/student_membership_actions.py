@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import HTTPException
 from supabase import Client
 
@@ -13,6 +11,7 @@ from app.schemas.student import (
 from app.services.program_service import ProgramService
 from app.services.student_program_memberships import StudentProgramMembershipStore
 from app.services.student_response_builder import StudentResponseBuilder
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 class StudentMembershipActions:
@@ -43,23 +42,18 @@ class StudentMembershipActions:
     ) -> StudentProgramMembershipResponse:
         self._ensure_student_exists(student_id, studio_id)
         ProgramService(self.supabase).ensure_program_active(studio_id, data.program_id)
-        row = self.membership_store.membership_write_payload(data.model_dump())
-        row["student_id"] = student_id
-        row["studio_id"] = studio_id
-        result = self.supabase.table("student_program_memberships").insert(row).execute()
-        if not result.data:
+        result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
+            "p_student_id": student_id,
+            "p_studio_id": studio_id,
+            "p_actor_id": actor_id,
+            "p_operation": "add",
+            "p_membership_id": None,
+            "p_payload": self.membership_store.membership_write_payload(data.model_dump()),
+        })
+        row = first_rpc_row(result)
+        if not row:
             raise HTTPException(status_code=500, detail="Failed to add student program membership")
-
-        self._write_audit_log(
-            studio_id,
-            actor_id,
-            "student.program_added",
-            "student",
-            student_id,
-            {"program_id": data.program_id},
-        )
-        self._sync_active_programs(student_id, studio_id)
-        return self.response_builder.membership_row_to_response(result.data[0])
+        return self.response_builder.membership_row_to_response(row)
 
     async def update(
         self,
@@ -73,32 +67,18 @@ class StudentMembershipActions:
         update_dict = self.membership_store.membership_write_payload(data.model_dump(exclude_unset=True))
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
-        if update_dict.get("status") == "ended" and not update_dict.get("ended_at"):
-            update_dict["ended_at"] = datetime.now(timezone.utc).date().isoformat()
-        if update_dict.get("status") in {"active", "paused"}:
-            update_dict["ended_at"] = None
-
-        result = (
-            self.supabase.table("student_program_memberships")
-            .update(update_dict)
-            .eq("id", membership_id)
-            .eq("student_id", student_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
-        if not result.data:
+        result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
+            "p_student_id": student_id,
+            "p_studio_id": studio_id,
+            "p_actor_id": actor_id,
+            "p_operation": "update",
+            "p_membership_id": membership_id,
+            "p_payload": update_dict,
+        })
+        row = first_rpc_row(result)
+        if not row:
             raise HTTPException(status_code=404, detail="Student program membership not found")
-
-        self._write_audit_log(
-            studio_id,
-            actor_id,
-            "student.program_updated",
-            "student_program_membership",
-            membership_id,
-            update_dict,
-        )
-        self._sync_active_programs(student_id, studio_id)
-        return self.response_builder.membership_row_to_response(result.data[0])
+        return self.response_builder.membership_row_to_response(row)
 
     async def remove(
         self,
@@ -108,32 +88,16 @@ class StudentMembershipActions:
         actor_id: str,
     ) -> None:
         self._ensure_student_exists(student_id, studio_id)
-        now = datetime.now(timezone.utc).date().isoformat()
-        result = (
-            self.supabase.table("student_program_memberships")
-            .update({"status": "ended", "ended_at": now, "current_belt_rank_id": None})
-            .eq("id", membership_id)
-            .eq("student_id", student_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
-        if not result.data:
+        result = execute_required_rpc(self.supabase, "mutate_student_program_membership_atomic", {
+            "p_student_id": student_id,
+            "p_studio_id": studio_id,
+            "p_actor_id": actor_id,
+            "p_operation": "remove",
+            "p_membership_id": membership_id,
+            "p_payload": {},
+        })
+        if not first_rpc_row(result):
             raise HTTPException(status_code=404, detail="Student program membership not found")
-
-        self._write_audit_log(
-            studio_id,
-            actor_id,
-            "student.program_removed",
-            "student_program_membership",
-            membership_id,
-            {"student_id": student_id},
-        )
-        active_program_ids = self._active_program_ids(student_id, studio_id)
-        if not active_program_ids:
-            active_program_ids = [ProgramService(self.supabase).get_unassigned_program_id(studio_id)]
-            self.membership_store.replace_active_memberships(student_id, studio_id, active_program_ids)
-            return
-        self.membership_store.sync_legacy_program_fields(student_id, studio_id, active_program_ids)
 
     def _ensure_student_exists(self, student_id: str, studio_id: str) -> None:
         result = (

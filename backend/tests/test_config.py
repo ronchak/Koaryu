@@ -397,6 +397,16 @@ class HostedConfigValidationTest(unittest.TestCase):
         ):
             staging_settings.validate_runtime_configuration()
 
+        for environment in ("development", "test"):
+            permissive_settings = Settings(
+                ENVIRONMENT=environment,
+                CORE_SELF_CHECKOUT_ENABLED=True,
+            )
+            with self.subTest(environment=environment), self.assertRaisesRegex(
+                RuntimeError, "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+            ):
+                permissive_settings.validate_runtime_configuration()
+
     def test_production_requires_jwt_secret_only_when_legacy_hs256_is_enabled(self):
         asymmetric_settings = Settings(
             ENVIRONMENT="production",

@@ -1399,14 +1399,14 @@ describe("studio-comp migration rollout guard", () => {
   });
 
   it("keeps historical non-attested states inspectable but refuses to apply from them", () => {
-    for (const state of ["intermediate", "convergence"]) {
+    for (const state of ["intermediate", "recovery", "convergence"]) {
       assert.doesNotThrow(() => assertApplyableState("dry-run", state));
       assert.throws(
         () => assertApplyableState("apply", state),
         new RegExp(`Apply is disabled from ${state} state`),
       );
     }
-    for (const state of ["pre", "recovery", "attested"]) {
+    for (const state of ["pre", "attested"]) {
       assert.doesNotThrow(() => assertApplyableState("apply", state));
     }
   });

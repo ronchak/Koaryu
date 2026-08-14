@@ -108,7 +108,9 @@ export function StudentDetailSections({
               const fromRank = promotion.from_rank_id
                 ? rankById.get(promotion.from_rank_id)
                 : undefined;
-              const toRank = rankById.get(promotion.to_rank_id);
+              const toRank = promotion.to_rank_id
+                ? rankById.get(promotion.to_rank_id)
+                : undefined;
 
               return (
                 <div

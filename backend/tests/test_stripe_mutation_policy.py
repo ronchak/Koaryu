@@ -259,6 +259,7 @@ def _settings(
     live_enabled: bool = False,
     core_self_checkout_enabled: bool = False,
     key_mode: str | None = None,
+    environment: str | None = None,
 ):
     effective_key_mode = key_mode or mode
     return SimpleNamespace(
@@ -267,6 +268,7 @@ def _settings(
         CORE_SELF_CHECKOUT_ENABLED=core_self_checkout_enabled,
         STRIPE_SECRET_KEY=f"sk_{effective_key_mode}_fixture",
         STRIPE_KOARYU_CORE_PRICE_ID="price_fixture",
+        ENVIRONMENT=environment or ("production" if mode == "live" else "test"),
     )
 
 
@@ -491,6 +493,8 @@ class StripeMutationPolicyTest(unittest.TestCase):
         for operation in (
             "customer.create",
             "core_checkout_session.create",
+            "core_checkout_session.expire",
+            "core_subscription.cancel",
             "customer_portal_session.create",
         ):
             with self.subTest(operation=operation):
@@ -522,6 +526,22 @@ class StripeMutationPolicyTest(unittest.TestCase):
             policy.issue_permit("core_checkout_session.create")
 
         self.assertEqual(raised.exception.detail, LIVE_SCOPE_REQUIRED_DETAIL)
+
+    def test_core_self_checkout_switch_cannot_authorize_live_mutations_outside_production(self):
+        for environment in ("development", "test", "staging"):
+            policy = StripeMutationPolicy(_settings(
+                mode="live",
+                core_self_checkout_enabled=True,
+                environment=environment,
+            ))
+            for operation in (
+                "customer.create",
+                "core_checkout_session.create",
+                "customer_portal_session.create",
+            ):
+                with self.subTest(environment=environment, operation=operation), self.assertRaises(HTTPException) as raised:
+                    policy.issue_permit(operation, studio_id="studio_1")
+                self.assertEqual(raised.exception.detail, LIVE_MUTATIONS_DISABLED_DETAIL)
 
     def test_live_switch_is_not_sufficient_without_explicit_durable_scope(self):
         policy = StripeMutationPolicy(_settings(mode="live", live_enabled=True))
@@ -584,6 +604,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
     def test_every_direct_stripe_service_mutation_is_policy_marked(self):
         expected = {
             "cancel_connected_subscription",
+            "cancel_core_subscription",
             "create_connect_account",
             "create_connect_onboarding_link",
             "create_connected_customer",
@@ -599,6 +620,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             "create_customer_portal_session",
             "create_setup_checkout_session",
             "delete_connected_subscription_item",
+            "expire_core_checkout_session",
             "finalize_connected_invoice",
             "pay_connected_invoice",
             "send_connected_invoice",
@@ -681,6 +703,8 @@ class StripeMutationPolicyTest(unittest.TestCase):
             ("stripe_service.py", "void_connected_invoice", "stripe.Invoice.void_invoice"),
             ("stripe_service.py", "create_connected_refund", "stripe.Refund.create"),
             ("stripe_service.py", "create_core_checkout_session", "stripe.checkout.Session.create"),
+            ("stripe_service.py", "expire_core_checkout_session", "stripe.checkout.Session.expire"),
+            ("stripe_service.py", "cancel_core_subscription", "stripe.Subscription.cancel"),
             ("stripe_service.py", "create_customer_portal_session", "stripe.billing_portal.Session.create"),
         }}
         # The source-wide HTTP mutation guard intentionally inventories this

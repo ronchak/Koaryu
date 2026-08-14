@@ -113,6 +113,7 @@ class PlatformBillingStatusResponse(BaseModel):
     currency: str = "usd"
     status: SubscriptionStatus = "comped"
     comped: bool = True
+    can_start_checkout: bool = False
     trial_start: Optional[str] = None
     trial_end: Optional[str] = None
     current_period_start: Optional[str] = None

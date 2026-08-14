@@ -6,6 +6,44 @@ from tests.platform_billing_helpers import PlatformBillingServiceTestCase
 
 
 class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
+    def test_invalidated_checkout_completion_cancels_subscription_without_clearing_comp(self):
+        token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "status": "incomplete",
+            "comped": True,
+            "metadata": {"core_checkout_epoch": 2},
+        }]
+        service = self.service(rows)
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+        canceled = []
+
+        class FakeStripeService:
+            def cancel_core_subscription(self, **payload):
+                canceled.append(payload["subscription_id"])
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "id": "evt_invalidated",
+                "created": 100,
+                "type": "checkout.session.completed",
+                "data": {"object": {
+                    "id": "cs_invalidated",
+                    "customer": "cus_123",
+                    "subscription": "sub_invalidated",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            })
+
+        self.assertEqual(canceled, ["sub_invalidated"])
+        self.assertTrue(rows[0]["comped"])
+        self.assertIsNone(rows[0].get("stripe_subscription_id"))
+
     @staticmethod
     def subscription_event(*, created):
         return {

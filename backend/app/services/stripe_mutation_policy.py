@@ -20,6 +20,8 @@ STRIPE_MODE_MISMATCH_DETAIL = "Stripe mode does not match the configured Stripe 
 CORE_SELF_CHECKOUT_OPERATIONS = frozenset({
     "customer.create",
     "core_checkout_session.create",
+    "core_checkout_session.expire",
+    "core_subscription.cancel",
     "customer_portal_session.create",
 })
 
@@ -135,6 +137,7 @@ class StripeMutationPolicy:
             live_scope == "core_subscription"
             and operation in CORE_SELF_CHECKOUT_OPERATIONS
             and bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
+            and str(getattr(self.settings, "ENVIRONMENT", "")).strip().lower() == "production"
         ):
             return StripeMutationPermit(
                 operation=operation,

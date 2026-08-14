@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -39,7 +41,11 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
         self.assertEqual(response.url, "https://checkout.stripe.test/session")
         self.assertEqual(calls[0][3], "koaryu:core-customer:studio_1")
         self.assertEqual(calls[1][0], "checkout")
-        self.assertEqual(calls[1][1]["idempotency_key"], "koaryu:core-checkout:studio_1:click-key")
+        self.assertEqual(
+            calls[1][1]["idempotency_key"],
+            "koaryu:core-checkout:studio_1:1:00000000-0000-4000-8000-000000000001",
+        )
+        self.assertEqual(calls[1][1]["checkout_epoch"], 1)
         self.assertEqual(rows[0]["stripe_customer_id"], "cus_123")
 
     def test_create_checkout_repairs_missing_live_subscription_before_opening_new_session(self):
@@ -105,6 +111,91 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
         self.assertEqual(first.url, "https://checkout.stripe.test/session")
         self.assertEqual(second.url, "https://checkout.stripe.test/session")
         self.assertEqual([call[0] for call in calls].count("checkout"), 1)
+
+    def test_concurrent_distinct_request_keys_create_exactly_one_provider_session(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+        provider_entered = Event()
+        release_provider = Event()
+        checkout_calls = []
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **payload):
+                checkout_calls.append(payload)
+                provider_entered.set()
+                release_provider.wait(timeout=2)
+                return {
+                    "id": "cs_single",
+                    "url": "https://checkout.stripe.test/single",
+                    "expires_at": 9999999999,
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(
+                    lambda: asyncio.run(service.create_checkout_link(
+                        "studio_1", "user_1", idempotency_key="tab-one",
+                    ))
+                )
+                self.assertTrue(provider_entered.wait(timeout=2))
+                second = executor.submit(
+                    lambda: asyncio.run(service.create_checkout_link(
+                        "studio_1", "user_1", idempotency_key="tab-two",
+                    ))
+                )
+                with self.assertRaises(HTTPException) as context:
+                    second.result(timeout=2)
+                self.assertEqual(context.exception.status_code, 409)
+                release_provider.set()
+                self.assertEqual(
+                    first.result(timeout=2).url,
+                    "https://checkout.stripe.test/single",
+                )
+
+        self.assertEqual(len(checkout_calls), 1)
+
+    def test_comp_granted_before_publication_expires_the_new_session(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+        expired = []
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **_payload):
+                rows[0]["comped"] = True
+                rows[0]["metadata"] = {"core_checkout_epoch": 2}
+                return {
+                    "id": "cs_invalidated",
+                    "url": "https://checkout.stripe.test/invalidated",
+                    "expires_at": 9999999999,
+                }
+
+            def expire_core_checkout_session(self, **payload):
+                expired.append(payload["session_id"])
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(expired, ["cs_invalidated"])
 
     def test_create_checkout_rejects_external_redirect_urls(self):
         rows = [{

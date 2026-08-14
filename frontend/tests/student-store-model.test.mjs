@@ -298,4 +298,42 @@ describe("student store model", () => {
     assert.equal(updated.program_memberships?.[0]?.id, "kids-membership");
     assert.equal(updated.program_memberships?.[0]?.current_belt_rank_id, null);
   });
+
+  it("updates retained membership start dates only when a new date is supplied", () => {
+    const existingStudent = student("student-1", {
+      membership_start_date: "2026-05-01",
+      program_id: "kids",
+      program_memberships: [{
+        id: "kids-membership",
+        studio_id: "mock-studio",
+        student_id: "student-1",
+        program_id: "kids",
+        status: "active",
+        started_at: "2026-05-01",
+        current_belt_rank_id: null,
+        created_at: "2026-05-01T00:00:00.000Z",
+        updated_at: "2026-05-01T00:00:00.000Z",
+      }],
+    });
+    const options = {
+      idFactory: () => "unused-membership",
+      now: new Date("2026-05-24T12:00:00.000Z"),
+    };
+
+    const omitted = applyPreviewStudentUpdate(
+      existingStudent,
+      { program_ids: ["kids"] },
+      [program("kids")],
+      options,
+    );
+    const changed = applyPreviewStudentUpdate(
+      existingStudent,
+      { membership_start_date: "2026-05-10", program_ids: ["kids"] },
+      [program("kids")],
+      options,
+    );
+
+    assert.equal(omitted.program_memberships?.[0]?.started_at, "2026-05-01");
+    assert.equal(changed.program_memberships?.[0]?.started_at, "2026-05-10");
+  });
 });

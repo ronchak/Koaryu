@@ -155,8 +155,23 @@ export function useStoreStudentRosterActions({
     }
 
     const liveRequest = beginLiveAuthRequest();
-    for (const id of ids) {
-      await api.delete(`/students/${id}`, liveRequest.token);
+    try {
+      for (const id of ids) {
+        await api.delete(`/students/${id}`, liveRequest.token);
+      }
+    } catch (error) {
+      if (liveRequest.isCurrent()) {
+        onStudentMutation();
+        try {
+          const nextStudents = await fetchAllStudents(liveRequest.token, { timeoutMs: 30000 });
+          if (liveRequest.isCurrent()) {
+            commitStudents(nextStudents);
+          }
+        } catch (refreshError) {
+          console.error("Failed to refresh students after delete error", refreshError);
+        }
+      }
+      throw error;
     }
     if (!liveRequest.isCurrent()) {
       return;

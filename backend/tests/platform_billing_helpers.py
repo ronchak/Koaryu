@@ -4,6 +4,7 @@ import unittest
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from math import floor
+from threading import Lock
 from unittest.mock import patch
 
 from app.services.platform_billing_service import PlatformBillingService
@@ -34,6 +35,109 @@ class FakeSupabase(RpcBackedSupabase):
             "audit_logs": [],
         })
         self.on_update_query = self._apply_studio_subscription_update
+        self._core_checkout_lock = Lock()
+
+    def _subscription_row(self, studio_id: str) -> dict:
+        return next(
+            row for row in self.tables["studio_subscriptions"]
+            if row.get("studio_id") == studio_id
+        )
+
+    def _rpc_reserve_core_checkout_atomic(self, params: dict) -> list[dict]:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            if row.get("comped") or row.get("status") == "comped":
+                return [{"outcome": "comped"}]
+            if row.get("stripe_subscription_id") and row.get("status") in {
+                "active", "trialing", "past_due", "unpaid", "paused",
+            }:
+                return [{"outcome": "active"}]
+            metadata = dict(row.get("metadata") or {})
+            session = metadata.get("core_checkout_session")
+            if isinstance(session, dict) and session.get("url") and int(session.get("expires_at") or 0) > 999999999:
+                return [{
+                    "outcome": "existing",
+                    "reservation_token": session.get("token"),
+                    "checkout_epoch": session.get("epoch"),
+                    "session_id": session.get("id"),
+                    "session_url": session.get("url"),
+                    "expires_at": session.get("expires_at"),
+                }]
+            if isinstance(metadata.get("core_checkout_reservation"), dict):
+                reservation = metadata["core_checkout_reservation"]
+                return [{
+                    "outcome": "in_progress",
+                    "reservation_token": reservation["token"],
+                    "checkout_epoch": reservation["epoch"],
+                }]
+            epoch = int(metadata.get("core_checkout_epoch") or 0) + 1
+            token = f"00000000-0000-4000-8000-{epoch:012d}"
+            metadata["core_checkout_epoch"] = epoch
+            metadata["core_checkout_reservation"] = {
+                "state": "reserved", "token": token, "epoch": epoch,
+            }
+            metadata.pop("core_checkout_session", None)
+            row["metadata"] = metadata
+            return [{
+                "outcome": "reserved",
+                "reservation_token": token,
+                "checkout_epoch": epoch,
+            }]
+
+    def _rpc_publish_core_checkout_atomic(self, params: dict) -> list[dict]:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            metadata = dict(row.get("metadata") or {})
+            reservation = metadata.get("core_checkout_reservation") or {}
+            if row.get("comped") or row.get("status") == "comped":
+                return [{"outcome": "comped"}]
+            if (
+                reservation.get("token") != params["p_reservation_token"]
+                or reservation.get("epoch") != params["p_checkout_epoch"]
+            ):
+                existing = metadata.get("core_checkout_session") or {}
+                return [{
+                    "outcome": "existing" if existing.get("url") else "stale",
+                    "session_id": existing.get("id"),
+                    "session_url": existing.get("url"),
+                }]
+            metadata.pop("core_checkout_reservation", None)
+            metadata["core_checkout_session"] = {
+                "state": "published",
+                "token": params["p_reservation_token"],
+                "epoch": params["p_checkout_epoch"],
+                "id": params["p_session_id"],
+                "url": params["p_session_url"],
+                "expires_at": params["p_expires_at"],
+            }
+            row["metadata"] = metadata
+            return [{
+                "outcome": "published",
+                "session_id": params["p_session_id"],
+                "session_url": params["p_session_url"],
+            }]
+
+    def _rpc_release_core_checkout_reservation_atomic(self, params: dict) -> bool:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            metadata = dict(row.get("metadata") or {})
+            reservation = metadata.get("core_checkout_reservation") or {}
+            if reservation.get("token") != params["p_reservation_token"]:
+                return False
+            metadata.pop("core_checkout_reservation", None)
+            row["metadata"] = metadata
+            return True
+
+    def _rpc_accept_core_checkout_completion_atomic(self, params: dict) -> bool:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            session = (row.get("metadata") or {}).get("core_checkout_session") or {}
+            return bool(
+                not row.get("comped")
+                and session.get("token") == params["p_reservation_token"]
+                and session.get("epoch") == params["p_checkout_epoch"]
+                and session.get("id") == params["p_session_id"]
+            )
 
     @staticmethod
     def _parse_timestamp(value: str):

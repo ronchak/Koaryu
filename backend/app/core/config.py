@@ -383,6 +383,11 @@ class Settings(BaseSettings):
         )
         self.validated_frontend_origin()
         self.validate_supabase_service_role_configuration()
+        if self.CORE_SELF_CHECKOUT_ENABLED and environment != "production":
+            raise RuntimeError(
+                "Runtime configuration is incomplete or unsafe: "
+                "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+            )
         if environment in PERMISSIVE_ENVIRONMENTS:
             return
         if environment not in STRICT_ENVIRONMENTS:

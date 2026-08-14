@@ -437,11 +437,23 @@ starting_belt_manifest="$(
 SELECT private.koaryu_release_starting_belt_manifest_v9();
 "
 )"
-if [[ "$starting_belt_manifest" != "0:872d8e3159278a82fc8d72f248d6b131ec8e87d679de19b0e889ab83eb39e653" ]]; then
+if [[ "$starting_belt_manifest" != "0:9eb0b668ca7b3d2856bb2c118fdcd759127bea1ce9222b5ec030356b27b4d611" ]]; then
   echo "[starting-belt manifest] FAIL database-observable invariant signal: $starting_belt_manifest" >&2
   exit 1
 fi
 echo "[starting-belt manifest] PASS database-observable invariant signal"
+
+echo "[student-rank manifest] RUN database-observable writer signal"
+student_rank_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_student_rank_writer_manifest_v13();
+"
+)"
+if [[ "$student_rank_manifest" != "0:27cdc692d92fb49f696521e7ab6f3d0b7717c30a232ba6ce4ba057df9e5b30f7" ]]; then
+  echo "[student-rank manifest] FAIL database-observable writer signal: $student_rank_manifest" >&2
+  exit 1
+fi
+echo "[student-rank manifest] PASS database-observable writer signal"
 
 echo "[catalog] RUN deterministic pending-object security fingerprint"
 catalog_state="$({

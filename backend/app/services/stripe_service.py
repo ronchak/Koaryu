@@ -682,6 +682,8 @@ class StripeService:
         studio_id: str,
         success_url: str,
         cancel_url: str,
+        reservation_token: str,
+        checkout_epoch: int,
         idempotency_key: Optional[str] = None,
     ):
         if not self.settings.STRIPE_KOARYU_CORE_PRICE_ID:
@@ -696,11 +698,49 @@ class StripeService:
             line_items=[{"price": self.settings.STRIPE_KOARYU_CORE_PRICE_ID, "quantity": 1}],
             subscription_data={
                 "trial_period_days": 30,
-                "metadata": {"studio_id": studio_id, "product": "koaryu_core"},
+                "metadata": {
+                    "studio_id": studio_id,
+                    "product": "koaryu_core",
+                    "core_checkout_reservation_token": reservation_token,
+                    "core_checkout_epoch": str(checkout_epoch),
+                },
             },
-            metadata={"studio_id": studio_id, "product": "koaryu_core"},
+            metadata={
+                "studio_id": studio_id,
+                "product": "koaryu_core",
+                "core_checkout_reservation_token": reservation_token,
+                "core_checkout_epoch": str(checkout_epoch),
+            },
             success_url=success_url,
             cancel_url=cancel_url,
+            **self._request_options(idempotency_key=idempotency_key),
+        )
+
+    @stripe_mutation("core_checkout_session.expire")
+    def expire_core_checkout_session(
+        self,
+        *,
+        session_id: str,
+        studio_id: str,
+        idempotency_key: Optional[str] = None,
+    ):
+        stripe = self._stripe()
+        return stripe.checkout.Session.expire(
+            session_id,
+            **self._request_options(idempotency_key=idempotency_key),
+        )
+
+    @stripe_mutation("core_subscription.cancel")
+    def cancel_core_subscription(
+        self,
+        *,
+        subscription_id: str,
+        studio_id: str,
+        idempotency_key: Optional[str] = None,
+    ):
+        stripe = self._stripe()
+        return stripe.Subscription.cancel(
+            subscription_id,
             **self._request_options(idempotency_key=idempotency_key),
         )
 

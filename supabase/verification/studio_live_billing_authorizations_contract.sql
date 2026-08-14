@@ -1108,12 +1108,12 @@ BEGIN
 
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF private.koaryu_release_starting_belt_manifest_v9()
-       <> '0:872d8e3159278a82fc8d72f248d6b131ec8e87d679de19b0e889ab83eb39e653' THEN
+       <> '0:9eb0b668ca7b3d2856bb2c118fdcd759127bea1ce9222b5ec030356b27b4d611' THEN
         RAISE EXCEPTION 'Starting-belt V9 manifest mismatch; got %',
             private.koaryu_release_starting_belt_manifest_v9();
     END IF;
     IF private.koaryu_release_student_rank_writer_manifest_v13()
-       <> '0:aa5dc399fd88062aaf27ab6b0c0af0fc9411058d5ca8ae041977eb2dab286276' THEN
+       <> '0:27cdc692d92fb49f696521e7ab6f3d0b7717c30a232ba6ce4ba057df9e5b30f7' THEN
         RAISE EXCEPTION 'Student-rank writer V13 manifest mismatch; got %',
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;

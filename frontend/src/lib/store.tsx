@@ -245,7 +245,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
   );
   const eligibilityRequestSeqRef = useRef(0);
-  const [promotionHistoryCache, setPromotionHistoryCache] = useState<PromotionHistoryCache>({});
+  const [promotionHistoryCache, setPromotionHistoryCache] = useState<PromotionHistoryCache>(() =>
+    isPreviewMode ? load(KEYS.promotionHistory, {}) : {}
+  );
   const promotionHistoryCacheRef = useRef<PromotionHistoryCache>(promotionHistoryCache);
   const promotionHistoryRequestsRef = useRef<PromotionHistoryRequests>({});
   const promotionHistoryGenerationRef = useRef(0);
@@ -255,7 +257,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promotionHistoryRequestsRef.current = {};
     promotionHistoryCacheRef.current = {};
     setPromotionHistoryCache({});
-  }, []);
+    if (isPreviewMode) save(KEYS.promotionHistory, {});
+  }, [isPreviewMode]);
 
   const beginLiveAuthRequest = useCallback(() => {
     const requestToken = tokenRef.current;
@@ -453,7 +456,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     promotionHistoryCacheRef.current = next;
     setPromotionHistoryCache(next);
-  }, []);
+    if (isPreviewMode) save(KEYS.promotionHistory, next);
+  }, [isPreviewMode]);
 
   const updateCurrentLadderId = useCallback((nextLadderId: string | null) => {
     setCurrentLadderIdState(nextLadderId);

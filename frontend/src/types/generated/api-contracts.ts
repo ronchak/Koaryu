@@ -1049,6 +1049,7 @@ export interface ApiPlatformBillingStatusResponse {
   currency: string;
   status: "comped" | "trialing" | "active" | "past_due" | "unpaid" | "canceled" | "incomplete" | "incomplete_expired" | "paused";
   comped: boolean;
+  can_start_checkout: boolean;
   trial_start?: string | null;
   trial_end?: string | null;
   current_period_start?: string | null;
@@ -1121,7 +1122,7 @@ export interface ApiPromotionResponse {
   student_program_membership_id?: string | null;
   program_id?: string | null;
   from_rank_id?: string | null;
-  to_rank_id: string;
+  to_rank_id?: string | null;
   promoted_by?: string | null;
   notes?: string | null;
   promoted_at: string;

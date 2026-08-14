@@ -23,10 +23,10 @@ describe("billing policy", () => {
   });
 
   it("never offers Core checkout to a comped studio", () => {
-    assert.equal(canStartCoreCheckout(null), true);
-    assert.equal(canStartCoreCheckout({ comped: false, status: "incomplete" }), true);
-    assert.equal(canStartCoreCheckout({ comped: true, status: "incomplete" }), false);
-    assert.equal(canStartCoreCheckout({ comped: false, status: "comped" }), false);
+    assert.equal(canStartCoreCheckout(null), false);
+    assert.equal(canStartCoreCheckout({ can_start_checkout: true }), true);
+    assert.equal(canStartCoreCheckout({ can_start_checkout: false }), false);
+    assert.equal(canStartCoreCheckout({}), false);
   });
 
   it("derives live copy independently from each studio-scoped permit", () => {

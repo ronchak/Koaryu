@@ -220,6 +220,7 @@ export function applyPreviewStudentUpdate(
       ) && !membership.ended_at)
       .map((membership) => [membership.program_id, membership])
   );
+  const membershipStartWasSupplied = Object.hasOwn(data, "membership_start_date");
   const membershipStart = data.membership_start_date
     || student.membership_start_date
     || nowIso.split("T")[0];
@@ -242,7 +243,9 @@ export function applyPreviewStudentUpdate(
       program_name: program?.name,
       program_color_hex: program?.color_hex,
       status: "active" as const,
-      started_at: existing?.started_at ?? membershipStart,
+      started_at: membershipStartWasSupplied && data.membership_start_date
+        ? data.membership_start_date
+        : existing?.started_at ?? membershipStart,
       ended_at: null,
       current_belt_rank_id: currentBeltRankId,
       created_at: existing?.created_at ?? nowIso,

@@ -278,7 +278,8 @@ class StudentCrudActionsTest(unittest.TestCase):
         ))
 
         params = supabase.rpc_calls[0][1]
-        self.assertEqual(params["p_program_ids"], ["program-2", "program-1"])
+        self.assertIsNone(params["p_program_ids"])
+        self.assertFalse(params["p_replace_programs"])
         self.assertEqual(student["program_id"], "program-2")
 
     def assert_no_direct_operational_writes(self, supabase):

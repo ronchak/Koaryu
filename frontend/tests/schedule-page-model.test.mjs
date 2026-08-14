@@ -73,6 +73,14 @@ describe("schedule page model", () => {
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "day", 1)), "2026-05-21");
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "week", -1)), "2026-05-13");
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "month", 1)), "2026-06-20");
+    assert.equal(
+      formatScheduleDateKey(navigateScheduleDate(new Date(2026, 0, 31, 12), "month", 1)),
+      "2026-02-28"
+    );
+    assert.equal(
+      formatScheduleDateKey(navigateScheduleDate(new Date(2026, 11, 31, 12), "month", -1)),
+      "2026-11-30"
+    );
   });
 
   it("checks recurring-class overlap and selected-session attendance outside the route", () => {

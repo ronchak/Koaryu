@@ -215,7 +215,10 @@ export function useStoreBeltActions({
     const nextLadders = upsertBeltLadder(beltLaddersRef.current, syncedLadder);
     applyLadderSelection(nextLadders, syncedLadder.id);
 
-    await loadEligibilityForLadder(syncedLadder.id, { force: true }).catch(() => undefined);
+    await Promise.all([
+      refreshStudents(),
+      loadEligibilityForLadder(syncedLadder.id, { force: true }),
+    ]);
   }, [
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -228,6 +231,7 @@ export function useStoreBeltActions({
     loadEligibilityForLadder,
     persistBeltRanks,
     persistStudents,
+    refreshStudents,
     studentsRef,
     subRankTerm,
   ]);
