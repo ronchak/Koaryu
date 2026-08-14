@@ -177,6 +177,14 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
 from public.koaryu_release_schema_preflight_v3()
 `;
 
+export const PREDECESSOR_OPERATIONAL_READINESS_SQL = `
+select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
+       array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
+       coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
+  as operational_readiness
+from public.koaryu_release_schema_preflight_v2()
+`;
+
 export const EXPECTED_WRITER_RETURN_CONTRACT_STATE =
   "4:13fe0a7d1e4e2d1483fa5bb73e77b0097c62f85348b9897b5a256f21950c19b1:0";
 
@@ -2142,7 +2150,9 @@ export function readRemoteState(
     ) {
       snapshot.operationalReadiness = query(
         sourceRoot,
-        OPERATIONAL_READINESS_SQL,
+        snapshot.history === packet.postHistory
+          ? OPERATIONAL_READINESS_SQL
+          : PREDECESSOR_OPERATIONAL_READINESS_SQL,
         "operational_readiness",
         env,
       );

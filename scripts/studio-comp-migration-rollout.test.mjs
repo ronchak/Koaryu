@@ -781,18 +781,21 @@ describe("studio-comp migration rollout guard", () => {
       ["operational_readiness", EXPECTED_OPERATIONAL_READINESS],
     ]);
     const postHeaders = [];
+    const postSql = [];
     const post = readRemoteState(
       repositoryRoot,
       packet,
       {},
       validFingerprint,
-      (_root, _sql, header) => {
+      (_root, sql, header) => {
         postHeaders.push(header);
+        postSql.push(sql);
         return parseSingleValueCsv(singleValueCsv(header, postValues.get(header)), header);
       },
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
     assert.equal(postHeaders.at(-1), "operational_readiness");
+    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v3/);
 
     const intermediateValues = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -801,11 +804,15 @@ describe("studio-comp migration rollout guard", () => {
       ["object_counts", "3:1"],
       ["operational_readiness", EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS],
     ]);
+    const intermediateSql = [];
     assert.deepEqual(
-      readRemoteState(repositoryRoot, packet, {}, null, (_root, _sql, header) =>
-        parseSingleValueCsv(singleValueCsv(header, intermediateValues.get(header)), header)),
+      readRemoteState(repositoryRoot, packet, {}, null, (_root, sql, header) => {
+        intermediateSql.push(sql);
+        return parseSingleValueCsv(singleValueCsv(header, intermediateValues.get(header)), header);
+      }),
       { state: "intermediate", providerFingerprint: null },
     );
+    assert.match(intermediateSql.at(-1), /koaryu_release_schema_preflight_v2/);
 
     const recoveryValues = new Map([
       ["history_columns", extendedHistoryColumns],
