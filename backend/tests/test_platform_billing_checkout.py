@@ -140,7 +140,7 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("already active", context.exception.detail)
 
-    def test_starting_checkout_does_not_end_an_operator_comp(self):
+    def test_starting_checkout_is_blocked_for_an_operator_comp(self):
         rows = [{
             "studio_id": "studio_1",
             "stripe_customer_id": None,
@@ -156,32 +156,21 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
         }]
         service = self.service(rows)
 
-        class FakeStripeService:
-            def create_customer(self, **_payload):
-                return {"id": "cus_new"}
-
-            def create_core_checkout_session(self, **_payload):
-                return {"url": "https://checkout.stripe.test/comped"}
+        class ProviderMustNotBeCalled:
+            def __init__(self):
+                raise AssertionError("comped checkout must stop before provider initialization")
 
         with patch(
             "app.services.platform_billing_service.StripeService",
-            FakeStripeService,
+            ProviderMustNotBeCalled,
         ):
-            response = asyncio.run(
-                service.create_checkout_link("studio_1", "user_1")
-            )
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_checkout_link("studio_1", "user_1"))
 
-        self.assertEqual(response.url, "https://checkout.stripe.test/comped")
-        self.assertEqual(rows[0]["stripe_customer_id"], "cus_new")
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("comped", context.exception.detail)
+        self.assertIsNone(rows[0]["stripe_customer_id"])
         self.assertTrue(rows[0]["comped"])
-        customer_update = next(
-            entry["update"]
-            for entry in service.supabase.query_log
-            if entry["table"] == "studio_subscriptions"
-            and entry["update"]
-            and entry["update"].get("stripe_customer_id") == "cus_new"
-        )
-        self.assertNotIn("comped", customer_update)
 
     def test_comped_local_live_status_can_still_block_checkout(self):
         rows = [{
@@ -211,5 +200,5 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
                 )
 
         self.assertEqual(context.exception.status_code, 409)
-        self.assertIn("already active", context.exception.detail)
+        self.assertIn("comped", context.exception.detail)
         self.assertTrue(rows[0]["comped"])

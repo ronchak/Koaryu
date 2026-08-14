@@ -366,6 +366,11 @@ class PlatformBillingService:
         idempotency_key: Optional[str] = None,
     ) -> BillingLinkResponse:
         row = self._ensure_subscription_row(studio_id)
+        if row.get("comped") is True or (row.get("status") or "") == "comped":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Koaryu Core access is comped for this studio. No checkout is required.",
+            )
         row = self._repair_missing_subscription(row)
         row = self._repair_subscription_periods(row)
         if row.get("stripe_subscription_id") and (row.get("status") or "") in LIVE_STRIPE_SUBSCRIPTION_STATUSES:

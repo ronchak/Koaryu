@@ -23,13 +23,14 @@ export const ROLLOUT = Object.freeze({
   recoveryMigrationCount: 102,
   convergenceMigrationCount: 103,
   attestedMigrationCount: 104,
-  finalMigrationCount: 105,
+  finalMigrationCount: 106,
   releasePendingVersions: Object.freeze([
     "20260814043325",
     "20260814103046",
     "20260814105424",
     "20260814114500",
     "20260814152000",
+    "20260814170000",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -53,6 +54,7 @@ export const ROLLOUT = Object.freeze({
     "20260814105424",
     "20260814114500",
     "20260814152000",
+    "20260814170000",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -79,41 +81,41 @@ export const EXPECTED_OPERATIONAL_MANIFEST =
   "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|105|20260814152000|" +
+  "true|106|20260814170000|" +
   ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v12";
+  "|0||release-db-attestation-v13";
 
 export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
   "true|104|20260814114500|" +
-  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
   "|0||release-db-attestation-v11";
 
 export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
   "true|102|20260814103046|" +
-    ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+    ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
     "|0||release-db-attestation-v9",
 ]);
 
 export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
   "true|103|20260814105424|" +
-  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
   "|0||release-db-attestation-v10";
 
 export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
-  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=55:daca2f0cf430bfc2d7de1fd3b80284fa06d2610fab2b653a2fd3c8d4a7584eb3:0;" +
+  "functions=55:6803233976bbe14cbbeb5907d139063c7444814b041bac4748a189c92395e47a:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -132,7 +134,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V12 operational readiness did not match the exact release state.");
+    throw new RolloutError("V13 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -800,7 +802,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_operational_manifest_v7()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
     ('private.koaryu_release_starting_belt_manifest_v9()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_student_rank_writer_manifest_v11()', 'search_path=pg_catalog', false, false),
-    ('private.koaryu_release_student_rank_writer_manifest_v12()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_student_rank_writer_manifest_v13()', 'search_path=pg_catalog', false, false),
     ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
     ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=public, pg_temp', false, true),
     ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=pg_catalog, public, private', false, true),
@@ -1689,14 +1691,14 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
       throw new RolloutError("V11 operational readiness did not match the exact attested state.");
     }
     if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
-      throw new RolloutError("V11 writer return contracts do not match the repository-pinned pre-V12 proof.");
+      throw new RolloutError("V11 writer return contracts do not match the repository-pinned pre-V13 proof.");
     }
     return { state: "attested", providerFingerprint: null };
   }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 105-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 106-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -2238,7 +2240,7 @@ export async function main(
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (config.mode !== "diagnose" && !packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 105-migration candidate through 152000.",
+        "Provider inspection requires the exact final 106-migration candidate through 170000.",
       );
     }
     commandRunner(
