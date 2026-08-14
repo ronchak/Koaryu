@@ -134,7 +134,12 @@ BEGIN
     END IF;
     v_epoch := v_epoch + 1;
     v_token := gen_random_uuid();
-    v_metadata := (v_metadata - 'core_checkout_session' - 'core_checkout_invalidated_session_id')
+    v_metadata := (
+        v_metadata
+        - 'core_checkout_session'
+        - 'core_checkout_invalidated_session_id'
+        - 'core_checkout_invalidated_session_state'
+    )
         || jsonb_build_object(
             'core_checkout_epoch', v_epoch,
             'core_checkout_reservation', jsonb_build_object(
@@ -230,7 +235,8 @@ BEGIN
         NEW.metadata := (v_metadata - 'core_checkout_reservation' - 'core_checkout_session')
             || jsonb_build_object(
                 'core_checkout_epoch', v_epoch + 1,
-                'core_checkout_invalidated_session_id', v_session_id
+                'core_checkout_invalidated_session_id', v_session_id,
+                'core_checkout_invalidated_session_state', v_session->>'state'
             );
     END IF;
     RETURN NEW;
@@ -267,7 +273,9 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
     v_row public.studio_subscriptions%ROWTYPE;
+    v_result RECORD;
     v_session JSONB;
+    v_acceptance JSONB;
     v_override_subscription_id TEXT;
 BEGIN
     SELECT * INTO v_row
@@ -294,6 +302,17 @@ BEGIN
         v_override_subscription_id := v_row.stripe_subscription_id;
     END IF;
 
+    IF p_comped IS FALSE
+       AND v_row.comped IS TRUE
+       AND jsonb_typeof(v_row.metadata) = 'object'
+       AND v_row.metadata->'comp'->>'live_subscription_override' = 'true'
+       AND v_row.metadata->'comp'->>'live_subscription_override_subscription_id'
+            IS NOT DISTINCT FROM v_row.stripe_subscription_id THEN
+        v_override_subscription_id := v_row.stripe_subscription_id;
+        v_acceptance := v_row.metadata->'core_checkout_acceptances'
+            ->v_override_subscription_id;
+    END IF;
+
     IF p_comped IS TRUE
        AND p_allow_live_subscription IS TRUE
        AND v_row.stripe_subscription_id IS NOT NULL
@@ -308,8 +327,8 @@ BEGIN
         COALESCE(v_override_subscription_id, ''),
         TRUE
     );
-    RETURN QUERY
-    SELECT * FROM public.set_studio_comp_atomic(
+    SELECT * INTO v_result
+    FROM public.set_studio_comp_atomic(
         p_studio_id,
         p_comped,
         p_reason,
@@ -317,6 +336,43 @@ BEGIN
         p_actor_email,
         p_allow_live_subscription
     );
+
+    -- A live-subscription comp archives the current checkout binding so the
+    -- operator decision wins while the override is active. Restore that exact
+    -- durable binding when the override is revoked; otherwise all later
+    -- provider events would be mistaken for an unrelated historical epoch.
+    IF p_comped IS FALSE
+       AND v_override_subscription_id IS NOT NULL
+       AND jsonb_typeof(v_acceptance) = 'object'
+       AND v_acceptance->>'state' = 'completed'
+       AND v_acceptance->>'accepted_subscription_id'
+            IS NOT DISTINCT FROM v_override_subscription_id THEN
+        UPDATE public.studio_subscriptions subscription
+        SET metadata = jsonb_set(
+            CASE
+                WHEN jsonb_typeof(subscription.metadata) = 'object'
+                    THEN subscription.metadata
+                ELSE '{}'::JSONB
+            END,
+            '{core_checkout_session}',
+            v_acceptance,
+            TRUE
+        )
+        WHERE subscription.studio_id = p_studio_id;
+    END IF;
+
+    SELECT * INTO v_row
+    FROM public.studio_subscriptions subscription
+    WHERE subscription.studio_id = p_studio_id;
+
+    RETURN QUERY SELECT
+        v_result.outcome,
+        v_result.subscription_status,
+        v_result.comped,
+        v_result.stripe_subscription_id,
+        v_row.metadata,
+        v_result.status_normalized,
+        v_result.provider_status_preserved;
     PERFORM set_config('koaryu.comp_live_override_subscription_id', '', TRUE);
 EXCEPTION WHEN OTHERS THEN
     PERFORM set_config('koaryu.comp_live_override_subscription_id', '', TRUE);
@@ -374,7 +430,6 @@ BEGIN
             AND v_metadata->'comp'->>'live_subscription_override_subscription_id'
                 IS NOT DISTINCT FROM p_subscription_id
             AND v_row.stripe_subscription_id IS NOT DISTINCT FROM p_subscription_id
-            AND v_row.status IN ('active', 'trialing', 'past_due', 'unpaid', 'paused')
             AND (
                 (
                     jsonb_typeof(v_acceptance) = 'object'
@@ -395,18 +450,6 @@ BEGIN
         END IF;
     END IF;
 
-    IF jsonb_typeof(v_acceptance) = 'object'
-       AND v_acceptance->>'state' = 'completed'
-       AND NULLIF(v_acceptance->>'token', '')::UUID IS NOT DISTINCT FROM p_reservation_token
-       AND NULLIF(v_acceptance->>'epoch', '')::BIGINT IS NOT DISTINCT FROM p_checkout_epoch
-       AND v_acceptance->>'accepted_subscription_id' IS NOT DISTINCT FROM p_subscription_id
-       AND (p_session_id IS NULL OR v_acceptance->>'id' IS NOT DISTINCT FROM p_session_id) THEN
-        -- The binding is authentic, but it belongs to an earlier checkout
-        -- epoch.  Callers must acknowledge it without projecting its provider
-        -- state over the currently selected subscription.
-        RETURN 'historical_replay';
-    END IF;
-
     IF jsonb_typeof(v_session) = 'object'
        AND v_session->>'state' = 'completed'
        AND NULLIF(v_session->>'token', '')::UUID IS NOT DISTINCT FROM p_reservation_token
@@ -422,6 +465,25 @@ BEGIN
         )
         WHERE subscription.studio_id = p_studio_id;
         RETURN 'already_accepted';
+    END IF;
+
+    IF jsonb_typeof(v_acceptance) = 'object'
+       AND v_acceptance->>'state' = 'completed'
+       AND NULLIF(v_acceptance->>'token', '')::UUID IS NOT DISTINCT FROM p_reservation_token
+       AND NULLIF(v_acceptance->>'epoch', '')::BIGINT IS NOT DISTINCT FROM p_checkout_epoch
+       AND v_acceptance->>'accepted_subscription_id' IS NOT DISTINCT FROM p_subscription_id
+       AND (p_session_id IS NULL OR v_acceptance->>'id' IS NOT DISTINCT FROM p_session_id) THEN
+        IF v_row.comped IS TRUE
+           AND v_metadata->'comp'->>'live_subscription_override' = 'true'
+           AND v_metadata->'comp'->>'live_subscription_override_subscription_id'
+                IS NOT DISTINCT FROM p_subscription_id
+           AND v_row.stripe_subscription_id IS NOT DISTINCT FROM p_subscription_id THEN
+            RETURN 'retained_live';
+        END IF;
+        -- The binding is authentic, but it belongs to an earlier checkout
+        -- epoch.  Callers must acknowledge it without projecting its provider
+        -- state over the currently selected subscription.
+        RETURN 'historical_replay';
     END IF;
 
     IF jsonb_typeof(v_session) IS DISTINCT FROM 'object'
@@ -705,6 +767,400 @@ ALTER FUNCTION public.sync_belt_ladder_ranks_v2(UUID, UUID, UUID, UUID, TEXT, JS
 REVOKE ALL ON FUNCTION public.sync_belt_ladder_ranks_v2(UUID, UUID, UUID, UUID, TEXT, JSONB) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_belt_ladder_ranks_v2(UUID, UUID, UUID, UUID, TEXT, JSONB) TO service_role;
 
+-- Keep an invalid paid Checkout completion recoverable even when the provider
+-- cancellation succeeds and the webhook is acknowledged. The receipt is
+-- written under the subscription-row lock before any provider mutation.
+CREATE FUNCTION public.record_core_checkout_compensation_required_atomic(
+    p_studio_id UUID,
+    p_session_id TEXT,
+    p_subscription_id TEXT,
+    p_event_created BIGINT,
+    p_reason TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+    v_row public.studio_subscriptions%ROWTYPE;
+    v_metadata JSONB;
+    v_receipts JSONB;
+BEGIN
+    IF NULLIF(p_session_id, '') IS NULL
+       OR NULLIF(p_subscription_id, '') IS NULL
+       OR NULLIF(p_reason, '') IS NULL THEN
+        RAISE EXCEPTION 'Checkout compensation identity and reason are required.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    SELECT * INTO v_row
+    FROM public.studio_subscriptions subscription
+    WHERE subscription.studio_id = p_studio_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Studio subscription not found.' USING ERRCODE = 'P0002';
+    END IF;
+
+    v_metadata := CASE
+        WHEN jsonb_typeof(v_row.metadata) = 'object' THEN v_row.metadata
+        ELSE '{}'::JSONB
+    END;
+    v_receipts := CASE
+        WHEN jsonb_typeof(v_metadata->'core_checkout_compensations') = 'object'
+            THEN v_metadata->'core_checkout_compensations'
+        ELSE '{}'::JSONB
+    END;
+
+    IF v_receipts ? p_subscription_id THEN
+        IF v_receipts->p_subscription_id->>'session_id' IS DISTINCT FROM p_session_id THEN
+            RAISE EXCEPTION 'Subscription compensation identity changed.'
+                USING ERRCODE = '22023';
+        END IF;
+        RETURN FALSE;
+    END IF;
+
+    v_receipts := v_receipts || jsonb_build_object(
+        p_subscription_id,
+        jsonb_build_object(
+            'state', 'required',
+            'session_id', p_session_id,
+            'subscription_id', p_subscription_id,
+            'event_created', p_event_created,
+            'reason', p_reason,
+            'recorded_at', NOW()
+        )
+    );
+    UPDATE public.studio_subscriptions subscription
+    SET metadata = jsonb_set(
+        v_metadata,
+        '{core_checkout_compensations}',
+        v_receipts,
+        TRUE
+    )
+    WHERE subscription.studio_id = p_studio_id;
+    RETURN TRUE;
+END;
+$$;
+
+ALTER FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT) TO service_role;
+
+-- Rank transitions are receipt-idempotent and validate direction/adjacency
+-- after taking the same student lock used by rank-plan synchronization. This
+-- also keeps secondary-program transitions from overwriting the student's
+-- primary compatibility fields.
+ALTER TABLE public.promotions
+    ADD COLUMN IF NOT EXISTS operation_id UUID,
+    ADD COLUMN IF NOT EXISTS transition_kind TEXT;
+
+ALTER TABLE public.promotions
+    DROP CONSTRAINT IF EXISTS promotions_transition_kind_check;
+ALTER TABLE public.promotions
+    ADD CONSTRAINT promotions_transition_kind_check
+    CHECK (transition_kind IS NULL OR transition_kind IN ('promotion', 'demotion'));
+
+CREATE UNIQUE INDEX IF NOT EXISTS promotions_studio_operation_once
+    ON public.promotions (studio_id, operation_id)
+    WHERE operation_id IS NOT NULL;
+
+CREATE FUNCTION private.record_student_rank_transition_v2(
+    p_studio_id UUID,
+    p_student_id UUID,
+    p_student_program_membership_id UUID,
+    p_program_id UUID,
+    p_from_rank_id UUID,
+    p_to_rank_id UUID,
+    p_actor_id UUID,
+    p_notes TEXT,
+    p_transition_kind TEXT,
+    p_operation_id UUID
+)
+RETURNS public.promotions
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_transition public.promotions%ROWTYPE;
+    v_student public.students%ROWTYPE;
+    v_membership public.student_program_memberships%ROWTYPE;
+    v_target_ladder_id UUID;
+    v_target_ladder_program_id UUID;
+    v_from_ladder_id UUID;
+    v_from_position INTEGER;
+    v_to_position INTEGER;
+    v_expected_action TEXT;
+BEGIN
+    IF p_transition_kind NOT IN ('promotion', 'demotion') THEN
+        RAISE EXCEPTION 'Rank transition kind is invalid.' USING ERRCODE = '22023';
+    END IF;
+    IF p_transition_kind = 'demotion' AND NULLIF(BTRIM(p_notes), '') IS NULL THEN
+        RAISE EXCEPTION 'A demotion reason is required.' USING ERRCODE = 'P0001';
+    END IF;
+    IF p_operation_id IS NOT NULL THEN
+        PERFORM pg_advisory_xact_lock(
+            hashtextextended(
+                'student_rank_transition|' || p_studio_id::TEXT || '|' || p_operation_id::TEXT,
+                0
+            )
+        );
+        SELECT * INTO v_transition
+        FROM public.promotions promotion
+        WHERE promotion.studio_id = p_studio_id
+          AND promotion.operation_id = p_operation_id;
+        IF FOUND THEN
+            IF v_transition.student_id IS DISTINCT FROM p_student_id
+               OR v_transition.student_program_membership_id IS DISTINCT FROM p_student_program_membership_id
+               OR v_transition.program_id IS DISTINCT FROM p_program_id
+               OR v_transition.from_rank_id IS DISTINCT FROM p_from_rank_id
+               OR v_transition.to_rank_id IS DISTINCT FROM p_to_rank_id
+               OR v_transition.promoted_by IS DISTINCT FROM p_actor_id
+               OR v_transition.notes IS DISTINCT FROM p_notes
+               OR v_transition.transition_kind IS DISTINCT FROM p_transition_kind THEN
+                RAISE EXCEPTION 'Operation ID was already used for a different rank transition.'
+                    USING ERRCODE = '22023';
+            END IF;
+            RETURN v_transition;
+        END IF;
+    END IF;
+
+    SELECT * INTO v_student
+    FROM public.students student
+    WHERE student.id = p_student_id
+      AND student.studio_id = p_studio_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Student not found for rank transition.' USING ERRCODE = 'P0002';
+    END IF;
+
+    SELECT rank.ladder_id, ladder.program_id
+    INTO v_target_ladder_id, v_target_ladder_program_id
+    FROM public.belt_ranks rank
+    JOIN public.belt_ladders ladder ON ladder.id = rank.ladder_id
+    WHERE rank.id = p_to_rank_id
+      AND rank.studio_id = p_studio_id
+      AND ladder.studio_id = p_studio_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Target belt rank not found for rank transition.' USING ERRCODE = 'P0002';
+    END IF;
+    IF v_target_ladder_program_id IS NOT NULL
+       AND p_program_id IS DISTINCT FROM v_target_ladder_program_id THEN
+        RAISE EXCEPTION 'Rank transition program must match the target ladder program.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF p_student_program_membership_id IS NOT NULL THEN
+        SELECT * INTO v_membership
+        FROM public.student_program_memberships membership
+        WHERE membership.id = p_student_program_membership_id
+          AND membership.studio_id = p_studio_id
+          AND membership.student_id = p_student_id
+        FOR UPDATE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Student program membership not found for rank transition.'
+                USING ERRCODE = 'P0002';
+        END IF;
+        IF v_membership.ended_at IS NOT NULL
+           OR v_membership.status NOT IN ('active', 'paused') THEN
+            RAISE EXCEPTION 'Cannot transition an inactive program membership.'
+                USING ERRCODE = 'P0001';
+        END IF;
+        IF v_membership.program_id IS DISTINCT FROM p_program_id THEN
+            RAISE EXCEPTION 'Rank transition program must match the student program membership.'
+                USING ERRCODE = 'P0001';
+        END IF;
+        IF v_membership.current_belt_rank_id IS DISTINCT FROM p_from_rank_id THEN
+            RAISE EXCEPTION 'Student program membership rank changed before transition.'
+                USING ERRCODE = 'P0001';
+        END IF;
+    ELSE
+        IF v_target_ladder_program_id IS NOT NULL THEN
+            IF p_transition_kind = 'promotion' THEN
+                RAISE EXCEPTION 'Program-scoped promotions require a student program membership.'
+                    USING ERRCODE = 'P0001';
+            ELSE
+                RAISE EXCEPTION 'Program-scoped demotions require a student program membership.'
+                    USING ERRCODE = 'P0001';
+            END IF;
+        END IF;
+        IF v_student.current_belt_rank_id IS DISTINCT FROM p_from_rank_id THEN
+            RAISE EXCEPTION 'Student rank changed before transition.' USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    IF p_from_rank_id IS NOT NULL THEN
+        SELECT rank.ladder_id INTO v_from_ladder_id
+        FROM public.belt_ranks rank
+        WHERE rank.id = p_from_rank_id
+          AND rank.studio_id = p_studio_id;
+        IF NOT FOUND OR v_from_ladder_id IS DISTINCT FROM v_target_ladder_id THEN
+            RAISE EXCEPTION 'Rank transitions must stay within one belt ladder.'
+                USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    WITH ordered AS (
+        SELECT rank.id,
+               row_number() OVER (
+                   ORDER BY rank.display_order, rank.created_at, rank.id
+               )::INTEGER AS position
+        FROM public.belt_ranks rank
+        WHERE rank.studio_id = p_studio_id
+          AND rank.ladder_id = v_target_ladder_id
+    )
+    SELECT
+        max(position) FILTER (WHERE id = p_from_rank_id),
+        max(position) FILTER (WHERE id = p_to_rank_id)
+    INTO v_from_position, v_to_position
+    FROM ordered;
+
+    IF v_to_position IS NULL THEN
+        RAISE EXCEPTION 'Target belt rank disappeared before transition.' USING ERRCODE = 'P0002';
+    END IF;
+    IF p_transition_kind = 'promotion' THEN
+        IF (p_from_rank_id IS NULL AND v_to_position <> 1)
+           OR (p_from_rank_id IS NOT NULL AND v_to_position <> v_from_position + 1) THEN
+            RAISE EXCEPTION 'Students can only be promoted to the next rank.'
+                USING ERRCODE = 'P0001';
+        END IF;
+        v_expected_action := 'student.promoted';
+    ELSE
+        IF p_from_rank_id IS NULL OR v_to_position <> v_from_position - 1 THEN
+            RAISE EXCEPTION 'Students can only be demoted to the previous rank.'
+                USING ERRCODE = 'P0001';
+        END IF;
+        v_expected_action := 'student.demoted';
+    END IF;
+
+    INSERT INTO public.promotions (
+        studio_id, student_id, student_program_membership_id, program_id,
+        from_rank_id, to_rank_id, promoted_by, notes, operation_id, transition_kind
+    ) VALUES (
+        p_studio_id, p_student_id, p_student_program_membership_id, p_program_id,
+        p_from_rank_id, p_to_rank_id, p_actor_id, p_notes, p_operation_id,
+        p_transition_kind
+    )
+    RETURNING * INTO v_transition;
+
+    IF p_student_program_membership_id IS NOT NULL THEN
+        UPDATE public.student_program_memberships membership
+        SET current_belt_rank_id = p_to_rank_id
+        WHERE membership.id = p_student_program_membership_id;
+    END IF;
+    IF p_student_program_membership_id IS NULL
+       OR v_student.program_id IS NOT DISTINCT FROM p_program_id THEN
+        UPDATE public.students student
+        SET current_belt_rank_id = p_to_rank_id
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id;
+    END IF;
+
+    INSERT INTO public.audit_logs (
+        studio_id, actor_id, action, entity_type, entity_id, metadata
+    ) VALUES (
+        p_studio_id, p_actor_id, v_expected_action, 'promotion', v_transition.id,
+        jsonb_build_object(
+            'student_id', p_student_id,
+            'student_program_membership_id', p_student_program_membership_id,
+            'program_id', p_program_id,
+            'from_rank_id', p_from_rank_id,
+            'to_rank_id', p_to_rank_id,
+            'operation_id', p_operation_id,
+            'transition_kind', p_transition_kind
+        ) || CASE
+            WHEN p_transition_kind = 'demotion' THEN
+                jsonb_build_object('reason', BTRIM(p_notes))
+            ELSE '{}'::JSONB
+        END
+    );
+    RETURN v_transition;
+END;
+$$;
+
+ALTER FUNCTION private.record_student_rank_transition_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, TEXT, UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_student_rank_transition_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, TEXT, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.record_student_rank_transition_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, TEXT, UUID) TO service_role;
+
+CREATE FUNCTION public.record_student_promotion_v2(
+    p_studio_id UUID, p_student_id UUID, p_student_program_membership_id UUID,
+    p_program_id UUID, p_from_rank_id UUID, p_to_rank_id UUID,
+    p_promoted_by UUID, p_notes TEXT, p_operation_id UUID
+)
+RETURNS public.promotions
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+    SELECT private.record_student_rank_transition_v2(
+        p_studio_id, p_student_id, p_student_program_membership_id, p_program_id,
+        p_from_rank_id, p_to_rank_id, p_promoted_by, p_notes, 'promotion', p_operation_id
+    );
+$$;
+
+CREATE FUNCTION public.record_student_demotion_v2(
+    p_studio_id UUID, p_student_id UUID, p_student_program_membership_id UUID,
+    p_program_id UUID, p_from_rank_id UUID, p_to_rank_id UUID,
+    p_demoted_by UUID, p_reason TEXT, p_operation_id UUID
+)
+RETURNS public.promotions
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+    SELECT private.record_student_rank_transition_v2(
+        p_studio_id, p_student_id, p_student_program_membership_id, p_program_id,
+        p_from_rank_id, p_to_rank_id, p_demoted_by, p_reason, 'demotion', p_operation_id
+    );
+$$;
+
+-- Mixed-version wrappers keep origin/main safe during database-first rollout.
+CREATE OR REPLACE FUNCTION public.record_student_promotion(
+    p_studio_id UUID, p_student_id UUID, p_student_program_membership_id UUID,
+    p_program_id UUID, p_from_rank_id UUID, p_to_rank_id UUID,
+    p_promoted_by UUID, p_notes TEXT DEFAULT NULL
+)
+RETURNS public.promotions
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+    SELECT private.record_student_rank_transition_v2(
+        p_studio_id, p_student_id, p_student_program_membership_id, p_program_id,
+        p_from_rank_id, p_to_rank_id, p_promoted_by, p_notes, 'promotion', NULL
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_student_demotion(
+    p_studio_id UUID, p_student_id UUID, p_student_program_membership_id UUID,
+    p_program_id UUID, p_from_rank_id UUID, p_to_rank_id UUID,
+    p_demoted_by UUID, p_reason TEXT
+)
+RETURNS public.promotions
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+    SELECT private.record_student_rank_transition_v2(
+        p_studio_id, p_student_id, p_student_program_membership_id, p_program_id,
+        p_from_rank_id, p_to_rank_id, p_demoted_by, BTRIM(p_reason), 'demotion', NULL
+    );
+$$;
+
+ALTER FUNCTION public.record_student_promotion_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, UUID) OWNER TO postgres;
+ALTER FUNCTION public.record_student_demotion_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, UUID) OWNER TO postgres;
+ALTER FUNCTION public.record_student_promotion(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT) OWNER TO postgres;
+ALTER FUNCTION public.record_student_demotion(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_student_promotion_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_student_demotion_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_student_promotion(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_student_demotion(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_student_promotion_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_student_demotion_v2(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT, UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_student_promotion(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_student_demotion(UUID, UUID, UUID, UUID, UUID, UUID, UUID, TEXT) TO service_role;
+
 CREATE FUNCTION private.koaryu_release_critical_surface_manifest_v16()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -726,6 +1182,12 @@ BEGIN
           ('public.set_studio_comp_v2_atomic(uuid,boolean,text,uuid,text,boolean)'),
           ('public.sync_belt_ladder_ranks_v2(uuid,uuid,uuid,uuid,text,jsonb)'),
           ('public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)'),
+          ('public.record_core_checkout_compensation_required_atomic(uuid,text,text,bigint,text)'),
+          ('private.record_student_rank_transition_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)'),
+          ('public.record_student_promotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)'),
+          ('public.record_student_demotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)'),
+          ('public.record_student_promotion_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid)'),
+          ('public.record_student_demotion_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid)'),
           ('public.koaryu_release_schema_preflight_v2()')
     ), function_state AS (
         SELECT required.signature,
@@ -781,6 +1243,17 @@ BEGIN
     IF v_count <> 109 OR v_head <> '20260814213000' THEN
         v_failures := array_append(v_failures, 'migration_history_v16');
     END IF;
+    IF COALESCE(v_pending, ARRAY[]::TEXT[]) IS DISTINCT FROM ARRAY[
+        '20260727100000','20260727110000','20260801050957','20260801060000',
+        '20260801070000','20260801080000','20260801090000','20260801091000',
+        '20260801092000','20260801093000','20260801094000','20260801105313',
+        '20260801112153','20260801115044','20260801123112','20260801131844',
+        '20260814043325','20260814103046','20260814105424','20260814114500',
+        '20260814152000','20260814170000','20260814183000','20260814200000',
+        '20260814213000'
+    ]::TEXT[] THEN
+        v_failures := array_append(v_failures, 'migration_history_sequence_v16');
+    END IF;
     IF private.koaryu_release_operational_manifest_v7()
        <> 'd621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79' THEN
         v_failures := array_append(v_failures, 'operational_semantic_acl_manifest_v7');
@@ -794,7 +1267,7 @@ BEGIN
         v_failures := array_append(v_failures, 'student_rank_writer_manifest_v13');
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v16()
-       <> '0:fcd9cbc4250f131ae6eb9b3eb22ec6da0075045702c88788f54e75f14fe24e44' THEN
+       <> '0:5f89277c75be4ff15896749d0943dfd095ab9974dbaf2b32da3f825fce52e195' THEN
         v_failures := array_append(v_failures, 'critical_surface_manifest_v16');
     END IF;
 

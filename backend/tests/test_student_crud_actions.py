@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import unittest
 
+from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
+
 from app.schemas.student import (
     GuardianCreate,
     StudentCreate,
@@ -162,16 +165,50 @@ class FakeStudentWriteSupabase(RpcBackedSupabase):
         }]
 
 
-def build_actions(supabase):
+def build_actions(supabase, *, create_signed_photo_url=lambda path: f"signed:{path}"):
     return StudentCrudActions(
         supabase=supabase,
         membership_store=FakeMembershipStore(),
         prepare_student_write=prepare_student_write_payload,
-        row_to_response=lambda row, **_kwargs: row,
+        row_to_response=lambda row, photo_url=None, **_kwargs: {
+            **row,
+            "photo_url": photo_url,
+        },
+        create_signed_photo_url=create_signed_photo_url,
     )
 
 
 class StudentCrudActionsTest(unittest.TestCase):
+    def test_update_missing_student_maps_atomic_rpc_error_to_not_found(self):
+        class MissingStudentSupabase(FakeStudentWriteSupabase):
+            def _rpc_write_student_profile_v2_atomic(self, _params):
+                raise PostgrestAPIError({
+                    "code": "P0001",
+                    "message": "Student not found for update.",
+                    "details": "",
+                    "hint": "",
+                })
+
+        actions = build_actions(MissingStudentSupabase({
+            "programs": [],
+            "students": [],
+            "student_program_memberships": [],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        }))
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(actions.update_student(
+                "missing-student",
+                StudentUpdate(preferred_name="Missing"),
+                "studio-1",
+                "actor-1",
+            ))
+
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(raised.exception.detail, "Student not found")
+
     def test_create_student_uses_atomic_rpc_for_student_memberships_guardians_and_audit(self):
         supabase = FakeStudentWriteSupabase({
             "programs": [{"id": "program-1", "studio_id": "studio-1"}],
@@ -252,6 +289,54 @@ class StudentCrudActionsTest(unittest.TestCase):
         self.assertEqual(supabase.tables["student_program_memberships"][0]["status"], "ended")
         self.assertEqual(supabase.tables["student_program_memberships"][1]["program_id"], "program-2")
         self.assert_no_direct_operational_writes(supabase)
+
+    def test_update_response_regenerates_existing_photo_url_best_effort(self):
+        base_tables = {
+            "programs": [],
+            "students": [{
+                "id": "student-1",
+                "studio_id": "studio-1",
+                "legal_first_name": "Aiko",
+                "legal_last_name": "Tanaka",
+                "photo_path": "studio-1/student-1/profile.jpg",
+                "status": "active",
+                "tags": [],
+                "created_at": "2026-05-20T00:00:00+00:00",
+                "updated_at": "2026-05-20T00:00:00+00:00",
+            }],
+            "student_program_memberships": [],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        }
+        supabase = FakeStudentWriteSupabase(base_tables)
+        actions = build_actions(supabase)
+
+        student = asyncio.run(actions.update_student(
+            "student-1",
+            StudentUpdate(preferred_name="Ai"),
+            "studio-1",
+            "actor-1",
+        ))
+
+        self.assertEqual(
+            student["photo_url"],
+            "signed:studio-1/student-1/profile.jpg",
+        )
+
+        def signing_failure(_path):
+            raise RuntimeError("storage unavailable")
+
+        actions = build_actions(supabase, create_signed_photo_url=signing_failure)
+        committed = asyncio.run(actions.update_student(
+            "student-1",
+            StudentUpdate(preferred_name="Aiko"),
+            "studio-1",
+            "actor-1",
+        ))
+
+        self.assertEqual(committed["preferred_name"], "Aiko")
+        self.assertIsNone(committed["photo_url"])
 
     def test_create_response_uses_trigger_updated_primary_membership_rank(self):
         supabase = FakeStudentWriteSupabase({

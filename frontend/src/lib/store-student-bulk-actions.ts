@@ -29,6 +29,7 @@ interface UseStoreStudentBulkActionsOptions {
   onStudentMutation: () => void;
   persistStudents: (next: Student[]) => void;
   refreshStudents: () => Promise<Student[]>;
+  studentMutationEpochRef: StoreRef<number>;
   studentsMayBePartial: boolean;
   studentsRef: StoreRef<Student[]>;
 }
@@ -40,6 +41,7 @@ export function useStoreStudentBulkActions({
   onStudentMutation,
   persistStudents,
   refreshStudents,
+  studentMutationEpochRef,
   studentsMayBePartial,
   studentsRef,
 }: UseStoreStudentBulkActionsOptions) {
@@ -80,6 +82,7 @@ export function useStoreStudentBulkActions({
       };
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
 
     let response: BulkStudentTagUpdateResponse;
@@ -129,6 +132,7 @@ export function useStoreStudentBulkActions({
     onStudentMutation,
     persistStudents,
     refreshStudents,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);
@@ -160,6 +164,7 @@ export function useStoreStudentBulkActions({
       };
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
 
     let response: BulkStudentStatusUpdateResponse;
@@ -210,6 +215,7 @@ export function useStoreStudentBulkActions({
     onStudentMutation,
     persistStudents,
     refreshStudents,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);

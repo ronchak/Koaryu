@@ -75,6 +75,7 @@ class StudentService:
             membership_store=self._program_memberships(),
             prepare_student_write=self._prepare_student_write,
             row_to_response=self.row_to_response,
+            create_signed_photo_url=self._student_photos().create_signed_url,
         )
 
     # ---- Helpers ----

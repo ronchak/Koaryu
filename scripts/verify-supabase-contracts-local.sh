@@ -461,7 +461,7 @@ critical_surface_manifest="$(
 SELECT private.koaryu_release_critical_surface_manifest_v16();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:fcd9cbc4250f131ae6eb9b3eb22ec6da0075045702c88788f54e75f14fe24e44" ]]; then
+if [[ "$critical_surface_manifest" != "0:5f89277c75be4ff15896749d0943dfd095ab9974dbaf2b32da3f825fce52e195" ]]; then
   echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi
@@ -606,6 +606,14 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "V13 helper self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_student_rank_writer_manifest_v13()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V16 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v16()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "promotion operation receipt column drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \
   "t"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \

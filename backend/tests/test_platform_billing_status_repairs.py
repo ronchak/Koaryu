@@ -198,6 +198,137 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertEqual(response.stripe_subscription_id, "sub_123")
         self.assertEqual(response.trial_end, "1970-01-01T00:05:00+00:00")
 
+    def test_missing_subscription_repair_accepts_exact_tokenized_checkout(self):
+        token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {
+                "core_checkout_epoch": 1,
+                "core_checkout_session": {
+                    "state": "published",
+                    "token": token,
+                    "epoch": 1,
+                    "id": "cs_exact",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": [{
+                    "id": "sub_exact",
+                    "customer": "cus_123",
+                    "status": "trialing",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }]}
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.get_status("studio_1"))
+
+        self.assertEqual(response.stripe_subscription_id, "sub_exact")
+        self.assertEqual(response.status, "trialing")
+        self.assertEqual(
+            rows[0]["metadata"]["core_checkout_session"]["state"],
+            "completed",
+        )
+
+    def test_missing_subscription_repair_rejects_and_cancels_stale_tokenized_checkout(self):
+        stale_token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {"core_checkout_epoch": 2},
+        }]
+        service = self.service(rows)
+        canceled = []
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": [{
+                    "id": "sub_stale",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": stale_token,
+                        "core_checkout_epoch": "1",
+                    },
+                }]}
+
+            def cancel_core_subscription(self, **payload):
+                canceled.append(payload["subscription_id"])
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.get_status("studio_1"))
+
+        self.assertEqual(canceled, ["sub_stale"])
+        self.assertIsNone(response.stripe_subscription_id)
+        self.assertEqual(response.status, "incomplete")
+
+    def test_missing_subscription_repair_does_not_project_historical_acceptance(self):
+        old_token = "00000000-0000-4000-8000-000000000001"
+        new_token = "00000000-0000-4000-8000-000000000002"
+        archived = {
+            "state": "completed",
+            "token": old_token,
+            "epoch": 1,
+            "id": "cs_old",
+            "accepted_subscription_id": "sub_old",
+        }
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {
+                "core_checkout_epoch": 2,
+                "core_checkout_acceptances": {"sub_old": archived},
+                "core_checkout_session": {
+                    "state": "published",
+                    "token": new_token,
+                    "epoch": 2,
+                    "id": "cs_new",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": [{
+                    "id": "sub_old",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": old_token,
+                        "core_checkout_epoch": "1",
+                    },
+                }]}
+
+            def cancel_core_subscription(self, **_payload):
+                raise AssertionError("historical accepted subscriptions are acknowledged only")
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.get_status("studio_1"))
+
+        self.assertIsNone(response.stripe_subscription_id)
+        self.assertEqual(response.status, "incomplete")
+        self.assertEqual(rows[0]["metadata"]["core_checkout_session"]["id"], "cs_new")
+
     def test_get_status_does_not_repair_comped_customer(self):
         rows = [{
             "studio_id": "studio_1",

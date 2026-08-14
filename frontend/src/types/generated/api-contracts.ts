@@ -842,6 +842,7 @@ export interface ApiDemoResetResponse {
 }
 
 export interface ApiDemoteStudent {
+  operation_id?: string | null;
   student_id: string;
   to_rank_id: string;
   student_program_membership_id?: string | null;
@@ -1109,6 +1110,7 @@ export interface ApiProgramUsageResponse {
 }
 
 export interface ApiPromoteStudent {
+  operation_id?: string | null;
   student_id: string;
   to_rank_id: string;
   student_program_membership_id?: string | null;
@@ -1127,6 +1129,8 @@ export interface ApiPromotionResponse {
   promoted_by?: string | null;
   notes?: string | null;
   promoted_at: string;
+  operation_id?: string | null;
+  transition_kind?: string | null;
   student_name?: string | null;
   from_rank_name?: string | null;
   to_rank_name?: string | null;

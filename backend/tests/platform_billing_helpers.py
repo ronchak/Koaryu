@@ -195,18 +195,19 @@ class FakeSupabase(RpcBackedSupabase):
                     and comp.get("live_subscription_override_subscription_id")
                     == params["p_subscription_id"]
                     and row.get("stripe_subscription_id") == params["p_subscription_id"]
-                    and row.get("status") in {"active", "trialing", "past_due", "unpaid", "paused"}
                     and (archived_binding or exact_binding)
                 )
                 if not override_matches:
                     return "invalid"
-            if archived_binding:
-                return "historical_replay"
             if session.get("state") == "completed" and exact_binding:
                 acceptances[params["p_subscription_id"]] = dict(session)
                 metadata["core_checkout_acceptances"] = acceptances
                 row["metadata"] = metadata
                 return "already_accepted"
+            if archived_binding:
+                if row.get("comped") or row.get("status") == "comped":
+                    return "retained_live"
+                return "historical_replay"
             if (
                 session.get("state") != "published"
                 or session.get("token") != params["p_reservation_token"]
@@ -231,6 +232,27 @@ class FakeSupabase(RpcBackedSupabase):
             metadata["core_trial_consumed"] = True
             row["metadata"] = metadata
             return "accepted"
+
+    def _rpc_record_core_checkout_compensation_required_atomic(self, params: dict) -> bool:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            metadata = dict(row.get("metadata") or {})
+            receipts = dict(metadata.get("core_checkout_compensations") or {})
+            existing = receipts.get(params["p_subscription_id"])
+            if existing:
+                if existing.get("session_id") != params["p_session_id"]:
+                    raise ValueError("Subscription compensation identity changed")
+                return False
+            receipts[params["p_subscription_id"]] = {
+                "state": "required",
+                "session_id": params["p_session_id"],
+                "subscription_id": params["p_subscription_id"],
+                "event_created": params.get("p_event_created"),
+                "reason": params["p_reason"],
+            }
+            metadata["core_checkout_compensations"] = receipts
+            row["metadata"] = metadata
+            return True
 
     @staticmethod
     def _parse_timestamp(value: str):

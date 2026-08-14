@@ -61,6 +61,8 @@ DECLARE
     v_sync_operation UUID := gen_random_uuid();
     v_sync_result RECORD;
     v_student_write RECORD;
+    v_compensation_recorded BOOLEAN;
+    v_compensation_replayed BOOLEAN;
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -316,6 +318,7 @@ BEGIN
     SELECT metadata INTO v_metadata
     FROM public.studio_subscriptions WHERE studio_id = v_studio;
     IF v_metadata->>'core_checkout_invalidated_session_id' <> 'cs_contract_2'
+       OR v_metadata->>'core_checkout_invalidated_session_state' <> 'published'
        OR (v_metadata->>'core_checkout_epoch')::BIGINT <= v_second_checkout.checkout_epoch
        OR v_metadata ? 'core_checkout_session'
        OR public.accept_core_checkout_completion_atomic(
@@ -327,6 +330,25 @@ BEGIN
             'cs_contract', 'sub_contract', 10
        ) <> 'invalid' THEN
         RAISE EXCEPTION 'Comp grant did not invalidate the published checkout epoch.';
+    END IF;
+
+    SELECT public.record_core_checkout_compensation_required_atomic(
+        v_studio, 'cs_contract_2', 'sub_contract_2', 12,
+        'invalid_paid_checkout_completion'
+    ) INTO v_compensation_recorded;
+    SELECT public.record_core_checkout_compensation_required_atomic(
+        v_studio, 'cs_contract_2', 'sub_contract_2', 12,
+        'invalid_paid_checkout_completion'
+    ) INTO v_compensation_replayed;
+    IF NOT v_compensation_recorded OR v_compensation_replayed OR NOT EXISTS (
+        SELECT 1 FROM public.studio_subscriptions subscription
+        WHERE subscription.studio_id = v_studio
+          AND subscription.metadata->'core_checkout_compensations'
+                ->'sub_contract_2'->>'state' = 'required'
+          AND subscription.metadata->'core_checkout_compensations'
+                ->'sub_contract_2'->>'session_id' = 'cs_contract_2'
+    ) THEN
+        RAISE EXCEPTION 'Paid invalid Checkout compensation was not durable and idempotent.';
     END IF;
 
     SELECT public.soft_delete_student_atomic(v_student, v_studio, v_owner)
@@ -414,18 +436,63 @@ BEGIN
        OR v_comp_result.metadata->'comp'->>'live_subscription_override' <> 'true'
        OR v_comp_result.metadata->'comp'->>'live_subscription_override_subscription_id'
             <> 'sub_override_contract'
+       OR v_comp_result.metadata->>'core_checkout_invalidated_session_state' <> 'completed'
        OR public.accept_core_checkout_subscription_atomic(
             v_override_studio, v_override_token, 1,
             'cs_override_contract', 'sub_override_contract', 20
-          ) <> 'historical_replay'
+          ) <> 'retained_live'
        OR public.accept_core_checkout_subscription_atomic(
             v_override_studio, v_override_token, 1,
             NULL, 'sub_override_contract', 21
-          ) <> 'historical_replay' THEN
+          ) <> 'retained_live' THEN
         RAISE EXCEPTION 'Explicit live Core subscription comp override did not preserve exact replay.';
     END IF;
 
+    UPDATE public.studio_subscriptions
+    SET status = 'canceled'
+    WHERE studio_id = v_override_studio;
+    SELECT * INTO v_comp_result
+    FROM public.set_studio_comp_v2_atomic(
+        v_override_studio, FALSE, 'provider subscription canceled', v_owner, NULL, FALSE
+    );
+    IF v_comp_result.comped IS TRUE
+       OR v_comp_result.subscription_status <> 'canceled'
+       OR public.accept_core_checkout_subscription_atomic(
+            v_override_studio, v_override_token, 1,
+            'cs_override_contract', 'sub_override_contract', 22
+          ) <> 'already_accepted'
+       OR public.accept_core_checkout_subscription_atomic(
+            v_override_studio, v_override_token, 1,
+            NULL, 'sub_override_contract', 23
+          ) <> 'already_accepted' THEN
+        RAISE EXCEPTION 'Comp revocation restored stale provider entitlement: %',
+            row_to_json(v_comp_result);
+    END IF;
+
     RAISE NOTICE 'Koaryu release UI atomic contract verification passed.';
+END $$;
+
+DO $$
+DECLARE
+    v_v3 RECORD;
+    v_v2 RECORD;
+BEGIN
+    UPDATE supabase_migrations.schema_migrations
+    SET version = '20260814170001'
+    WHERE version = '20260814170000';
+
+    SELECT * INTO v_v3 FROM public.koaryu_release_schema_preflight_v3();
+    SELECT * INTO v_v2 FROM public.koaryu_release_schema_preflight_v2();
+    IF v_v3.ready IS TRUE
+       OR NOT ('migration_history_sequence_v16' = ANY(v_v3.security_failures))
+       OR v_v2.ready IS TRUE THEN
+        RAISE EXCEPTION 'Readiness accepted substituted migration history: v3=%, v2=%',
+            row_to_json(v_v3), row_to_json(v_v2);
+    END IF;
+
+    UPDATE supabase_migrations.schema_migrations
+    SET version = '20260814170000'
+    WHERE version = '20260814170001';
 END $$;
 
 ROLLBACK;

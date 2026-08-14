@@ -566,7 +566,22 @@ class PlatformBillingService:
             reservation_token = metadata.get("core_checkout_reservation_token")
             checkout_epoch = metadata.get("core_checkout_epoch")
             session_id = self._stripe_id(data_object.get("id"))
-            accepted = not bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
+            pending_session = row_metadata(row).get(PENDING_CHECKOUT_METADATA_KEY)
+            legacy_session_matches = (
+                not reservation_token
+                and checkout_epoch is None
+                and isinstance(pending_session, dict)
+                and pending_session.get("id") == session_id
+                and (
+                    not row.get("stripe_customer_id")
+                    or row.get("stripe_customer_id")
+                    == self._stripe_id(data_object.get("customer"))
+                )
+            )
+            accepted = (
+                not bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
+                or legacy_session_matches
+            )
             if (
                 reservation_token
                 and checkout_epoch is not None
@@ -588,11 +603,26 @@ class PlatformBillingService:
                 acceptance_outcome = getattr(accepted_result, "data", accepted_result)
                 if acceptance_outcome == "historical_replay":
                     return
+                preserve_comp = acceptance_outcome == "retained_live"
                 accepted = acceptance_outcome in {
-                    "accepted", "already_accepted",
+                    "accepted", "already_accepted", "retained_live",
                 }
+            else:
+                preserve_comp = False
             if not accepted:
                 if subscription_id:
+                    if data_object.get("payment_status") == "paid" and session_id:
+                        execute_required_rpc(
+                            self.supabase,
+                            "record_core_checkout_compensation_required_atomic",
+                            {
+                                "p_studio_id": studio_id,
+                                "p_session_id": session_id,
+                                "p_subscription_id": subscription_id,
+                                "p_event_created": event_created,
+                                "p_reason": "invalid_paid_checkout_completion",
+                            },
+                        )
                     StripeService().cancel_core_subscription(
                         subscription_id=subscription_id,
                         studio_id=studio_id,
@@ -619,11 +649,17 @@ class PlatformBillingService:
             if not stale_for_subscription_state:
                 update["stripe_customer_id"] = self._stripe_id(data_object.get("customer"))
                 update["stripe_subscription_id"] = subscription_id
-                update["comped"] = False
+                if not preserve_comp:
+                    update["comped"] = False
                 if subscription_id and hydrate_subscription:
                     try:
                         subscription = StripeService().retrieve_subscription(subscription_id)
-                        update.update(self._project_subscription(subscription, clear_comp=True))
+                        update.update(
+                            self._project_subscription(
+                                subscription,
+                                clear_comp=not preserve_comp,
+                            )
+                        )
                     except Exception as exc:
                         logger.error(
                             "Stripe checkout completion subscription hydration failed; "
@@ -639,7 +675,9 @@ class PlatformBillingService:
                 studio_id,
                 {k: v for k, v in update.items() if v is not None},
                 comp_clear_event_created=(
-                    event_created if not stale_for_subscription_state else NO_COMP_CLEAR_EVENT
+                    event_created
+                    if not stale_for_subscription_state and not preserve_comp
+                    else NO_COMP_CLEAR_EVENT
                 ),
             )
             return
@@ -675,8 +713,9 @@ class PlatformBillingService:
                 acceptance_outcome = getattr(accepted_result, "data", accepted_result)
                 if acceptance_outcome == "historical_replay":
                     return
+                preserve_comp = acceptance_outcome == "retained_live"
                 accepted = acceptance_outcome in {
-                    "accepted", "already_accepted",
+                    "accepted", "already_accepted", "retained_live",
                 }
                 if not accepted:
                     if event_type != "customer.subscription.deleted":
@@ -691,14 +730,21 @@ class PlatformBillingService:
                         )
                     return
                 row = self._ensure_subscription_row(studio_id)
+            else:
+                preserve_comp = False
             if self._is_stale_subscription_event(row, event_created):
                 return
-            update = self._project_subscription(data_object, clear_comp=True)
+            update = self._project_subscription(
+                data_object,
+                clear_comp=not preserve_comp,
+            )
             self._mark_subscription_event_created(update, row, event_created)
             self._update_subscription_row(
                 studio_id,
                 update,
-                comp_clear_event_created=event_created,
+                comp_clear_event_created=(
+                    NO_COMP_CLEAR_EVENT if preserve_comp else event_created
+                ),
             )
             return
 
@@ -977,8 +1023,75 @@ class PlatformBillingService:
         if not subscription:
             return row
 
+        if not self._accept_repaired_core_subscription(row, subscription):
+            return row
+
         update = self._project_subscription(subscription)
         return self._update_subscription_row(row["studio_id"], update)
+
+    def _accept_repaired_core_subscription(
+        self,
+        row: dict[str, Any],
+        subscription: Any,
+    ) -> bool:
+        projector = self._subscription_projector()
+        metadata = projector.object_get(subscription, "metadata") or {}
+        reservation_token = projector.object_get(
+            metadata,
+            "core_checkout_reservation_token",
+        )
+        checkout_epoch = projector.object_get(metadata, "core_checkout_epoch")
+
+        # Subscriptions created before the reservation protocol have neither
+        # field. They remain repairable through the bounded legacy path.
+        if reservation_token is None and checkout_epoch is None:
+            return True
+
+        subscription_id = projector.stripe_id(
+            projector.object_get(subscription, "id")
+        )
+        acceptance_outcome = "invalid"
+        if reservation_token and checkout_epoch is not None and subscription_id:
+            try:
+                accepted_result = execute_required_rpc(
+                    self.supabase,
+                    "accept_core_checkout_subscription_atomic",
+                    {
+                        "p_studio_id": row["studio_id"],
+                        "p_reservation_token": reservation_token,
+                        "p_checkout_epoch": int(checkout_epoch),
+                        "p_session_id": None,
+                        "p_subscription_id": subscription_id,
+                        "p_event_created": None,
+                    },
+                )
+                acceptance_outcome = getattr(
+                    accepted_result,
+                    "data",
+                    accepted_result,
+                )
+            except (TypeError, ValueError):
+                acceptance_outcome = "invalid"
+
+        if acceptance_outcome in {"accepted", "already_accepted", "retained_live"}:
+            return True
+        if acceptance_outcome == "historical_replay":
+            return False
+
+        subscription_status = projector.object_get(subscription, "status") or ""
+        if subscription_id and subscription_status in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
+            self._provider_call(
+                lambda: StripeService().cancel_core_subscription(
+                    subscription_id=subscription_id,
+                    studio_id=row["studio_id"],
+                    idempotency_key=build_idempotency_key(
+                        "core-repair-invalid-subscription",
+                        row["studio_id"],
+                        subscription_id,
+                    ),
+                )
+            )
+        return False
 
     def _select_core_subscription(self, subscriptions: Any, studio_id: str) -> Optional[Any]:
         return self._subscription_projector().select_core_subscription(

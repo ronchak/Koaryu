@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import HTTPException
 
@@ -154,12 +155,17 @@ class BeltPromotionRecorder:
             "to_rank_id": data.to_rank_id,
             "promoted_by": actor_id,
             "notes": data.notes,
+            "operation_id": str(data.operation_id or uuid4()),
         }
         promotion = self._record_promotion_atomic(
             promo,
             student_program_id=student_program_id,
         )
-        return PromotionResponse(**promotion)
+        return PromotionResponse.model_validate({
+            **promotion,
+            "from_rank_name": promotion.get("from_rank_name_snapshot"),
+            "to_rank_name": promotion.get("to_rank_name_snapshot"),
+        })
 
     async def demote_student(
         self, data: DemoteStudent, studio_id: str, actor_id: str
@@ -296,15 +302,20 @@ class BeltPromotionRecorder:
                 "to_rank_id": data.to_rank_id,
                 "demoted_by": actor_id,
                 "reason": data.reason.strip(),
+                "operation_id": str(data.operation_id or uuid4()),
             },
             student_program_id=student_program_id,
         )
-        return PromotionResponse(**demotion)
+        return PromotionResponse.model_validate({
+            **demotion,
+            "from_rank_name": demotion.get("from_rank_name_snapshot"),
+            "to_rank_name": demotion.get("to_rank_name_snapshot"),
+        })
 
     def _record_promotion_atomic(
         self, promo: dict[str, Any], *, student_program_id: Optional[str]
     ) -> dict[str, Any]:
-        result = self.supabase.rpc("record_student_promotion", {
+        result = self.supabase.rpc("record_student_promotion_v2", {
             "p_studio_id": promo["studio_id"],
             "p_student_id": promo["student_id"],
             "p_student_program_membership_id": promo.get("student_program_membership_id"),
@@ -313,6 +324,7 @@ class BeltPromotionRecorder:
             "p_to_rank_id": promo["to_rank_id"],
             "p_promoted_by": promo.get("promoted_by"),
             "p_notes": promo.get("notes"),
+            "p_operation_id": promo["operation_id"],
         }).execute()
         if isinstance(result.data, list):
             promotion = result.data[0] if result.data else None
@@ -325,7 +337,7 @@ class BeltPromotionRecorder:
     def _record_demotion_atomic(
         self, demotion: dict[str, Any], *, student_program_id: Optional[str]
     ) -> dict[str, Any]:
-        result = self.supabase.rpc("record_student_demotion", {
+        result = self.supabase.rpc("record_student_demotion_v2", {
             "p_studio_id": demotion["studio_id"],
             "p_student_id": demotion["student_id"],
             "p_student_program_membership_id": demotion.get("student_program_membership_id"),
@@ -334,6 +346,7 @@ class BeltPromotionRecorder:
             "p_to_rank_id": demotion["to_rank_id"],
             "p_demoted_by": demotion["demoted_by"],
             "p_reason": demotion["reason"],
+            "p_operation_id": demotion["operation_id"],
         }).execute()
         if isinstance(result.data, list):
             row = result.data[0] if result.data else None

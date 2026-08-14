@@ -624,7 +624,12 @@ def _change_comp(
             if isinstance(metadata, dict)
             else None
         )
-        if invalidated_session_id:
+        invalidated_session_state = (
+            metadata.get("core_checkout_invalidated_session_state")
+            if isinstance(metadata, dict)
+            else None
+        )
+        if invalidated_session_id and invalidated_session_state != "completed":
             try:
                 StripeService().expire_core_checkout_session(
                     session_id=str(invalidated_session_id),

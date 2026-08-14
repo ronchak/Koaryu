@@ -19,6 +19,7 @@ LADDER_ID = "55555555-5555-5555-5555-555555555555"
 FROM_RANK_ID = "66666666-6666-6666-6666-666666666666"
 TO_RANK_ID = "77777777-7777-7777-7777-777777777777"
 ACTOR_ID = "88888888-8888-8888-8888-888888888888"
+OPERATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 class FakeSupabase(RpcBackedSupabase):
@@ -47,7 +48,7 @@ class FakeSupabase(RpcBackedSupabase):
         })
         return {**ladder, "ranks": ranks}
 
-    def _rpc_record_student_promotion(self, params: dict):
+    def _rpc_record_student_promotion_v2(self, params: dict):
         promotion = {
             "id": "99999999-9999-9999-9999-999999999999",
             "studio_id": params["p_studio_id"],
@@ -59,6 +60,10 @@ class FakeSupabase(RpcBackedSupabase):
             "promoted_by": params["p_promoted_by"],
             "notes": params["p_notes"],
             "promoted_at": "2026-05-24T12:00:00Z",
+            "from_rank_name_snapshot": "White Belt",
+            "to_rank_name_snapshot": "Yellow Belt",
+            "operation_id": params["p_operation_id"],
+            "transition_kind": "promotion",
         }
         self.tables["promotions"].append(dict(promotion))
         for row in self.tables["student_program_memberships"]:
@@ -75,7 +80,7 @@ class FakeSupabase(RpcBackedSupabase):
         })
         return promotion
 
-    def _rpc_record_student_demotion(self, params: dict):
+    def _rpc_record_student_demotion_v2(self, params: dict):
         row = {
             "id": "aaaaaaaa-9999-9999-9999-999999999999",
             "studio_id": params["p_studio_id"],
@@ -87,6 +92,10 @@ class FakeSupabase(RpcBackedSupabase):
             "promoted_by": params["p_demoted_by"],
             "notes": params["p_reason"],
             "promoted_at": "2026-07-12T12:00:00Z",
+            "from_rank_name_snapshot": "Yellow Belt",
+            "to_rank_name_snapshot": "White Belt",
+            "operation_id": params["p_operation_id"],
+            "transition_kind": "demotion",
         }
         self.tables["promotions"].append(dict(row))
         for membership in self.tables["student_program_memberships"]:
@@ -196,6 +205,7 @@ class BeltServiceTest(unittest.TestCase):
 
         response = asyncio.run(service.promote_student(
             PromoteStudent(
+                operation_id=OPERATION_ID,
                 student_id=STUDENT_ID,
                 student_program_membership_id=MEMBERSHIP_ID,
                 to_rank_id=TO_RANK_ID,
@@ -207,8 +217,10 @@ class BeltServiceTest(unittest.TestCase):
 
         self.assertEqual(response.id, "99999999-9999-9999-9999-999999999999")
         self.assertEqual(response.to_rank_id, TO_RANK_ID)
+        self.assertEqual(response.from_rank_name, "White Belt")
+        self.assertEqual(response.to_rank_name, "Yellow Belt")
         self.assertEqual(supabase.rpc_calls, [(
-            "record_student_promotion",
+            "record_student_promotion_v2",
             {
                 "p_studio_id": STUDIO_ID,
                 "p_student_id": STUDENT_ID,
@@ -218,6 +230,7 @@ class BeltServiceTest(unittest.TestCase):
                 "p_to_rank_id": TO_RANK_ID,
                 "p_promoted_by": ACTOR_ID,
                 "p_notes": "Ready for next rank",
+                "p_operation_id": OPERATION_ID,
             },
         )])
         direct_writes = [
@@ -270,7 +283,9 @@ class BeltServiceTest(unittest.TestCase):
         ))
 
         self.assertEqual(response.to_rank_id, TO_RANK_ID)
-        self.assertEqual(supabase.rpc_calls[0][0], "record_student_demotion")
+        self.assertEqual(response.from_rank_name, "Yellow Belt")
+        self.assertEqual(response.to_rank_name, "White Belt")
+        self.assertEqual(supabase.rpc_calls[0][0], "record_student_demotion_v2")
         self.assertEqual(
             supabase.rpc_calls[0][1]["p_reason"],
             "Correcting an earlier rank entry",

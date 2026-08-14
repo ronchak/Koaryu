@@ -142,11 +142,11 @@ export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
-  "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
+  "columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
-  "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=57:745c88cf413050ed6c6b9e552787372e03abf60a28add6852d348c0e8dba45d3:0;" +
-  "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
+  "constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;" +
+  "functions=68:291cb20b4b0c2ce76d8ef3396b71daaba8e0e377763151a195d856bcc939a163:0;" +
+  "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
   "scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;" +
@@ -842,8 +842,19 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_starting_belt_manifest_v9()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_student_rank_writer_manifest_v11()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_student_rank_writer_manifest_v13()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_critical_surface_manifest_v15()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_critical_surface_manifest_v16()', 'search_path=pg_catalog', false, false),
     ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
     ('public.write_student_profile_v2_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public', false, true),
+    ('public.reserve_core_checkout_v2_atomic(uuid)', 'search_path=pg_catalog, public', false, true),
+    ('public.set_studio_comp_v2_atomic(uuid, boolean, text, uuid, text, boolean)', 'search_path=pg_catalog, public', false, true),
+    ('public.sync_belt_ladder_ranks_v2(uuid, uuid, uuid, uuid, text, jsonb)', 'search_path=pg_catalog, public', false, true),
+    ('public.record_core_checkout_compensation_required_atomic(uuid, text, text, bigint, text)', 'search_path=pg_catalog, public', false, true),
+    ('private.record_student_rank_transition_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text, uuid)', 'search_path=public, pg_temp', false, true),
+    ('public.record_student_promotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_demotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_promotion_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, uuid)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_demotion_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, uuid)', 'search_path=pg_catalog', false, true),
     ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=public, pg_temp', false, true),
     ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=pg_catalog, public, private', false, true),
     ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=public, pg_temp', false, true),
@@ -959,7 +970,8 @@ required_indexes(index_name, table_name, unique_index, partial_index) as (
     ('operational_alert_episodes_recent', 'operational_alert_episodes', false, false),
     ('operational_alert_outbox_claim', 'operational_alert_outbox', false, true),
     ('operational_alert_delivery_attempts_delivery', 'operational_alert_delivery_attempts', false, false),
-    ('operational_alert_audit_events_episode', 'operational_alert_audit_events', false, false)
+    ('operational_alert_audit_events_episode', 'operational_alert_audit_events', false, false),
+    ('promotions_studio_operation_once', 'promotions', true, true)
 ),
 index_actual as (
   select index_relation.relname as index_name, table_relation.relname as table_name,
@@ -1068,7 +1080,9 @@ required_columns(table_name, column_name, data_type, nullable, identity_column) 
     ('operational_alert_episodes', 'acknowledged_by_role', 'text', true, false),
     ('operational_alert_episodes', 'acknowledged_actor_ref', 'text', true, false),
     ('operational_alert_outbox', 'event_kind', 'text', false, false),
-    ('operational_alert_outbox', 'destination_role', 'text', false, false)
+    ('operational_alert_outbox', 'destination_role', 'text', false, false),
+    ('promotions', 'operation_id', 'uuid', true, false),
+    ('promotions', 'transition_kind', 'text', true, false)
 ),
 column_compared as (
   select required.*,
@@ -1093,6 +1107,7 @@ required_constraints(table_name, constraint_identity, constraint_type) as (
     ('stripe_live_billing_reconciliation_account_evidence', 'primary:checkpoint_id,stripe_connected_account_id', 'p'),
     ('stripe_live_billing_reconciliation_account_evidence', 'unique:checkpoint_id,studio_id', 'u'),
     ('operational_alert_episodes', 'operational_alert_episode_ack_complete', 'c'),
+    ('promotions', 'promotions_transition_kind_check', 'c'),
     ('operational_alert_outbox', 'operational_alert_outbox_episode_event_role_key', 'u'),
     ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c'),
     ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_pair', 'c'),

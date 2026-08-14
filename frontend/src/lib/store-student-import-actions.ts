@@ -5,6 +5,7 @@ import { withCsvImportRefreshWarning } from "@/lib/csv-import";
 import { buildPreviewStudentImportResult } from "@/lib/student-import-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import { localId } from "@/lib/store-storage";
+import { isStudentRosterSnapshotCurrent } from "@/lib/student-roster-reconciliation";
 import { fetchAllStudents } from "@/lib/store-student-pages";
 import type {
   BeltLadder,
@@ -33,6 +34,8 @@ interface UseStoreStudentImportActionsOptions {
   refreshBeltsRef: StoreRef<((preferredLadderId?: string | null) => Promise<void>) | null>;
   refreshPrograms: (options?: { includeArchived?: boolean }) => Promise<Program[]>;
   setStudentsLoadError: Dispatch<SetStateAction<string | null>>;
+  studentMutationEpochRef: StoreRef<number>;
+  studentRosterRequestSequenceRef: StoreRef<number>;
   studentsRef: StoreRef<Student[]>;
 }
 
@@ -48,6 +51,8 @@ export function useStoreStudentImportActions({
   refreshBeltsRef,
   refreshPrograms,
   setStudentsLoadError,
+  studentMutationEpochRef,
+  studentRosterRequestSequenceRef,
   studentsRef,
 }: UseStoreStudentImportActionsOptions) {
   const importStudents = useCallback(async (
@@ -75,6 +80,7 @@ export function useStoreStudentImportActions({
       return execution.result;
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const importKey = request?.importKey?.trim();
     const formData = new FormData();
@@ -127,9 +133,18 @@ export function useStoreStudentImportActions({
       refreshWarnings.push(`Import data was saved, but Koaryu could not refresh the Programs list afterward. ${message}`);
     }
 
+    const mutationEpoch = studentMutationEpochRef.current;
+    const requestSequence = studentRosterRequestSequenceRef.current + 1;
+    studentRosterRequestSequenceRef.current = requestSequence;
     const studentsRefresh = await Promise.allSettled([
       fetchAllStudents(liveRequest.token, { timeoutMs: 30000 }).then((refreshedStudents) => {
-        if (liveRequest.isCurrent()) {
+        if (isStudentRosterSnapshotCurrent({
+          authCurrent: liveRequest.isCurrent(),
+          currentMutationEpoch: studentMutationEpochRef.current,
+          currentRequestSequence: studentRosterRequestSequenceRef.current,
+          mutationEpochAtStart: mutationEpoch,
+          requestSequence,
+        })) {
           commitStudents(refreshedStudents);
         }
       }),
@@ -138,7 +153,13 @@ export function useStoreStudentImportActions({
       const message = studentsRefresh[0].reason instanceof Error
         ? studentsRefresh[0].reason.message
         : "Failed to refresh students after import.";
-      if (liveRequest.isCurrent()) {
+      if (isStudentRosterSnapshotCurrent({
+        authCurrent: liveRequest.isCurrent(),
+        currentMutationEpoch: studentMutationEpochRef.current,
+        currentRequestSequence: studentRosterRequestSequenceRef.current,
+        mutationEpochAtStart: mutationEpoch,
+        requestSequence,
+      })) {
         setStudentsLoadError(message);
       }
       refreshWarnings.push(`Import data was saved, but Koaryu could not refresh the Students list afterward. ${message}`);
@@ -180,6 +201,8 @@ export function useStoreStudentImportActions({
     refreshBeltsRef,
     refreshPrograms,
     setStudentsLoadError,
+    studentMutationEpochRef,
+    studentRosterRequestSequenceRef,
     studentsRef,
   ]);
 

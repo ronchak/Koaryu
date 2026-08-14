@@ -728,7 +728,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.throws(
       () => classifyStateSnapshot(
         postSnapshot(packet, {
-          catalogState: validCatalogState.replace("indexes=11", "indexes=10"),
+          catalogState: validCatalogState.replace("indexes=12", "indexes=11"),
         }),
         packet,
       ),

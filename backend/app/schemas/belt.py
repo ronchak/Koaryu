@@ -81,6 +81,7 @@ class BeltLadderSyncRequest(BaseModel):
 # ---- Promotion ----
 
 class PromoteStudent(BaseModel):
+    operation_id: Optional[UUID] = None
     student_id: str
     to_rank_id: str
     student_program_membership_id: Optional[str] = None
@@ -89,6 +90,7 @@ class PromoteStudent(BaseModel):
 
 
 class DemoteStudent(BaseModel):
+    operation_id: Optional[UUID] = None
     student_id: str
     to_rank_id: str
     student_program_membership_id: Optional[str] = None
@@ -110,6 +112,8 @@ class PromotionResponse(BaseModel):
     promoted_by: Optional[str] = None
     notes: Optional[str] = None
     promoted_at: str
+    operation_id: Optional[str] = None
+    transition_kind: Optional[str] = None
     # Joined names for display
     student_name: Optional[str] = None
     from_rank_name: Optional[str] = None

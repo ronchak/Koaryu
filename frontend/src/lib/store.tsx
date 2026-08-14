@@ -152,6 +152,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const dashboardSummaryRequestSeqRef = useRef(0);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
+  const studentMutationEpochRef = useRef(0);
+  const studentRosterRequestSequenceRef = useRef(0);
   const previewStudentPhotoUrlsRef = useRef<Record<string, string>>({});
   const [programs, setPrograms] = useState<Program[]>(() =>
     isPreviewMode ? MOCK_PROGRAMS : []
@@ -1463,6 +1465,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     programsRef,
     setStudentsLoadError,
     studentsMayBePartial,
+    studentMutationEpochRef,
+    studentRosterRequestSequenceRef,
     studentsRef,
     token,
   });
@@ -1475,6 +1479,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     commitStudents,
     isPreviewMode,
     previewStudentPhotoUrlsRef,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   });
@@ -1491,6 +1496,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshBeltsRef,
     refreshPrograms,
     setStudentsLoadError,
+    studentMutationEpochRef,
+    studentRosterRequestSequenceRef,
     studentsRef,
   });
 
@@ -1504,6 +1511,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     onStudentMutation,
     persistStudents,
     refreshStudents,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   });

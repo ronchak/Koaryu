@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import {
+  clearPendingBeltLadderSync,
+  isTerminalBeltLadderSyncError,
+  loadPendingBeltLadderSync,
+  persistPendingBeltLadderSync,
+  type PendingBeltLadderSync,
+} from "@/lib/belt-ladder-sync-operation";
+import {
   buildBeltLadderSyncPayload,
   buildPreviewBeltLadderFromRanks,
   buildPreviewPromotion,
@@ -11,7 +18,6 @@ import {
   updatePreviewLadderSubRankTerm,
   upsertBeltLadder,
 } from "@/lib/belt-store-model";
-import type { BeltLadderSyncPayload } from "@/lib/belt-store-model";
 import {
   buildPromotionHistoryWithPrependedItem,
   buildPromotionHistoryWithPrependedItemIfCached,
@@ -19,6 +25,15 @@ import {
   type PromotionHistoryCache,
   type PromotionHistoryRequests,
 } from "@/lib/store-promotion-history";
+import {
+  clearPendingRankTransition,
+  isTerminalRankTransitionError,
+  loadPendingRankTransition,
+  persistPendingRankTransition,
+  rankTransitionFingerprint,
+  type PendingRankTransition,
+  type RankTransitionKind,
+} from "@/lib/rank-transition-operation";
 import { KEYS, localId, save } from "@/lib/store-storage";
 import { MOCK_BELT_LADDER } from "@/lib/mock-data";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
@@ -81,10 +96,34 @@ export function useStoreBeltActions({
   studentsRef,
   subRankTerm,
 }: UseStoreBeltActionsArgs) {
-  const pendingLadderSyncsRef = useRef(new Map<string, {
-    fingerprint: string;
-    request: BeltLadderSyncPayload & { operation_id: string };
-  }>());
+  const pendingLadderSyncsRef = useRef(new Map<string, PendingBeltLadderSync>());
+  const pendingRankTransitionsRef = useRef(new Map<string, PendingRankTransition>());
+
+  const pendingRankTransition = useCallback((
+    kind: RankTransitionKind,
+    data: PromoteStudent | DemoteStudent,
+  ) => {
+    const key = `${kind}:${data.student_id}`;
+    const fingerprint = rankTransitionFingerprint(data);
+    const existing = pendingRankTransitionsRef.current.get(key)
+      ?? loadPendingRankTransition(kind, data.student_id);
+    if (existing?.fingerprint === fingerprint) {
+      pendingRankTransitionsRef.current.set(key, existing);
+      return existing;
+    }
+    const pending = { fingerprint, operationId: crypto.randomUUID() };
+    pendingRankTransitionsRef.current.set(key, pending);
+    persistPendingRankTransition(kind, data.student_id, pending);
+    return pending;
+  }, []);
+
+  const clearRankTransition = useCallback((
+    kind: RankTransitionKind,
+    studentId: string,
+  ) => {
+    pendingRankTransitionsRef.current.delete(`${kind}:${studentId}`);
+    clearPendingRankTransition(kind, studentId);
+  }, []);
 
   const refreshBelts = useCallback(async (
     preferredLadderId?: string | null,
@@ -215,19 +254,37 @@ export function useStoreBeltActions({
     if (!liveRequest.isCurrent()) {
       return;
     }
+    const studioId = beltLaddersRef.current.find(
+      (candidate) => candidate.id === ladder.id
+    )?.studio_id;
+    if (!studioId) {
+      throw new Error("The selected belt ladder is not attached to the active studio.");
+    }
     const nextSubRankTerm = desiredSubRankTerm || ladder.sub_rank_term || "Stripe";
     const syncPayload = buildBeltLadderSyncPayload(ranks, nextSubRankTerm);
     const fingerprint = JSON.stringify(syncPayload);
 
     let syncedLadder: BeltLadder | undefined;
-    const pendingSync = pendingLadderSyncsRef.current.get(ladder.id);
+    const pendingSync = pendingLadderSyncsRef.current.get(ladder.id)
+      ?? loadPendingBeltLadderSync(studioId, ladder.id);
     if (pendingSync) {
-      const resolvedPendingSync = await api.post<BeltLadder>(
-        `/belts/ladders/${ladder.id}/sync`,
-        pendingSync.request,
-        liveRequest.token
-      );
+      pendingLadderSyncsRef.current.set(ladder.id, pendingSync);
+      let resolvedPendingSync: BeltLadder;
+      try {
+        resolvedPendingSync = await api.post<BeltLadder>(
+          `/belts/ladders/${ladder.id}/sync`,
+          pendingSync.request,
+          liveRequest.token
+        );
+      } catch (error) {
+        if (isTerminalBeltLadderSyncError(error)) {
+          pendingLadderSyncsRef.current.delete(ladder.id);
+          clearPendingBeltLadderSync(studioId, ladder.id);
+        }
+        throw error;
+      }
       pendingLadderSyncsRef.current.delete(ladder.id);
+      clearPendingBeltLadderSync(studioId, ladder.id);
       if (pendingSync.fingerprint === fingerprint) {
         syncedLadder = resolvedPendingSync;
       }
@@ -239,6 +296,7 @@ export function useStoreBeltActions({
         operation_id: crypto.randomUUID(),
       };
       pendingLadderSyncsRef.current.set(ladder.id, { fingerprint, request });
+      persistPendingBeltLadderSync(studioId, ladder.id, { fingerprint, request });
       try {
         syncedLadder = await api.post<BeltLadder>(
           `/belts/ladders/${ladder.id}/sync`,
@@ -246,6 +304,11 @@ export function useStoreBeltActions({
           liveRequest.token
         );
       } catch (firstError) {
+        if (isTerminalBeltLadderSyncError(firstError)) {
+          pendingLadderSyncsRef.current.delete(ladder.id);
+          clearPendingBeltLadderSync(studioId, ladder.id);
+          throw firstError;
+        }
         try {
           // The database operation ID serializes this retry behind an original
           // request that may still be committing.  A later user retry resolves
@@ -255,11 +318,17 @@ export function useStoreBeltActions({
             request,
             liveRequest.token
           );
-        } catch {
+        } catch (retryError) {
+          if (isTerminalBeltLadderSyncError(retryError)) {
+            pendingLadderSyncsRef.current.delete(ladder.id);
+            clearPendingBeltLadderSync(studioId, ladder.id);
+            throw retryError;
+          }
           throw firstError;
         }
       }
       pendingLadderSyncsRef.current.delete(ladder.id);
+      clearPendingBeltLadderSync(studioId, ladder.id);
     }
     if (!liveRequest.isCurrent()) {
       return;
@@ -414,12 +483,36 @@ export function useStoreBeltActions({
       return previewPromotion.promotion;
     }
 
+    // Invalidate any GET that started before this write. Its promise may still
+    // resolve for its caller, but identity checks prevent it from overwriting
+    // the committed promotion in the shared cache.
+    delete promotionHistoryRequestsRef.current[data.student_id];
+    const pending = pendingRankTransition("promotion", data);
+    const requestData = { ...data, operation_id: pending.operationId };
     const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<Promotion>(
-      "/belts/promote",
-      data,
-      liveRequest.token
-    );
+    let result: Promotion;
+    try {
+      result = await api.post<Promotion>(
+        "/belts/promote",
+        requestData,
+        liveRequest.token
+      );
+    } catch (error) {
+      if (isTerminalRankTransitionError(error)) {
+        clearRankTransition("promotion", data.student_id);
+        throw error;
+      }
+      delete promotionHistoryRequestsRef.current[data.student_id];
+      const history = await loadPromotionHistory(data.student_id, { force: true })
+        .catch(() => null);
+      const recovered = history?.find(
+        (item) => item.operation_id === pending.operationId
+      );
+      if (!recovered) throw error;
+      clearRankTransition("promotion", data.student_id);
+      result = recovered;
+    }
+    clearRankTransition("promotion", data.student_id);
     if (!liveRequest.isCurrent()) {
       return result;
     }
@@ -440,12 +533,16 @@ export function useStoreBeltActions({
   }, [
     beginLiveAuthRequest,
     beltRanksRef,
+    clearRankTransition,
     commitPromotionHistoryItem,
     commitLivePromotionHistoryItem,
     currentLadderIdRef,
     isPreviewMode,
     loadEligibilityForLadder,
+    loadPromotionHistory,
+    pendingRankTransition,
     persistStudents,
+    promotionHistoryRequestsRef,
     refreshBelts,
     refreshStudents,
     studentsRef,
@@ -468,17 +565,37 @@ export function useStoreBeltActions({
       return previewDemotion.promotion;
     }
 
+    delete promotionHistoryRequestsRef.current[data.student_id];
+    const pending = pendingRankTransition("demotion", data);
+    const requestData = { ...data, operation_id: pending.operationId };
     const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<Promotion>(
-      "/belts/demote",
-      data,
-      liveRequest.token
-    );
+    let result: Promotion;
+    try {
+      result = await api.post<Promotion>(
+        "/belts/demote",
+        requestData,
+        liveRequest.token
+      );
+    } catch (error) {
+      if (isTerminalRankTransitionError(error)) {
+        clearRankTransition("demotion", data.student_id);
+        throw error;
+      }
+      delete promotionHistoryRequestsRef.current[data.student_id];
+      const history = await loadPromotionHistory(data.student_id, { force: true })
+        .catch(() => null);
+      const recovered = history?.find(
+        (item) => item.operation_id === pending.operationId
+      );
+      if (!recovered) throw error;
+      clearRankTransition("demotion", data.student_id);
+      result = recovered;
+    }
+    clearRankTransition("demotion", data.student_id);
     if (!liveRequest.isCurrent()) {
       return result;
     }
 
-    delete promotionHistoryRequestsRef.current[data.student_id];
     commitLivePromotionHistoryItem(data.student_id, result);
 
     const reconciliation = await Promise.allSettled([
@@ -495,11 +612,14 @@ export function useStoreBeltActions({
   }, [
     beginLiveAuthRequest,
     beltRanksRef,
+    clearRankTransition,
     commitPromotionHistoryItem,
     commitLivePromotionHistoryItem,
     currentLadderIdRef,
     isPreviewMode,
     loadEligibilityForLadder,
+    loadPromotionHistory,
+    pendingRankTransition,
     persistStudents,
     promotionHistoryRequestsRef,
     refreshBelts,
