@@ -180,12 +180,12 @@ curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V2-named database preflight. It returns 503 unless Supabase reports exactly 106 migrations, head `20260814170000`, the twenty-two expected pending versions after the production baseline, manifest version `release-db-attestation-v13`, and no required-object/security failure. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned operator raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V2-named database preflight. It returns 503 unless Supabase reports exactly 108 migrations, head `20260814200000`, the twenty-four expected pending versions after the production baseline, manifest version `release-db-attestation-v15`, and no required-object/security failure. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned operator raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
 
 Promote the database first. Do not route the new backend to a Supabase project
 until the final staging fingerprint and preflight pass. The exact-head manifest
 includes the billing, Connect delivery, and alert security surfaces; an application
-deploy that reaches schema 84 or any partial 85-105 state remains unhealthy.
+deploy that reaches schema 84 or any partial 85-107 state remains unhealthy.
 Local PostgreSQL does not prove hosted PostgREST exposed schemas or actual schema
 ACLs; authenticated operator readback must separately prove `private` is not
 exposed and the hosted schema ACL state matches the approved release gate.

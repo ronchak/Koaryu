@@ -54,6 +54,20 @@ class FakeSupabase(RpcBackedSupabase):
                 return [{"outcome": "active"}]
             metadata = dict(row.get("metadata") or {})
             session = metadata.get("core_checkout_session")
+            acceptances = dict(metadata.get("core_checkout_acceptances") or {})
+            if (
+                isinstance(session, dict)
+                and session.get("state") == "completed"
+                and session.get("accepted_subscription_id")
+            ):
+                accepted_subscription_id = session["accepted_subscription_id"]
+                if (
+                    row.get("stripe_subscription_id") != accepted_subscription_id
+                    or row.get("status") not in {"canceled", "incomplete_expired"}
+                ):
+                    return [{"outcome": "active"}]
+                acceptances[accepted_subscription_id] = dict(session)
+                metadata["core_checkout_acceptances"] = acceptances
             if (
                 isinstance(session, dict)
                 and session.get("state") == "published"
@@ -138,6 +152,21 @@ class FakeSupabase(RpcBackedSupabase):
             row = self._subscription_row(params["p_studio_id"])
             metadata = dict(row.get("metadata") or {})
             session = dict(metadata.get("core_checkout_session") or {})
+            acceptances = dict(metadata.get("core_checkout_acceptances") or {})
+            accepted = acceptances.get(params["p_subscription_id"])
+            archived_binding = (
+                isinstance(accepted, dict)
+                and accepted.get("state") == "completed"
+                and accepted.get("token") == params["p_reservation_token"]
+                and accepted.get("epoch") == params["p_checkout_epoch"]
+                and accepted.get("accepted_subscription_id") == params["p_subscription_id"]
+                and (
+                    params.get("p_session_id") is None
+                    or accepted.get("id") == params["p_session_id"]
+                )
+            )
+            if archived_binding:
+                return "already_accepted"
             exact_binding = (
                 session.get("token") == params["p_reservation_token"]
                 and session.get("epoch") == params["p_checkout_epoch"]
@@ -148,6 +177,9 @@ class FakeSupabase(RpcBackedSupabase):
                 )
             )
             if session.get("state") == "completed" and exact_binding:
+                acceptances[params["p_subscription_id"]] = dict(session)
+                metadata["core_checkout_acceptances"] = acceptances
+                row["metadata"] = metadata
                 return "already_accepted"
             if (
                 row.get("comped")
@@ -169,6 +201,8 @@ class FakeSupabase(RpcBackedSupabase):
                 "completed_event_created": params.get("p_event_created"),
             })
             metadata["core_checkout_session"] = session
+            acceptances[params["p_subscription_id"]] = dict(session)
+            metadata["core_checkout_acceptances"] = acceptances
             metadata["core_trial_consumed"] = True
             row["metadata"] = metadata
             return "accepted"

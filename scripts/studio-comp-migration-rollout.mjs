@@ -25,7 +25,8 @@ export const ROLLOUT = Object.freeze({
   attestedMigrationCount: 104,
   returnAttestedMigrationCount: 105,
   retainedMigrationCount: 106,
-  finalMigrationCount: 107,
+  criticalMigrationCount: 107,
+  finalMigrationCount: 108,
   releasePendingVersions: Object.freeze([
     "20260814043325",
     "20260814103046",
@@ -34,6 +35,7 @@ export const ROLLOUT = Object.freeze({
     "20260814152000",
     "20260814170000",
     "20260814183000",
+    "20260814200000",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -59,6 +61,7 @@ export const ROLLOUT = Object.freeze({
     "20260814152000",
     "20260814170000",
     "20260814183000",
+    "20260814200000",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -85,51 +88,56 @@ export const EXPECTED_OPERATIONAL_MANIFEST =
   "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|107|20260814183000|" +
+  "true|108|20260814200000|" +
   ROLLOUT.finalPendingVersions.join(",") +
-  "|0||release-db-attestation-v14";
+  "|0||release-db-attestation-v15";
 
 export const EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS =
   "true|105|20260814152000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
   "|0||release-db-attestation-v12";
 
 export const EXPECTED_RETAINED_OPERATIONAL_READINESS =
   "true|106|20260814170000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
   "|0||release-db-attestation-v13";
+
+export const EXPECTED_CRITICAL_OPERATIONAL_READINESS =
+  "true|107|20260814183000|" +
+  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  "|0||release-db-attestation-v14";
 
 export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
   "true|104|20260814114500|" +
-  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
   "|0||release-db-attestation-v11";
 
 export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
   "true|102|20260814103046|" +
-    ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
+    ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
     "|0||release-db-attestation-v9",
 ]);
 
 export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
   "true|103|20260814105424|" +
-  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
   "|0||release-db-attestation-v10";
 
 export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
-  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=55:fd6c64f8e48369a70bc13a64baddde2523c7d7074af68fbc99ecbee8192d60dd:0;" +
+  "functions=55:02e29e5fb8f68caa88c836ef272ba879ecfce1efe19e544bd824466eecd1310c:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -148,7 +156,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V14 operational readiness did not match the exact release state.");
+    throw new RolloutError("V15 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -1410,6 +1418,7 @@ export function formatNonSuccessProbeState(result) {
     result?.state === "attested" ||
     result?.state === "return-attested" ||
     result?.state === "retained" ||
+    result?.state === "critical" ||
     result?.state === "post"
   ) return null;
   if (
@@ -1433,9 +1442,10 @@ export function buildInspectionTokenForAcceptedState(packet, target, result) {
     result?.state !== "attested" &&
     result?.state !== "return-attested" &&
     result?.state !== "retained" &&
+    result?.state !== "critical" &&
     result?.state !== "post"
   ) {
-    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, or post probe state.");
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
 }
@@ -1542,6 +1552,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
   )}`;
+  const criticalHistory = `${ROLLOUT.criticalMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.criticalMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -1575,6 +1594,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     attestedHistory,
     returnAttestedHistory,
     retainedHistory,
+    criticalHistory,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -1623,6 +1643,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
+    criticalTargetHistory: filenames.slice(84, ROLLOUT.criticalMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -1644,9 +1670,10 @@ export function packetForAcceptedState(packet, state) {
           : state === "attested" ? 4
             : state === "return-attested" ? 5
               : state === "retained" ? 6
+                : state === "critical" ? 7
           : null;
   if (consumedMigrations === null) {
-    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, or retained state.");
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, or critical state.");
   }
   const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
   const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
@@ -1773,10 +1800,22 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     }
     return { state: "retained", providerFingerprint: null };
   }
+  if (history === packet.criticalHistory) {
+    if (targetHistory !== packet.criticalTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("Migration history is critical but its exact V14 target history is missing.");
+    }
+    if (operationalReadiness !== EXPECTED_CRITICAL_OPERATIONAL_READINESS) {
+      throw new RolloutError("V14 operational readiness did not match the exact migration-107 state.");
+    }
+    if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
+      throw new RolloutError("V14 writer return contracts do not match the repository-pinned proof.");
+    }
+    return { state: "critical", providerFingerprint: null };
+  }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 107-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 108-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1798,7 +1837,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, or post-state.`,
   );
 }
 
@@ -2055,6 +2094,7 @@ export function readRemoteState(
         snapshot.history === packet.attestedHistory ||
         snapshot.history === packet.returnAttestedHistory ||
         snapshot.history === packet.retainedHistory ||
+        snapshot.history === packet.criticalHistory ||
         snapshot.history === packet.postHistory
       )
     ) {
@@ -2069,7 +2109,8 @@ export function readRemoteState(
       snapshot.objectCounts === "3:1" &&
       (snapshot.history === packet.attestedHistory ||
        snapshot.history === packet.returnAttestedHistory ||
-       snapshot.history === packet.retainedHistory)
+       snapshot.history === packet.retainedHistory ||
+       snapshot.history === packet.criticalHistory)
     ) {
       snapshot.writerReturnContractState = query(
         sourceRoot,
@@ -2394,10 +2435,11 @@ export async function main(
       before.state !== "convergence" &&
       before.state !== "attested" &&
       before.state !== "return-attested" &&
-      before.state !== "retained"
+      before.state !== "retained" &&
+      before.state !== "critical"
     ) {
       throw new RolloutError(
-        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, or retained state.`,
+        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, or critical state.`,
       );
     }
     const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);

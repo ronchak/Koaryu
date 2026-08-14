@@ -150,12 +150,15 @@ Operator: `Codex release orchestrator`
   103. Exact-head review then identified writer-path and return-contract gaps, so
   forward-only migrations 104 and 105 were added. A final exact-head review then
   found retained multi-program ranks could be erased when changing the primary
-  program, so forward-only migration 106 was added. Production remained at the
-  V7 pre-state.
-- Final required database identity: 106 migrations, head
-  `20260814170000_preserve_retained_student_membership_ranks.sql`. Production has
-  migrations 101 through 106 pending; staging has migrations 105 and 106 pending.
-  The V13 readiness response attests the complete historical 85-through-106 sequence,
+  program, so forward-only migration 106 was added. Further exact-head reviews
+  added migration 107 for tokenized checkout acceptance and secondary-program
+  lock ordering, then migration 108 to preserve accepted checkout history and
+  attest the promotion columns themselves. Staging is at exact 107; production
+  remained at the V7 pre-state.
+- Final required database identity: 108 migrations, head
+  `20260814200000_preserve_checkout_acceptance_history.sql`. Production has
+  migrations 101 through 108 pending; staging has migration 108 pending.
+  The V15 readiness response attests the complete historical 85-through-108 sequence,
   the starting-belt function/trigger invariant, and the converged trigger-only
   function ACLs plus the bodies, ACLs, and normalized return contracts of both
   public/private student profile and import writer pairs.
@@ -192,9 +195,12 @@ Operator: `Codex release orchestrator`
   `20260814152000` normalizes and attests all four writer return contracts and
   advances readiness to V12 at migration 105; `20260814170000` preserves ranked
   retained memberships when the primary program changes and advances readiness
-  to V13 at migration 106. The packet reports
+  to V13 at migration 106; `20260814183000` adds tokenized, replayable checkout
+  acceptance and secondary-program lock ordering at V14; `20260814200000`
+  preserves every accepted binding across later checkout epochs and attests the
+  six promotion rank/snapshot column identities at V15. The packet reports
   `integration_complete=true` only for
-  the exact 84-to-106 history and twenty-two
+  the exact 84-to-108 history and twenty-four
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
@@ -203,9 +209,9 @@ Operator: `Codex release orchestrator`
   and `stripe_events`. A separate column-ACL manifest covers every ordinary,
   non-dropped column across all fourteen scoped tables, including empty
   `attacl`, and rejects explicit custom/browser grants and grant-option drift.
-  Apparent-post linked inspection also requires exact V13 output before
+  Apparent-post linked inspection also requires exact V15 output before
   certification. Hosted exposed-schema and schema-ACL readback remain a
-  separate provider/operator gate that local PostgreSQL cannot certify. The exact 32-file SQL
+  separate provider/operator gate that local PostgreSQL cannot certify. The exact 33-file SQL
   contract inventory fails CI on missing or unexpected verification files.
 - Recovery: any partial history, catalog mismatch, readiness failure, or guard
   conflict halts. Preserve applied state and recover only with reviewed

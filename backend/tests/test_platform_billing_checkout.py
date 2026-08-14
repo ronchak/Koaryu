@@ -11,6 +11,90 @@ from tests.platform_billing_helpers import PlatformBillingServiceTestCase
 
 
 class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
+    def test_completed_checkout_blocks_new_session_until_subscription_projection(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {
+                "core_trial_consumed": True,
+                "core_checkout_session": {
+                    "state": "completed",
+                    "token": "00000000-0000-4000-8000-000000000001",
+                    "epoch": 1,
+                    "id": "cs_accepted",
+                    "accepted_subscription_id": "sub_accepted",
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        class ProviderMustNotCreateCheckout:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **_payload):
+                raise AssertionError("accepted checkout must block a second provider session")
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            ProviderMustNotCreateCheckout,
+        ):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertIn("already active", context.exception.detail)
+        self.assertEqual(
+            rows[0]["metadata"]["core_checkout_session"]["accepted_subscription_id"],
+            "sub_accepted",
+        )
+
+    def test_terminal_accepted_subscription_can_start_new_epoch_without_new_trial(self):
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": "sub_old",
+            "status": "canceled",
+            "comped": False,
+            "metadata": {
+                "core_trial_consumed": True,
+                "core_checkout_epoch": 1,
+                "core_checkout_session": {
+                    "state": "completed",
+                    "token": "00000000-0000-4000-8000-000000000001",
+                    "epoch": 1,
+                    "id": "cs_old",
+                    "accepted_subscription_id": "sub_old",
+                },
+            },
+        }]
+        service = self.service(rows)
+        checkout_payloads = []
+
+        class FakeStripeService:
+            def create_core_checkout_session(self, **payload):
+                checkout_payloads.append(payload)
+                return {
+                    "id": "cs_new",
+                    "url": "https://checkout.stripe.test/new",
+                    "expires_at": 9999999999,
+                }
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(response.url, "https://checkout.stripe.test/new")
+        self.assertIsNone(checkout_payloads[0]["trial_period_days"])
+        self.assertEqual(
+            rows[0]["metadata"]["core_checkout_acceptances"]["sub_old"]
+            ["accepted_subscription_id"],
+            "sub_old",
+        )
+        self.assertEqual(rows[0]["metadata"]["core_checkout_session"]["id"], "cs_new")
+
     def test_create_checkout_uses_idempotent_customer_and_session_keys(self):
         rows = [{"studio_id": "studio_1", "status": "incomplete", "comped": False}]
         service = self.service(rows)

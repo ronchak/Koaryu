@@ -1,9 +1,9 @@
 # Studio-Comp Migration Rollout
 
-Status: **staging at exact migration 106; migration 107 rehearsal pending; production human apply locked**
+Status: **staging at exact migration 107; migration 108 rehearsal pending; production human apply locked**
 
 This packet reconciles the production and staging 100-migration V7 baseline
-with the immutable 107-migration release candidate. It is specialized to this rollout, not a
+with the immutable 108-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -23,10 +23,11 @@ Therefore:
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
 - the release authority is the operator-side raw-catalog verifier plus its
-  repository-pinned SHA-256 manifests; the database V14 readiness signal, backed
+  repository-pinned SHA-256 manifests; the database V15 readiness signal, backed
   by the V7 semantic/ACL manifest, V9 starting-belt invariant manifest, V11
   student-rank writer body/ACL manifest, V12 writer return-contract manifest,
-  V13 retained-membership rank manifest, and V14 critical RPC/trigger/FK manifest, exposed through
+  V13 retained-membership rank manifest, V14 critical RPC/trigger/FK manifest,
+  and V15 checkout-binding/promotion-column manifest, exposed through
   the stable V2-named RPC is an operational drift/readiness signal, not proof
   against a malicious database administrator;
 - the mutable parsed `statements` array is not treated as file identity.
@@ -43,9 +44,10 @@ The fixed production pre-state is:
 ```
 
 The authorized release migrations are `20260814043325`, `20260814103046`,
-`20260814105424`, `20260814114500`, `20260814152000`, `20260814170000`, and `20260814183000`.
-The only certifiable post-state is migration count 107 at the latter head. Its
-V14 readiness signal retains the complete migration-85-through-107 sequence:
+`20260814105424`, `20260814114500`, `20260814152000`, `20260814170000`,
+`20260814183000`, and `20260814200000`.
+The only certifiable post-state is migration count 108 at the latter head. Its
+V15 readiness signal retains the complete migration-85-through-108 sequence:
 
 ```text
 20260727100000
@@ -71,12 +73,13 @@ V14 readiness signal retains the complete migration-85-through-107 sequence:
 20260814152000
 20260814170000
 20260814183000
+20260814200000
 ```
 
 The checker derives filenames and source hashes from the final candidate, pins
 the first 100 identities to the observed V7 baseline, and reports
-`integration_complete=true` only when those seven files are the release
-pending migrations and the 107-state readiness contract contains the twenty-three
+`integration_complete=true` only when those eight files are the release
+pending migrations and the 108-state readiness contract contains the twenty-four
 historical versions above. The 070000/091000/093000/105313
 billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
@@ -119,7 +122,12 @@ public/private student writers and advances readiness to V12. Migration 106
 preserves each ranked retained membership when the primary program changes and
 advances readiness to V13. Migration 107 preserves replayable checkout acceptance,
 enforces one-time trials and tokenized subscription epochs, prelocks secondary-program
-rank holders, and advances the exact-head critical-surface readiness signal to V14. Never certify
+rank holders, and advances the exact-head critical-surface readiness signal to V14.
+Migration 108 preserves every accepted checkout binding across
+later subscription epochs, blocks new checkout until the accepted subscription
+has a terminal projection, and advances readiness to V15 with exact type,
+nullability, default, identity, and generated-state attestation for the six
+promotion rank/snapshot columns. Never certify
 an earlier head; regenerate the packet
 from the exact immutable release commit so
 all candidate migration hashes and counts remain current. Hosted PostgREST
@@ -136,15 +144,16 @@ exact source files:
 
 They remain pinned as the first two migrations after historical migration 84.
 They are already present in the 100-state baseline. Production must apply
-migrations 101 through 107; staging, already at exact migration 106,
-must dry-run and apply only migration 107.
+migrations 101 through 108; staging, already at exact migration 107,
+must dry-run and apply only migration 108.
 
 Historical intermediate migrations 101 through 103 remain read-only
 inspectable, but apply is deliberately disabled from intermediate 101,
 recovery 102, and convergence 103. Those readiness versions do not attest the
 complete object surface needed for safe forward recovery. Only exact pre-state
-100, attested state 104, return-attested state 105, or retained state 106 may enter apply after a matching inspection token and
-dry-run; post-state 107 is inspect-only and has nothing left to apply.
+100, attested state 104, return-attested state 105, retained state 106, or
+critical state 107 may enter apply after a matching inspection token and
+dry-run; post-state 108 is inspect-only and has nothing left to apply.
 
 ## Transaction and old-application classification
 
@@ -166,9 +175,10 @@ The August release files have the following operational profile:
 | 102 | Replaces the starting-rank backfill, adds one delete trigger and the V9 manifest. No standalone product-data scan. | Additive and compatible with old callers; belt-rank deletion semantics become stricter. | One migration transaction. State 102 is a recovery classification only; automated apply is blocked because its manifest does not attest the later writer surface. |
 | 103 | Replaces profile/rank functions and ACLs. No standalone product-data scan, but function and trigger DDL can wait on active writers. | RPC signatures remain stable. Old callers continue to work and receive corrected rank preservation. | One migration transaction. State 103 is inspect-only convergence; repair forward to 104 before any further apply. |
 | 104 | Adds stable public/private import wrappers, replaces the readiness RPC, and adds the V11 manifest. No product-data scan. | Additive, signature-compatible wrappers; safe for the old application. | One migration transaction. This is the only accepted partial attested apply origin. |
-| 105 | Adds the V12 return-contract manifest and replaces readiness. No table data or trigger changes. | Read-only attestation change; application-compatible. | One migration transaction. Exact V12 state is guarded and may resume with migrations 106-107 after fresh inspection and dry-run. |
+| 105 | Adds the V12 return-contract manifest and replaces readiness. No table data or trigger changes. | Read-only attestation change; application-compatible. | One migration transaction. Exact V12 state is guarded and may resume with migrations 106-108 after fresh inspection and dry-run. |
 | 106 | Replaces the profile writer and rank-delete trigger; wraps the belt-plan writer so assigned-rank deletion is authorized only after its students-first pre-lock; adds atomic membership, bulk, delete, and Core-checkout RPCs; adds four promotion snapshot columns; backfills historical promotion names/colors; replaces two promotion FKs with `ON DELETE SET NULL`; and adds promotion/comp triggers. The promotion `ALTER TABLE` and FK validation can take strong table locks, while the snapshot backfill row-locks matching promotions. | Existing public RPC signatures remain; promotion responses now allow deleted historical rank IDs. Assigned ranks can no longer be deleted directly and must go through `sync_belt_ladder_ranks`. Deploy database-first because new backend membership and checkout flows require the new service-role RPCs. | One migration transaction. Failure rolls back migration 106, but provider timeout is treated as ambiguous: re-inspect catalog/history before retry. If 105 committed first, preserve it and repair forward with immutable 106 or a reviewed migration. |
 | 107 | Replaces Core checkout acceptance/reservation functions, records durable one-time trial and accepted-subscription proof, prelocks every target-program membership holder before ladder sync, and adds the V14 critical-surface manifest. | Requires the new backend and remains database-first. Existing completed subscriptions are preserved; old acceptance RPC execution is revoked. | One migration transaction. Exact V13 state is guarded and may resume with immutable 107 after fresh inspection and dry-run. |
+| 108 | Replaces Core checkout reservation/acceptance so completed bindings remain terminal until exact terminal projection, archives accepted bindings for later webhook replay, and adds the V15 critical-surface manifest with exact promotion-column state. | Requires the new backend and remains database-first. Returning canceled subscriptions may start a new epoch without receiving a second trial. | One migration transaction. Exact V14 state is guarded and may resume with immutable 108 after fresh inspection and dry-run. |
 
 Before staging apply, record cardinalities for `student_program_memberships`,
 active unranked memberships eligible for the 101 backfill, `students`,
@@ -235,7 +245,8 @@ node scripts/studio-comp-migration-rollout.mjs \
 The command is unavailable until the packet reports
 `integration_complete=true`. Acceptance requires the pinned staging ref
 `nxgsektqsgrtyfhawxbc`, one exact accepted history (`pre`, `intermediate`,
-`recovery`, `convergence`, `attested`, or `post`), its corresponding readiness
+`recovery`, `convergence`, `attested`, `return-attested`, `retained`, `critical`,
+or `post`), its corresponding readiness
 result, the complete
 historical target sequence, the expected studio-comp objects, and an
 `inspection_token`. Any other partial, ahead, or manually altered state stops.
@@ -253,7 +264,7 @@ node scripts/studio-comp-migration-rollout.mjs \
 ```
 
 From the current staging state, the dry-run must report exactly
-`20260814183000_close_final_release_review_blockers.sql` with its final candidate hash.
+`20260814200000_preserve_checkout_acceptance_history.sql` with its final candidate hash.
 A missing, extra, or unparseable name halts
 the rollout.
 
@@ -262,7 +273,7 @@ release record. Any staging apply requires the same inspection token, exact
 project ref, durable approval record, and `--approve-staging-apply`. After
 application:
 
-1. require count 107, head 183000, the exact twenty-three-version sequence, and the
+1. require count 108, head 200000, the exact twenty-four-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
@@ -275,7 +286,7 @@ application:
 3. invoke the service-role-only V2-named readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v14`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v15`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
@@ -341,6 +352,6 @@ trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 107 head and
+database-first: Render `/health/ready` remains 503 until the exact 108 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

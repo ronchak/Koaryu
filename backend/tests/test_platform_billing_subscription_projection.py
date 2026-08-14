@@ -93,6 +93,93 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
         self.assertTrue(rows[0]["metadata"]["core_trial_consumed"])
         self.assertEqual(rows[0]["stripe_subscription_id"], "sub_accepted")
 
+    def test_archived_acceptance_replays_both_event_families_without_cancellation(self):
+        old_token = "00000000-0000-4000-8000-000000000001"
+        new_token = "00000000-0000-4000-8000-000000000002"
+        archived = {
+            "state": "completed",
+            "token": old_token,
+            "epoch": 1,
+            "id": "cs_old",
+            "accepted_subscription_id": "sub_old",
+            "completed_event_created": 100,
+        }
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": "sub_new",
+            "status": "active",
+            "comped": False,
+            "last_stripe_event_created": 200,
+            "metadata": {
+                "core_trial_consumed": True,
+                "core_subscription_event_created": 200,
+                "core_invoice_payment_event_created": 200,
+                "core_checkout_epoch": 2,
+                "core_checkout_acceptances": {"sub_old": archived},
+                "core_checkout_session": {
+                    "state": "published",
+                    "token": new_token,
+                    "epoch": 2,
+                    "id": "cs_new",
+                    "url": "https://checkout.stripe.test/new",
+                    "expires_at": 9999999999,
+                },
+            },
+        }]
+        service = self.service(rows)
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+
+        class CancellationMustNotRun:
+            def cancel_core_subscription(self, **_payload):
+                raise AssertionError("an archived accepted binding must replay successfully")
+
+        checkout_event = {
+            "created": 100,
+            "type": "checkout.session.completed",
+            "data": {"object": {
+                "id": "cs_old",
+                "customer": "cus_123",
+                "subscription": "sub_old",
+                "payment_status": "paid",
+                "metadata": {
+                    "studio_id": "studio_1",
+                    "core_checkout_reservation_token": old_token,
+                    "core_checkout_epoch": "1",
+                },
+            }},
+        }
+        subscription_event = {
+            "created": 100,
+            "type": "customer.subscription.updated",
+            "data": {"object": {
+                "id": "sub_old",
+                "customer": "cus_123",
+                "status": "canceled",
+                "metadata": {
+                    "studio_id": "studio_1",
+                    "core_checkout_reservation_token": old_token,
+                    "core_checkout_epoch": "1",
+                },
+            }},
+        }
+
+        with patch(
+            "app.services.platform_billing_service.StripeService",
+            CancellationMustNotRun,
+        ):
+            service.project_subscription_event(checkout_event, hydrate_subscription=False)
+            service.project_subscription_event(subscription_event)
+
+        self.assertEqual(rows[0]["stripe_subscription_id"], "sub_new")
+        self.assertEqual(rows[0]["status"], "active")
+        self.assertEqual(rows[0]["metadata"]["core_checkout_session"]["id"], "cs_new")
+        self.assertEqual(
+            rows[0]["metadata"]["core_checkout_acceptances"]["sub_old"]
+            ["accepted_subscription_id"],
+            "sub_old",
+        )
+
     def test_tokenized_subscription_event_accepts_before_checkout_completion(self):
         token = "00000000-0000-4000-8000-000000000001"
         rows = [{

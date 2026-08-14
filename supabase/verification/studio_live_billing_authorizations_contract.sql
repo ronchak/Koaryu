@@ -1118,8 +1118,8 @@ BEGIN
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 107
-       OR v_preflight.migration_head <> '20260814183000'
+       OR v_preflight.migration_count <> 108
+       OR v_preflight.migration_head <> '20260814200000'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
@@ -1128,10 +1128,10 @@ BEGIN
            '20260801112153', '20260801115044', '20260801123112',
            '20260801131844', '20260814043325', '20260814103046',
            '20260814105424', '20260814114500', '20260814152000',
-           '20260814170000', '20260814183000'
+           '20260814170000', '20260814183000', '20260814200000'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v14' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v15' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 

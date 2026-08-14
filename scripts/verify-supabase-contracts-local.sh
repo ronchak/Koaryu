@@ -455,6 +455,18 @@ if [[ "$student_rank_manifest" != "0:27cdc692d92fb49f696521e7ab6f3d0b7717c30a232
 fi
 echo "[student-rank manifest] PASS database-observable writer signal"
 
+echo "[critical-surface manifest] RUN checkout and promotion identity signal"
+critical_surface_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_critical_surface_manifest_v15();
+"
+)"
+if [[ "$critical_surface_manifest" != "0:ea9595fd9c1c661c983d580be9beafdb0b794743dc43caef31a0a53f32f07149" ]]; then
+  echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
+  exit 1
+fi
+echo "[critical-surface manifest] PASS checkout and promotion identity signal"
+
 echo "[catalog] RUN deterministic pending-object security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"
@@ -568,6 +580,21 @@ assert_preflight_rejects \
 assert_preflight_rejects \
   "student import private writer body drift" \
   "UPDATE pg_proc SET prosrc = 'BEGIN RETURN; END;' WHERE oid = 'private.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])'::regprocedure;"
+assert_preflight_rejects \
+  "promotion snapshot column type drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN from_rank_name_snapshot TYPE varchar(200);"
+assert_preflight_rejects \
+  "promotion snapshot column nullability drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN from_rank_color_snapshot SET NOT NULL;"
+assert_preflight_rejects \
+  "promotion snapshot column default drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN to_rank_name_snapshot SET DEFAULT '';"
+assert_preflight_rejects \
+  "promotion snapshot column missing" \
+  "ALTER TABLE public.promotions DROP COLUMN to_rank_color_snapshot CASCADE;"
+assert_preflight_rejects \
+  "promotion target rank nullability drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN to_rank_id SET NOT NULL;"
 assert_attestation_rejects \
   "V9 helper self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_starting_belt_manifest_v9()'::regprocedure;" \
@@ -712,6 +739,17 @@ assert_attestation_rejects \
   "unmanifested permissive policy drift" \
   "CREATE POLICY koaryu_harness_forbidden_permissive_policy ON public.studio_live_billing_authorizations AS PERMISSIVE FOR SELECT TO anon USING (true);" \
   "f"
+
+echo "[concurrency] RUN Core checkout acceptance/reservation serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-core-checkout-accept-reserve-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS Core checkout acceptance/reservation serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL Core checkout acceptance/reservation serialization (exit $status)" >&2
+  exit "$status"
+fi
 
 echo "[concurrency] RUN Connect identity mapping/exclusion invariant"
 if bash "$ROOT_DIR/scripts/verify-connect-identity-concurrency.sh" \

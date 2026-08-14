@@ -45,6 +45,7 @@ DECLARE
     v_promotion UUID := gen_random_uuid();
     v_checkout RECORD;
     v_publish RECORD;
+    v_second_checkout RECORD;
     v_result public.student_program_memberships%ROWTYPE;
     v_deleted BOOLEAN;
     v_metadata JSONB;
@@ -174,15 +175,58 @@ BEGIN
         RAISE EXCEPTION 'Core checkout reservation could not be published.';
     END IF;
 
+    IF public.accept_core_checkout_subscription_atomic(
+        v_studio, v_checkout.reservation_token, v_checkout.checkout_epoch,
+        'cs_contract', 'sub_contract', 10
+    ) <> 'accepted' THEN
+        RAISE EXCEPTION 'Core checkout acceptance did not commit.';
+    END IF;
+    SELECT * INTO v_second_checkout
+    FROM public.reserve_core_checkout_atomic(v_studio);
+    IF v_second_checkout.outcome <> 'active' THEN
+        RAISE EXCEPTION 'A completed checkout binding was reopened before projection: %',
+            row_to_json(v_second_checkout);
+    END IF;
+    UPDATE public.studio_subscriptions
+    SET stripe_subscription_id = 'sub_contract', status = 'canceled'
+    WHERE studio_id = v_studio;
+    SELECT * INTO v_second_checkout
+    FROM public.reserve_core_checkout_atomic(v_studio);
+    IF v_second_checkout.outcome <> 'reserved'
+       OR public.accept_core_checkout_subscription_atomic(
+            v_studio, v_checkout.reservation_token, v_checkout.checkout_epoch,
+            'cs_contract', 'sub_contract', 10
+          ) <> 'already_accepted'
+       OR NOT EXISTS (
+            SELECT 1
+            FROM public.studio_subscriptions subscription
+            WHERE subscription.studio_id = v_studio
+              AND subscription.metadata->>'core_trial_consumed' = 'true'
+              AND subscription.metadata->'core_checkout_acceptances'->'sub_contract'
+                    ->>'accepted_subscription_id' = 'sub_contract'
+       ) THEN
+        RAISE EXCEPTION 'Terminal subscription retry did not preserve accepted replay/trial proof.';
+    END IF;
+
+    -- Restore a published session so the comp-trigger invalidation contract
+    -- below continues to exercise an in-flight checkout.
+    SELECT * INTO v_publish FROM public.publish_core_checkout_atomic(
+        v_studio, v_second_checkout.reservation_token, v_second_checkout.checkout_epoch,
+        'cs_contract_2', 'https://checkout.stripe.example/contract-2', 4102444800
+    );
+    IF v_publish.outcome <> 'published' THEN
+        RAISE EXCEPTION 'Second Core checkout reservation could not be published.';
+    END IF;
+
     UPDATE public.studio_subscriptions SET comped = TRUE WHERE studio_id = v_studio;
     SELECT metadata INTO v_metadata
     FROM public.studio_subscriptions WHERE studio_id = v_studio;
-    IF v_metadata->>'core_checkout_invalidated_session_id' <> 'cs_contract'
-       OR (v_metadata->>'core_checkout_epoch')::BIGINT <= v_checkout.checkout_epoch
+    IF v_metadata->>'core_checkout_invalidated_session_id' <> 'cs_contract_2'
+       OR (v_metadata->>'core_checkout_epoch')::BIGINT <= v_second_checkout.checkout_epoch
        OR v_metadata ? 'core_checkout_session'
        OR public.accept_core_checkout_completion_atomic(
-            v_studio, v_checkout.reservation_token, v_checkout.checkout_epoch,
-            'cs_contract', 1
+            v_studio, v_second_checkout.reservation_token, v_second_checkout.checkout_epoch,
+            'cs_contract_2', 1
        ) THEN
         RAISE EXCEPTION 'Comp grant did not invalidate the published checkout epoch.';
     END IF;
