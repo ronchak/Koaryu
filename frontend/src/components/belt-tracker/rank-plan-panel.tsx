@@ -236,14 +236,21 @@ export function RankPlanPanel({
                 } ${isDraggingThisGroup ? "opacity-40" : "opacity-100"}`}
               >
                 <div
-                  draggable
-                  onDragStart={(event) => onBeltDragStart(groupIndex, event)}
                   onDragOver={(event) => onBeltDragOver(groupIndex, event)}
                   onDrop={() => onBeltDrop(groupIndex)}
-                  onDragEnd={onBeltDragEnd}
                   className="flex items-center gap-3 px-4 py-3 cursor-default select-none"
                 >
-                  <GripVertical aria-hidden="true" className="w-3.5 h-3.5 text-muted cursor-grab active:cursor-grabbing flex-shrink-0" />
+                  <span
+                    draggable
+                    data-belt-drag-handle={group.belt.id}
+                    aria-label={`Drag ${group.belt.name} to reorder`}
+                    title={`Drag ${group.belt.name} to reorder`}
+                    onDragStart={(event) => onBeltDragStart(groupIndex, event)}
+                    onDragEnd={onBeltDragEnd}
+                    className="flex h-7 w-6 flex-shrink-0 cursor-grab items-center justify-center rounded-[4px] text-muted transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
+                  >
+                    <GripVertical aria-hidden="true" className="h-4 w-4" />
+                  </span>
 
                   <button
                     type="button"
@@ -336,16 +343,23 @@ export function RankPlanPanel({
                       return (
                         <div
                           key={tip.id}
-                          draggable
-                          onDragStart={(event) => onTipDragStart(groupIndex, tipIndex, event)}
                           onDragOver={(event) => onTipDragOver(groupIndex, tipIndex, event)}
                           onDrop={() => onTipDrop(groupIndex, tipIndex)}
-                          onDragEnd={onTipDragEnd}
                           className={`flex items-center gap-2.5 py-2 px-2 rounded-[4px] mb-0.5 transition-[background-color,color,opacity] select-none ${
                             isTipDragging ? "opacity-30" : "opacity-100"
                           } ${isTipOver ? "bg-accent/10" : "hover:bg-surface-raised/60"}`}
                         >
-                          <GripVertical aria-hidden="true" className="w-3 h-3 text-muted/50 cursor-grab active:cursor-grabbing flex-shrink-0" />
+                          <span
+                            draggable
+                            data-tip-drag-handle={tip.id}
+                            aria-label={`Drag ${tip.name} to reorder`}
+                            title={`Drag ${tip.name} to reorder`}
+                            onDragStart={(event) => onTipDragStart(groupIndex, tipIndex, event)}
+                            onDragEnd={onTipDragEnd}
+                            className="flex h-6 w-5 flex-shrink-0 cursor-grab items-center justify-center rounded-[4px] text-muted/60 transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
+                          >
+                            <GripVertical aria-hidden="true" className="h-3 w-3" />
+                          </span>
                           <BeltVisual rank={tip} size="sm" />
                           <span className="text-xs text-text-secondary flex-1 truncate font-medium">
                             {tip.name}

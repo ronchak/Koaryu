@@ -13,9 +13,13 @@ DECLARE
     v_owner UUID := gen_random_uuid();
     v_studio UUID := gen_random_uuid();
     v_other_studio UUID := gen_random_uuid();
+    v_program UUID := gen_random_uuid();
     v_ladder UUID := gen_random_uuid();
+    v_student_before_rank UUID := gen_random_uuid();
+    v_student_after_rank UUID := gen_random_uuid();
     v_ranks JSONB;
     v_first_rank UUID;
+    v_replacement_rank UUID;
     v_rank_count INTEGER;
     v_error_message TEXT;
 BEGIN
@@ -43,8 +47,43 @@ BEGIN
     INSERT INTO public.studios (id, name, slug, owner_id)
     VALUES (v_studio, 'Koaryu Verification Studio', 'koaryu-verification-' || replace(v_studio::TEXT, '-', ''), v_owner);
 
-    INSERT INTO public.belt_ladders (id, studio_id, name)
-    VALUES (v_ladder, v_studio, 'Verification Ladder');
+    INSERT INTO public.programs (id, studio_id, name)
+    VALUES (v_program, v_studio, 'Verification Program');
+
+    INSERT INTO public.belt_ladders (id, studio_id, name, program_id)
+    VALUES (v_ladder, v_studio, 'Verification Ladder', v_program);
+
+    INSERT INTO public.students (
+        id,
+        studio_id,
+        legal_first_name,
+        legal_last_name,
+        status,
+        program_id
+    )
+    VALUES (
+        v_student_before_rank,
+        v_studio,
+        'Before',
+        'Rank',
+        'active',
+        v_program
+    );
+
+    INSERT INTO public.student_program_memberships (
+        studio_id,
+        student_id,
+        program_id,
+        status,
+        current_belt_rank_id
+    )
+    VALUES (
+        v_studio,
+        v_student_before_rank,
+        v_program,
+        'active',
+        NULL
+    );
 
     SELECT synced.ranks
     INTO v_ranks
@@ -77,6 +116,78 @@ BEGIN
     END IF;
 
     v_first_rank := (v_ranks->0->>'id')::UUID;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_student_before_rank
+          AND program_id = v_program
+          AND current_belt_rank_id = v_first_rank
+    ) THEN
+        RAISE EXCEPTION 'Creating the first full belt did not backfill an existing unassigned membership.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_student_before_rank
+          AND program_id = v_program
+          AND current_belt_rank_id = v_first_rank
+    ) THEN
+        RAISE EXCEPTION 'Starting-belt backfill did not update the primary student rank.';
+    END IF;
+
+    INSERT INTO public.students (
+        id,
+        studio_id,
+        legal_first_name,
+        legal_last_name,
+        status,
+        program_id
+    )
+    VALUES (
+        v_student_after_rank,
+        v_studio,
+        'After',
+        'Rank',
+        'active',
+        v_program
+    );
+
+    INSERT INTO public.student_program_memberships (
+        studio_id,
+        student_id,
+        program_id,
+        status,
+        current_belt_rank_id
+    )
+    VALUES (
+        v_studio,
+        v_student_after_rank,
+        v_program,
+        'active',
+        NULL
+    );
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_student_after_rank
+          AND program_id = v_program
+          AND current_belt_rank_id = v_first_rank
+    ) THEN
+        RAISE EXCEPTION 'A new unassigned membership did not default to the starting belt.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_student_after_rank
+          AND program_id = v_program
+          AND current_belt_rank_id = v_first_rank
+    ) THEN
+        RAISE EXCEPTION 'Membership default did not update the primary student rank.';
+    END IF;
 
     SELECT synced.ranks
     INTO v_ranks
@@ -139,6 +250,44 @@ BEGIN
 
     IF v_rank_count <> 2 THEN
         RAISE EXCEPTION 'Expected two persisted ranks after update sync, got %', v_rank_count;
+    END IF;
+
+    SELECT synced.ranks
+    INTO v_ranks
+    FROM public.sync_belt_ladder_ranks(
+        v_ladder,
+        v_studio,
+        'Tip',
+        jsonb_build_array(
+            jsonb_build_object(
+                'name', 'Blue Belt',
+                'color_hex', '#3b82f6',
+                'min_classes', 0,
+                'min_months', 0,
+                'requires_approval', false,
+                'is_tip', false
+            )
+        )
+    ) AS synced;
+
+    v_replacement_rank := (v_ranks->0->>'id')::UUID;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id IN (v_student_before_rank, v_student_after_rank)
+          AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
+    ) THEN
+        RAISE EXCEPTION 'Deleting an assigned starting rank did not move memberships to its replacement.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id IN (v_student_before_rank, v_student_after_rank)
+          AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
+    ) THEN
+        RAISE EXCEPTION 'Deleting an assigned starting rank did not move primary student ranks to its replacement.';
     END IF;
 
     BEGIN

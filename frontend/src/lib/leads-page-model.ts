@@ -107,6 +107,14 @@ export function getFollowUpStatusLabel(date: string, today: string) {
   return `Due ${formatDate(date)}`;
 }
 
+export function getLeadFollowUpTone(
+  followUpDate: string | null | undefined,
+  today: string
+): "due-today" | "overdue" | null {
+  if (!followUpDate || followUpDate > today) return null;
+  return followUpDate < today ? "overdue" : "due-today";
+}
+
 export function getProgramLabel(lead: Lead, program?: Program | null) {
   return program?.name || lead.program_interest || "No program";
 }

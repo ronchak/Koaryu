@@ -44,6 +44,7 @@ export function useBeltRankDrag({
     dragGroupIdx.current = groupIndex;
     setDraggingGroupIdx(groupIndex);
     event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `belt:${groupIndex}`);
   }, []);
 
   const onBeltDragOver = useCallback((groupIndex: number, event: DragEvent) => {
@@ -81,6 +82,7 @@ export function useBeltRankDrag({
     dragTip.current = { gIdx: groupIndex, tIdx: tipIndex };
     setDraggingTip({ gIdx: groupIndex, tIdx: tipIndex });
     event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `tip:${groupIndex}:${tipIndex}`);
   }, []);
 
   const onTipDragOver = useCallback((

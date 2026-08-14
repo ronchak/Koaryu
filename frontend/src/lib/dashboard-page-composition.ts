@@ -20,6 +20,7 @@ import {
   type DashboardBillingSummary,
 } from "./dashboard-billing-summary";
 import { formatCount } from "./dashboard-page-utils";
+import { isDashboardSetupStepComplete } from "./dashboard-page-model";
 import type {
   buildDashboardBeltStats,
   buildDashboardChurnStats,
@@ -385,10 +386,19 @@ function buildDashboardSetupSteps({
   summary: DashboardSummary | null;
   templateCount: number;
 }): SetupStep[] {
-  const hasPrograms = summary?.setup.has_programs ?? programs.some((program) => !program.archived_at);
-  const hasStudents = summary?.setup.has_students ?? studentCount > 0;
-  const hasBeltSystem = summary?.setup.has_belt_system ?? beltStats.beltCount > 0;
-  const hasSchedule = summary?.setup.has_weekly_classes ?? (templateCount > 0 || sessionCount > 0);
+  const hasPrograms = isDashboardSetupStepComplete(
+    summary?.setup.has_programs,
+    programs.some((program) => !program.archived_at)
+  );
+  const hasStudents = isDashboardSetupStepComplete(summary?.setup.has_students, studentCount > 0);
+  const hasBeltSystem = isDashboardSetupStepComplete(
+    summary?.setup.has_belt_system,
+    beltStats.beltCount > 0
+  );
+  const hasSchedule = isDashboardSetupStepComplete(
+    summary?.setup.has_weekly_classes,
+    templateCount > 0 || sessionCount > 0
+  );
   const steps: SetupStep[] = [
     {
       id: "programs",

@@ -12,6 +12,7 @@ import {
   getDueTodayCount,
   getFollowUpStatusLabel,
   getLeadFollowUpInputValue,
+  getLeadFollowUpTone,
   getLostLeads,
   getNextStage,
   getProgramLabel,
@@ -81,6 +82,9 @@ describe("leads page model", () => {
     assert.equal(getFollowUpStatusLabel("2026-05-24", "2026-05-24"), "Due today");
     assert.equal(getFollowUpStatusLabel("2026-05-22", "2026-05-24"), "2d overdue");
     assert.equal(getFollowUpStatusLabel("2026-05-26", "2026-05-24"), "Due May 26");
+    assert.equal(getLeadFollowUpTone("2026-05-24", "2026-05-24"), "due-today");
+    assert.equal(getLeadFollowUpTone("2026-05-22", "2026-05-24"), "overdue");
+    assert.equal(getLeadFollowUpTone("2026-05-26", "2026-05-24"), null);
   });
 
   it("builds lead pipeline buckets and follow-up queues outside the route", () => {

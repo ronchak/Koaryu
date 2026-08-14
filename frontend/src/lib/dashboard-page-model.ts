@@ -1,6 +1,13 @@
 import type { AttendanceRecord, BeltRank, ClassSession, EligibilityEntry, Lead, Program, Student } from "@/types";
 import type { DashboardSummaryRecentStudent } from "@/types/dashboard";
 
+export function isDashboardSetupStepComplete(
+  summaryValue: boolean | null | undefined,
+  liveValue: boolean
+) {
+  return summaryValue === true || liveValue;
+}
+
 function dashboardStudentStartDate(student: { membership_start_date?: string | null; created_at: string }) {
   return student.membership_start_date || student.created_at.slice(0, 10);
 }

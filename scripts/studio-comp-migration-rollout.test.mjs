@@ -142,22 +142,22 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("requires the exact V7 operational readiness output", () => {
+  it("requires the exact V8 operational readiness output", () => {
     assert.equal(
       validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS),
       EXPECTED_OPERATIONAL_READINESS,
     );
-    for (const value of [null, "", "true|100|20260801131844", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
-      assert.throws(() => validateOperationalReadiness(value), /V7 operational readiness/);
+    for (const value of [null, "", "true|101|20260814043325", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
+      assert.throws(() => validateOperationalReadiness(value), /V8 operational readiness/);
     }
   });
 
-  it("decodes the pinned CLI single-field CSV contract before exact V7 validation", () => {
+  it("decodes the pinned CLI single-field CSV contract before exact V8 validation", () => {
     const quotedReadiness = singleValueCsv(
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|100\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|101\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -197,7 +197,7 @@ describe("studio-comp migration rollout guard", () => {
   it("derives an exact 84-to-N packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 100);
+    assert.equal(packet.migrationCount, 101);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(packet.pendingMigrations.length, packet.migrationCount - 84);
     assert.deepEqual(
@@ -572,26 +572,26 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("rejects missing, malformed, or non-ready V7 output before post certification", () => {
+  it("rejects missing, malformed, or non-ready V8 output before post certification", () => {
     const packet = candidatePacket();
     for (const operationalReadiness of [
       null,
       "",
       EXPECTED_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_OPERATIONAL_READINESS.replace("|100|", "|99|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("20260801131844", "20260801123112"),
+      EXPECTED_OPERATIONAL_READINESS.replace("|101|", "|100|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("20260814043325", "20260801131844"),
       EXPECTED_OPERATIONAL_READINESS.replace("20260801105313,", ""),
       EXPECTED_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v7", "release-db-attestation-v6"),
+      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v8", "release-db-attestation-v7"),
     ]) {
       assert.throws(
         () => classifyStateSnapshot(postSnapshot(packet, { operationalReadiness }), packet),
-        /V7 operational readiness/,
+        /V8 operational readiness/,
       );
     }
   });
 
-  it("invokes V7 for apparent post-state but not for the migration-84 pre-state", () => {
+  it("invokes V8 for apparent post-state but not for the migration-84 pre-state", () => {
     const packet = candidatePacket();
     const postValues = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -855,8 +855,8 @@ describe("studio-comp migration rollout guard", () => {
         ["trigger_state", snapshot.triggerState],
         ["catalog_state", snapshot.catalogState],
         ["operational_readiness", snapshot.operationalReadiness],
-        ["migration_row_count", expected.state === "pre" ? "84" : "100"],
-        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : "20260801131844"],
+        ["migration_row_count", expected.state === "pre" ? "84" : "101"],
+        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : "20260814043325"],
       ]);
       const headers = [];
       const diagnosis = readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, sql, header) => {
@@ -1146,12 +1146,12 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 100-migration integration", () => {
+  it("refuses to certify post-state before the exact 101-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 100-migration sequence/,
+      /exact final 101-migration sequence/,
     );
   });
 

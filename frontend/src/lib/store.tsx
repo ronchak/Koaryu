@@ -21,6 +21,7 @@ import {
 } from "@/lib/store-storage";
 import { fetchStudentPage } from "@/lib/store-student-pages";
 import { useSyncedRefValue } from "@/lib/store-ref-sync";
+import { invalidateEligibilityAfterStudentMutation } from "@/lib/store-eligibility-invalidation";
 import {
   applyLiveStudioDataResetRefs,
   buildSubscriptionAccessRestoreState,
@@ -1401,6 +1402,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isPreviewMode) save(KEYS.attendance, next);
   }, [isPreviewMode]);
 
+  const onStudentMutation = useCallback(() => {
+    invalidateEligibilityAfterStudentMutation({
+      clearCurrentEligibility: () => commitEligibilityRows(null, []),
+      currentLadderIdRef,
+      eligibilityCacheRef,
+      onRefreshError: (error) => {
+        console.error("Failed to refresh belt eligibility after student mutation", error);
+      },
+      refreshEligibility: loadEligibilityForLadder,
+    });
+  }, [commitEligibilityRows, loadEligibilityForLadder]);
+
   // ── Students ──
   const {
     addStudent,
@@ -1412,6 +1425,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     previewStudentPhotoUrlsRef,
     programsRef,
@@ -1454,6 +1468,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     refreshStudents,
     studentsMayBePartial,
@@ -1470,6 +1485,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beginLiveAuthRequest,
     isPreviewMode,
     leadsRef,
+    onStudentMutation,
     persistLeads,
     persistStudents,
     programsRef,

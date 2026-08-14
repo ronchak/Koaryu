@@ -2,6 +2,8 @@ import type { AttendanceRecord, ClassSession, Student } from "@/types";
 
 export type SchedulePageView = "month" | "week" | "day";
 
+export const DEFAULT_SCHEDULE_PAGE_VIEW: SchedulePageView = "month";
+
 export type SessionAttendanceRefreshState = {
   sessionId: string | null;
   status: "idle" | "pending" | "ready" | "error";

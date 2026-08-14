@@ -5,6 +5,7 @@ import type { ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
   beginSessionAttendanceRefresh,
   clearSessionAttendanceRefresh,
+  DEFAULT_SCHEDULE_PAGE_VIEW,
   getActiveScheduleStudents,
   createAttendanceToggleQueue,
   getScheduleSessionAttendance,
@@ -69,7 +70,7 @@ export function useSchedulePageController({
     toggleCheckIn,
   } = scheduleStore;
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<SchedulePageView>("week");
+  const [view, setView] = useState<SchedulePageView>(DEFAULT_SCHEDULE_PAGE_VIEW);
   const [programFilter, setProgramFilter] = useState("");
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [showAddClass, setShowAddClass] = useState(false);

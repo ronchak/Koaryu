@@ -5,10 +5,20 @@ import {
   buildInitialStudentFormFields,
   buildStudentCreatePayload,
   buildStudentUpdatePayload,
+  formatPhoneInput,
   validateStudentFormFields,
 } from "../src/components/students/student-form-state.ts";
 
 describe("student form state", () => {
+  it("formats domestic phone input progressively without truncating other formats", () => {
+    assert.equal(formatPhoneInput("555"), "555");
+    assert.equal(formatPhoneInput("555123"), "(555) 123");
+    assert.equal(formatPhoneInput("5551234567"), "(555) 123-4567");
+    assert.equal(formatPhoneInput("5550100"), "555-0100");
+    assert.equal(formatPhoneInput("15551234567"), "+1 (555) 123-4567");
+    assert.equal(formatPhoneInput("+44 20 7946 0958"), "+44 20 7946 0958");
+  });
+
   it("builds initial field state from student data", () => {
     const fields = buildInitialStudentFormFields({
       legal_first_name: "Aiko",

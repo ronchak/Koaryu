@@ -17,6 +17,7 @@ import {
   moveBeltGroup,
   moveTipWithinGroup,
   normalizeSubRankTermDraft,
+  resolvePresetBeltName,
   updateRankFromForm,
   validatePromotionTarget,
 } from "../src/lib/belt-tracker-page-model.ts";
@@ -90,6 +91,33 @@ function ladder(id, overrides = {}) {
 }
 
 describe("belt tracker page model", () => {
+  it("defaults new full-belt names from presets without overwriting manual names", () => {
+    assert.equal(resolvePresetBeltName({
+      currentName: "",
+      isTip: false,
+      nameWasEdited: false,
+      presetLabel: "White",
+    }), "White Belt");
+    assert.equal(resolvePresetBeltName({
+      currentName: "White Belt",
+      isTip: false,
+      nameWasEdited: false,
+      presetLabel: "Brown",
+    }), "Brown Belt");
+    assert.equal(resolvePresetBeltName({
+      currentName: "Beginner Rank",
+      isTip: false,
+      nameWasEdited: true,
+      presetLabel: "Black",
+    }), "Beginner Rank");
+    assert.equal(resolvePresetBeltName({
+      currentName: "1 Stripe",
+      isTip: true,
+      nameWasEdited: false,
+      presetLabel: "Red",
+    }), "1 Stripe");
+  });
+
   it("groups tips under the preceding full belt and ignores leading tips", () => {
     const groups = groupRanks([
       rank("orphan-tip", { is_tip: true }),

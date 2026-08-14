@@ -5,6 +5,7 @@ import {
   beginSessionAttendanceRefresh,
   clearSessionAttendanceRefresh,
   createAttendanceToggleQueue,
+  DEFAULT_SCHEDULE_PAGE_VIEW,
   formatScheduleDateKey,
   getActiveScheduleStudents,
   getScheduleSessionAttendance,
@@ -32,6 +33,10 @@ function deferred() {
 }
 
 describe("schedule page model", () => {
+  it("opens on the month view by default", () => {
+    assert.equal(DEFAULT_SCHEDULE_PAGE_VIEW, "month");
+  });
+
   it("builds day, week, and month visible ranges from local calendar dates", () => {
     const base = new Date(2026, 4, 20, 15);
 

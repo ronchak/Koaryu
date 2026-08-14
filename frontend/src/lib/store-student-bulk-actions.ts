@@ -26,6 +26,7 @@ interface UseStoreStudentBulkActionsOptions {
   beginLiveAuthRequest: BeginLiveAuthRequest;
   commitStudents: CommitStudents;
   isPreviewMode: boolean;
+  onStudentMutation: () => void;
   persistStudents: (next: Student[]) => void;
   refreshStudents: () => Promise<Student[]>;
   studentsMayBePartial: boolean;
@@ -36,6 +37,7 @@ export function useStoreStudentBulkActions({
   beginLiveAuthRequest,
   commitStudents,
   isPreviewMode,
+  onStudentMutation,
   persistStudents,
   refreshStudents,
   studentsMayBePartial,
@@ -195,11 +197,13 @@ export function useStoreStudentBulkActions({
       });
     }
 
+    onStudentMutation();
     return response;
   }, [
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     refreshStudents,
     studentsMayBePartial,

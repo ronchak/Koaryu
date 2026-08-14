@@ -15,6 +15,7 @@ interface UseStoreLeadActionsOptions {
   beginLiveAuthRequest: BeginLiveAuthRequest;
   isPreviewMode: boolean;
   leadsRef: StoreRef<Lead[]>;
+  onStudentMutation: () => void;
   persistLeads: (next: Lead[]) => void;
   persistStudents: (next: Student[]) => void;
   programsRef: StoreRef<Program[]>;
@@ -29,6 +30,7 @@ export function useStoreLeadActions({
   beginLiveAuthRequest,
   isPreviewMode,
   leadsRef,
+  onStudentMutation,
   persistLeads,
   persistStudents,
   programsRef,
@@ -150,6 +152,7 @@ export function useStoreLeadActions({
     } catch (error) {
       console.error("Failed to refresh students after lead conversion", error);
     }
+    onStudentMutation();
 
     return {
       lead: result,
@@ -159,6 +162,7 @@ export function useStoreLeadActions({
     beginLiveAuthRequest,
     isPreviewMode,
     leadsRef,
+    onStudentMutation,
     persistLeads,
     persistStudents,
     programsRef,

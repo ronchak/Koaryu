@@ -65,6 +65,25 @@ function parseTags(value: string): string[] {
     : [];
 }
 
+export function formatPhoneInput(value: string) {
+  if (!value) return "";
+  if (value.trimStart().startsWith("+")) return value;
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 0) return "";
+  if (digits.length > 10) {
+    if (digits.length === 11 && digits.startsWith("1")) {
+      return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+    }
+    return value;
+  }
+  if (digits.length <= 3) return digits;
+  if (digits.length === 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
 export function buildInitialStudentFormFields(initialData?: StudentFormInitialData): StudentFormFields {
   const guardian = initialData?.guardians?.[0];
 
@@ -85,18 +104,18 @@ export function buildInitialStudentFormFields(initialData?: StudentFormInitialDa
     notes: initialData?.notes || "",
     tags: initialData?.tags?.join(", ") || "",
     email: initialData?.email || "",
-    phone: initialData?.phone || "",
+    phone: formatPhoneInput(initialData?.phone || ""),
     addressLine1: initialData?.address_line1 || "",
     city: initialData?.address_city || "",
     state: initialData?.address_state || "",
     zip: initialData?.address_zip || "",
     emergencyName: initialData?.emergency_contact_name || "",
-    emergencyPhone: initialData?.emergency_contact_phone || "",
+    emergencyPhone: formatPhoneInput(initialData?.emergency_contact_phone || ""),
     emergencyRelation: initialData?.emergency_contact_relation || "",
     guardianFirst: guardian?.first_name || "",
     guardianLast: guardian?.last_name || "",
     guardianEmail: guardian?.email || "",
-    guardianPhone: guardian?.phone || "",
+    guardianPhone: formatPhoneInput(guardian?.phone || ""),
     guardianRelation: guardian?.relation || "",
   };
 }

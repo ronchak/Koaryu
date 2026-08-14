@@ -30,6 +30,7 @@ interface UseStoreStudentRosterActionsOptions {
   beginLiveAuthRequest: BeginLiveAuthRequest;
   commitStudents: CommitStudents;
   isPreviewMode: boolean;
+  onStudentMutation: () => void;
   persistStudents: (next: Student[]) => void;
   previewStudentPhotoUrlsRef: StoreRef<Record<string, string>>;
   programsRef: StoreRef<Program[]>;
@@ -43,6 +44,7 @@ export function useStoreStudentRosterActions({
   beginLiveAuthRequest,
   commitStudents,
   isPreviewMode,
+  onStudentMutation,
   persistStudents,
   previewStudentPhotoUrlsRef,
   programsRef,
@@ -66,11 +68,13 @@ export function useStoreStudentRosterActions({
       return result;
     }
     commitStudents((current) => [result, ...current], { mayBePartial: studentsMayBePartial });
+    onStudentMutation();
     return result;
   }, [
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     programsRef,
     studentsMayBePartial,
@@ -111,11 +115,13 @@ export function useStoreStudentRosterActions({
       (current) => current.map((student) => student.id === id ? result : student),
       { mayBePartial: studentsMayBePartial }
     );
+    onStudentMutation();
     return result;
   }, [
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     studentsMayBePartial,
     studentsRef,
@@ -148,10 +154,12 @@ export function useStoreStudentRosterActions({
       (current) => current.filter((student) => !idSet.has(student.id)),
       { mayBePartial: studentsMayBePartial }
     );
+    onStudentMutation();
   }, [
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     previewStudentPhotoUrlsRef,
     studentsMayBePartial,

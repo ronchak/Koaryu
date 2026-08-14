@@ -13,6 +13,7 @@ import {
   buildDashboardStudentStats,
   buildDashboardTestReadinessStats,
   countDashboardTodaySessions,
+  isDashboardSetupStepComplete,
 } from "../src/lib/dashboard-page-model.ts";
 
 function student(id, overrides = {}) {
@@ -75,6 +76,13 @@ function attendance(id, sessionId, status = "present") {
 }
 
 describe("dashboard page model", () => {
+  it("lets fresh local setup evidence override a stale incomplete summary", () => {
+    assert.equal(isDashboardSetupStepComplete(false, true), true);
+    assert.equal(isDashboardSetupStepComplete(true, false), true);
+    assert.equal(isDashboardSetupStepComplete(false, false), false);
+    assert.equal(isDashboardSetupStepComplete(undefined, true), true);
+  });
+
   it("counts roster, lead, belt, inactivity, churn, and readiness stats outside the route", () => {
     const students = [
       student("active", { membership_start_date: "2026-05-20" }),
