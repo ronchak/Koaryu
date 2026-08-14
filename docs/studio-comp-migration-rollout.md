@@ -188,7 +188,7 @@ node scripts/studio-comp-migration-rollout.mjs \
 Record the exact output. It pins the CLI, fixed pre-history, immutable Git
 ancestry, complete pending set, every candidate migration hash, and the source
 manifest hash. Any missing migration, unexpected version, or migration after
-152000 halts before credentials are used.
+170000 halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
