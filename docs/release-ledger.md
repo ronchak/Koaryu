@@ -144,6 +144,10 @@ Operator: `Codex release orchestrator`
 - Read-only inspection confirmed both staging and production at the healthy
   100-migration V7 state, digest `359058cc127e57a47e429f6271453acf`,
   through `20260801131844_finalize_release_database_attestation_v7.sql`.
+- Staging rehearsal: the guarded dry-run and apply advanced only migration 101.
+  Fresh inspection certified the exact V8 post-state and provider fingerprint;
+  linked lint returned no errors, and the belt-ladder plus account-control SQL
+  contracts passed transactionally. Production remained at the V7 pre-state.
 - Final required database identity: 101 migrations, head
   `20260814043325_default_program_memberships_to_starting_belt.sql`. That file
   is the sole pending release migration from the observed 100-state baseline;

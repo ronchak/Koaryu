@@ -1,6 +1,6 @@
 # Studio-Comp Migration Rollout
 
-Status: **Phase A tooling only; provider mutation locked**
+Status: **staging rehearsed at migration 101; production human apply locked**
 
 This packet reconciles the production and staging 100-migration V7 baseline
 with the immutable 101-migration release candidate. It is specialized to this rollout, not a
@@ -202,9 +202,10 @@ The dry-run must report only `20260814043325_default_program_memberships_to_star
 with its final candidate hash. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
-Staging application remains locked until the director approves Phase B. The
-approved command will require the same inspection token, exact project ref, a
-durable approval record, and `--approve-staging-apply`. After application:
+The exact candidate's staging rehearsal was approved through its durable PR
+release record. Any staging apply requires the same inspection token, exact
+project ref, durable approval record, and `--approve-staging-apply`. After
+application:
 
 1. require count 101, head 043325, the exact seventeen-version sequence, and the
    derived final history digest;
