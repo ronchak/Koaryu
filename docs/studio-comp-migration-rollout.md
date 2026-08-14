@@ -1,9 +1,9 @@
 # Studio-Comp Migration Rollout
 
-Status: **staging at accepted intermediate migration 101; migration 102 rehearsal pending; production human apply locked**
+Status: **staging at accepted recovery migration 102; migration 103 rehearsal pending; production human apply locked**
 
 This packet reconciles the production and staging 100-migration V7 baseline
-with the immutable 102-migration release candidate. It is specialized to this rollout, not a
+with the immutable 103-migration release candidate. It is specialized to this rollout, not a
 generic migration or history-repair framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
@@ -23,7 +23,7 @@ Therefore:
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
 - the release authority is the operator-side raw-catalog verifier plus its
-  repository-pinned SHA-256 manifests; the database V9 readiness signal, backed
+  repository-pinned SHA-256 manifests; the database V10 readiness signal, backed
   by the V7 semantic/ACL manifest and V9 starting-belt invariant manifest, exposed through
   the stable V2-named RPC is an operational drift/readiness signal, not proof
   against a malicious database administrator;
@@ -40,10 +40,10 @@ The fixed production pre-state is:
 100:359058cc127e57a47e429f6271453acf
 ```
 
-The authorized release migrations are `20260814043325` and
-`20260814103046`. The only certifiable post-state is migration count 102 at
-the latter head. Its V9 readiness signal retains the complete
-migration-85-through-102 sequence:
+The authorized release migrations are `20260814043325`, `20260814103046`, and
+`20260814105424`. The only certifiable post-state is migration count 103 at
+the latter head. Its V10 readiness signal retains the complete
+migration-85-through-103 sequence:
 
 ```text
 20260727100000
@@ -64,12 +64,13 @@ migration-85-through-102 sequence:
 20260801131844
 20260814043325
 20260814103046
+20260814105424
 ```
 
 The checker derives filenames and source hashes from the final candidate, pins
 the first 100 identities to the observed V7 baseline, and reports
-`integration_complete=true` only when those two files are the release
-pending migrations and the 102-state readiness contract contains the eighteen
+`integration_complete=true` only when those three files are the release
+pending migrations and the 103-state readiness contract contains the nineteen
 historical versions above. The 070000/091000/093000/105313
 billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
@@ -100,7 +101,10 @@ with UTC rendering and C-collated identity ordering. Migration 101 defaults
 unassigned active program memberships to the first full
 belt and advances the intermediate readiness result to V8. Migration 102 repairs
 whole-statement starting-belt replacement and adds the V9 function/trigger
-attestation while retaining the V7 billing semantic/ACL manifest. Never certify
+attestation while retaining the V7 billing semantic/ACL manifest. Migration 103
+preserves deliberately unranked memberships during one-belt plan edits and
+unrelated deletes, converges hosted historical grants on trigger-only functions,
+and advances the exact-head readiness signal to V10. Never certify
 an earlier head; regenerate the packet
 from the exact immutable release commit so
 all candidate migration hashes and counts remain current. Hosted PostgREST
@@ -117,8 +121,8 @@ exact source files:
 
 They remain pinned as the first two migrations after historical migration 84.
 They are already present in the 100-state baseline. Production must apply
-migrations 101 and 102; staging, already at accepted V8 migration 101, must
-dry-run and apply only migration 102.
+migrations 101 through 103; staging, already at accepted V9 recovery migration
+102, must dry-run and apply only migration 103.
 
 ## Transaction and old-application classification
 
@@ -166,7 +170,7 @@ node scripts/studio-comp-migration-rollout.mjs \
 Record the exact output. It pins the CLI, fixed pre-history, immutable Git
 ancestry, complete pending set, every candidate migration hash, and the source
 manifest hash. Any missing migration, unexpected version, or migration after
-043325 halts before credentials are used.
+105424 halts before credentials are used.
 
 ## Staging gate: inspect before rehearsal
 
@@ -187,11 +191,11 @@ node scripts/studio-comp-migration-rollout.mjs \
 ```
 
 The command is unavailable until the packet reports
-`integration_complete=true`. Acceptance then requires `state=pre`, the pinned staging ref
-`nxgsektqsgrtyfhawxbc`, the exact 100-row V7 history, the complete historical
-target sequence, the expected studio-comp objects, exact V7 readiness, and an
-`inspection_token`. If staging is behind, ahead, partially applied, or has
-manual objects, stop. Rebuild or catch-up needs a separate packet.
+`integration_complete=true`. Acceptance requires the pinned staging ref
+`nxgsektqsgrtyfhawxbc`, one exact accepted history (`pre`, `intermediate`, or
+`recovery`), its corresponding V7/V8/V9 readiness result, the complete
+historical target sequence, the expected studio-comp objects, and an
+`inspection_token`. Any other partial, ahead, or manually altered state stops.
 
 Only after recording that inspection may the read-only rehearsal run:
 
@@ -203,8 +207,8 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-From the current staging intermediate state, the dry-run must report only
-`20260814103046_finalize_starting_belt_invariant_attestation.sql`
+From the current staging recovery state, the dry-run must report only
+`20260814105424_converge_starting_belt_invariant_and_acl.sql`
 with its final candidate hash. A missing, extra, reordered, or unparseable
 name halts the rollout.
 
@@ -213,7 +217,7 @@ release record. Any staging apply requires the same inspection token, exact
 project ref, durable approval record, and `--approve-staging-apply`. After
 application:
 
-1. require count 102, head 103046, the exact eighteen-version sequence, and the
+1. require count 103, head 105424, the exact nineteen-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
@@ -226,7 +230,7 @@ application:
 3. invoke the service-role-only V2-named readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v9`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v10`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
@@ -291,6 +295,6 @@ trigger/functions, or use a production restore as ordinary rollback.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 102 head and
+database-first: Render `/health/ready` remains 503 until the exact 103 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

@@ -1108,23 +1108,24 @@ BEGIN
 
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF private.koaryu_release_starting_belt_manifest_v9()
-       <> '0:367516cc9b324bca35445f07c1f4d7e58e897e189edaa334c520e55aed9618a2' THEN
+       <> '0:7e8dc46f3e4a514f694fe4ea3a1559928397c6e2cee8af2a09e5c3d07129e8b7' THEN
         RAISE EXCEPTION 'Starting-belt V9 manifest mismatch; got %',
             private.koaryu_release_starting_belt_manifest_v9();
     END IF;
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 102
-       OR v_preflight.migration_head <> '20260814103046'
+       OR v_preflight.migration_count <> 103
+       OR v_preflight.migration_head <> '20260814105424'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
            '20260801090000', '20260801091000', '20260801092000',
            '20260801093000', '20260801094000', '20260801105313',
            '20260801112153', '20260801115044', '20260801123112',
-           '20260801131844', '20260814043325', '20260814103046'
+           '20260801131844', '20260814043325', '20260814103046',
+           '20260814105424'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v9' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v10' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 
@@ -1154,6 +1155,21 @@ BEGIN
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF NOT v_preflight.ready THEN
         RAISE EXCEPTION 'Hosted preflight did not recover after exact CHECK restoration: %',
+            v_preflight.security_failures;
+    END IF;
+
+    GRANT EXECUTE ON FUNCTION public.validate_student_program_membership()
+        TO service_role;
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF v_preflight.ready
+       OR NOT ('starting_belt_invariant_manifest_v9' = ANY(v_preflight.security_failures)) THEN
+        RAISE EXCEPTION 'Hosted preflight accepted a direct grant on a trigger-only function.';
+    END IF;
+    REVOKE EXECUTE ON FUNCTION public.validate_student_program_membership()
+        FROM service_role;
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF NOT v_preflight.ready THEN
+        RAISE EXCEPTION 'Hosted preflight did not recover after trigger-function ACL restoration: %',
             v_preflight.security_failures;
     END IF;
 

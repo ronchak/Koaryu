@@ -23,6 +23,7 @@ DECLARE
     v_second_rank UUID;
     v_tip_rank UUID;
     v_green_rank UUID;
+    v_unrelated_tip UUID;
     v_replacement_rank UUID;
     v_rank_count INTEGER;
     v_error_message TEXT;
@@ -319,6 +320,27 @@ BEGIN
         RAISE EXCEPTION 'An unrelated belt edit rewrote a deliberately unranked membership.';
     END IF;
 
+    INSERT INTO public.belt_ranks (
+        ladder_id, studio_id, name, color_hex, display_order, is_tip,
+        tip_color_hex
+    ) VALUES (
+        v_ladder, v_studio, 'Disposable Tip', '#ffffff', 99, TRUE,
+        '#111111'
+    ) RETURNING id INTO v_unrelated_tip;
+
+    DELETE FROM public.belt_ranks
+    WHERE id = v_unrelated_tip
+      AND studio_id = v_studio;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'Deleting an unrelated belt rewrote a deliberately unranked membership.';
+    END IF;
+
     UPDATE public.student_program_memberships
     SET current_belt_rank_id = v_tip_rank
     WHERE student_id = v_student_before_rank
@@ -455,6 +477,49 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Deleting the starting belt did not move active students to the surviving first full belt.';
     END IF;
+
+    UPDATE public.student_program_memberships
+    SET current_belt_rank_id = NULL
+    WHERE student_id = v_student_before_rank
+      AND program_id = v_program;
+
+    SELECT synced.ranks
+    INTO v_ranks
+    FROM public.sync_belt_ladder_ranks(
+        v_ladder,
+        v_studio,
+        'Tip',
+        jsonb_build_array(
+            jsonb_build_object(
+                'id', v_green_rank,
+                'name', 'Green Edited',
+                'color_hex', '#22c55e',
+                'min_classes', 12,
+                'min_months', 3,
+                'requires_approval', true,
+                'is_tip', false
+            )
+        )
+    ) AS synced;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'Saving a one-belt plan rewrote a deliberately unranked membership.';
+    END IF;
+
+    UPDATE public.student_program_memberships
+    SET current_belt_rank_id = v_green_rank
+    WHERE student_id = v_student_before_rank
+      AND program_id = v_program;
+
+    UPDATE public.students
+    SET current_belt_rank_id = v_green_rank
+    WHERE id = v_student_before_rank
+      AND studio_id = v_studio;
 
     SELECT synced.ranks
     INTO v_ranks
