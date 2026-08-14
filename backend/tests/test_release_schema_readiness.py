@@ -47,6 +47,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v4"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v5"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v6"},
+            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v7"},
         ]
         for row in mismatches:
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):

@@ -59,6 +59,7 @@ export function useStoreStudentRosterActions({
         idFactory: localId,
       });
       persistStudents([newStudent, ...studentsRef.current]);
+      onStudentMutation();
       return newStudent;
     }
 
@@ -103,6 +104,7 @@ export function useStoreStudentRosterActions({
       if (!updatedStudent) {
         throw new Error("Student not found.");
       }
+      onStudentMutation();
       return updatedStudent;
     }
 
@@ -139,6 +141,7 @@ export function useStoreStudentRosterActions({
       });
       const next = studentsRef.current.filter((student) => !idSet.has(student.id));
       persistStudents(next);
+      onStudentMutation();
       return;
     }
 

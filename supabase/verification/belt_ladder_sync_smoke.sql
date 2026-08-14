@@ -17,8 +17,12 @@ DECLARE
     v_ladder UUID := gen_random_uuid();
     v_student_before_rank UUID := gen_random_uuid();
     v_student_after_rank UUID := gen_random_uuid();
+    v_ended_student UUID := gen_random_uuid();
     v_ranks JSONB;
     v_first_rank UUID;
+    v_second_rank UUID;
+    v_tip_rank UUID;
+    v_green_rank UUID;
     v_replacement_rank UUID;
     v_rank_count INTEGER;
     v_error_message TEXT;
@@ -116,6 +120,7 @@ BEGIN
     END IF;
 
     v_first_rank := (v_ranks->0->>'id')::UUID;
+    v_second_rank := (v_ranks->1->>'id')::UUID;
 
     IF NOT EXISTS (
         SELECT 1
@@ -206,6 +211,32 @@ BEGIN
                 'is_tip', false
             ),
             jsonb_build_object(
+                'id', v_second_rank,
+                'name', 'Yellow',
+                'color_hex', '#facc15',
+                'min_classes', 10,
+                'min_months', 2,
+                'requires_approval', true,
+                'is_tip', false
+            ),
+            jsonb_build_object(
+                'name', 'Yellow Tip',
+                'color_hex', '#fde047',
+                'min_classes', 3,
+                'min_months', 1,
+                'requires_approval', false,
+                'is_tip', true,
+                'tip_color_hex', '#eab308'
+            ),
+            jsonb_build_object(
+                'name', 'Green',
+                'color_hex', '#22c55e',
+                'min_classes', 12,
+                'min_months', 3,
+                'requires_approval', true,
+                'is_tip', false
+            ),
+            jsonb_build_object(
                 'name', 'Green Tip',
                 'color_hex', '#22c55e',
                 'min_classes', 3,
@@ -217,8 +248,8 @@ BEGIN
         )
     ) AS synced;
 
-    IF jsonb_array_length(v_ranks) <> 2 THEN
-        RAISE EXCEPTION 'Expected two ranks after update sync, got %', jsonb_array_length(v_ranks);
+    IF jsonb_array_length(v_ranks) <> 5 THEN
+        RAISE EXCEPTION 'Expected five ranks after update sync, got %', jsonb_array_length(v_ranks);
     END IF;
 
     IF NOT EXISTS (
@@ -232,14 +263,14 @@ BEGIN
         RAISE EXCEPTION 'Existing rank was not updated in place.';
     END IF;
 
-    IF EXISTS (
+    IF NOT EXISTS (
         SELECT 1
         FROM public.belt_ranks
         WHERE ladder_id = v_ladder
           AND studio_id = v_studio
           AND name = 'Yellow'
     ) THEN
-        RAISE EXCEPTION 'Removed rank still exists after sync.';
+        RAISE EXCEPTION 'Existing second rank was not preserved during sync.';
     END IF;
 
     SELECT COUNT(*)
@@ -248,9 +279,69 @@ BEGIN
     WHERE ladder_id = v_ladder
       AND studio_id = v_studio;
 
-    IF v_rank_count <> 2 THEN
-        RAISE EXCEPTION 'Expected two persisted ranks after update sync, got %', v_rank_count;
+    IF v_rank_count <> 5 THEN
+        RAISE EXCEPTION 'Expected five persisted ranks after update sync, got %', v_rank_count;
     END IF;
+
+    v_tip_rank := (v_ranks->2->>'id')::UUID;
+    v_green_rank := (v_ranks->3->>'id')::UUID;
+
+    UPDATE public.student_program_memberships
+    SET current_belt_rank_id = v_tip_rank
+    WHERE student_id = v_student_before_rank
+      AND program_id = v_program;
+
+    UPDATE public.student_program_memberships
+    SET current_belt_rank_id = NULL
+    WHERE student_id = v_student_before_rank
+      AND program_id = v_program;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_student_before_rank
+          AND current_belt_rank_id IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'Clearing an existing rank during an update was rewritten to the starting belt.';
+    END IF;
+
+    UPDATE public.student_program_memberships
+    SET current_belt_rank_id = v_tip_rank
+    WHERE student_id = v_student_before_rank
+      AND program_id = v_program;
+
+    UPDATE public.students
+    SET current_belt_rank_id = v_tip_rank
+    WHERE id = v_student_before_rank
+      AND studio_id = v_studio;
+
+    UPDATE public.student_program_memberships
+    SET current_belt_rank_id = v_green_rank
+    WHERE student_id = v_student_after_rank
+      AND program_id = v_program;
+
+    UPDATE public.students
+    SET current_belt_rank_id = v_green_rank
+    WHERE id = v_student_after_rank
+      AND studio_id = v_studio;
+
+    INSERT INTO public.students (
+        id, studio_id, legal_first_name, legal_last_name, status,
+        program_id, current_belt_rank_id
+    )
+    VALUES (
+        v_ended_student, v_studio, 'Ended', 'Rank', 'inactive',
+        v_program, v_green_rank
+    );
+
+    INSERT INTO public.student_program_memberships (
+        studio_id, student_id, program_id, status, ended_at,
+        current_belt_rank_id
+    )
+    VALUES (
+        v_studio, v_ended_student, v_program, 'ended', CURRENT_DATE,
+        v_green_rank
+    );
 
     SELECT synced.ranks
     INTO v_ranks
@@ -260,17 +351,27 @@ BEGIN
         'Tip',
         jsonb_build_array(
             jsonb_build_object(
-                'name', 'Blue Belt',
-                'color_hex', '#3b82f6',
-                'min_classes', 0,
+                'id', v_first_rank,
+                'name', 'White Updated',
+                'color_hex', '#eeeeee',
+                'min_classes', 1,
                 'min_months', 0,
                 'requires_approval', false,
+                'is_tip', false
+            ),
+            jsonb_build_object(
+                'id', v_second_rank,
+                'name', 'Yellow',
+                'color_hex', '#facc15',
+                'min_classes', 10,
+                'min_months', 2,
+                'requires_approval', true,
                 'is_tip', false
             )
         )
     ) AS synced;
 
-    v_replacement_rank := (v_ranks->0->>'id')::UUID;
+    v_replacement_rank := v_second_rank;
 
     IF EXISTS (
         SELECT 1
@@ -278,7 +379,7 @@ BEGIN
         WHERE student_id IN (v_student_before_rank, v_student_after_rank)
           AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
     ) THEN
-        RAISE EXCEPTION 'Deleting an assigned starting rank did not move memberships to its replacement.';
+        RAISE EXCEPTION 'Deleting a tip or later belt did not move active memberships to the nearest preceding full belt.';
     END IF;
 
     IF EXISTS (
@@ -287,7 +388,25 @@ BEGIN
         WHERE id IN (v_student_before_rank, v_student_after_rank)
           AND current_belt_rank_id IS DISTINCT FROM v_replacement_rank
     ) THEN
-        RAISE EXCEPTION 'Deleting an assigned starting rank did not move primary student ranks to its replacement.';
+        RAISE EXCEPTION 'Deleting a tip or later belt did not move primary student ranks to the nearest preceding full belt.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_ended_student
+          AND current_belt_rank_id IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'Deleting a rank rewrote an ended membership instead of leaving foreign-key cleanup neutral.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_ended_student
+          AND current_belt_rank_id IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'Deleting a rank reassigned an inactive student without an active membership.';
     END IF;
 
     BEGIN

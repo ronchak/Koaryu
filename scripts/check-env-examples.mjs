@@ -45,6 +45,7 @@ const backendPublicKeys = [
   "DEMO_RESET_STUDIO_IDS",
   "STRIPE_MODE",
   "LIVE_BILLING_ENABLED",
+  "CORE_SELF_CHECKOUT_ENABLED",
   "OPERATIONAL_ALERTS_ENABLED",
   "BILLING_PLATFORM_FEE_BPS",
   "API_V1_PREFIX",
@@ -96,6 +97,7 @@ const renderCriticalValues = new Map([
   ["SUPABASE_DEVELOPMENT_PROJECT_REF", ""],
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "false"],
+  ["CORE_SELF_CHECKOUT_ENABLED", "true"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);

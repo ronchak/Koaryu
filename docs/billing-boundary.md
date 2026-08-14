@@ -248,9 +248,9 @@ The domain write and audit insert are not one database transaction. After an amb
 
 ## Independent production approvals and live activation gate
 
-Application deployment, production migration, and live Stripe activation are three independent approvals. On 2026-08-04, the product owner approved live Koaryu Core Checkout and Customer Portal activation. That approval is limited to the `core_subscription` scope and does not approve Connect onboarding, Connect payments, tuition collection, refunds, or other Stripe mutations. Activation is not complete until the production migration, exact-candidate deployment, reconciliation checkpoint, and studio authorization gates below are satisfied.
+Application deployment, production migration, and live Stripe activation are three independent approvals. On 2026-08-04, the product owner approved live Koaryu Core Checkout and Customer Portal activation. On 2026-08-13, the product owner approved production self-service Core checkout for newly registered studios. Those approvals are limited to `customer.create`, `core_checkout_session.create`, and `customer_portal_session.create`; they do not approve Connect onboarding, Connect payments, tuition collection, refunds, or other Stripe mutations.
 
-`LIVE_BILLING_ENABLED` remains `false` by default until the approved activation is executed. The durable authorization source and central mutation policy are defined in `stripe-live-billing-rollout.md`: the global flag alone is insufficient, and runtime also requires an unexpired exact-studio scope and an exact-candidate all-clear reconciliation checkpoint. Connect scopes additionally require current account binding and readiness.
+`CORE_SELF_CHECKOUT_ENABLED` is the production-only interlock for those three named Core operations. It requires an exact deployed `RENDER_GIT_COMMIT`, an authenticated studio Admin at the endpoint boundary, and an explicit studio ID at the central Stripe mutation policy. It never authorizes a generic `customer.*` operation. `LIVE_BILLING_ENABLED` remains `false` by default and continues to own every Connect or tuition mutation; those operations still require an unexpired exact-studio scope and exact-candidate all-clear reconciliation checkpoint as defined in `stripe-live-billing-rollout.md`.
 
 Activation execution must name each exact transition and prove in Stripe test mode:
 

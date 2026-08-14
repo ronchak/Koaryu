@@ -243,7 +243,7 @@ export function RankPlanPanel({
                   <span
                     draggable
                     data-belt-drag-handle={group.belt.id}
-                    aria-label={`Drag ${group.belt.name} to reorder`}
+                    aria-hidden="true"
                     title={`Drag ${group.belt.name} to reorder`}
                     onDragStart={(event) => onBeltDragStart(groupIndex, event)}
                     onDragEnd={onBeltDragEnd}
@@ -352,7 +352,7 @@ export function RankPlanPanel({
                           <span
                             draggable
                             data-tip-drag-handle={tip.id}
-                            aria-label={`Drag ${tip.name} to reorder`}
+                            aria-hidden="true"
                             title={`Drag ${tip.name} to reorder`}
                             onDragStart={(event) => onTipDragStart(groupIndex, tipIndex, event)}
                             onDragEnd={onTipDragEnd}

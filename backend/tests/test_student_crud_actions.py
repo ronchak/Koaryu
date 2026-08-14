@@ -3,7 +3,12 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.schemas.student import GuardianCreate, StudentCreate, StudentUpdate
+from app.schemas.student import (
+    GuardianCreate,
+    StudentCreate,
+    StudentProgramMembershipResponse,
+    StudentUpdate,
+)
 from app.services.student_crud_actions import StudentCrudActions
 from app.services.student_write_payload import prepare_student_write_payload
 from tests.fakes.supabase import RpcBackedSupabase
@@ -187,6 +192,39 @@ class StudentCrudActionsTest(unittest.TestCase):
         self.assertEqual(supabase.tables["student_program_memberships"][0]["status"], "ended")
         self.assertEqual(supabase.tables["student_program_memberships"][1]["program_id"], "program-2")
         self.assert_no_direct_operational_writes(supabase)
+
+    def test_create_response_uses_trigger_updated_primary_membership_rank(self):
+        supabase = FakeStudentWriteSupabase({
+            "programs": [{"id": "program-1", "studio_id": "studio-1"}],
+            "students": [],
+            "student_program_memberships": [],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        })
+        membership = StudentProgramMembershipResponse(
+            id="membership-1",
+            studio_id="studio-1",
+            student_id="student-1",
+            program_id="program-1",
+            status="active",
+            current_belt_rank_id="rank-white",
+            created_at="2026-05-20T00:00:00+00:00",
+            updated_at="2026-05-20T00:00:00+00:00",
+        )
+        actions = build_actions(supabase, memberships=[membership])
+
+        student = asyncio.run(actions.create_student(
+            StudentCreate(
+                legal_first_name="Aiko",
+                legal_last_name="Tanaka",
+                program_id="program-1",
+            ),
+            "studio-1",
+            "actor-1",
+        ))
+
+        self.assertEqual(student["current_belt_rank_id"], "rank-white")
 
     def assert_no_direct_operational_writes(self, supabase):
         operational_tables = {

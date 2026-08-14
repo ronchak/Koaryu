@@ -17,6 +17,11 @@ StripeMode = Literal["test", "live"]
 
 LIVE_MUTATIONS_DISABLED_DETAIL = "Live Stripe mutations are disabled for this environment."
 STRIPE_MODE_MISMATCH_DETAIL = "Stripe mode does not match the configured Stripe API key."
+CORE_SELF_CHECKOUT_OPERATIONS = frozenset({
+    "customer.create",
+    "core_checkout_session.create",
+    "customer_portal_session.create",
+})
 
 
 class StripeMutationBlocked(HTTPException):
@@ -66,7 +71,9 @@ def expected_stripe_livemode(settings: Any) -> Optional[bool]:
 class StripeMutationPermit:
     operation: str
     mode: StripeMode
-    authorization_source: Literal["test_mode", "durable_live_scope"] = "test_mode"
+    authorization_source: Literal[
+        "test_mode", "core_self_checkout", "durable_live_scope"
+    ] = "test_mode"
     studio_id: Optional[str] = None
 
 
@@ -123,6 +130,18 @@ class StripeMutationPolicy:
 
         if declared_mode == "test":
             return StripeMutationPermit(operation=operation, mode="test", studio_id=studio_id)
+
+        if (
+            live_scope == "core_subscription"
+            and operation in CORE_SELF_CHECKOUT_OPERATIONS
+            and bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
+        ):
+            return StripeMutationPermit(
+                operation=operation,
+                mode="live",
+                authorization_source="core_self_checkout",
+                studio_id=studio_id,
+            )
 
         if not bool(getattr(self.settings, "LIVE_BILLING_ENABLED", False)):
             raise StripeMutationBlocked(

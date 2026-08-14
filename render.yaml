@@ -26,6 +26,8 @@ services:
         value: live
       - key: LIVE_BILLING_ENABLED
         value: "false"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "true"
       - key: SUPABASE_URL
         value: https://mimguepumzsgmcaycdsh.supabase.co
       - key: SUPABASE_DEVELOPMENT_PROJECT_REF

@@ -13,6 +13,7 @@ import {
   buildDashboardStudentStats,
   buildDashboardTestReadinessStats,
   countDashboardTodaySessions,
+  isDashboardBeltSetupComplete,
   isDashboardSetupStepComplete,
 } from "../src/lib/dashboard-page-model.ts";
 
@@ -81,6 +82,8 @@ describe("dashboard page model", () => {
     assert.equal(isDashboardSetupStepComplete(true, false), true);
     assert.equal(isDashboardSetupStepComplete(false, false), false);
     assert.equal(isDashboardSetupStepComplete(undefined, true), true);
+    assert.equal(isDashboardBeltSetupComplete(false, 0, 1), true);
+    assert.equal(isDashboardBeltSetupComplete(false, 0, 0), false);
   });
 
   it("counts roster, lead, belt, inactivity, churn, and readiness stats outside the route", () => {

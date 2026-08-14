@@ -70,7 +70,7 @@ class StudentCrudActions:
         student = first_rpc_row(result)
         if not student:
             raise HTTPException(status_code=500, detail="Failed to create student")
-        return self.row_to_response(student)
+        return self._write_response(student, studio_id)
 
     async def get_student(self, student_id: str, studio_id: str) -> StudentResponse:
         result = (
@@ -134,7 +134,28 @@ class StudentCrudActions:
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
 
-        return self.row_to_response(student)
+        return self._write_response(student, studio_id)
+
+    def _write_response(self, student: dict, studio_id: str) -> StudentResponse:
+        memberships = self.fetch_memberships_for_student(student["id"], studio_id)
+        if not student.get("current_belt_rank_id"):
+            primary_membership = next(
+                (
+                    membership
+                    for membership in memberships
+                    if membership.program_id == student.get("program_id")
+                    and membership.status in {"active", "paused"}
+                    and not membership.ended_at
+                    and membership.current_belt_rank_id
+                ),
+                None,
+            )
+            if primary_membership:
+                student = {
+                    **student,
+                    "current_belt_rank_id": primary_membership.current_belt_rank_id,
+                }
+        return self.row_to_response(student, memberships=memberships)
 
     async def soft_delete_student(
         self, student_id: str, studio_id: str, actor_id: str

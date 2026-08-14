@@ -36,6 +36,14 @@ BEGIN
     IF NEW.current_belt_rank_id IS NULL
        AND NEW.status IN ('active', 'paused')
        AND NEW.ended_at IS NULL
+       AND (
+           TG_OP = 'INSERT'
+           OR (
+               TG_OP = 'UPDATE'
+               AND OLD.ended_at IS NOT NULL
+               AND NEW.ended_at IS NULL
+           )
+       )
        AND pg_trigger_depth() = 1 THEN
         SELECT br.id
         INTO NEW.current_belt_rank_id
@@ -139,6 +147,24 @@ BEGIN
         RETURN NEW;
     END IF;
 
+    -- Match write_student_profile_atomic's students-then-memberships lock order
+    -- so a concurrent rank-plan save cannot deadlock with a profile write.
+    PERFORM 1
+    FROM public.students student
+    WHERE student.studio_id = NEW.studio_id
+      AND EXISTS (
+          SELECT 1
+          FROM public.student_program_memberships membership
+          WHERE membership.studio_id = NEW.studio_id
+            AND membership.student_id = student.id
+            AND membership.program_id = target_program_id
+            AND membership.status IN ('active', 'paused')
+            AND membership.ended_at IS NULL
+            AND membership.current_belt_rank_id IS NULL
+      )
+    ORDER BY student.id
+    FOR UPDATE;
+
     UPDATE public.student_program_memberships
     SET current_belt_rank_id = starting_rank_id,
         updated_at = NOW()
@@ -160,9 +186,10 @@ CREATE TRIGGER backfill_starting_belt_for_program_trigger
     FOR EACH ROW
     EXECUTE FUNCTION public.backfill_starting_belt_for_program();
 
--- Move assignments away from a rank before its foreign-key cascade runs. If a
--- replacement full belt exists, use the first one; otherwise leave the program
--- membership unassigned until a later full belt is created.
+-- Move active assignments away from a rank before its foreign-key cascade
+-- runs. Use the nearest preceding full belt so a removed tip or rank never
+-- silently resets holders to the bottom of the ladder. Historical ended
+-- memberships are left to the foreign key's SET NULL behavior.
 CREATE OR REPLACE FUNCTION public.reassign_memberships_before_belt_rank_delete()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -190,7 +217,9 @@ BEGIN
       AND br.studio_id = OLD.studio_id
       AND br.id <> OLD.id
       AND br.is_tip = FALSE
-    ORDER BY br.display_order, br.created_at, br.id
+      AND (br.display_order, br.created_at, br.id)
+          < (OLD.display_order, OLD.created_at, OLD.id)
+    ORDER BY br.display_order DESC, br.created_at DESC, br.id DESC
     LIMIT 1;
 
     UPDATE public.student_program_memberships
@@ -198,14 +227,26 @@ BEGIN
         updated_at = NOW()
     WHERE studio_id = OLD.studio_id
       AND program_id = target_program_id
-      AND current_belt_rank_id = OLD.id;
+      AND current_belt_rank_id = OLD.id
+      AND status IN ('active', 'paused')
+      AND ended_at IS NULL;
 
     UPDATE public.students
     SET current_belt_rank_id = replacement_rank_id,
         updated_at = NOW()
     WHERE studio_id = OLD.studio_id
       AND program_id = target_program_id
-      AND current_belt_rank_id = OLD.id;
+      AND current_belt_rank_id = OLD.id
+      AND EXISTS (
+          SELECT 1
+          FROM public.student_program_memberships membership
+          WHERE membership.studio_id = OLD.studio_id
+            AND membership.student_id = students.id
+            AND membership.program_id = target_program_id
+            AND membership.status IN ('active', 'paused')
+            AND membership.ended_at IS NULL
+            AND membership.current_belt_rank_id IS NOT DISTINCT FROM replacement_rank_id
+      );
 
     RETURN OLD;
 END;

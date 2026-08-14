@@ -20,7 +20,10 @@ import {
   type DashboardBillingSummary,
 } from "./dashboard-billing-summary";
 import { formatCount } from "./dashboard-page-utils";
-import { isDashboardSetupStepComplete } from "./dashboard-page-model";
+import {
+  isDashboardBeltSetupComplete,
+  isDashboardSetupStepComplete,
+} from "./dashboard-page-model";
 import type {
   buildDashboardBeltStats,
   buildDashboardChurnStats,
@@ -136,6 +139,7 @@ export function buildDashboardPageComposition({
     beltStats: displayStats.displayedBeltStats,
     billingSummary: displayStats.displayedBillingSummary,
     canSeeBilling,
+    localBeltCount: localStats.beltStats.beltCount,
     programs,
     sessionCount,
     studentCount,
@@ -371,6 +375,7 @@ function buildDashboardSetupSteps({
   beltStats,
   billingSummary,
   canSeeBilling,
+  localBeltCount,
   programs,
   sessionCount,
   studentCount,
@@ -380,6 +385,7 @@ function buildDashboardSetupSteps({
   beltStats: DashboardBeltStats;
   billingSummary: DashboardBillingSummary;
   canSeeBilling: boolean;
+  localBeltCount: number;
   programs: Program[];
   sessionCount: number;
   studentCount: number;
@@ -391,9 +397,10 @@ function buildDashboardSetupSteps({
     programs.some((program) => !program.archived_at)
   );
   const hasStudents = isDashboardSetupStepComplete(summary?.setup.has_students, studentCount > 0);
-  const hasBeltSystem = isDashboardSetupStepComplete(
+  const hasBeltSystem = isDashboardBeltSetupComplete(
     summary?.setup.has_belt_system,
-    beltStats.beltCount > 0
+    beltStats.beltCount,
+    localBeltCount
   );
   const hasSchedule = isDashboardSetupStepComplete(
     summary?.setup.has_weekly_classes,

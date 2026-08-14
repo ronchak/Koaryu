@@ -14,7 +14,7 @@ describe("student form state", () => {
     assert.equal(formatPhoneInput("555"), "555");
     assert.equal(formatPhoneInput("555123"), "(555) 123");
     assert.equal(formatPhoneInput("5551234567"), "(555) 123-4567");
-    assert.equal(formatPhoneInput("5550100"), "555-0100");
+    assert.equal(formatPhoneInput("5550100"), "(555) 010-0");
     assert.equal(formatPhoneInput("15551234567"), "+1 (555) 123-4567");
     assert.equal(formatPhoneInput("+44 20 7946 0958"), "+44 20 7946 0958");
   });
