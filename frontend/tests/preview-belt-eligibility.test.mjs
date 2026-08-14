@@ -147,4 +147,59 @@ describe("preview belt eligibility", () => {
     assert.equal(rows[0].classes_met, true);
     assert.equal(rows[0].time_met, true);
   });
+
+  it("anchors preview progress to the latest promotion for the exact membership", () => {
+    const rows = buildPreviewEligibilityForLadder({
+      ladderId: ladder.id,
+      beltLadders: [ladder],
+      beltRanks: ranks,
+      students: [student("promoted")],
+      seedRows: [{
+        student_id: "promoted",
+        student_program_membership_id: "promoted-membership",
+        program_id: "program-bjj",
+        student_name: "Promoted Student",
+        current_rank_id: "white",
+        next_rank_id: "yellow",
+        classes_since_promo: 12,
+        classes_required: 10,
+        days_at_rank: 90,
+        days_required: 60,
+        classes_met: true,
+        time_met: true,
+        needs_approval: true,
+        is_eligible: false,
+      }],
+      promotionHistoryByStudent: {
+        promoted: [
+          {
+            id: "other-membership-promotion",
+            studio_id: "mock-studio",
+            student_id: "promoted",
+            student_program_membership_id: "other-membership",
+            program_id: "other-program",
+            from_rank_id: null,
+            to_rank_id: "white",
+            promoted_at: "2026-06-03T00:00:00.000Z",
+          },
+          {
+            id: "current-membership-promotion",
+            studio_id: "mock-studio",
+            student_id: "promoted",
+            student_program_membership_id: "promoted-membership",
+            program_id: "program-bjj",
+            from_rank_id: null,
+            to_rank_id: "white",
+            promoted_at: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      },
+      nowMs: Date.parse("2026-06-01T12:00:00.000Z"),
+    });
+
+    assert.equal(rows[0].classes_since_promo, 0);
+    assert.equal(rows[0].days_at_rank, 0);
+    assert.equal(rows[0].classes_met, false);
+    assert.equal(rows[0].time_met, false);
+  });
 });

@@ -33,6 +33,7 @@ import {
 } from "@/lib/store-reset-model";
 import {
   setPromotionHistoryCacheItems,
+  toPromotionHistoryByStudent,
   type PromotionHistoryCache,
   type PromotionHistoryRequests,
 } from "@/lib/store-promotion-history";
@@ -445,11 +446,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [isPreviewMode, reconcileSchedule]);
 
   const commitPromotionHistoryCache = useCallback((studentId: string, items: Promotion[]) => {
-    setPromotionHistoryCache((current) => {
-      const next = setPromotionHistoryCacheItems(current, studentId, items);
-      promotionHistoryCacheRef.current = next;
-      return next;
-    });
+    const next = setPromotionHistoryCacheItems(
+      promotionHistoryCacheRef.current,
+      studentId,
+      items,
+    );
+    promotionHistoryCacheRef.current = next;
+    setPromotionHistoryCache(next);
   }, []);
 
   const updateCurrentLadderId = useCallback((nextLadderId: string | null) => {
@@ -789,6 +792,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       beltRanks: beltRanksRef.current,
       students: studentsRef.current,
       seedRows: ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [],
+      promotionHistoryByStudent: toPromotionHistoryByStudent(promotionHistoryCacheRef.current),
     });
   }, []);
 

@@ -113,12 +113,16 @@ export function buildPreviewPromotion(
   {
     studentId,
     toRankId,
+    studentProgramMembershipId,
+    programId,
     notes,
     idFactory,
     now = new Date(),
   }: {
     studentId: string;
     toRankId: string;
+    studentProgramMembershipId?: string | null;
+    programId?: string | null;
     notes?: string;
     idFactory: () => string;
     now?: Date;
@@ -136,44 +140,164 @@ export function buildPreviewPromotion(
 
   const nowIso = now.toISOString();
   const rankById = new Map(ranks.map((rank) => [rank.id, rank]));
+  const currentMemberships = (student.program_memberships || []).filter((membership) =>
+    (membership.status === "active" || membership.status === "paused") &&
+    !membership.ended_at
+  );
+  let targetMembership = studentProgramMembershipId
+    ? currentMemberships.find((membership) => membership.id === studentProgramMembershipId)
+    : undefined;
+
+  if (studentProgramMembershipId && !targetMembership) {
+    throw new Error("Student program membership not found");
+  }
+  if (!targetMembership && programId) {
+    targetMembership = currentMemberships.find((membership) => membership.program_id === programId);
+    if (!targetMembership && currentMemberships.length > 0) {
+      throw new Error("Student program membership not found");
+    }
+  }
+  if (targetMembership && programId && targetMembership.program_id !== programId) {
+    throw new Error("Student program membership does not match program");
+  }
+  if (!targetMembership && !studentProgramMembershipId && !programId) {
+    targetMembership = currentMemberships.find((membership) => {
+      const currentRank = membership.current_belt_rank_id
+        ? rankById.get(membership.current_belt_rank_id)
+        : null;
+      return currentRank?.ladder_id === targetRank.ladder_id;
+    }) ?? currentMemberships.find((membership) =>
+      !membership.current_belt_rank_id && membership.program_id === student.program_id
+    );
+  }
+
+  const fromRankId = targetMembership
+    ? targetMembership.current_belt_rank_id ?? null
+    : student.current_belt_rank_id;
+  const targetProgramId = targetMembership?.program_id ?? programId ?? student.program_id;
   const promotion: Promotion = {
     id: idFactory(),
     studio_id: student.studio_id,
     student_id: studentId,
-    from_rank_id: student.current_belt_rank_id,
+    student_program_membership_id: targetMembership?.id ?? null,
+    program_id: targetProgramId ?? null,
+    from_rank_id: fromRankId,
     to_rank_id: toRankId,
     promoted_by: "preview-user",
     notes,
     promoted_at: nowIso,
     student_name: student.preferred_name || `${student.legal_first_name} ${student.legal_last_name}`,
-    from_rank_name: ranks.find((rank) => rank.id === student.current_belt_rank_id)?.name,
+    from_rank_name: ranks.find((rank) => rank.id === fromRankId)?.name,
     to_rank_name: targetRank.name,
   };
 
   return {
     promotion,
-    students: students.map((item) =>
-      item.id === studentId
-        ? {
-            ...item,
-            current_belt_rank_id: toRankId,
-            program_memberships: item.program_memberships?.map((membership) => {
-              const membershipRank = membership.current_belt_rank_id
-                ? rankById.get(membership.current_belt_rank_id)
-                : null;
-              const belongsToTargetLadder = membershipRank?.ladder_id === targetRank.ladder_id;
-              const isUnrankedPrimary = !membership.current_belt_rank_id
-                && membership.program_id === item.program_id;
-              const isCurrentMembership = (
-                membership.status === "active" || membership.status === "paused"
-              ) && !membership.ended_at;
-              return isCurrentMembership && (belongsToTargetLadder || isUnrankedPrimary)
-                ? { ...membership, current_belt_rank_id: toRankId, updated_at: nowIso }
-                : membership;
-            }),
-            updated_at: nowIso,
-          }
-        : item
-    ),
+    students: students.map((item) => {
+      if (item.id !== studentId) return item;
+
+      const updatesPrimaryRank = !targetMembership || targetMembership.program_id === item.program_id;
+      return {
+        ...item,
+        current_belt_rank_id: updatesPrimaryRank ? toRankId : item.current_belt_rank_id,
+        program_memberships: item.program_memberships?.map((membership) =>
+          membership.id === targetMembership?.id
+            ? {
+                ...membership,
+                current_belt_rank_id: toRankId,
+                current_belt_rank_name: targetRank.name,
+                current_belt_rank_color: targetRank.color_hex,
+                updated_at: nowIso,
+              }
+            : membership
+        ),
+        updated_at: nowIso,
+      };
+    }),
   };
+}
+
+function sortRanksForRepair(ranks: BeltRank[]): BeltRank[] {
+  return [...ranks].sort((left, right) =>
+    left.display_order - right.display_order || left.id.localeCompare(right.id)
+  );
+}
+
+export function repairPreviewStudentRanksForLadder(
+  students: Student[],
+  ladder: BeltLadder,
+  previousRanks: BeltRank[],
+  nextRanks: BeltRank[],
+  now = new Date()
+): Student[] {
+  if (!ladder.program_id) return students;
+
+  const orderedPrevious = sortRanksForRepair(previousRanks);
+  const orderedNext = sortRanksForRepair(nextRanks);
+  const previousById = new Map(orderedPrevious.map((rank) => [rank.id, rank]));
+  const nextById = new Map(orderedNext.map((rank) => [rank.id, rank]));
+  const previousFullRanks = orderedPrevious.filter((rank) => !rank.is_tip);
+  const nextFullRanks = orderedNext.filter((rank) => !rank.is_tip);
+  const nowIso = now.toISOString();
+
+  const replacementForDeletedRank = (rankId: string): BeltRank | null => {
+    const removedRank = previousById.get(rankId);
+    if (!removedRank || nextFullRanks.length === 0) return nextFullRanks[0] ?? null;
+
+    const survivingFullRanks = nextFullRanks
+      .map((rank) => ({ rank, previous: previousById.get(rank.id) }))
+      .filter((entry): entry is { rank: BeltRank; previous: BeltRank } => Boolean(entry.previous));
+    const preceding = survivingFullRanks
+      .filter((entry) => entry.previous.display_order <= removedRank.display_order)
+      .sort((left, right) => right.previous.display_order - left.previous.display_order)[0];
+    if (preceding) return preceding.rank;
+
+    const following = survivingFullRanks
+      .filter((entry) => entry.previous.display_order > removedRank.display_order)
+      .sort((left, right) => left.previous.display_order - right.previous.display_order)[0];
+    return following?.rank ?? nextFullRanks[0] ?? null;
+  };
+
+  return students.map((student) => {
+    let primaryRankId = student.current_belt_rank_id;
+    let changed = false;
+    const programMemberships = student.program_memberships?.map((membership) => {
+      const isTargetMembership = membership.program_id === ladder.program_id &&
+        (membership.status === "active" || membership.status === "paused") &&
+        !membership.ended_at;
+      if (!isTargetMembership) return membership;
+
+      let nextRank: BeltRank | null | undefined;
+      if (!membership.current_belt_rank_id) {
+        nextRank = previousFullRanks.length === 0 ? nextFullRanks[0] : undefined;
+      } else if (!nextById.has(membership.current_belt_rank_id) && previousById.has(membership.current_belt_rank_id)) {
+        nextRank = replacementForDeletedRank(membership.current_belt_rank_id);
+      }
+
+      if (nextRank === undefined || (nextRank?.id ?? null) === (membership.current_belt_rank_id ?? null)) {
+        return membership;
+      }
+
+      changed = true;
+      if (membership.program_id === student.program_id) {
+        primaryRankId = nextRank?.id ?? null;
+      }
+      return {
+        ...membership,
+        current_belt_rank_id: nextRank?.id ?? null,
+        current_belt_rank_name: nextRank?.name ?? null,
+        current_belt_rank_color: nextRank?.color_hex ?? null,
+        updated_at: nowIso,
+      };
+    });
+
+    return changed
+      ? {
+          ...student,
+          current_belt_rank_id: primaryRankId,
+          program_memberships: programMemberships,
+          updated_at: nowIso,
+        }
+      : student;
+  });
 }

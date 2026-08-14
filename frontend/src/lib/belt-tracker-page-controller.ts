@@ -345,9 +345,7 @@ export function useBeltTrackerPageController({
     try {
       if (isPreviewMode) {
         await promoteStudent(
-          promoteEntry.student_id,
-          targetRankId,
-          promotionNotes.trim() || undefined
+          buildPromotionRequestBody(promoteEntry, targetRankId, promotionNotes)
         );
       } else {
         if (!token) {

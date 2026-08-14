@@ -6,6 +6,7 @@ import {
   buildBeltLadderSyncPayload,
   buildPreviewBeltLadderFromRanks,
   buildPreviewPromotion,
+  repairPreviewStudentRanksForLadder,
   selectBeltLadder,
   updatePreviewLadderSubRankTerm,
   upsertBeltLadder,
@@ -25,6 +26,7 @@ import type {
   BeltRank,
   DemoteStudent,
   EligibilityEntry,
+  PromoteStudent,
   Promotion,
   Student,
 } from "@/types";
@@ -165,6 +167,7 @@ export function useStoreBeltActions({
 
   const setBeltRanks = useCallback(async (ranks: BeltRank[], options?: { subRankTerm?: string }) => {
     if (isPreviewMode) {
+      const previousRanks = beltRanksRef.current;
       const nextPreviewLadder = buildPreviewBeltLadderFromRanks(
         beltLaddersRef.current,
         ranks,
@@ -176,8 +179,19 @@ export function useStoreBeltActions({
           requestedSubRankTerm: options?.subRankTerm,
         }
       );
+      const nextLadders = upsertBeltLadder(beltLaddersRef.current, nextPreviewLadder);
+      const repairedStudents = repairPreviewStudentRanksForLadder(
+        studentsRef.current,
+        nextPreviewLadder,
+        previousRanks,
+        ranks,
+      );
+      persistStudents(repairedStudents);
+      beltRanksRef.current = ranks;
+      beltLaddersRef.current = nextLadders;
       persistBeltRanks(ranks);
-      applyLadderSelection(upsertBeltLadder(beltLaddersRef.current, nextPreviewLadder), nextPreviewLadder.id);
+      applyLadderSelection(nextLadders, nextPreviewLadder.id);
+      await loadEligibilityForLadder(nextPreviewLadder.id, { force: true });
       return;
     }
 
@@ -206,12 +220,15 @@ export function useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
     beltLaddersRef,
+    beltRanksRef,
     currentLadderIdRef,
     ensureCurrentLadder,
     isPreviewMode,
     ladderName,
     loadEligibilityForLadder,
     persistBeltRanks,
+    persistStudents,
+    studentsRef,
     subRankTerm,
   ]);
 
@@ -318,16 +335,19 @@ export function useStoreBeltActions({
     }
   }, [commitPromotionHistoryCache, promotionHistoryCacheRef]);
 
-  const promoteStudent = useCallback(async (studentId: string, toRankId: string, notes?: string) => {
+  const promoteStudent = useCallback(async (data: PromoteStudent) => {
     if (isPreviewMode) {
       const previewPromotion = buildPreviewPromotion(studentsRef.current, beltRanksRef.current, {
-        studentId,
-        toRankId,
-        notes,
+        studentId: data.student_id,
+        toRankId: data.to_rank_id,
+        studentProgramMembershipId: data.student_program_membership_id,
+        programId: data.program_id,
+        notes: data.notes ?? undefined,
         idFactory: localId,
       });
       persistStudents(previewPromotion.students);
-      commitPromotionHistoryItem(studentId, previewPromotion.promotion);
+      commitPromotionHistoryItem(data.student_id, previewPromotion.promotion);
+      await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
 
       return previewPromotion.promotion;
     }
@@ -335,18 +355,14 @@ export function useStoreBeltActions({
     const liveRequest = beginLiveAuthRequest();
     const result = await api.post<Promotion>(
       "/belts/promote",
-      {
-        student_id: studentId,
-        to_rank_id: toRankId,
-        notes,
-      },
+      data,
       liveRequest.token
     );
     if (!liveRequest.isCurrent()) {
       return result;
     }
 
-    commitLivePromotionHistoryItem(studentId, result);
+    commitLivePromotionHistoryItem(data.student_id, result);
 
     await Promise.all([refreshStudents(), refreshBelts(currentLadderIdRef.current)]);
     return result;
@@ -357,6 +373,7 @@ export function useStoreBeltActions({
     commitLivePromotionHistoryItem,
     currentLadderIdRef,
     isPreviewMode,
+    loadEligibilityForLadder,
     persistStudents,
     refreshBelts,
     refreshStudents,
@@ -368,11 +385,14 @@ export function useStoreBeltActions({
       const previewDemotion = buildPreviewPromotion(studentsRef.current, beltRanksRef.current, {
         studentId: data.student_id,
         toRankId: data.to_rank_id,
+        studentProgramMembershipId: data.student_program_membership_id,
+        programId: data.program_id,
         notes: data.reason,
         idFactory: localId,
       });
       persistStudents(previewDemotion.students);
       commitPromotionHistoryItem(data.student_id, previewDemotion.promotion);
+      await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
 
       return previewDemotion.promotion;
     }
@@ -399,6 +419,7 @@ export function useStoreBeltActions({
     commitLivePromotionHistoryItem,
     currentLadderIdRef,
     isPreviewMode,
+    loadEligibilityForLadder,
     persistStudents,
     promotionHistoryRequestsRef,
     refreshBelts,

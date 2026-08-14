@@ -2,6 +2,7 @@ import type {
   BeltLadder,
   BeltRank,
   EligibilityEntry,
+  Promotion,
   Student,
   StudentProgramMembership,
 } from "@/types";
@@ -37,12 +38,54 @@ function studentName(student: Student): string {
   return `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`;
 }
 
+function matchesMembershipContext(
+  item: Pick<EligibilityEntry | Promotion, "student_program_membership_id" | "program_id">,
+  student: Student,
+  membership: StudentProgramMembership | null,
+): boolean {
+  if (membership) {
+    if (item.student_program_membership_id) {
+      return item.student_program_membership_id === membership.id;
+    }
+    if (item.program_id) {
+      return item.program_id === membership.program_id;
+    }
+    return membership.program_id === student.program_id;
+  }
+
+  return !item.student_program_membership_id &&
+    (!item.program_id || item.program_id === student.program_id);
+}
+
+function latestPromotionAtForRank(
+  promotions: Promotion[],
+  student: Student,
+  membership: StudentProgramMembership | null,
+  currentRankId: string | null,
+): string | null {
+  if (!currentRankId) return null;
+
+  let latest: { promotedAt: string; promotedAtMs: number } | null = null;
+  for (const promotion of promotions) {
+    if (promotion.to_rank_id !== currentRankId ||
+        !matchesMembershipContext(promotion, student, membership)) {
+      continue;
+    }
+    const promotedAtMs = Date.parse(promotion.promoted_at);
+    if (Number.isFinite(promotedAtMs) && (!latest || promotedAtMs > latest.promotedAtMs)) {
+      latest = { promotedAt: promotion.promoted_at, promotedAtMs };
+    }
+  }
+  return latest?.promotedAt ?? null;
+}
+
 export function buildPreviewEligibilityForLadder({
   ladderId,
   beltLadders,
   beltRanks,
   students,
   seedRows = [],
+  promotionHistoryByStudent = {},
   nowMs = Date.now(),
 }: {
   ladderId?: string | null;
@@ -50,6 +93,7 @@ export function buildPreviewEligibilityForLadder({
   beltRanks: BeltRank[];
   students: Student[];
   seedRows?: EligibilityEntry[];
+  promotionHistoryByStudent?: Record<string, Promotion[]>;
   nowMs?: number;
 }): EligibilityEntry[] {
   const ladder = beltLadders.find((candidate) => candidate.id === ladderId);
@@ -59,7 +103,6 @@ export function buildPreviewEligibilityForLadder({
   if (orderedRanks.length === 0) return [];
 
   const rankById = new Map(orderedRanks.map((rank) => [rank.id, rank]));
-  const seedByStudentId = new Map(seedRows.map((row) => [row.student_id, row]));
   const entries: EligibilityEntry[] = [];
 
   const addEntry = (
@@ -79,14 +122,24 @@ export function buildPreviewEligibilityForLadder({
     const nextRank = orderedRanks[currentIndex + 1];
     if (!nextRank) return;
 
-    const seed = seedByStudentId.get(student.id);
-    const canReuseSeed =
+    const promotionAnchor = latestPromotionAtForRank(
+      promotionHistoryByStudent[student.id] ?? [],
+      student,
+      membership,
+      currentRank?.id ?? null,
+    );
+    const seed = seedRows.find((row) =>
+      row.student_id === student.id && matchesMembershipContext(row, student, membership)
+    );
+    const canReuseSeed = !promotionAnchor &&
       seed?.current_rank_id === (currentRank?.id ?? null) &&
       seed.next_rank_id === nextRank.id;
     const classesSincePromo = canReuseSeed ? seed.classes_since_promo : 0;
-    const daysAtRank = canReuseSeed
-      ? seed.days_at_rank
-      : daysSince(membership?.started_at ?? student.membership_start_date, nowMs);
+    const daysAtRank = promotionAnchor
+      ? daysSince(promotionAnchor, nowMs)
+      : canReuseSeed
+        ? seed.days_at_rank
+        : daysSince(membership?.started_at ?? student.membership_start_date, nowMs);
     const classesRequired = nextRank.min_classes;
     const daysRequired = nextRank.min_months * 30;
     const classesMet = classesSincePromo >= classesRequired;
