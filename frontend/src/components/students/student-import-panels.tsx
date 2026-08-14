@@ -196,7 +196,7 @@ export function StudentImportDonePanel({
       ) : null}
       {importResult.imported_without_belt_count > 0 ? (
         <p className="text-sm text-text-secondary mt-1">
-          {importResult.imported_without_belt_count} {pluralize(importResult.imported_without_belt_count, "student")} {importResult.imported_without_belt_count === 1 ? "was" : "were"} imported without a current belt, and the original belt text was saved to notes.
+          {importResult.imported_without_belt_count} {pluralize(importResult.imported_without_belt_count, "student")} {importResult.imported_without_belt_count === 1 ? "had an" : "had"} unmatched belt {pluralize(importResult.imported_without_belt_count, "name")} saved to notes. Students in configured programs start at that program&apos;s first full belt; others remain unranked.
         </p>
       ) : null}
       {importResult.normalized_status_count > 0 ? (

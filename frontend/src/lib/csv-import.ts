@@ -178,12 +178,20 @@ export function resolvePreviewImportStudentIds({
     });
   }
   if (beltRankValue?.trim() && !beltRankId) {
+    const hasConfiguredStartingRank = Boolean(
+      programId && beltLadders
+        .filter((ladder) => ladder.program_id === programId)
+        .flatMap((ladder) => ladder.ranks || [])
+        .some((rank) => !rank.is_tip)
+    );
     issues.push({
       code: "unresolved_belt",
       severity: "warning",
       field: "current_belt_rank_id",
       value: beltRankValue,
-      message: `Koaryu preview could not match "${beltRankValue}" to an existing belt rank, so the imported student will not be assigned to a belt rank.`,
+      message: hasConfiguredStartingRank
+        ? `Koaryu preview could not match "${beltRankValue}" to an existing belt rank, so the imported student will start at the program's first full belt. The original belt text will be saved to notes on live import.`
+        : `Koaryu preview could not match "${beltRankValue}" to an existing belt rank, so the imported student will remain unranked. The original belt text will be saved to notes on live import.`,
     });
   }
 

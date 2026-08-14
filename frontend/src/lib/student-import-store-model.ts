@@ -333,7 +333,7 @@ export function buildPreviewStudentImportResult({
       : "active";
 
     const resolvedBeltRankId = previewResolution.beltRankId || (
-      !mapped.current_belt_rank_id && previewResolution.programId
+      previewResolution.programId
         ? findPreviewStartingRankId(
           previewResolution.programId,
           beltLadders,

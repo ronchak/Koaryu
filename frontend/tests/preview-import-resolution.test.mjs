@@ -183,4 +183,46 @@ describe("preview import resolution", () => {
       "rank-white"
     );
   });
+
+  it("truthfully warns and defaults a program student when requested belt text is unresolved", () => {
+    const stripe = rank("rank-stripe-1", "Stripe 1", -1, true);
+    const white = rank("rank-white", "White Belt", 0);
+    const execution = buildPreviewStudentImportResult({
+      rows: [{ First: "Jules", Last: "Park", Program: "Brazilian Jiu Jitsu", Belt: "Cerulean" }],
+      mapping: {
+        First: "legal_first_name",
+        Last: "legal_last_name",
+        Program: "program_id",
+        Belt: "current_belt_rank_id",
+      },
+      options: {
+        create_missing_programs: false,
+        create_missing_belts: false,
+        import_without_unresolved_belt: true,
+        status_alias_mode: "normalize",
+      },
+      programs: [program("program-bjj", "Brazilian Jiu Jitsu")],
+      beltLadders: [{
+        id: "ladder-bjj",
+        studio_id: "mock-studio",
+        name: "BJJ",
+        program_id: "program-bjj",
+        sub_rank_term: "Stripe",
+        created_at: "2026-05-01T00:00:00.000Z",
+        updated_at: "2026-05-01T00:00:00.000Z",
+        ranks: [stripe, white],
+      }],
+      fallbackRanks: [stripe, white],
+      existingStudents: [],
+      idFactory: idFactory(),
+      now: () => new Date("2026-05-24T12:00:00.000Z"),
+      nowMs: () => new Date("2026-05-24T12:00:00.000Z").getTime(),
+    });
+
+    assert.equal(execution.importedStudents[0].current_belt_rank_id, "rank-white");
+    assert.equal(
+      execution.result.rows[0].issues.find((issue) => issue.code === "unresolved_belt")?.message,
+      "Koaryu preview could not match \"Cerulean\" to an existing belt rank, so the imported student will start at the program's first full belt. The original belt text will be saved to notes on live import."
+    );
+  });
 });

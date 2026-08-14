@@ -22,12 +22,14 @@ export const ROLLOUT = Object.freeze({
   intermediateMigrationCount: 101,
   recoveryMigrationCount: 102,
   convergenceMigrationCount: 103,
-  finalMigrationCount: 104,
+  attestedMigrationCount: 104,
+  finalMigrationCount: 105,
   releasePendingVersions: Object.freeze([
     "20260814043325",
     "20260814103046",
     "20260814105424",
     "20260814114500",
+    "20260814152000",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -50,6 +52,7 @@ export const ROLLOUT = Object.freeze({
     "20260814103046",
     "20260814105424",
     "20260814114500",
+    "20260814152000",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -76,36 +79,41 @@ export const EXPECTED_OPERATIONAL_MANIFEST =
   "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|104|20260814114500|" +
+  "true|105|20260814152000|" +
   ROLLOUT.finalPendingVersions.join(",") +
+  "|0||release-db-attestation-v12";
+
+export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
+  "true|104|20260814114500|" +
+  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
   "|0||release-db-attestation-v11";
 
 export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
   "true|102|20260814103046|" +
-    ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+    ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
     "|0||release-db-attestation-v9",
 ]);
 
 export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
   "true|103|20260814105424|" +
-  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
   "|0||release-db-attestation-v10";
 
 export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
-  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=54:29dcfe2a88b43a050d40c15748a162943f52d6c908a7a2d587b3edbb3ee8f193:0;" +
+  "functions=55:daca2f0cf430bfc2d7de1fd3b80284fa06d2610fab2b653a2fd3c8d4a7584eb3:0;" +
   "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -124,7 +132,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V11 operational readiness did not match the exact release state.");
+    throw new RolloutError("V12 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -135,6 +143,37 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
 from public.koaryu_release_schema_preflight_v2()
+`;
+
+export const EXPECTED_WRITER_RETURN_CONTRACT_STATE =
+  "4:13fe0a7d1e4e2d1483fa5bb73e77b0097c62f85348b9897b5a256f21950c19b1:0";
+
+export const WRITER_RETURN_CONTRACT_STATE_SQL = `
+with required_functions(signature, expected_result) as (
+  values
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)'),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)')
+),
+actual as (
+  select format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes)) as signature,
+         replace(pg_get_function_result(function.oid), 'public.', '') as result_contract
+    from pg_proc function
+    join pg_namespace namespace on namespace.oid = function.pronamespace
+    join required_functions required
+      on required.signature = format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes))
+),
+compared as (
+  select required.signature, required.expected_result, actual.result_contract
+    from required_functions required
+    left join actual using (signature)
+)
+select count(*)::text || ':' ||
+       encode(extensions.digest(convert_to(string_agg(signature || ':' || coalesce(result_contract, ''), '|' order by signature collate "C"), 'UTF8'), 'sha256'), 'hex') || ':' ||
+       count(*) filter (where result_contract is distinct from expected_result)::text
+  as writer_return_contract_state
+from compared
 `;
 
 export const TOLERATED_HISTORY_COLUMNS = Object.freeze([
@@ -761,6 +800,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_operational_manifest_v7()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
     ('private.koaryu_release_starting_belt_manifest_v9()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_student_rank_writer_manifest_v11()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_student_rank_writer_manifest_v12()', 'search_path=pg_catalog', false, false),
     ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
     ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=public, pg_temp', false, true),
     ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=pg_catalog, public, private', false, true),
@@ -768,11 +808,19 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
 ),
+required_writer_results(signature, expected_result_contract) as (
+  values
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)'),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)')
+),
 function_actual as (
   select format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes)) as signature,
          owner.rolname as owner_name, language.lanname as language_name,
          function.prosecdef as security_definer,
          coalesce(array_to_string(function.proconfig, ','), '') as search_path_config,
+         replace(pg_get_function_result(function.oid), 'public.', '') as result_contract,
          exists (select 1 from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl where acl.grantee = 0 and acl.privilege_type = 'EXECUTE') as public_execute,
          has_function_privilege('anon', function.oid, 'EXECUTE') as anon_execute,
          has_function_privilege('authenticated', function.oid, 'EXECUTE') as authenticated_execute,
@@ -813,9 +861,11 @@ function_compared as (
          actual.search_path_config as actual_search_path_config,
          actual.public_execute, actual.anon_execute, actual.authenticated_execute,
          actual.service_execute as actual_service_execute,
+         actual.result_contract, writer_result.expected_result_contract,
          actual.body_sha256, actual.acl_state, actual.unexpected_execute_grant
     from required_functions required
     left join function_actual actual using (signature)
+    left join required_writer_results writer_result using (signature)
 ),
 required_triggers(table_name, trigger_name, function_schema, function_name, trigger_type) as (
   values
@@ -1096,8 +1146,8 @@ states as (
     from policy_compared
   union all
   select 'functions', count(*)::integer,
-         encode(extensions.digest(convert_to(coalesce(string_agg(signature || ':' || coalesce(owner_name, '') || ':' || coalesce(language_name, '') || ':' || coalesce(actual_security_definer::text, '') || ':' || coalesce(actual_search_path_config, '') || ':' || coalesce(actual_service_execute::text, '') || ':' || coalesce(body_sha256, '') || ':' || coalesce(acl_state, ''), '|' order by signature collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
-         count(*) filter (where owner_name is null or owner_name <> 'postgres' or language_name not in ('sql', 'plpgsql') or actual_security_definer is distinct from security_definer or actual_search_path_config is distinct from search_path_config or public_execute or anon_execute or authenticated_execute or actual_service_execute is distinct from service_execute or unexpected_execute_grant)::integer
+         encode(extensions.digest(convert_to(coalesce(string_agg(signature || ':' || coalesce(owner_name, '') || ':' || coalesce(language_name, '') || ':' || coalesce(actual_security_definer::text, '') || ':' || coalesce(actual_search_path_config, '') || ':' || coalesce(actual_service_execute::text, '') || ':' || coalesce(result_contract, '') || ':' || coalesce(body_sha256, '') || ':' || coalesce(acl_state, ''), '|' order by signature collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where owner_name is null or owner_name <> 'postgres' or language_name not in ('sql', 'plpgsql') or actual_security_definer is distinct from security_definer or actual_search_path_config is distinct from search_path_config or public_execute or anon_execute or authenticated_execute or actual_service_execute is distinct from service_execute or unexpected_execute_grant or (expected_result_contract is not null and result_contract is distinct from expected_result_contract))::integer
     from function_compared
   union all
   select 'triggers', count(*)::integer,
@@ -1341,6 +1391,7 @@ export function formatNonSuccessProbeState(result) {
     result?.state === "intermediate" ||
     result?.state === "recovery" ||
     result?.state === "convergence" ||
+    result?.state === "attested" ||
     result?.state === "post"
   ) return null;
   if (
@@ -1361,9 +1412,10 @@ export function buildInspectionTokenForAcceptedState(packet, target, result) {
     result?.state !== "intermediate" &&
     result?.state !== "recovery" &&
     result?.state !== "convergence" &&
+    result?.state !== "attested" &&
     result?.state !== "post"
   ) {
-    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, or post probe state.");
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
 }
@@ -1443,6 +1495,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
   )}`;
+  const attestedHistory = `${ROLLOUT.attestedMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.attestedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -1473,6 +1534,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     intermediateHistory,
     recoveryHistory,
     convergenceHistory,
+    attestedHistory,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -1503,6 +1565,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
+    attestedTargetHistory: filenames.slice(84, ROLLOUT.attestedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -1521,9 +1589,10 @@ export function packetForAcceptedState(packet, state) {
     state === "intermediate" ? 1
       : state === "recovery" ? 2
         : state === "convergence" ? 3
+          : state === "attested" ? 4
           : null;
   if (consumedMigrations === null) {
-    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, or convergence state.");
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, or attested state.");
   }
   const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
   const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
@@ -1538,6 +1607,14 @@ export function packetForAcceptedState(packet, state) {
   };
 }
 
+export function assertApplyableState(mode, state) {
+  if (mode === "apply" && (state === "intermediate" || state === "convergence")) {
+    throw new RolloutError(
+      `Apply is disabled from ${state} state because its historical readiness version does not attest every object needed for a safe forward recovery. Inspect the provider catalogs and repair to an attested state before applying.`,
+    );
+  }
+}
+
 export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint = null) {
   const {
     history,
@@ -1547,6 +1624,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     triggerState,
     catalogState,
     operationalReadiness,
+    writerReturnContractState,
   } = snapshot;
   const historySchema = validateHistoryColumnMetadata(snapshot.historyColumns);
   if (!historySchema.accepted) {
@@ -1601,10 +1679,24 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     }
     return { state: "convergence", providerFingerprint: null };
   }
+  if (history === packet.attestedHistory) {
+    if (targetHistory !== packet.attestedTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError(
+        "Migration history is attested-state but the exact V11 target history or studio-comp objects are missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_ATTESTED_OPERATIONAL_READINESS) {
+      throw new RolloutError("V11 operational readiness did not match the exact attested state.");
+    }
+    if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
+      throw new RolloutError("V11 writer return contracts do not match the repository-pinned pre-V12 proof.");
+    }
+    return { state: "attested", providerFingerprint: null };
+  }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 104-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 105-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1626,7 +1718,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, or post-state.`,
   );
 }
 
@@ -1851,6 +1943,7 @@ export function readRemoteState(
       triggerState: null,
       catalogState: null,
       operationalReadiness: null,
+      writerReturnContractState: null,
     };
     if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
       snapshot.functionState = query(
@@ -1879,6 +1972,7 @@ export function readRemoteState(
         snapshot.history === packet.intermediateHistory ||
         snapshot.history === packet.recoveryHistory ||
         snapshot.history === packet.convergenceHistory ||
+        snapshot.history === packet.attestedHistory ||
         snapshot.history === packet.postHistory
       )
     ) {
@@ -1886,6 +1980,17 @@ export function readRemoteState(
         sourceRoot,
         OPERATIONAL_READINESS_SQL,
         "operational_readiness",
+        env,
+      );
+    }
+    if (
+      snapshot.objectCounts === "3:1" &&
+      snapshot.history === packet.attestedHistory
+    ) {
+      snapshot.writerReturnContractState = query(
+        sourceRoot,
+        WRITER_RETURN_CONTRACT_STATE_SQL,
+        "writer_return_contract_state",
         env,
       );
     }
@@ -2133,7 +2238,7 @@ export async function main(
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (config.mode !== "diagnose" && !packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 104-migration candidate through 114500.",
+        "Provider inspection requires the exact final 105-migration candidate through 152000.",
       );
     }
     commandRunner(
@@ -2202,10 +2307,11 @@ export async function main(
       before.state !== "pre" &&
       before.state !== "intermediate" &&
       before.state !== "recovery" &&
-      before.state !== "convergence"
+      before.state !== "convergence" &&
+      before.state !== "attested"
     ) {
       throw new RolloutError(
-        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, or convergence state.`,
+        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, or attested state.`,
       );
     }
     const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
@@ -2219,6 +2325,8 @@ export async function main(
     const pending = runDryRun(sourceRoot, remainingPacket, env);
     console.log(`dry_run_migrations=${pending.join(",")}`);
     if (config.mode === "dry-run") return;
+
+    assertApplyableState(config.mode, before.state);
 
     if (config.target === "production") {
       await confirmProductionApply(remainingPacket);

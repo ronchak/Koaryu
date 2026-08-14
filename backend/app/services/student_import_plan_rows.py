@@ -471,7 +471,7 @@ def build_import_row_plan(
                 if options.import_without_unresolved_belt:
                     row_issues.append(make_import_issue(
                         issue_code,
-                        f"{issue_message} Map the Program column if you want Koaryu to create the right ladder and belt automatically. The student can still be imported without a current belt.",
+                        f"{issue_message} Map the Program column if you want Koaryu to create the right ladder and belt automatically. The student can still be imported; a configured program starts them at its first full belt, otherwise they remain unranked.",
                         severity="warning",
                         field="current_belt_rank_id",
                         value=raw_belt,
@@ -488,7 +488,7 @@ def build_import_row_plan(
             elif options.import_without_unresolved_belt:
                 row_issues.append(make_import_issue(
                     issue_code,
-                    f"{issue_message} The student can still be imported without a current belt.",
+                    f"{issue_message} The student can still be imported; a configured program starts them at its first full belt, otherwise they remain unranked.",
                     severity="warning",
                     field="current_belt_rank_id",
                     value=raw_belt,

@@ -1112,9 +1112,14 @@ BEGIN
         RAISE EXCEPTION 'Starting-belt V9 manifest mismatch; got %',
             private.koaryu_release_starting_belt_manifest_v9();
     END IF;
+    IF private.koaryu_release_student_rank_writer_manifest_v12()
+       <> '0:37191b47844a7b1d665242e9d90627b89410eb3d2238511d4bd2845912aa7aa7' THEN
+        RAISE EXCEPTION 'Student-rank writer V12 manifest mismatch; got %',
+            private.koaryu_release_student_rank_writer_manifest_v12();
+    END IF;
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 104
-       OR v_preflight.migration_head <> '20260814114500'
+       OR v_preflight.migration_count <> 105
+       OR v_preflight.migration_head <> '20260814152000'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
@@ -1122,10 +1127,10 @@ BEGIN
            '20260801093000', '20260801094000', '20260801105313',
            '20260801112153', '20260801115044', '20260801123112',
            '20260801131844', '20260814043325', '20260814103046',
-           '20260814105424', '20260814114500'
+           '20260814105424', '20260814114500', '20260814152000'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v11' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v12' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 

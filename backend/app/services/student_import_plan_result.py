@@ -87,11 +87,15 @@ def build_import_result(
     if unresolved_belt_rows:
         warnings.append(CsvImportWarning(
             code="import_without_belt",
-            message="Some students will be imported without a current belt until your ladder is configured.",
+            message=(
+                "Some requested belt names could not be matched. Koaryu will save the original "
+                "text to notes; students assigned to a program with configured ranks start at "
+                "that program's first full belt, while students without one remain unranked."
+            ),
             row_numbers=unresolved_belt_rows,
             field="current_belt_rank_id",
             values=sorted(unresolved_belt_values),
-            suggested_action="Open Belt Tracker after import to finish assigning belts.",
+            suggested_action="Open Belt Tracker after import to reconcile the original belt names.",
         ))
 
     setup_issues: list[CsvImportSetupIssue] = []

@@ -15,7 +15,11 @@ import {
   EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS,
   EXPECTED_RECOVERY_OPERATIONAL_READINESS,
   EXPECTED_CONVERGENCE_OPERATIONAL_READINESS,
+  EXPECTED_ATTESTED_OPERATIONAL_READINESS,
   EXPECTED_OPERATIONAL_READINESS,
+  EXPECTED_WRITER_RETURN_CONTRACT_STATE,
+  WRITER_RETURN_CONTRACT_STATE_SQL,
+  assertApplyableState,
   assertExactPendingMigrations,
   assertSafeCredentialedTransport,
   buildInspectionToken,
@@ -167,6 +171,21 @@ function convergenceSnapshot(packet, overrides = {}) {
   };
 }
 
+function attestedSnapshot(packet, overrides = {}) {
+  return {
+    historyColumns: minimalHistoryColumns,
+    history: packet.attestedHistory,
+    targetHistory: packet.attestedTargetHistory,
+    objectCounts: "3:1",
+    functionState: null,
+    triggerState: null,
+    catalogState: null,
+    operationalReadiness: EXPECTED_ATTESTED_OPERATIONAL_READINESS,
+    writerReturnContractState: EXPECTED_WRITER_RETURN_CONTRACT_STATE,
+    ...overrides,
+  };
+}
+
 function assertReadOnlySql(sql) {
   const normalized = sql.trim();
   const executableSql = normalized
@@ -190,22 +209,38 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("requires the exact V11 operational readiness output", () => {
+  it("requires the exact V12 operational readiness output", () => {
     assert.equal(
       validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS),
       EXPECTED_OPERATIONAL_READINESS,
     );
     for (const value of [null, "", "true|101|20260814043325", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
-      assert.throws(() => validateOperationalReadiness(value), /V11 operational readiness/);
+      assert.throws(() => validateOperationalReadiness(value), /V12 operational readiness/);
     }
   });
 
-  it("decodes the pinned CLI single-field CSV contract before exact V11 validation", () => {
+  it("pins all four student-writer return contracts through database-observable SQL", () => {
+    assert.equal(
+      (WRITER_RETURN_CONTRACT_STATE_SQL.match(/pg_get_function_result/g) || []).length,
+      1,
+    );
+    for (const signature of [
+      "public.write_student_profile_atomic",
+      "private.write_student_profile_atomic",
+      "public.import_student_row_atomic",
+      "private.import_student_row_atomic",
+    ]) {
+      assert.match(WRITER_RETURN_CONTRACT_STATE_SQL, new RegExp(signature.replaceAll(".", "\\.")));
+    }
+    assert.match(WRITER_RETURN_CONTRACT_STATE_SQL, /TABLE\(student_id uuid, guardian_imported boolean\)/);
+  });
+
+  it("decodes the pinned CLI single-field CSV contract before exact V12 validation", () => {
     const quotedReadiness = singleValueCsv(
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|104\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|105\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -242,13 +277,14 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-104 packet from immutable ancestry and source hashes", () => {
+  it("derives an exact 100-to-105 packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 104);
+    assert.equal(packet.migrationCount, 105);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
+    assert.match(packet.attestedHistory, /^104:[0-9a-f]{32}$/);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(
       packet.pendingMigrations.length,
@@ -573,7 +609,7 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("accepts only exact pre-, intermediate-, recovery-, convergence-, or semantically valid post-state", () => {
+  it("accepts exact pre-, intermediate-, recovery-, convergence-, attested-, or semantically valid post-state", () => {
     const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(preSnapshot(), packet), {
       state: "pre",
@@ -595,6 +631,17 @@ describe("studio-comp migration rollout guard", () => {
       state: "convergence",
       providerFingerprint: null,
     });
+    assert.deepEqual(classifyStateSnapshot(attestedSnapshot(packet), packet), {
+      state: "attested",
+      providerFingerprint: null,
+    });
+    assert.throws(
+      () => classifyStateSnapshot(
+        attestedSnapshot(packet, { writerReturnContractState: "4:bad:1" }),
+        packet,
+      ),
+      /writer return contracts/,
+    );
     assert.deepEqual(
       classifyStateSnapshot(
         recoverySnapshot(packet, {
@@ -666,26 +713,26 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("rejects missing, malformed, or non-ready V11 output before post certification", () => {
+  it("rejects missing, malformed, or non-ready V12 output before post certification", () => {
     const packet = candidatePacket();
     for (const operationalReadiness of [
       null,
       "",
       EXPECTED_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_OPERATIONAL_READINESS.replace("|104|", "|103|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("20260814114500", "20260814105424"),
+      EXPECTED_OPERATIONAL_READINESS.replace("|105|", "|104|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("20260814152000", "20260814114500"),
       EXPECTED_OPERATIONAL_READINESS.replace("20260801105313,", ""),
       EXPECTED_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v11", "release-db-attestation-v10"),
+      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v12", "release-db-attestation-v11"),
     ]) {
       assert.throws(
         () => classifyStateSnapshot(postSnapshot(packet, { operationalReadiness }), packet),
-        /V11 operational readiness/,
+        /V12 operational readiness/,
       );
     }
   });
 
-  it("validates V7 pre-state, V8 intermediate, V9 recovery, V10 convergence, and V11 post-state readiness", () => {
+  it("validates V7-V12 pre, recovery, attested, and post-state readiness", () => {
     const packet = candidatePacket();
     const postValues = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -749,6 +796,24 @@ describe("studio-comp migration rollout guard", () => {
         parseSingleValueCsv(singleValueCsv(header, convergenceValues.get(header)), header)),
       { state: "convergence", providerFingerprint: null },
     );
+
+    const attestedValues = new Map([
+      ["history_columns", extendedHistoryColumns],
+      ["history_state", packet.attestedHistory],
+      ["target_history", packet.attestedTargetHistory],
+      ["object_counts", "3:1"],
+      ["operational_readiness", EXPECTED_ATTESTED_OPERATIONAL_READINESS],
+      ["writer_return_contract_state", EXPECTED_WRITER_RETURN_CONTRACT_STATE],
+    ]);
+    const attestedHeaders = [];
+    assert.deepEqual(
+      readRemoteState(repositoryRoot, packet, {}, null, (_root, _sql, header) => {
+        attestedHeaders.push(header);
+        return parseSingleValueCsv(singleValueCsv(header, attestedValues.get(header)), header);
+      }),
+      { state: "attested", providerFingerprint: null },
+    );
+    assert.equal(attestedHeaders.at(-1), "writer_return_contract_state");
 
     const preHeaders = [];
     const preValues = new Map([
@@ -839,7 +904,7 @@ describe("studio-comp migration rollout guard", () => {
 
     assert.deepEqual(result, {
       state: "diverged",
-      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, or post-state.`,
+      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, or post-state.`,
     });
   });
 
@@ -978,6 +1043,10 @@ describe("studio-comp migration rollout guard", () => {
         expected: { state: "convergence", providerFingerprint: null },
       },
       {
+        snapshot: attestedSnapshot(packet),
+        expected: { state: "attested", providerFingerprint: null },
+      },
+      {
         snapshot: intermediateSnapshot(packet),
         expected: { state: "intermediate", providerFingerprint: null },
       },
@@ -1001,8 +1070,9 @@ describe("studio-comp migration rollout guard", () => {
         ["trigger_state", snapshot.triggerState],
         ["catalog_state", snapshot.catalogState],
         ["operational_readiness", snapshot.operationalReadiness],
-        ["migration_row_count", expected.state === "pre" ? "84" : expected.state === "intermediate" ? "101" : expected.state === "recovery" ? "102" : expected.state === "convergence" ? "103" : "104"],
-        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : "20260814114500"],
+        ["writer_return_contract_state", snapshot.writerReturnContractState],
+        ["migration_row_count", expected.state === "pre" ? "84" : expected.state === "intermediate" ? "101" : expected.state === "recovery" ? "102" : expected.state === "convergence" ? "103" : expected.state === "attested" ? "104" : "105"],
+        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : expected.state === "attested" ? "20260814114500" : "20260814152000"],
       ]);
       const headers = [];
       const diagnosis = readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, sql, header) => {
@@ -1257,6 +1327,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(formatNonSuccessProbeState({ state: "intermediate", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "recovery", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "convergence", providerFingerprint: null }), null);
+    assert.equal(formatNonSuccessProbeState({ state: "attested", providerFingerprint: null }), null);
     assert.equal(
       formatNonSuccessProbeState({ state: "post", providerFingerprint: validFingerprint }),
       null,
@@ -1265,7 +1336,7 @@ describe("studio-comp migration rollout guard", () => {
 
   it("makes an inspection token available only for accepted probe states", () => {
     const packet = candidatePacket();
-    for (const state of ["pre", "intermediate", "recovery", "convergence", "post"]) {
+    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "post"]) {
       assert.equal(
         buildInspectionTokenForAcceptedState(packet, "staging", { state }),
         buildInspectionToken(packet, "staging", state),
@@ -1278,7 +1349,7 @@ describe("studio-comp migration rollout guard", () => {
     ]) {
       assert.throws(
         () => buildInspectionTokenForAcceptedState(packet, "staging", result),
-        /accepted pre, intermediate, recovery, convergence, or post probe state/,
+        /accepted pre, intermediate, recovery, convergence, attested, or post probe state/,
       );
     }
   });
@@ -1295,16 +1366,16 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 104-migration integration", () => {
+  it("refuses to certify post-state before the exact 105-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 104-migration sequence/,
+      /exact final 105-migration sequence/,
     );
   });
 
-  it("selects exact remaining migrations from intermediate, recovery, and convergence states", () => {
+  it("selects exact remaining migrations from intermediate, recovery, convergence, and attested states", () => {
     const packet = candidatePacket();
     const intermediateRemaining = packetForAcceptedState(packet, "intermediate");
     assert.deepEqual(intermediateRemaining.pendingMigrations, packet.pendingMigrations.slice(1));
@@ -1317,11 +1388,27 @@ describe("studio-comp migration rollout guard", () => {
     const convergenceRemaining = packetForAcceptedState(packet, "convergence");
     assert.deepEqual(convergenceRemaining.pendingMigrations, packet.pendingMigrations.slice(3));
     assert.deepEqual(convergenceRemaining.pendingManifest, packet.pendingManifest.slice(3));
+    const attestedRemaining = packetForAcceptedState(packet, "attested");
+    assert.deepEqual(attestedRemaining.pendingMigrations, packet.pendingMigrations.slice(4));
+    assert.deepEqual(attestedRemaining.pendingManifest, packet.pendingManifest.slice(4));
     assert.equal(packetForAcceptedState(packet, "pre"), packet);
     assert.throws(
       () => packetForAcceptedState(packet, "post"),
-      /pre, intermediate, recovery, or convergence state/,
+      /pre, intermediate, recovery, convergence, or attested state/,
     );
+  });
+
+  it("keeps historical non-attested states inspectable but refuses to apply from them", () => {
+    for (const state of ["intermediate", "convergence"]) {
+      assert.doesNotThrow(() => assertApplyableState("dry-run", state));
+      assert.throws(
+        () => assertApplyableState("apply", state),
+        new RegExp(`Apply is disabled from ${state} state`),
+      );
+    }
+    for (const state of ["pre", "recovery", "attested"]) {
+      assert.doesNotThrow(() => assertApplyableState("apply", state));
+    }
   });
 
   it("requires a preceding same-candidate, same-target, same-state inspection", () => {
