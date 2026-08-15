@@ -73,6 +73,7 @@ BEGIN
             AND (
                 (
                     v_function.function_name IN (
+                        'can_read_staff_profile',
                         'is_staff_in_studio',
                         'is_admin_or_front_desk_in_studio',
                         'is_admin_in_studio'
