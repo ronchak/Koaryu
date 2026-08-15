@@ -334,12 +334,42 @@ BEGIN
 
     SELECT public.record_core_checkout_compensation_required_atomic(
         v_studio, 'cs_contract_2', 'sub_contract_2', 12,
-        'invalid_paid_checkout_completion'
+        'invalid_paid_checkout_completion', TRUE
     ) INTO v_compensation_recorded;
     SELECT public.record_core_checkout_compensation_required_atomic(
         v_studio, 'cs_contract_2', 'sub_contract_2', 12,
-        'invalid_paid_checkout_completion'
+        'invalid_paid_checkout_completion', TRUE
     ) INTO v_compensation_replayed;
+
+    -- A rejection with no money owed still has to be durable: provider repair
+    -- consults this record, and relying on the acceptance RPC to re-derive
+    -- `invalid` left a transiently-uncancelled subscription repairable.
+    IF NOT EXISTS (
+        SELECT 1 FROM public.studio_subscriptions subscription
+        WHERE subscription.studio_id = v_studio
+          AND subscription.metadata->'core_checkout_rejections'
+                ->'sub_contract_2'->>'subscription_id' = 'sub_contract_2'
+    ) THEN
+        RAISE EXCEPTION 'Compensation did not record a durable checkout rejection.';
+    END IF;
+
+    PERFORM public.record_core_checkout_compensation_required_atomic(
+        v_studio, NULL, 'sub_contract_trial', 13,
+        'invalid_paid_subscription_event', FALSE
+    );
+    IF NOT EXISTS (
+        SELECT 1 FROM public.studio_subscriptions subscription
+        WHERE subscription.studio_id = v_studio
+          AND subscription.metadata->'core_checkout_rejections'
+                ? 'sub_contract_trial'
+    ) OR EXISTS (
+        SELECT 1 FROM public.studio_subscriptions subscription
+        WHERE subscription.studio_id = v_studio
+          AND subscription.metadata->'core_checkout_compensations'
+                ? 'sub_contract_trial'
+    ) THEN
+        RAISE EXCEPTION 'Unpaid rejection must record a rejection without a refund receipt.';
+    END IF;
     IF NOT v_compensation_recorded OR v_compensation_replayed OR NOT EXISTS (
         SELECT 1 FROM public.studio_subscriptions subscription
         WHERE subscription.studio_id = v_studio

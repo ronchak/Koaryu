@@ -1363,13 +1363,13 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
                 order.append("cancel")
                 canceled.append(payload["subscription_id"])
 
-        original = service._record_core_compensation_required
+        original = service._record_core_subscription_rejection
 
         def tracked(**kwargs):
             order.append("receipt")
             return original(**kwargs)
 
-        service._record_core_compensation_required = tracked
+        service._record_core_subscription_rejection = tracked
 
         with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
             service.project_subscription_event({

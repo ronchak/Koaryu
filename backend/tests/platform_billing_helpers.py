@@ -241,6 +241,24 @@ class FakeSupabase(RpcBackedSupabase):
             session_id = params.get("p_session_id") or None
             if not params.get("p_subscription_id") or not params.get("p_reason"):
                 raise ValueError("Checkout compensation identity and reason are required")
+
+            # The rejection is durable for every invalid binding, paid or not.
+            rejections = dict(metadata.get("core_checkout_rejections") or {})
+            recorded = False
+            if params["p_subscription_id"] not in rejections:
+                rejections[params["p_subscription_id"]] = {
+                    "subscription_id": params["p_subscription_id"],
+                    "session_id": session_id,
+                    "event_created": params.get("p_event_created"),
+                    "reason": params["p_reason"],
+                }
+                metadata["core_checkout_rejections"] = rejections
+                row["metadata"] = metadata
+                recorded = True
+
+            if not params.get("p_compensation_required"):
+                return recorded
+
             existing = receipts.get(params["p_subscription_id"])
             if existing:
                 existing_session_id = existing.get("session_id")

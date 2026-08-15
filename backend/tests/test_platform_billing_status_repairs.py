@@ -404,3 +404,133 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
 
         service.settings.CORE_SELF_CHECKOUT_ENABLED = False
         self.assertFalse(asyncio.run(service.get_status("studio_1")).can_start_checkout)
+
+    def test_repair_never_projects_a_previously_rejected_subscription(self):
+        """A transient cancel failure must not make a rejection forgettable.
+
+        The rejection previously existed only as an attempted Stripe
+        cancellation. If that cancel failed and the comp was later revoked, the
+        repair guard reopened against provider state alone and could project the
+        still-live rejected subscription as the studio's active one.
+        """
+        rejected_token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {
+                "core_checkout_rejections": {
+                    "sub_rejected": {
+                        "subscription_id": "sub_rejected",
+                        "reason": "invalid_paid_subscription_event",
+                    },
+                },
+            },
+        }]
+        service = self.service(rows)
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": [{
+                    "id": "sub_rejected",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": rejected_token,
+                        "core_checkout_epoch": "1",
+                    },
+                }]}
+
+            def cancel_core_subscription(self, **_payload):
+                pass
+
+        # Force the acceptance decision to *approve* this binding. That is the
+        # exact state the durable rejection exists for: a transient cancel
+        # failure left the subscription live, and nothing in provider or
+        # acceptance state still says it was rejected.
+        service.supabase._rpc_accept_core_checkout_subscription_atomic = (
+            lambda _params: "accepted"
+        )
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.get_status("studio_1"))
+
+        self.assertIsNone(response.stripe_subscription_id)
+        self.assertEqual(response.status, "incomplete")
+        self.assertIsNone(rows[0]["stripe_subscription_id"])
+
+    def test_terminal_delete_clears_a_concurrently_projected_rejection(self):
+        """The deleted event is the last chance to undo a projected rejection."""
+        token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": "sub_rejected",
+            "status": "active",
+            "comped": False,
+            "metadata": {"core_checkout_epoch": 2},
+        }]
+        service = self.service(rows)
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+
+        class FakeStripeService:
+            def cancel_core_subscription(self, **_payload):
+                raise AssertionError("a deleted subscription must not be cancelled again")
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "created": 100,
+                "type": "customer.subscription.deleted",
+                "data": {"object": {
+                    "id": "sub_rejected",
+                    "customer": "cus_123",
+                    "status": "canceled",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            })
+
+        self.assertIsNone(rows[0]["stripe_subscription_id"])
+        self.assertEqual(rows[0]["status"], "incomplete")
+
+    def test_rejection_is_recorded_even_when_no_compensation_is_owed(self):
+        """A trialing rejection owes no refund but must still be durable."""
+        token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {"core_checkout_epoch": 2},
+        }]
+        service = self.service(rows)
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+
+        class FakeStripeService:
+            def cancel_core_subscription(self, **_payload):
+                pass
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "created": 100,
+                "type": "customer.subscription.updated",
+                "data": {"object": {
+                    "id": "sub_trial_rejected",
+                    "customer": "cus_123",
+                    "status": "trialing",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            })
+
+        metadata = rows[0]["metadata"]
+        self.assertIn("sub_trial_rejected", metadata["core_checkout_rejections"])
+        self.assertNotIn("core_checkout_compensations", metadata)

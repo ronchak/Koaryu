@@ -1136,7 +1136,7 @@ BEGIN
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v16()
-       <> '0:554eb9e9f8317929a8f13322fa7ad961defbcfe641b689e46640d9fba83a30ca' THEN
+       <> '0:dcfee976320c4472f3b65fd344a643aa783e00064d3d8f4705f511e5c5c6ba4c' THEN
         RAISE EXCEPTION 'Critical-surface V16 manifest mismatch; got %',
             private.koaryu_release_critical_surface_manifest_v16();
     END IF;

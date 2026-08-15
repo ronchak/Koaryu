@@ -775,7 +775,8 @@ CREATE FUNCTION public.record_core_checkout_compensation_required_atomic(
     p_session_id TEXT,
     p_subscription_id TEXT,
     p_event_created BIGINT,
-    p_reason TEXT
+    p_reason TEXT,
+    p_compensation_required BOOLEAN
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -786,8 +787,10 @@ DECLARE
     v_row public.studio_subscriptions%ROWTYPE;
     v_metadata JSONB;
     v_receipts JSONB;
+    v_rejections JSONB;
     v_session_id TEXT := NULLIF(p_session_id, '');
     v_existing_session_id TEXT;
+    v_recorded BOOLEAN := FALSE;
 BEGIN
     -- The subscription is the compensation identity. A session id refines it
     -- when the receipt originates from checkout completion, but the webhook and
@@ -817,6 +820,42 @@ BEGIN
             THEN v_metadata->'core_checkout_compensations'
         ELSE '{}'::JSONB
     END;
+    v_rejections := CASE
+        WHEN jsonb_typeof(v_metadata->'core_checkout_rejections') = 'object'
+            THEN v_metadata->'core_checkout_rejections'
+        ELSE '{}'::JSONB
+    END;
+
+    -- The rejection itself is recorded for every invalid binding, paid or not.
+    -- Previously it existed only as an attempted Stripe cancellation, so a
+    -- transient cancel failure left no durable trace and provider repair could
+    -- later list the still-live subscription and project it as the studio's
+    -- active one without ever consulting the checkout binding.
+    IF NOT (v_rejections ? p_subscription_id) THEN
+        v_rejections := v_rejections || jsonb_build_object(
+            p_subscription_id,
+            jsonb_build_object(
+                'subscription_id', p_subscription_id,
+                'session_id', v_session_id,
+                'event_created', p_event_created,
+                'reason', p_reason,
+                'recorded_at', NOW()
+            )
+        );
+        v_metadata := jsonb_set(
+            v_metadata, '{core_checkout_rejections}', v_rejections, TRUE
+        );
+        v_recorded := TRUE;
+    END IF;
+
+    IF NOT p_compensation_required THEN
+        IF v_recorded THEN
+            UPDATE public.studio_subscriptions subscription
+            SET metadata = v_metadata
+            WHERE subscription.studio_id = p_studio_id;
+        END IF;
+        RETURN v_recorded;
+    END IF;
 
     IF v_receipts ? p_subscription_id THEN
         v_existing_session_id := v_receipts->p_subscription_id->>'session_id';
@@ -830,8 +869,7 @@ BEGIN
                 USING ERRCODE = '22023';
         END IF;
         IF v_existing_session_id IS NULL AND v_session_id IS NOT NULL THEN
-            UPDATE public.studio_subscriptions subscription
-            SET metadata = jsonb_set(
+            v_metadata := jsonb_set(
                 v_metadata,
                 '{core_checkout_compensations}',
                 v_receipts || jsonb_build_object(
@@ -840,7 +878,12 @@ BEGIN
                         || jsonb_build_object('session_id', v_session_id)
                 ),
                 TRUE
-            )
+            );
+            v_recorded := TRUE;
+        END IF;
+        IF v_recorded THEN
+            UPDATE public.studio_subscriptions subscription
+            SET metadata = v_metadata
             WHERE subscription.studio_id = p_studio_id;
         END IF;
         RETURN FALSE;
@@ -869,9 +912,9 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT) TO service_role;
+ALTER FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT, BOOLEAN) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT, BOOLEAN) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_core_checkout_compensation_required_atomic(UUID, TEXT, TEXT, BIGINT, TEXT, BOOLEAN) TO service_role;
 
 -- Rank transitions are receipt-idempotent and validate direction/adjacency
 -- after taking the same student lock used by rank-plan synchronization. This
@@ -1208,7 +1251,7 @@ BEGIN
           ('public.set_studio_comp_v2_atomic(uuid,boolean,text,uuid,text,boolean)'),
           ('public.sync_belt_ladder_ranks_v2(uuid,uuid,uuid,uuid,text,jsonb)'),
           ('public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)'),
-          ('public.record_core_checkout_compensation_required_atomic(uuid,text,text,bigint,text)'),
+          ('public.record_core_checkout_compensation_required_atomic(uuid,text,text,bigint,text,boolean)'),
           ('private.record_student_rank_transition_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)'),
           ('public.record_student_promotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)'),
           ('public.record_student_demotion(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text)'),
@@ -1353,7 +1396,7 @@ BEGIN
         v_failures := array_append(v_failures, 'student_rank_writer_manifest_v13');
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v16()
-       <> '0:554eb9e9f8317929a8f13322fa7ad961defbcfe641b689e46640d9fba83a30ca' THEN
+       <> '0:dcfee976320c4472f3b65fd344a643aa783e00064d3d8f4705f511e5c5c6ba4c' THEN
         v_failures := array_append(v_failures, 'critical_surface_manifest_v16');
     END IF;
 

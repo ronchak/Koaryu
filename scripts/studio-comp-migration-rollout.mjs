@@ -145,7 +145,7 @@ export const EXPECTED_CATALOG_STATE =
   "columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;" +
-  "functions=68:fca1c938521eed690548a643caa01c2d4e6be8c207b8fd9ccb051f522b603b59:0;" +
+  "functions=68:a724ad4e219c1ffdeae840ce3a088e08f697db04de3a0a4ff32eea0d06f65d58:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -849,7 +849,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.reserve_core_checkout_v2_atomic(uuid)', 'search_path=pg_catalog, public', false, true),
     ('public.set_studio_comp_v2_atomic(uuid, boolean, text, uuid, text, boolean)', 'search_path=pg_catalog, public', false, true),
     ('public.sync_belt_ladder_ranks_v2(uuid, uuid, uuid, uuid, text, jsonb)', 'search_path=pg_catalog, public', false, true),
-    ('public.record_core_checkout_compensation_required_atomic(uuid, text, text, bigint, text)', 'search_path=pg_catalog, public', false, true),
+    ('public.record_core_checkout_compensation_required_atomic(uuid, text, text, bigint, text, boolean)', 'search_path=pg_catalog, public', false, true),
     ('private.record_student_rank_transition_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text, uuid)', 'search_path=public, pg_temp', false, true),
     ('public.record_student_promotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),
     ('public.record_student_demotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),

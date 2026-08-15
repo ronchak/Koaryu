@@ -544,22 +544,29 @@ class PlatformBillingService:
             "p_checkout_epoch": epoch,
         })
 
-    def _record_core_compensation_required(
+    def _record_core_subscription_rejection(
         self,
         *,
         studio_id: str,
         subscription_id: str,
         reason: str,
+        compensation_required: bool,
         session_id: Optional[str] = None,
         event_created: Optional[int] = None,
     ) -> None:
-        """Persist the studio's refund claim before an invalid subscription dies.
+        """Durably record an invalid checkout binding before its subscription dies.
 
-        Cancelling is irreversible from the studio's side, so the obligation has
-        to be durable first. Checkout completion always did this; the webhook and
+        Two facts, one lock. The rejection is always recorded: it previously
+        existed only as an attempted Stripe cancellation, so a transient cancel
+        failure left nothing behind and provider repair could later list the
+        still-live subscription and project it as the studio's active one.
+
+        The refund claim is recorded only when money actually moved. Cancelling
+        is irreversible from the studio's side, so that obligation has to be
+        durable first. Checkout completion always did this; the webhook and
         repair paths reach the same cancel holding only a subscription id, which
-        is why the RPC treats the session as an optional refinement rather than
-        part of the required identity.
+        is why the session is an optional refinement rather than part of the
+        required identity.
         """
         execute_required_rpc(
             self.supabase,
@@ -570,8 +577,14 @@ class PlatformBillingService:
                 "p_subscription_id": subscription_id,
                 "p_event_created": event_created,
                 "p_reason": reason,
+                "p_compensation_required": compensation_required,
             },
         )
+
+    @staticmethod
+    def _core_checkout_rejections(row: dict[str, Any]) -> dict[str, Any]:
+        rejections = (row_metadata(row) or {}).get("core_checkout_rejections")
+        return rejections if isinstance(rejections, dict) else {}
 
     async def create_portal_link(
         self,
@@ -680,14 +693,16 @@ class PlatformBillingService:
                 preserve_comp = False
             if not accepted:
                 if subscription_id:
-                    if data_object.get("payment_status") == "paid":
-                        self._record_core_compensation_required(
-                            studio_id=studio_id,
-                            subscription_id=subscription_id,
-                            reason="invalid_paid_checkout_completion",
-                            session_id=session_id,
-                            event_created=event_created,
-                        )
+                    self._record_core_subscription_rejection(
+                        studio_id=studio_id,
+                        subscription_id=subscription_id,
+                        reason="invalid_paid_checkout_completion",
+                        compensation_required=(
+                            data_object.get("payment_status") == "paid"
+                        ),
+                        session_id=session_id,
+                        event_created=event_created,
+                    )
                     StripeService().cancel_core_subscription(
                         subscription_id=subscription_id,
                         studio_id=studio_id,
@@ -783,23 +798,42 @@ class PlatformBillingService:
                     "accepted", "already_accepted", "retained_live",
                 }
                 if not accepted:
-                    if event_type != "customer.subscription.deleted":
-                        if (data_object.get("status") or "") in PAID_STRIPE_SUBSCRIPTION_STATUSES:
-                            self._record_core_compensation_required(
-                                studio_id=studio_id,
-                                subscription_id=subscription_id,
-                                reason="invalid_paid_subscription_event",
-                                event_created=event_created,
-                            )
-                        StripeService().cancel_core_subscription(
-                            subscription_id=subscription_id,
-                            studio_id=studio_id,
-                            idempotency_key=build_idempotency_key(
-                                "core-checkout-invalid-subscription",
+                    if event_type == "customer.subscription.deleted":
+                        # The terminal event is the one chance to undo a
+                        # rejected subscription that provider repair projected
+                        # before the rejection was durable. Ignoring it left the
+                        # local row active on a subscription Stripe had deleted.
+                        if (
+                            subscription_id
+                            and row.get("stripe_subscription_id") == subscription_id
+                        ):
+                            self._update_subscription_row(
                                 studio_id,
-                                subscription_id,
-                            ),
-                        )
+                                {
+                                    "stripe_subscription_id": None,
+                                    "status": "incomplete",
+                                },
+                            )
+                        return
+                    self._record_core_subscription_rejection(
+                        studio_id=studio_id,
+                        subscription_id=subscription_id,
+                        reason="invalid_paid_subscription_event",
+                        compensation_required=(
+                            (data_object.get("status") or "")
+                            in PAID_STRIPE_SUBSCRIPTION_STATUSES
+                        ),
+                        event_created=event_created,
+                    )
+                    StripeService().cancel_core_subscription(
+                        subscription_id=subscription_id,
+                        studio_id=studio_id,
+                        idempotency_key=build_idempotency_key(
+                            "core-checkout-invalid-subscription",
+                            studio_id,
+                            subscription_id,
+                        ),
+                    )
                     return
                 row = self._ensure_subscription_row(studio_id)
             else:
@@ -1122,6 +1156,13 @@ class PlatformBillingService:
         subscription_id = projector.stripe_id(
             projector.object_get(subscription, "id")
         )
+        # A subscription this studio already rejected is never a repair
+        # candidate, however the provider still lists it. Relying on the
+        # acceptance RPC to re-derive `invalid` was not enough: a transient
+        # cancel failure leaves the subscription live, and once the comp is
+        # revoked the repair guard reopens against provider state alone.
+        if subscription_id and subscription_id in self._core_checkout_rejections(row):
+            return False
         acceptance_outcome = "invalid"
         if reservation_token and checkout_epoch is not None and subscription_id:
             try:
@@ -1152,12 +1193,14 @@ class PlatformBillingService:
 
         subscription_status = projector.object_get(subscription, "status") or ""
         if subscription_id and subscription_status in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
-            if subscription_status in PAID_STRIPE_SUBSCRIPTION_STATUSES:
-                self._record_core_compensation_required(
-                    studio_id=row["studio_id"],
-                    subscription_id=subscription_id,
-                    reason="invalid_paid_subscription_repair",
-                )
+            self._record_core_subscription_rejection(
+                studio_id=row["studio_id"],
+                subscription_id=subscription_id,
+                reason="invalid_paid_subscription_repair",
+                compensation_required=(
+                    subscription_status in PAID_STRIPE_SUBSCRIPTION_STATUSES
+                ),
+            )
             self._provider_call(
                 lambda: StripeService().cancel_core_subscription(
                     subscription_id=subscription_id,
