@@ -7,7 +7,13 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
 from app.core.config import get_settings
-from app.schemas.staff import StaffInviteCreate, StaffMemberResponse, StaffRoleUpdate
+from app.schemas.staff import (
+    StaffInviteCreate,
+    StaffLegalNameResponse,
+    StaffLegalNameUpdate,
+    StaffMemberResponse,
+    StaffRoleUpdate,
+)
 
 BASE_STAFF_ROLE_COLUMNS = "id, studio_id, user_id, role, created_at"
 EXTENDED_STAFF_ROLE_COLUMNS = (
@@ -16,6 +22,10 @@ EXTENDED_STAFF_ROLE_COLUMNS = (
 SINGLE_STUDIO_MEMBERSHIP_DETAIL = (
     "This account cannot be added to another studio. Contact Koaryu support."
 )
+STAFF_PROFILE_COLUMNS = "user_id, legal_first_name, legal_last_name"
+STAFF_PROFILE_NOT_FOUND_DETAIL = "Staff member not found."
+STAFF_PROFILE_UPDATE_FORBIDDEN_DETAIL = "Only studio admins can update staff profiles."
+STAFF_PROFILE_ALREADY_EXISTS_DETAIL = "Staff profile already exists."
 
 
 def _to_text(value: Any) -> Optional[str]:
@@ -203,6 +213,119 @@ class StaffService:
         )
 
         return self._hydrate_staff_member(result.data[0])
+
+    async def update_staff_legal_name(
+        self,
+        target_user_id: str,
+        data: StaffLegalNameUpdate,
+        studio_id: str,
+        actor_id: str,
+        actor_role: str,
+    ) -> StaffLegalNameResponse:
+        self._ensure_target_staff_membership(target_user_id, studio_id)
+
+        is_admin = actor_role == "admin"
+        if not is_admin and target_user_id != actor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=STAFF_PROFILE_UPDATE_FORBIDDEN_DETAIL,
+            )
+
+        existing_profile = self._get_staff_profile(target_user_id)
+        if existing_profile:
+            if not is_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=STAFF_PROFILE_UPDATE_FORBIDDEN_DETAIL,
+                )
+
+            result = (
+                self.supabase.table("staff_profiles")
+                .update({
+                    "legal_first_name": data.legal_first_name,
+                    "legal_last_name": data.legal_last_name,
+                })
+                .eq("user_id", target_user_id)
+                .execute()
+            )
+            if not result.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=STAFF_PROFILE_NOT_FOUND_DETAIL,
+                )
+
+            operation = "updated"
+            row = result.data[0]
+        else:
+            try:
+                result = (
+                    self.supabase.table("staff_profiles")
+                    .insert({
+                        "user_id": target_user_id,
+                        "legal_first_name": data.legal_first_name,
+                        "legal_last_name": data.legal_last_name,
+                    })
+                    .execute()
+                )
+            except PostgrestAPIError as exc:
+                if exc.code == "23505":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=STAFF_PROFILE_ALREADY_EXISTS_DETAIL,
+                    ) from exc
+                raise
+
+            if not result.data:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create staff profile.",
+                )
+
+            operation = "created"
+            row = result.data[0]
+
+        self._audit(
+            studio_id,
+            actor_id,
+            f"staff.profile_{operation}",
+            target_user_id,
+            {
+                "target_user_id": target_user_id,
+                "operation": operation,
+            },
+            entity_type="staff_profile",
+        )
+
+        return StaffLegalNameResponse(
+            user_id=row["user_id"],
+            legal_first_name=row["legal_first_name"],
+            legal_last_name=row["legal_last_name"],
+        )
+
+    def _ensure_target_staff_membership(self, target_user_id: str, studio_id: str) -> None:
+        result = (
+            self.supabase.table("staff_roles")
+            .select("user_id")
+            .eq("studio_id", studio_id)
+            .eq("user_id", target_user_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=STAFF_PROFILE_NOT_FOUND_DETAIL,
+            )
+
+    def _get_staff_profile(self, target_user_id: str) -> Optional[dict]:
+        result = (
+            self.supabase.table("staff_profiles")
+            .select(STAFF_PROFILE_COLUMNS)
+            .eq("user_id", target_user_id)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
 
     def _list_staff_role_rows(self, studio_id: str):
         try:
@@ -519,12 +642,13 @@ class StaffService:
         action: str,
         entity_id: str,
         metadata: dict,
+        entity_type: str = "staff_role",
     ) -> None:
         self.supabase.table("audit_logs").insert({
             "studio_id": studio_id,
             "actor_id": actor_id,
             "action": action,
-            "entity_type": "staff_role",
+            "entity_type": entity_type,
             "entity_id": entity_id,
             "metadata": metadata,
         }).execute()

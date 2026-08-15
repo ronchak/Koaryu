@@ -41,3 +41,26 @@ class StaffInviteCreate(BaseModel):
 
 class StaffRoleUpdate(BaseModel):
     role: StaffRoleName
+
+
+def _normalize_legal_name(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value).strip()
+    if not normalized:
+        raise ValueError("Name is required")
+    return normalized
+
+
+class StaffLegalNameUpdate(BaseModel):
+    legal_first_name: str
+    legal_last_name: str
+
+    @field_validator("legal_first_name", "legal_last_name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return _normalize_legal_name(value)
+
+
+class StaffLegalNameResponse(BaseModel):
+    user_id: str
+    legal_first_name: str
+    legal_last_name: str

@@ -4,9 +4,18 @@ from fastapi import APIRouter, Depends, Response, status
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
-from app.schemas.staff import StaffInviteCreate, StaffMemberResponse, StaffRoleUpdate
+from app.schemas.staff import (
+    StaffInviteCreate,
+    StaffLegalNameResponse,
+    StaffLegalNameUpdate,
+    StaffMemberResponse,
+    StaffRoleUpdate,
+)
 from app.services.staff_service import StaffService
-from app.services.studio_scope import resolve_admin_staff_role_for_user
+from app.services.studio_scope import (
+    resolve_admin_staff_role_for_user,
+    resolve_staff_role_for_user,
+)
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
@@ -48,6 +57,32 @@ async def invite_staff(
 ):
     studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
     return await StaffService(supabase).invite_staff(data, studio_id, user_id)
+
+
+@router.patch(
+    "/{target_user_id}/legal-name",
+    response_model=StaffLegalNameResponse,
+)
+async def update_staff_legal_name(
+    target_user_id: str,
+    data: StaffLegalNameUpdate,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    membership = resolve_staff_role_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        require_platform_subscription=False,
+    )
+    return await StaffService(supabase).update_staff_legal_name(
+        target_user_id,
+        data,
+        membership["studio_id"],
+        user_id,
+        membership["role"],
+    )
 
 
 @router.patch("/{staff_role_id}", response_model=StaffMemberResponse)

@@ -1142,6 +1142,17 @@ export interface ApiStaffInviteCreate {
   role: "admin" | "instructor" | "front_desk";
 }
 
+export interface ApiStaffLegalNameResponse {
+  user_id: string;
+  legal_first_name: string;
+  legal_last_name: string;
+}
+
+export interface ApiStaffLegalNameUpdate {
+  legal_first_name: string;
+  legal_last_name: string;
+}
+
 export interface ApiStaffMemberResponse {
   id: string;
   studio_id: string;
