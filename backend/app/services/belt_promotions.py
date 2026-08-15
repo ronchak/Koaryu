@@ -10,9 +10,50 @@ class BeltPromotionRecorder:
     def __init__(self, supabase: Any):
         self.supabase = supabase
 
+    def _replay_rank_transition(
+        self, operation_id: Any, studio_id: str, transition_kind: str
+    ) -> Optional[PromotionResponse]:
+        """Return an already-recorded transition for this operation id.
+
+        The client keeps its operation id across retries, so a retry after a lost
+        response reads a membership this very operation already moved. Every
+        state-dependent check below would then see the *new* rank and reject the
+        retry as non-adjacent, reporting a committed transition as failed. The
+        write RPC does hold a receipt, but nothing reaches it. Resolving the
+        receipt before any state-dependent validation is what makes the operation
+        id idempotent end to end rather than only inside the writer.
+        """
+        if not operation_id:
+            return None
+        existing = (
+            self.supabase.table("promotions")
+            .select("*")
+            .eq("studio_id", studio_id)
+            .eq("operation_id", str(operation_id))
+            .maybe_single()
+            .execute()
+        )
+        row = getattr(existing, "data", None)
+        if not row:
+            return None
+        if row.get("transition_kind") not in (None, transition_kind):
+            raise HTTPException(
+                status_code=409,
+                detail="Operation ID was already used for a different rank transition.",
+            )
+        return PromotionResponse.model_validate({
+            **row,
+            "from_rank_name": row.get("from_rank_name_snapshot"),
+            "to_rank_name": row.get("to_rank_name_snapshot"),
+        })
+
     async def promote_student(
         self, data: PromoteStudent, studio_id: str, actor_id: str
     ) -> PromotionResponse:
+        replayed = self._replay_rank_transition(data.operation_id, studio_id, "promotion")
+        if replayed is not None:
+            return replayed
+
         target_rank_result = (
             self.supabase.table("belt_ranks")
             .select("id, ladder_id")
@@ -170,6 +211,10 @@ class BeltPromotionRecorder:
     async def demote_student(
         self, data: DemoteStudent, studio_id: str, actor_id: str
     ) -> PromotionResponse:
+        replayed = self._replay_rank_transition(data.operation_id, studio_id, "demotion")
+        if replayed is not None:
+            return replayed
+
         target_rank_result = (
             self.supabase.table("belt_ranks")
             .select("id, ladder_id")

@@ -238,14 +238,30 @@ class FakeSupabase(RpcBackedSupabase):
             row = self._subscription_row(params["p_studio_id"])
             metadata = dict(row.get("metadata") or {})
             receipts = dict(metadata.get("core_checkout_compensations") or {})
+            session_id = params.get("p_session_id") or None
+            if not params.get("p_subscription_id") or not params.get("p_reason"):
+                raise ValueError("Checkout compensation identity and reason are required")
             existing = receipts.get(params["p_subscription_id"])
             if existing:
-                if existing.get("session_id") != params["p_session_id"]:
+                existing_session_id = existing.get("session_id")
+                # The subscription is the identity; a session only refines it, so
+                # a receipt first recorded without one can still be upgraded.
+                if (
+                    existing_session_id is not None
+                    and session_id is not None
+                    and existing_session_id != session_id
+                ):
                     raise ValueError("Subscription compensation identity changed")
+                if existing_session_id is None and session_id is not None:
+                    existing = dict(existing)
+                    existing["session_id"] = session_id
+                    receipts[params["p_subscription_id"]] = existing
+                    metadata["core_checkout_compensations"] = receipts
+                    row["metadata"] = metadata
                 return False
             receipts[params["p_subscription_id"]] = {
                 "state": "required",
-                "session_id": params["p_session_id"],
+                "session_id": session_id,
                 "subscription_id": params["p_subscription_id"],
                 "event_created": params.get("p_event_created"),
                 "reason": params["p_reason"],

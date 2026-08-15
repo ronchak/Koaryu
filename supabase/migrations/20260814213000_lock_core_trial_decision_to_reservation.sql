@@ -786,9 +786,15 @@ DECLARE
     v_row public.studio_subscriptions%ROWTYPE;
     v_metadata JSONB;
     v_receipts JSONB;
+    v_session_id TEXT := NULLIF(p_session_id, '');
+    v_existing_session_id TEXT;
 BEGIN
-    IF NULLIF(p_session_id, '') IS NULL
-       OR NULLIF(p_subscription_id, '') IS NULL
+    -- The subscription is the compensation identity. A session id refines it
+    -- when the receipt originates from checkout completion, but the webhook and
+    -- repair paths cancel a subscription they reached without a session, and
+    -- they owe the studio the same durable receipt. Requiring a session here is
+    -- what previously forced those paths to cancel paid subscriptions silently.
+    IF NULLIF(p_subscription_id, '') IS NULL
        OR NULLIF(p_reason, '') IS NULL THEN
         RAISE EXCEPTION 'Checkout compensation identity and reason are required.'
             USING ERRCODE = '22023';
@@ -813,9 +819,29 @@ BEGIN
     END;
 
     IF v_receipts ? p_subscription_id THEN
-        IF v_receipts->p_subscription_id->>'session_id' IS DISTINCT FROM p_session_id THEN
+        v_existing_session_id := v_receipts->p_subscription_id->>'session_id';
+        -- A receipt recorded without a session is the same obligation as one
+        -- recorded with it. Let a later checkout-completion replay refine the
+        -- session, but never let a conflicting session rewrite the identity.
+        IF v_existing_session_id IS NOT NULL
+           AND v_session_id IS NOT NULL
+           AND v_existing_session_id IS DISTINCT FROM v_session_id THEN
             RAISE EXCEPTION 'Subscription compensation identity changed.'
                 USING ERRCODE = '22023';
+        END IF;
+        IF v_existing_session_id IS NULL AND v_session_id IS NOT NULL THEN
+            UPDATE public.studio_subscriptions subscription
+            SET metadata = jsonb_set(
+                v_metadata,
+                '{core_checkout_compensations}',
+                v_receipts || jsonb_build_object(
+                    p_subscription_id,
+                    (v_receipts->p_subscription_id)
+                        || jsonb_build_object('session_id', v_session_id)
+                ),
+                TRUE
+            )
+            WHERE subscription.studio_id = p_studio_id;
         END IF;
         RETURN FALSE;
     END IF;
@@ -824,7 +850,7 @@ BEGIN
         p_subscription_id,
         jsonb_build_object(
             'state', 'required',
-            'session_id', p_session_id,
+            'session_id', v_session_id,
             'subscription_id', p_subscription_id,
             'event_created', p_event_created,
             'reason', p_reason,
@@ -1201,16 +1227,76 @@ BEGIN
         FROM required_functions required
         LEFT JOIN pg_proc procedure ON procedure.oid = to_regprocedure(required.signature)
         LEFT JOIN pg_roles owner ON owner.oid = procedure.proowner
+    -- The rank-transition receipt is a schema guarantee, not only a function
+    -- body: the columns carry the receipt, the partial unique index is what
+    -- makes the replay lookup safe under concurrency, and the check constraint
+    -- is what keeps transition_kind a closed set. V15 cannot cover any of them
+    -- because they did not exist yet, so readiness has to attest them here or a
+    -- hosted database missing one still reports ready while the RPC silently
+    -- loses idempotency.
+    ), required_columns(table_name, column_name) AS (
+        VALUES
+          ('promotions', 'operation_id'),
+          ('promotions', 'transition_kind')
+    ), column_state AS (
+        SELECT required.table_name,
+               required.column_name,
+               attribute.attnum AS oid,
+               COALESCE(format_type(attribute.atttypid, attribute.atttypmod), '') AS type_name,
+               COALESCE(attribute.attnotnull::TEXT, '') AS not_null
+        FROM required_columns required
+        LEFT JOIN pg_attribute attribute
+          ON attribute.attrelid = 'public.promotions'::regclass
+         AND attribute.attname = required.column_name
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
+    ), required_indexes(name) AS (
+        VALUES ('promotions_studio_operation_once')
+    ), index_state AS (
+        SELECT required.name,
+               index_row.indexrelid AS oid,
+               COALESCE(pg_get_indexdef(index_row.indexrelid), '') AS definition,
+               COALESCE(index_row.indisunique::TEXT, '') AS is_unique,
+               COALESCE(index_row.indisvalid::TEXT, '') AS is_valid
+        FROM required_indexes required
+        LEFT JOIN pg_class index_class ON index_class.relname = required.name
+        LEFT JOIN pg_index index_row
+          ON index_row.indexrelid = index_class.oid
+         AND index_row.indrelid = 'public.promotions'::regclass
+    ), required_constraints(name) AS (
+        VALUES ('promotions_transition_kind_check')
+    ), constraint_state AS (
+        SELECT required.name,
+               constraint_row.oid,
+               COALESCE(pg_get_constraintdef(constraint_row.oid, TRUE), '') AS definition,
+               COALESCE(constraint_row.convalidated::TEXT, '') AS validated
+        FROM required_constraints required
+        LEFT JOIN pg_constraint constraint_row ON constraint_row.conname = required.name
+          AND constraint_row.conrelid = 'public.promotions'::regclass
+    ), serialized AS (
+        SELECT 'f:' || signature || ':' || definition || ':' || result_contract || ':' ||
+               owner_name || ':' || security_definer || ':' || configuration || ':' ||
+               acl AS value,
+               (oid IS NULL)::INTEGER AS invalid
+        FROM function_state
+        UNION ALL
+        SELECT 'a:' || table_name || ':' || column_name || ':' || type_name || ':' || not_null,
+               (oid IS NULL)::INTEGER
+        FROM column_state
+        UNION ALL
+        SELECT 'i:' || name || ':' || definition || ':' || is_unique || ':' || is_valid,
+               (oid IS NULL OR is_unique <> 'true' OR is_valid <> 'true')::INTEGER
+        FROM index_state
+        UNION ALL
+        SELECT 'c:' || name || ':' || definition || ':' || validated,
+               (oid IS NULL OR validated <> 'true')::INTEGER
+        FROM constraint_state
     )
-    SELECT v_invalid + COALESCE(sum((oid IS NULL)::INTEGER), 0)::INTEGER,
+    SELECT v_invalid + COALESCE(sum(invalid), 0)::INTEGER,
            'v15:' || COALESCE(v_v15, '') || '|' ||
-           string_agg(
-               'f:' || signature || ':' || definition || ':' || result_contract || ':' ||
-               owner_name || ':' || security_definer || ':' || configuration || ':' || acl,
-               '|' ORDER BY signature COLLATE "C"
-           )
+           string_agg(value, '|' ORDER BY value COLLATE "C")
     INTO v_invalid, v_serialized
-    FROM function_state;
+    FROM serialized;
 
     RETURN v_invalid::TEXT || ':' || encode(
         extensions.digest(convert_to(v_serialized, 'UTF8'), 'sha256'),
@@ -1267,7 +1353,7 @@ BEGIN
         v_failures := array_append(v_failures, 'student_rank_writer_manifest_v13');
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v16()
-       <> '0:5f89277c75be4ff15896749d0943dfd095ab9974dbaf2b32da3f825fce52e195' THEN
+       <> '0:554eb9e9f8317929a8f13322fa7ad961defbcfe641b689e46640d9fba83a30ca' THEN
         v_failures := array_append(v_failures, 'critical_surface_manifest_v16');
     END IF;
 

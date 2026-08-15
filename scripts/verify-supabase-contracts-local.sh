@@ -461,7 +461,7 @@ critical_surface_manifest="$(
 SELECT private.koaryu_release_critical_surface_manifest_v16();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:5f89277c75be4ff15896749d0943dfd095ab9974dbaf2b32da3f825fce52e195" ]]; then
+if [[ "$critical_surface_manifest" != "0:554eb9e9f8317929a8f13322fa7ad961defbcfe641b689e46640d9fba83a30ca" ]]; then
   echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi
@@ -614,7 +614,19 @@ assert_attestation_rejects \
 assert_attestation_rejects \
   "promotion operation receipt column drift" \
   "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \
-  "t"
+  "f"
+assert_attestation_rejects \
+  "promotion operation receipt index drift" \
+  "DROP INDEX public.promotions_studio_operation_once;" \
+  "f"
+assert_attestation_rejects \
+  "promotion transition kind constraint drift" \
+  "ALTER TABLE public.promotions DROP CONSTRAINT promotions_transition_kind_check;" \
+  "f"
+assert_attestation_rejects \
+  "promotion transition kind column drift" \
+  "ALTER TABLE public.promotions DROP COLUMN transition_kind CASCADE;" \
+  "f"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \
   "ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints DISABLE TRIGGER enforce_live_billing_checkpoint_processed_events;" \

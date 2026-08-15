@@ -44,6 +44,10 @@ logger = logging.getLogger(__name__)
 EMAIL_INCLUDED_PER_MONTH = 500
 EMAIL_OVERAGE_RATE_CENTS = 0.2
 LIVE_STRIPE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid", "paused"}
+# A trialing subscription has never been invoiced, so cancelling it owes the
+# studio nothing. Every other live status means at least one invoice was already
+# paid, so cancelling it has to leave a durable compensation receipt behind.
+PAID_STRIPE_SUBSCRIPTION_STATUSES = LIVE_STRIPE_SUBSCRIPTION_STATUSES - {"trialing"}
 MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environment."
 NO_COMP_CLEAR_EVENT = object()
 
@@ -472,20 +476,50 @@ class PlatformBillingService:
         session_url = session["url"] if isinstance(session, dict) else session.url
         session_id = session.get("id") if isinstance(session, dict) else getattr(session, "id", None)
         expires_at = session.get("expires_at") if isinstance(session, dict) else getattr(session, "expires_at", None)
-        published = first_rpc_row(execute_required_rpc(
-            self.supabase,
-            "publish_core_checkout_atomic",
-            {
-                "p_studio_id": studio_id,
-                "p_reservation_token": str(reservation_token),
-                "p_checkout_epoch": int(checkout_epoch),
-                "p_session_id": session_id,
-                "p_session_url": session_url,
-                "p_expires_at": expires_at,
-            },
-        )) or {}
+        publish_args = {
+            "p_studio_id": studio_id,
+            "p_reservation_token": str(reservation_token),
+            "p_checkout_epoch": int(checkout_epoch),
+            "p_session_id": session_id,
+            "p_session_url": session_url,
+            "p_expires_at": expires_at,
+        }
+        try:
+            published = first_rpc_row(execute_required_rpc(
+                self.supabase,
+                "publish_core_checkout_atomic",
+                publish_args,
+            )) or {}
+        except Exception:
+            # Stripe already holds a live session, so failing here leaves it
+            # untracked and the reservation held. Expiring blind is not safe
+            # either: the write may have committed and only the response lost.
+            # Replaying the atomic publication is what settles it, because a
+            # committed publish consumes the reservation and reports the stored
+            # session back as `existing`.
+            logger.error(
+                "Koaryu Core checkout publication failed; reconciling; reference=%s",
+                uuid4().hex,
+            )
+            try:
+                published = first_rpc_row(execute_required_rpc(
+                    self.supabase,
+                    "publish_core_checkout_atomic",
+                    publish_args,
+                )) or {}
+            except Exception as exc:
+                # Still unprovable. Leaving a live session to its own expiry is
+                # recoverable; cancelling a checkout the studio may already have
+                # paid through is not.
+                raise HTTPException(
+                    status_code=503,
+                    detail="Koaryu Core checkout could not be confirmed. Try again shortly.",
+                ) from exc
         if published.get("outcome") != "published":
-            if session_id:
+            # Only expire a session the database proves it did not store. When
+            # the stored session is this one, the publication did commit and the
+            # lost response was the only failure.
+            if session_id and published.get("session_id") != session_id:
                 stripe_service.expire_core_checkout_session(
                     session_id=session_id,
                     studio_id=studio_id,
@@ -503,6 +537,35 @@ class PlatformBillingService:
             "p_reservation_token": token,
             "p_checkout_epoch": epoch,
         })
+
+    def _record_core_compensation_required(
+        self,
+        *,
+        studio_id: str,
+        subscription_id: str,
+        reason: str,
+        session_id: Optional[str] = None,
+        event_created: Optional[int] = None,
+    ) -> None:
+        """Persist the studio's refund claim before an invalid subscription dies.
+
+        Cancelling is irreversible from the studio's side, so the obligation has
+        to be durable first. Checkout completion always did this; the webhook and
+        repair paths reach the same cancel holding only a subscription id, which
+        is why the RPC treats the session as an optional refinement rather than
+        part of the required identity.
+        """
+        execute_required_rpc(
+            self.supabase,
+            "record_core_checkout_compensation_required_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_session_id": session_id,
+                "p_subscription_id": subscription_id,
+                "p_event_created": event_created,
+                "p_reason": reason,
+            },
+        )
 
     async def create_portal_link(
         self,
@@ -611,17 +674,13 @@ class PlatformBillingService:
                 preserve_comp = False
             if not accepted:
                 if subscription_id:
-                    if data_object.get("payment_status") == "paid" and session_id:
-                        execute_required_rpc(
-                            self.supabase,
-                            "record_core_checkout_compensation_required_atomic",
-                            {
-                                "p_studio_id": studio_id,
-                                "p_session_id": session_id,
-                                "p_subscription_id": subscription_id,
-                                "p_event_created": event_created,
-                                "p_reason": "invalid_paid_checkout_completion",
-                            },
+                    if data_object.get("payment_status") == "paid":
+                        self._record_core_compensation_required(
+                            studio_id=studio_id,
+                            subscription_id=subscription_id,
+                            reason="invalid_paid_checkout_completion",
+                            session_id=session_id,
+                            event_created=event_created,
                         )
                     StripeService().cancel_core_subscription(
                         subscription_id=subscription_id,
@@ -719,6 +778,13 @@ class PlatformBillingService:
                 }
                 if not accepted:
                     if event_type != "customer.subscription.deleted":
+                        if (data_object.get("status") or "") in PAID_STRIPE_SUBSCRIPTION_STATUSES:
+                            self._record_core_compensation_required(
+                                studio_id=studio_id,
+                                subscription_id=subscription_id,
+                                reason="invalid_paid_subscription_event",
+                                event_created=event_created,
+                            )
                         StripeService().cancel_core_subscription(
                             subscription_id=subscription_id,
                             studio_id=studio_id,
@@ -1080,6 +1146,12 @@ class PlatformBillingService:
 
         subscription_status = projector.object_get(subscription, "status") or ""
         if subscription_id and subscription_status in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
+            if subscription_status in PAID_STRIPE_SUBSCRIPTION_STATUSES:
+                self._record_core_compensation_required(
+                    studio_id=row["studio_id"],
+                    subscription_id=subscription_id,
+                    reason="invalid_paid_subscription_repair",
+                )
             self._provider_call(
                 lambda: StripeService().cancel_core_subscription(
                     subscription_id=subscription_id,

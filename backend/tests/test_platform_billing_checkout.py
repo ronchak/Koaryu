@@ -495,3 +495,137 @@ class PlatformBillingCheckoutTest(PlatformBillingServiceTestCase):
         self.assertEqual(context.exception.status_code, 409)
         self.assertIn("comped", context.exception.detail)
         self.assertTrue(rows[0]["comped"])
+
+    def test_publication_failure_does_not_expire_a_session_that_was_stored(self):
+        """A lost response is not the same as a lost write.
+
+        Stripe already holds a live session when publication raises. Expiring it
+        blind would cancel a checkout the studio may already be paying through,
+        so the atomic publication is replayed: a committed publish consumes the
+        reservation and reports the stored session back as `existing`.
+        """
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+        expired = []
+        attempts = []
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **_payload):
+                return {
+                    "id": "cs_committed",
+                    "url": "https://checkout.stripe.test/committed",
+                    "expires_at": 9999999999,
+                }
+
+            def expire_core_checkout_session(self, **payload):
+                expired.append(payload["session_id"])
+
+        original = service.supabase._rpc_publish_core_checkout_atomic
+
+        def flaky_publish(params):
+            attempts.append(params)
+            if len(attempts) == 1:
+                # The write commits, then the response is lost.
+                original(params)
+                raise RuntimeError("connection reset after commit")
+            return original(params)
+
+        service.supabase._rpc_publish_core_checkout_atomic = flaky_publish
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            response = asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(expired, [])
+        self.assertEqual(response.url, "https://checkout.stripe.test/committed")
+
+    def test_publication_failure_expires_a_session_the_database_never_stored(self):
+        """When the replay proves nothing was stored, the live session must die."""
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+        expired = []
+        attempts = []
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **_payload):
+                return {
+                    "id": "cs_orphaned",
+                    "url": "https://checkout.stripe.test/orphaned",
+                    "expires_at": 9999999999,
+                }
+
+            def expire_core_checkout_session(self, **payload):
+                expired.append(payload["session_id"])
+
+        def failing_publish(params):
+            attempts.append(params)
+            if len(attempts) == 1:
+                raise RuntimeError("connection reset before commit")
+            # The reservation is gone and nothing was ever published.
+            rows[0]["metadata"] = {"core_checkout_epoch": 2}
+            return [{"outcome": "stale", "session_id": None, "session_url": None}]
+
+        service.supabase._rpc_publish_core_checkout_atomic = failing_publish
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(expired, ["cs_orphaned"])
+
+    def test_unprovable_publication_leaves_the_session_alone(self):
+        """Two failed replays cannot prove anything, so nothing is cancelled."""
+        rows = [{
+            "studio_id": "studio_1",
+            "stripe_customer_id": "cus_123",
+            "stripe_subscription_id": None,
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+        expired = []
+
+        class FakeStripeService:
+            def list_customer_subscriptions(self, _customer_id):
+                return {"data": []}
+
+            def create_core_checkout_session(self, **_payload):
+                return {
+                    "id": "cs_unknown",
+                    "url": "https://checkout.stripe.test/unknown",
+                    "expires_at": 9999999999,
+                }
+
+            def expire_core_checkout_session(self, **payload):
+                expired.append(payload["session_id"])
+
+        def always_failing_publish(_params):
+            raise RuntimeError("database unreachable")
+
+        service.supabase._rpc_publish_core_checkout_atomic = always_failing_publish
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_checkout_link("studio_1", "user_1"))
+
+        self.assertEqual(context.exception.status_code, 503)
+        self.assertEqual(expired, [])

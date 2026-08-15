@@ -1336,3 +1336,150 @@ class PlatformBillingSubscriptionProjectionTest(PlatformBillingServiceTestCase):
 
         self.assertEqual(rows[0]["status"], "active")
         self.assertTrue(rows[0]["comped"])
+
+    def test_invalid_paid_subscription_event_records_compensation_before_cancel(self):
+        """A paid subscription reached without a checkout session still owes a receipt.
+
+        Checkout completion always persisted the studio's refund claim before
+        cancelling. The subscription webhook reached the same cancel holding only
+        a subscription id, and the compensation RPC used to demand a session, so
+        this path cancelled an already-paid subscription leaving no durable trace
+        that the studio was owed anything.
+        """
+        token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {"core_checkout_epoch": 2},
+        }]
+        service = self.service(rows)
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+        canceled = []
+        order = []
+
+        class FakeStripeService:
+            def cancel_core_subscription(self, **payload):
+                order.append("cancel")
+                canceled.append(payload["subscription_id"])
+
+        original = service._record_core_compensation_required
+
+        def tracked(**kwargs):
+            order.append("receipt")
+            return original(**kwargs)
+
+        service._record_core_compensation_required = tracked
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "created": 100,
+                "type": "customer.subscription.updated",
+                "data": {"object": {
+                    "id": "sub_invalid_paid",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            })
+
+        self.assertEqual(canceled, ["sub_invalid_paid"])
+        self.assertEqual(order, ["receipt", "cancel"])
+        receipt = (
+            rows[0]["metadata"]["core_checkout_compensations"]["sub_invalid_paid"]
+        )
+        self.assertEqual(receipt["state"], "required")
+        self.assertEqual(receipt["reason"], "invalid_paid_subscription_event")
+        self.assertIsNone(receipt["session_id"])
+
+    def test_invalid_trialing_subscription_event_cancels_without_compensation(self):
+        """A trial was never invoiced, so cancelling it owes the studio nothing."""
+        token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {"core_checkout_epoch": 2},
+        }]
+        service = self.service(rows)
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+        canceled = []
+
+        class FakeStripeService:
+            def cancel_core_subscription(self, **payload):
+                canceled.append(payload["subscription_id"])
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "created": 100,
+                "type": "customer.subscription.updated",
+                "data": {"object": {
+                    "id": "sub_invalid_trial",
+                    "customer": "cus_123",
+                    "status": "trialing",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            })
+
+        self.assertEqual(canceled, ["sub_invalid_trial"])
+        self.assertNotIn(
+            "core_checkout_compensations",
+            rows[0].get("metadata") or {},
+        )
+
+    def test_checkout_completion_refines_session_on_existing_compensation(self):
+        """A receipt first recorded without a session accepts the later session."""
+        token = "00000000-0000-4000-8000-000000000001"
+        rows = [{
+            "studio_id": "studio_1",
+            "status": "incomplete",
+            "comped": False,
+            "metadata": {
+                "core_checkout_epoch": 2,
+                "core_checkout_compensations": {
+                    "sub_invalid_paid": {
+                        "state": "required",
+                        "session_id": None,
+                        "subscription_id": "sub_invalid_paid",
+                        "reason": "invalid_paid_subscription_event",
+                    },
+                },
+            },
+        }]
+        service = self.service(rows)
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+
+        class FakeStripeService:
+            def cancel_core_subscription(self, **payload):
+                pass
+
+        with patch("app.services.platform_billing_service.StripeService", FakeStripeService):
+            service.project_subscription_event({
+                "created": 100,
+                "type": "checkout.session.completed",
+                "data": {"object": {
+                    "id": "cs_invalid",
+                    "customer": "cus_123",
+                    "subscription": "sub_invalid_paid",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "studio_id": "studio_1",
+                        "core_checkout_reservation_token": token,
+                        "core_checkout_epoch": "1",
+                    },
+                }},
+            })
+
+        receipt = (
+            rows[0]["metadata"]["core_checkout_compensations"]["sub_invalid_paid"]
+        )
+        self.assertEqual(receipt["session_id"], "cs_invalid")
+        self.assertEqual(receipt["reason"], "invalid_paid_subscription_event")
