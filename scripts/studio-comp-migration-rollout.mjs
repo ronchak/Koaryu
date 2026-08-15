@@ -27,7 +27,8 @@ export const ROLLOUT = Object.freeze({
   retainedMigrationCount: 106,
   criticalMigrationCount: 107,
   columnAttestedMigrationCount: 108,
-  finalMigrationCount: 109,
+  trialLockedMigrationCount: 109,
+  finalMigrationCount: 110,
   releasePendingVersions: Object.freeze([
     "20260814043325",
     "20260814103046",
@@ -38,6 +39,7 @@ export const ROLLOUT = Object.freeze({
     "20260814183000",
     "20260814200000",
     "20260814213000",
+    "20260815220402",
   ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
@@ -65,6 +67,7 @@ export const ROLLOUT = Object.freeze({
     "20260814183000",
     "20260814200000",
     "20260814213000",
+    "20260815220402",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -91,61 +94,70 @@ export const EXPECTED_OPERATIONAL_MANIFEST =
   "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|109|20260814213000|" +
+  "true|110|20260815220402|" +
   ROLLOUT.finalPendingVersions.join(",") +
+  "|0||release-db-attestation-v17";
+
+export const EXPECTED_TRIAL_LOCKED_OPERATIONAL_READINESS =
+  `true|${ROLLOUT.trialLockedMigrationCount}|20260814213000|` +
+  ROLLOUT.finalPendingVersions.slice(
+    0,
+    ROLLOUT.finalPendingVersions.length -
+      (ROLLOUT.finalMigrationCount - ROLLOUT.trialLockedMigrationCount),
+  ).join(",") +
   "|0||release-db-attestation-v16";
 
 export const EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS =
   "true|105|20260814152000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
   "|0||release-db-attestation-v12";
 
 export const EXPECTED_RETAINED_OPERATIONAL_READINESS =
   "true|106|20260814170000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
   "|0||release-db-attestation-v13";
 
 export const EXPECTED_CRITICAL_OPERATIONAL_READINESS =
   "true|107|20260814183000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
   "|0||release-db-attestation-v14";
 
 export const EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS =
   "true|108|20260814200000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
   "|0||release-db-attestation-v15";
 
 export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
   "true|104|20260814114500|" +
-  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
   "|0||release-db-attestation-v11";
 
 export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
   "true|102|20260814103046|" +
-    ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
-    "|0||release-db-attestation-v9",
+  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
+  "|0||release-db-attestation-v9",
 ]);
 
 export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
   "true|103|20260814105424|" +
-  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
   "|0||release-db-attestation-v10";
 
 export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
   "true|101|20260814043325|" +
-  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -9).join(",") +
   "|0||release-db-attestation-v8";
 
 export const EXPECTED_PRE_OPERATIONAL_READINESS =
   "true|100|20260801131844|" +
-  ROLLOUT.finalPendingVersions.slice(0, -9).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -10).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
   "columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
   "constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;" +
-  "functions=68:a724ad4e219c1ffdeae840ce3a088e08f697db04de3a0a4ff32eea0d06f65d58:0;" +
+  "functions=68:a09b9c54e4572fefce2e6c9cdc9c8bf87e7eb1b16e47cb2919857ff1a1a15b41:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
@@ -164,7 +176,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V16 operational readiness did not match the exact release state.");
+    throw new RolloutError("V17 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -1453,6 +1465,7 @@ export function formatNonSuccessProbeState(result) {
     result?.state === "retained" ||
     result?.state === "critical" ||
     result?.state === "column-attested" ||
+    result?.state === "trial-locked" ||
     result?.state === "post"
   ) return null;
   if (
@@ -1478,9 +1491,10 @@ export function buildInspectionTokenForAcceptedState(packet, target, result) {
     result?.state !== "retained" &&
     result?.state !== "critical" &&
     result?.state !== "column-attested" &&
+    result?.state !== "trial-locked" &&
     result?.state !== "post"
   ) {
-    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, or post probe state.");
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
 }
@@ -1506,9 +1520,9 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     .readdirSync(migrationsDirectory)
     .filter((name) => name.endsWith(".sql"))
     .sort();
-  if (filenames.length < ROLLOUT.finalMigrationCount) {
+  if (filenames.length !== ROLLOUT.finalMigrationCount) {
     throw new RolloutError(
-      `Candidate must contain at least ${ROLLOUT.finalMigrationCount} migrations, found ${filenames.length}.`,
+      `Candidate must contain exactly ${ROLLOUT.finalMigrationCount} migrations, found ${filenames.length}.`,
     );
   }
   for (const filename of filenames) {
@@ -1605,6 +1619,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
   )}`;
+  const trialLockedHistory = `${ROLLOUT.trialLockedMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.trialLockedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -1640,6 +1663,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     retainedHistory,
     criticalHistory,
     columnAttestedHistory,
+    trialLockedHistory,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -1700,6 +1724,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
+    trialLockedTargetHistory: filenames.slice(84, ROLLOUT.trialLockedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -1723,9 +1753,11 @@ export function packetForAcceptedState(packet, state) {
               : state === "retained" ? 6
                 : state === "critical" ? 7
                   : state === "column-attested" ? 8
-          : null;
+                    : state === "trial-locked"
+                      ? ROLLOUT.trialLockedMigrationCount - ROLLOUT.baselineMigrationCount
+                      : null;
   if (consumedMigrations === null) {
-    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, or column-attested state.");
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, or trial-locked state.");
   }
   const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
   const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
@@ -1876,10 +1908,19 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     }
     return { state: "column-attested", providerFingerprint: null };
   }
+  if (history === packet.trialLockedHistory) {
+    if (targetHistory !== packet.trialLockedTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("Migration history is trial-locked but its exact V16 target history is missing.");
+    }
+    if (operationalReadiness !== EXPECTED_TRIAL_LOCKED_OPERATIONAL_READINESS) {
+      throw new RolloutError("V16 operational readiness did not match the exact migration-109 state.");
+    }
+    return { state: "trial-locked", providerFingerprint: null };
+  }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 109-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 110-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1901,7 +1942,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, or post-state.`,
   );
 }
 
@@ -2160,12 +2201,14 @@ export function readRemoteState(
         snapshot.history === packet.retainedHistory ||
         snapshot.history === packet.criticalHistory ||
         snapshot.history === packet.columnAttestedHistory ||
+        snapshot.history === packet.trialLockedHistory ||
         snapshot.history === packet.postHistory
       )
     ) {
       snapshot.operationalReadiness = query(
         sourceRoot,
-        snapshot.history === packet.postHistory
+        snapshot.history === packet.postHistory ||
+        snapshot.history === packet.trialLockedHistory
           ? OPERATIONAL_READINESS_SQL
           : PREDECESSOR_OPERATIONAL_READINESS_SQL,
         "operational_readiness",
@@ -2431,7 +2474,7 @@ export async function main(
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (config.mode !== "diagnose" && !packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 106-migration candidate through 170000.",
+        "Provider inspection requires the exact final 110-migration candidate through 220402.",
       );
     }
     commandRunner(
@@ -2505,10 +2548,11 @@ export async function main(
       before.state !== "return-attested" &&
       before.state !== "retained" &&
       before.state !== "critical" &&
-      before.state !== "column-attested"
+      before.state !== "column-attested" &&
+      before.state !== "trial-locked"
     ) {
       throw new RolloutError(
-        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, critical, or column-attested state.`,
+        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, critical, column-attested, or trial-locked state.`,
       );
     }
     const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);

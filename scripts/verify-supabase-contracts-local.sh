@@ -461,7 +461,7 @@ critical_surface_manifest="$(
 SELECT private.koaryu_release_critical_surface_manifest_v16();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:dcfee976320c4472f3b65fd344a643aa783e00064d3d8f4705f511e5c5c6ba4c" ]]; then
+if [[ "$critical_surface_manifest" != "0:0953df02aa7cb93c327f60059bd410e4db2af60b90f4f4e710f7baaa7d9204ad" ]]; then
   echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi

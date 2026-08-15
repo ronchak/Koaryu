@@ -39,16 +39,21 @@ Merging `main` does not authorize an automatic production deployment. `frontend/
 
 Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only V3 Supabase preflight and requires the exact final migration count
-109, head `20260814213000`, pending sequence, manifest version
-`release-db-attestation-v16`, and required-object/security proof. Schema 84, a
-partial 85-108 state, a missing final migration manifest, or any
+110, head `20260815220402`, the exact 26-version pending sequence, manifest version
+`release-db-attestation-v17`, and required-object/security proof. Schema 84, a
+partial 85-109 state, a missing final migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.
 
-Migration 109 retains the deployed `origin/main` V2 readiness and V1 reservation
-signatures for the mixed-version database-first window. The V2 compatibility
-response is V7-shaped and reports ready only when the candidate V3 preflight
-proves exact V16 state; the new backend never uses the compatibility path.
+Migration 109 introduced the candidate V2 checkout-reservation path and retains
+the deployed `origin/main` predecessor reservation (V1) and V2 readiness
+signatures for the mixed-version database-first window. Migration 110 updates
+the V2 compatibility guard: its V7-shaped response reports ready only when the
+candidate V3 preflight proves exact V17 state; the new backend never uses the
+compatibility path.
+Exact migration 109/head `20260814213000`/V16 is the single accepted
+`trial-locked` resume state and may continue only with migration 110 after a
+fresh inspection and dry-run.
 
 The local PostgreSQL proof does not certify hosted PostgREST exposed-schema
 configuration or actual schema ACL state. Authenticated operator readback must
