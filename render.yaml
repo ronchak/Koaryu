@@ -76,3 +76,78 @@ services:
         sync: false
       - key: SUPPORT_TRIAGE_SECRET
         sync: false
+
+  # Staging rehearses the database-first cutover before production sees it.
+  # It is declared here rather than living only in the Render dashboard, because
+  # an undeclared service drifts silently: nothing in the repository notices when
+  # its configuration changes or when it stops serving.
+  #
+  # `/health/ready` fails closed against a database at an unexpected migration.
+  # That is deliberate, and it means the ordering is the same here as in
+  # production: apply the migration to staging Supabase first, then deploy.
+  # Deploying first leaves the service failing its health check until the
+  # database catches up.
+  - type: web
+    name: koaryu-staging
+    runtime: python
+    plan: free
+    region: ohio
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      # ENVIRONMENT=staging is a hardened mode, not a relaxed one: the frontend
+      # origin and Supabase project below are both pinned in app/core/config.py
+      # and the process refuses to boot against anything else.
+      - key: ENVIRONMENT
+        value: staging
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: API_V1_PREFIX
+        value: /api/v1
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+      - key: DEMO_RESET_STUDIO_IDS
+        value: ""
+      - key: BILLING_PLATFORM_FEE_BPS
+        value: "50"
+      # Staging never touches live money. STRIPE_MODE=test also forces the
+      # secret keys below to be sk_test_/rk_test_ prefixed.
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "false"
+      # config.py rejects CORE_SELF_CHECKOUT_ENABLED=true outside production, so
+      # staging proves the migration and boot path but not the checkout flow.
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: SUPABASE_DEVELOPMENT_PROJECT_REF
+        value: ""
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_ALLOW_LEGACY_HS256
+        value: "false"
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_RESTRICTED_KEY
+        sync: false
+      - key: STRIPE_PLATFORM_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_CONNECT_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_KOARYU_CORE_PRICE_ID
+        sync: false
+      - key: ACCOUNT_DELETION_WORKER_SECRET
+        sync: false
+      - key: OPERATIONAL_ALERTS_ENABLED
+        value: "false"
+      - key: OPERATIONAL_ALERT_WORKER_SECRET
+        sync: false
+      - key: SUPPORT_TRIAGE_SECRET
+        sync: false
