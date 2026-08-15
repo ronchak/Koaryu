@@ -1140,6 +1140,9 @@ export interface ApiPromotionResponse {
 export interface ApiStaffInviteCreate {
   email: string;
   role: "admin" | "instructor" | "front_desk";
+  full_name: string;
+  legal_first_name: string;
+  legal_last_name: string;
 }
 
 export interface ApiStaffLegalNameResponse {
@@ -1159,6 +1162,8 @@ export interface ApiStaffMemberResponse {
   user_id?: string | null;
   email: string;
   full_name?: string | null;
+  legal_first_name?: string | null;
+  legal_last_name?: string | null;
   role: "admin" | "instructor" | "front_desk";
   status: "pending" | "active";
   invited_by?: string | null;

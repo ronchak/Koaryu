@@ -19,6 +19,7 @@ BASE_STAFF_ROLE_COLUMNS = "id, studio_id, user_id, role, created_at"
 EXTENDED_STAFF_ROLE_COLUMNS = (
     "id, studio_id, user_id, role, invited_by, invited_email, created_at, updated_at"
 )
+OPTIONAL_STAFF_PROFILE_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
 SINGLE_STUDIO_MEMBERSHIP_DETAIL = (
     "This account cannot be added to another studio. Contact Koaryu support."
 )
@@ -60,8 +61,19 @@ class StaffService:
 
     async def list_staff(self, studio_id: str) -> list[StaffMemberResponse]:
         result = self._list_staff_role_rows(studio_id)
+        rows = result.data or []
+        profile_map = self._get_staff_profiles_for_user_ids(
+            list(dict.fromkeys(
+                row.get("user_id")
+                for row in rows
+                if row.get("user_id")
+            ))
+        )
 
-        return [self._hydrate_staff_member(row) for row in (result.data or [])]
+        return [
+            self._hydrate_staff_member(row, profile=profile_map.get(row.get("user_id")))
+            for row in rows
+        ]
 
     async def invite_staff(
         self,
@@ -98,7 +110,10 @@ class StaffService:
         try:
             invite_response = self.supabase.auth.admin.invite_user_by_email(
                 data.email,
-                {"redirect_to": f"{frontend_origin}/auth/callback"},
+                {
+                    "redirect_to": f"{frontend_origin}/auth/callback",
+                    "data": {"full_name": data.full_name},
+                },
             )
         except AuthApiError as exc:
             self._delete_pending_staff_role(pending_role["id"], studio_id)
@@ -123,10 +138,32 @@ class StaffService:
                 detail="Supabase did not return an invited user.",
             )
 
+        user_id = user.id
+        role_ids = [pending_role["id"]]
         try:
-            result = self._link_pending_staff_role(pending_role["id"], studio_id, user.id)
+            profile_result = (
+                self.supabase.table("staff_profiles")
+                .insert({
+                    "user_id": user_id,
+                    "legal_first_name": data.legal_first_name,
+                    "legal_last_name": data.legal_last_name,
+                })
+                .execute()
+            )
+            if not profile_result.data:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create staff profile.",
+                )
+            profile = profile_result.data[0]
+        except Exception:
+            self._cleanup_failed_invite_resources(role_ids, studio_id, user_id)
+            raise
+
+        try:
+            result = self._link_pending_staff_role(pending_role["id"], studio_id, user_id)
         except PostgrestAPIError as exc:
-            self._cleanup_failed_invite_link(pending_role["id"], studio_id, user.id)
+            self._cleanup_failed_invite_resources(role_ids, studio_id, user_id)
             if exc.code == "23505" or self._is_single_studio_membership_conflict(exc):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -138,36 +175,50 @@ class StaffService:
                 ) from exc
             raise
         except Exception:
-            self._cleanup_failed_invite_link(pending_role["id"], studio_id, user.id)
+            self._cleanup_failed_invite_resources(role_ids, studio_id, user_id)
             raise
 
         if not result.data:
             try:
-                result = self._recover_missing_pending_staff_role(data, studio_id, actor_id, user.id)
+                result = self._recover_missing_pending_staff_role(
+                    data,
+                    studio_id,
+                    actor_id,
+                    user_id,
+                    role_ids,
+                )
             except Exception:
-                self._delete_invited_auth_user(user.id)
+                self._cleanup_failed_invite_resources(role_ids, studio_id, user_id)
                 raise
 
         if not result.data:
-            self._delete_invited_auth_user(user.id)
+            self._cleanup_failed_invite_resources(role_ids, studio_id, user_id)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to link staff invite.",
             )
 
-        self._audit(
-            studio_id,
-            actor_id,
-            "staff.invited",
-            result.data[0]["id"],
-            {
-                "email": data.email,
-                "role": data.role,
-                "target_user_id": user.id,
-            },
-        )
+        try:
+            self._audit(
+                studio_id,
+                actor_id,
+                "staff.invited",
+                result.data[0]["id"],
+                {
+                    "email": data.email,
+                    "role": data.role,
+                    "target_user_id": user_id,
+                },
+            )
+        except Exception:
+            self._cleanup_failed_invite_resources(role_ids, studio_id, user_id)
+            raise
 
-        return self._hydrate_staff_member(result.data[0], user)
+        try:
+            return self._hydrate_staff_member(result.data[0], user, profile)
+        except Exception:
+            self._cleanup_failed_invite_resources(role_ids, studio_id, user_id)
+            raise
 
     async def update_staff_role(
         self,
@@ -327,6 +378,37 @@ class StaffService:
         )
         return result.data[0] if result.data else None
 
+    def _get_staff_profiles_for_user_ids(self, user_ids: list[str]) -> dict[str, dict]:
+        if not user_ids:
+            return {}
+
+        try:
+            result = (
+                self.supabase.table("staff_profiles")
+                .select(STAFF_PROFILE_COLUMNS)
+                .in_("user_id", user_ids)
+                .execute()
+            )
+        except PostgrestAPIError as exc:
+            if exc.code in OPTIONAL_STAFF_PROFILE_SCHEMA_ERROR_CODES:
+                return {}
+            raise
+
+        rows = result.data
+        if rows is None:
+            rows = []
+        if not isinstance(rows, list):
+            raise RuntimeError("Invalid staff_profiles response")
+
+        profiles = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                raise RuntimeError("Invalid staff_profiles row")
+            user_id = row.get("user_id")
+            if user_id in user_ids:
+                profiles[user_id] = row
+        return profiles
+
     def _list_staff_role_rows(self, studio_id: str):
         try:
             return (
@@ -389,6 +471,7 @@ class StaffService:
         studio_id: str,
         actor_id: str,
         user_id: str,
+        role_ids: Optional[list[str]] = None,
     ):
         try:
             recovered = self._insert_staff_role_with_metadata(
@@ -412,10 +495,11 @@ class StaffService:
             return recovered
 
         recovered_role_id = recovered.data[0]["id"]
+        if role_ids is not None:
+            role_ids.append(recovered_role_id)
         try:
             result = self._link_pending_staff_role(recovered_role_id, studio_id, user_id)
         except PostgrestAPIError as exc:
-            self._delete_pending_staff_role(recovered_role_id, studio_id)
             if exc.code == "23505" or self._is_single_studio_membership_conflict(exc):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -426,12 +510,6 @@ class StaffService:
                     ),
                 ) from exc
             raise
-        except Exception:
-            self._delete_pending_staff_role(recovered_role_id, studio_id)
-            raise
-
-        if not result.data:
-            self._delete_pending_staff_role(recovered_role_id, studio_id)
         return result
 
     @staticmethod
@@ -456,6 +534,25 @@ class StaffService:
             .execute()
         )
 
+    def _delete_invite_created_staff_role(self, staff_role_id: str, studio_id: str) -> None:
+        (
+            self.supabase.table("staff_roles")
+            .delete()
+            .eq("id", staff_role_id)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
+
+    def _delete_invited_staff_profile(self, user_id: Optional[str]) -> None:
+        if not user_id:
+            return
+        (
+            self.supabase.table("staff_profiles")
+            .delete()
+            .eq("user_id", user_id)
+            .execute()
+        )
+
     def _delete_invited_auth_user(self, user_id: Optional[str]) -> None:
         if not user_id:
             return
@@ -470,8 +567,21 @@ class StaffService:
         studio_id: str,
         user_id: Optional[str],
     ) -> None:
+        self._cleanup_failed_invite_resources([staff_role_id], studio_id, user_id)
+
+    def _cleanup_failed_invite_resources(
+        self,
+        staff_role_ids: list[str],
+        studio_id: str,
+        user_id: Optional[str],
+    ) -> None:
+        for staff_role_id in dict.fromkeys(staff_role_ids):
+            try:
+                self._delete_invite_created_staff_role(staff_role_id, studio_id)
+            except Exception:
+                pass
         try:
-            self._delete_pending_staff_role(staff_role_id, studio_id)
+            self._delete_invited_staff_profile(user_id)
         except Exception:
             pass
         self._delete_invited_auth_user(user_id)
@@ -514,7 +624,12 @@ class StaffService:
             },
         )
 
-    def _hydrate_staff_member(self, row: dict, user: Any = None) -> StaffMemberResponse:
+    def _hydrate_staff_member(
+        self,
+        row: dict,
+        user: Any = None,
+        profile: Optional[dict] = None,
+    ) -> StaffMemberResponse:
         user_id = row.get("user_id")
         if user is None:
             user = self._get_auth_user(user_id)
@@ -525,6 +640,8 @@ class StaffService:
             user_id=user_id,
             email=(getattr(user, "email", None) or row.get("invited_email") or ""),
             full_name=_user_full_name(user),
+            legal_first_name=profile.get("legal_first_name") if profile else None,
+            legal_last_name=profile.get("legal_last_name") if profile else None,
             role=row["role"],
             status=_staff_status(user),
             invited_by=row.get("invited_by"),

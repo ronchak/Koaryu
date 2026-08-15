@@ -7,6 +7,7 @@ from app.schemas.belt import DemoteStudent
 from app.schemas.billing import BillingSubscriptionResponse, StudentBillingEnrollmentResponse
 from app.schemas.lead import LeadCreate, LeadResponse, LeadUpdate
 from app.schemas.schedule import AttendanceCheckIn, ClassSessionResponse
+from app.schemas.staff import StaffInviteCreate, StaffMemberResponse
 from app.schemas.student import (
     BulkStatusUpdate,
     StudentCreate,
@@ -17,6 +18,55 @@ from app.schemas.student import (
 
 
 class ApiContractSchemaTest(unittest.TestCase):
+    def test_staff_invite_requires_and_normalizes_all_identity_names(self):
+        invite = StaffInviteCreate(
+            email=" Instructor@Example.com ",
+            role="instructor",
+            full_name="  Display\t Person  ",
+            legal_first_name="  Legal\nFirst ",
+            legal_last_name=" Last\u00a0 Name ",
+        )
+
+        self.assertEqual(invite.email, "instructor@example.com")
+        self.assertEqual(invite.full_name, "Display Person")
+        self.assertEqual(invite.legal_first_name, "Legal First")
+        self.assertEqual(invite.legal_last_name, "Last Name")
+
+        for field in ("full_name", "legal_first_name", "legal_last_name"):
+            with self.subTest(field=field):
+                payload = {
+                    "email": "instructor@example.com",
+                    "role": "instructor",
+                    "full_name": "Display Person",
+                    "legal_first_name": "Legal",
+                    "legal_last_name": "Name",
+                }
+                payload[field] = " \t\n"
+                with self.assertRaises(ValidationError):
+                    StaffInviteCreate.model_validate(payload)
+
+        with self.assertRaises(ValidationError):
+            StaffInviteCreate(
+                email="instructor@example.com",
+                role="instructor",
+                full_name="Display Person",
+                legal_first_name="Legal",
+            )
+
+    def test_staff_member_response_legal_names_are_optional(self):
+        member = StaffMemberResponse(
+            id="role-1",
+            studio_id="studio-1",
+            email="instructor@example.com",
+            role="instructor",
+            status="pending",
+            created_at="2026-08-15T00:00:00+00:00",
+            updated_at="2026-08-15T00:00:00+00:00",
+        )
+
+        self.assertIsNone(member.legal_first_name)
+        self.assertIsNone(member.legal_last_name)
+
     def test_demotion_reason_is_trimmed_and_requires_non_whitespace_text(self):
         demotion = DemoteStudent(
             student_id="student-1",
