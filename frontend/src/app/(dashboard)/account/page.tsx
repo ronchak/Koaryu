@@ -50,7 +50,7 @@ export default function AccountPage() {
           href="/account/profile"
           icon={UserCircle}
           title="Profile"
-          description="Update your display name and review the email used for login."
+          description="Change your display name and review the email used for login."
         />
         <AccountLinkTile
           href="/account/settings"
