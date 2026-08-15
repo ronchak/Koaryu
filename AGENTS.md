@@ -84,6 +84,7 @@ Contract files can create functions and triggers on real tables inside a transac
 
 - Do not rewrite old Supabase migrations unless the task explicitly calls for migration repair. Add a new migration instead.
 - Do not change deployment secrets, Vercel config, Render config, or linked Supabase project state unless the task explicitly asks for it.
+- Declare every hosted service in its provider manifest (`render.yaml`, `frontend/vercel.json`) and in `docs/services.md`. A service configured only in a provider dashboard drifts silently and stops serving without anything in the repository noticing.
 - Do not expose raw support-ticket data in broad summaries. Follow the privacy rules in `docs/support-triage.md`.
 - Assume the worktree may already contain unrelated user changes. Do not revert or “clean up” edits you did not make.
 
@@ -95,6 +96,11 @@ Contract files can create functions and triggers on real tables inside a transac
 
 ## Important References
 
+- **Hosted services inventory: `docs/services.md`** — every Vercel, Render, Supabase
+  and Stripe environment, which copy is production, and where each secret lives.
+  Read it before reasoning about any deployed environment, and update it in the
+  same change whenever a hosted service is added, renamed, or removed. A hosted
+  service that is not listed there does not exist.
 - Repo overview and local setup: `README.md`
 - Frontend app guidance: `frontend/AGENTS.md`
 - Backend app guidance: `backend/AGENTS.md`
