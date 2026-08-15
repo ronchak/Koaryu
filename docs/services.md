@@ -59,14 +59,31 @@ Both services are declared in `render.yaml`. Neither auto-deploys.
 
 | | Production | Staging |
 | --- | --- | --- |
-| Service name | `koaryu` | `koaryu-staging` |
-| Service ID | `srv-d7mogk1kh4rs73aq6hqg` | not currently referenced by tooling |
+| Service name | `Koaryu` | `koaryu-staging` |
+| Service ID | `srv-d7mogk1kh4rs73aq6hqg` | `srv-d98g4kutrd3s73ek0elg` |
 | URL | `https://koaryu.onrender.com` | `https://koaryu-staging.onrender.com` |
-| Plan | `starter` | `free` |
-| Region | ohio | ohio |
+| Tracks branch | `main` | `staging` |
+| Plan | `starter` (paid) | `free` |
+| Auto-deploy | off | off |
 | Health check | `/health/ready` | `/health/ready` |
 | `ENVIRONMENT` | `production` | `staging` |
 | Stripe mode | `live` | `test` |
+
+The two services track **different branches**. Deploying a commit to staging means
+moving the `staging` branch to it first — `git push origin main:staging` — and
+then triggering a manual deploy, because auto-deploy is off on both.
+
+The staging service is on the free plan, which sleeps after roughly 15 minutes of
+inactivity. A slow or absent first response is usually spin-up, not a fault. If it
+never comes back, check whether `/health/ready` is failing against a database that
+has moved ahead of the deployed commit.
+
+### Not part of Koaryu
+
+`sparse-halo-api` (`srv-d76dl0pr0fns73c85la0`) lives in the same Render account but
+builds `ronchak/sparse-halo`, an unrelated repository. It is on the free plan, has
+no health check, and is the only service in the account with auto-deploy **on**.
+Recorded here so it is not mistaken for Koaryu infrastructure.
 
 The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
@@ -136,19 +153,29 @@ vault.
 
 | Secret | Where it lives |
 | --- | --- |
-| Render API key | Render dashboard → Account Settings → API Keys. Not currently on this machine. |
+| Render API key | macOS Keychain — service `com.koaryu.render.api-key`, account `koaryu-release-automation` |
 | Supabase service role / JWT secret | Render dashboard env vars, `sync: false` |
 | Stripe keys and webhook secrets | Render dashboard env vars, `sync: false` |
 | Shared test studio password | macOS Keychain, `Koaryu Shared Core Test - NO BILLING` |
 | Non-secret account references | Obsidian vault, `Codex Memory/` |
 
+The Render key is account-wide, not per-service, and is what
+`scripts/merge-release-pr.sh` needs. Load it into a shell without printing it:
+
+```bash
+export RENDER_API_KEY="$(security find-generic-password -s com.koaryu.render.api-key -w)"
+```
+
+It is stored under a service name that does not contain the string
+`RENDER_API_KEY`, so searching the Keychain for the environment variable's name
+finds nothing and wrongly suggests the key is missing.
+
 ## Known gaps
 
-- `RENDER_API_KEY` is not available on this machine, so the guarded release merge
-  and every Render deploy are director-executed.
-- `koaryu-staging` has no service ID recorded here because reading it requires
-  that key. Add it once available.
 - The staging Render service was created outside the blueprint. It is declared in
   `render.yaml` now, but confirm its dashboard environment variables match that
-  declaration — adding it to the blueprint does not retroactively adopt an
-  existing service.
+  declaration — adding a service to the blueprint does not retroactively adopt an
+  existing one.
+- `frontend/vercel.json` pins the staging frontend by branch, but no Vercel
+  project ID or service ID is recorded for it separately; it is the same project
+  as production, deployed from the `staging` branch.
