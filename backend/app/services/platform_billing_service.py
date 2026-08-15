@@ -192,7 +192,13 @@ class PlatformBillingService:
 
     def get_status_sync(self, studio_id: str) -> PlatformBillingStatusResponse:
         row = self.get_access_status_row(studio_id)
-        return status_response(row, self._email_usage(studio_id))
+        return status_response(
+            row,
+            self._email_usage(studio_id),
+            self_checkout_enabled=bool(
+                getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False)
+            ),
+        )
 
     def get_access_status_row(self, studio_id: str, *, strict_repairs: bool = False) -> dict[str, Any]:
         row = self._ensure_subscription_row(studio_id)

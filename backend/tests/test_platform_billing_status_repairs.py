@@ -384,3 +384,23 @@ class PlatformBillingStatusRepairTest(PlatformBillingServiceTestCase):
         self.assertIsNone(response.current_period_start)
         self.assertIsNone(response.current_period_end)
         self.assertTrue(rows[0]["comped"])
+
+    def test_checkout_capability_follows_the_server_side_kill_switch(self):
+        """Disabling self-checkout must close the flow, not break it.
+
+        `can_start_checkout` drove the frontend's checkout button from row state
+        alone, so with the switch off the UI still offered checkout while
+        StripeMutationPolicy rejected the operation.
+        """
+        rows = [{
+            "studio_id": "studio_1",
+            "status": "incomplete",
+            "comped": False,
+        }]
+        service = self.service(rows)
+
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = True
+        self.assertTrue(asyncio.run(service.get_status("studio_1")).can_start_checkout)
+
+        service.settings.CORE_SELF_CHECKOUT_ENABLED = False
+        self.assertFalse(asyncio.run(service.get_status("studio_1")).can_start_checkout)

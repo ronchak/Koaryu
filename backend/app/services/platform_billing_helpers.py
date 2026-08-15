@@ -142,7 +142,12 @@ def pending_checkout_metadata_update(
     return {"metadata": merge_metadata(row, {PENDING_CHECKOUT_METADATA_KEY: pending})}
 
 
-def status_response(row: dict[str, Any], email_usage: EmailUsageResponse) -> PlatformBillingStatusResponse:
+def status_response(
+    row: dict[str, Any],
+    email_usage: EmailUsageResponse,
+    *,
+    self_checkout_enabled: bool = False,
+) -> PlatformBillingStatusResponse:
     status = row.get("status") or "comped"
     comped = bool(row.get("comped", True))
     return PlatformBillingStatusResponse(
@@ -152,8 +157,13 @@ def status_response(row: dict[str, Any], email_usage: EmailUsageResponse) -> Pla
         currency=row.get("currency") or "usd",
         status=status,
         comped=comped,
+        # Derived from the server-side kill switch as well as row state. Without
+        # the switch the UI offered checkout while StripeMutationPolicy rejected
+        # it, so disabling self-checkout produced a broken flow instead of a
+        # closed one.
         can_start_checkout=(
-            not comped
+            self_checkout_enabled
+            and not comped
             and status not in {"comped", "active", "trialing", "past_due", "unpaid", "paused"}
         ),
         trial_start=to_text(row.get("trial_start")),
