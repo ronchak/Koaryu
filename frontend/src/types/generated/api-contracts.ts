@@ -62,6 +62,7 @@ export interface ApiAttendanceResponse {
 
 export interface ApiAuthResponse {
   user: ApiUserProfile;
+  staff_profiles_available: boolean;
   studio_id?: string | null;
   role?: "admin" | "instructor" | "front_desk" | null;
 }
@@ -1424,6 +1425,8 @@ export interface ApiUserProfile {
   id: string;
   email: string;
   full_name?: string | null;
+  legal_first_name?: string | null;
+  legal_last_name?: string | null;
 }
 
 export interface ApiValidationError {

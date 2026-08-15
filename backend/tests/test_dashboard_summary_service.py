@@ -47,6 +47,7 @@ class FakeSupabase(TableBackedSupabase):
 def auth_response(role="admin", studio_id="studio-1"):
     return AuthResponse(
         user=UserProfile(id="user-1", email="owner@example.com", full_name="Owner"),
+        staff_profiles_available=True,
         studio_id=studio_id,
         role=role,
     )

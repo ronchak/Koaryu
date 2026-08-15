@@ -37,6 +37,7 @@ class ApiContractSchemaTest(unittest.TestCase):
     def test_auth_role_uses_staff_role_contract(self):
         auth = AuthResponse(
             user=UserProfile(id="user-1", email="owner@example.com"),
+            staff_profiles_available=True,
             studio_id="studio-1",
             role="front_desk",
         )
@@ -45,6 +46,7 @@ class ApiContractSchemaTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             AuthResponse(
                 user=UserProfile(id="user-1", email="owner@example.com"),
+                staff_profiles_available=True,
                 role="owner",
             )
 
