@@ -9,10 +9,42 @@ import { StaffRolesSection } from "@/components/settings/staff-roles-section";
 import { api } from "@/lib/api";
 import { useConfigStore, useStudioStore } from "@/lib/store";
 import { AlertTriangle, Save, Check, RotateCcw, Trash2 } from "lucide-react";
+import { canAccessSettings } from "./access-policy";
 
 type StudioDataConfirmAction = "demo-reset" | "clear-data" | null;
 
 export default function SettingsPage() {
+  const { currentRole } = useStudioStore();
+
+  return (
+    <>
+      <Header title="Settings" description="Studio configuration and preferences." />
+      {canAccessSettings(currentRole) ? <AdminSettingsContent /> : <SettingsAccessNotice />}
+    </>
+  );
+}
+
+function SettingsAccessNotice() {
+  return (
+    <div className="flex-1 p-8">
+      <div className="max-w-3xl">
+        <section
+          aria-labelledby="settings-access-title"
+          className="rounded-[6px] border border-accent/20 bg-accent/10 p-5"
+        >
+          <h2 id="settings-access-title" className="text-sm font-medium text-text-primary">
+            Admin access required
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-text-secondary">
+            Only studio admins can view and manage studio settings. Ask a studio admin if you need access.
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function AdminSettingsContent() {
   const { isPreviewMode, token } = useConfigStore();
   const { currentRole, studioName, setStudioName, resetDemoData, clearStudioData } = useStudioStore();
   const [nameDraft, setNameDraft] = useState("");
@@ -204,7 +236,6 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Header title="Settings" description="Studio configuration and preferences." />
       <div className="flex-1 p-8">
         <div className="max-w-3xl space-y-6">
           {/* Studio info */}
