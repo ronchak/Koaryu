@@ -181,6 +181,12 @@ jobs:
       - name: Prove Connect identity concurrency invariant
         run: scripts/verify-connect-identity-concurrency.sh
 
+      - name: Prove Core checkout acceptance and reservation serialization
+        run: scripts/verify-core-checkout-accept-reserve-concurrency.sh
+
+      - name: Prove student profile and rank-plan lock ordering
+        run: scripts/verify-student-profile-rank-plan-concurrency.sh
+
       - name: Stop disposable database
         if: ${{ always() }}
         run: supabase stop --no-backup

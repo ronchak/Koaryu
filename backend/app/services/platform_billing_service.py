@@ -28,14 +28,13 @@ from app.services.platform_billing_helpers import (
     build_core_checkout_idempotency_key,
     build_idempotency_key,
     merge_metadata,
-    pending_checkout_metadata_update,
-    pending_checkout_url,
+    normalize_idempotency_key,
     row_metadata,
     safe_redirect_url,
     status_response,
 )
 from app.services.platform_subscription_projection import PlatformSubscriptionProjector
-from app.services.supabase_rpc import execute_required_rpc
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 from app.services.stripe_service import StripeService
 
 
@@ -45,6 +44,10 @@ logger = logging.getLogger(__name__)
 EMAIL_INCLUDED_PER_MONTH = 500
 EMAIL_OVERAGE_RATE_CENTS = 0.2
 LIVE_STRIPE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid", "paused"}
+# A trialing subscription has never been invoiced, so cancelling it owes the
+# studio nothing. Every other live status means at least one invoice was already
+# paid, so cancelling it has to leave a durable compensation receipt behind.
+PAID_STRIPE_SUBSCRIPTION_STATUSES = LIVE_STRIPE_SUBSCRIPTION_STATUSES - {"trialing"}
 MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environment."
 NO_COMP_CLEAR_EVENT = object()
 
@@ -189,7 +192,13 @@ class PlatformBillingService:
 
     def get_status_sync(self, studio_id: str) -> PlatformBillingStatusResponse:
         row = self.get_access_status_row(studio_id)
-        return status_response(row, self._email_usage(studio_id))
+        return status_response(
+            row,
+            self._email_usage(studio_id),
+            self_checkout_enabled=bool(
+                getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False)
+            ),
+        )
 
     def get_access_status_row(self, studio_id: str, *, strict_repairs: bool = False) -> dict[str, Any]:
         row = self._ensure_subscription_row(studio_id)
@@ -366,6 +375,11 @@ class PlatformBillingService:
         idempotency_key: Optional[str] = None,
     ) -> BillingLinkResponse:
         row = self._ensure_subscription_row(studio_id)
+        if row.get("comped") is True or (row.get("status") or "") == "comped":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Koaryu Core access is comped for this studio. No checkout is required.",
+            )
         row = self._repair_missing_subscription(row)
         row = self._repair_subscription_periods(row)
         if row.get("stripe_subscription_id") and (row.get("status") or "") in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
@@ -393,54 +407,184 @@ class PlatformBillingService:
                 self.settings.FRONTEND_URL,
             ),
         }
-        pending_url = pending_checkout_url(row)
-        if pending_url:
+        normalize_idempotency_key(idempotency_key)
+        reservation = first_rpc_row(execute_required_rpc(
+            self.supabase,
+            "reserve_core_checkout_v2_atomic",
+            {"p_studio_id": studio_id},
+        )) or {}
+        reservation_outcome = reservation.get("outcome")
+        if reservation_outcome == "existing" and reservation.get("session_url"):
             self._audit(studio_id, actor_id, "platform_billing.checkout_reused", studio_id, {"customer_id": customer_id})
-            return BillingLinkResponse(url=pending_url)
+            return BillingLinkResponse(url=reservation["session_url"])
+        if reservation_outcome == "comped":
+            raise HTTPException(status_code=409, detail="Koaryu Core access is comped for this studio. No checkout is required.")
+        if reservation_outcome == "active":
+            raise HTTPException(status_code=409, detail="Koaryu Core billing is already active. Open the billing portal to manage this subscription.")
+        if reservation_outcome == "in_progress":
+            raise HTTPException(status_code=409, detail="Koaryu Core checkout is already being prepared. Try again in a moment.")
+        reservation_token = reservation.get("reservation_token")
+        checkout_epoch = reservation.get("checkout_epoch")
+        if reservation_outcome != "reserved" or not reservation_token or checkout_epoch is None:
+            raise HTTPException(status_code=500, detail="Failed to reserve Koaryu Core checkout.")
+        trial_period_days = reservation.get("trial_period_days")
+        if trial_period_days not in (None, 30):
+            self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
+            raise HTTPException(status_code=500, detail="Koaryu Core checkout returned invalid trial eligibility.")
         checkout_key = build_core_checkout_idempotency_key(
             studio_id,
-            customer_id,
-            checkout_urls,
-            idempotency_key,
-            self.settings.STRIPE_KOARYU_CORE_PRICE_ID,
+            str(reservation_token),
+            int(checkout_epoch),
         )
         try:
             session = stripe_service.create_core_checkout_session(
                 customer_id=customer_id,
                 studio_id=studio_id,
+                reservation_token=str(reservation_token),
+                checkout_epoch=int(checkout_epoch),
+                trial_period_days=trial_period_days,
                 idempotency_key=checkout_key,
                 **checkout_urls,
             )
         except Exception as exc:
             if not self._is_missing_stripe_customer_error(exc):
+                self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
                 raise
+            self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
             customer_id = self._create_platform_customer(stripe_service, studio_id, studio)
+            reservation = first_rpc_row(execute_required_rpc(
+                self.supabase,
+                "reserve_core_checkout_v2_atomic",
+                {"p_studio_id": studio_id},
+            )) or {}
+            reservation_token = reservation.get("reservation_token")
+            checkout_epoch = reservation.get("checkout_epoch")
+            if reservation.get("outcome") != "reserved" or not reservation_token or checkout_epoch is None:
+                raise HTTPException(status_code=409, detail="Koaryu Core checkout state changed. Start checkout again.")
+            trial_period_days = reservation.get("trial_period_days")
+            if trial_period_days not in (None, 30):
+                self._release_core_checkout_reservation(studio_id, str(reservation_token), int(checkout_epoch))
+                raise HTTPException(status_code=500, detail="Koaryu Core checkout returned invalid trial eligibility.")
             checkout_key = build_core_checkout_idempotency_key(
                 studio_id,
-                customer_id,
-                checkout_urls,
-                idempotency_key,
-                self.settings.STRIPE_KOARYU_CORE_PRICE_ID,
+                str(reservation_token),
+                int(checkout_epoch),
             )
             session = stripe_service.create_core_checkout_session(
                 customer_id=customer_id,
                 studio_id=studio_id,
+                reservation_token=str(reservation_token),
+                checkout_epoch=int(checkout_epoch),
+                trial_period_days=trial_period_days,
                 idempotency_key=checkout_key,
                 **checkout_urls,
             )
         session_url = session["url"] if isinstance(session, dict) else session.url
         session_id = session.get("id") if isinstance(session, dict) else getattr(session, "id", None)
         expires_at = session.get("expires_at") if isinstance(session, dict) else getattr(session, "expires_at", None)
-        pending_update = pending_checkout_metadata_update(
-            row,
-            session_id=session_id,
-            session_url=session_url,
-            expires_at=expires_at,
-        )
-        if pending_update:
-            self._update_subscription_row(row["studio_id"], pending_update)
+        publish_args = {
+            "p_studio_id": studio_id,
+            "p_reservation_token": str(reservation_token),
+            "p_checkout_epoch": int(checkout_epoch),
+            "p_session_id": session_id,
+            "p_session_url": session_url,
+            "p_expires_at": expires_at,
+        }
+        try:
+            published = first_rpc_row(execute_required_rpc(
+                self.supabase,
+                "publish_core_checkout_atomic",
+                publish_args,
+            )) or {}
+        except Exception:
+            # Stripe already holds a live session, so failing here leaves it
+            # untracked and the reservation held. Expiring blind is not safe
+            # either: the write may have committed and only the response lost.
+            # Replaying the atomic publication is what settles it, because a
+            # committed publish consumes the reservation and reports the stored
+            # session back as `existing`.
+            logger.error(
+                "Koaryu Core checkout publication failed; reconciling; reference=%s",
+                uuid4().hex,
+            )
+            try:
+                published = first_rpc_row(execute_required_rpc(
+                    self.supabase,
+                    "publish_core_checkout_atomic",
+                    publish_args,
+                )) or {}
+            except Exception as exc:
+                # Still unprovable. Leaving a live session to its own expiry is
+                # recoverable; cancelling a checkout the studio may already have
+                # paid through is not.
+                raise HTTPException(
+                    status_code=503,
+                    detail="Koaryu Core checkout could not be confirmed. Try again shortly.",
+                ) from exc
+        if published.get("outcome") != "published":
+            # Only expire a session the database proves it did not store. When
+            # the stored session is this one, the publication did commit and the
+            # lost response was the only failure.
+            if session_id and published.get("session_id") != session_id:
+                stripe_service.expire_core_checkout_session(
+                    session_id=session_id,
+                    studio_id=studio_id,
+                    idempotency_key=build_idempotency_key("core-checkout-expire", studio_id, session_id),
+                )
+            if published.get("outcome") == "existing" and published.get("session_url"):
+                return BillingLinkResponse(url=published["session_url"])
+            raise HTTPException(status_code=409, detail="Koaryu Core checkout was invalidated. Start again if payment is still required.")
         self._audit(studio_id, actor_id, "platform_billing.checkout_created", studio_id, {"customer_id": customer_id})
         return BillingLinkResponse(url=session_url)
+
+    def _release_core_checkout_reservation(self, studio_id: str, token: str, epoch: int) -> None:
+        execute_required_rpc(self.supabase, "release_core_checkout_reservation_atomic", {
+            "p_studio_id": studio_id,
+            "p_reservation_token": token,
+            "p_checkout_epoch": epoch,
+        })
+
+    def _record_core_subscription_rejection(
+        self,
+        *,
+        studio_id: str,
+        subscription_id: str,
+        reason: str,
+        compensation_required: bool,
+        session_id: Optional[str] = None,
+        event_created: Optional[int] = None,
+    ) -> None:
+        """Durably record an invalid checkout binding before its subscription dies.
+
+        Two facts, one lock. The rejection is always recorded: it previously
+        existed only as an attempted Stripe cancellation, so a transient cancel
+        failure left nothing behind and provider repair could later list the
+        still-live subscription and project it as the studio's active one.
+
+        The refund claim is recorded only when money actually moved. Cancelling
+        is irreversible from the studio's side, so that obligation has to be
+        durable first. Checkout completion always did this; the webhook and
+        repair paths reach the same cancel holding only a subscription id, which
+        is why the session is an optional refinement rather than part of the
+        required identity.
+        """
+        execute_required_rpc(
+            self.supabase,
+            "record_core_checkout_compensation_required_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_session_id": session_id,
+                "p_subscription_id": subscription_id,
+                "p_event_created": event_created,
+                "p_reason": reason,
+                "p_compensation_required": compensation_required,
+            },
+        )
+
+    @staticmethod
+    def _core_checkout_rejections(row: dict[str, Any]) -> dict[str, Any]:
+        rejections = (row_metadata(row) or {}).get("core_checkout_rejections")
+        return rejections if isinstance(rejections, dict) else {}
 
     async def create_portal_link(
         self,
@@ -501,18 +645,101 @@ class PlatformBillingService:
             stale_for_subscription_state = self._is_stale_subscription_event(row, event_created)
             stale_for_payment_state = self._is_stale_invoice_payment_event(row, event_created)
             subscription_id = self._stripe_id(data_object.get("subscription"))
-            update = {"metadata": merge_metadata(row, {PENDING_CHECKOUT_METADATA_KEY: None})}
+            reservation_token = metadata.get("core_checkout_reservation_token")
+            checkout_epoch = metadata.get("core_checkout_epoch")
+            session_id = self._stripe_id(data_object.get("id"))
+            pending_session = row_metadata(row).get(PENDING_CHECKOUT_METADATA_KEY)
+            legacy_session_matches = (
+                not reservation_token
+                and checkout_epoch is None
+                and isinstance(pending_session, dict)
+                and pending_session.get("id") == session_id
+                and (
+                    not row.get("stripe_customer_id")
+                    or row.get("stripe_customer_id")
+                    == self._stripe_id(data_object.get("customer"))
+                )
+            )
+            accepted = (
+                not bool(getattr(self.settings, "CORE_SELF_CHECKOUT_ENABLED", False))
+                or legacy_session_matches
+            )
+            if (
+                reservation_token
+                and checkout_epoch is not None
+                and session_id
+                and subscription_id
+            ):
+                accepted_result = execute_required_rpc(
+                    self.supabase,
+                    "accept_core_checkout_subscription_atomic",
+                    {
+                        "p_studio_id": studio_id,
+                        "p_reservation_token": reservation_token,
+                        "p_checkout_epoch": int(checkout_epoch),
+                        "p_session_id": session_id,
+                        "p_subscription_id": subscription_id,
+                        "p_event_created": event_created,
+                    },
+                )
+                acceptance_outcome = getattr(accepted_result, "data", accepted_result)
+                if acceptance_outcome == "historical_replay":
+                    return
+                preserve_comp = acceptance_outcome == "retained_live"
+                accepted = acceptance_outcome in {
+                    "accepted", "already_accepted", "retained_live",
+                }
+            else:
+                preserve_comp = False
+            if not accepted:
+                if subscription_id:
+                    self._record_core_subscription_rejection(
+                        studio_id=studio_id,
+                        subscription_id=subscription_id,
+                        reason="invalid_paid_checkout_completion",
+                        compensation_required=(
+                            data_object.get("payment_status") == "paid"
+                        ),
+                        session_id=session_id,
+                        event_created=event_created,
+                    )
+                    StripeService().cancel_core_subscription(
+                        subscription_id=subscription_id,
+                        studio_id=studio_id,
+                        idempotency_key=build_idempotency_key(
+                            "core-checkout-invalid-subscription",
+                            studio_id,
+                            subscription_id,
+                        ),
+                    )
+                return
+            if reservation_token:
+                row = self._ensure_subscription_row(studio_id)
+                stale_for_subscription_state = self._is_stale_subscription_event(row, event_created)
+                stale_for_payment_state = self._is_stale_invoice_payment_event(row, event_created)
+            update: dict[str, Any] = {}
+            if not reservation_token:
+                update["metadata"] = merge_metadata(
+                    row,
+                    {PENDING_CHECKOUT_METADATA_KEY: None},
+                )
             if not stale_for_payment_state:
                 update["last_payment_status"] = data_object.get("payment_status")
                 self._mark_invoice_payment_event_created(update, row, event_created)
             if not stale_for_subscription_state:
                 update["stripe_customer_id"] = self._stripe_id(data_object.get("customer"))
                 update["stripe_subscription_id"] = subscription_id
-                update["comped"] = False
+                if not preserve_comp:
+                    update["comped"] = False
                 if subscription_id and hydrate_subscription:
                     try:
                         subscription = StripeService().retrieve_subscription(subscription_id)
-                        update.update(self._project_subscription(subscription, clear_comp=True))
+                        update.update(
+                            self._project_subscription(
+                                subscription,
+                                clear_comp=not preserve_comp,
+                            )
+                        )
                     except Exception as exc:
                         logger.error(
                             "Stripe checkout completion subscription hydration failed; "
@@ -528,7 +755,9 @@ class PlatformBillingService:
                 studio_id,
                 {k: v for k, v in update.items() if v is not None},
                 comp_clear_event_created=(
-                    event_created if not stale_for_subscription_state else NO_COMP_CLEAR_EVENT
+                    event_created
+                    if not stale_for_subscription_state and not preserve_comp
+                    else NO_COMP_CLEAR_EVENT
                 ),
             )
             return
@@ -545,14 +774,83 @@ class PlatformBillingService:
                 self._log_orphaned_subscription_event(event_type)
                 return
             row = self._ensure_subscription_row(studio_id)
+            reservation_token = metadata.get("core_checkout_reservation_token")
+            checkout_epoch = metadata.get("core_checkout_epoch")
+            subscription_id = self._stripe_id(data_object.get("id"))
+            if reservation_token and checkout_epoch is not None and subscription_id:
+                accepted_result = execute_required_rpc(
+                    self.supabase,
+                    "accept_core_checkout_subscription_atomic",
+                    {
+                        "p_studio_id": studio_id,
+                        "p_reservation_token": reservation_token,
+                        "p_checkout_epoch": int(checkout_epoch),
+                        "p_session_id": None,
+                        "p_subscription_id": subscription_id,
+                        "p_event_created": event_created,
+                    },
+                )
+                acceptance_outcome = getattr(accepted_result, "data", accepted_result)
+                if acceptance_outcome == "historical_replay":
+                    return
+                preserve_comp = acceptance_outcome == "retained_live"
+                accepted = acceptance_outcome in {
+                    "accepted", "already_accepted", "retained_live",
+                }
+                if not accepted:
+                    if event_type == "customer.subscription.deleted":
+                        # The terminal event is the one chance to undo a
+                        # rejected subscription that provider repair projected
+                        # before the rejection was durable. Ignoring it left the
+                        # local row active on a subscription Stripe had deleted.
+                        if (
+                            subscription_id
+                            and row.get("stripe_subscription_id") == subscription_id
+                        ):
+                            self._update_subscription_row(
+                                studio_id,
+                                {
+                                    "stripe_subscription_id": None,
+                                    "status": "incomplete",
+                                },
+                            )
+                        return
+                    self._record_core_subscription_rejection(
+                        studio_id=studio_id,
+                        subscription_id=subscription_id,
+                        reason="invalid_paid_subscription_event",
+                        compensation_required=(
+                            (data_object.get("status") or "")
+                            in PAID_STRIPE_SUBSCRIPTION_STATUSES
+                        ),
+                        event_created=event_created,
+                    )
+                    StripeService().cancel_core_subscription(
+                        subscription_id=subscription_id,
+                        studio_id=studio_id,
+                        idempotency_key=build_idempotency_key(
+                            "core-checkout-invalid-subscription",
+                            studio_id,
+                            subscription_id,
+                        ),
+                    )
+                    return
+                row = self._ensure_subscription_row(studio_id)
+            else:
+                preserve_comp = False
             if self._is_stale_subscription_event(row, event_created):
                 return
-            update = self._project_subscription(data_object, clear_comp=True)
+            update = self._project_subscription(
+                data_object,
+                clear_comp=not preserve_comp,
+            )
             self._mark_subscription_event_created(update, row, event_created)
             self._update_subscription_row(
                 studio_id,
                 update,
-                comp_clear_event_created=event_created,
+                comp_clear_event_created=(
+                    NO_COMP_CLEAR_EVENT if preserve_comp else event_created
+                ),
             )
             return
 
@@ -831,8 +1129,90 @@ class PlatformBillingService:
         if not subscription:
             return row
 
+        if not self._accept_repaired_core_subscription(row, subscription):
+            return row
+
         update = self._project_subscription(subscription)
         return self._update_subscription_row(row["studio_id"], update)
+
+    def _accept_repaired_core_subscription(
+        self,
+        row: dict[str, Any],
+        subscription: Any,
+    ) -> bool:
+        projector = self._subscription_projector()
+        metadata = projector.object_get(subscription, "metadata") or {}
+        reservation_token = projector.object_get(
+            metadata,
+            "core_checkout_reservation_token",
+        )
+        checkout_epoch = projector.object_get(metadata, "core_checkout_epoch")
+
+        # Subscriptions created before the reservation protocol have neither
+        # field. They remain repairable through the bounded legacy path.
+        if reservation_token is None and checkout_epoch is None:
+            return True
+
+        subscription_id = projector.stripe_id(
+            projector.object_get(subscription, "id")
+        )
+        # A subscription this studio already rejected is never a repair
+        # candidate, however the provider still lists it. Relying on the
+        # acceptance RPC to re-derive `invalid` was not enough: a transient
+        # cancel failure leaves the subscription live, and once the comp is
+        # revoked the repair guard reopens against provider state alone.
+        if subscription_id and subscription_id in self._core_checkout_rejections(row):
+            return False
+        acceptance_outcome = "invalid"
+        if reservation_token and checkout_epoch is not None and subscription_id:
+            try:
+                accepted_result = execute_required_rpc(
+                    self.supabase,
+                    "accept_core_checkout_subscription_atomic",
+                    {
+                        "p_studio_id": row["studio_id"],
+                        "p_reservation_token": reservation_token,
+                        "p_checkout_epoch": int(checkout_epoch),
+                        "p_session_id": None,
+                        "p_subscription_id": subscription_id,
+                        "p_event_created": None,
+                    },
+                )
+                acceptance_outcome = getattr(
+                    accepted_result,
+                    "data",
+                    accepted_result,
+                )
+            except (TypeError, ValueError):
+                acceptance_outcome = "invalid"
+
+        if acceptance_outcome in {"accepted", "already_accepted", "retained_live"}:
+            return True
+        if acceptance_outcome == "historical_replay":
+            return False
+
+        subscription_status = projector.object_get(subscription, "status") or ""
+        if subscription_id and subscription_status in LIVE_STRIPE_SUBSCRIPTION_STATUSES:
+            self._record_core_subscription_rejection(
+                studio_id=row["studio_id"],
+                subscription_id=subscription_id,
+                reason="invalid_paid_subscription_repair",
+                compensation_required=(
+                    subscription_status in PAID_STRIPE_SUBSCRIPTION_STATUSES
+                ),
+            )
+            self._provider_call(
+                lambda: StripeService().cancel_core_subscription(
+                    subscription_id=subscription_id,
+                    studio_id=row["studio_id"],
+                    idempotency_key=build_idempotency_key(
+                        "core-repair-invalid-subscription",
+                        row["studio_id"],
+                        subscription_id,
+                    ),
+                )
+            )
+        return False
 
     def _select_core_subscription(self, subscriptions: Any, studio_id: str) -> Optional[Any]:
         return self._subscription_projector().select_core_subscription(

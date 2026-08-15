@@ -1,4 +1,5 @@
 from typing import Annotated, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -72,6 +73,7 @@ class BeltRankSyncItem(BeltRankCreate):
 
 
 class BeltLadderSyncRequest(BaseModel):
+    operation_id: UUID
     sub_rank_term: Optional[str] = None
     ranks: list[BeltRankSyncItem] = Field(default_factory=list)
 
@@ -79,6 +81,7 @@ class BeltLadderSyncRequest(BaseModel):
 # ---- Promotion ----
 
 class PromoteStudent(BaseModel):
+    operation_id: Optional[UUID] = None
     student_id: str
     to_rank_id: str
     student_program_membership_id: Optional[str] = None
@@ -87,6 +90,7 @@ class PromoteStudent(BaseModel):
 
 
 class DemoteStudent(BaseModel):
+    operation_id: Optional[UUID] = None
     student_id: str
     to_rank_id: str
     student_program_membership_id: Optional[str] = None
@@ -104,10 +108,12 @@ class PromotionResponse(BaseModel):
     student_program_membership_id: Optional[str] = None
     program_id: Optional[str] = None
     from_rank_id: Optional[str] = None
-    to_rank_id: str
+    to_rank_id: Optional[str] = None
     promoted_by: Optional[str] = None
     notes: Optional[str] = None
     promoted_at: str
+    operation_id: Optional[str] = None
+    transition_kind: Optional[str] = None
     # Joined names for display
     student_name: Optional[str] = None
     from_rank_name: Optional[str] = None

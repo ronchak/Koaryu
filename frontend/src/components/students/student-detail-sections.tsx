@@ -108,7 +108,9 @@ export function StudentDetailSections({
               const fromRank = promotion.from_rank_id
                 ? rankById.get(promotion.from_rank_id)
                 : undefined;
-              const toRank = rankById.get(promotion.to_rank_id);
+              const toRank = promotion.to_rank_id
+                ? rankById.get(promotion.to_rank_id)
+                : undefined;
 
               return (
                 <div
@@ -125,6 +127,8 @@ export function StudentDetailSections({
                             isTip={fromRank.is_tip}
                             tipColorHex={fromRank.tip_color_hex ?? undefined}
                           />
+                        ) : promotion.from_rank_name ? (
+                          <span className="text-xs text-text-primary">{promotion.from_rank_name}</span>
                         ) : (
                           <span className="text-xs text-muted">Unranked</span>
                         )}

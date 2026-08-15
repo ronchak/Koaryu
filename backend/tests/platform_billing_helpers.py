@@ -4,6 +4,7 @@ import unittest
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from math import floor
+from threading import Lock
 from unittest.mock import patch
 
 from app.services.platform_billing_service import PlatformBillingService
@@ -34,6 +35,258 @@ class FakeSupabase(RpcBackedSupabase):
             "audit_logs": [],
         })
         self.on_update_query = self._apply_studio_subscription_update
+        self._core_checkout_lock = Lock()
+        self.before_reserve_core_checkout = None
+
+    def _subscription_row(self, studio_id: str) -> dict:
+        return next(
+            row for row in self.tables["studio_subscriptions"]
+            if row.get("studio_id") == studio_id
+        )
+
+    def _rpc_reserve_core_checkout_v2_atomic(self, params: dict) -> list[dict]:
+        with self._core_checkout_lock:
+            if self.before_reserve_core_checkout is not None:
+                callback = self.before_reserve_core_checkout
+                self.before_reserve_core_checkout = None
+                callback()
+            row = self._subscription_row(params["p_studio_id"])
+            if row.get("comped") or row.get("status") == "comped":
+                return [{"outcome": "comped", "trial_period_days": None}]
+            if row.get("stripe_subscription_id") and row.get("status") in {
+                "active", "trialing", "past_due", "unpaid", "paused",
+            }:
+                return [{"outcome": "active", "trial_period_days": None}]
+            metadata = dict(row.get("metadata") or {})
+            session = metadata.get("core_checkout_session")
+            acceptances = dict(metadata.get("core_checkout_acceptances") or {})
+            if (
+                isinstance(session, dict)
+                and session.get("state") == "completed"
+                and session.get("accepted_subscription_id")
+            ):
+                accepted_subscription_id = session["accepted_subscription_id"]
+                if (
+                    row.get("stripe_subscription_id") != accepted_subscription_id
+                    or row.get("status") not in {"canceled", "incomplete_expired"}
+                ):
+                    return [{"outcome": "active", "trial_period_days": None}]
+                acceptances[accepted_subscription_id] = dict(session)
+                metadata["core_checkout_acceptances"] = acceptances
+            if (
+                isinstance(session, dict)
+                and session.get("state") == "published"
+                and session.get("url")
+                and int(session.get("expires_at") or 0) > 999999999
+            ):
+                return [{
+                    "outcome": "existing",
+                    "reservation_token": session.get("token"),
+                    "checkout_epoch": session.get("epoch"),
+                    "session_id": session.get("id"),
+                    "session_url": session.get("url"),
+                    "expires_at": session.get("expires_at"),
+                    "trial_period_days": None,
+                }]
+            if isinstance(metadata.get("core_checkout_reservation"), dict):
+                reservation = metadata["core_checkout_reservation"]
+                return [{
+                    "outcome": "in_progress",
+                    "reservation_token": reservation["token"],
+                    "checkout_epoch": reservation["epoch"],
+                    "trial_period_days": None,
+                }]
+            trial_period_days = (
+                30
+                if row.get("stripe_subscription_id") is None
+                and metadata.get("core_trial_consumed", False) is False
+                else None
+            )
+            epoch = int(metadata.get("core_checkout_epoch") or 0) + 1
+            token = f"00000000-0000-4000-8000-{epoch:012d}"
+            metadata["core_checkout_epoch"] = epoch
+            metadata["core_checkout_reservation"] = {
+                "state": "reserved", "token": token, "epoch": epoch,
+            }
+            metadata.pop("core_checkout_session", None)
+            row["metadata"] = metadata
+            return [{
+                "outcome": "reserved",
+                "reservation_token": token,
+                "checkout_epoch": epoch,
+                "trial_period_days": trial_period_days,
+            }]
+
+    def _rpc_publish_core_checkout_atomic(self, params: dict) -> list[dict]:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            metadata = dict(row.get("metadata") or {})
+            reservation = metadata.get("core_checkout_reservation") or {}
+            if row.get("comped") or row.get("status") == "comped":
+                return [{"outcome": "comped"}]
+            if (
+                reservation.get("token") != params["p_reservation_token"]
+                or reservation.get("epoch") != params["p_checkout_epoch"]
+            ):
+                existing = metadata.get("core_checkout_session") or {}
+                return [{
+                    "outcome": "existing" if existing.get("url") else "stale",
+                    "session_id": existing.get("id"),
+                    "session_url": existing.get("url"),
+                }]
+            metadata.pop("core_checkout_reservation", None)
+            metadata["core_checkout_session"] = {
+                "state": "published",
+                "token": params["p_reservation_token"],
+                "epoch": params["p_checkout_epoch"],
+                "id": params["p_session_id"],
+                "url": params["p_session_url"],
+                "expires_at": params["p_expires_at"],
+            }
+            row["metadata"] = metadata
+            return [{
+                "outcome": "published",
+                "session_id": params["p_session_id"],
+                "session_url": params["p_session_url"],
+            }]
+
+    def _rpc_release_core_checkout_reservation_atomic(self, params: dict) -> bool:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            metadata = dict(row.get("metadata") or {})
+            reservation = metadata.get("core_checkout_reservation") or {}
+            if reservation.get("token") != params["p_reservation_token"]:
+                return False
+            metadata.pop("core_checkout_reservation", None)
+            row["metadata"] = metadata
+            return True
+
+    def _rpc_accept_core_checkout_subscription_atomic(self, params: dict) -> str:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            metadata = dict(row.get("metadata") or {})
+            session = dict(metadata.get("core_checkout_session") or {})
+            acceptances = dict(metadata.get("core_checkout_acceptances") or {})
+            accepted = acceptances.get(params["p_subscription_id"])
+            archived_binding = (
+                isinstance(accepted, dict)
+                and accepted.get("state") == "completed"
+                and accepted.get("token") == params["p_reservation_token"]
+                and accepted.get("epoch") == params["p_checkout_epoch"]
+                and accepted.get("accepted_subscription_id") == params["p_subscription_id"]
+                and (
+                    params.get("p_session_id") is None
+                    or accepted.get("id") == params["p_session_id"]
+                )
+            )
+            exact_binding = (
+                session.get("token") == params["p_reservation_token"]
+                and session.get("epoch") == params["p_checkout_epoch"]
+                and session.get("accepted_subscription_id") == params["p_subscription_id"]
+                and (
+                    params.get("p_session_id") is None
+                    or session.get("id") == params["p_session_id"]
+                )
+            )
+            if row.get("comped") or row.get("status") == "comped":
+                comp = metadata.get("comp") or {}
+                override_matches = (
+                    comp.get("live_subscription_override") is True
+                    and comp.get("live_subscription_override_subscription_id")
+                    == params["p_subscription_id"]
+                    and row.get("stripe_subscription_id") == params["p_subscription_id"]
+                    and (archived_binding or exact_binding)
+                )
+                if not override_matches:
+                    return "invalid"
+            if session.get("state") == "completed" and exact_binding:
+                acceptances[params["p_subscription_id"]] = dict(session)
+                metadata["core_checkout_acceptances"] = acceptances
+                row["metadata"] = metadata
+                return "already_accepted"
+            if archived_binding:
+                if row.get("comped") or row.get("status") == "comped":
+                    return "retained_live"
+                return "historical_replay"
+            if (
+                session.get("state") != "published"
+                or session.get("token") != params["p_reservation_token"]
+                or session.get("epoch") != params["p_checkout_epoch"]
+                or (
+                    params.get("p_session_id") is not None
+                    and session.get("id") != params["p_session_id"]
+                )
+                or not params.get("p_subscription_id")
+            ):
+                return "invalid"
+            session.pop("url", None)
+            session.pop("expires_at", None)
+            session.update({
+                "state": "completed",
+                "accepted_subscription_id": params["p_subscription_id"],
+                "completed_event_created": params.get("p_event_created"),
+            })
+            metadata["core_checkout_session"] = session
+            acceptances[params["p_subscription_id"]] = dict(session)
+            metadata["core_checkout_acceptances"] = acceptances
+            metadata["core_trial_consumed"] = True
+            row["metadata"] = metadata
+            return "accepted"
+
+    def _rpc_record_core_checkout_compensation_required_atomic(self, params: dict) -> bool:
+        with self._core_checkout_lock:
+            row = self._subscription_row(params["p_studio_id"])
+            metadata = dict(row.get("metadata") or {})
+            receipts = dict(metadata.get("core_checkout_compensations") or {})
+            session_id = params.get("p_session_id") or None
+            if not params.get("p_subscription_id") or not params.get("p_reason"):
+                raise ValueError("Checkout compensation identity and reason are required")
+
+            # The rejection is durable for every invalid binding, paid or not.
+            rejections = dict(metadata.get("core_checkout_rejections") or {})
+            recorded = False
+            if params["p_subscription_id"] not in rejections:
+                rejections[params["p_subscription_id"]] = {
+                    "subscription_id": params["p_subscription_id"],
+                    "session_id": session_id,
+                    "event_created": params.get("p_event_created"),
+                    "reason": params["p_reason"],
+                }
+                metadata["core_checkout_rejections"] = rejections
+                row["metadata"] = metadata
+                recorded = True
+
+            if not params.get("p_compensation_required"):
+                return recorded
+
+            existing = receipts.get(params["p_subscription_id"])
+            if existing:
+                existing_session_id = existing.get("session_id")
+                # The subscription is the identity; a session only refines it, so
+                # a receipt first recorded without one can still be upgraded.
+                if (
+                    existing_session_id is not None
+                    and session_id is not None
+                    and existing_session_id != session_id
+                ):
+                    raise ValueError("Subscription compensation identity changed")
+                if existing_session_id is None and session_id is not None:
+                    existing = dict(existing)
+                    existing["session_id"] = session_id
+                    receipts[params["p_subscription_id"]] = existing
+                    metadata["core_checkout_compensations"] = receipts
+                    row["metadata"] = metadata
+                return False
+            receipts[params["p_subscription_id"]] = {
+                "state": "required",
+                "session_id": session_id,
+                "subscription_id": params["p_subscription_id"],
+                "event_created": params.get("p_event_created"),
+                "reason": params["p_reason"],
+            }
+            metadata["core_checkout_compensations"] = receipts
+            row["metadata"] = metadata
+            return True
 
     @staticmethod
     def _parse_timestamp(value: str):

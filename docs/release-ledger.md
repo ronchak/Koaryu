@@ -139,24 +139,44 @@ Operator: `Codex release orchestrator`
 - Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
 - Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
 
-## Database-Parity Remediation Candidate — 2026-08-01
+## Database-Parity Remediation Candidate — updated 2026-08-14
 
-- Scope: repository-only remediation; no staging or production provider read,
-  migration, contract execution, Auth fixture, or other provider mutation was
-  performed.
-- Final required database identity: 100 migrations, head
-  `20260801131844_finalize_release_database_attestation_v7.sql`, with exact pending
-  versions 27100000, 27110000, 01050957, 01060000, 01070000, 01080000, and
-  01090000, 01091000, 01092000, 01093000, 01094000, 01105313, 01112153,
-  01115044, 01123112, and 01131844 after the fixed
-  84-migration production baseline.
+- Read-only inspection confirmed both staging and production at the healthy
+  100-migration V7 state, digest `359058cc127e57a47e429f6271453acf`,
+  through `20260801131844_finalize_release_database_attestation_v7.sql`.
+- Staging rehearsal: guarded applies advanced migrations 101 through 104. The 102
+  post-check found one hosted-only historical `service_role` EXECUTE grant on a
+  trigger-only function, so the release halted and added forward-only migration
+  103. Exact-head review then identified writer-path and return-contract gaps, so
+  forward-only migrations 104 and 105 were added. A final exact-head review then
+  found retained multi-program ranks could be erased when changing the primary
+  program, so forward-only migration 106 was added. Further exact-head reviews
+  added migration 107 for tokenized checkout acceptance and secondary-program
+  lock ordering, then migration 108 to preserve accepted checkout history and
+  attest the promotion columns themselves. A final review found the trial
+  duration was still derived before the reservation lock, so migration 109
+  moved that decision into a versioned row-locked RPC and made accepted checkout
+  versus operator comp grants fail closed in either lock order. Exact-head
+  review then required mixed-version service-role compatibility, historical
+  replay isolation, exact live-comp provenance, and atomic idempotent belt-ladder
+  audit plus atomic student write responses; migration 109 now carries those
+  contracts while the candidate uses the versioned writers and V3 readiness.
+  Staging is at exact 108; production
+  remained at the V7 pre-state.
+- Final required database identity: 109 migrations, head
+  `20260814213000_lock_core_trial_decision_to_reservation.sql`. Production has
+  migrations 101 through 109 pending; staging has migration 109 pending.
+  The V16 readiness response attests the complete historical 85-through-109 sequence,
+  the starting-belt function/trigger invariant, and the converged trigger-only
+  function ACLs plus the bodies, ACLs, and normalized return contracts of both
+  public/private student profile and import writer pairs.
 - Security repair: revoke browser/PUBLIC access to the new identity sequences;
   serialize Connect mapping/exclusion identities through one private guard row
   and database constraint; prove both opposite-direction races with concurrent
   transactions.
 - Promotion guard: Render health uses `/health/ready`; hosted readiness calls a
   service-role-only exact-head/object preflight and fails closed on provider
-  errors. Schema 84 cannot receive healthy traffic from the new backend.
+  errors. Schema 100 cannot receive healthy traffic from the new backend.
 - Catalog proof: deterministic sorted identities and security-relevant catalog
   properties cover the currently integrated pending tables/RLS, policies,
   exact ACLs and stored function bodies, complete trigger/index definitions,
@@ -170,8 +190,30 @@ Operator: `Codex release orchestrator`
   delivery retirement), `20260801112153` (V4 attestation), `20260801115044`
   (V5 column-ACL attestation), `20260801123112` (alert-delivery lint repair
   and V6 attestation), and `20260801131844` (runtime-invariant V7 and explicit
-  least-privilege ACL convergence) are ordered 89-100. The packet reports
-  `integration_complete=true` only for the exact 84-to-100 history and sixteen
+  least-privilege ACL convergence) are ordered 89-100; `20260814043325`
+  adds the starting-belt membership invariant and advances readiness to V8 at
+  migration 101; `20260814103046` repairs whole-statement belt replacement and
+  advances readiness to V9 at migration 102; `20260814105424` preserves
+  deliberately unranked memberships across plan edits and unrelated deletes,
+  replaces carried ranks when a student changes primary programs, removes
+  historical direct grants from trigger-only functions, and advances exact-head
+  readiness to V10 at migration 103; `20260814114500` reconciles rankless CSV
+  imports after their final compatibility-field write, attests both public/private
+  student writer pairs, and advances readiness to V11 at migration 104;
+  `20260814152000` normalizes and attests all four writer return contracts and
+  advances readiness to V12 at migration 105; `20260814170000` preserves ranked
+  retained memberships when the primary program changes and advances readiness
+  to V13 at migration 106; `20260814183000` adds tokenized, replayable checkout
+  acceptance and secondary-program lock ordering at V14; `20260814200000`
+  preserves every accepted binding across later checkout epochs and attests the
+  six promotion rank/snapshot column identities at V15; `20260814213000`
+  atomically decides trial eligibility under the checkout-reservation lock,
+  serializes checkout acceptance against operator comps, preserves the
+  predecessor service-role signatures for database-first cutover, isolates
+  historical replay, binds explicit live-comp provenance, makes belt-ladder
+  sync/audit idempotent, and advances candidate readiness to V3/V16. The packet reports
+  `integration_complete=true` only for
+  the exact 84-to-109 history and twenty-five
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
@@ -180,9 +222,9 @@ Operator: `Codex release orchestrator`
   and `stripe_events`. A separate column-ACL manifest covers every ordinary,
   non-dropped column across all fourteen scoped tables, including empty
   `attacl`, and rejects explicit custom/browser grants and grant-option drift.
-  Apparent-post linked inspection also requires exact V7 output before
+  Apparent-post linked inspection also requires exact V16 output before
   certification. Hosted exposed-schema and schema-ACL readback remain a
-  separate provider/operator gate that local PostgreSQL cannot certify. The exact 32-file SQL
+  separate provider/operator gate that local PostgreSQL cannot certify. The exact 33-file SQL
   contract inventory fails CI on missing or unexpected verification files.
 - Recovery: any partial history, catalog mismatch, readiness failure, or guard
   conflict halts. Preserve applied state and recover only with reviewed

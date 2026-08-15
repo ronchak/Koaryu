@@ -155,6 +155,7 @@ export function AccountMenu({
           currency: "usd",
           status: "comped",
           comped: true,
+          can_start_checkout: false,
           cancel_at_period_end: false,
           email_usage: {
             included: 500,

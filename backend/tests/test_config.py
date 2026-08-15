@@ -21,6 +21,7 @@ VALID_PRODUCTION_SETTINGS = {
     "FRONTEND_URL": "https://koaryu.app",
     "STRIPE_MODE": "live",
     "LIVE_BILLING_ENABLED": False,
+    "CORE_SELF_CHECKOUT_ENABLED": False,
     "STRIPE_SECRET_KEY": _synthetic_stripe_key("sk"),
     "STRIPE_RESTRICTED_KEY": _synthetic_stripe_key("rk"),
     "STRIPE_PLATFORM_WEBHOOK_SECRET": _synthetic_webhook_secret("platform"),
@@ -368,6 +369,43 @@ class HostedConfigValidationTest(unittest.TestCase):
 
         with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=True):
             settings.validate_production_configuration()
+
+    def test_core_self_checkout_is_production_only_and_requires_exact_deployment_sha(self):
+        production_settings = Settings(
+            ENVIRONMENT="production",
+            **{
+                **VALID_PRODUCTION_SETTINGS,
+                "CORE_SELF_CHECKOUT_ENABLED": True,
+            },
+        )
+
+        with patch.dict("os.environ", {}, clear=True), self.assertRaisesRegex(RuntimeError, "RENDER_GIT_COMMIT"):
+            production_settings.validate_production_configuration()
+
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "b" * 40}, clear=True):
+            production_settings.validate_production_configuration()
+
+        staging_settings = Settings(
+            ENVIRONMENT="staging",
+            **{
+                **VALID_STAGING_SETTINGS,
+                "CORE_SELF_CHECKOUT_ENABLED": True,
+            },
+        )
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "b" * 40}, clear=True), self.assertRaisesRegex(
+            RuntimeError, "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+        ):
+            staging_settings.validate_runtime_configuration()
+
+        for environment in ("development", "test"):
+            permissive_settings = Settings(
+                ENVIRONMENT=environment,
+                CORE_SELF_CHECKOUT_ENABLED=True,
+            )
+            with self.subTest(environment=environment), self.assertRaisesRegex(
+                RuntimeError, "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+            ):
+                permissive_settings.validate_runtime_configuration()
 
     def test_production_requires_jwt_secret_only_when_legacy_hs256_is_enabled(self):
         asymmetric_settings = Settings(

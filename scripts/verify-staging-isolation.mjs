@@ -199,6 +199,9 @@ export function verifyStagingIsolation(env) {
   if (required(env, "LIVE_BILLING_ENABLED").toLowerCase() !== "false") {
     throw new Error("LIVE_BILLING_ENABLED must be false for staging release-gate verification.");
   }
+  if (required(env, "CORE_SELF_CHECKOUT_ENABLED").toLowerCase() !== "false") {
+    throw new Error("CORE_SELF_CHECKOUT_ENABLED must be false for staging release-gate verification.");
+  }
 
   requireCredentialShape(
     "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",

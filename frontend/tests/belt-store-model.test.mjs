@@ -5,6 +5,7 @@ import {
   buildBeltLadderSyncPayload,
   buildPreviewBeltLadderFromRanks,
   buildPreviewPromotion,
+  repairPreviewStudentRanksForLadder,
   selectBeltLadder,
   sortBeltLadders,
   updatePreviewLadderSubRankTerm,
@@ -163,7 +164,21 @@ describe("belt store model", () => {
       [
         student("student-1", {
           preferred_name: "A",
+          program_id: "bjj",
           current_belt_rank_id: "white",
+          program_memberships: [
+            {
+              id: "membership-1",
+              studio_id: "mock-studio",
+              student_id: "student-1",
+              program_id: "bjj",
+              status: "paused",
+              started_at: "2026-05-01",
+              current_belt_rank_id: "white",
+              created_at: "2026-05-01T00:00:00.000Z",
+              updated_at: "2026-05-01T00:00:00.000Z",
+            },
+          ],
         }),
         student("student-2", { current_belt_rank_id: "white" }),
       ],
@@ -205,6 +220,15 @@ describe("belt store model", () => {
       ["student-1", "blue", "2026-05-24T12:00:00.000Z"],
       ["student-2", "white", "2026-05-01T00:00:00.000Z"],
     ]);
+    assert.deepEqual(
+      result.students[0].program_memberships?.map((membership) => [
+        membership.id,
+        membership.current_belt_rank_id,
+        membership.updated_at,
+      ]),
+      [["membership-1", "blue", "2026-05-24T12:00:00.000Z"]]
+    );
+    assert.equal(result.students[0].program_memberships?.[0]?.status, "paused");
   });
 
   it("keeps preview promotion validation errors explicit", () => {
@@ -225,5 +249,131 @@ describe("belt store model", () => {
       }),
       /Target rank not found/
     );
+  });
+
+  it("promotes the exact unranked secondary program membership", () => {
+    const result = buildPreviewPromotion(
+      [student("student-1", {
+        program_id: "primary-program",
+        current_belt_rank_id: "primary-white",
+        program_memberships: [
+          {
+            id: "primary-membership",
+            studio_id: "mock-studio",
+            student_id: "student-1",
+            program_id: "primary-program",
+            status: "active",
+            started_at: "2026-05-01",
+            current_belt_rank_id: "primary-white",
+            created_at: "2026-05-01T00:00:00.000Z",
+            updated_at: "2026-05-01T00:00:00.000Z",
+          },
+          {
+            id: "secondary-membership",
+            studio_id: "mock-studio",
+            student_id: "student-1",
+            program_id: "secondary-program",
+            status: "active",
+            started_at: "2026-05-10",
+            current_belt_rank_id: null,
+            created_at: "2026-05-10T00:00:00.000Z",
+            updated_at: "2026-05-10T00:00:00.000Z",
+          },
+        ],
+      })],
+      [
+        rank("primary-white", { ladder_id: "primary-ladder", name: "White" }),
+        rank("secondary-white", { ladder_id: "secondary-ladder", name: "Secondary White" }),
+      ],
+      {
+        studentId: "student-1",
+        toRankId: "secondary-white",
+        studentProgramMembershipId: "secondary-membership",
+        programId: "secondary-program",
+        idFactory: () => "promotion-1",
+      }
+    );
+
+    assert.equal(result.promotion.student_program_membership_id, "secondary-membership");
+    assert.equal(result.promotion.program_id, "secondary-program");
+    assert.equal(result.promotion.from_rank_id, null);
+    assert.equal(result.students[0].current_belt_rank_id, "primary-white");
+    assert.deepEqual(
+      result.students[0].program_memberships.map((membership) => [
+        membership.id,
+        membership.current_belt_rank_id,
+      ]),
+      [
+        ["primary-membership", "primary-white"],
+        ["secondary-membership", "secondary-white"],
+      ]
+    );
+  });
+
+  it("repairs deleted preview ranks to the nearest surviving full belt", () => {
+    const previewLadder = ladder("ladder-1", { program_id: "bjj" });
+    const white = rank("white", { display_order: 0 });
+    const yellow = rank("yellow", { display_order: 1 });
+    const repaired = repairPreviewStudentRanksForLadder(
+      [student("student-1", {
+        program_id: "bjj",
+        current_belt_rank_id: "yellow",
+        program_memberships: [{
+          id: "membership-1",
+          studio_id: "mock-studio",
+          student_id: "student-1",
+          program_id: "bjj",
+          status: "active",
+          started_at: "2026-05-01",
+          current_belt_rank_id: "yellow",
+          created_at: "2026-05-01T00:00:00.000Z",
+          updated_at: "2026-05-01T00:00:00.000Z",
+        }],
+      })],
+      previewLadder,
+      [white, yellow],
+      [white],
+      new Date("2026-05-24T12:00:00.000Z"),
+    );
+
+    assert.equal(repaired[0].current_belt_rank_id, "white");
+    assert.equal(repaired[0].program_memberships[0].current_belt_rank_id, "white");
+    assert.equal(repaired[0].program_memberships[0].updated_at, "2026-05-24T12:00:00.000Z");
+  });
+
+  it("assigns the first new full belt without overwriting deliberate unranked state", () => {
+    const previewLadder = ladder("ladder-1", { program_id: "bjj" });
+    const white = rank("white", { display_order: 0 });
+    const unrankedStudent = student("student-1", {
+      program_id: "bjj",
+      current_belt_rank_id: null,
+      program_memberships: [{
+        id: "membership-1",
+        studio_id: "mock-studio",
+        student_id: "student-1",
+        program_id: "bjj",
+        status: "active",
+        started_at: "2026-05-01",
+        current_belt_rank_id: null,
+        created_at: "2026-05-01T00:00:00.000Z",
+        updated_at: "2026-05-01T00:00:00.000Z",
+      }],
+    });
+
+    const initiallyAssigned = repairPreviewStudentRanksForLadder(
+      [unrankedStudent],
+      previewLadder,
+      [],
+      [white],
+    );
+    assert.equal(initiallyAssigned[0].program_memberships[0].current_belt_rank_id, "white");
+
+    const deliberatelyUnranked = repairPreviewStudentRanksForLadder(
+      [unrankedStudent],
+      previewLadder,
+      [white],
+      [white, rank("yellow", { display_order: 1 })],
+    );
+    assert.equal(deliberatelyUnranked[0].program_memberships[0].current_belt_rank_id, null);
   });
 });

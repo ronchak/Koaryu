@@ -6,7 +6,11 @@ import {
   buildPreviewStudentListPage,
   type StudentListQuery,
 } from "@/lib/student-list-page";
-import { buildPreviewStudent } from "@/lib/student-store-model";
+import { applyPreviewStudentUpdate, buildPreviewStudent } from "@/lib/student-store-model";
+import {
+  isStudentRosterSnapshotCurrent,
+  shouldRetryStudentRosterRefresh,
+} from "@/lib/student-roster-reconciliation";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import { localId } from "@/lib/store-storage";
 import {
@@ -14,6 +18,8 @@ import {
   fetchStudentPage,
 } from "@/lib/store-student-pages";
 import type {
+  BeltLadder,
+  BeltRank,
   Program,
   Student,
   StudentCreate,
@@ -28,12 +34,17 @@ type CommitStudents = (
 
 interface UseStoreStudentRosterActionsOptions {
   beginLiveAuthRequest: BeginLiveAuthRequest;
+  beltLaddersRef: StoreRef<BeltLadder[]>;
+  beltRanksRef: StoreRef<BeltRank[]>;
   commitStudents: CommitStudents;
   isPreviewMode: boolean;
+  onStudentMutation: () => void;
   persistStudents: (next: Student[]) => void;
   previewStudentPhotoUrlsRef: StoreRef<Record<string, string>>;
   programsRef: StoreRef<Program[]>;
   setStudentsLoadError: (message: string | null) => void;
+  studentMutationEpochRef: StoreRef<number>;
+  studentRosterRequestSequenceRef: StoreRef<number>;
   studentsMayBePartial: boolean;
   studentsRef: StoreRef<Student[]>;
   token: string | null;
@@ -41,12 +52,17 @@ interface UseStoreStudentRosterActionsOptions {
 
 export function useStoreStudentRosterActions({
   beginLiveAuthRequest,
+  beltLaddersRef,
+  beltRanksRef,
   commitStudents,
   isPreviewMode,
+  onStudentMutation,
   persistStudents,
   previewStudentPhotoUrlsRef,
   programsRef,
   setStudentsLoadError,
+  studentMutationEpochRef,
+  studentRosterRequestSequenceRef,
   studentsMayBePartial,
   studentsRef,
   token,
@@ -54,25 +70,34 @@ export function useStoreStudentRosterActions({
   const addStudent = useCallback(async (data: StudentCreate): Promise<Student> => {
     if (isPreviewMode) {
       const newStudent = buildPreviewStudent(data, programsRef.current, {
+        beltLadders: beltLaddersRef.current,
+        beltRanks: beltRanksRef.current,
         idFactory: localId,
       });
       persistStudents([newStudent, ...studentsRef.current]);
+      onStudentMutation();
       return newStudent;
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const result = await api.post<Student>("/students", data, liveRequest.token);
     if (!liveRequest.isCurrent()) {
       return result;
     }
     commitStudents((current) => [result, ...current], { mayBePartial: studentsMayBePartial });
+    onStudentMutation();
     return result;
   }, [
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     programsRef,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);
@@ -84,24 +109,22 @@ export function useStoreStudentRosterActions({
         if (student.id !== id) {
           return student;
         }
-        updatedStudent = {
-            ...student,
-            ...data,
-            legal_first_name: data.legal_first_name ?? student.legal_first_name,
-            legal_last_name: data.legal_last_name ?? student.legal_last_name,
-            status: data.status ?? student.status,
-            tags: data.tags ?? student.tags,
-            updated_at: new Date().toISOString(),
-          };
+        updatedStudent = applyPreviewStudentUpdate(student, data, programsRef.current, {
+          beltLadders: beltLaddersRef.current,
+          beltRanks: beltRanksRef.current,
+          idFactory: localId,
+        });
         return updatedStudent;
       });
       persistStudents(next);
       if (!updatedStudent) {
         throw new Error("Student not found.");
       }
+      onStudentMutation();
       return updatedStudent;
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const result = await api.patch<Student>(`/students/${id}`, data, liveRequest.token);
     if (!liveRequest.isCurrent()) {
@@ -111,12 +134,18 @@ export function useStoreStudentRosterActions({
       (current) => current.map((student) => student.id === id ? result : student),
       { mayBePartial: studentsMayBePartial }
     );
+    onStudentMutation();
     return result;
   }, [
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
+    programsRef,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);
@@ -133,12 +162,38 @@ export function useStoreStudentRosterActions({
       });
       const next = studentsRef.current.filter((student) => !idSet.has(student.id));
       persistStudents(next);
+      onStudentMutation();
       return;
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
-    for (const id of ids) {
-      await api.delete(`/students/${id}`, liveRequest.token);
+    try {
+      for (const id of ids) {
+        await api.delete(`/students/${id}`, liveRequest.token);
+      }
+    } catch (error) {
+      if (liveRequest.isCurrent()) {
+        onStudentMutation();
+        try {
+          const mutationEpoch = studentMutationEpochRef.current;
+          const requestSequence = studentRosterRequestSequenceRef.current + 1;
+          studentRosterRequestSequenceRef.current = requestSequence;
+          const nextStudents = await fetchAllStudents(liveRequest.token, { timeoutMs: 30000 });
+          if (isStudentRosterSnapshotCurrent({
+            authCurrent: liveRequest.isCurrent(),
+            currentMutationEpoch: studentMutationEpochRef.current,
+            currentRequestSequence: studentRosterRequestSequenceRef.current,
+            mutationEpochAtStart: mutationEpoch,
+            requestSequence,
+          })) {
+            commitStudents(nextStudents);
+          }
+        } catch (refreshError) {
+          console.error("Failed to refresh students after delete error", refreshError);
+        }
+      }
+      throw error;
     }
     if (!liveRequest.isCurrent()) {
       return;
@@ -148,12 +203,16 @@ export function useStoreStudentRosterActions({
       (current) => current.filter((student) => !idSet.has(student.id)),
       { mayBePartial: studentsMayBePartial }
     );
+    onStudentMutation();
   }, [
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     previewStudentPhotoUrlsRef,
+    studentMutationEpochRef,
+    studentRosterRequestSequenceRef,
     studentsMayBePartial,
     studentsRef,
   ]);
@@ -163,31 +222,69 @@ export function useStoreStudentRosterActions({
       return studentsRef.current;
     }
 
-    const request = beginLiveAuthRequest();
+    // A superseded snapshot is correctly refused, but resolving anyway told
+    // callers the reconciliation succeeded. Bulk status/tag changes, rank
+    // transitions, and ladder saves then skipped their fallback paths, so a
+    // concurrent unrelated edit could keep a committed mutation out of the local
+    // roster indefinitely. Retrying once observes the settled epoch and commits
+    // the roster that contains both changes.
+    const maxAttempts = 2;
+    let lastStudents: Student[] = studentsRef.current;
 
-    try {
-      markPerformance("students.refresh_started");
-      const nextStudents = await fetchAllStudents(request.token, { timeoutMs: 30000 });
-      markPerformance("students.refresh_finished");
-      measurePerformance(
-        "students.refresh_duration",
-        "students.refresh_started",
-        "students.refresh_finished"
-      );
-      if (!request.isCurrent()) {
-        return nextStudents;
-      }
-      commitStudents(nextStudents);
-      return nextStudents;
-    } catch (error) {
-      if (request.isCurrent()) {
-        setStudentsLoadError(
-          error instanceof Error ? error.message : "Failed to load students."
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const request = beginLiveAuthRequest();
+      const requestSequence = studentRosterRequestSequenceRef.current + 1;
+      studentRosterRequestSequenceRef.current = requestSequence;
+      const mutationEpoch = studentMutationEpochRef.current;
+
+      try {
+        markPerformance("students.refresh_started");
+        const nextStudents = await fetchAllStudents(request.token, { timeoutMs: 30000 });
+        markPerformance("students.refresh_finished");
+        measurePerformance(
+          "students.refresh_duration",
+          "students.refresh_started",
+          "students.refresh_finished"
         );
+        lastStudents = nextStudents;
+        if (!isStudentRosterSnapshotCurrent({
+          authCurrent: request.isCurrent(),
+          currentMutationEpoch: studentMutationEpochRef.current,
+          currentRequestSequence: studentRosterRequestSequenceRef.current,
+          mutationEpochAtStart: mutationEpoch,
+          requestSequence,
+        })) {
+          if (shouldRetryStudentRosterRefresh({
+            attempt,
+            authCurrent: request.isCurrent(),
+            currentRequestSequence: studentRosterRequestSequenceRef.current,
+            maxAttempts,
+            requestSequence,
+          })) {
+            continue;
+          }
+          return nextStudents;
+        }
+        commitStudents(nextStudents);
+        return nextStudents;
+      } catch (error) {
+        if (isStudentRosterSnapshotCurrent({
+          authCurrent: request.isCurrent(),
+          currentMutationEpoch: studentMutationEpochRef.current,
+          currentRequestSequence: studentRosterRequestSequenceRef.current,
+          mutationEpochAtStart: mutationEpoch,
+          requestSequence,
+        })) {
+          setStudentsLoadError(
+            error instanceof Error ? error.message : "Failed to load students."
+          );
+        }
+        throw error;
       }
-      throw error;
     }
-  }, [beginLiveAuthRequest, commitStudents, isPreviewMode, setStudentsLoadError, studentsRef]);
+
+    return lastStudents;
+  }, [beginLiveAuthRequest, commitStudents, isPreviewMode, setStudentsLoadError, studentMutationEpochRef, studentRosterRequestSequenceRef, studentsRef]);
 
   const listStudentsPage = useCallback(async (
     query: StudentListQuery = {},

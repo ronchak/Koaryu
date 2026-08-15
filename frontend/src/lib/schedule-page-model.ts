@@ -2,6 +2,8 @@ import type { AttendanceRecord, ClassSession, Student } from "@/types";
 
 export type SchedulePageView = "month" | "week" | "day";
 
+export const DEFAULT_SCHEDULE_PAGE_VIEW: SchedulePageView = "month";
+
 export type SessionAttendanceRefreshState = {
   sessionId: string | null;
   status: "idle" | "pending" | "ready" | "error";
@@ -153,7 +155,12 @@ export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, 
   if (view === "day") {
     next.setDate(next.getDate() + direction);
   } else if (view === "month") {
-    next.setMonth(next.getMonth() + direction);
+    const currentDay = next.getDate();
+    const targetMonth = next.getMonth() + direction;
+    next.setDate(1);
+    next.setMonth(targetMonth);
+    const lastTargetDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(currentDay, lastTargetDay));
   } else {
     next.setDate(next.getDate() + direction * 7);
   }

@@ -226,6 +226,42 @@ class CompSupabase(RpcBackedSupabase):
                 self.tables["audit_logs"] = audits_before
                 raise
 
+    def _rpc_set_studio_comp_v2_atomic(self, params: dict) -> list[dict]:
+        row = self.tables["studio_subscriptions"][0]
+        metadata = row.get("metadata")
+        session = (
+            metadata.get("core_checkout_session") or {}
+            if isinstance(metadata, dict)
+            else {}
+        )
+        if (
+            params.get("p_comped") is True
+            and params.get("p_allow_live_subscription") is True
+            and row.get("stripe_subscription_id")
+            and row.get("status") in comp_studio.LIVE_STRIPE_SUBSCRIPTION_STATUSES
+            and not (
+                session.get("state") == "completed"
+                and session.get("accepted_subscription_id") == row.get("stripe_subscription_id")
+            )
+        ):
+            raise PostgrestAPIError({
+                "code": comp_studio.UNBOUND_LIVE_SUBSCRIPTION_OVERRIDE_SQLSTATE,
+                "message": "Live subscription override requires the exact accepted Core checkout binding.",
+                "details": "",
+                "hint": "",
+            })
+        result = self._rpc_set_studio_comp_atomic(params)
+        if (
+            params.get("p_comped") is True
+            and params.get("p_allow_live_subscription") is True
+            and session.get("state") == "completed"
+            and session.get("accepted_subscription_id") == row.get("stripe_subscription_id")
+        ):
+            row["metadata"]["comp"]["live_subscription_override"] = True
+            row["metadata"]["comp"]["live_subscription_override_subscription_id"] = row["stripe_subscription_id"]
+            result[0]["metadata"] = deepcopy(row["metadata"])
+        return result
+
 
 class FakeSettings:
     SUPABASE_URL = "https://project-ref.supabase.co"
@@ -759,7 +795,7 @@ class CompStudioCliTests(unittest.TestCase):
         self.assertIn("provider billing continues", stderr)
         self.assertEqual(supabase.rpc_calls, [])
 
-    def test_grant_override_warns_that_provider_billing_continues(self):
+    def test_grant_override_rejects_unbound_live_subscription(self):
         supabase = CompSupabase(subscriptions=[{
             "studio_id": STUDIO_ID,
             "status": "active",
@@ -773,11 +809,38 @@ class CompStudioCliTests(unittest.TestCase):
             args,
             stdin=TTYInput("project-ref.supabase.co\n"),
         )
-        self.assertEqual(exit_code, 0, stderr)
+        self.assertEqual(exit_code, 1)
         self.assertIn("provider billing continues", stdout)
+        self.assertIn("not the exact accepted Core checkout binding", stderr)
+        self.assertFalse(supabase.tables["studio_subscriptions"][0]["comped"])
+
+    def test_grant_override_binds_completed_core_subscription(self):
+        supabase = CompSupabase(subscriptions=[{
+            "studio_id": STUDIO_ID,
+            "status": "active",
+            "comped": False,
+            "stripe_subscription_id": "sub_core_live",
+            "metadata": {
+                "core_checkout_session": {
+                    "state": "completed",
+                    "accepted_subscription_id": "sub_core_live",
+                },
+            },
+        }])
+        args = execute_args("grant") + ["--override-live-subscription"]
+
+        exit_code, _stdout, stderr = run_cli(
+            supabase,
+            args,
+            stdin=TTYInput("project-ref.supabase.co\n"),
+        )
+
+        self.assertEqual(exit_code, 0, stderr)
+        comp = supabase.tables["studio_subscriptions"][0]["metadata"]["comp"]
+        self.assertTrue(comp["live_subscription_override"])
         self.assertEqual(
-            supabase.tables["studio_subscriptions"][0]["stripe_subscription_id"],
-            "sub_live",
+            comp["live_subscription_override_subscription_id"],
+            "sub_core_live",
         )
 
     def test_grant_allows_canceled_subscription_id_without_override_or_warning(self):
@@ -1204,6 +1267,7 @@ class CompStudioCliTests(unittest.TestCase):
             "stripe_subscription_id": None,
             "metadata": {"comp": {"state": "granted", "reason": "test"}},
         }]
+
         commands = [
             ["list"],
             ["status", "--studio-id", STUDIO_ID],

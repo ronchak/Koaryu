@@ -157,10 +157,22 @@ export function ProgramsSection() {
                   key={swatch}
                   type="button"
                   onClick={() => setColor(swatch)}
-                  className={`h-8 w-8 rounded-[6px] border ${color === swatch ? "border-accent" : "border-border"}`}
-                  style={{ backgroundColor: swatch }}
                   aria-label={`Use ${swatch}`}
-                />
+                  aria-pressed={color === swatch}
+                  title={color === swatch ? `${swatch} selected` : `Use ${swatch}`}
+                  className={`relative flex h-8 w-8 items-center justify-center rounded-[6px] border transition-[border-color,box-shadow,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+                    color === swatch
+                      ? "scale-105 border-accent ring-2 ring-accent ring-offset-2 ring-offset-surface"
+                      : "border-border hover:scale-105 hover:border-text-secondary"
+                  }`}
+                  style={{ backgroundColor: swatch }}
+                >
+                  {color === swatch ? (
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-bg/85 text-text-primary shadow-sm">
+                      <Check aria-hidden="true" className="h-3 w-3" strokeWidth={3} />
+                    </span>
+                  ) : null}
+                </button>
               ))}
               <Button type="submit" size="sm" variant="primary" isLoading={isSaving}>
                 {editingProgram ? <Save className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}

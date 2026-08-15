@@ -58,10 +58,13 @@ def _settings(
     *,
     stripe_mode: str = "live",
     live_billing_enabled: bool = False,
+    core_self_checkout_enabled: bool = False,
 ):
     return type("Settings", (), {
+        "ENVIRONMENT": "production",
         "STRIPE_MODE": stripe_mode,
         "LIVE_BILLING_ENABLED": live_billing_enabled,
+        "CORE_SELF_CHECKOUT_ENABLED": core_self_checkout_enabled,
         "STRIPE_SECRET_KEY": secret_key,
         "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
         "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform",
@@ -208,6 +211,27 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
                 with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
                     response = asyncio.run(reporter.get_system_status("studio_1"))
                 self.assertFalse(response.mutation_capabilities.connect_onboarding)
+
+    def test_live_core_self_checkout_capability_does_not_enable_connect_mutations(self):
+        async def load_account(_studio_id: str) -> StudioPaymentAccountResponse:
+            return StudioPaymentAccountResponse(studio_id="studio_1")
+
+        supabase = _PreflightSupabase(
+            {"studio_payment_accounts": [{"studio_id": "studio_1"}], "stripe_events": []},
+            begin=True,
+        )
+        reporter = BillingSystemStatusReporter(
+            supabase,
+            settings=_settings(core_self_checkout_enabled=True),
+            connect_accounts=_ConnectAccounts(),
+            payment_account_loader=load_account,
+        )
+
+        response = asyncio.run(reporter.get_system_status("studio_1"))
+
+        self.assertTrue(response.mutation_capabilities.core_subscription)
+        self.assertFalse(response.mutation_capabilities.connect_onboarding)
+        self.assertFalse(response.mutation_capabilities.connect_payments)
 
     def test_live_mapped_account_does_not_fallback_when_bootstrap_requires_support(self):
         supabase = _PreflightSupabase(

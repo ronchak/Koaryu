@@ -20,6 +20,10 @@ import {
   type DashboardBillingSummary,
 } from "./dashboard-billing-summary";
 import { formatCount } from "./dashboard-page-utils";
+import {
+  isDashboardBeltSetupComplete,
+  isDashboardSetupStepComplete,
+} from "./dashboard-page-model";
 import type {
   buildDashboardBeltStats,
   buildDashboardChurnStats,
@@ -135,6 +139,7 @@ export function buildDashboardPageComposition({
     beltStats: displayStats.displayedBeltStats,
     billingSummary: displayStats.displayedBillingSummary,
     canSeeBilling,
+    localBeltCount: localStats.beltStats.beltCount,
     programs,
     sessionCount,
     studentCount,
@@ -370,6 +375,7 @@ function buildDashboardSetupSteps({
   beltStats,
   billingSummary,
   canSeeBilling,
+  localBeltCount,
   programs,
   sessionCount,
   studentCount,
@@ -379,16 +385,27 @@ function buildDashboardSetupSteps({
   beltStats: DashboardBeltStats;
   billingSummary: DashboardBillingSummary;
   canSeeBilling: boolean;
+  localBeltCount: number;
   programs: Program[];
   sessionCount: number;
   studentCount: number;
   summary: DashboardSummary | null;
   templateCount: number;
 }): SetupStep[] {
-  const hasPrograms = summary?.setup.has_programs ?? programs.some((program) => !program.archived_at);
-  const hasStudents = summary?.setup.has_students ?? studentCount > 0;
-  const hasBeltSystem = summary?.setup.has_belt_system ?? beltStats.beltCount > 0;
-  const hasSchedule = summary?.setup.has_weekly_classes ?? (templateCount > 0 || sessionCount > 0);
+  const hasPrograms = isDashboardSetupStepComplete(
+    summary?.setup.has_programs,
+    programs.some((program) => !program.archived_at)
+  );
+  const hasStudents = isDashboardSetupStepComplete(summary?.setup.has_students, studentCount > 0);
+  const hasBeltSystem = isDashboardBeltSetupComplete(
+    summary?.setup.has_belt_system,
+    beltStats.beltCount,
+    localBeltCount
+  );
+  const hasSchedule = isDashboardSetupStepComplete(
+    summary?.setup.has_weekly_classes,
+    templateCount > 0 || sessionCount > 0
+  );
   const steps: SetupStep[] = [
     {
       id: "programs",

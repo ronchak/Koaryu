@@ -20,17 +20,13 @@ class PlatformBillingHelperTest(unittest.TestCase):
     def test_core_checkout_key_stays_under_stripe_limit_with_max_user_key(self):
         key = build_core_checkout_idempotency_key(
             "studio-" + ("s" * 120),
-            "cus_123",
-            {
-                "success_url": "https://koaryu.test/success",
-                "cancel_url": "https://koaryu.test/cancel",
-            },
-            "r" * MAX_IDEMPOTENCY_KEY_LENGTH,
-            "price_core",
+            "00000000-0000-4000-8000-000000000001",
+            42,
         )
 
         self.assertLessEqual(len(key), MAX_IDEMPOTENCY_KEY_LENGTH)
-        self.assertRegex(key, r"^koaryu:core-checkout:[0-9a-f]{64}$")
+        self.assertTrue(key.startswith("koaryu:core-checkout:studio-"))
+        self.assertTrue(key.endswith(":42:00000000-0000-4000-8000-000000000001"))
 
     def test_normalize_idempotency_key_rejects_over_limit_values(self):
         with self.assertRaises(HTTPException) as context:

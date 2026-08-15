@@ -7,6 +7,7 @@ import {
   SOURCE_LABELS,
   formatDate,
   fullName,
+  getLeadFollowUpTone,
   getFollowUpStatusLabel,
   getProgramLabel,
   timeAgo,
@@ -263,6 +264,7 @@ function LeadPipelineCard({
 }: LeadPipelineCardProps) {
   const program = lead.program_id ? programById.get(lead.program_id) : null;
   const cardAccent = program?.color_hex || "var(--border)";
+  const followUpTone = getLeadFollowUpTone(lead.follow_up_date, today);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Enter" || event.key === " ") {
@@ -295,7 +297,14 @@ function LeadPipelineCard({
       onClick={() => onSelectLead(lead.id)}
       onKeyDown={handleKeyDown}
       aria-label={`${fullName(lead)} lead card`}
-      className={`group relative min-w-0 bg-surface border border-border mb-2 cursor-pointer hover:border-[color:var(--accent)]/30 transition-colors overflow-hidden ${
+      data-follow-up-state={followUpTone ?? "none"}
+      className={`group relative mb-2 min-w-0 cursor-pointer overflow-hidden border transition-colors ${
+        followUpTone === "overdue"
+          ? "border-danger/60 bg-danger/[0.07] hover:border-danger"
+          : followUpTone === "due-today"
+            ? "border-warning/60 bg-warning/[0.07] hover:border-warning"
+            : "border-border bg-surface hover:border-[color:var(--accent)]/30"
+      } ${
         draggedLeadId === lead.id || pendingLeadId === lead.id
           ? "opacity-50"
           : ""

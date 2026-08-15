@@ -154,7 +154,16 @@ Exit codes are:
 
 ### What it writes
 
-The `set_studio_comp_atomic` database function locks the existing `studio_subscriptions` row and performs the entitlement update, provenance patch, and audit insert in one transaction. The only explicitly assigned business columns are:
+The CLI calls `set_studio_comp_v2_atomic`, which locks the existing
+`studio_subscriptions` row and delegates the entitlement update, provenance
+patch, and audit insert to `set_studio_comp_atomic` in the same transaction. An
+explicit `--override-live-subscription` grant is accepted only when the current
+provider subscription is the exact accepted and already-projected Core checkout
+subscription. An unbound or legacy live subscription is rejected rather than
+creating a comp whose next webhook could cancel or overwrite the operator's
+intent. The trigger records that subscription ID in comp provenance, so a
+later replay can preserve the override only for the same accepted checkout
+binding. The only explicitly assigned business columns are:
 
 - `comped`
 - `metadata.comp`, patched with `jsonb_set` so current unrelated metadata is retained

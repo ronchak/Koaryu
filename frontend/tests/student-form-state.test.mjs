@@ -5,10 +5,22 @@ import {
   buildInitialStudentFormFields,
   buildStudentCreatePayload,
   buildStudentUpdatePayload,
+  formatPhoneInput,
   validateStudentFormFields,
 } from "../src/components/students/student-form-state.ts";
 
 describe("student form state", () => {
+  it("formats domestic phone input progressively without truncating other formats", () => {
+    assert.equal(formatPhoneInput("555"), "555");
+    assert.equal(formatPhoneInput("555123"), "(555) 123");
+    assert.equal(formatPhoneInput("5551234567"), "(555) 123-4567");
+    assert.equal(formatPhoneInput("5550100"), "(555) 010-0");
+    assert.equal(formatPhoneInput("15551234567"), "+1 (555) 123-4567");
+    assert.equal(formatPhoneInput("+44 20 7946 0958"), "+44 20 7946 0958");
+    assert.equal(formatPhoneInput("555-1234"), "555-1234");
+    assert.equal(formatPhoneInput("555-1234 ext 89"), "555-1234 ext 89");
+  });
+
   it("builds initial field state from student data", () => {
     const fields = buildInitialStudentFormFields({
       legal_first_name: "Aiko",
@@ -29,6 +41,28 @@ describe("student form state", () => {
     assert.deepEqual(fields.programIds, ["program-a"]);
     assert.equal(fields.tags, "youth, beginner");
     assert.equal(fields.guardianFirst, "Kenji");
+  });
+
+  it("preserves unsupported stored phone formats during unrelated edits", () => {
+    const fields = buildInitialStudentFormFields({
+      legal_first_name: "Aiko",
+      legal_last_name: "Tanaka",
+      phone: "555-1234 ext 89",
+      emergency_contact_phone: "555-1234",
+      guardians: [
+        {
+          first_name: "Kenji",
+          last_name: "Tanaka",
+          phone: "x42 555 0199",
+        },
+      ],
+    });
+
+    assert.equal(fields.phone, "555-1234 ext 89");
+    assert.equal(fields.emergencyPhone, "555-1234");
+    assert.equal(fields.guardianPhone, "x42 555 0199");
+    assert.equal(buildStudentUpdatePayload(fields).phone, "555-1234 ext 89");
+    assert.equal(buildStudentUpdatePayload(fields).emergency_contact_phone, "555-1234");
   });
 
   it("validates required names and hold date ordering", () => {
@@ -134,7 +168,7 @@ describe("student form state", () => {
     assert.equal(payload.program_id, "program-a");
     assert.deepEqual(payload.program_ids, ["program-a", "program-b"]);
     assert.deepEqual(payload.tags, ["youth", "leadership"]);
-    assert.equal(payload.current_belt_rank_id, "rank-a");
+    assert.equal(Object.hasOwn(payload, "current_belt_rank_id"), false);
     assert.equal(Object.hasOwn(payload, "guardians"), false);
   });
 
@@ -199,7 +233,7 @@ describe("student form state", () => {
       },
     ]);
     assert.equal(Object.hasOwn(updatePayload, "guardians"), false);
-    assert.equal(updatePayload.current_belt_rank_id, "rank-a");
+    assert.equal(Object.hasOwn(updatePayload, "current_belt_rank_id"), false);
     assert.equal(updatePayload.preferred_name, null);
   });
 });

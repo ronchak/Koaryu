@@ -34,6 +34,7 @@ function validEnvironment() {
     DEMO_RESET_STUDIO_IDS: "",
     STRIPE_MODE: "test",
     LIVE_BILLING_ENABLED: "false",
+    CORE_SELF_CHECKOUT_ENABLED: "false",
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: syntheticCredential("pk_test_", "A"),
     STRIPE_SECRET_KEY: syntheticCredential("sk_test_", "B"),
     STRIPE_RESTRICTED_KEY: syntheticCredential("rk_test_", "C"),
@@ -73,10 +74,14 @@ describe("staging isolation guard", () => {
       () => verifyStagingIsolation({ ...validEnvironment(), STRIPE_MODE: "live" }),
       /STRIPE_MODE must be test/,
     );
-    assert.throws(
-      () => verifyStagingIsolation({ ...validEnvironment(), LIVE_BILLING_ENABLED: "true" }),
-      /LIVE_BILLING_ENABLED must be false/,
-    );
+  assert.throws(
+    () => verifyStagingIsolation({ ...validEnvironment(), LIVE_BILLING_ENABLED: "true" }),
+    /LIVE_BILLING_ENABLED must be false/,
+  );
+  assert.throws(
+    () => verifyStagingIsolation({ ...validEnvironment(), CORE_SELF_CHECKOUT_ENABLED: "true" }),
+    /CORE_SELF_CHECKOUT_ENABLED must be false/,
+  );
   });
 
   it("cannot bless production through caller-controlled project refs", () => {

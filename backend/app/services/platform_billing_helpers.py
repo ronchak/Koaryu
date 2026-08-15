@@ -56,21 +56,15 @@ def stable_hash(payload: dict[str, Any]) -> str:
 
 def build_core_checkout_idempotency_key(
     studio_id: str,
-    customer_id: str,
-    checkout_urls: dict[str, str],
-    request_key: Optional[str],
-    price_id: Any,
+    reservation_token: str,
+    checkout_epoch: int,
 ) -> str:
-    normalized = normalize_idempotency_key(request_key)
-    if normalized:
-        return build_idempotency_key("core-checkout", studio_id, normalized)
-    request_hash = stable_hash({
-        "customer_id": customer_id,
-        "price_id": price_id,
-        "success_url": checkout_urls["success_url"],
-        "cancel_url": checkout_urls["cancel_url"],
-    })
-    return build_idempotency_key("core-checkout", studio_id, request_hash)
+    return build_idempotency_key(
+        "core-checkout",
+        studio_id,
+        checkout_epoch,
+        reservation_token,
+    )
 
 
 def allowed_redirect_origins(frontend_url: str) -> set[str]:
@@ -148,14 +142,30 @@ def pending_checkout_metadata_update(
     return {"metadata": merge_metadata(row, {PENDING_CHECKOUT_METADATA_KEY: pending})}
 
 
-def status_response(row: dict[str, Any], email_usage: EmailUsageResponse) -> PlatformBillingStatusResponse:
+def status_response(
+    row: dict[str, Any],
+    email_usage: EmailUsageResponse,
+    *,
+    self_checkout_enabled: bool = False,
+) -> PlatformBillingStatusResponse:
+    status = row.get("status") or "comped"
+    comped = bool(row.get("comped", True))
     return PlatformBillingStatusResponse(
         studio_id=row["studio_id"],
         plan_name=row.get("plan_name") or "Koaryu Core",
         monthly_price_cents=row.get("monthly_price_cents") or 2700,
         currency=row.get("currency") or "usd",
-        status=row.get("status") or "comped",
-        comped=bool(row.get("comped", True)),
+        status=status,
+        comped=comped,
+        # Derived from the server-side kill switch as well as row state. Without
+        # the switch the UI offered checkout while StripeMutationPolicy rejected
+        # it, so disabling self-checkout produced a broken flow instead of a
+        # closed one.
+        can_start_checkout=(
+            self_checkout_enabled
+            and not comped
+            and status not in {"comped", "active", "trialing", "past_due", "unpaid", "paused"}
+        ),
         trial_start=to_text(row.get("trial_start")),
         trial_end=to_text(row.get("trial_end")),
         current_period_start=to_text(row.get("current_period_start")),

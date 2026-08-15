@@ -2,7 +2,10 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from app.schemas.belt import DemoteStudent, PromoteStudent
+from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
+
+from app.schemas.belt import BeltLadderSyncRequest, DemoteStudent, PromoteStudent
 from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.belt_service import BeltService
 from tests.fakes.supabase import RpcBackedSupabase
@@ -16,10 +19,36 @@ LADDER_ID = "55555555-5555-5555-5555-555555555555"
 FROM_RANK_ID = "66666666-6666-6666-6666-666666666666"
 TO_RANK_ID = "77777777-7777-7777-7777-777777777777"
 ACTOR_ID = "88888888-8888-8888-8888-888888888888"
+OPERATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 class FakeSupabase(RpcBackedSupabase):
-    def _rpc_record_student_promotion(self, params: dict):
+    def _rpc_sync_belt_ladder_ranks_v2(self, params: dict):
+        ladder = next(
+            row for row in self.tables["belt_ladders"]
+            if row["id"] == params["p_ladder_id"] and row["studio_id"] == params["p_studio_id"]
+        )
+        ranks = [
+            {
+                **rank,
+                "id": rank.get("id") or "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "ladder_id": ladder["id"],
+                "studio_id": ladder["studio_id"],
+                "created_at": "2026-08-14T00:00:00Z",
+            }
+            for rank in params["p_ranks"]
+        ]
+        self.tables["belt_ranks"] = ranks
+        self.tables["audit_logs"].append({
+            "studio_id": params["p_studio_id"],
+            "actor_id": params["p_actor_id"],
+            "action": "belt_ladder.synced",
+            "entity_id": params["p_ladder_id"],
+            "metadata": {"operation_id": params["p_operation_id"]},
+        })
+        return {**ladder, "ranks": ranks}
+
+    def _rpc_record_student_promotion_v2(self, params: dict):
         promotion = {
             "id": "99999999-9999-9999-9999-999999999999",
             "studio_id": params["p_studio_id"],
@@ -31,6 +60,10 @@ class FakeSupabase(RpcBackedSupabase):
             "promoted_by": params["p_promoted_by"],
             "notes": params["p_notes"],
             "promoted_at": "2026-05-24T12:00:00Z",
+            "from_rank_name_snapshot": "White Belt",
+            "to_rank_name_snapshot": "Yellow Belt",
+            "operation_id": params["p_operation_id"],
+            "transition_kind": "promotion",
         }
         self.tables["promotions"].append(dict(promotion))
         for row in self.tables["student_program_memberships"]:
@@ -47,7 +80,7 @@ class FakeSupabase(RpcBackedSupabase):
         })
         return promotion
 
-    def _rpc_record_student_demotion(self, params: dict):
+    def _rpc_record_student_demotion_v2(self, params: dict):
         row = {
             "id": "aaaaaaaa-9999-9999-9999-999999999999",
             "studio_id": params["p_studio_id"],
@@ -59,6 +92,10 @@ class FakeSupabase(RpcBackedSupabase):
             "promoted_by": params["p_demoted_by"],
             "notes": params["p_reason"],
             "promoted_at": "2026-07-12T12:00:00Z",
+            "from_rank_name_snapshot": "Yellow Belt",
+            "to_rank_name_snapshot": "White Belt",
+            "operation_id": params["p_operation_id"],
+            "transition_kind": "demotion",
         }
         self.tables["promotions"].append(dict(row))
         for membership in self.tables["student_program_memberships"]:
@@ -78,6 +115,67 @@ class FakeSupabase(RpcBackedSupabase):
 
 
 class BeltServiceTest(unittest.TestCase):
+    def test_sync_ladder_uses_atomic_idempotent_audit_rpc(self):
+        operation_id = "99999999-9999-4999-8999-999999999999"
+        supabase = FakeSupabase({
+            "belt_ladders": [{
+                "id": LADDER_ID,
+                "studio_id": STUDIO_ID,
+                "program_id": PROGRAM_ID,
+                "name": "Karate",
+                "sub_rank_term": "Stripe",
+                "created_at": "2026-08-14T00:00:00Z",
+                "updated_at": "2026-08-14T00:00:00Z",
+            }],
+            "belt_ranks": [],
+            "audit_logs": [],
+        })
+
+        response = asyncio.run(BeltService(supabase).sync_ladder(
+            LADDER_ID,
+            BeltLadderSyncRequest(
+                operation_id=operation_id,
+                sub_rank_term="Stripe",
+                ranks=[{"name": "White Belt", "color_hex": "#FFFFFF"}],
+            ),
+            STUDIO_ID,
+            ACTOR_ID,
+        ))
+
+        self.assertEqual(response.ranks[0].name, "White Belt")
+        self.assertEqual(supabase.rpc_calls[0][0], "sync_belt_ladder_ranks_v2")
+        self.assertEqual(supabase.rpc_calls[0][1]["p_operation_id"], operation_id)
+        self.assertEqual(supabase.tables["audit_logs"][0]["metadata"]["operation_id"], operation_id)
+        direct_audit_inserts = [
+            entry for entry in supabase.query_log
+            if entry["table"] == "audit_logs" and entry["insert"] is not None
+        ]
+        self.assertEqual(direct_audit_inserts, [])
+
+    def test_delete_assigned_rank_returns_conflict_with_sync_guidance(self):
+        supabase = FakeSupabase({"belt_ranks": []})
+        supabase.table_failures["belt_ranks"] = PostgrestAPIError({
+            "code": "P0001",
+            "message": "Assigned belt ranks must be deleted through sync_belt_ladder_ranks.",
+            "details": "",
+            "hint": "",
+        })
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(BeltService(supabase).delete_rank(FROM_RANK_ID, STUDIO_ID))
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("full belt ladder", raised.exception.detail)
+
+    def test_delete_unassigned_rank_remains_available(self):
+        supabase = FakeSupabase({
+            "belt_ranks": [{"id": FROM_RANK_ID, "studio_id": STUDIO_ID}],
+        })
+
+        asyncio.run(BeltService(supabase).delete_rank(FROM_RANK_ID, STUDIO_ID))
+
+        self.assertEqual(supabase.tables["belt_ranks"], [])
+
     def test_promote_student_records_promotion_through_atomic_rpc(self):
         supabase = FakeSupabase({
             "belt_ranks": [
@@ -107,6 +205,7 @@ class BeltServiceTest(unittest.TestCase):
 
         response = asyncio.run(service.promote_student(
             PromoteStudent(
+                operation_id=OPERATION_ID,
                 student_id=STUDENT_ID,
                 student_program_membership_id=MEMBERSHIP_ID,
                 to_rank_id=TO_RANK_ID,
@@ -118,8 +217,10 @@ class BeltServiceTest(unittest.TestCase):
 
         self.assertEqual(response.id, "99999999-9999-9999-9999-999999999999")
         self.assertEqual(response.to_rank_id, TO_RANK_ID)
+        self.assertEqual(response.from_rank_name, "White Belt")
+        self.assertEqual(response.to_rank_name, "Yellow Belt")
         self.assertEqual(supabase.rpc_calls, [(
-            "record_student_promotion",
+            "record_student_promotion_v2",
             {
                 "p_studio_id": STUDIO_ID,
                 "p_student_id": STUDENT_ID,
@@ -129,6 +230,7 @@ class BeltServiceTest(unittest.TestCase):
                 "p_to_rank_id": TO_RANK_ID,
                 "p_promoted_by": ACTOR_ID,
                 "p_notes": "Ready for next rank",
+                "p_operation_id": OPERATION_ID,
             },
         )])
         direct_writes = [
@@ -181,7 +283,9 @@ class BeltServiceTest(unittest.TestCase):
         ))
 
         self.assertEqual(response.to_rank_id, TO_RANK_ID)
-        self.assertEqual(supabase.rpc_calls[0][0], "record_student_demotion")
+        self.assertEqual(response.from_rank_name, "Yellow Belt")
+        self.assertEqual(response.to_rank_name, "White Belt")
+        self.assertEqual(supabase.rpc_calls[0][0], "record_student_demotion_v2")
         self.assertEqual(
             supabase.rpc_calls[0][1]["p_reason"],
             "Correcting an earlier rank entry",
@@ -396,3 +500,153 @@ class BeltServiceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BeltTransitionReplayTest(unittest.TestCase):
+    """A retry after a lost response must replay, not fail as non-adjacent.
+
+    The client keeps its operation id across retries, so the retry reads a
+    membership this very operation already moved. Adjacency validation then sees
+    the *new* rank and rejects the retry, reporting a committed promotion as
+    failed. The write RPC holds a receipt, but nothing used to reach it.
+    """
+
+    @staticmethod
+    def _supabase(*, current_rank_id, promotions):
+        return FakeSupabase({
+            "belt_ranks": [
+                {"id": FROM_RANK_ID, "studio_id": STUDIO_ID, "ladder_id": LADDER_ID, "display_order": 1},
+                {"id": TO_RANK_ID, "studio_id": STUDIO_ID, "ladder_id": LADDER_ID, "display_order": 2},
+            ],
+            "belt_ladders": [{"id": LADDER_ID, "studio_id": STUDIO_ID, "program_id": PROGRAM_ID}],
+            "students": [{
+                "id": STUDENT_ID,
+                "studio_id": STUDIO_ID,
+                "program_id": PROGRAM_ID,
+                "current_belt_rank_id": current_rank_id,
+            }],
+            "student_program_memberships": [{
+                "id": MEMBERSHIP_ID,
+                "student_id": STUDENT_ID,
+                "studio_id": STUDIO_ID,
+                "program_id": PROGRAM_ID,
+                "status": "active",
+                "ended_at": None,
+                "current_belt_rank_id": current_rank_id,
+            }],
+            "promotions": promotions,
+            "audit_logs": [],
+        })
+
+    @staticmethod
+    def _receipt(transition_kind="promotion"):
+        return {
+            "id": "99999999-9999-9999-9999-999999999999",
+            "studio_id": STUDIO_ID,
+            "student_id": STUDENT_ID,
+            "student_program_membership_id": MEMBERSHIP_ID,
+            "program_id": PROGRAM_ID,
+            "from_rank_id": FROM_RANK_ID,
+            "to_rank_id": TO_RANK_ID,
+            "promoted_by": ACTOR_ID,
+            "notes": "Ready for next rank",
+            "promoted_at": "2026-08-14T00:00:00Z",
+            "operation_id": OPERATION_ID,
+            "transition_kind": transition_kind,
+            "from_rank_name_snapshot": "White Belt",
+            "to_rank_name_snapshot": "Yellow Belt",
+        }
+
+    def test_promotion_retry_after_lost_response_replays_the_receipt(self):
+        # The membership already carries the new rank, so every adjacency check
+        # below would reject this retry as a non-adjacent promotion.
+        supabase = self._supabase(
+            current_rank_id=TO_RANK_ID,
+            promotions=[self._receipt()],
+        )
+
+        response = asyncio.run(BeltService(supabase).promote_student(
+            PromoteStudent(
+                operation_id=OPERATION_ID,
+                student_id=STUDENT_ID,
+                student_program_membership_id=MEMBERSHIP_ID,
+                to_rank_id=TO_RANK_ID,
+                notes="Ready for next rank",
+            ),
+            STUDIO_ID,
+            ACTOR_ID,
+        ))
+
+        self.assertEqual(response.id, "99999999-9999-9999-9999-999999999999")
+        self.assertEqual(response.to_rank_id, TO_RANK_ID)
+        self.assertEqual(response.from_rank_name, "White Belt")
+        self.assertEqual(supabase.rpc_calls, [])
+
+    def test_demotion_retry_after_lost_response_replays_the_receipt(self):
+        supabase = self._supabase(
+            current_rank_id=FROM_RANK_ID,
+            promotions=[{
+                **self._receipt("demotion"),
+                "from_rank_id": TO_RANK_ID,
+                "to_rank_id": FROM_RANK_ID,
+                "notes": "Recorded in error",
+            }],
+        )
+
+        response = asyncio.run(BeltService(supabase).demote_student(
+            DemoteStudent(
+                operation_id=OPERATION_ID,
+                student_id=STUDENT_ID,
+                student_program_membership_id=MEMBERSHIP_ID,
+                to_rank_id=FROM_RANK_ID,
+                reason="Recorded in error",
+            ),
+            STUDIO_ID,
+            ACTOR_ID,
+        ))
+
+        self.assertEqual(response.id, "99999999-9999-9999-9999-999999999999")
+        self.assertEqual(response.to_rank_id, FROM_RANK_ID)
+        self.assertEqual(supabase.rpc_calls, [])
+
+    def test_reused_operation_id_across_transition_kinds_is_rejected(self):
+        supabase = self._supabase(
+            current_rank_id=TO_RANK_ID,
+            promotions=[self._receipt("demotion")],
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(BeltService(supabase).promote_student(
+                PromoteStudent(
+                    operation_id=OPERATION_ID,
+                    student_id=STUDENT_ID,
+                    student_program_membership_id=MEMBERSHIP_ID,
+                    to_rank_id=TO_RANK_ID,
+                    notes="Ready for next rank",
+                ),
+                STUDIO_ID,
+                ACTOR_ID,
+            ))
+
+        self.assertEqual(raised.exception.status_code, 409)
+
+    def test_first_promotion_without_a_receipt_still_writes(self):
+        supabase = self._supabase(current_rank_id=FROM_RANK_ID, promotions=[])
+
+        response = asyncio.run(BeltService(supabase).promote_student(
+            PromoteStudent(
+                operation_id=OPERATION_ID,
+                student_id=STUDENT_ID,
+                student_program_membership_id=MEMBERSHIP_ID,
+                to_rank_id=TO_RANK_ID,
+                notes="Ready for next rank",
+            ),
+            STUDIO_ID,
+            ACTOR_ID,
+        ))
+
+        self.assertEqual(response.to_rank_id, TO_RANK_ID)
+        self.assertEqual(
+            [name for name, _params in supabase.rpc_calls],
+            ["record_student_promotion_v2"],
+        )

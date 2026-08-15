@@ -257,6 +257,7 @@ class Settings(BaseSettings):
     DEMO_RESET_STUDIO_IDS: str = ""
     STRIPE_MODE: Literal["test", "live"] = "test"
     LIVE_BILLING_ENABLED: bool = False
+    CORE_SELF_CHECKOUT_ENABLED: bool = False
     STRIPE_SECRET_KEY: str = ""
     STRIPE_RESTRICTED_KEY: str = ""
     STRIPE_PLATFORM_WEBHOOK_SECRET: str = ""
@@ -382,6 +383,11 @@ class Settings(BaseSettings):
         )
         self.validated_frontend_origin()
         self.validate_supabase_service_role_configuration()
+        if self.CORE_SELF_CHECKOUT_ENABLED and environment != "production":
+            raise RuntimeError(
+                "Runtime configuration is incomplete or unsafe: "
+                "CORE_SELF_CHECKOUT_ENABLED may only be true in production"
+            )
         if environment in PERMISSIVE_ENVIRONMENTS:
             return
         if environment not in STRICT_ENVIRONMENTS:
@@ -477,6 +483,15 @@ class Settings(BaseSettings):
             if not COMMIT_SHA_PATTERN.fullmatch(deployment_sha):
                 missing.append(
                     "RENDER_GIT_COMMIT must contain the exact deployed candidate when live billing is enabled"
+                )
+
+        if self.CORE_SELF_CHECKOUT_ENABLED:
+            deployment_sha = os.environ.get("RENDER_GIT_COMMIT", "").strip().lower()
+            if environment != "production":
+                missing.append("CORE_SELF_CHECKOUT_ENABLED may only be true in production")
+            if not COMMIT_SHA_PATTERN.fullmatch(deployment_sha):
+                missing.append(
+                    "RENDER_GIT_COMMIT must contain the exact deployed candidate when Core self-checkout is enabled"
                 )
 
         if not platform_webhook_secrets or any(

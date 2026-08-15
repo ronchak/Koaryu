@@ -2,7 +2,6 @@
 
 import { Header } from "@/components/header";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
-import { FollowUpPanel } from "@/components/leads/follow-up-panel";
 import { LeadDetailModal } from "@/components/leads/lead-detail-modal";
 import { LeadPipelineBoard } from "@/components/leads/lead-pipeline-board";
 import { LostLeadsSection } from "@/components/leads/lost-leads-section";
@@ -37,16 +36,12 @@ export default function LeadsPage() {
   const {
     activePrograms,
     draggedLeadRecord,
-    dueTodayCount,
     enrolledCount,
-    followUpQueue,
     leadsByStage,
     lostLeads,
-    overdueCount,
     programById,
     selectedLead,
     totalActive,
-    upcomingFollowUps,
   } = controller.model;
 
   return (
@@ -91,21 +86,6 @@ export default function LeadsPage() {
       )}
 
       <div className="flex-1 flex flex-col overflow-x-hidden">
-        {controller.canManageLeads ? <FollowUpPanel
-          dueTodayCount={dueTodayCount}
-          followUpQueue={followUpQueue}
-          overdueCount={overdueCount}
-          pendingLeadId={controller.pendingLeadId}
-          programById={programById}
-          today={today}
-          upcomingFollowUps={upcomingFollowUps}
-          getFollowUpInputValue={controller.getFollowUpInputValue}
-          onFollowUpInputChange={controller.setFollowUpInputValue}
-          onMarkContacted={controller.handleMarkContacted}
-          onRescheduleLead={controller.handleRescheduleLead}
-          onSelectLead={controller.selectLead}
-        /> : null}
-
         <LeadPipelineBoard
           canConvertLeads={controller.canConvertLeads}
           canManageLeads={controller.canManageLeads}

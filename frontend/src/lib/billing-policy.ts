@@ -1,4 +1,4 @@
-import type { StaffRoleName } from "@/types";
+import type { PlatformBillingStatus, StaffRoleName } from "@/types";
 
 export type BillingProviderMode = "test" | "live" | null | undefined;
 
@@ -20,6 +20,12 @@ export function areProviderMutationsEnabled(
   serverCapability = false
 ): boolean {
   return isPreviewMode || serverCapability;
+}
+
+export function canStartCoreCheckout(
+  billingPlatform: Pick<PlatformBillingStatus, "can_start_checkout"> | null
+): boolean {
+  return billingPlatform?.can_start_checkout === true;
 }
 
 function scopedCopy(

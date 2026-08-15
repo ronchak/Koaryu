@@ -17,8 +17,28 @@ export const ROLLOUT = Object.freeze({
   cliVersion: "2.95.4",
   stagingRef: "nxgsektqsgrtyfhawxbc",
   productionRef: "mimguepumzsgmcaycdsh",
-  preHistory: "84:57ae4269ef4d75c249d59ef297661a3a",
-  finalMigrationCount: 100,
+  baselineMigrationCount: 100,
+  preHistory: "100:359058cc127e57a47e429f6271453acf",
+  intermediateMigrationCount: 101,
+  recoveryMigrationCount: 102,
+  convergenceMigrationCount: 103,
+  attestedMigrationCount: 104,
+  returnAttestedMigrationCount: 105,
+  retainedMigrationCount: 106,
+  criticalMigrationCount: 107,
+  columnAttestedMigrationCount: 108,
+  finalMigrationCount: 109,
+  releasePendingVersions: Object.freeze([
+    "20260814043325",
+    "20260814103046",
+    "20260814105424",
+    "20260814114500",
+    "20260814152000",
+    "20260814170000",
+    "20260814183000",
+    "20260814200000",
+    "20260814213000",
+  ]),
   finalPendingVersions: Object.freeze([
     "20260727100000",
     "20260727110000",
@@ -36,6 +56,15 @@ export const ROLLOUT = Object.freeze({
     "20260801115044",
     "20260801123112",
     "20260801131844",
+    "20260814043325",
+    "20260814103046",
+    "20260814105424",
+    "20260814114500",
+    "20260814152000",
+    "20260814170000",
+    "20260814183000",
+    "20260814200000",
+    "20260814213000",
   ]),
   requiredAncestry: Object.freeze([
     "d12f5b8cb7fabf82383227a0e5d41113d32ff928",
@@ -62,16 +91,62 @@ export const EXPECTED_OPERATIONAL_MANIFEST =
   "d621d0bfa18b21571132a51108dd418e66996944fb7723bd3aeb624da7fe0e79";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|100|20260801131844|" +
+  "true|109|20260814213000|" +
   ROLLOUT.finalPendingVersions.join(",") +
+  "|0||release-db-attestation-v16";
+
+export const EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS =
+  "true|105|20260814152000|" +
+  ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
+  "|0||release-db-attestation-v12";
+
+export const EXPECTED_RETAINED_OPERATIONAL_READINESS =
+  "true|106|20260814170000|" +
+  ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
+  "|0||release-db-attestation-v13";
+
+export const EXPECTED_CRITICAL_OPERATIONAL_READINESS =
+  "true|107|20260814183000|" +
+  ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
+  "|0||release-db-attestation-v14";
+
+export const EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS =
+  "true|108|20260814200000|" +
+  ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
+  "|0||release-db-attestation-v15";
+
+export const EXPECTED_ATTESTED_OPERATIONAL_READINESS =
+  "true|104|20260814114500|" +
+  ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
+  "|0||release-db-attestation-v11";
+
+export const EXPECTED_RECOVERY_OPERATIONAL_READINESS = Object.freeze([
+  "true|102|20260814103046|" +
+    ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
+    "|0||release-db-attestation-v9",
+]);
+
+export const EXPECTED_CONVERGENCE_OPERATIONAL_READINESS =
+  "true|103|20260814105424|" +
+  ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
+  "|0||release-db-attestation-v10";
+
+export const EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS =
+  "true|101|20260814043325|" +
+  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
+  "|0||release-db-attestation-v8";
+
+export const EXPECTED_PRE_OPERATIONAL_READINESS =
+  "true|100|20260801131844|" +
+  ROLLOUT.finalPendingVersions.slice(0, -9).join(",") +
   "|0||release-db-attestation-v7";
 
 export const EXPECTED_CATALOG_STATE =
-  "columns=41:418fd3507a3fdaa04d55db04524a62c387f023421813c75cb926679ba86274d4:0;" +
+  "columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;" +
   "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
-  "constraints=23:000e14a3e9c322f1d2c44def057552f09eb486158ec650ca406862623b1a0ab0:0;" +
-  "functions=48:8a881fd7e66621ec59432e2b010d500863f00e076ebb84bbc95f6e14b4b6d047:0;" +
-  "indexes=11:9521e89597975b9092fa7b3d8dfd53a8f0306422f090af794cd27d2456ef14aa:0;" +
+  "constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;" +
+  "functions=68:a724ad4e219c1ffdeae840ce3a088e08f697db04de3a0a4ff32eea0d06f65d58:0;" +
+  "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
   "scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;" +
@@ -89,7 +164,7 @@ export function validateOperationalManifest(value) {
 
 export function validateOperationalReadiness(value) {
   if (value !== EXPECTED_OPERATIONAL_READINESS) {
-    throw new RolloutError("V7 operational readiness did not match the exact release state.");
+    throw new RolloutError("V16 operational readiness did not match the exact release state.");
   }
   return value;
 }
@@ -99,7 +174,46 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
+from public.koaryu_release_schema_preflight_v3()
+`;
+
+export const PREDECESSOR_OPERATIONAL_READINESS_SQL = `
+select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
+       array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
+       coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
+  as operational_readiness
 from public.koaryu_release_schema_preflight_v2()
+`;
+
+export const EXPECTED_WRITER_RETURN_CONTRACT_STATE =
+  "4:13fe0a7d1e4e2d1483fa5bb73e77b0097c62f85348b9897b5a256f21950c19b1:0";
+
+export const WRITER_RETURN_CONTRACT_STATE_SQL = `
+with required_functions(signature, expected_result) as (
+  values
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)'),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)')
+),
+actual as (
+  select format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes)) as signature,
+         replace(pg_get_function_result(function.oid), 'public.', '') as result_contract
+    from pg_proc function
+    join pg_namespace namespace on namespace.oid = function.pronamespace
+    join required_functions required
+      on required.signature = format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes))
+),
+compared as (
+  select required.signature, required.expected_result, actual.result_contract
+    from required_functions required
+    left join actual using (signature)
+)
+select count(*)::text || ':' ||
+       encode(extensions.digest(convert_to(string_agg(signature || ':' || coalesce(result_contract, ''), '|' order by signature collate "C"), 'UTF8'), 'sha256'), 'hex') || ':' ||
+       count(*) filter (where result_contract is distinct from expected_result)::text
+  as writer_return_contract_state
+from compared
 `;
 
 export const TOLERATED_HISTORY_COLUMNS = Object.freeze([
@@ -717,6 +831,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.operational_alert_heartbeats(text)', 'search_path=public, pg_temp', false, true),
     ('public.koaryu_release_schema_preflight()', 'search_path=pg_catalog', true, true),
     ('public.koaryu_release_schema_preflight_v2()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v3()', 'search_path=pg_catalog', true, true),
     ('public.koaryu_release_schema_preflight_v6()', 'search_path=pg_catalog', true, false),
     ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
@@ -724,14 +839,41 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('private.koaryu_release_operational_manifest_v5()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v6()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v7()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
+    ('private.koaryu_release_starting_belt_manifest_v9()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_student_rank_writer_manifest_v11()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_student_rank_writer_manifest_v13()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_critical_surface_manifest_v15()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_critical_surface_manifest_v16()', 'search_path=pg_catalog', false, false),
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
+    ('public.write_student_profile_v2_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public', false, true),
+    ('public.reserve_core_checkout_v2_atomic(uuid)', 'search_path=pg_catalog, public', false, true),
+    ('public.set_studio_comp_v2_atomic(uuid, boolean, text, uuid, text, boolean)', 'search_path=pg_catalog, public', false, true),
+    ('public.sync_belt_ladder_ranks_v2(uuid, uuid, uuid, uuid, text, jsonb)', 'search_path=pg_catalog, public', false, true),
+    ('public.record_core_checkout_compensation_required_atomic(uuid, text, text, bigint, text, boolean)', 'search_path=pg_catalog, public', false, true),
+    ('private.record_student_rank_transition_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text, uuid)', 'search_path=public, pg_temp', false, true),
+    ('public.record_student_promotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_demotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_promotion_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, uuid)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_demotion_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, uuid)', 'search_path=pg_catalog', false, true),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=public, pg_temp', false, true),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=pg_catalog, public, private', false, true),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=public, pg_temp', false, true),
     ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
     ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
+),
+required_writer_results(signature, expected_result_contract) as (
+  values
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)'),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)')
 ),
 function_actual as (
   select format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes)) as signature,
          owner.rolname as owner_name, language.lanname as language_name,
          function.prosecdef as security_definer,
          coalesce(array_to_string(function.proconfig, ','), '') as search_path_config,
+         replace(pg_get_function_result(function.oid), 'public.', '') as result_contract,
          exists (select 1 from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl where acl.grantee = 0 and acl.privilege_type = 'EXECUTE') as public_execute,
          has_function_privilege('anon', function.oid, 'EXECUTE') as anon_execute,
          has_function_privilege('authenticated', function.oid, 'EXECUTE') as authenticated_execute,
@@ -772,9 +914,11 @@ function_compared as (
          actual.search_path_config as actual_search_path_config,
          actual.public_execute, actual.anon_execute, actual.authenticated_execute,
          actual.service_execute as actual_service_execute,
+         actual.result_contract, writer_result.expected_result_contract,
          actual.body_sha256, actual.acl_state, actual.unexpected_execute_grant
     from required_functions required
     left join function_actual actual using (signature)
+    left join required_writer_results writer_result using (signature)
 ),
 required_triggers(table_name, trigger_name, function_schema, function_name, trigger_type) as (
   values
@@ -826,7 +970,8 @@ required_indexes(index_name, table_name, unique_index, partial_index) as (
     ('operational_alert_episodes_recent', 'operational_alert_episodes', false, false),
     ('operational_alert_outbox_claim', 'operational_alert_outbox', false, true),
     ('operational_alert_delivery_attempts_delivery', 'operational_alert_delivery_attempts', false, false),
-    ('operational_alert_audit_events_episode', 'operational_alert_audit_events', false, false)
+    ('operational_alert_audit_events_episode', 'operational_alert_audit_events', false, false),
+    ('promotions_studio_operation_once', 'promotions', true, true)
 ),
 index_actual as (
   select index_relation.relname as index_name, table_relation.relname as table_name,
@@ -935,7 +1080,9 @@ required_columns(table_name, column_name, data_type, nullable, identity_column) 
     ('operational_alert_episodes', 'acknowledged_by_role', 'text', true, false),
     ('operational_alert_episodes', 'acknowledged_actor_ref', 'text', true, false),
     ('operational_alert_outbox', 'event_kind', 'text', false, false),
-    ('operational_alert_outbox', 'destination_role', 'text', false, false)
+    ('operational_alert_outbox', 'destination_role', 'text', false, false),
+    ('promotions', 'operation_id', 'uuid', true, false),
+    ('promotions', 'transition_kind', 'text', true, false)
 ),
 column_compared as (
   select required.*,
@@ -960,6 +1107,7 @@ required_constraints(table_name, constraint_identity, constraint_type) as (
     ('stripe_live_billing_reconciliation_account_evidence', 'primary:checkpoint_id,stripe_connected_account_id', 'p'),
     ('stripe_live_billing_reconciliation_account_evidence', 'unique:checkpoint_id,studio_id', 'u'),
     ('operational_alert_episodes', 'operational_alert_episode_ack_complete', 'c'),
+    ('promotions', 'promotions_transition_kind_check', 'c'),
     ('operational_alert_outbox', 'operational_alert_outbox_episode_event_role_key', 'u'),
     ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c'),
     ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_pair', 'c'),
@@ -1055,8 +1203,8 @@ states as (
     from policy_compared
   union all
   select 'functions', count(*)::integer,
-         encode(extensions.digest(convert_to(coalesce(string_agg(signature || ':' || coalesce(owner_name, '') || ':' || coalesce(language_name, '') || ':' || coalesce(actual_security_definer::text, '') || ':' || coalesce(actual_search_path_config, '') || ':' || coalesce(actual_service_execute::text, '') || ':' || coalesce(body_sha256, '') || ':' || coalesce(acl_state, ''), '|' order by signature collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
-         count(*) filter (where owner_name is null or owner_name <> 'postgres' or language_name not in ('sql', 'plpgsql') or actual_security_definer is distinct from security_definer or actual_search_path_config is distinct from search_path_config or public_execute or anon_execute or authenticated_execute or actual_service_execute is distinct from service_execute or unexpected_execute_grant)::integer
+         encode(extensions.digest(convert_to(coalesce(string_agg(signature || ':' || coalesce(owner_name, '') || ':' || coalesce(language_name, '') || ':' || coalesce(actual_security_definer::text, '') || ':' || coalesce(actual_search_path_config, '') || ':' || coalesce(actual_service_execute::text, '') || ':' || coalesce(result_contract, '') || ':' || coalesce(body_sha256, '') || ':' || coalesce(acl_state, ''), '|' order by signature collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where owner_name is null or owner_name <> 'postgres' or language_name not in ('sql', 'plpgsql') or actual_security_definer is distinct from security_definer or actual_search_path_config is distinct from search_path_config or public_execute or anon_execute or authenticated_execute or actual_service_execute is distinct from service_execute or unexpected_execute_grant or (expected_result_contract is not null and result_contract is distinct from expected_result_contract))::integer
     from function_compared
   union all
   select 'triggers', count(*)::integer,
@@ -1295,7 +1443,18 @@ export function buildInspectionToken(packet, target, state) {
 }
 
 export function formatNonSuccessProbeState(result) {
-  if (result?.state === "pre" || result?.state === "post") return null;
+  if (
+    result?.state === "pre" ||
+    result?.state === "intermediate" ||
+    result?.state === "recovery" ||
+    result?.state === "convergence" ||
+    result?.state === "attested" ||
+    result?.state === "return-attested" ||
+    result?.state === "retained" ||
+    result?.state === "critical" ||
+    result?.state === "column-attested" ||
+    result?.state === "post"
+  ) return null;
   if (
     result?.state === "unknown" &&
     (result.reason === "timeout" || result.reason === "connectivity")
@@ -1309,8 +1468,19 @@ export function formatNonSuccessProbeState(result) {
 }
 
 export function buildInspectionTokenForAcceptedState(packet, target, result) {
-  if (result?.state !== "pre" && result?.state !== "post") {
-    throw new RolloutError("Inspection tokens require an accepted pre or post probe state.");
+  if (
+    result?.state !== "pre" &&
+    result?.state !== "intermediate" &&
+    result?.state !== "recovery" &&
+    result?.state !== "convergence" &&
+    result?.state !== "attested" &&
+    result?.state !== "return-attested" &&
+    result?.state !== "retained" &&
+    result?.state !== "critical" &&
+    result?.state !== "column-attested" &&
+    result?.state !== "post"
+  ) {
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
 }
@@ -1336,8 +1506,10 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     .readdirSync(migrationsDirectory)
     .filter((name) => name.endsWith(".sql"))
     .sort();
-  if (filenames.length < 86) {
-    throw new RolloutError(`Candidate must contain at least 86 migrations, found ${filenames.length}.`);
+  if (filenames.length < ROLLOUT.finalMigrationCount) {
+    throw new RolloutError(
+      `Candidate must contain at least ${ROLLOUT.finalMigrationCount} migrations, found ${filenames.length}.`,
+    );
   }
   for (const filename of filenames) {
     if (!/^[0-9]{14}_[A-Za-z0-9_]+\.sql$/.test(filename)) {
@@ -1351,15 +1523,92 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
     })
     .join("|");
-  const preHistory = `84:${digest("md5", filenames.slice(0, 84)
+  const preHistory = `${ROLLOUT.baselineMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.baselineMigrationCount)
     .map((filename) => {
       const separator = filename.indexOf("_");
       return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
     })
-    .join("|"))}`;
+    .join("|"),
+  )}`;
   const postHistory = `${filenames.length}:${digest("md5", orderedHistory)}`;
+  const intermediateHistory = `${ROLLOUT.intermediateMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.intermediateMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
+  const recoveryHistory = `${ROLLOUT.recoveryMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.recoveryMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
+  const convergenceHistory = `${ROLLOUT.convergenceMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.convergenceMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
+  const attestedHistory = `${ROLLOUT.attestedMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.attestedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
+  const returnAttestedHistory = `${ROLLOUT.returnAttestedMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.returnAttestedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
+  const retainedHistory = `${ROLLOUT.retainedMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.retainedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
+  const criticalHistory = `${ROLLOUT.criticalMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.criticalMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
+  const columnAttestedHistory = `${ROLLOUT.columnAttestedMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.columnAttestedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   if (preHistory !== ROLLOUT.preHistory) {
-    throw new RolloutError("Candidate's first 84 migration names do not match the production baseline.");
+    throw new RolloutError(
+      `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
+    );
   }
   const expectedTail = ROLLOUT.migrations.map(({ filename }) => filename);
   if (JSON.stringify(filenames.slice(84, 86)) !== JSON.stringify(expectedTail)) {
@@ -1373,7 +1622,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     }
   }
 
-  const pendingMigrations = filenames.slice(84);
+  const pendingMigrations = filenames.slice(ROLLOUT.baselineMigrationCount);
   const pendingVersions = pendingMigrations.map((filename) => filename.slice(0, 14));
   const pendingManifest = pendingMigrations.map((filename) => ({
     filename,
@@ -1383,7 +1632,69 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     candidateSha,
     migrationCount: filenames.length,
     postHistory,
-    postTargetHistory: pendingMigrations
+    intermediateHistory,
+    recoveryHistory,
+    convergenceHistory,
+    attestedHistory,
+    returnAttestedHistory,
+    retainedHistory,
+    criticalHistory,
+    columnAttestedHistory,
+    preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    postTargetHistory: filenames.slice(84)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    intermediateTargetHistory: filenames.slice(84, ROLLOUT.intermediateMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    recoveryTargetHistory: filenames.slice(84, ROLLOUT.recoveryMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    convergenceTargetHistory: filenames.slice(84, ROLLOUT.convergenceMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    attestedTargetHistory: filenames.slice(84, ROLLOUT.attestedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    returnAttestedTargetHistory: filenames.slice(84, ROLLOUT.returnAttestedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    retainedTargetHistory: filenames.slice(84, ROLLOUT.retainedMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    criticalTargetHistory: filenames.slice(84, ROLLOUT.criticalMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+    columnAttestedTargetHistory: filenames.slice(84, ROLLOUT.columnAttestedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1392,13 +1703,51 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
-      JSON.stringify(pendingVersions) === JSON.stringify(ROLLOUT.finalPendingVersions),
+      JSON.stringify(pendingVersions) === JSON.stringify(ROLLOUT.releasePendingVersions),
     sourceManifestSha256: digest(
       "sha256",
       pendingManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
     ),
     pendingManifest,
   };
+}
+
+export function packetForAcceptedState(packet, state) {
+  if (state === "pre") return packet;
+  const consumedMigrations =
+    state === "intermediate" ? 1
+      : state === "recovery" ? 2
+        : state === "convergence" ? 3
+          : state === "attested" ? 4
+            : state === "return-attested" ? 5
+              : state === "retained" ? 6
+                : state === "critical" ? 7
+                  : state === "column-attested" ? 8
+          : null;
+  if (consumedMigrations === null) {
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, or column-attested state.");
+  }
+  const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
+  const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
+  return {
+    ...packet,
+    pendingMigrations,
+    pendingManifest,
+    sourceManifestSha256: digest(
+      "sha256",
+      pendingManifest.map(({ filename, sha256 }) => `${filename}:${sha256}`).join("|"),
+    ),
+  };
+}
+
+export function assertApplyableState(mode, state) {
+  if (mode === "apply" && (
+    state === "intermediate" || state === "recovery" || state === "convergence"
+  )) {
+    throw new RolloutError(
+      `Apply is disabled from ${state} state because its historical readiness version does not attest every object needed for a safe forward recovery. Inspect the provider catalogs and repair to an attested state before applying.`,
+    );
+  }
 }
 
 export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerprint = null) {
@@ -1410,6 +1759,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     triggerState,
     catalogState,
     operationalReadiness,
+    writerReturnContractState,
   } = snapshot;
   const historySchema = validateHistoryColumnMetadata(snapshot.historyColumns);
   if (!historySchema.accepted) {
@@ -1418,17 +1768,118 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     );
   }
   if (history === ROLLOUT.preHistory) {
-    if (targetHistory !== "" || objectCounts !== "0:0") {
+    if (targetHistory !== packet.preTargetHistory || objectCounts !== "3:1") {
       throw new RolloutError(
-        "Migration history is pre-state but studio-comp objects already exist; stop for drift review.",
+        "Migration history is pre-state but the exact V7 target history or studio-comp objects are missing.",
       );
     }
+    if (operationalReadiness !== EXPECTED_PRE_OPERATIONAL_READINESS) {
+      throw new RolloutError("V7 operational readiness did not match the exact production baseline.");
+    }
     return { state: "pre", providerFingerprint: null };
+  }
+  if (history === packet.intermediateHistory) {
+    if (
+      targetHistory !== packet.intermediateTargetHistory ||
+      objectCounts !== "3:1"
+    ) {
+      throw new RolloutError(
+        "Migration history is intermediate but the exact V8 target history or studio-comp objects are missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS) {
+      throw new RolloutError("V8 operational readiness did not match the exact intermediate state.");
+    }
+    return { state: "intermediate", providerFingerprint: null };
+  }
+  if (history === packet.recoveryHistory) {
+    if (targetHistory !== packet.recoveryTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError(
+        "Migration history is recovery-state but the exact V9 target history or studio-comp objects are missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_RECOVERY_OPERATIONAL_READINESS[0]) {
+      throw new RolloutError("V9 operational readiness did not match the exact recovery state.");
+    }
+    return { state: "recovery", providerFingerprint: null };
+  }
+  if (history === packet.convergenceHistory) {
+    if (targetHistory !== packet.convergenceTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError(
+        "Migration history is convergence-state but the exact V10 target history or studio-comp objects are missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_CONVERGENCE_OPERATIONAL_READINESS) {
+      throw new RolloutError("V10 operational readiness did not match the exact convergence state.");
+    }
+    return { state: "convergence", providerFingerprint: null };
+  }
+  if (history === packet.attestedHistory) {
+    if (targetHistory !== packet.attestedTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError(
+        "Migration history is attested-state but the exact V11 target history or studio-comp objects are missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_ATTESTED_OPERATIONAL_READINESS) {
+      throw new RolloutError("V11 operational readiness did not match the exact attested state.");
+    }
+    if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
+      throw new RolloutError("V11 writer return contracts do not match the repository-pinned pre-V13 proof.");
+    }
+    return { state: "attested", providerFingerprint: null };
+  }
+  if (history === packet.returnAttestedHistory) {
+    if (targetHistory !== packet.returnAttestedTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("Migration history is return-attested but its exact V12 target history is missing.");
+    }
+    if (operationalReadiness !== EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS) {
+      throw new RolloutError("V12 operational readiness did not match the exact migration-105 state.");
+    }
+    if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
+      throw new RolloutError("V12 writer return contracts do not match the repository-pinned proof.");
+    }
+    return { state: "return-attested", providerFingerprint: null };
+  }
+  if (history === packet.retainedHistory) {
+    if (targetHistory !== packet.retainedTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("Migration history is retained but its exact V13 target history is missing.");
+    }
+    if (operationalReadiness !== EXPECTED_RETAINED_OPERATIONAL_READINESS) {
+      throw new RolloutError("V13 operational readiness did not match the exact migration-106 state.");
+    }
+    if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
+      throw new RolloutError("V13 writer return contracts do not match the repository-pinned proof.");
+    }
+    return { state: "retained", providerFingerprint: null };
+  }
+  if (history === packet.criticalHistory) {
+    if (targetHistory !== packet.criticalTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("Migration history is critical but its exact V14 target history is missing.");
+    }
+    if (operationalReadiness !== EXPECTED_CRITICAL_OPERATIONAL_READINESS) {
+      throw new RolloutError("V14 operational readiness did not match the exact migration-107 state.");
+    }
+    if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
+      throw new RolloutError("V14 writer return contracts do not match the repository-pinned proof.");
+    }
+    return { state: "critical", providerFingerprint: null };
+  }
+  if (history === packet.columnAttestedHistory) {
+    if (targetHistory !== packet.columnAttestedTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("Migration history is column-attested but its exact V15 target history is missing.");
+    }
+    if (operationalReadiness !== EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS) {
+      throw new RolloutError("V15 operational readiness did not match the exact migration-108 state.");
+    }
+    if (writerReturnContractState !== EXPECTED_WRITER_RETURN_CONTRACT_STATE) {
+      throw new RolloutError("V15 writer return contracts do not match the repository-pinned proof.");
+    }
+    return { state: "column-attested", providerFingerprint: null };
   }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
-        "Candidate does not contain the exact final 100-migration sequence; post-state cannot be certified.",
+        "Candidate does not contain the exact final 109-migration sequence; post-state cannot be certified.",
       );
     }
     if (targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
@@ -1450,7 +1901,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-state or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, or post-state.`,
   );
 }
 
@@ -1675,6 +2126,7 @@ export function readRemoteState(
       triggerState: null,
       catalogState: null,
       operationalReadiness: null,
+      writerReturnContractState: null,
     };
     if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
       snapshot.functionState = query(
@@ -1695,10 +2147,43 @@ export function readRemoteState(
         "catalog_state",
         env,
       );
+    }
+    if (
+      snapshot.objectCounts === "3:1" &&
+      (
+        snapshot.history === ROLLOUT.preHistory ||
+        snapshot.history === packet.intermediateHistory ||
+        snapshot.history === packet.recoveryHistory ||
+        snapshot.history === packet.convergenceHistory ||
+        snapshot.history === packet.attestedHistory ||
+        snapshot.history === packet.returnAttestedHistory ||
+        snapshot.history === packet.retainedHistory ||
+        snapshot.history === packet.criticalHistory ||
+        snapshot.history === packet.columnAttestedHistory ||
+        snapshot.history === packet.postHistory
+      )
+    ) {
       snapshot.operationalReadiness = query(
         sourceRoot,
-        OPERATIONAL_READINESS_SQL,
+        snapshot.history === packet.postHistory
+          ? OPERATIONAL_READINESS_SQL
+          : PREDECESSOR_OPERATIONAL_READINESS_SQL,
         "operational_readiness",
+        env,
+      );
+    }
+    if (
+      snapshot.objectCounts === "3:1" &&
+      (snapshot.history === packet.attestedHistory ||
+       snapshot.history === packet.returnAttestedHistory ||
+       snapshot.history === packet.retainedHistory ||
+       snapshot.history === packet.criticalHistory ||
+       snapshot.history === packet.columnAttestedHistory)
+    ) {
+      snapshot.writerReturnContractState = query(
+        sourceRoot,
+        WRITER_RETURN_CONTRACT_STATE_SQL,
+        "writer_return_contract_state",
         env,
       );
     }
@@ -1946,7 +2431,7 @@ export async function main(
     const projectRef = config.target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
     if (config.mode !== "diagnose" && !packet.integrationComplete) {
       throw new RolloutError(
-        "Provider inspection requires the exact final 100-migration candidate through 131844.",
+        "Provider inspection requires the exact final 106-migration candidate through 170000.",
       );
     }
     commandRunner(
@@ -1995,6 +2480,11 @@ export async function main(
       const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
       console.log(`state=${before.state}`);
       console.log(`inspection_token=${inspectionToken}`);
+      if (before.state !== "post") {
+        const remainingPacket = packetForAcceptedState(packet, before.state);
+        console.log(`remaining_migrations=${remainingPacket.pendingMigrations.join(",")}`);
+        console.log(`remaining_manifest_sha256=${remainingPacket.sourceManifestSha256}`);
+      }
       if (before.providerFingerprint) {
         console.log(`provider_fingerprint=${before.providerFingerprint}`);
       }
@@ -2002,10 +2492,24 @@ export async function main(
     }
     if (nonSuccessStateLine !== null) {
       console.log(nonSuccessStateLine);
-      throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
+      throw new RolloutError(
+        `${config.mode} requires the exact ${ROLLOUT.baselineMigrationCount}-migration pre-state.`,
+      );
     }
-    if (before.state !== "pre") {
-      throw new RolloutError(`${config.mode} requires the exact 84-migration pre-state.`);
+    if (
+      before.state !== "pre" &&
+      before.state !== "intermediate" &&
+      before.state !== "recovery" &&
+      before.state !== "convergence" &&
+      before.state !== "attested" &&
+      before.state !== "return-attested" &&
+      before.state !== "retained" &&
+      before.state !== "critical" &&
+      before.state !== "column-attested"
+    ) {
+      throw new RolloutError(
+        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, critical, or column-attested state.`,
+      );
     }
     const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
     if (config.inspectionToken !== inspectionToken) {
@@ -2014,12 +2518,15 @@ export async function main(
       );
     }
 
-    const pending = runDryRun(sourceRoot, packet, env);
+    const remainingPacket = packetForAcceptedState(packet, before.state);
+    const pending = runDryRun(sourceRoot, remainingPacket, env);
     console.log(`dry_run_migrations=${pending.join(",")}`);
     if (config.mode === "dry-run") return;
 
+    assertApplyableState(config.mode, before.state);
+
     if (config.target === "production") {
-      await confirmProductionApply(packet);
+      await confirmProductionApply(remainingPacket);
     }
     try {
       runCommand("supabase", ["db", "push", "--linked", "--agent=no"], {

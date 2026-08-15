@@ -5,6 +5,7 @@ import {
   beginSessionAttendanceRefresh,
   clearSessionAttendanceRefresh,
   createAttendanceToggleQueue,
+  DEFAULT_SCHEDULE_PAGE_VIEW,
   formatScheduleDateKey,
   getActiveScheduleStudents,
   getScheduleSessionAttendance,
@@ -32,6 +33,10 @@ function deferred() {
 }
 
 describe("schedule page model", () => {
+  it("opens on the month view by default", () => {
+    assert.equal(DEFAULT_SCHEDULE_PAGE_VIEW, "month");
+  });
+
   it("builds day, week, and month visible ranges from local calendar dates", () => {
     const base = new Date(2026, 4, 20, 15);
 
@@ -68,6 +73,14 @@ describe("schedule page model", () => {
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "day", 1)), "2026-05-21");
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "week", -1)), "2026-05-13");
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "month", 1)), "2026-06-20");
+    assert.equal(
+      formatScheduleDateKey(navigateScheduleDate(new Date(2026, 0, 31, 12), "month", 1)),
+      "2026-02-28"
+    );
+    assert.equal(
+      formatScheduleDateKey(navigateScheduleDate(new Date(2026, 11, 31, 12), "month", -1)),
+      "2026-11-30"
+    );
   });
 
   it("checks recurring-class overlap and selected-session attendance outside the route", () => {

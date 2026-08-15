@@ -1,4 +1,5 @@
-import type { Lead, LeadSource, Program, Student } from "@/types";
+import { findPreviewStartingRankId } from "./student-store-model.ts";
+import type { BeltLadder, BeltRank, Lead, LeadSource, Program, Student } from "@/types";
 
 export function buildPreviewLead(
   data: Partial<Lead>,
@@ -63,9 +64,13 @@ export function buildPreviewLeadConversion(
   lead: Lead,
   programs: Program[],
   {
+    beltLadders = [],
+    beltRanks = [],
     idFactory,
     now = new Date(),
   }: {
+    beltLadders?: BeltLadder[];
+    beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
   }
@@ -75,6 +80,7 @@ export function buildPreviewLeadConversion(
   const membershipStartDate = nowIso.split("T")[0];
   const selectedProgramId = lead.program_id || "program-unassigned";
   const selectedProgram = programs.find((program) => program.id === selectedProgramId);
+  const startingRankId = findPreviewStartingRankId(selectedProgramId, beltLadders, beltRanks);
   const guardianName = lead.guardian_name ? splitGuardianName(lead.guardian_name) : null;
 
   const student: Student = {
@@ -99,7 +105,7 @@ export function buildPreviewLeadConversion(
     status: "active",
     membership_start_date: membershipStartDate,
     program_id: selectedProgramId,
-    current_belt_rank_id: undefined,
+    current_belt_rank_id: startingRankId,
     program_memberships: [
       {
         id: idFactory(),
@@ -111,7 +117,7 @@ export function buildPreviewLeadConversion(
         status: "active",
         started_at: membershipStartDate,
         ended_at: null,
-        current_belt_rank_id: null,
+        current_belt_rank_id: startingRankId,
         current_belt_rank_name: null,
         current_belt_rank_color: null,
         created_at: nowIso,

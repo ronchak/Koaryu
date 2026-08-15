@@ -3,7 +3,14 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.schemas.student import GuardianCreate, StudentCreate, StudentUpdate
+from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
+
+from app.schemas.student import (
+    GuardianCreate,
+    StudentCreate,
+    StudentUpdate,
+)
 from app.services.student_crud_actions import StudentCrudActions
 from app.services.student_write_payload import prepare_student_write_payload
 from tests.fakes.supabase import RpcBackedSupabase
@@ -62,6 +69,22 @@ class FakeStudentWriteSupabase(RpcBackedSupabase):
                 if membership:
                     membership.update({"status": "active", "started_at": existing.get("membership_start_date")})
                 else:
+                    ladder_ids = {
+                        row["id"]
+                        for row in self.tables.get("belt_ladders", [])
+                        if row.get("studio_id") == params["p_studio_id"]
+                        and row.get("program_id") == program_id
+                    }
+                    starting_rank = next((
+                        row
+                        for row in sorted(
+                            self.tables.get("belt_ranks", []),
+                            key=lambda item: item.get("display_order", 0),
+                        )
+                        if row.get("studio_id") == params["p_studio_id"]
+                        and row.get("ladder_id") in ladder_ids
+                        and not row.get("is_tip", False)
+                    ), None)
                     self.tables["student_program_memberships"].append({
                         "id": f"membership-{len(self.tables['student_program_memberships']) + 1}",
                         "studio_id": params["p_studio_id"],
@@ -70,7 +93,22 @@ class FakeStudentWriteSupabase(RpcBackedSupabase):
                         "status": "active",
                         "started_at": existing.get("membership_start_date"),
                         "ended_at": None,
+                        "current_belt_rank_id": starting_rank.get("id") if starting_rank else None,
+                        "created_at": "2026-05-20T00:00:00+00:00",
+                        "updated_at": "2026-05-20T00:00:00+00:00",
                     })
+
+            primary_membership = next((
+                row
+                for row in self.tables["student_program_memberships"]
+                if row.get("studio_id") == params["p_studio_id"]
+                and row.get("student_id") == student_id
+                and row.get("program_id") == existing.get("program_id")
+                and row.get("status") in {"active", "paused"}
+                and row.get("ended_at") is None
+            ), None)
+            if primary_membership:
+                existing["current_belt_rank_id"] = primary_membership.get("current_belt_rank_id")
 
         for guardian in params.get("p_guardians") or []:
             guardian_row = {
@@ -95,18 +133,82 @@ class FakeStudentWriteSupabase(RpcBackedSupabase):
         })
         return [dict(existing)]
 
+    def _rpc_write_student_profile_v2_atomic(self, params):
+        rows = self._rpc_write_student_profile_atomic(params)
+        if not rows:
+            return []
+        student_id = params["p_student_id"]
+        guardian_ids = {
+            row["guardian_id"]
+            for row in self.tables["student_guardians"]
+            if row["student_id"] == student_id
+        }
+        guardians = [
+            dict(row)
+            for row in self.tables["guardians"]
+            if row["id"] in guardian_ids
+        ]
+        memberships = [
+            {
+                **row,
+                "created_at": row.get("created_at") or "2026-05-20T00:00:00+00:00",
+                "updated_at": row.get("updated_at") or "2026-05-20T00:00:00+00:00",
+            }
+            for row in self.tables["student_program_memberships"]
+            if row.get("student_id") == student_id
+            and row.get("studio_id") == params["p_studio_id"]
+        ]
+        return [{
+            "result_student": rows[0],
+            "result_guardians": guardians,
+            "result_program_memberships": memberships,
+        }]
 
-def build_actions(supabase, memberships=None):
+
+def build_actions(supabase, *, create_signed_photo_url=lambda path: f"signed:{path}"):
     return StudentCrudActions(
         supabase=supabase,
         membership_store=FakeMembershipStore(),
         prepare_student_write=prepare_student_write_payload,
-        row_to_response=lambda row, **_kwargs: row,
-        fetch_memberships_for_student=lambda *_args: memberships or [],
+        row_to_response=lambda row, photo_url=None, **_kwargs: {
+            **row,
+            "photo_url": photo_url,
+        },
+        create_signed_photo_url=create_signed_photo_url,
     )
 
 
 class StudentCrudActionsTest(unittest.TestCase):
+    def test_update_missing_student_maps_atomic_rpc_error_to_not_found(self):
+        class MissingStudentSupabase(FakeStudentWriteSupabase):
+            def _rpc_write_student_profile_v2_atomic(self, _params):
+                raise PostgrestAPIError({
+                    "code": "P0001",
+                    "message": "Student not found for update.",
+                    "details": "",
+                    "hint": "",
+                })
+
+        actions = build_actions(MissingStudentSupabase({
+            "programs": [],
+            "students": [],
+            "student_program_memberships": [],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        }))
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(actions.update_student(
+                "missing-student",
+                StudentUpdate(preferred_name="Missing"),
+                "studio-1",
+                "actor-1",
+            ))
+
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(raised.exception.detail, "Student not found")
+
     def test_create_student_uses_atomic_rpc_for_student_memberships_guardians_and_audit(self):
         supabase = FakeStudentWriteSupabase({
             "programs": [{"id": "program-1", "studio_id": "studio-1"}],
@@ -131,7 +233,7 @@ class StudentCrudActionsTest(unittest.TestCase):
         ))
 
         self.assertEqual(student["legal_first_name"], "Aiko")
-        self.assertEqual([name for name, _params in supabase.rpc_calls], ["write_student_profile_atomic"])
+        self.assertEqual([name for name, _params in supabase.rpc_calls], ["write_student_profile_v2_atomic"])
         params = supabase.rpc_calls[0][1]
         self.assertTrue(params["p_replace_programs"])
         self.assertEqual(params["p_audit_action"], "student.created")
@@ -179,7 +281,7 @@ class StudentCrudActionsTest(unittest.TestCase):
 
         self.assertEqual(student["program_id"], "program-2")
         self.assertEqual(student["status"], "paused")
-        self.assertEqual([name for name, _params in supabase.rpc_calls], ["write_student_profile_atomic"])
+        self.assertEqual([name for name, _params in supabase.rpc_calls], ["write_student_profile_v2_atomic"])
         params = supabase.rpc_calls[0][1]
         self.assertTrue(params["p_replace_programs"])
         self.assertEqual(params["p_audit_action"], "student.updated")
@@ -187,6 +289,144 @@ class StudentCrudActionsTest(unittest.TestCase):
         self.assertEqual(supabase.tables["student_program_memberships"][0]["status"], "ended")
         self.assertEqual(supabase.tables["student_program_memberships"][1]["program_id"], "program-2")
         self.assert_no_direct_operational_writes(supabase)
+
+    def test_update_response_regenerates_existing_photo_url_best_effort(self):
+        base_tables = {
+            "programs": [],
+            "students": [{
+                "id": "student-1",
+                "studio_id": "studio-1",
+                "legal_first_name": "Aiko",
+                "legal_last_name": "Tanaka",
+                "photo_path": "studio-1/student-1/profile.jpg",
+                "status": "active",
+                "tags": [],
+                "created_at": "2026-05-20T00:00:00+00:00",
+                "updated_at": "2026-05-20T00:00:00+00:00",
+            }],
+            "student_program_memberships": [],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        }
+        supabase = FakeStudentWriteSupabase(base_tables)
+        actions = build_actions(supabase)
+
+        student = asyncio.run(actions.update_student(
+            "student-1",
+            StudentUpdate(preferred_name="Ai"),
+            "studio-1",
+            "actor-1",
+        ))
+
+        self.assertEqual(
+            student["photo_url"],
+            "signed:studio-1/student-1/profile.jpg",
+        )
+
+        def signing_failure(_path):
+            raise RuntimeError("storage unavailable")
+
+        actions = build_actions(supabase, create_signed_photo_url=signing_failure)
+        committed = asyncio.run(actions.update_student(
+            "student-1",
+            StudentUpdate(preferred_name="Aiko"),
+            "studio-1",
+            "actor-1",
+        ))
+
+        self.assertEqual(committed["preferred_name"], "Aiko")
+        self.assertIsNone(committed["photo_url"])
+
+    def test_create_response_uses_trigger_updated_primary_membership_rank(self):
+        supabase = FakeStudentWriteSupabase({
+            "programs": [{"id": "program-1", "studio_id": "studio-1"}],
+            "students": [],
+            "student_program_memberships": [],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        })
+        supabase.tables["belt_ladders"] = [{
+            "id": "ladder-1",
+            "studio_id": "studio-1",
+            "program_id": "program-1",
+        }]
+        supabase.tables["belt_ranks"] = [{
+            "id": "rank-white",
+            "studio_id": "studio-1",
+            "ladder_id": "ladder-1",
+            "display_order": 0,
+            "is_tip": False,
+        }]
+        actions = build_actions(supabase)
+
+        student = asyncio.run(actions.create_student(
+            StudentCreate(
+                legal_first_name="Aiko",
+                legal_last_name="Tanaka",
+                program_id="program-1",
+            ),
+            "studio-1",
+            "actor-1",
+        ))
+
+        self.assertEqual(student["current_belt_rank_id"], "rank-white")
+
+    def test_rank_only_update_keeps_current_primary_program_first(self):
+        supabase = FakeStudentWriteSupabase({
+            "programs": [
+                {"id": "program-1", "studio_id": "studio-1"},
+                {"id": "program-2", "studio_id": "studio-1"},
+            ],
+            "students": [{
+                "id": "student-1",
+                "studio_id": "studio-1",
+                "legal_first_name": "Aiko",
+                "legal_last_name": "Tanaka",
+                "program_id": "program-2",
+                "status": "active",
+                "tags": [],
+                "created_at": "2026-05-20T00:00:00+00:00",
+                "updated_at": "2026-05-20T00:00:00+00:00",
+            }],
+            "student_program_memberships": [
+                {
+                    "id": "membership-1",
+                    "studio_id": "studio-1",
+                    "student_id": "student-1",
+                    "program_id": "program-1",
+                    "status": "active",
+                    "created_at": "2026-05-01T00:00:00+00:00",
+                    "updated_at": "2026-05-01T00:00:00+00:00",
+                },
+                {
+                    "id": "membership-2",
+                    "studio_id": "studio-1",
+                    "student_id": "student-1",
+                    "program_id": "program-2",
+                    "status": "active",
+                    "created_at": "2026-05-20T00:00:00+00:00",
+                    "updated_at": "2026-05-20T00:00:00+00:00",
+                },
+            ],
+            "guardians": [],
+            "student_guardians": [],
+            "audit_logs": [],
+        })
+        actions = build_actions(supabase)
+
+        student = asyncio.run(actions.update_student(
+            "student-1",
+            StudentUpdate(current_belt_rank_id="rank-black"),
+            "studio-1",
+            "actor-1",
+        ))
+
+        params = supabase.rpc_calls[0][1]
+        self.assertIsNone(params["p_program_ids"])
+        self.assertFalse(params["p_replace_programs"])
+        self.assertEqual(student["program_id"], "program-2")
 
     def assert_no_direct_operational_writes(self, supabase):
         operational_tables = {

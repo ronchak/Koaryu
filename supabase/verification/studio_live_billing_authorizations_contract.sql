@@ -225,6 +225,9 @@ BEGIN
         IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v2()', 'EXECUTE') THEN
             RAISE EXCEPTION '% can execute the hosted V2 schema preflight.', v_role;
         END IF;
+        IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v3()', 'EXECUTE') THEN
+            RAISE EXCEPTION '% can execute the hosted V3 schema preflight.', v_role;
+        END IF;
         IF has_function_privilege(v_role, 'public.koaryu_release_schema_preflight_v6()', 'EXECUTE') THEN
             RAISE EXCEPTION '% can execute the retired hosted V6 schema preflight.', v_role;
         END IF;
@@ -259,6 +262,18 @@ BEGIN
           CROSS JOIN LATERAL aclexplode(coalesce(
               function.proacl, acldefault('f', function.proowner)
           )) acl
+         WHERE function.oid = 'public.koaryu_release_schema_preflight_v3()'::REGPROCEDURE
+           AND acl.grantee = 0
+           AND acl.privilege_type = 'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'PUBLIC can execute the hosted V3 schema preflight.';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM pg_proc function
+          CROSS JOIN LATERAL aclexplode(coalesce(
+              function.proacl, acldefault('f', function.proowner)
+          )) acl
          WHERE function.oid = 'public.koaryu_release_schema_preflight_v6()'::REGPROCEDURE
            AND acl.grantee = 0
            AND acl.privilege_type = 'EXECUTE'
@@ -270,6 +285,9 @@ BEGIN
     END IF;
     IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight_v2()', 'EXECUTE') THEN
         RAISE EXCEPTION 'service_role cannot execute the hosted V2 schema preflight.';
+    END IF;
+    IF NOT has_function_privilege('service_role', 'public.koaryu_release_schema_preflight_v3()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'service_role cannot execute the hosted V3 schema preflight.';
     END IF;
     IF has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE')
        OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v2()', 'EXECUTE')
@@ -289,6 +307,9 @@ BEGIN
        OR has_function_privilege('service_role', 'private.koaryu_release_operational_manifest_v7()', 'EXECUTE')
        OR has_function_privilege('anon', 'private.koaryu_release_operational_manifest_v7()', 'EXECUTE')
        OR has_function_privilege('authenticated', 'private.koaryu_release_operational_manifest_v7()', 'EXECUTE')
+       OR has_function_privilege('service_role', 'private.koaryu_release_starting_belt_manifest_v9()', 'EXECUTE')
+       OR has_function_privilege('anon', 'private.koaryu_release_starting_belt_manifest_v9()', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'private.koaryu_release_starting_belt_manifest_v9()', 'EXECUTE')
        OR has_function_privilege('service_role', 'public.koaryu_release_schema_preflight_v6()', 'EXECUTE') THEN
         RAISE EXCEPTION 'Private operational manifest helper is directly callable.';
     END IF;
@@ -1103,6 +1124,41 @@ BEGIN
         RAISE EXCEPTION 'Live-billing authorization audit evidence is incomplete.';
     END IF;
 
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v3();
+    IF private.koaryu_release_starting_belt_manifest_v9()
+       <> '0:9c1c8ea5e7ab6ce0d34d5654d17b056faba89234f0f2b945ff147c0462711be9' THEN
+        RAISE EXCEPTION 'Starting-belt V9 manifest mismatch; got %',
+            private.koaryu_release_starting_belt_manifest_v9();
+    END IF;
+    IF private.koaryu_release_student_rank_writer_manifest_v13()
+       <> '0:27cdc692d92fb49f696521e7ab6f3d0b7717c30a232ba6ce4ba057df9e5b30f7' THEN
+        RAISE EXCEPTION 'Student-rank writer V13 manifest mismatch; got %',
+            private.koaryu_release_student_rank_writer_manifest_v13();
+    END IF;
+    IF private.koaryu_release_critical_surface_manifest_v16()
+       <> '0:dcfee976320c4472f3b65fd344a643aa783e00064d3d8f4705f511e5c5c6ba4c' THEN
+        RAISE EXCEPTION 'Critical-surface V16 manifest mismatch; got %',
+            private.koaryu_release_critical_surface_manifest_v16();
+    END IF;
+    IF NOT v_preflight.ready
+       OR v_preflight.migration_count <> 109
+       OR v_preflight.migration_head <> '20260814213000'
+       OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
+           '20260727100000', '20260727110000', '20260801050957',
+           '20260801060000', '20260801070000', '20260801080000',
+           '20260801090000', '20260801091000', '20260801092000',
+           '20260801093000', '20260801094000', '20260801105313',
+           '20260801112153', '20260801115044', '20260801123112',
+           '20260801131844', '20260814043325', '20260814103046',
+           '20260814105424', '20260814114500', '20260814152000',
+           '20260814170000', '20260814183000', '20260814200000',
+           '20260814213000'
+       ]::TEXT[]
+       OR cardinality(v_preflight.security_failures) <> 0
+       OR v_preflight.manifest_version <> 'release-db-attestation-v16' THEN
+        RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
+    END IF;
+
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF NOT v_preflight.ready
        OR v_preflight.migration_count <> 100
@@ -1117,7 +1173,7 @@ BEGIN
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
        OR v_preflight.manifest_version <> 'release-db-attestation-v7' THEN
-        RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
+        RAISE EXCEPTION 'Deployed predecessor V7 compatibility preflight failed on exact V16.';
     END IF;
 
     EXECUTE 'ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints
@@ -1149,12 +1205,27 @@ BEGIN
             v_preflight.security_failures;
     END IF;
 
+    GRANT EXECUTE ON FUNCTION public.validate_student_program_membership()
+        TO service_role;
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF v_preflight.ready
+       OR NOT ('starting_belt_invariant_manifest_v9' = ANY(v_preflight.security_failures)) THEN
+        RAISE EXCEPTION 'Hosted preflight accepted a direct grant on a trigger-only function.';
+    END IF;
+    REVOKE EXECUTE ON FUNCTION public.validate_student_program_membership()
+        FROM service_role;
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
+    IF NOT v_preflight.ready THEN
+        RAISE EXCEPTION 'Hosted preflight did not recover after trigger-function ACL restoration: %',
+            v_preflight.security_failures;
+    END IF;
+
     EXECUTE 'CREATE POLICY injected_permissive_contract_policy
         ON public.stripe_live_billing_reconciliation_account_evidence
         FOR SELECT TO authenticated USING (false)';
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF v_preflight.ready
-       OR NOT ('policy_manifest' = ANY(v_preflight.security_failures)) THEN
+       OR NOT ('operational_semantic_acl_manifest_v7' = ANY(v_preflight.security_failures)) THEN
         RAISE EXCEPTION 'Hosted preflight accepted an injected policy-manifest drift.';
     END IF;
 
@@ -1180,7 +1251,7 @@ BEGIN
     );
     SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v2();
     IF v_preflight.ready
-       OR NOT ('sequence_acl' = ANY(v_preflight.security_failures)) THEN
+       OR NOT ('operational_semantic_acl_manifest_v7' = ANY(v_preflight.security_failures)) THEN
         RAISE EXCEPTION 'Hosted preflight accepted injected service-role sequence UPDATE.';
     END IF;
 END $$;

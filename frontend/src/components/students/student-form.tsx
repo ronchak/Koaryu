@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { ProgramPicker } from "@/components/programs/program-picker";
 import {
+  formatPhoneInput,
   studentFormTabs,
   useStudentFormState,
   type StudentFormInitialData,
@@ -216,7 +217,7 @@ export function StudentForm(props: StudentFormProps) {
                     label="Phone"
                     type="tel"
                     value={fields.phone}
-                    onChange={(e) => setField("phone", e.target.value)}
+                    onChange={(e) => setField("phone", formatPhoneInput(e.target.value))}
                     placeholder="(555) 000-0000"
                   />
                 </div>
@@ -269,7 +270,7 @@ export function StudentForm(props: StudentFormProps) {
                       label="Emergency phone"
                       type="tel"
                       value={fields.emergencyPhone}
-                      onChange={(e) => setField("emergencyPhone", e.target.value)}
+                      onChange={(e) => setField("emergencyPhone", formatPhoneInput(e.target.value))}
                       placeholder="(555) 000-0000"
                     />
                   </div>
@@ -316,7 +317,7 @@ export function StudentForm(props: StudentFormProps) {
                     label="Phone"
                     type="tel"
                     value={fields.guardianPhone}
-                    onChange={(e) => setField("guardianPhone", e.target.value)}
+                    onChange={(e) => setField("guardianPhone", formatPhoneInput(e.target.value))}
                     placeholder="(555) 000-0000"
                     disabled={isEdit}
                   />

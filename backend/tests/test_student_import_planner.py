@@ -61,6 +61,35 @@ def test_planner_resolves_belt_name_inside_selected_program_ladder():
     assert planned_rows[0]["resolved_belt_rank_id"] == "rank_bjj_white"
 
 
+def test_planner_truthfully_describes_unresolved_belt_starting_rank_behavior():
+    planner = StudentImportPlanner(TableBackedSupabase({
+        "programs": [{"id": "program_bjj", "studio_id": "studio_1", "name": "BJJ"}],
+        "belt_ladders": [
+            {"id": "ladder_bjj", "studio_id": "studio_1", "name": "BJJ Ladder", "program_id": "program_bjj"},
+        ],
+        "belt_ranks": [
+            {"id": "rank_bjj_white", "studio_id": "studio_1", "name": "White", "ladder_id": "ladder_bjj", "is_tip": False, "display_order": 0},
+        ],
+    }))
+
+    result, planned_rows = planner.prepare_import(
+        [{"First": "Aiko", "Last": "Tanaka", "Program": "BJJ", "Belt": "Cerulean"}],
+        {
+            "First": "legal_first_name",
+            "Last": "legal_last_name",
+            "Program": "program_id",
+            "Belt": "current_belt_rank_id",
+        },
+        "studio_1",
+        CsvImportOptions(import_without_unresolved_belt=True),
+    )
+
+    assert planned_rows[0]["is_valid"]
+    assert "configured program starts them at its first full belt" in planned_rows[0]["issues"][0].message
+    assert "original text to notes" in result.warnings[0].message
+    assert "first full belt" in result.warnings[0].message
+
+
 def test_planner_exposes_missing_ladder_creation_actions():
     planner = StudentImportPlanner(TableBackedSupabase({
         "programs": [{"id": "program_bjj", "studio_id": "studio_1", "name": "BJJ"}],

@@ -84,6 +84,7 @@ export interface ApiBeltLadderResponse {
 }
 
 export interface ApiBeltLadderSyncRequest {
+  operation_id: string;
   sub_rank_term?: string | null;
   ranks?: ApiBeltRankSyncItem[];
 }
@@ -841,6 +842,7 @@ export interface ApiDemoResetResponse {
 }
 
 export interface ApiDemoteStudent {
+  operation_id?: string | null;
   student_id: string;
   to_rank_id: string;
   student_program_membership_id?: string | null;
@@ -1049,6 +1051,7 @@ export interface ApiPlatformBillingStatusResponse {
   currency: string;
   status: "comped" | "trialing" | "active" | "past_due" | "unpaid" | "canceled" | "incomplete" | "incomplete_expired" | "paused";
   comped: boolean;
+  can_start_checkout: boolean;
   trial_start?: string | null;
   trial_end?: string | null;
   current_period_start?: string | null;
@@ -1107,6 +1110,7 @@ export interface ApiProgramUsageResponse {
 }
 
 export interface ApiPromoteStudent {
+  operation_id?: string | null;
   student_id: string;
   to_rank_id: string;
   student_program_membership_id?: string | null;
@@ -1121,10 +1125,12 @@ export interface ApiPromotionResponse {
   student_program_membership_id?: string | null;
   program_id?: string | null;
   from_rank_id?: string | null;
-  to_rank_id: string;
+  to_rank_id?: string | null;
   promoted_by?: string | null;
   notes?: string | null;
   promoted_at: string;
+  operation_id?: string | null;
+  transition_kind?: string | null;
   student_name?: string | null;
   from_rank_name?: string | null;
   to_rank_name?: string | null;

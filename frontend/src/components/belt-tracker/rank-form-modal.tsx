@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { BeltVisual, RankBadge } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
+import { resolvePresetBeltName } from "@/lib/belt-tracker-page-model";
 import { Save, X } from "lucide-react";
 
 const BELT_COLOR_PRESETS = [
@@ -31,10 +32,11 @@ export type RankFormData = {
   requires_approval: boolean;
 };
 
-function ColorPicker({ label, value, onChange }: {
+function ColorPicker({ label, value, onChange, onPresetSelect }: {
   label: string;
   value: string;
   onChange: (hex: string) => void;
+  onPresetSelect?: (preset: { label: string; hex: string }) => void;
 }) {
   const inputId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-hex`;
 
@@ -47,8 +49,12 @@ function ColorPicker({ label, value, onChange }: {
             key={c.hex}
             type="button"
             aria-label={`Use ${c.label} for ${label.toLowerCase()}`}
+            aria-pressed={value === c.hex}
             title={c.label}
-            onClick={() => onChange(c.hex)}
+            onClick={() => {
+              onChange(c.hex);
+              onPresetSelect?.(c);
+            }}
             className="w-7 h-7 rounded-[4px] transition-transform hover:scale-110 flex-shrink-0"
             style={{
               backgroundColor: c.hex,
@@ -98,6 +104,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
     min_months: initial?.min_months ?? 0,
     requires_approval: initial?.requires_approval ?? false,
   });
+  const [nameWasEdited, setNameWasEdited] = useState(Boolean(initial?.name));
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -126,7 +133,10 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
             id="rank-form-name"
             type="text"
             value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) => {
+              setNameWasEdited(true);
+              setForm((f) => ({ ...f, name: e.target.value }));
+            }}
             placeholder={form.is_tip ? `e.g. 1 ${subRankTerm}, 2 ${subRankTerm}s` : "e.g. Blue Belt"}
             required
             className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
@@ -170,6 +180,15 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
           label={form.is_tip ? "Belt background color" : "Belt color"}
           value={form.color_hex}
           onChange={(hex) => setForm((f) => ({ ...f, color_hex: hex }))}
+          onPresetSelect={(preset) => setForm((current) => ({
+            ...current,
+            name: resolvePresetBeltName({
+              currentName: current.name,
+              isTip: current.is_tip,
+              nameWasEdited,
+              presetLabel: preset.label,
+            }),
+          }))}
         />
 
         {form.is_tip && (

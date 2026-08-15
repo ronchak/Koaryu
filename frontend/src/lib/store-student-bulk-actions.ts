@@ -26,8 +26,10 @@ interface UseStoreStudentBulkActionsOptions {
   beginLiveAuthRequest: BeginLiveAuthRequest;
   commitStudents: CommitStudents;
   isPreviewMode: boolean;
+  onStudentMutation: () => void;
   persistStudents: (next: Student[]) => void;
   refreshStudents: () => Promise<Student[]>;
+  studentMutationEpochRef: StoreRef<number>;
   studentsMayBePartial: boolean;
   studentsRef: StoreRef<Student[]>;
 }
@@ -36,8 +38,10 @@ export function useStoreStudentBulkActions({
   beginLiveAuthRequest,
   commitStudents,
   isPreviewMode,
+  onStudentMutation,
   persistStudents,
   refreshStudents,
+  studentMutationEpochRef,
   studentsMayBePartial,
   studentsRef,
 }: UseStoreStudentBulkActionsOptions) {
@@ -78,6 +82,7 @@ export function useStoreStudentBulkActions({
       };
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
 
     let response: BulkStudentTagUpdateResponse;
@@ -88,7 +93,8 @@ export function useStoreStudentBulkActions({
         liveRequest.token
       );
     } catch (error) {
-      if (liveRequest.isCurrent() && shouldRefreshFullRoster) {
+      if (liveRequest.isCurrent()) {
+        onStudentMutation();
         try {
           await refreshStudents();
         } catch (refreshError) {
@@ -123,8 +129,10 @@ export function useStoreStudentBulkActions({
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     refreshStudents,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);
@@ -149,12 +157,14 @@ export function useStoreStudentBulkActions({
     if (isPreviewMode) {
       const selectedIdSet = new Set(normalizedStudentIds);
       persistStudents(applyStatusToStudents(studentsRef.current, normalizedStudentIds, status));
+      onStudentMutation();
 
       return {
         updated: studentsRef.current.filter((student) => selectedIdSet.has(student.id)).length,
       };
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
 
     let response: BulkStudentStatusUpdateResponse;
@@ -165,7 +175,8 @@ export function useStoreStudentBulkActions({
         liveRequest.token
       );
     } catch (error) {
-      if (liveRequest.isCurrent() && shouldRefreshFullRoster) {
+      if (liveRequest.isCurrent()) {
+        onStudentMutation();
         try {
           await refreshStudents();
         } catch (refreshError) {
@@ -195,13 +206,16 @@ export function useStoreStudentBulkActions({
       });
     }
 
+    onStudentMutation();
     return response;
   }, [
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     refreshStudents,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);

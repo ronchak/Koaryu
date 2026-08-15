@@ -15,10 +15,15 @@ DECLARE
     v_rank_yellow UUID := gen_random_uuid();
     v_rank_orange UUID := gen_random_uuid();
     v_other_program_rank UUID := gen_random_uuid();
+    v_other_program_rank_two UUID := gen_random_uuid();
     v_other_studio_rank UUID := gen_random_uuid();
     v_student UUID := gen_random_uuid();
     v_student_without_membership UUID := gen_random_uuid();
     v_membership UUID := gen_random_uuid();
+    v_secondary_membership UUID := gen_random_uuid();
+    v_secondary_operation UUID := gen_random_uuid();
+    v_secondary_demotion_operation UUID := gen_random_uuid();
+    v_secondary_promotion UUID;
     v_promotion public.promotions%ROWTYPE;
     v_promotion_count INTEGER;
     v_expected_exception BOOLEAN;
@@ -71,6 +76,7 @@ BEGIN
         (v_rank_yellow, v_ladder, v_studio, 'Yellow', 1),
         (v_rank_orange, v_ladder, v_studio, 'Orange', 2),
         (v_other_program_rank, v_other_ladder, v_studio, 'Other White', 0),
+        (v_other_program_rank_two, v_other_ladder, v_studio, 'Other Yellow', 1),
         (v_other_studio_rank, v_other_studio_ladder, v_other_studio, 'Other Studio White', 0);
 
     INSERT INTO public.students (
@@ -95,15 +101,15 @@ BEGIN
         started_at,
         current_belt_rank_id
     )
-    VALUES (
-        v_membership,
-        v_studio,
-        v_student,
-        v_program,
-        'active',
-        CURRENT_DATE,
-        v_rank_white
-    );
+    VALUES
+        (
+            v_membership, v_studio, v_student, v_program,
+            'active', CURRENT_DATE, v_rank_white
+        ),
+        (
+            v_secondary_membership, v_studio, v_student, v_other_program,
+            'active', CURRENT_DATE, v_other_program_rank
+        );
 
     SELECT *
     INTO v_promotion
@@ -141,6 +147,70 @@ BEGIN
           AND program_id = v_program
     ) THEN
         RAISE EXCEPTION 'Promotion RPC did not update student rank/program atomically.';
+    END IF;
+
+    SELECT id INTO v_secondary_promotion
+    FROM public.record_student_promotion_v2(
+        v_studio, v_student, v_secondary_membership, v_other_program,
+        v_other_program_rank, v_other_program_rank_two, v_owner,
+        'Secondary exact operation', v_secondary_operation
+    );
+    IF NOT EXISTS (
+        SELECT 1 FROM public.student_program_memberships
+        WHERE id = v_secondary_membership
+          AND current_belt_rank_id = v_other_program_rank_two
+    ) OR NOT EXISTS (
+        SELECT 1 FROM public.students
+        WHERE id = v_student
+          AND program_id = v_program
+          AND current_belt_rank_id = v_rank_yellow
+    ) THEN
+        RAISE EXCEPTION 'Secondary promotion changed primary compatibility state.';
+    END IF;
+    IF (
+        SELECT id FROM public.record_student_promotion_v2(
+            v_studio, v_student, v_secondary_membership, v_other_program,
+            v_other_program_rank, v_other_program_rank_two, v_owner,
+            'Secondary exact operation', v_secondary_operation
+        )
+    ) IS DISTINCT FROM v_secondary_promotion OR (
+        SELECT count(*) FROM public.audit_logs
+        WHERE studio_id = v_studio
+          AND metadata->>'operation_id' = v_secondary_operation::TEXT
+    ) <> 1 THEN
+        RAISE EXCEPTION 'Promotion operation retry did not return one exact receipt.';
+    END IF;
+
+    PERFORM public.record_student_demotion_v2(
+        v_studio, v_student, v_secondary_membership, v_other_program,
+        v_other_program_rank_two, v_other_program_rank, v_owner,
+        'Secondary correction', v_secondary_demotion_operation
+    );
+    IF NOT EXISTS (
+        SELECT 1 FROM public.students
+        WHERE id = v_student
+          AND program_id = v_program
+          AND current_belt_rank_id = v_rank_yellow
+    ) THEN
+        RAISE EXCEPTION 'Secondary demotion changed primary compatibility state.';
+    END IF;
+
+    v_expected_exception := false;
+    BEGIN
+        PERFORM public.record_student_promotion_v2(
+            v_studio, v_student, v_membership, v_program,
+            v_rank_yellow, v_rank_white, v_owner,
+            'Wrong direction', gen_random_uuid()
+        );
+    EXCEPTION WHEN OTHERS THEN
+        IF SQLERRM LIKE '%next rank%' THEN
+            v_expected_exception := true;
+        ELSE
+            RAISE;
+        END IF;
+    END;
+    IF NOT v_expected_exception THEN
+        RAISE EXCEPTION 'Promotion writer accepted a non-adjacent or reverse transition.';
     END IF;
 
     SELECT COUNT(*)

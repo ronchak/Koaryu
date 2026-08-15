@@ -18,6 +18,8 @@ from app.core.config import get_settings, is_placeholder_value
 from app.db.supabase import create_supabase_client
 from app.services.studio_scope import _platform_subscription_access_from_row
 from app.services.platform_billing_service import LIVE_STRIPE_SUBSCRIPTION_STATUSES
+from app.services.platform_billing_helpers import build_idempotency_key
+from app.services.stripe_service import StripeService
 
 
 PAGE_SIZE = 200
@@ -25,6 +27,7 @@ AUTH_PAGE_SIZE = 100
 MAX_REASON_LENGTH = 500
 RECOGNIZED_ENVIRONMENTS = {"development", "test", "staging", "production"}
 LIVE_SUBSCRIPTION_REFUSAL_SQLSTATE = "P0C01"
+UNBOUND_LIVE_SUBSCRIPTION_OVERRIDE_SQLSTATE = "P0C02"
 LIVE_SUBSCRIPTION_WARNING = (
     "WARNING: This studio has a live Stripe subscription. A comp is only an "
     "access override; provider billing continues."
@@ -586,7 +589,7 @@ def _change_comp(
     _confirm_execute(args, settings, stdin, stdout)
     try:
         result = supabase.rpc(
-            "set_studio_comp_atomic",
+            "set_studio_comp_v2_atomic",
             {
                 "p_studio_id": studio["id"],
                 "p_comped": args.command == "grant",
@@ -604,11 +607,45 @@ def _change_comp(
                 f"{LIVE_SUBSCRIPTION_WARNING} Re-run with "
                 "--override-live-subscription only if continued billing is intended."
             ) from exc
+        if getattr(exc, "code", None) == UNBOUND_LIVE_SUBSCRIPTION_OVERRIDE_SQLSTATE:
+            raise CompStudioError(
+                "The live subscription is not the exact accepted Core checkout "
+                "binding, so Koaryu cannot safely preserve it through a comp grant."
+            ) from exc
         raise CompStudioError(f"Atomic comp change failed: {exc}") from exc
 
     row = _first_rpc_row(result.data)
     if not row:
         raise CompStudioError("Atomic comp change returned no outcome.")
+    if args.command == "grant":
+        metadata = row.get("metadata")
+        invalidated_session_id = (
+            metadata.get("core_checkout_invalidated_session_id")
+            if isinstance(metadata, dict)
+            else None
+        )
+        invalidated_session_state = (
+            metadata.get("core_checkout_invalidated_session_state")
+            if isinstance(metadata, dict)
+            else None
+        )
+        if invalidated_session_id and invalidated_session_state != "completed":
+            try:
+                StripeService().expire_core_checkout_session(
+                    session_id=str(invalidated_session_id),
+                    studio_id=studio["id"],
+                    idempotency_key=build_idempotency_key(
+                        "core-checkout-expire",
+                        studio["id"],
+                        invalidated_session_id,
+                    ),
+                )
+            except Exception as exc:
+                raise CompStudioError(
+                    "Comp was granted, but its outstanding checkout session could not be expired. "
+                    "The completion webhook will reject and cancel it; retry the grant command "
+                    f"to finish provider cleanup. Provider error: {type(exc).__name__}."
+                ) from exc
     outcome = row.get("outcome")
     if outcome == "no_change":
         print(

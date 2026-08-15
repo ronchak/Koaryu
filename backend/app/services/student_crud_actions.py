@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import uuid
 from typing import Any, Callable
 
 from fastapi import HTTPException
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.student import (
+    GuardianResponse,
     StudentCreate,
     StudentProgramMembershipResponse,
     StudentResponse,
@@ -25,13 +26,13 @@ class StudentCrudActions:
         membership_store: StudentProgramMembershipStore,
         prepare_student_write: Callable[..., dict],
         row_to_response: Callable[..., StudentResponse],
-        fetch_memberships_for_student: Callable[..., list[StudentProgramMembershipResponse]],
+        create_signed_photo_url: Callable[[str], str | None],
     ):
         self.supabase = supabase
         self.membership_store = membership_store
         self.prepare_student_write = prepare_student_write
         self.row_to_response = row_to_response
-        self.fetch_memberships_for_student = fetch_memberships_for_student
+        self.create_signed_photo_url = create_signed_photo_url
 
     async def create_student(
         self, data: StudentCreate, studio_id: str, actor_id: str
@@ -57,7 +58,7 @@ class StudentCrudActions:
         student_dict["studio_id"] = studio_id
         student_dict = self.prepare_student_write(student_dict, set_default_is_minor=True)
 
-        result = execute_required_rpc(self.supabase, "write_student_profile_atomic", {
+        result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
             "p_student_id": student_id,
             "p_studio_id": studio_id,
             "p_actor_id": actor_id,
@@ -67,10 +68,10 @@ class StudentCrudActions:
             "p_replace_programs": True,
             "p_audit_action": "student.created",
         })
-        student = first_rpc_row(result)
-        if not student:
+        payload = first_rpc_row(result)
+        if not payload or not isinstance(payload.get("result_student"), dict):
             raise HTTPException(status_code=500, detail="Failed to create student")
-        return self.row_to_response(student)
+        return self._write_response(payload)
 
     async def get_student(self, student_id: str, studio_id: str) -> StudentResponse:
         result = (
@@ -110,50 +111,63 @@ class StudentCrudActions:
         )
 
         update_dict = self.prepare_student_write(update_dict, set_default_is_minor=False)
-        if program_ids is None and "current_belt_rank_id" in update_dict:
-            memberships = self.fetch_memberships_for_student(student_id, studio_id)
-            active_program_ids = [
-                membership.program_id
-                for membership in memberships
-                if membership.status in {"active", "paused"} and not membership.ended_at
-            ]
-            if active_program_ids:
-                program_ids = active_program_ids
-
-        result = execute_required_rpc(self.supabase, "write_student_profile_atomic", {
-            "p_student_id": student_id,
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_student": update_dict,
-            "p_program_ids": program_ids,
-            "p_guardians": [],
-            "p_replace_programs": program_ids is not None,
-            "p_audit_action": "student.updated",
-        })
-        student = first_rpc_row(result)
-        if not student:
+        try:
+            result = execute_required_rpc(self.supabase, "write_student_profile_v2_atomic", {
+                "p_student_id": student_id,
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_student": update_dict,
+                "p_program_ids": program_ids,
+                "p_guardians": [],
+                "p_replace_programs": program_ids is not None,
+                "p_audit_action": "student.updated",
+            })
+        except PostgrestAPIError as exc:
+            message = (getattr(exc, "message", None) or str(exc)).lower()
+            if getattr(exc, "code", None) == "P0001" and (
+                "student not found for update" in message
+                or "student id already belongs to another studio" in message
+            ):
+                raise HTTPException(status_code=404, detail="Student not found") from exc
+            raise
+        payload = first_rpc_row(result)
+        if not payload or not isinstance(payload.get("result_student"), dict):
             raise HTTPException(status_code=404, detail="Student not found")
 
-        return self.row_to_response(student)
+        return self._write_response(payload)
+
+    def _write_response(self, payload: dict) -> StudentResponse:
+        student = payload["result_student"]
+        guardians = [
+            GuardianResponse.model_validate(row)
+            for row in payload.get("result_guardians") or []
+        ]
+        memberships = [
+            StudentProgramMembershipResponse.model_validate(row)
+            for row in payload.get("result_program_memberships") or []
+        ]
+        photo_url = None
+        if student.get("photo_path"):
+            try:
+                photo_url = self.create_signed_photo_url(student["photo_path"])
+            except Exception:
+                # The write has committed. Storage signing must be best-effort
+                # so a transient failure cannot invite a duplicate retry.
+                photo_url = None
+        return self.row_to_response(
+            student,
+            guardians=guardians,
+            memberships=memberships,
+            photo_url=photo_url,
+        )
 
     async def soft_delete_student(
         self, student_id: str, studio_id: str, actor_id: str
     ) -> None:
-        result = (
-            self.supabase.table("students")
-            .update({"deleted_at": datetime.now(timezone.utc).isoformat()})
-            .eq("id", student_id)
-            .eq("studio_id", studio_id)
-            .execute()
-        )
+        result = execute_required_rpc(self.supabase, "soft_delete_student_atomic", {
+            "p_student_id": student_id,
+            "p_studio_id": studio_id,
+            "p_actor_id": actor_id,
+        })
         if not result.data:
             raise HTTPException(status_code=404, detail="Student not found")
-
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "student.deleted",
-            "entity_type": "student",
-            "entity_id": student_id,
-            "metadata": {},
-        }).execute()

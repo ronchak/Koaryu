@@ -9,6 +9,7 @@ import type {
   StudentStatus,
 } from "@/types";
 import { resolvePreviewImportStudentIds } from "./csv-import.ts";
+import { findPreviewStartingRankId } from "./student-store-model.ts";
 
 export const CSV_IMPORT_STATUS_ALIASES: Record<string, StudentStatus> = {
   current: "active",
@@ -331,11 +332,21 @@ export function buildPreviewStudentImportResult({
       ? (statusIssues.normalizedStatus as StudentStatus)
       : "active";
 
+    const resolvedBeltRankId = previewResolution.beltRankId || (
+      previewResolution.programId
+        ? findPreviewStartingRankId(
+          previewResolution.programId,
+          beltLadders,
+          fallbackRanks,
+        )
+        : undefined
+    );
+
     importedStudents.push(buildImportedPreviewStudent({
       mapped,
       status,
       programId: previewResolution.programId,
-      beltRankId: previewResolution.beltRankId,
+      beltRankId: resolvedBeltRankId,
       idFactory,
       now,
       nowMs,

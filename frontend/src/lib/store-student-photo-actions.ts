@@ -14,6 +14,7 @@ interface UseStoreStudentPhotoActionsOptions {
   commitStudents: CommitStudents;
   isPreviewMode: boolean;
   previewStudentPhotoUrlsRef: StoreRef<Record<string, string>>;
+  studentMutationEpochRef: StoreRef<number>;
   studentsMayBePartial: boolean;
   studentsRef: StoreRef<Student[]>;
 }
@@ -23,6 +24,7 @@ export function useStoreStudentPhotoActions({
   commitStudents,
   isPreviewMode,
   previewStudentPhotoUrlsRef,
+  studentMutationEpochRef,
   studentsMayBePartial,
   studentsRef,
 }: UseStoreStudentPhotoActionsOptions) {
@@ -58,6 +60,7 @@ export function useStoreStudentPhotoActions({
       return updated;
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const body = new FormData();
     body.append("file", file);
@@ -83,6 +86,7 @@ export function useStoreStudentPhotoActions({
     commitStudents,
     isPreviewMode,
     previewStudentPhotoUrlsRef,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);
@@ -114,6 +118,7 @@ export function useStoreStudentPhotoActions({
       return updated;
     }
 
+    studentMutationEpochRef.current += 1;
     const liveRequest = beginLiveAuthRequest();
     const updated = await api.delete<Student>(`/students/${studentId}/photo`, liveRequest.token);
     if (!liveRequest.isCurrent()) {
@@ -132,6 +137,7 @@ export function useStoreStudentPhotoActions({
     commitStudents,
     isPreviewMode,
     previewStudentPhotoUrlsRef,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   ]);

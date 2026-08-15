@@ -22,6 +22,7 @@ import type {
   Program,
   ProgramCreate,
   ProgramUpdate,
+  PromoteStudent,
   Promotion,
   StaffInviteCreate,
   StaffMember,
@@ -123,7 +124,7 @@ export interface StoreContextValue {
     options?: { force?: boolean; signal?: AbortSignal }
   ) => Promise<Promotion[]>;
   demoteStudent: (data: DemoteStudent) => Promise<Promotion>;
-  promoteStudent: (studentId: string, toRankId: string, notes?: string) => Promise<Promotion>;
+  promoteStudent: (data: PromoteStudent) => Promise<Promotion>;
 
   sessions: ClassSession[];
   addSession: (data: ClassSessionCreate) => Promise<void>;

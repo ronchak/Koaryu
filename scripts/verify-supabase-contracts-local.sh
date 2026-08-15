@@ -431,6 +431,42 @@ else
   exit "$status"
 fi
 
+echo "[starting-belt manifest] RUN database-observable invariant signal"
+starting_belt_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_starting_belt_manifest_v9();
+"
+)"
+if [[ "$starting_belt_manifest" != "0:9c1c8ea5e7ab6ce0d34d5654d17b056faba89234f0f2b945ff147c0462711be9" ]]; then
+  echo "[starting-belt manifest] FAIL database-observable invariant signal: $starting_belt_manifest" >&2
+  exit 1
+fi
+echo "[starting-belt manifest] PASS database-observable invariant signal"
+
+echo "[student-rank manifest] RUN database-observable writer signal"
+student_rank_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_student_rank_writer_manifest_v13();
+"
+)"
+if [[ "$student_rank_manifest" != "0:27cdc692d92fb49f696521e7ab6f3d0b7717c30a232ba6ce4ba057df9e5b30f7" ]]; then
+  echo "[student-rank manifest] FAIL database-observable writer signal: $student_rank_manifest" >&2
+  exit 1
+fi
+echo "[student-rank manifest] PASS database-observable writer signal"
+
+echo "[critical-surface manifest] RUN checkout and promotion identity signal"
+critical_surface_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_critical_surface_manifest_v16();
+"
+)"
+if [[ "$critical_surface_manifest" != "0:dcfee976320c4472f3b65fd344a643aa783e00064d3d8f4705f511e5c5c6ba4c" ]]; then
+  echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
+  exit 1
+fi
+echo "[critical-surface manifest] PASS checkout and promotion identity signal"
+
 echo "[catalog] RUN deterministic pending-object security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"
@@ -466,7 +502,7 @@ assert_attestation_rejects() {
       node --input-type=module --eval \
         "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v2();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v3();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
   actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
@@ -487,6 +523,23 @@ assert_attestation_rejects() {
   echo "[attestation negative] PASS $label"
 }
 
+assert_preflight_rejects() {
+  local label="$1"
+  local mutation_sql="$2"
+  local actual_v2_ready=""
+
+  echo "[attestation negative] RUN $label"
+  actual_v2_ready="$({
+    printf 'BEGIN;\n%s\n' "$mutation_sql"
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v3();\nROLLBACK;\n'
+  } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  if [[ "$actual_v2_ready" != "f" ]]; then
+    echo "[attestation negative] FAIL V2 readiness result for $label" >&2
+    exit 1
+  fi
+  echo "[attestation negative] PASS $label"
+}
+
 assert_attestation_rejects \
   "stored function-body drift" \
   "UPDATE pg_proc SET prosrc = 'BEGIN RETURN false; END;' WHERE oid = 'private.live_billing_event_is_in_scope(text,text)'::regprocedure;" \
@@ -497,7 +550,7 @@ assert_attestation_rejects \
   "f"
 assert_attestation_rejects \
   "V2 self-body drift (external authority only)" \
-  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v2()'::regprocedure;" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v3()'::regprocedure;" \
   "t"
 assert_attestation_rejects \
   "V4 helper self-body drift" \
@@ -515,6 +568,65 @@ assert_attestation_rejects \
   "V7 helper self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v7()'::regprocedure;" \
   "t"
+assert_preflight_rejects \
+  "starting-belt function-body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN NULL; END;' WHERE oid = 'public.backfill_starting_belt_after_rank_delete()'::regprocedure;"
+assert_preflight_rejects \
+  "starting-belt trigger-definition drift" \
+  "ALTER TABLE public.belt_ranks DISABLE TRIGGER backfill_starting_belt_after_rank_delete_trigger;"
+assert_preflight_rejects \
+  "student profile wrapper body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN NULL; END;' WHERE oid = 'public.write_student_profile_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)'::regprocedure;"
+assert_preflight_rejects \
+  "student import private writer body drift" \
+  "UPDATE pg_proc SET prosrc = 'BEGIN RETURN; END;' WHERE oid = 'private.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])'::regprocedure;"
+assert_preflight_rejects \
+  "promotion snapshot column type drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN from_rank_name_snapshot TYPE varchar(200);"
+assert_preflight_rejects \
+  "promotion snapshot column nullability drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN from_rank_color_snapshot SET NOT NULL;"
+assert_preflight_rejects \
+  "promotion snapshot column default drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN to_rank_name_snapshot SET DEFAULT '';"
+assert_preflight_rejects \
+  "promotion snapshot column missing" \
+  "ALTER TABLE public.promotions DROP COLUMN to_rank_color_snapshot CASCADE;"
+assert_preflight_rejects \
+  "promotion target rank nullability drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN to_rank_id SET NOT NULL;"
+assert_attestation_rejects \
+  "V9 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_starting_belt_manifest_v9()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V11 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_student_rank_writer_manifest_v11()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V13 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_student_rank_writer_manifest_v13()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "V16 helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v16()'::regprocedure;" \
+  "t"
+assert_attestation_rejects \
+  "promotion operation receipt column drift" \
+  "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \
+  "f"
+assert_attestation_rejects \
+  "promotion operation receipt index drift" \
+  "DROP INDEX public.promotions_studio_operation_once;" \
+  "f"
+assert_attestation_rejects \
+  "promotion transition kind constraint drift" \
+  "ALTER TABLE public.promotions DROP CONSTRAINT promotions_transition_kind_check;" \
+  "f"
+assert_attestation_rejects \
+  "promotion transition kind column drift" \
+  "ALTER TABLE public.promotions DROP COLUMN transition_kind CASCADE;" \
+  "f"
 assert_attestation_rejects \
   "checkpoint trigger-definition drift" \
   "ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints DISABLE TRIGGER enforce_live_billing_checkpoint_processed_events;" \
@@ -648,6 +760,17 @@ assert_attestation_rejects \
   "CREATE POLICY koaryu_harness_forbidden_permissive_policy ON public.studio_live_billing_authorizations AS PERMISSIVE FOR SELECT TO anon USING (true);" \
   "f"
 
+echo "[concurrency] RUN Core checkout acceptance/reservation serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-core-checkout-accept-reserve-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS Core checkout acceptance/reservation serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL Core checkout acceptance/reservation serialization (exit $status)" >&2
+  exit "$status"
+fi
+
 echo "[concurrency] RUN Connect identity mapping/exclusion invariant"
 if bash "$ROOT_DIR/scripts/verify-connect-identity-concurrency.sh" \
   "$PSQL" "$SOCKET_DIR" "$PG_PORT" postgres postgres; then
@@ -655,6 +778,17 @@ if bash "$ROOT_DIR/scripts/verify-connect-identity-concurrency.sh" \
 else
   status=$?
   echo "[concurrency] FAIL Connect identity mapping/exclusion invariant (exit $status)" >&2
+  exit "$status"
+fi
+
+echo "[concurrency] RUN student profile/rank-plan lock ordering"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-student-profile-rank-plan-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS student profile/rank-plan lock ordering"
+else
+  status=$?
+  echo "[concurrency] FAIL student profile/rank-plan lock ordering (exit $status)" >&2
   exit "$status"
 fi
 

@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   areProviderMutationsEnabled,
   canManageRoutineBilling,
+  canStartCoreCheckout,
   resolveBillingProviderCopy,
 } from "../src/lib/billing-policy.ts";
 
@@ -19,6 +20,13 @@ describe("billing policy", () => {
     assert.equal(areProviderMutationsEnabled(false), false);
     assert.equal(areProviderMutationsEnabled(true), true);
     assert.equal(areProviderMutationsEnabled(false, true), true);
+  });
+
+  it("never offers Core checkout to a comped studio", () => {
+    assert.equal(canStartCoreCheckout(null), false);
+    assert.equal(canStartCoreCheckout({ can_start_checkout: true }), true);
+    assert.equal(canStartCoreCheckout({ can_start_checkout: false }), false);
+    assert.equal(canStartCoreCheckout({}), false);
   });
 
   it("derives live copy independently from each studio-scoped permit", () => {

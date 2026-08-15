@@ -7,6 +7,7 @@ export const KEYS = {
   attendance: "koaryu:attendance",
   programs: "koaryu:programs",
   beltLadders: "koaryu:beltLadders",
+  promotionHistory: "koaryu:promotionHistory",
   studioName: "koaryu:studioName",
   subRankTerm: "koaryu:subRankTerm",
   ladderName: "koaryu:ladderName",

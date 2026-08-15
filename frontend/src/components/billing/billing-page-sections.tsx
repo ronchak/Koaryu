@@ -20,7 +20,7 @@ import type {
   StudioPaymentAccount,
 } from "@/types";
 import type { BillingPlan } from "@/types";
-import type { BillingProviderCopy } from "@/lib/billing-policy";
+import { canStartCoreCheckout, type BillingProviderCopy } from "@/lib/billing-policy";
 
 type BillingPeriodCopy = {
   label: string;
@@ -136,6 +136,8 @@ export function BillingOverviewTab({
   coreProviderMutationsEnabled: boolean;
   connectOnboardingEnabled: boolean;
 }) {
+  const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
+
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -198,8 +200,16 @@ export function BillingOverviewTab({
             <Button
               variant="primary"
               size="sm"
-              disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || isActionLoading}
-              title={coreProviderMutationsEnabled ? undefined : billingProviderCopy.coreSubscription}
+              disabled={!coreProviderMutationsEnabled || !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading}
+              title={!coreCheckoutAvailable
+                ? billingPlatform?.comped || billingPlatform?.status === "comped"
+                  ? "Koaryu Core access is comped for this studio. No checkout is required."
+                  : billingPlatform && ["active", "trialing", "past_due", "unpaid", "paused"].includes(billingPlatform.status)
+                    ? "Koaryu Core billing already exists. Use the billing portal to manage it."
+                    : "Koaryu Core checkout is currently unavailable."
+                : coreProviderMutationsEnabled
+                  ? undefined
+                  : billingProviderCopy.coreSubscription}
               isLoading={isLoadingAction("checkout")}
               onClick={() => void openBillingLink("/platform-billing/checkout", {
                 success_url: window.location.href,

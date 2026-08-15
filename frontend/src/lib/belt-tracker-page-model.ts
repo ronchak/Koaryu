@@ -83,6 +83,24 @@ export function createLocalRankId(randomValue = Math.random()) {
   return "local-" + randomValue.toString(36).slice(2, 9);
 }
 
+export function resolvePresetBeltName({
+  currentName,
+  isTip,
+  nameWasEdited,
+  presetLabel,
+}: {
+  currentName: string;
+  isTip: boolean;
+  nameWasEdited: boolean;
+  presetLabel: string;
+}) {
+  if (isTip || nameWasEdited) {
+    return currentName;
+  }
+
+  return `${presetLabel} Belt`;
+}
+
 export function buildNewBeltRank({
   data,
   displayOrder,

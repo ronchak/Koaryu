@@ -45,6 +45,7 @@ const backendPublicKeys = [
   "DEMO_RESET_STUDIO_IDS",
   "STRIPE_MODE",
   "LIVE_BILLING_ENABLED",
+  "CORE_SELF_CHECKOUT_ENABLED",
   "OPERATIONAL_ALERTS_ENABLED",
   "BILLING_PLATFORM_FEE_BPS",
   "API_V1_PREFIX",
@@ -96,6 +97,7 @@ const renderCriticalValues = new Map([
   ["SUPABASE_DEVELOPMENT_PROJECT_REF", ""],
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "false"],
+  ["CORE_SELF_CHECKOUT_ENABLED", "true"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
@@ -357,6 +359,62 @@ function renderServiceBlock(source, serviceName) {
     .find((block) => new RegExp(`^    name: ${serviceName}$`, "m").test(block));
 }
 
+// Values that keep the staging service isolated from production and from live
+// money. These are the settings whose drift would make a staging rehearsal
+// meaningless — or worse, quietly point staging at production data.
+const stagingRenderCriticalValues = new Map([
+  ["ENVIRONMENT", "staging"],
+  ["STRIPE_MODE", "test"],
+  ["LIVE_BILLING_ENABLED", "false"],
+  ["CORE_SELF_CHECKOUT_ENABLED", "false"],
+  ["SUPABASE_URL", "https://nxgsektqsgrtyfhawxbc.supabase.co"],
+  ["FRONTEND_URL", "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"],
+  ["DEMO_RESET_ENABLED", "false"],
+]);
+
+export function validateStagingRenderService(renderSource, secretKeys) {
+  const failures = [];
+  const block = renderServiceBlock(renderSource, "koaryu-staging");
+  if (!block) {
+    return ["render.yaml: staging service koaryu-staging is missing"];
+  }
+
+  if (renderScalar(block, "autoDeployTrigger") !== "off") {
+    failures.push("render.yaml: staging autoDeployTrigger must be off");
+  }
+  if (renderScalar(block, "healthCheckPath") !== "/health/ready") {
+    failures.push("render.yaml: staging healthCheckPath must enforce /health/ready");
+  }
+
+  const entries = extractRenderEnvEntries(block);
+  const declared = new Map(
+    entries.filter((entry) => entry.hasValue).map((entry) => [entry.key, entry.value]),
+  );
+  const secretKeySet = new Set(secretKeys);
+
+  for (const [key, expected] of stagingRenderCriticalValues) {
+    if (!declared.has(key)) {
+      failures.push(`render.yaml: staging must declare ${key}`);
+    } else if (declared.get(key) !== expected) {
+      failures.push(`render.yaml: staging ${key} must equal ${JSON.stringify(expected)}`);
+    }
+  }
+
+  for (const entry of entries) {
+    if (!secretKeySet.has(entry.key)) {
+      continue;
+    }
+    if (entry.sync !== "false") {
+      failures.push(`render.yaml: staging secret key ${entry.key} must use sync: false`);
+    }
+    if (entry.hasValue) {
+      failures.push(`render.yaml: staging secret key ${entry.key} must not contain a literal value`);
+    }
+  }
+
+  return failures;
+}
+
 function renderScalar(block, key) {
   const match = block?.match(new RegExp(`^    ${key}:\\s*([^#\\n]+)`, "m"));
   return match?.[1].trim().replace(/^(?:'([^']*)'|"([^"]*)")$/, "$1$2") ?? null;
@@ -603,7 +661,12 @@ export function runEnvExampleCheck() {
     readFileSync(resolve(ROOT, "backend/app/core/config.py"), "utf8"),
   );
   const renderSource = readFileSync(resolve(ROOT, "render.yaml"), "utf8");
-  const renderEnvEntries = extractRenderEnvEntries(renderSource);
+  // render.yaml declares more than one service. Everything below is the
+  // production contract and is specific to `koaryu`; scanning the whole file
+  // would apply production expectations to staging and fail on values that are
+  // correct precisely because staging is not production.
+  const productionRenderBlock = renderServiceBlock(renderSource, "koaryu") ?? renderSource;
+  const renderEnvEntries = extractRenderEnvEntries(productionRenderBlock);
   const frontendRequiredKeys = unique([
     ...frontendPublicKeys,
     ...frontendSecretKeys,
@@ -672,6 +735,7 @@ export function runEnvExampleCheck() {
     backendPlaceholderKeys,
     renderExampleValues,
   ));
+  failures.push(...validateStagingRenderService(renderSource, backendPlaceholderKeys));
   let operationalAlertsSource;
   let releaseControlsSource;
   try {

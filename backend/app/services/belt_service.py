@@ -163,7 +163,14 @@ class BeltService:
             return []
 
         if not include_names:
-            return [PromotionResponse(**row) for row in promotion_rows]
+            return [
+                PromotionResponse(
+                    **row,
+                    from_rank_name=row.get("from_rank_name_snapshot"),
+                    to_rank_name=row.get("to_rank_name_snapshot"),
+                )
+                for row in promotion_rows
+            ]
 
         student_ids = sorted(
             {
@@ -214,8 +221,14 @@ class BeltService:
             PromotionResponse(
                 **row,
                 student_name=students_by_id.get(row["student_id"]),
-                from_rank_name=ranks_by_id.get(row.get("from_rank_id")),
-                to_rank_name=ranks_by_id.get(row["to_rank_id"]),
+                from_rank_name=(
+                    row.get("from_rank_name_snapshot")
+                    or ranks_by_id.get(row.get("from_rank_id"))
+                ),
+                to_rank_name=(
+                    row.get("to_rank_name_snapshot")
+                    or ranks_by_id.get(row.get("to_rank_id"))
+                ),
             )
             for row in promotion_rows
         ]
@@ -373,28 +386,18 @@ class BeltService:
 
         try:
             result = self.supabase.rpc(
-                "sync_belt_ladder_ranks",
+                "sync_belt_ladder_ranks_v2",
                 {
                     "p_ladder_id": ladder_id,
                     "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_operation_id": str(data.operation_id),
                     "p_sub_rank_term": sub_rank_term,
                     "p_ranks": sync_payload,
                 },
             ).execute()
         except Exception as exc:
             self._raise_sync_error(exc)
-
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "belt_ladder.synced",
-            "entity_type": "belt_ladder",
-            "entity_id": ladder_id,
-            "metadata": {
-                "rank_count": len(sync_payload),
-                "sub_rank_term": sub_rank_term,
-            },
-        }).execute()
 
         return self._build_synced_ladder_response(result.data)
 
@@ -434,7 +437,15 @@ class BeltService:
         return BeltRankResponse(**result.data[0])
 
     async def delete_rank(self, rank_id: str, studio_id: str) -> None:
-        self.supabase.table("belt_ranks").delete().eq("id", rank_id).eq("studio_id", studio_id).execute()
+        try:
+            self.supabase.table("belt_ranks").delete().eq("id", rank_id).eq("studio_id", studio_id).execute()
+        except PostgrestAPIError as exc:
+            if getattr(exc, "code", None) == "P0001":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Assigned ranks must be removed by saving the full belt ladder.",
+                ) from exc
+            raise
 
     # ---- Eligibility ----
 

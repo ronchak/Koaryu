@@ -17,6 +17,8 @@ DECLARE
     v_rank_two UUID := gen_random_uuid();
     v_other_rank UUID := gen_random_uuid();
     v_student UUID := gen_random_uuid();
+    v_sync_student UUID := gen_random_uuid();
+    v_retained_student UUID := gen_random_uuid();
     v_conflict_student UUID := gen_random_uuid();
     v_other_guardian UUID := gen_random_uuid();
     v_written public.students%ROWTYPE;
@@ -89,6 +91,138 @@ BEGIN
         (v_rank_one, v_studio, v_ladder_one, 'White Belt', 0),
         (v_rank_two, v_studio, v_ladder_two, 'Blue Belt', 0),
         (v_other_rank, v_other_studio, v_other_ladder, 'Other Rank', 0);
+
+    INSERT INTO public.students (
+        id, studio_id, legal_first_name, legal_last_name, status,
+        program_id, current_belt_rank_id
+    ) VALUES (
+        v_sync_student, v_studio, 'Program', 'Switch', 'active',
+        v_program_one, v_rank_one
+    );
+
+    PERFORM public.write_student_profile_atomic(
+        v_sync_student,
+        v_studio,
+        v_owner,
+        '{}'::JSONB,
+        ARRAY[v_program_two],
+        '[]'::JSONB,
+        TRUE,
+        'student.updated'
+    );
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.students
+        WHERE id = v_sync_student
+          AND program_id = v_program_two
+          AND current_belt_rank_id = v_rank_two
+    ) THEN
+        RAISE EXCEPTION 'Primary membership default did not replace a stale rank from the prior program.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_sync_student
+          AND studio_id = v_studio
+          AND program_id = v_program_two
+          AND current_belt_rank_id = v_rank_two
+          AND status = 'active'
+          AND ended_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Primary program switch did not default the new active membership.';
+    END IF;
+
+    INSERT INTO public.students (
+        id, studio_id, legal_first_name, legal_last_name, status,
+        program_id, current_belt_rank_id
+    ) VALUES (
+        v_retained_student, v_studio, 'Retained', 'Ranks', 'active',
+        v_program_one, v_rank_one
+    );
+
+    INSERT INTO public.student_program_memberships (
+        studio_id, student_id, program_id, status, current_belt_rank_id
+    ) VALUES
+        (v_studio, v_retained_student, v_program_one, 'active', v_rank_one),
+        (v_studio, v_retained_student, v_program_two, 'active', v_rank_two);
+
+    SELECT *
+    INTO v_written
+    FROM public.write_student_profile_atomic(
+        v_retained_student,
+        v_studio,
+        v_owner,
+        '{}'::JSONB,
+        ARRAY[v_program_two, v_program_one],
+        '[]'::JSONB,
+        TRUE,
+        'student.updated'
+    );
+
+    IF v_written.program_id <> v_program_two
+       OR v_written.current_belt_rank_id <> v_rank_two THEN
+        RAISE EXCEPTION 'Primary program switch did not retain and synchronize the new primary rank.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_retained_student
+          AND studio_id = v_studio
+          AND program_id = v_program_one
+          AND current_belt_rank_id = v_rank_one
+          AND status = 'active'
+          AND ended_at IS NULL
+    ) OR NOT EXISTS (
+        SELECT 1
+        FROM public.student_program_memberships
+        WHERE student_id = v_retained_student
+          AND studio_id = v_studio
+          AND program_id = v_program_two
+          AND current_belt_rank_id = v_rank_two
+          AND status = 'active'
+          AND ended_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Primary program switch erased a retained membership rank.';
+    END IF;
+
+    SELECT *
+    INTO v_written
+    FROM public.write_student_profile_atomic(
+        v_retained_student,
+        v_studio,
+        v_owner,
+        jsonb_build_object('current_belt_rank_id', NULL),
+        ARRAY[v_program_two, v_program_one],
+        '[]'::JSONB,
+        TRUE,
+        'student.updated'
+    );
+
+    IF v_written.current_belt_rank_id IS NOT NULL
+       OR EXISTS (
+           SELECT 1
+           FROM public.student_program_memberships
+           WHERE student_id = v_retained_student
+             AND studio_id = v_studio
+             AND program_id = v_program_two
+             AND current_belt_rank_id IS NOT NULL
+             AND status = 'active'
+             AND ended_at IS NULL
+       ) OR NOT EXISTS (
+           SELECT 1
+           FROM public.student_program_memberships
+           WHERE student_id = v_retained_student
+             AND studio_id = v_studio
+             AND program_id = v_program_one
+             AND current_belt_rank_id = v_rank_one
+             AND status = 'active'
+             AND ended_at IS NULL
+       ) THEN
+        RAISE EXCEPTION 'Explicit primary-rank clear did not preserve the deliberate unranked state and retained secondary rank.';
+    END IF;
 
     SELECT *
     INTO v_written
@@ -328,6 +462,7 @@ BEGIN
                 RAISE;
             END IF;
     END;
+
 END $$;
 
 ROLLBACK;

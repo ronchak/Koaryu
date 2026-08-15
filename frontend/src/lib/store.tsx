@@ -21,6 +21,8 @@ import {
 } from "@/lib/store-storage";
 import { fetchStudentPage } from "@/lib/store-student-pages";
 import { useSyncedRefValue } from "@/lib/store-ref-sync";
+import { invalidateEligibilityAfterStudentMutation } from "@/lib/store-eligibility-invalidation";
+import { buildPreviewEligibilityForLadder } from "@/lib/preview-belt-eligibility";
 import {
   applyLiveStudioDataResetRefs,
   buildSubscriptionAccessRestoreState,
@@ -31,6 +33,7 @@ import {
 } from "@/lib/store-reset-model";
 import {
   setPromotionHistoryCacheItems,
+  toPromotionHistoryByStudent,
   type PromotionHistoryCache,
   type PromotionHistoryRequests,
 } from "@/lib/store-promotion-history";
@@ -149,6 +152,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const dashboardSummaryRequestSeqRef = useRef(0);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
+  const studentMutationEpochRef = useRef(0);
+  const studentRosterRequestSequenceRef = useRef(0);
   const previewStudentPhotoUrlsRef = useRef<Record<string, string>>({});
   const [programs, setPrograms] = useState<Program[]>(() =>
     isPreviewMode ? MOCK_PROGRAMS : []
@@ -242,7 +247,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
   );
   const eligibilityRequestSeqRef = useRef(0);
-  const [promotionHistoryCache, setPromotionHistoryCache] = useState<PromotionHistoryCache>({});
+  const [promotionHistoryCache, setPromotionHistoryCache] = useState<PromotionHistoryCache>(() =>
+    isPreviewMode ? load(KEYS.promotionHistory, {}) : {}
+  );
   const promotionHistoryCacheRef = useRef<PromotionHistoryCache>(promotionHistoryCache);
   const promotionHistoryRequestsRef = useRef<PromotionHistoryRequests>({});
   const promotionHistoryGenerationRef = useRef(0);
@@ -252,7 +259,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promotionHistoryRequestsRef.current = {};
     promotionHistoryCacheRef.current = {};
     setPromotionHistoryCache({});
-  }, []);
+    if (isPreviewMode) save(KEYS.promotionHistory, {});
+  }, [isPreviewMode]);
 
   const beginLiveAuthRequest = useCallback(() => {
     const requestToken = tokenRef.current;
@@ -443,12 +451,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [isPreviewMode, reconcileSchedule]);
 
   const commitPromotionHistoryCache = useCallback((studentId: string, items: Promotion[]) => {
-    setPromotionHistoryCache((current) => {
-      const next = setPromotionHistoryCacheItems(current, studentId, items);
-      promotionHistoryCacheRef.current = next;
-      return next;
-    });
-  }, []);
+    const next = setPromotionHistoryCacheItems(
+      promotionHistoryCacheRef.current,
+      studentId,
+      items,
+    );
+    promotionHistoryCacheRef.current = next;
+    setPromotionHistoryCache(next);
+    if (isPreviewMode) save(KEYS.promotionHistory, next);
+  }, [isPreviewMode]);
 
   const updateCurrentLadderId = useCallback((nextLadderId: string | null) => {
     setCurrentLadderIdState(nextLadderId);
@@ -741,9 +752,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         primaryEligibilityLadderId: MOCK_BELT_LADDER.id,
         primaryEligibilityRows: MOCK_ELIGIBILITY,
       });
+      const hydratedStudents = load(KEYS.students, MOCK_STUDENTS);
+      const hydratedPromotionHistory = load(KEYS.promotionHistory, {});
+      const hydratedEligibility = buildPreviewEligibilityForLadder({
+        ladderId: hydratedLadderState.eligibilityLadderId,
+        beltLadders: hydratedLadderState.hydratedLadders,
+        beltRanks: hydratedLadderState.hydratedLadders.find(
+          (ladder) => ladder.id === hydratedLadderState.eligibilityLadderId
+        )?.ranks || [],
+        students: hydratedStudents,
+        seedRows: hydratedLadderState.eligibilityRows,
+        promotionHistoryByStudent: toPromotionHistoryByStudent(hydratedPromotionHistory),
+      });
 
       setStudioNameState(load(KEYS.studioName, "My Studio"));
-      commitStudents(load(KEYS.students, MOCK_STUDENTS));
+      commitStudents(hydratedStudents);
+      promotionHistoryCacheRef.current = hydratedPromotionHistory;
+      setPromotionHistoryCache(hydratedPromotionHistory);
       setPrograms(load(KEYS.programs, MOCK_PROGRAMS));
       setProgramsLoaded(true);
       setProgramsLoadError(null);
@@ -753,7 +778,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       applyLadderSelection(hydratedLadderState.hydratedLadders, hydratedLadderState.eligibilityLadderId);
       commitEligibilityRows(
         hydratedLadderState.eligibilityLadderId,
-        hydratedLadderState.eligibilityRows
+        hydratedEligibility
       );
       setEligibilityPendingLadderId(null);
       setEligibilityLoadError(null);
@@ -771,7 +796,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
-    return ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [];
+    return buildPreviewEligibilityForLadder({
+      ladderId,
+      beltLadders: beltLaddersRef.current,
+      beltRanks: beltRanksRef.current,
+      students: studentsRef.current,
+      seedRows: ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [],
+      promotionHistoryByStudent: toPromotionHistoryByStudent(promotionHistoryCacheRef.current),
+    });
   }, []);
 
   const fetchEligibilityForLadder = useCallback(async (
@@ -1346,6 +1378,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
+    studentsRef.current = next;
     commitStudents(next);
     if (isPreviewMode) save(KEYS.students, next);
   }, [commitStudents, isPreviewMode]);
@@ -1401,6 +1434,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isPreviewMode) save(KEYS.attendance, next);
   }, [isPreviewMode]);
 
+  const onStudentMutation = useCallback(() => {
+    invalidateEligibilityAfterStudentMutation({
+      clearCurrentEligibility: () => commitEligibilityRows(null, []),
+      currentLadderIdRef,
+      eligibilityCacheRef,
+      onRefreshError: (error) => {
+        console.error("Failed to refresh belt eligibility after student mutation", error);
+      },
+      refreshEligibility: loadEligibilityForLadder,
+    });
+  }, [commitEligibilityRows, loadEligibilityForLadder]);
+
   // ── Students ──
   const {
     addStudent,
@@ -1410,13 +1455,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateStudent,
   } = useStoreStudentRosterActions({
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     previewStudentPhotoUrlsRef,
     programsRef,
     setStudentsLoadError,
     studentsMayBePartial,
+    studentMutationEpochRef,
+    studentRosterRequestSequenceRef,
     studentsRef,
     token,
   });
@@ -1429,6 +1479,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     commitStudents,
     isPreviewMode,
     previewStudentPhotoUrlsRef,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   });
@@ -1439,11 +1490,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beltRanksRef,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     programsRef,
     refreshBeltsRef,
     refreshPrograms,
     setStudentsLoadError,
+    studentMutationEpochRef,
+    studentRosterRequestSequenceRef,
     studentsRef,
   });
 
@@ -1454,8 +1508,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beginLiveAuthRequest,
     commitStudents,
     isPreviewMode,
+    onStudentMutation,
     persistStudents,
     refreshStudents,
+    studentMutationEpochRef,
     studentsMayBePartial,
     studentsRef,
   });
@@ -1468,8 +1524,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateLead,
   } = useStoreLeadActions({
     beginLiveAuthRequest,
+    beltLaddersRef,
+    beltRanksRef,
     isPreviewMode,
     leadsRef,
+    onStudentMutation,
     persistLeads,
     persistStudents,
     programsRef,
@@ -1494,7 +1553,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beginLiveAuthRequest,
     beltLaddersRef,
     beltRanksRef,
-    commitEligibilityRows,
     commitPromotionHistoryCache,
     currentLadderIdRef,
     isPreviewMode,
