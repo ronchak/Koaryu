@@ -455,17 +455,17 @@ if [[ "$student_rank_manifest" != "0:27cdc692d92fb49f696521e7ab6f3d0b7717c30a232
 fi
 echo "[student-rank manifest] PASS database-observable writer signal"
 
-echo "[critical-surface manifest] RUN checkout and promotion identity signal"
+echo "[critical-surface manifest] RUN archive, checkout, and promotion identity signal"
 critical_surface_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_critical_surface_manifest_v16();
+SELECT private.koaryu_release_critical_surface_manifest_v17();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:0953df02aa7cb93c327f60059bd410e4db2af60b90f4f4e710f7baaa7d9204ad" ]]; then
-  echo "[critical-surface manifest] FAIL checkout and promotion identity signal: $critical_surface_manifest" >&2
+if [[ "$critical_surface_manifest" != "0:b4d56644fa503da9992d7c60668740dbf8482a07d718513345347732584fd26e" ]]; then
+  echo "[critical-surface manifest] FAIL archive, checkout, and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi
-echo "[critical-surface manifest] PASS checkout and promotion identity signal"
+echo "[critical-surface manifest] PASS archive, checkout, and promotion identity signal"
 
 echo "[catalog] RUN deterministic pending-object security fingerprint"
 catalog_state="$({
@@ -611,6 +611,9 @@ assert_attestation_rejects \
   "V16 helper self-body drift (external authority only)" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v16()'::regprocedure;" \
   "t"
+assert_preflight_rejects \
+  "V17 archive manifest body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v17()'::regprocedure;"
 assert_attestation_rejects \
   "promotion operation receipt column drift" \
   "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \

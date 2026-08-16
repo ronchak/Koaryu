@@ -1138,4 +1138,261 @@ BEGIN
 END
 $$;
 
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_active_staff UUID := gen_random_uuid();
+    v_archived_caller UUID := gen_random_uuid();
+    v_archived_target UUID := gen_random_uuid();
+    v_last_admin_owner UUID := gen_random_uuid();
+    v_last_admin UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_last_admin_studio UUID := gen_random_uuid();
+    v_program UUID := gen_random_uuid();
+    v_archived_role_count INTEGER;
+    v_archived_program_count INTEGER;
+    v_archived_profile_count INTEGER;
+    v_active_program_count INTEGER;
+    v_active_role_count INTEGER;
+    v_active_profile_count INTEGER;
+    v_service_role_count INTEGER;
+    v_service_profile_count INTEGER;
+    v_service_program_count INTEGER;
+    v_denied BOOLEAN := false;
+    v_owner_archive_denied BOOLEAN := false;
+    v_last_admin_archive_denied BOOLEAN := false;
+    v_reservation_denied BOOLEAN := false;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'staff_roles'
+          AND column_name = 'archived_at'
+          AND data_type = 'timestamp with time zone'
+          AND is_nullable = 'YES'
+    ) THEN
+        RAISE EXCEPTION 'staff_roles.archived_at is missing or not nullable timestamptz.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_class AS relation
+        JOIN pg_catalog.pg_namespace AS namespace
+          ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relkind IN ('r', 'p')
+          AND relation.relrowsecurity
+          AND NOT EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_policy AS policy
+              JOIN pg_catalog.pg_roles AS policy_role
+                ON policy_role.oid = ANY(policy.polroles)
+              WHERE policy.polrelid = relation.oid
+                AND policy.polname = 'reject_ambiguous_staff_membership_access'
+                AND NOT policy.polpermissive
+                AND policy.polcmd = '*'
+                AND policy_role.rolname = 'authenticated'
+                AND pg_catalog.regexp_replace(
+                    pg_catalog.pg_get_expr(policy.polqual, policy.polrelid),
+                    '[[:space:]]+', '', 'g'
+                ) = '(SELECTprivate.has_unambiguous_studio_membership()AShas_unambiguous_studio_membership)'
+                AND pg_catalog.regexp_replace(
+                    pg_catalog.pg_get_expr(policy.polwithcheck, policy.polrelid),
+                    '[[:space:]]+', '', 'g'
+                ) = '(SELECTprivate.has_unambiguous_studio_membership()AShas_unambiguous_studio_membership)'
+          )
+    ) THEN
+        RAISE EXCEPTION 'A public RLS table is missing the archive-era restrictive membership guard.';
+    END IF;
+
+    INSERT INTO auth.users (
+        id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    )
+    VALUES
+        (v_owner, 'authenticated', 'authenticated', 'archive-owner-' || v_owner || '@example.invalid', '{}', '{}', now(), now()),
+        (v_active_staff, 'authenticated', 'authenticated', 'archive-active-' || v_active_staff || '@example.invalid', '{}', '{}', now(), now()),
+        (v_archived_caller, 'authenticated', 'authenticated', 'archive-caller-' || v_archived_caller || '@example.invalid', '{}', '{}', now(), now()),
+        (v_archived_target, 'authenticated', 'authenticated', 'archive-target-' || v_archived_target || '@example.invalid', '{}', '{}', now(), now()),
+        (v_last_admin_owner, 'authenticated', 'authenticated', 'archive-last-owner-' || v_last_admin_owner || '@example.invalid', '{}', '{}', now(), now()),
+        (v_last_admin, 'authenticated', 'authenticated', 'archive-last-admin-' || v_last_admin || '@example.invalid', '{}', '{}', now(), now());
+
+    INSERT INTO public.studios (id, name, slug, owner_id)
+    VALUES
+        (v_studio, 'Archive Authorization Studio', 'archive-authorization-' || replace(v_studio::TEXT, '-', ''), v_owner),
+        (v_last_admin_studio, 'Last Active Admin Studio', 'archive-last-admin-' || replace(v_last_admin_studio::TEXT, '-', ''), v_last_admin_owner);
+
+    INSERT INTO public.staff_roles (studio_id, user_id, role)
+    VALUES
+        (v_studio, v_owner, 'admin'),
+        (v_studio, v_active_staff, 'instructor'),
+        (v_studio, v_archived_caller, 'instructor'),
+        (v_studio, v_archived_target, 'instructor'),
+        (v_last_admin_studio, v_last_admin, 'admin');
+
+    INSERT INTO public.staff_profiles (user_id, legal_first_name, legal_last_name)
+    VALUES
+        (v_owner, 'Archive', 'Owner'),
+        (v_active_staff, 'Active', 'Staff'),
+        (v_archived_caller, 'Archived', 'Caller'),
+        (v_archived_target, 'Archived', 'Target');
+
+    INSERT INTO public.programs (id, studio_id, name)
+    VALUES (v_program, v_studio, 'Archive Authorization Program');
+
+    PERFORM set_config('request.jwt.claim.sub', '', true);
+    PERFORM set_config('request.jwt.claim.role', '', true);
+    EXECUTE 'SET LOCAL ROLE service_role';
+
+    UPDATE public.staff_roles
+    SET archived_at = clock_timestamp()
+    WHERE user_id IN (v_archived_caller, v_archived_target);
+
+    SELECT COUNT(*) INTO v_service_role_count
+    FROM public.staff_roles
+    WHERE user_id IN (v_archived_caller, v_archived_target)
+      AND archived_at IS NOT NULL;
+    SELECT COUNT(*) INTO v_service_profile_count
+    FROM public.staff_profiles
+    WHERE user_id IN (v_archived_caller, v_archived_target);
+    SELECT COUNT(*) INTO v_service_program_count
+    FROM public.programs
+    WHERE id = v_program;
+
+    IF v_service_role_count <> 2 OR v_service_profile_count <> 2 OR v_service_program_count <> 1 THEN
+        RAISE EXCEPTION 'Service role lost operational visibility: roles %, profiles %, programs %.',
+            v_service_role_count, v_service_profile_count, v_service_program_count;
+    END IF;
+
+    EXECUTE 'RESET ROLE';
+    PERFORM set_config('request.jwt.claim.sub', v_archived_caller::TEXT, true);
+    PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+    EXECUTE 'SET LOCAL ROLE authenticated';
+
+    IF private.has_unambiguous_studio_membership()
+       OR private.is_staff_in_studio(v_studio)
+       OR private.is_admin_or_front_desk_in_studio(v_studio)
+       OR private.is_admin_in_studio(v_studio)
+       OR private.can_read_staff_profile(v_archived_target) THEN
+        RAISE EXCEPTION 'An archived caller reached a central or private authorization helper.';
+    END IF;
+
+    SELECT COUNT(*) INTO v_archived_role_count
+    FROM public.staff_roles
+    WHERE user_id = v_archived_caller;
+    SELECT COUNT(*) INTO v_archived_program_count
+    FROM public.programs
+    WHERE id = v_program;
+    SELECT COUNT(*) INTO v_archived_profile_count
+    FROM public.staff_profiles
+    WHERE user_id = v_archived_target;
+
+    IF v_archived_role_count <> 0
+       OR v_archived_program_count <> 0
+       OR v_archived_profile_count <> 0 THEN
+        RAISE EXCEPTION 'Archived caller retained direct/helper-path visibility: roles %, programs %, profiles %.',
+            v_archived_role_count, v_archived_program_count, v_archived_profile_count;
+    END IF;
+
+    IF has_table_privilege('authenticated', 'public.staff_roles', 'UPDATE') THEN
+        RAISE EXCEPTION 'Authenticated clients retain staff_roles UPDATE privilege.';
+    END IF;
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET archived_at = NULL
+        WHERE user_id = v_archived_target;
+    EXCEPTION WHEN insufficient_privilege THEN
+        v_denied := true;
+    END;
+    IF NOT v_denied THEN
+        RAISE EXCEPTION 'Authenticated clients can archive or unarchive staff_roles directly.';
+    END IF;
+
+    EXECUTE 'RESET ROLE';
+    PERFORM set_config('request.jwt.claim.sub', v_owner::TEXT, true);
+    PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+    EXECUTE 'SET LOCAL ROLE authenticated';
+
+    IF NOT private.has_unambiguous_studio_membership()
+       OR NOT private.is_staff_in_studio(v_studio)
+       OR NOT private.is_admin_or_front_desk_in_studio(v_studio)
+       OR NOT private.is_admin_in_studio(v_studio)
+       OR NOT private.can_read_staff_profile(v_active_staff) THEN
+        RAISE EXCEPTION 'Active same-studio authorization was lost.';
+    END IF;
+
+    SELECT COUNT(*) INTO v_active_role_count
+    FROM public.staff_roles
+    WHERE user_id = v_owner;
+    SELECT COUNT(*) INTO v_active_program_count
+    FROM public.programs
+    WHERE id = v_program;
+    SELECT COUNT(*) INTO v_active_profile_count
+    FROM public.staff_profiles
+    WHERE user_id = v_active_staff;
+
+    IF v_active_role_count <> 1
+       OR v_active_program_count <> 1
+       OR v_active_profile_count <> 1
+       OR EXISTS (
+           SELECT 1 FROM public.staff_profiles WHERE user_id = v_archived_target
+       ) THEN
+        RAISE EXCEPTION 'Active same-studio or archived-target profile policy behavior changed.';
+    END IF;
+
+    EXECUTE 'RESET ROLE';
+    PERFORM set_config('request.jwt.claim.sub', '', true);
+    PERFORM set_config('request.jwt.claim.role', '', true);
+    EXECUTE 'SET LOCAL ROLE service_role';
+
+    BEGIN
+        INSERT INTO public.staff_roles (studio_id, user_id, role)
+        VALUES (v_last_admin_studio, v_archived_caller, 'instructor');
+    EXCEPTION WHEN OTHERS THEN
+        IF SQLSTATE <> 'P0001' THEN
+            RAISE;
+        END IF;
+        v_reservation_denied := true;
+    END;
+    IF NOT v_reservation_denied THEN
+        RAISE EXCEPTION 'An archived membership no longer reserves its original single-studio identity.';
+    END IF;
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET archived_at = clock_timestamp()
+        WHERE studio_id = v_studio
+          AND user_id = v_owner;
+    EXCEPTION WHEN check_violation THEN
+        v_owner_archive_denied := true;
+    END;
+    IF NOT v_owner_archive_denied THEN
+        RAISE EXCEPTION 'Studio owner archive was accepted.';
+    END IF;
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET archived_at = clock_timestamp()
+        WHERE studio_id = v_last_admin_studio
+          AND user_id = v_last_admin;
+    EXCEPTION WHEN check_violation THEN
+        v_last_admin_archive_denied := true;
+    END;
+    IF NOT v_last_admin_archive_denied THEN
+        RAISE EXCEPTION 'Last active-admin archive was accepted.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.staff_roles
+        WHERE (studio_id = v_studio AND user_id = v_owner AND archived_at IS NOT NULL)
+           OR (studio_id = v_last_admin_studio AND user_id = v_last_admin AND archived_at IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'A refused owner or last-admin archive changed persisted state.';
+    END IF;
+
+    RAISE NOTICE 'Archive authorization, RLS, reservation, and admin-guard verification passed.';
+END $$;
+
 ROLLBACK;

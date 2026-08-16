@@ -39,8 +39,11 @@ Merging `main` does not authorize an automatic production deployment. `frontend/
 
 Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only V3 Supabase preflight and requires the exact final migration count
-110, head `20260815220402`, the exact 26-version pending sequence, manifest version
-`release-db-attestation-v17`, and required-object/security proof. Schema 84, a
+111, head `20260816012723`, the exact 27-version pending sequence, manifest version
+`release-db-attestation-v18`, the exact zero-invalid-count V17 archive-critical
+semantic manifest `0:b4d56644fa503da9992d7c60668740dbf8482a07d718513345347732584fd26e`, and required-object/security proof. That manifest covers
+`staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware
+triggers, and every public RLS table's restrictive membership guard. Schema 84, a
 partial 85-109 state, a missing final migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.
@@ -49,10 +52,11 @@ Migration 109 introduced the candidate V2 checkout-reservation path and retains
 the deployed `origin/main` predecessor reservation (V1) and V2 readiness
 signatures for the mixed-version database-first window. Migration 110 updates
 the V2 compatibility guard: its V7-shaped response reports ready only when the
-candidate V3 preflight proves exact V17 state; the new backend never uses the
-compatibility path.
+candidate V3 preflight proves exact V18 state. Migration 111 adds active-membership
+archive authorization, owner/last-admin archive guards, and service-role-only
+staff-role writes; the new backend never uses the compatibility path.
 Exact migration 109/head `20260814213000`/V16 is the single accepted
-`trial-locked` resume state and may continue only with migration 110 after a
+`trial-locked` resume state and may continue only with migrations 110 and 111 after a
 fresh inspection and dry-run.
 
 The local PostgreSQL proof does not certify hosted PostgREST exposed-schema
