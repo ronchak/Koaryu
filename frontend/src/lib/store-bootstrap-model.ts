@@ -48,6 +48,10 @@ export function buildAuthUserProfile(authProfile: AuthProfileResponse): AuthUser
   return authProfile.user;
 }
 
+export function isStaffProfilesAvailable(authProfile: { staff_profiles_available?: unknown }): boolean {
+  return authProfile.staff_profiles_available === true;
+}
+
 export function resolveBootstrapStudioName(data: Pick<BootstrapResponse, "studio_name" | "studio">): string {
   return data.studio_name || data.studio?.name || "";
 }

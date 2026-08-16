@@ -94,6 +94,7 @@ import {
   buildDeferredScheduleDateRange,
   buildLegacyBootstrapResponse,
   buildSessionUserProfile,
+  isStaffProfilesAvailable,
   isDashboardSummaryForStudio,
   isLiveAuthRequestCurrent,
   resolveBootstrapLadders,
@@ -220,6 +221,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [currentRole, setCurrentRole] = useState<StaffRoleName | null>(() =>
     isPreviewMode ? "admin" : null
   );
+  const [staffProfilesAvailable, setStaffProfilesAvailable] = useState(false);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() =>
     isPreviewMode ? MOCK_STAFF_MEMBERS : []
   );
@@ -610,8 +612,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     authUserIdRef.current = null;
     setCurrentUser(null);
     setCurrentRole(null);
+    setStaffProfilesAvailable(false);
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
   }, [applyLiveStudioDataResetState]);
+
+  const commitAuthoritativeAuthProfile = useCallback((authProfile: AuthProfileResponse) => {
+    setCurrentUser(buildAuthUserProfile(authProfile));
+    setCurrentRole(authProfile.role ?? null);
+    setStaffProfilesAvailable(isStaffProfilesAvailable(authProfile));
+  }, []);
 
   const applySubscriptionRequiredState = useCallback((
     authProfile: AuthProfileResponse,
@@ -619,19 +628,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   ) => {
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
-    const userProfile = buildAuthUserProfile(authProfile);
 
     authUserIdRef.current = sessionUser.id;
-    setCurrentUser(userProfile);
-    setCurrentRole(authProfile.role ?? null);
+    commitAuthoritativeAuthProfile(authProfile);
     syncStoredStudioSessionCookies(sessionUser.id, authProfile.studio_id);
 
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
-  }, [applyLiveStudioDataResetState]);
+  }, [applyLiveStudioDataResetState, commitAuthoritativeAuthProfile]);
 
   const markSubscriptionRequired = useCallback(() => {
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
+    setStaffProfilesAvailable(false);
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
@@ -934,6 +942,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       authUserIdRef.current = session.user.id;
       setToken(sessionToken);
       setCurrentUser(buildSessionUserProfile(session.user));
+      setStaffProfilesAvailable(false);
       setHydrated(true);
       markPerformance("auth.session_resolved");
 
@@ -985,8 +994,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!authProfile.studio_id) {
             syncStoredStudioSessionCookies(session.user.id, authProfile.studio_id);
             resetLiveStudioState();
-            setCurrentUser(buildAuthUserProfile(authProfile));
-            setCurrentRole(authProfile.role ?? null);
+            commitAuthoritativeAuthProfile(authProfile);
             setHydrated(true);
             router.replace("/onboarding");
             return;
@@ -996,8 +1004,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .then((studioRes) => {
               if (isCurrentSession()) {
                 setSubscriptionRequired(false);
-                setCurrentUser(buildAuthUserProfile(authProfile));
-                setCurrentRole(authProfile.role ?? null);
+                commitAuthoritativeAuthProfile(authProfile);
                 syncStoredStudioSessionCookies(session.user.id, authProfile.studio_id);
                 setStudioNameState(studioRes.name);
               }
@@ -1160,17 +1167,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         if (isCurrentSession()) {
           const authProfile = criticalData.auth;
-          const userProfile = buildAuthUserProfile(authProfile);
 
           setSubscriptionRequired(false);
-          setCurrentUser(userProfile);
-          setCurrentRole(authProfile.role ?? null);
+          commitAuthoritativeAuthProfile(authProfile);
           syncStoredStudioSessionCookies(session.user.id, authProfile.studio_id);
 
           if (!authProfile.studio_id) {
             resetLiveStudioState();
-            setCurrentUser(userProfile);
-            setCurrentRole(authProfile.role ?? null);
+            commitAuthoritativeAuthProfile(authProfile);
             setHydrated(true);
             router.replace("/onboarding");
             return;
@@ -1310,6 +1314,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const loadError = error instanceof Error
             ? error.message
             : "Initial studio data could not be loaded.";
+          setStaffProfilesAvailable(false);
           setStudentsLoadError(loadError);
           setProgramsLoaded(false);
           setProgramsLoadError(loadError);
@@ -1334,6 +1339,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         const tokenChanged = tokenRef.current !== session.access_token;
+        const sessionUserChanged = authUserIdRef.current !== session.user.id;
         if (tokenChanged) {
           const preservesScheduleGeneration = shouldPreserveScheduleMutationsOnAuthChange(
             event,
@@ -1355,6 +1361,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         tokenRef.current = session.access_token;
         authUserIdRef.current = session.user.id;
         setToken(session.access_token);
+        if (sessionUserChanged) {
+          setStaffProfilesAvailable(false);
+        }
         if (tokenChanged) {
           void reconcileSchedule("read").catch((error) => {
             console.error("Failed to reconcile schedule after an auth token change", error);
@@ -1374,7 +1383,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1619,6 +1628,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearStudioData,
     resetDemoData,
     setStudioName,
+    updateUserLegalName,
     updateUserName,
   } = useStoreStudioActions({
     activeUserId,
@@ -1632,6 +1642,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistPrograms,
     sessionsRef,
     setCurrentUser,
+    setStaffProfilesAvailable,
     setStaffLoadError,
     setStaffLoaded,
     setStaffMembers,
@@ -1706,6 +1717,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     staffLoadError,
     staffLoaded,
     staffMembers,
+    staffProfilesAvailable,
     students,
     studentsLastLoadedAt,
     studentsLoadError,
@@ -1721,10 +1733,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateProgram,
     updateStaffRole,
     updateStudent,
+    updateUserLegalName,
     updateUserName,
     uploadStudentPhoto,
     userEmail: currentUser?.email || "",
     userName: currentUser?.full_name || "",
+    legalFirstName: currentUser?.legal_first_name ?? "",
+    legalLastName: currentUser?.legal_last_name ?? "",
   });
 
   if (!hydrated) {
