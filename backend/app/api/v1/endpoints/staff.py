@@ -36,12 +36,16 @@ def _resolve_admin_studio_id(
 
 @router.get("", response_model=list[StaffMemberResponse])
 async def list_staff(
+    include_archived: bool = False,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
     studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    return await StaffService(supabase).list_staff(studio_id)
+    return await StaffService(supabase).list_staff(
+        studio_id,
+        include_archived=include_archived,
+    )
 
 
 @router.post(
@@ -100,6 +104,28 @@ async def update_staff_role(
         studio_id,
         user_id,
     )
+
+
+@router.post("/{staff_role_id}/archive", response_model=StaffMemberResponse)
+async def archive_staff(
+    staff_role_id: str,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
+    return await StaffService(supabase).archive_staff(staff_role_id, studio_id, user_id)
+
+
+@router.post("/{staff_role_id}/unarchive", response_model=StaffMemberResponse)
+async def unarchive_staff(
+    staff_role_id: str,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
+    return await StaffService(supabase).unarchive_staff(staff_role_id, studio_id, user_id)
 
 
 @router.delete("/{staff_role_id}", status_code=status.HTTP_204_NO_CONTENT)

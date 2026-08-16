@@ -5,7 +5,7 @@ from pydantic import BaseModel, field_validator
 
 
 StaffRoleName = Literal["admin", "instructor", "front_desk"]
-StaffStatus = Literal["pending", "active"]
+StaffStatus = Literal["pending", "active", "archived"]
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -20,6 +20,7 @@ class StaffMemberResponse(BaseModel):
     legal_last_name: Optional[str] = None
     role: StaffRoleName
     status: StaffStatus
+    archived_at: Optional[str] = None
     invited_by: Optional[str] = None
     created_at: str
     updated_at: str

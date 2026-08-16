@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -16,7 +16,12 @@ BILLING_STATUS_UNAVAILABLE_DETAIL = {
     "message": "Koaryu Core subscription status could not be verified. Try again shortly.",
 }
 MISSING_STRIPE_CONFIGURATION_DETAIL = "Stripe is not configured for this environment."
-STAFF_ROLE_MEMBERSHIP_COLUMNS = "studio_id, role, created_at"
+STAFF_ROLE_MEMBERSHIP_COLUMNS = "studio_id, role, created_at, archived_at"
+STAFF_MEMBERSHIP_STATUS = Literal["none", "active", "archived"]
+STAFF_ARCHIVED_DETAIL = {
+    "code": "STAFF_ARCHIVED",
+    "message": "This staff account is archived.",
+}
 MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL = {
     "code": "MULTIPLE_STUDIO_MEMBERSHIPS",
     "message": (
@@ -71,6 +76,7 @@ def ensure_staff_user_in_studio(
         .select("id")
         .eq("user_id", user_id)
         .eq("studio_id", studio_id)
+        .is_("archived_at", None)
         .limit(1)
         .execute()
     )
@@ -91,6 +97,56 @@ def list_staff_roles_for_user(
         .execute()
     )
     return result.data or []
+
+
+def resolve_staff_membership_state_for_user(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str] = None,
+    *,
+    user_email: Optional[str] = None,
+    require_explicit_studio_selection: bool = False,
+) -> tuple[Optional[dict], STAFF_MEMBERSHIP_STATUS]:
+    """Resolve active access while retaining archived identity state.
+
+    The query intentionally includes archived rows. They are reservations and
+    must participate in ambiguity checks, but they never become an active
+    tenant membership.
+    """
+    _ = user_email
+    _ = require_explicit_studio_selection
+    roles = list_staff_roles_for_user(supabase, user_id)
+
+    # Koaryu supports exactly one studio per Auth identity. Fail closed before
+    # considering a caller-controlled selector, including for archived rows.
+    if len(roles) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL,
+        )
+
+    membership = None
+    if requested_studio_id:
+        membership = next(
+            (
+                role for role in roles
+                if role.get("studio_id") == requested_studio_id
+            ),
+            None,
+        )
+        if membership is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to the requested studio.",
+            )
+    elif roles:
+        membership = roles[0]
+
+    if membership is None:
+        return None, "none"
+    if membership.get("archived_at") is not None:
+        return None, "archived"
+    return membership, "active"
 
 
 def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
@@ -219,45 +275,28 @@ def resolve_optional_staff_role_for_user(
 
     `requested_studio_id` comes from caller-controlled active-studio state and
     is only a selector. The returned membership is the server-verified tenant
-    identity. Returning None is reserved for users who have no studio yet, so
-    onboarding-aware callers can preserve the no-studio profile flow.
+    identity. Returning None is reserved for a true no-membership identity;
+    archived-only identities fail closed with the stable archived denial.
     """
     # Pending invite rows are not memberships. StaffService links invites to
     # the Supabase Auth user returned by invite_user_by_email; this resolver
     # must not grant access from email equality alone.
     _ = user_email
-    roles = list_staff_roles_for_user(supabase, user_id)
+    membership, membership_status = resolve_staff_membership_state_for_user(
+        supabase,
+        user_id,
+        requested_studio_id,
+        user_email=user_email,
+        require_explicit_studio_selection=require_explicit_studio_selection,
+    )
 
-    # Koaryu supports exactly one studio per Auth identity. Fail
-    # closed before considering a caller-controlled selector so historical
-    # duplicate memberships cannot be used to enter either tenant.
-    if len(roles) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=MULTIPLE_STUDIO_MEMBERSHIPS_DETAIL,
-        )
-
-    if requested_studio_id:
-        for role in roles:
-            if role["studio_id"] == requested_studio_id:
-                if require_platform_subscription:
-                    ensure_platform_subscription_access(supabase, role["studio_id"])
-                return role
-
+    if membership_status == "archived":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to the requested studio.",
+            detail=STAFF_ARCHIVED_DETAIL,
         )
 
-    if not roles:
-        return None
-
-    # Kept as a compatibility parameter for existing callers. Multi-membership
-    # accounts are rejected above for both reads and writes.
-    _ = require_explicit_studio_selection
-    membership = roles[0]
-
-    if require_platform_subscription:
+    if membership_status == "active" and membership and require_platform_subscription:
         ensure_platform_subscription_access(supabase, membership["studio_id"])
 
     return membership
@@ -271,19 +310,27 @@ def resolve_staff_role_for_user(
     require_platform_subscription: bool = False,
     require_explicit_studio_selection: bool = False,
 ) -> dict:
-    membership = resolve_optional_staff_role_for_user(
+    membership, membership_status = resolve_staff_membership_state_for_user(
         supabase,
         user_id,
         requested_studio_id,
-        require_platform_subscription=require_platform_subscription,
         require_explicit_studio_selection=require_explicit_studio_selection,
     )
+
+    if membership_status == "archived":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=STAFF_ARCHIVED_DETAIL,
+        )
 
     if membership is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No studio found for this user. Complete onboarding first.",
         )
+
+    if require_platform_subscription:
+        ensure_platform_subscription_access(supabase, membership["studio_id"])
 
     return membership
 

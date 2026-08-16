@@ -122,6 +122,7 @@ class StudioService:
             .eq("studio_id", studio_id)
             .eq("user_id", next_owner_id)
             .eq("role", "admin")
+            .is_("archived_at", None)
             .limit(1)
             .execute()
         )

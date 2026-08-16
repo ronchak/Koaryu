@@ -1,0 +1,513 @@
+import asyncio
+import csv
+import unittest
+from io import StringIO
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from postgrest.exceptions import APIError as PostgrestAPIError
+
+from app.api.v1.endpoints import staff as staff_endpoint
+from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
+from app.services.auth_service import AuthService
+from app.services.dashboard_bootstrap_service import DashboardBootstrapService
+from app.services.report_export_service import ReportExportService
+from app.services.staff_service import (
+    STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL,
+    STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL,
+    STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL,
+    StaffService,
+)
+from app.services.studio_scope import (
+    STAFF_ARCHIVED_DETAIL,
+    ensure_staff_user_in_studio,
+    resolve_optional_staff_role_for_user,
+    resolve_staff_role_for_user,
+)
+from app.services.studio_service import StudioService
+from tests.fakes.supabase import TableBackedSupabase
+
+
+ARCHIVED_AT = "2026-08-15T20:00:00+00:00"
+
+
+def staff_role(
+    role_id: str,
+    user_id: str | None,
+    role: str = "instructor",
+    *,
+    archived_at: str | None = None,
+    studio_id: str = "studio-1",
+) -> dict:
+    return {
+        "id": role_id,
+        "studio_id": studio_id,
+        "user_id": user_id,
+        "role": role,
+        "archived_at": archived_at,
+        "invited_by": "admin-1",
+        "invited_email": f"{role_id}@invite.example",
+        "created_at": "2026-08-15T00:00:00+00:00",
+        "updated_at": "2026-08-15T00:00:00+00:00",
+    }
+
+
+def auth_user(user_id: str, *, active: bool = True) -> SimpleNamespace:
+    timestamp = "2026-08-15T00:00:00+00:00" if active else None
+    return SimpleNamespace(
+        id=user_id,
+        email=f"{user_id}@example.com",
+        user_metadata={"full_name": f"Display {user_id}"},
+        confirmed_at=timestamp,
+        email_confirmed_at=timestamp,
+        last_sign_in_at=timestamp if active else None,
+    )
+
+
+class ArchiveAuthAdmin:
+    def __init__(self, supabase: "ArchiveSupabase"):
+        self.supabase = supabase
+
+    def get_user_by_id(self, user_id: str):
+        return SimpleNamespace(user=self.supabase.auth_users.get(user_id))
+
+
+class ArchiveSupabase(TableBackedSupabase):
+    def __init__(self, tables: dict[str, list[dict]] | None = None, *, auth_users=None):
+        super().__init__(tables or {})
+        self.auth_users = auth_users or {}
+        self.auth = SimpleNamespace(admin=ArchiveAuthAdmin(self))
+
+
+class StaffArchiveReadTest(unittest.TestCase):
+    def test_archived_status_precedes_auth_status_and_hydrates_timestamp(self):
+        service = StaffService(ArchiveSupabase())
+
+        response = service._hydrate_staff_member(
+            staff_role("role-1", "user-1", archived_at=ARCHIVED_AT),
+            user=auth_user("user-1", active=True),
+        )
+
+        self.assertEqual(response.status, "archived")
+        self.assertEqual(response.archived_at, ARCHIVED_AT)
+        self.assertEqual(response.full_name, "Display user-1")
+
+    def test_staff_list_excludes_archived_rows_at_database_query_by_default(self):
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [
+                    staff_role("active-role", "active-user"),
+                    staff_role("archived-role", "archived-user", archived_at=ARCHIVED_AT),
+                ],
+            },
+            auth_users={
+                "active-user": auth_user("active-user"),
+                "archived-user": auth_user("archived-user"),
+            },
+        )
+        service = StaffService(supabase)
+
+        visible = asyncio.run(service.list_staff("studio-1"))
+        included = asyncio.run(service.list_staff("studio-1", include_archived=True))
+
+        self.assertEqual([row.id for row in visible], ["active-role"])
+        self.assertEqual([row.id for row in included], ["active-role", "archived-role"])
+        default_query = next(
+            query for query in supabase.query_log
+            if query["table"] == "staff_roles"
+        )
+        self.assertIn(("is", "archived_at", None), default_query["filters"])
+        include_query = [
+            query for query in supabase.query_log
+            if query["table"] == "staff_roles"
+        ][1]
+        self.assertNotIn(("is", "archived_at", None), include_query["filters"])
+
+    def test_staff_list_route_passes_include_archived_only_after_admin_resolution(self):
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [
+                    staff_role("active-role", "active-user"),
+                    staff_role("archived-role", "archived-user", archived_at=ARCHIVED_AT),
+                ],
+            },
+            auth_users={
+                "active-user": auth_user("active-user"),
+                "archived-user": auth_user("archived-user"),
+            },
+        )
+        test_app = FastAPI()
+        test_app.include_router(staff_endpoint.router)
+        test_app.dependency_overrides[get_current_user_id] = lambda: "admin-1"
+        test_app.dependency_overrides[get_requested_studio_id] = lambda: "studio-1"
+        test_app.dependency_overrides[get_supabase] = lambda: supabase
+
+        with patch(
+            "app.api.v1.endpoints.staff._resolve_admin_studio_id",
+            return_value="studio-1",
+        ):
+            client = TestClient(test_app)
+            default_response = client.get("/staff")
+            included_response = client.get("/staff?include_archived=true")
+
+        self.assertEqual(default_response.status_code, 200, default_response.text)
+        self.assertEqual(included_response.status_code, 200, included_response.text)
+        self.assertEqual(
+            [row["id"] for row in default_response.json()],
+            ["active-role"],
+        )
+        self.assertEqual(
+            [row["id"] for row in included_response.json()],
+            ["active-role", "archived-role"],
+        )
+
+    def test_staff_list_does_not_fail_open_when_archive_column_is_unavailable(self):
+        supabase = ArchiveSupabase({
+            "staff_roles": [staff_role("active-role", "active-user")],
+        })
+        supabase.table_failures["staff_roles"] = PostgrestAPIError({
+            "code": "42703",
+            "message": "column staff_roles.archived_at does not exist",
+            "details": "",
+            "hint": "",
+        })
+
+        with self.assertRaises(PostgrestAPIError) as raised:
+            asyncio.run(StaffService(supabase).list_staff("studio-1"))
+
+        self.assertEqual(raised.exception.code, "42703")
+        role_queries = [
+            query for query in supabase.query_log
+            if query["table"] == "staff_roles"
+        ]
+        self.assertEqual(len(role_queries), 2)
+        self.assertTrue(all(("is", "archived_at", None) in query["filters"] for query in role_queries))
+
+
+class StaffArchiveMutationTest(unittest.TestCase):
+    def test_archive_and_unarchive_are_idempotent_and_only_update_archived_at(self):
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("role-1", "user-1")],
+                "studios": [{"id": "studio-1", "owner_id": "owner-1"}],
+                "audit_logs": [],
+            },
+            auth_users={"user-1": auth_user("user-1")},
+        )
+        service = StaffService(supabase)
+
+        archived = asyncio.run(service.archive_staff("role-1", "studio-1", "admin-1"))
+        archived_again = asyncio.run(service.archive_staff("role-1", "studio-1", "admin-1"))
+        unarchived = asyncio.run(service.unarchive_staff("role-1", "studio-1", "admin-1"))
+        unarchived_again = asyncio.run(service.unarchive_staff("role-1", "studio-1", "admin-1"))
+
+        self.assertEqual(archived.status, "archived")
+        self.assertIsNotNone(archived.archived_at)
+        self.assertEqual(archived_again.archived_at, archived.archived_at)
+        self.assertEqual(unarchived.status, "active")
+        self.assertIsNone(unarchived.archived_at)
+        self.assertEqual(unarchived_again.status, "active")
+        updates = [
+            query["update"]
+            for query in supabase.query_log
+            if query["table"] == "staff_roles" and query["update"] is not None
+        ]
+        self.assertEqual(len(updates), 2)
+        self.assertEqual(set(updates[0]), {"archived_at"})
+        self.assertEqual(updates[1], {"archived_at": None})
+        self.assertEqual(len(supabase.tables["audit_logs"]), 2)
+        for audit in supabase.tables["audit_logs"]:
+            self.assertNotIn("Display user-1", str(audit["metadata"]))
+            self.assertNotIn("legal_first_name", audit["metadata"])
+            self.assertNotIn("legal_last_name", audit["metadata"])
+
+    def test_archive_owner_and_last_active_admin_are_refused(self):
+        owner_supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("owner-role", "owner-1", "admin")],
+                "studios": [{"id": "studio-1", "owner_id": "owner-1"}],
+                "audit_logs": [],
+                "account_deletion_requests": [],
+            },
+            auth_users={"owner-1": auth_user("owner-1")},
+        )
+        with self.assertRaises(HTTPException) as owner_error:
+            asyncio.run(StaffService(owner_supabase).archive_staff("owner-role", "studio-1", "admin-1"))
+        self.assertEqual(owner_error.exception.status_code, 409)
+        self.assertEqual(owner_error.exception.detail, STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL)
+        self.assertFalse(any(query["update"] for query in owner_supabase.query_log))
+
+        admin_supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("admin-role", "admin-1", "admin")],
+                "studios": [{"id": "studio-1", "owner_id": "owner-1"}],
+                "audit_logs": [],
+                "account_deletion_requests": [],
+            },
+            auth_users={"admin-1": auth_user("admin-1")},
+        )
+        with self.assertRaises(HTTPException) as admin_error:
+            asyncio.run(StaffService(admin_supabase).archive_staff("admin-role", "studio-1", "actor-1"))
+        self.assertEqual(admin_error.exception.status_code, 409)
+        self.assertEqual(admin_error.exception.detail, STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL)
+        admin_query = next(
+            query for query in admin_supabase.query_log
+            if query["table"] == "staff_roles" and query["columns"] == "user_id"
+        )
+        self.assertIn(("is", "archived_at", None), admin_query["filters"])
+
+    def test_archived_admin_does_not_count_as_active_survivor(self):
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [
+                    staff_role("departing", "departing", "admin"),
+                    staff_role("archived-survivor", "archived-survivor", "admin", archived_at=ARCHIVED_AT),
+                ],
+                "studios": [{"id": "studio-1", "owner_id": "owner-1"}],
+                "account_deletion_requests": [],
+            },
+            auth_users={
+                "departing": auth_user("departing"),
+                "archived-survivor": auth_user("archived-survivor"),
+            },
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(StaffService(supabase).archive_staff("departing", "studio-1", "actor-1"))
+
+        self.assertEqual(raised.exception.detail, STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL)
+
+    def test_delete_revokes_unlinked_and_linked_pending_invitations_only(self):
+        pending_supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("pending-role", None)],
+                "audit_logs": [],
+            }
+        )
+        asyncio.run(StaffService(pending_supabase).remove_staff("pending-role", "studio-1", "admin-1"))
+        self.assertEqual(pending_supabase.tables["staff_roles"], [])
+        delete_query = next(
+            query for query in pending_supabase.query_log
+            if query["table"] == "staff_roles" and query["delete"]
+        )
+        self.assertIn(("is", "user_id", None), delete_query["filters"])
+
+        linked_pending_supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("linked-pending-role", "user-1")],
+                "audit_logs": [],
+            },
+            auth_users={"user-1": auth_user("user-1", active=False)},
+        )
+        asyncio.run(
+            StaffService(linked_pending_supabase).remove_staff(
+                "linked-pending-role",
+                "studio-1",
+                "admin-1",
+            )
+        )
+        self.assertEqual(linked_pending_supabase.tables["staff_roles"], [])
+        linked_delete_query = next(
+            query for query in linked_pending_supabase.query_log
+            if query["table"] == "staff_roles" and query["delete"]
+        )
+        self.assertNotIn(("is", "user_id", None), linked_delete_query["filters"])
+        self.assertIn(("is", "archived_at", None), linked_delete_query["filters"])
+
+    def test_delete_rejects_active_archived_missing_and_failed_auth_rows(self):
+        cases = (
+            ("active", staff_role("active-role", "user-1"), {"user-1": auth_user("user-1")}),
+            (
+                "archived",
+                staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT),
+                {"user-1": auth_user("user-1", active=False)},
+            ),
+            ("missing", staff_role("missing-role", "user-1"), {}),
+        )
+
+        for case_name, row, auth_users in cases:
+            with self.subTest(case_name=case_name):
+                supabase = ArchiveSupabase(
+                    {"staff_roles": [row], "audit_logs": []},
+                    auth_users=auth_users,
+                )
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(
+                        StaffService(supabase).remove_staff(
+                            row["id"],
+                            "studio-1",
+                            "admin-1",
+                        )
+                    )
+                self.assertEqual(raised.exception.status_code, 409)
+                self.assertEqual(raised.exception.detail, STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL)
+                self.assertEqual(len(supabase.tables["staff_roles"]), 1)
+                self.assertFalse(any(query["delete"] for query in supabase.query_log))
+
+        failed_supabase = ArchiveSupabase(
+            {"staff_roles": [staff_role("failed-role", "user-1")], "audit_logs": []},
+        )
+        failed_service = StaffService(failed_supabase)
+        with patch.object(failed_service, "_get_auth_user", side_effect=RuntimeError("Auth unavailable")):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(failed_service.remove_staff("failed-role", "studio-1", "admin-1"))
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL)
+        self.assertEqual(len(failed_supabase.tables["staff_roles"]), 1)
+        self.assertFalse(any(query["delete"] for query in failed_supabase.query_log))
+
+
+class StaffArchiveMembershipTest(unittest.TestCase):
+    def test_optional_resolver_rejects_archived_but_retains_active_same_studio_and_none(self):
+        archived_supabase = ArchiveSupabase({
+            "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
+        })
+        with self.assertRaises(HTTPException) as archived_error:
+            resolve_optional_staff_role_for_user(archived_supabase, "user-1")
+        self.assertEqual(archived_error.exception.status_code, 403)
+        self.assertEqual(archived_error.exception.detail, STAFF_ARCHIVED_DETAIL)
+
+        active_supabase = ArchiveSupabase({
+            "staff_roles": [staff_role("active-role", "user-1")],
+        })
+        active_membership = resolve_optional_staff_role_for_user(
+            active_supabase,
+            "user-1",
+            "studio-1",
+        )
+        self.assertEqual(active_membership["studio_id"], "studio-1")
+        self.assertEqual(active_membership["role"], "instructor")
+
+        no_membership_supabase = ArchiveSupabase({"staff_roles": []})
+        self.assertIsNone(resolve_optional_staff_role_for_user(no_membership_supabase, "user-1"))
+
+    def test_archived_membership_is_denied_but_remains_a_same_studio_reservation(self):
+        supabase = ArchiveSupabase({
+            "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
+        })
+
+        with self.assertRaises(HTTPException) as raised:
+            resolve_staff_role_for_user(supabase, "user-1")
+        self.assertEqual(raised.exception.status_code, 403)
+        self.assertEqual(raised.exception.detail, STAFF_ARCHIVED_DETAIL)
+
+        with self.assertRaises(HTTPException) as assignment_denial:
+            ensure_staff_user_in_studio(
+                supabase,
+                "user-1",
+                "studio-1",
+                "Staff assignment denied.",
+            )
+        self.assertEqual(assignment_denial.exception.status_code, 404)
+        assignment_query = next(
+            query for query in supabase.query_log
+            if query["table"] == "staff_roles" and query["columns"] == "id"
+        )
+        self.assertIn(("is", "archived_at", None), assignment_query["filters"])
+
+        StaffService(supabase)._ensure_single_studio_membership_candidate("user-1", "studio-1")
+        with self.assertRaises(HTTPException):
+            StaffService(supabase)._ensure_single_studio_membership_candidate("user-1", "studio-2")
+
+    def test_owner_transfer_requires_an_active_admin_candidate(self):
+        supabase = ArchiveSupabase(
+            {
+                "studios": [{"id": "studio-1", "owner_id": "owner-1"}],
+                "staff_roles": [staff_role("archived-admin", "admin-2", "admin", archived_at=ARCHIVED_AT)],
+            },
+            auth_users={"admin-2": auth_user("admin-2")},
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            StudioService(supabase)._validate_owner_transfer("studio-1", "owner-1", "admin-2")
+        self.assertEqual(raised.exception.status_code, 409)
+        staff_query = next(
+            query for query in supabase.query_log
+            if query["table"] == "staff_roles"
+        )
+        self.assertIn(("is", "archived_at", None), staff_query["filters"])
+
+
+class StaffArchiveAuthAndExportTest(unittest.TestCase):
+    def test_auth_reports_archived_only_and_true_no_membership_states(self):
+        archived_supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
+                "staff_profiles": [],
+            },
+            auth_users={"user-1": auth_user("user-1")},
+        )
+        archived = asyncio.run(AuthService(archived_supabase).get_user_profile("user-1"))
+        self.assertEqual(archived.membership_status, "archived")
+        self.assertIsNone(archived.studio_id)
+        self.assertIsNone(archived.role)
+
+        with self.assertRaises(HTTPException) as requested_error:
+            asyncio.run(
+                AuthService(archived_supabase).get_user_profile("user-1", "studio-other")
+            )
+        self.assertEqual(requested_error.exception.status_code, 403)
+
+        no_membership_supabase = ArchiveSupabase(
+            {"staff_roles": [], "staff_profiles": []},
+            auth_users={"user-1": auth_user("user-1")},
+        )
+        none = asyncio.run(AuthService(no_membership_supabase).get_user_profile("user-1"))
+        self.assertEqual(none.membership_status, "none")
+        self.assertIsNone(none.studio_id)
+        self.assertIsNone(none.role)
+
+    def test_dashboard_bootstrap_returns_archived_state_without_tenant_reads(self):
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [staff_role("archived-role", "user-1", archived_at=ARCHIVED_AT)],
+                "staff_profiles": [],
+            },
+            auth_users={"user-1": auth_user("user-1")},
+        )
+
+        with patch.object(
+            DashboardBootstrapService,
+            "_timed_fetch_with_isolated_client",
+        ) as tenant_fetch:
+            payload, _ = asyncio.run(
+                DashboardBootstrapService(supabase).get_dashboard_bootstrap("user-1")
+            )
+
+        tenant_fetch.assert_not_called()
+        self.assertEqual(payload.auth.membership_status, "archived")
+        self.assertIsNone(payload.auth.studio_id)
+        self.assertIsNone(payload.auth.role)
+
+    def test_default_staff_export_excludes_archived_rows(self):
+        supabase = ArchiveSupabase(
+            {
+                "staff_roles": [
+                    staff_role("active-role", "active-user"),
+                    staff_role("archived-role", "archived-user", archived_at=ARCHIVED_AT),
+                ],
+                "staff_profiles": [],
+            },
+            auth_users={
+                "active-user": auth_user("active-user"),
+                "archived-user": auth_user("archived-user"),
+            },
+        )
+
+        csv_text, _ = asyncio.run(
+            ReportExportService(supabase).build_csv("staff_roles", "studio-1")
+        )
+        rows = list(csv.DictReader(StringIO(csv_text)))
+
+        self.assertEqual([row["id"] for row in rows], ["active-role"])
+        role_query = next(
+            query for query in supabase.query_log
+            if query["table"] == "staff_roles"
+        )
+        self.assertIn(("is", "archived_at", None), role_query["filters"])
+
+
+if __name__ == "__main__":
+    unittest.main()
