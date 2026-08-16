@@ -21,7 +21,7 @@ import {
   privacyItems,
   promises,
   workflows,
-} from "@/lib/landing-page-content";
+} from "@/lib/landing-page-legacy-content";
 import { publicFooterLinks, publicNavLinks } from "@/lib/public-navigation";
 import publicStyles from "@/components/marketing/public-pages.module.css";
 import styles from "@/app/page.module.css";

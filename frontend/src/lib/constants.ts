@@ -41,3 +41,23 @@ export const APP_NAME = "Koaryu";
 export const APP_TAGLINE = "A warrior's flow.";
 export const APP_DESCRIPTION =
   "The daily operating system for independent martial arts studios.";
+
+export const PUBLIC_PLATFORM_PRICE = {
+  monthlyCents: 2700,
+  currency: "USD",
+  billingPeriod: "month",
+  scope: "studio",
+} as const;
+
+export function publicPlatformPriceAmount(): string {
+  return (PUBLIC_PLATFORM_PRICE.monthlyCents / 100).toString();
+}
+
+export function formatPublicPlatformPrice(): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: PUBLIC_PLATFORM_PRICE.currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(PUBLIC_PLATFORM_PRICE.monthlyCents / 100);
+}

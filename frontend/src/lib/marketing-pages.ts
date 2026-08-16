@@ -1,3 +1,5 @@
+import { formatPublicPlatformPrice } from "./constants.ts";
+
 export type MarketingPageKind = "feature" | "useCase" | "studioType";
 
 export interface MarketingPageRef {
@@ -285,7 +287,7 @@ const featurePageDrafts: MarketingPageDraft[] = [
       },
     ],
     proof: [
-      { label: "Pricing", value: "$27", detail: "Flat Koaryu platform subscription" },
+      { label: "Pricing", value: formatPublicPlatformPrice(), detail: "Flat Koaryu platform subscription" },
       { label: "Provider writes", value: "Disabled", detail: "Currently unavailable" },
       { label: "Tuition", value: "Visible", detail: "Existing plans, payers, invoices, and issues" },
     ],
