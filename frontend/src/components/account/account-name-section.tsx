@@ -18,12 +18,19 @@ const SAVED_MESSAGE_MS = 2500;
  */
 export function AccountNameSection({
   title = "Your name",
-  description = "This name belongs to your login, not to the studio. Each staff account sets its own.",
+  description = "This display name belongs to your login, not to the studio. Each staff account sets its own.",
 }: {
   title?: string;
   description?: string;
 }) {
-  const { updateUserName, userEmail, userName } = useStudioStore();
+  const {
+    legalFirstName,
+    legalLastName,
+    staffProfilesAvailable,
+    updateUserName,
+    userEmail,
+    userName,
+  } = useStudioStore();
   const [nameDraft, setNameDraft] = useState(userName);
   const [hasEditedName, setHasEditedName] = useState(false);
   // Until the field is touched it mirrors the stored name, so a save made
@@ -55,7 +62,7 @@ export function AccountNameSection({
     try {
       await updateUserName(normalizedNameDraft);
       setHasEditedName(false);
-      setSavedMessage("Name updated.");
+      setSavedMessage("Display name updated.");
 
       if (savedTimeoutRef.current) {
         window.clearTimeout(savedTimeoutRef.current);
@@ -86,20 +93,20 @@ export function AccountNameSection({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium text-text-primary">Full name</span>
+            <span className="font-medium text-text-primary">Display name</span>
             <input
               value={nameValue}
               onChange={(event) => {
                 setHasEditedName(true);
                 setNameDraft(event.target.value);
               }}
-              placeholder="Your name"
+              placeholder="Your display name"
               className="px-3 py-2 text-sm"
             />
             <span className="text-xs text-muted">
               {greetingName
                 ? `The dashboard will greet you as "${greetingName}".`
-                : "Shown on the staff roster, in exports, and in audit history."}
+                : "Used on the staff roster, in exports, and in audit history."}
             </span>
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
@@ -111,6 +118,32 @@ export function AccountNameSection({
           </label>
         </div>
 
+        {staffProfilesAvailable && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-text-primary">Legal first name</span>
+              <input
+                value={legalFirstName}
+                readOnly
+                aria-readonly="true"
+                className="px-3 py-2 text-sm opacity-75"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-text-primary">Legal last name</span>
+              <input
+                value={legalLastName}
+                readOnly
+                aria-readonly="true"
+                className="px-3 py-2 text-sm opacity-75"
+              />
+            </label>
+            <p className="text-xs text-muted sm:col-span-2">
+              Legal-name changes are managed by an admin in staff management.
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           <Button
             type="button"
@@ -120,7 +153,7 @@ export function AccountNameSection({
             disabled={!canSave}
           >
             <Save className="h-3.5 w-3.5" />
-            {isSaving ? "Saving..." : "Save name"}
+            {isSaving ? "Saving..." : "Save display name"}
           </Button>
           {savedMessage && <span className="text-xs text-success">{savedMessage}</span>}
           {error && <span className="text-xs text-danger">{error}</span>}
