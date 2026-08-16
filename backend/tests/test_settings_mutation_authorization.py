@@ -8,7 +8,12 @@ from fastapi import HTTPException
 
 from app.api.v1.endpoints import demo, programs, staff, studios
 from app.schemas.program import ProgramCreate, ProgramUpdate
-from app.schemas.staff import StaffInviteCreate, StaffRoleUpdate
+from app.schemas.staff import (
+    StaffDeletionRequestCreate,
+    StaffInviteCreate,
+    StaffLegalNameUpdate,
+    StaffRoleUpdate,
+)
 from app.schemas.studio import StudioUpdate
 from app.services.studio_scope import resolve_admin_staff_role_for_user
 from tests.fakes.supabase import TableBackedSupabase
@@ -16,6 +21,27 @@ from tests.fakes.supabase import TableBackedSupabase
 
 STUDIO_ID = "settings-studio"
 ADMIN_USER_ID = "settings-admin"
+LEGAL_NAME_ROUTE = "PATCH /staff/{target_user_id}/legal-name"
+NON_ADMIN_ROLES = ("front_desk", "instructor")
+ADMIN_GUARDED_SETTINGS_MUTATION_ROUTE_COUNT = 13
+SETTINGS_MUTATION_ROUTE_COUNT = 14
+EXPECTED_NON_ADMIN_SUBCASES = 28
+SETTINGS_MUTATION_ROUTE_INVENTORY = (
+    "PATCH /studios/current",
+    "POST /programs",
+    "PATCH /programs/{program_id}",
+    "POST /programs/{program_id}/archive",
+    "POST /programs/{program_id}/restore",
+    "POST /staff/invitations",
+    LEGAL_NAME_ROUTE,
+    "PATCH /staff/{staff_role_id}",
+    "POST /staff/{staff_role_id}/archive",
+    "POST /staff/{staff_role_id}/unarchive",
+    "POST /staff/{staff_role_id}/deletion-request",
+    "DELETE /staff/{staff_role_id}",
+    "POST /demo/reset",
+    "DELETE /demo/data",
+)
 
 
 def _active_subscription() -> dict:
@@ -45,6 +71,43 @@ def _supabase_for_role(role: str, *, user_id: str | None = None) -> TableBackedS
                 },
             ],
             "studio_subscriptions": [_active_subscription()],
+        }
+    )
+
+
+def _supabase_for_cross_user_legal_name(role: str) -> TableBackedSupabase:
+    actor_id = f"user-{role}"
+    target_id = "target-user"
+    return TableBackedSupabase(
+        {
+            "staff_roles": [
+                {
+                    "id": f"role-{role}",
+                    "studio_id": STUDIO_ID,
+                    "user_id": actor_id,
+                    "role": role,
+                    "created_at": "2026-08-01T00:00:00+00:00",
+                },
+                {
+                    "id": "target-role",
+                    "studio_id": STUDIO_ID,
+                    "user_id": target_id,
+                    "role": "instructor",
+                    "created_at": "2026-08-02T00:00:00+00:00",
+                },
+            ],
+            "studio_subscriptions": [_active_subscription()],
+            "staff_profiles": [{
+                "user_id": target_id,
+                "legal_first_name": "Existing",
+                "legal_last_name": "Name",
+            }],
+            "audit_logs": [{
+                "id": "existing-audit",
+                "studio_id": STUDIO_ID,
+                "actor_id": "existing-actor",
+                "action": "existing.action",
+            }],
         }
     )
 
@@ -117,7 +180,13 @@ def _settings_mutation_cases():
             "app.api.v1.endpoints.staff.StaffService",
             lambda user_id, supabase: asyncio.run(
                 staff.invite_staff(
-                    StaffInviteCreate(email="new@example.com", role="instructor"),
+                    StaffInviteCreate(
+                        email="new@example.com",
+                        role="instructor",
+                        full_name="New Instructor",
+                        legal_first_name="New",
+                        legal_last_name="Instructor",
+                    ),
                     user_id=user_id,
                     requested_studio_id=STUDIO_ID,
                     supabase=supabase,
@@ -131,6 +200,46 @@ def _settings_mutation_cases():
                 staff.update_staff_role(
                     "staff-role-1",
                     StaffRoleUpdate(role="instructor"),
+                    user_id=user_id,
+                    requested_studio_id=STUDIO_ID,
+                    supabase=supabase,
+                )
+            ),
+        ),
+        (
+            "POST /staff/{staff_role_id}/archive",
+            "app.api.v1.endpoints.staff.StaffService",
+            lambda user_id, supabase: asyncio.run(
+                staff.archive_staff(
+                    "staff-role-1",
+                    user_id=user_id,
+                    requested_studio_id=STUDIO_ID,
+                    supabase=supabase,
+                )
+            ),
+        ),
+        (
+            "POST /staff/{staff_role_id}/unarchive",
+            "app.api.v1.endpoints.staff.StaffService",
+            lambda user_id, supabase: asyncio.run(
+                staff.unarchive_staff(
+                    "staff-role-1",
+                    user_id=user_id,
+                    requested_studio_id=STUDIO_ID,
+                    supabase=supabase,
+                )
+            ),
+        ),
+        (
+            "POST /staff/{staff_role_id}/deletion-request",
+            "app.api.v1.endpoints.staff.StaffService",
+            lambda user_id, supabase: asyncio.run(
+                staff.schedule_staff_deletion(
+                    "staff-role-1",
+                    StaffDeletionRequestCreate(
+                        confirmation_name="Display target-1",
+                        reason="offboarding",
+                    ),
                     user_id=user_id,
                     requested_studio_id=STUDIO_ID,
                     supabase=supabase,
@@ -186,9 +295,20 @@ class SettingsMutationAuthorizationTest(unittest.TestCase):
 
     def test_every_settings_mutation_rejects_non_admin_roles_before_service(self):
         cases = _settings_mutation_cases()
-        self.assertEqual(len(cases), 10)
+        self.assertEqual(len(cases), ADMIN_GUARDED_SETTINGS_MUTATION_ROUTE_COUNT)
+        self.assertEqual(len(SETTINGS_MUTATION_ROUTE_INVENTORY), SETTINGS_MUTATION_ROUTE_COUNT)
+        case_routes = [route for route, _service_path, _invoke in cases]
+        case_routes.insert(6, LEGAL_NAME_ROUTE)
+        self.assertEqual(
+            tuple(case_routes),
+            SETTINGS_MUTATION_ROUTE_INVENTORY,
+        )
+        self.assertEqual(
+            len(NON_ADMIN_ROLES) * len(cases) + len(NON_ADMIN_ROLES),
+            EXPECTED_NON_ADMIN_SUBCASES,
+        )
 
-        for role in ("front_desk", "instructor"):
+        for role in NON_ADMIN_ROLES:
             for route, service_path, invoke in cases:
                 with self.subTest(role=role, route=route):
                     supabase = _supabase_for_role(role)
@@ -211,6 +331,32 @@ class SettingsMutationAuthorizationTest(unittest.TestCase):
                     self.assertEqual(context.exception.status_code, 403)
                     service_class.assert_not_called()
                     self.assert_no_mutation(supabase)
+
+    def test_non_admin_cross_user_legal_name_is_denied_by_real_service_boundary(self):
+        for role in NON_ADMIN_ROLES:
+            with self.subTest(role=role):
+                supabase = _supabase_for_cross_user_legal_name(role)
+                profiles_before = [dict(row) for row in supabase.tables["staff_profiles"]]
+                audits_before = [dict(row) for row in supabase.tables["audit_logs"]]
+
+                with self.assertRaises(HTTPException) as context:
+                    asyncio.run(
+                        staff.update_staff_legal_name(
+                            "target-user",
+                            StaffLegalNameUpdate(
+                                legal_first_name="Updated",
+                                legal_last_name="Name",
+                            ),
+                            user_id=f"user-{role}",
+                            requested_studio_id=STUDIO_ID,
+                            supabase=supabase,
+                        )
+                    )
+
+                self.assertEqual(context.exception.status_code, 403)
+                self.assertEqual(supabase.tables["staff_profiles"], profiles_before)
+                self.assertEqual(supabase.tables["audit_logs"], audits_before)
+                self.assert_no_mutation(supabase)
 
     def test_admin_program_mutations_delegate_resolved_scope_and_actor(self):
         service = SimpleNamespace(
