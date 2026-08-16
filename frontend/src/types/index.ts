@@ -3,6 +3,7 @@ import type * as ApiContracts from "./generated/api-contracts";
 export type Studio = ApiContracts.ApiStudioResponse;
 export type UserProfile = ApiContracts.ApiUserProfile;
 export type AuthResponse = ApiContracts.ApiAuthResponse;
+export type MembershipStatus = AuthResponse["membership_status"];
 
 export type StaffRoleName = ApiContracts.ApiStaffMemberResponse["role"];
 export type StaffStatus = ApiContracts.ApiStaffMemberResponse["status"];
@@ -23,6 +24,9 @@ export type StaffInviteCreate = ApiContracts.ApiStaffInviteCreate;
 export type StaffRoleUpdate = ApiContracts.ApiStaffRoleUpdate;
 export type StaffLegalNameUpdate = ApiContracts.ApiStaffLegalNameUpdate;
 export type StaffLegalNameResponse = ApiContracts.ApiStaffLegalNameResponse;
+export type StaffDeletionRequestCreate = ApiContracts.ApiStaffDeletionRequestCreate;
+export type StaffDeletionRequestResponse = ApiContracts.ApiAccountDeletionRequestResponse;
+export type StaffDeletionRequest = StaffDeletionRequestResponse;
 
 export * from "./dashboard";
 

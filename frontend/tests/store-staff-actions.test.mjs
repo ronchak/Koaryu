@@ -49,3 +49,27 @@ describe("staff legal-name action contract", () => {
     );
   });
 });
+
+describe("staff lifecycle action contract", () => {
+  it("uses the exact default and archived list endpoint builder", () => {
+    assert.match(actionSource, /buildStaffListPath\(includeArchived\)/);
+    assert.match(actionSource, /api\.get<StaffMember\[\]>\(buildStaffListPath\(includeArchived\), request\.token\)/);
+  });
+
+  it("keeps archive, unarchive, and scheduled deletion on their dedicated endpoints", () => {
+    assert.match(actionSource, /api\.post<StaffMember>\(`\/staff\/\$\{id\}\/archive`, \{\}, liveRequest\.token\)/);
+    assert.match(actionSource, /api\.post<StaffMember>\(`\/staff\/\$\{id\}\/unarchive`, \{\}, liveRequest\.token\)/);
+    assert.match(actionSource, /api\.post<StaffDeletionRequestResponse>\([\s\S]*?`\/staff\/\$\{id\}\/deletion-request`/);
+    assert.match(actionSource, /buildStaffDeletionRequest\(confirmationName, reason\)/);
+  });
+
+  it("does not remove staff state when scheduling deletion and reserves DELETE for pending invites", () => {
+    const scheduleAction = actionSource.slice(
+      actionSource.indexOf("  const scheduleStaffDeletion"),
+      actionSource.indexOf("  const removeStaff")
+    );
+    assert.doesNotMatch(scheduleAction, /setStaffMembers/);
+    assert.match(actionSource, /getPendingInviteRevokeError\(staffMembers, id\)/);
+    assert.match(actionSource, /api\.delete\(`\/staff\/\$\{id\}`, liveRequest\.token\)/);
+  });
+});

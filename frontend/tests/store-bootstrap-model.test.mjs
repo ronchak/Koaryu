@@ -9,6 +9,7 @@ import {
   isStaffProfilesAvailable,
   isDashboardSummaryForStudio,
   isLiveAuthRequestCurrent,
+  parseAuthProfileResponse,
   resolveBootstrapLadders,
   resolveBootstrapStudioName,
 } from "../src/lib/store-bootstrap-model.ts";
@@ -142,6 +143,7 @@ describe("store bootstrap model", () => {
             legal_last_name: "Profile",
           },
           staff_profiles_available: true,
+          membership_status: "active",
           studio_id: "studio-1",
           role: "admin",
         }
@@ -182,6 +184,7 @@ describe("store bootstrap model", () => {
     const auth = {
       user: { id: "user-1", email: "owner@example.test" },
       staff_profiles_available: true,
+      membership_status: "active",
       studio_id: "studio-1",
       role: "admin",
     };
@@ -214,6 +217,22 @@ describe("store bootstrap model", () => {
     );
     assert.equal(response.auth, auth);
     assert.equal(response.auth.staff_profiles_available, true);
+    assert.equal(response.auth.membership_status, "active");
+  });
+
+  it("requires an explicit membership status when parsing authoritative auth", () => {
+    const archived = parseAuthProfileResponse({
+      user: { id: "archived-user", email: "archived@example.test", full_name: null },
+      staff_profiles_available: false,
+      membership_status: "archived",
+      studio_id: null,
+      role: null,
+    });
+    assert.equal(archived.membership_status, "archived");
+    assert.throws(
+      () => parseAuthProfileResponse({ user: {}, staff_profiles_available: false }),
+      /explicit membership_status/
+    );
   });
 
   it("builds deferred schedule windows using the existing UTC ISO date-key behavior", () => {
