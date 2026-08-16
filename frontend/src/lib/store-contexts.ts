@@ -25,6 +25,7 @@ import type {
   PromoteStudent,
   Promotion,
   StaffInviteCreate,
+  StaffDeletionRequestResponse,
   StaffLegalNameResponse,
   StaffMember,
   StaffRoleName,
@@ -163,8 +164,15 @@ export interface StoreContextValue {
     firstName: string,
     lastName: string
   ) => Promise<StaffLegalNameResponse>;
-  refreshStaff: () => Promise<StaffMember[]>;
+  refreshStaff: (includeArchived?: boolean) => Promise<StaffMember[]>;
   inviteStaff: (data: StaffInviteCreate) => Promise<StaffMember>;
+  archiveStaff: (id: string) => Promise<StaffMember>;
+  unarchiveStaff: (id: string) => Promise<StaffMember>;
+  scheduleStaffDeletion: (
+    id: string,
+    confirmationName: string,
+    reason?: string
+  ) => Promise<StaffDeletionRequestResponse>;
   updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
   removeStaff: (id: string) => Promise<void>;
   resetDemoData: () => Promise<DemoResetResponse>;
@@ -279,6 +287,9 @@ export type StudioStoreContextValue = Pick<
   | "updateStaffLegalName"
   | "refreshStaff"
   | "inviteStaff"
+  | "archiveStaff"
+  | "unarchiveStaff"
+  | "scheduleStaffDeletion"
   | "updateStaffRole"
   | "removeStaff"
   | "resetDemoData"

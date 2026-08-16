@@ -55,14 +55,51 @@ class AccountService:
         user_id: str,
         requested_studio_id: Optional[str],
     ) -> AccountDeletionRequestResponse:
-        existing = self._get_scheduled_deletion_row(user_id)
+        return await self._schedule_deletion_request(
+            data=data,
+            target_user_id=user_id,
+            requested_studio_id=requested_studio_id,
+            requested_by=user_id,
+            resolve_requested_studio=True,
+        )
+
+    async def schedule_deletion_for_admin(
+        self,
+        data: AccountDeletionRequestCreate,
+        target_user_id: str,
+        target_studio_id: str,
+        actor_id: str,
+    ) -> AccountDeletionRequestResponse:
+        """Schedule an archived staff member through the same deletion owner."""
+        return await self._schedule_deletion_request(
+            data=data,
+            target_user_id=target_user_id,
+            requested_studio_id=target_studio_id,
+            requested_by=actor_id,
+            resolve_requested_studio=False,
+        )
+
+    async def _schedule_deletion_request(
+        self,
+        *,
+        data: AccountDeletionRequestCreate,
+        target_user_id: str,
+        requested_studio_id: Optional[str],
+        requested_by: str,
+        resolve_requested_studio: bool,
+    ) -> AccountDeletionRequestResponse:
+        existing = self._get_scheduled_deletion_row(target_user_id)
         if existing:
             return self._to_response(existing)
 
-        studio_id = self._resolve_requested_studio_id(user_id, requested_studio_id)
-        self._ensure_deletion_will_not_orphan_studios(user_id)
+        studio_id = (
+            self._resolve_requested_studio_id(target_user_id, requested_studio_id)
+            if resolve_requested_studio
+            else requested_studio_id
+        )
+        self._ensure_deletion_will_not_orphan_studios(target_user_id)
 
-        user = self._get_auth_user(user_id)
+        user = self._get_auth_user(requested_by)
         requester_email = getattr(user, "email", None)
         if not requester_email:
             raise HTTPException(
@@ -76,9 +113,9 @@ class AccountService:
             result = (
                 self.supabase.table("account_deletion_requests")
                 .insert({
-                    "user_id": user_id,
+                    "user_id": target_user_id,
                     "studio_id": studio_id,
-                    "requested_by": user_id,
+                    "requested_by": requested_by,
                     "requester_email": requester_email,
                     "status": "scheduled",
                     "requested_at": now.isoformat(),
@@ -90,7 +127,7 @@ class AccountService:
             )
         except PostgrestAPIError as exc:
             if exc.code == "23505":
-                existing = self._get_scheduled_deletion_row(user_id)
+                existing = self._get_scheduled_deletion_row(target_user_id)
                 if existing:
                     return self._to_response(existing)
             if exc.code in {"23514", "P0001"}:
@@ -110,7 +147,7 @@ class AccountService:
                 detail="Failed to schedule account deletion.",
             )
 
-        self._audit(studio_id, user_id, "account.deletion_scheduled", result.data[0]["id"], {
+        self._audit(studio_id, requested_by, "account.deletion_scheduled", result.data[0]["id"], {
             "scheduled_for": scheduled_for.isoformat(),
         })
         return self._to_response(result.data[0])
@@ -294,6 +331,7 @@ class AccountService:
                 .select("user_id")
                 .eq("studio_id", studio_id)
                 .eq("role", "admin")
+                .is_("archived_at", None)
                 .execute()
             )
             surviving_admins = [

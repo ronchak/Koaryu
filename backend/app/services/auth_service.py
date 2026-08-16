@@ -4,7 +4,7 @@ from typing import Optional
 from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 from app.schemas.auth import UserProfile, AuthResponse
-from app.services.studio_scope import resolve_optional_staff_role_for_user
+from app.services.studio_scope import resolve_staff_membership_state_for_user
 
 
 OPTIONAL_STAFF_PROFILE_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
@@ -47,7 +47,7 @@ class AuthService:
 
         # The active studio cookie/header is only a selector. studio_scope
         # returns the server-verified membership that is safe to expose/use.
-        membership = resolve_optional_staff_role_for_user(
+        membership, membership_status = resolve_staff_membership_state_for_user(
             self.supabase,
             user_id,
             requested_studio_id,
@@ -56,7 +56,7 @@ class AuthService:
 
         studio_id = None
         role = None
-        if membership:
+        if membership_status == "active" and membership:
             studio_id = membership["studio_id"]
             role = membership["role"]
 
@@ -97,6 +97,7 @@ class AuthService:
         return AuthResponse(
             user=user_profile,
             staff_profiles_available=staff_profiles_available,
+            membership_status=membership_status,
             studio_id=studio_id,
             role=role,
         )

@@ -28,6 +28,19 @@ export type BootstrapResponse = Omit<
   primary_belt_ladder: BeltLadder | null;
 };
 
+export function parseAuthProfileResponse(value: unknown): AuthProfileResponse {
+  if (!value || typeof value !== "object") {
+    throw new Error("Auth response is invalid.");
+  }
+
+  const membershipStatus = (value as { membership_status?: unknown }).membership_status;
+  if (membershipStatus !== "none" && membershipStatus !== "active" && membershipStatus !== "archived") {
+    throw new Error("Auth response is missing explicit membership_status.");
+  }
+
+  return value as AuthProfileResponse;
+}
+
 export interface SessionUserProfileSource {
   id: string;
   email?: string | null;

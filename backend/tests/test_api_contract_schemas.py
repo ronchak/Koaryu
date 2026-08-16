@@ -7,7 +7,7 @@ from app.schemas.belt import DemoteStudent
 from app.schemas.billing import BillingSubscriptionResponse, StudentBillingEnrollmentResponse
 from app.schemas.lead import LeadCreate, LeadResponse, LeadUpdate
 from app.schemas.schedule import AttendanceCheckIn, ClassSessionResponse
-from app.schemas.staff import StaffInviteCreate, StaffMemberResponse
+from app.schemas.staff import StaffDeletionRequestCreate, StaffInviteCreate, StaffMemberResponse
 from app.schemas.student import (
     BulkStatusUpdate,
     StudentCreate,
@@ -58,6 +58,7 @@ class ApiContractSchemaTest(unittest.TestCase):
             id="role-1",
             studio_id="studio-1",
             email="instructor@example.com",
+            deletion_confirmation_name="instructor@example.com",
             role="instructor",
             status="pending",
             created_at="2026-08-15T00:00:00+00:00",
@@ -66,6 +67,18 @@ class ApiContractSchemaTest(unittest.TestCase):
 
         self.assertIsNone(member.legal_first_name)
         self.assertIsNone(member.legal_last_name)
+
+    def test_staff_deletion_request_normalizes_confirmation_and_reason(self):
+        request = StaffDeletionRequestCreate(
+            confirmation_name="  Display\tName  ",
+            reason="  Offboarding  ",
+        )
+
+        self.assertEqual(request.confirmation_name, "Display Name")
+        self.assertEqual(request.reason, "Offboarding")
+
+        with self.assertRaises(ValidationError):
+            StaffDeletionRequestCreate(confirmation_name=" \t\n ")
 
     def test_demotion_reason_is_trimmed_and_requires_non_whitespace_text(self):
         demotion = DemoteStudent(

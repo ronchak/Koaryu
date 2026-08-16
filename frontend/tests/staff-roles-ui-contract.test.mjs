@@ -11,6 +11,10 @@ const legalSaveSource = staffSource.slice(
   staffSource.indexOf("  async function handleLegalNameSave"),
   staffSource.indexOf("  if (!canManageStaff)")
 );
+const deletionSource = staffSource.slice(
+  staffSource.indexOf("  async function runScheduleDeletion"),
+  staffSource.indexOf("  function handleEditLegalName")
+);
 
 describe("staff invite UI contract", () => {
   it("requires and submits display plus both legal names", () => {
@@ -35,7 +39,7 @@ describe("staff legal-name roster UI contract", () => {
     assert.match(staffSource, /<p className=\"text-\[11px\] uppercase tracking-normal text-muted\">Legal name<\/p>/);
     assert.match(staffSource, /: \"Not provided\"/);
     assert.match(staffSource, /staffProfilesAvailable && isLegalNameEditing/);
-    assert.match(staffSource, /staffProfilesAvailable && hasUserId && !isLegalNameEditing/);
+    assert.match(staffSource, /staffProfilesAvailable && member\.status === "active" && hasUserId && !isLegalNameEditing/);
     assert.doesNotMatch(staffSource, /legal_first_name[^\n]*split|split\([^)]*full_name/);
   });
 
@@ -56,5 +60,65 @@ describe("staff legal-name roster UI contract", () => {
     assert.match(staffSource, /onClick=\{onLegalNameCancel\}/);
     assert.match(staffSource, /aria-live=\"polite\"/);
     assert.doesNotMatch(legalSaveSource, /full_name|router|reload\(/);
+  });
+});
+
+describe("staff lifecycle roster UI contract", () => {
+  it("keeps the default roster active-only and serializes explicit archived refreshes", () => {
+    assert.match(staffSource, /Show archived/);
+    assert.match(staffSource, /void refreshRoster\(false\)/);
+    assert.match(staffSource, /await refreshRoster\(false\)/);
+    assert.match(staffSource, /await refreshRoster\(nextShowArchived\)/);
+    assert.match(staffSource, /const previousShowArchived = showArchived/);
+    assert.match(staffSource, /setShowArchived\(previousShowArchived\)/);
+    assert.match(staffSource, /disabled=\{isStaffRefreshPending\}/);
+    assert.match(staffSource, /filterStaffMembersForDisplay\(staffMembers, showArchived\)/);
+    assert.match(staffSource, /data-staff-status=\{member\.status\}/);
+    assert.match(staffSource, /member\.archived_at \|\| member\.updated_at/);
+  });
+
+  it("uses the backend-owned identity and keeps lifecycle endpoints separated by status", () => {
+    assert.match(staffSource, /getDisplayedStaffIdentity\(member\)/);
+    assert.match(staffSource, /getDisplayedStaffIdentity\(deleteTarget\)/);
+    assert.match(staffSource, /member\.status === "pending"/);
+    assert.match(staffSource, /await removeStaff\(member\.id\)/);
+    assert.match(staffSource, /await archiveStaff\(member\.id\)/);
+    assert.match(staffSource, /await unarchiveStaff\(member\.id\)/);
+    assert.match(staffSource, /const unarchivedMember = await unarchiveStaff\(member\.id\)/);
+    assert.match(staffSource, /unarchivedMember\.status === "active"/);
+    assert.match(staffSource, /studio access is restored/);
+    assert.match(staffSource, /membership remains pending/);
+    assert.match(staffSource, /scheduleStaffDeletion\(\s*deleteTarget\.id,\s*deletionConfirmationInput/);
+    assert.match(
+      staffSource,
+      /\{hasUserId \? \([\s\S]*?onScheduleDeletion\(member\)[\s\S]*?No linked account to delete[\s\S]*?\)\}/
+    );
+    assert.match(staffSource, /status === "archived"/);
+    assert.match(staffSource, /Archive staff access/);
+    assert.match(staffSource, /revoke studio access immediately/);
+    assert.match(staffSource, /staff row.*preserved/i);
+    assert.doesNotMatch(staffSource, /member\.full_name \|\| member\.email/);
+    assert.doesNotMatch(deletionSource, /legal_/);
+  });
+
+  it("gates archived deletion on exact normalized confirmation and preserves the row", () => {
+    assert.match(staffSource, /matchesStaffDeletionConfirmation\(deleteTarget, deletionConfirmationInput\)/);
+    assert.match(staffSource, /disabled=\{!deletionCanSubmit\}/);
+    assert.match(staffSource, /existing 30-day lifecycle/);
+    assert.match(staffSource, /It is not immediate/);
+    assert.match(staffSource, /audit history is retained/);
+    assert.match(staffSource, /response\.scheduled_for/);
+    assert.match(staffSource, /setMessage\(\s*`Permanent account\/profile deletion/);
+    assert.match(staffSource, /archived membership\/profile remains until the existing worker completes the scheduled deletion/);
+    assert.match(staffSource, /frozen audit history remains retained/);
+    assert.doesNotMatch(deletionSource, /staff row remains preserved/);
+    assert.doesNotMatch(staffSource, /setStaffMembers/);
+  });
+
+  it("protects the last active admin using active roster facts only", () => {
+    assert.match(staffSource, /countActiveAdminMembers\(staffMembers\)/);
+    assert.match(staffSource, /isLastActiveAdmin\(staffMembers, member\)/);
+    assert.match(staffSource, /disabled=\{isLifecyclePending \|\| isLastActiveAdmin\}/);
+    assert.doesNotMatch(staffSource, /ownerUserId/);
   });
 });

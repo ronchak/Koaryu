@@ -3,6 +3,7 @@ import {
   clearStudioStateCookie,
   setActiveStudioIdCookie,
   setStudioStateCookie,
+  type StudioMembershipStatus,
 } from "@/lib/studio-state-cookie";
 
 export function clearStoredStudioSessionCookies() {
@@ -12,10 +13,12 @@ export function clearStoredStudioSessionCookies() {
 
 export function syncStoredStudioSessionCookies(
   userId: string,
-  studioId: string | null | undefined
+  studioId: string | null | undefined,
+  membershipStatus: StudioMembershipStatus = studioId ? "active" : "none"
 ) {
-  setStudioStateCookie(userId, Boolean(studioId));
-  if (studioId) {
+  const hasStudio = membershipStatus === "active" && Boolean(studioId);
+  setStudioStateCookie(userId, hasStudio, membershipStatus);
+  if (hasStudio && studioId) {
     setActiveStudioIdCookie(studioId);
   } else {
     clearActiveStudioIdCookie();

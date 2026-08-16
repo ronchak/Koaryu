@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 
 from app.schemas.staff import StaffRoleName
 
@@ -15,5 +15,6 @@ class UserProfile(BaseModel):
 class AuthResponse(BaseModel):
     user: UserProfile
     staff_profiles_available: bool
+    membership_status: Literal["none", "active", "archived"] = "none"
     studio_id: Optional[str] = None
     role: Optional[StaffRoleName] = None

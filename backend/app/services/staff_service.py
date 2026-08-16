@@ -1,4 +1,5 @@
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -7,17 +8,23 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
 from app.core.config import get_settings
+from app.schemas.account import (
+    AccountDeletionRequestCreate,
+    AccountDeletionRequestResponse,
+)
 from app.schemas.staff import (
+    StaffDeletionRequestCreate,
     StaffInviteCreate,
     StaffLegalNameResponse,
     StaffLegalNameUpdate,
     StaffMemberResponse,
     StaffRoleUpdate,
 )
+from app.services.account_service import AccountService
 
-BASE_STAFF_ROLE_COLUMNS = "id, studio_id, user_id, role, created_at"
+BASE_STAFF_ROLE_COLUMNS = "id, studio_id, user_id, role, archived_at, created_at"
 EXTENDED_STAFF_ROLE_COLUMNS = (
-    "id, studio_id, user_id, role, invited_by, invited_email, created_at, updated_at"
+    "id, studio_id, user_id, role, archived_at, invited_by, invited_email, created_at, updated_at"
 )
 OPTIONAL_STAFF_PROFILE_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
 SINGLE_STUDIO_MEMBERSHIP_DETAIL = (
@@ -27,6 +34,24 @@ STAFF_PROFILE_COLUMNS = "user_id, legal_first_name, legal_last_name"
 STAFF_PROFILE_NOT_FOUND_DETAIL = "Staff member not found."
 STAFF_PROFILE_UPDATE_FORBIDDEN_DETAIL = "Only studio admins can update staff profiles."
 STAFF_PROFILE_ALREADY_EXISTS_DETAIL = "Staff profile already exists."
+STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL = {
+    "code": "STAFF_DELETE_REQUIRES_ARCHIVE",
+    "message": "Archive this staff membership before using the archived-delete flow.",
+}
+STAFF_DELETE_REQUIRES_LINKED_DETAIL = {
+    "code": "STAFF_DELETE_REQUIRES_LINKED",
+    "message": "Only a linked archived staff account can be scheduled for deletion.",
+}
+STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL = {
+    "code": "STAFF_DELETE_CONFIRMATION_MISMATCH",
+    "message": "Type the staff member's displayed identity exactly to confirm deletion.",
+}
+STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL = (
+    "Transfer studio ownership before archiving this staff member."
+)
+STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL = (
+    "At least one active admin not scheduled for deletion must remain in the studio."
+)
 
 
 def _to_text(value: Any) -> Optional[str]:
@@ -39,11 +64,29 @@ def _to_text(value: Any) -> Optional[str]:
 
 def _user_full_name(user: Any) -> Optional[str]:
     metadata = getattr(user, "user_metadata", None) or {}
-    value = metadata.get("full_name") or metadata.get("name")
-    return str(value) if value else None
+    return _normalize_identity_text(metadata.get("full_name")) or _normalize_identity_text(
+        metadata.get("name")
+    )
 
 
-def _staff_status(user: Any) -> str:
+def _normalize_identity_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = re.sub(r"\s+", " ", str(value)).strip()
+    return normalized or None
+
+
+def _deletion_confirmation_name(row: dict, user: Any, email: str) -> str:
+    return (
+        _user_full_name(user)
+        or _normalize_identity_text(email)
+        or f"staff role {row['id']}"
+    )
+
+
+def _staff_status(user: Any, archived_at: Any = None) -> str:
+    if archived_at is not None:
+        return "archived"
     if not user:
         return "pending"
     if (
@@ -59,8 +102,13 @@ class StaffService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
 
-    async def list_staff(self, studio_id: str) -> list[StaffMemberResponse]:
-        result = self._list_staff_role_rows(studio_id)
+    async def list_staff(
+        self,
+        studio_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> list[StaffMemberResponse]:
+        result = self._list_staff_role_rows(studio_id, include_archived=include_archived)
         rows = result.data or []
         profile_map = self._get_staff_profiles_for_user_ids(
             list(dict.fromkeys(
@@ -234,7 +282,11 @@ class StaffService:
             return self._hydrate_staff_member(staff_role)
 
         self._ensure_owner_not_demoted_or_removed(studio_id, staff_role["user_id"], data.role)
-        if previous_role == "admin" and data.role != "admin":
+        if (
+            previous_role == "admin"
+            and data.role != "admin"
+            and staff_role.get("archived_at") is None
+        ):
             self._ensure_more_than_one_admin(studio_id, staff_role["user_id"])
 
         try:
@@ -264,6 +316,133 @@ class StaffService:
         )
 
         return self._hydrate_staff_member(result.data[0])
+
+    async def archive_staff(
+        self,
+        staff_role_id: str,
+        studio_id: str,
+        actor_id: str,
+    ) -> StaffMemberResponse:
+        staff_role = self._get_staff_role_or_404(staff_role_id, studio_id)
+        if staff_role.get("archived_at") is not None:
+            return self._hydrate_staff_member(staff_role)
+
+        self._ensure_owner_not_archived(studio_id, staff_role.get("user_id"))
+        if staff_role.get("role") == "admin":
+            self._ensure_more_than_one_admin(studio_id, staff_role.get("user_id"))
+
+        archived_at = datetime.now(timezone.utc).isoformat()
+        try:
+            result = (
+                self.supabase.table("staff_roles")
+                .update({"archived_at": archived_at})
+                .eq("id", staff_role_id)
+                .eq("studio_id", studio_id)
+                .is_("archived_at", None)
+                .execute()
+            )
+        except PostgrestAPIError as exc:
+            self._raise_admin_integrity_conflict(exc)
+
+        if not result.data:
+            current = self._get_staff_role_or_404(staff_role_id, studio_id)
+            if current.get("archived_at") is not None:
+                return self._hydrate_staff_member(current)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Staff member could not be archived. Refresh and try again.",
+            )
+
+        row = result.data[0]
+        self._audit(
+            studio_id,
+            actor_id,
+            "staff.archived",
+            staff_role_id,
+            {
+                "target_user_id": staff_role.get("user_id"),
+                "role": staff_role.get("role"),
+            },
+        )
+        return self._hydrate_staff_member(row)
+
+    async def unarchive_staff(
+        self,
+        staff_role_id: str,
+        studio_id: str,
+        actor_id: str,
+    ) -> StaffMemberResponse:
+        staff_role = self._get_staff_role_or_404(staff_role_id, studio_id)
+        if staff_role.get("archived_at") is None:
+            return self._hydrate_staff_member(staff_role)
+
+        try:
+            result = (
+                self.supabase.table("staff_roles")
+                .update({"archived_at": None})
+                .eq("id", staff_role_id)
+                .eq("studio_id", studio_id)
+                .not_.is_("archived_at", None)
+                .execute()
+            )
+        except PostgrestAPIError as exc:
+            self._raise_admin_integrity_conflict(exc)
+
+        if not result.data:
+            current = self._get_staff_role_or_404(staff_role_id, studio_id)
+            if current.get("archived_at") is None:
+                return self._hydrate_staff_member(current)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Staff member could not be unarchived. Refresh and try again.",
+            )
+
+        row = result.data[0]
+        self._audit(
+            studio_id,
+            actor_id,
+            "staff.unarchived",
+            staff_role_id,
+            {
+                "target_user_id": staff_role.get("user_id"),
+                "role": staff_role.get("role"),
+            },
+        )
+        return self._hydrate_staff_member(row)
+
+    async def schedule_staff_deletion(
+        self,
+        staff_role_id: str,
+        data: StaffDeletionRequestCreate,
+        studio_id: str,
+        actor_id: str,
+    ) -> AccountDeletionRequestResponse:
+        staff_role = self._get_staff_role_or_404(staff_role_id, studio_id)
+        target_user_id = staff_role.get("user_id")
+        if not target_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_DELETE_REQUIRES_LINKED_DETAIL,
+            )
+        if staff_role.get("archived_at") is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL,
+            )
+
+        target = self._hydrate_staff_member(staff_role)
+        if data.confirmation_name != target.deletion_confirmation_name:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL,
+            )
+
+        return await AccountService(self.supabase).schedule_deletion_for_admin(
+            AccountDeletionRequestCreate(reason=data.reason),
+            target_user_id,
+            studio_id,
+            actor_id,
+        )
 
     async def update_staff_legal_name(
         self,
@@ -409,25 +588,30 @@ class StaffService:
                 profiles[user_id] = row
         return profiles
 
-    def _list_staff_role_rows(self, studio_id: str):
+    def _list_staff_role_rows(self, studio_id: str, *, include_archived: bool = False):
         try:
-            return (
+            query = (
                 self.supabase.table("staff_roles")
                 .select(EXTENDED_STAFF_ROLE_COLUMNS)
                 .eq("studio_id", studio_id)
-                .order("created_at")
-                .execute()
             )
+            if not include_archived:
+                query = query.is_("archived_at", None)
+            return query.order("created_at").execute()
         except PostgrestAPIError as exc:
             if exc.code != "42703":
                 raise
-            return (
+            query = (
                 self.supabase.table("staff_roles")
                 .select(BASE_STAFF_ROLE_COLUMNS)
                 .eq("studio_id", studio_id)
-                .order("created_at")
-                .execute()
             )
+            if not include_archived:
+                query = query.is_("archived_at", None)
+            # archived_at is part of the required release schema. If this
+            # fallback also fails, propagate the schema error instead of
+            # silently returning an archive-blind roster.
+            return query.order("created_at").execute()
 
     def _insert_staff_role_with_metadata(self, row: dict):
         try:
@@ -524,15 +708,22 @@ class StaffService:
         ).lower()
         return exc.code == "P0001" and "one studio" in error_text
 
-    def _delete_pending_staff_role(self, staff_role_id: str, studio_id: str) -> None:
-        (
+    def _delete_pending_staff_role(
+        self,
+        staff_role_id: str,
+        studio_id: str,
+        *,
+        require_unlinked: bool = True,
+    ):
+        query = (
             self.supabase.table("staff_roles")
             .delete()
             .eq("id", staff_role_id)
             .eq("studio_id", studio_id)
-            .is_("user_id", None)
-            .execute()
         )
+        if require_unlinked:
+            query = query.is_("user_id", None)
+        return query.is_("archived_at", None).execute()
 
     def _delete_invite_created_staff_role(self, staff_role_id: str, studio_id: str) -> None:
         (
@@ -593,18 +784,29 @@ class StaffService:
         actor_id: str,
     ) -> None:
         staff_role = self._get_staff_role_or_404(staff_role_id, studio_id)
-        self._ensure_owner_not_demoted_or_removed(studio_id, staff_role["user_id"], None)
-        if staff_role["role"] == "admin":
-            self._ensure_more_than_one_admin(studio_id, staff_role["user_id"])
+        if staff_role.get("archived_at") is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL,
+            )
 
-        staff_member = self._hydrate_staff_member(staff_role)
+        target_user_id = staff_role.get("user_id")
+        if target_user_id is not None:
+            try:
+                user = self._get_auth_user(target_user_id)
+            except Exception:
+                user = None
+            if user is None or _staff_status(user) != "pending":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL,
+                )
+
         try:
-            result = (
-                self.supabase.table("staff_roles")
-                .delete()
-                .eq("id", staff_role_id)
-                .eq("studio_id", studio_id)
-                .execute()
+            result = self._delete_pending_staff_role(
+                staff_role_id,
+                studio_id,
+                require_unlinked=target_user_id is None,
             )
         except PostgrestAPIError as exc:
             self._raise_admin_integrity_conflict(exc)
@@ -620,7 +822,7 @@ class StaffService:
             {
                 "target_user_id": staff_role["user_id"],
                 "previous_role": staff_role["role"],
-                "email": staff_member.email,
+                "email": staff_role.get("invited_email") or "",
             },
         )
 
@@ -634,16 +836,24 @@ class StaffService:
         if user is None:
             user = self._get_auth_user(user_id)
 
+        email = (
+            _normalize_identity_text(getattr(user, "email", None))
+            or _normalize_identity_text(row.get("invited_email"))
+            or ""
+        )
+
         return StaffMemberResponse(
             id=row["id"],
             studio_id=row["studio_id"],
             user_id=user_id,
-            email=(getattr(user, "email", None) or row.get("invited_email") or ""),
+            email=email,
             full_name=_user_full_name(user),
+            deletion_confirmation_name=_deletion_confirmation_name(row, user, email),
             legal_first_name=profile.get("legal_first_name") if profile else None,
             legal_last_name=profile.get("legal_last_name") if profile else None,
             role=row["role"],
-            status=_staff_status(user),
+            status=_staff_status(user, row.get("archived_at")),
+            archived_at=_to_text(row.get("archived_at")),
             invited_by=row.get("invited_by"),
             created_at=_to_text(row.get("created_at")) or "",
             updated_at=_to_text(row.get("updated_at")) or _to_text(row.get("created_at")) or "",
@@ -704,12 +914,32 @@ class StaffService:
                 detail="The studio owner must remain an admin.",
             )
 
+    def _ensure_owner_not_archived(
+        self,
+        studio_id: str,
+        target_user_id: Optional[str],
+    ) -> None:
+        result = (
+            self.supabase.table("studios")
+            .select("owner_id")
+            .eq("id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        owner_id = result.data[0]["owner_id"] if result.data else None
+        if owner_id == target_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL,
+            )
+
     def _ensure_more_than_one_admin(self, studio_id: str, departing_user_id: Optional[str] = None) -> None:
         result = (
             self.supabase.table("staff_roles")
             .select("user_id")
             .eq("studio_id", studio_id)
             .eq("role", "admin")
+            .is_("archived_at", None)
             .execute()
         )
         active_admins = [
@@ -723,7 +953,7 @@ class StaffService:
         if len(active_admins) < 1:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="At least one active admin not scheduled for deletion must remain in the studio.",
+                detail=STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL,
             )
 
     def _has_scheduled_account_deletion(self, user_id: Optional[str]) -> bool:
@@ -748,7 +978,7 @@ class StaffService:
         if exc.code in {"23514", "P0001"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=getattr(exc, "message", None) or "At least one active admin not scheduled for deletion must remain in the studio.",
+                detail=getattr(exc, "message", None) or STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL,
             ) from exc
         raise exc
 

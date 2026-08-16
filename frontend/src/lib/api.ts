@@ -32,6 +32,13 @@ export function isSubscriptionRequiredError(error: unknown) {
   return error instanceof ApiError && error.status === 402;
 }
 
+export function isStaffArchivedError(error: unknown) {
+  return error instanceof ApiError && (
+    /\bSTAFF_ARCHIVED\b/.test(error.message)
+    || /staff account is archived/i.test(error.message)
+  );
+}
+
 interface ApiOptions {
   token?: string;
   body?: unknown;
