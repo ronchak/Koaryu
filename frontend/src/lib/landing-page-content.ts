@@ -314,7 +314,8 @@ const faqGroups: readonly FaqGroup[] = [
     items: [
       {
         question: "Is CSV import available?",
-        answer: "CSV import is planned for students, leads, and belt ranks.",
+        answer:
+          "Yes. Student-roster CSV import supports program and current-belt mapping.",
       },
       {
         question: "What if my existing data is messy?",
@@ -352,9 +353,9 @@ const faqGroups: readonly FaqGroup[] = [
           "Yes. Keep kids, teens, adults, beginner tracks, and different disciplines separate without splitting the school into different systems.",
       },
       {
-        question: "Are configurable belt ladders planned?",
+        question: "Can I configure belt ladders?",
         answer:
-          "Yes. The plan covers ordered ranks, class thresholds, time-at-rank rules, and instructor approval.",
+          "Yes. Ordered ladders support class-count, time-at-rank, and instructor-approval requirements.",
       },
       {
         question: "Does Koaryu handle leads and trials?",

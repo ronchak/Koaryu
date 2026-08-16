@@ -113,8 +113,10 @@ describe("marketing content contract", () => {
     );
 
     const serialized = JSON.stringify(landingPageContent);
-    assert.match(serialized, /CSV import is planned/);
-    assert.match(serialized, /configurable belt ladders planned/);
+    assert.match(serialized, /Student-roster CSV import supports program and current-belt mapping/);
+    assert.match(serialized, /Ordered ladders support class-count, time-at-rank, and instructor-approval requirements/);
+    assert.doesNotMatch(serialized, /CSV import is planned/);
+    assert.doesNotMatch(serialized, /Are configurable belt ladders planned|The plan covers ordered ranks/);
     assert.match(serialized, /web-first/);
     assert.match(serialized, /Maybe\. SMS brings cost/);
     assert.match(serialized, /before activating payments/);
