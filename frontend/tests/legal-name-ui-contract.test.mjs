@@ -113,6 +113,9 @@ describe("account legal-name view contract", () => {
     assert.match(accountSource, /updateUserName\(normalizedNameDraft\)/);
     assert.match(accountSource, /Save display name/);
     assert.match(accountSource, /Display name updated\./);
+    assert.match(accountSource, /user_metadata\.full_name[\s\S]*?cosmetic,[\s\S]*?in-app display only/);
+    assert.match(accountSource, /For cosmetic, in-app display only\./);
+    assert.doesNotMatch(accountSource, /exports|audit (?:history|records)|legal records/i);
     assert.doesNotMatch(accountSource, /updateUserLegalName/);
   });
 

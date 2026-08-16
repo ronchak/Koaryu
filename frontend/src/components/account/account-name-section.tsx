@@ -10,9 +10,9 @@ import { useStudioStore } from "@/lib/store";
 const SAVED_MESSAGE_MS = 2500;
 
 /**
- * Per-account name editor. The name lives on the signed-in account itself
- * (Supabase `user_metadata.full_name`), so each staff login — instructors
- * included — carries its own name into the staff roster and audit records.
+ * Per-account display-name editor. The value lives on the signed-in account
+ * itself (Supabase `user_metadata.full_name`) and is used for cosmetic,
+ * in-app display only.
  *
  * Shared by `/account/settings` and `/account/profile` so the two never drift.
  */
@@ -106,7 +106,7 @@ export function AccountNameSection({
             <span className="text-xs text-muted">
               {greetingName
                 ? `The dashboard will greet you as "${greetingName}".`
-                : "Used on the staff roster, in exports, and in audit history."}
+                : "For cosmetic, in-app display only."}
             </span>
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
