@@ -75,10 +75,17 @@ Database verification targets are:
 | Target | Use |
 | --- | --- |
 | local ephemeral cluster | Default for developing and reviewing contract SQL. |
-| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters; this project is currently inactive. |
-| production (`mimguepumzsgmcaycdsh`) | Read-only inspection only. Never run contract or migration SQL against it. |
+| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters. Active as of 2026-08-15; the backend follows the `staging` branch, not `main`. |
+| production (`mimguepumzsgmcaycdsh`) | Read-only inspection only, except the two guarded operations below. Never run contract or migration SQL against it. |
 
 Contract files can create functions and triggers on real tables inside a transaction. A later `ROLLBACK` does not make production an acceptable target: never point contract or migration execution at production.
+
+Exactly two operations may write to production, both human-authorized and both outside the contract/migration-SQL prohibition above:
+
+1. **The guarded rollout tool's production apply** (`scripts/studio-comp-migration-rollout.mjs --target production --mode apply`), which a human runs from an interactive terminal.
+2. **The pre-migration backup role** — a temporary `CREATE ROLE` / `ALTER ROLE` / `DROP ROLE` used to take a verified `pg_dump` before an irreversible migration, because the project has no managed restore path.
+
+Nothing else. Both are described in `docs/cutover-gates.md`.
 
 ## Safety Boundaries
 
@@ -105,6 +112,9 @@ Contract files can create functions and triggers on real tables inside a transac
 - Frontend app guidance: `frontend/AGENTS.md`
 - Backend app guidance: `backend/AGENTS.md`
 - Database guidance: `supabase/AGENTS.md`
+- **Release cutover gates and traps: `docs/cutover-gates.md`** — read before merging a
+  release candidate, migrating a hosted database, or promoting a frontend. Covers what
+  blocks a cutover and what silently breaks one.
 - Render deployment runbook: `docs/render-backend-deployment.md`
 - Owner-run operator tools: `docs/operator-tooling.md`
 - Support triage/privacy runbook: `docs/support-triage.md`
