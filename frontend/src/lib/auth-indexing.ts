@@ -9,6 +9,7 @@ export const AUTH_NOINDEX_METADATA: Metadata = {
 
 export const PRIVATE_ROUTE_DISALLOW_PATHS = [
   "/api",
+  "/account-archived",
   "/account",
   "/automations",
   "/belt-tracker",

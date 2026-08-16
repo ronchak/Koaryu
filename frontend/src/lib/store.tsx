@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, type ReactNode } from 
 import { usePathname, useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/loading-screen";
 import { createClient } from "@/lib/supabase/client";
-import { api, isSubscriptionRequiredError } from "@/lib/api";
+import { api, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
 import { markPerformance, measurePerformance } from "@/lib/performance";
 import {
   clearStoredStudioSessionCookies,
@@ -94,14 +94,17 @@ import {
   buildDeferredScheduleDateRange,
   buildLegacyBootstrapResponse,
   buildSessionUserProfile,
+  isStaffProfilesAvailable,
   isDashboardSummaryForStudio,
   isLiveAuthRequestCurrent,
+  parseAuthProfileResponse,
   resolveBootstrapLadders,
   resolveBootstrapStudioName,
   type AuthUserProfile,
   type AuthProfileResponse,
   type BootstrapResponse,
 } from "@/lib/store-bootstrap-model";
+import { routeForMembershipStatus } from "@/lib/auth-route-model";
 import {
   buildPreviewHydratedLadderState,
   resolvePreviewLadderHydrationDefaults,
@@ -220,6 +223,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [currentRole, setCurrentRole] = useState<StaffRoleName | null>(() =>
     isPreviewMode ? "admin" : null
   );
+  const [staffProfilesAvailable, setStaffProfilesAvailable] = useState(false);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() =>
     isPreviewMode ? MOCK_STAFF_MEMBERS : []
   );
@@ -610,8 +614,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     authUserIdRef.current = null;
     setCurrentUser(null);
     setCurrentRole(null);
+    setStaffProfilesAvailable(false);
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
   }, [applyLiveStudioDataResetState]);
+
+  const commitAuthoritativeAuthProfile = useCallback((authProfile: AuthProfileResponse) => {
+    setCurrentUser(buildAuthUserProfile(authProfile));
+    setCurrentRole(authProfile.role ?? null);
+    setStaffProfilesAvailable(isStaffProfilesAvailable(authProfile));
+  }, []);
 
   const applySubscriptionRequiredState = useCallback((
     authProfile: AuthProfileResponse,
@@ -619,19 +630,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   ) => {
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
-    const userProfile = buildAuthUserProfile(authProfile);
 
     authUserIdRef.current = sessionUser.id;
-    setCurrentUser(userProfile);
-    setCurrentRole(authProfile.role ?? null);
-    syncStoredStudioSessionCookies(sessionUser.id, authProfile.studio_id);
+    commitAuthoritativeAuthProfile(authProfile);
+    syncStoredStudioSessionCookies(
+      sessionUser.id,
+      authProfile.studio_id,
+      authProfile.membership_status
+    );
 
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
-  }, [applyLiveStudioDataResetState]);
+  }, [applyLiveStudioDataResetState, commitAuthoritativeAuthProfile]);
+
+  const applyAuthoritativeNoStudioState = useCallback((
+    authProfile: AuthProfileResponse,
+    sessionUser: { id: string; email?: string | null; user_metadata?: { full_name?: string | null } }
+  ) => {
+    syncStoredStudioSessionCookies(
+      sessionUser.id,
+      authProfile.studio_id,
+      authProfile.membership_status
+    );
+    resetLiveStudioState();
+    commitAuthoritativeAuthProfile(authProfile);
+    setHydrated(true);
+    router.replace(routeForMembershipStatus(authProfile.membership_status));
+  }, [commitAuthoritativeAuthProfile, resetLiveStudioState, router]);
 
   const markSubscriptionRequired = useCallback(() => {
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
+    setStaffProfilesAvailable(false);
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
@@ -934,6 +963,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       authUserIdRef.current = session.user.id;
       setToken(sessionToken);
       setCurrentUser(buildSessionUserProfile(session.user));
+      setStaffProfilesAvailable(false);
       setHydrated(true);
       markPerformance("auth.session_resolved");
 
@@ -957,38 +987,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         } catch (bootstrapError) {
           usedLegacyFallback = true;
           if (isSubscriptionRequiredError(bootstrapError)) {
-            const authProfile = await api.get<AuthProfileResponse>(
+            const authProfile = parseAuthProfileResponse(await api.get<unknown>(
               "/auth/me",
-              sessionToken
-            );
+              sessionToken,
+              { omitStudioHeader: true }
+            ));
             if (!isCurrentSession()) {
+              return;
+            }
+
+            if (authProfile.membership_status !== "active" || !authProfile.studio_id) {
+              applyAuthoritativeNoStudioState(authProfile, session.user);
               return;
             }
 
             applySubscriptionRequiredState(authProfile, session.user);
             setHydrated(true);
-            if (!authProfile.studio_id) {
-              router.replace("/onboarding");
-            }
             return;
           }
 
-          const authProfile = await api.get<AuthProfileResponse>(
+          const authProfile = parseAuthProfileResponse(await api.get<unknown>(
             "/auth/me",
             sessionToken,
             { omitStudioHeader: true }
-          );
+          ));
           if (!isCurrentSession()) {
             return;
           }
 
-          if (!authProfile.studio_id) {
-            syncStoredStudioSessionCookies(session.user.id, authProfile.studio_id);
-            resetLiveStudioState();
-            setCurrentUser(buildAuthUserProfile(authProfile));
-            setCurrentRole(authProfile.role ?? null);
-            setHydrated(true);
-            router.replace("/onboarding");
+          if (authProfile.membership_status !== "active" || !authProfile.studio_id) {
+            applyAuthoritativeNoStudioState(authProfile, session.user);
             return;
           }
 
@@ -996,9 +1024,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .then((studioRes) => {
               if (isCurrentSession()) {
                 setSubscriptionRequired(false);
-                setCurrentUser(buildAuthUserProfile(authProfile));
-                setCurrentRole(authProfile.role ?? null);
-                syncStoredStudioSessionCookies(session.user.id, authProfile.studio_id);
+                commitAuthoritativeAuthProfile(authProfile);
+                syncStoredStudioSessionCookies(
+                  session.user.id,
+                  authProfile.studio_id,
+                  authProfile.membership_status
+                );
                 setStudioNameState(studioRes.name);
               }
               return studioRes;
@@ -1159,20 +1190,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
 
         if (isCurrentSession()) {
-          const authProfile = criticalData.auth;
-          const userProfile = buildAuthUserProfile(authProfile);
+          const authProfile = parseAuthProfileResponse(criticalData.auth);
 
           setSubscriptionRequired(false);
-          setCurrentUser(userProfile);
-          setCurrentRole(authProfile.role ?? null);
-          syncStoredStudioSessionCookies(session.user.id, authProfile.studio_id);
+          commitAuthoritativeAuthProfile(authProfile);
+          syncStoredStudioSessionCookies(
+            session.user.id,
+            authProfile.studio_id,
+            authProfile.membership_status
+          );
 
-          if (!authProfile.studio_id) {
-            resetLiveStudioState();
-            setCurrentUser(userProfile);
-            setCurrentRole(authProfile.role ?? null);
-            setHydrated(true);
-            router.replace("/onboarding");
+          if (authProfile.membership_status !== "active" || !authProfile.studio_id) {
+            applyAuthoritativeNoStudioState(authProfile, session.user);
             return;
           }
 
@@ -1284,15 +1313,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
-        if (isCurrentSession() && isSubscriptionRequiredError(error)) {
-          const authProfile = await api.get<AuthProfileResponse>(
+        if (isCurrentSession() && isStaffArchivedError(error)) {
+          const authProfile = await api.get<unknown>(
             "/auth/me",
-            sessionToken
-          ).catch(() => null);
+            sessionToken,
+            { omitStudioHeader: true }
+          )
+            .then((response) => parseAuthProfileResponse(response))
+            .catch(() => null);
+          if (!isCurrentSession()) {
+            return;
+          }
+          if (authProfile && (authProfile.membership_status !== "active" || !authProfile.studio_id)) {
+            applyAuthoritativeNoStudioState(authProfile, session.user);
+            return;
+          }
+        }
+        if (isCurrentSession() && isSubscriptionRequiredError(error)) {
+          const authProfile = await api.get<unknown>(
+            "/auth/me",
+            sessionToken,
+            { omitStudioHeader: true }
+          )
+            .then((response) => parseAuthProfileResponse(response))
+            .catch(() => null);
           if (!isCurrentSession()) {
             return;
           }
           if (authProfile) {
+            if (authProfile.membership_status !== "active" || !authProfile.studio_id) {
+              applyAuthoritativeNoStudioState(authProfile, session.user);
+              return;
+            }
             applySubscriptionRequiredState(authProfile, session.user);
           } else {
             markSubscriptionRequired();
@@ -1310,6 +1362,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const loadError = error instanceof Error
             ? error.message
             : "Initial studio data could not be loaded.";
+          setStaffProfilesAvailable(false);
           setStudentsLoadError(loadError);
           setProgramsLoaded(false);
           setProgramsLoadError(loadError);
@@ -1334,6 +1387,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         const tokenChanged = tokenRef.current !== session.access_token;
+        const sessionUserChanged = authUserIdRef.current !== session.user.id;
         if (tokenChanged) {
           const preservesScheduleGeneration = shouldPreserveScheduleMutationsOnAuthChange(
             event,
@@ -1355,6 +1409,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         tokenRef.current = session.access_token;
         authUserIdRef.current = session.user.id;
         setToken(session.access_token);
+        if (sessionUserChanged) {
+          setStaffProfilesAvailable(false);
+        }
         if (tokenChanged) {
           void reconcileSchedule("read").catch((error) => {
             console.error("Failed to reconcile schedule after an auth token change", error);
@@ -1374,7 +1431,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mounted = false;
       authListener?.subscription.unsubscribe();
     };
-  }, [applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, isPreviewMode, loadEligibilityForLadder, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1601,11 +1658,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
 
   const {
+    archiveStaff,
     inviteStaff,
     refreshStaff,
     removeStaff,
+    scheduleStaffDeletion,
+    unarchiveStaff,
+    updateStaffLegalName,
     updateStaffRole,
   } = useStoreStaffActions({
+    activeUserEmail: currentUser?.email || "",
     activeUserId,
     beginLiveAuthRequest,
     isPreviewMode,
@@ -1619,6 +1681,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearStudioData,
     resetDemoData,
     setStudioName,
+    updateUserLegalName,
     updateUserName,
   } = useStoreStudioActions({
     activeUserId,
@@ -1632,6 +1695,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistPrograms,
     sessionsRef,
     setCurrentUser,
+    setStaffProfilesAvailable,
     setStaffLoadError,
     setStaffLoaded,
     setStaffMembers,
@@ -1646,6 +1710,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addSession,
     addStudent,
     addTemplate,
+    archiveStaff,
     archiveProgram,
     attendance,
     beltLadders,
@@ -1697,6 +1762,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     restoreProgram,
     scheduleLoadError,
     scheduleStatus,
+    scheduleStaffDeletion,
     sessions,
     setBeltRanks,
     setCurrentLadder,
@@ -1706,6 +1772,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     staffLoadError,
     staffLoaded,
     staffMembers,
+    staffProfilesAvailable,
     students,
     studentsLastLoadedAt,
     studentsLoadError,
@@ -1717,14 +1784,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     templates,
     toggleCheckIn,
     token,
+    unarchiveStaff,
     updateLead,
     updateProgram,
+    updateStaffLegalName,
     updateStaffRole,
     updateStudent,
+    updateUserLegalName,
     updateUserName,
     uploadStudentPhoto,
     userEmail: currentUser?.email || "",
     userName: currentUser?.full_name || "",
+    legalFirstName: currentUser?.legal_first_name ?? "",
+    legalLastName: currentUser?.legal_last_name ?? "",
   });
 
   if (!hydrated) {

@@ -40,6 +40,8 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "migration_count": 103},
             {**exact_preflight_row(), "migration_count": 104},
             {**exact_preflight_row(), "migration_count": 105},
+            {**exact_preflight_row(), "migration_count": 109},
+            {**exact_preflight_row(), "migration_count": 110},
             {**exact_preflight_row(), "migration_head": "20260801080000"},
             {**exact_preflight_row(), "migration_head": "20260801105313"},
             {**exact_preflight_row(), "migration_head": "20260801112153"},
@@ -50,6 +52,8 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "migration_head": "20260814105424"},
             {**exact_preflight_row(), "migration_head": "20260814114500"},
             {**exact_preflight_row(), "migration_head": "20260814152000"},
+            {**exact_preflight_row(), "migration_head": "20260814213000"},
+            {**exact_preflight_row(), "migration_head": "20260815220402"},
             {**exact_preflight_row(), "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1]},
             {**exact_preflight_row(), "security_failures": ["table:missing"]},
             {**exact_preflight_row(), "manifest_version": "stale-manifest"},
@@ -63,6 +67,8 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v10"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v11"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v12"},
+            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v16"},
+            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v17"},
         ]
         for row in mismatches:
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):

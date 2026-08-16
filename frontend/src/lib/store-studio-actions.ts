@@ -20,7 +20,17 @@ import {
   type DemoResetResponse,
   type StudioDataClearResponse,
 } from "@/lib/studio-store-model";
-import type { AttendanceRecord, BeltRank, ClassSession, Lead, Program, StaffMember, Student } from "@/types";
+import type {
+  AttendanceRecord,
+  BeltRank,
+  ClassSession,
+  Lead,
+  Program,
+  StaffLegalNameResponse,
+  StaffLegalNameUpdate,
+  StaffMember,
+  Student,
+} from "@/types";
 
 const DESTRUCTIVE_ACTION_HEADER = "X-Koaryu-Destructive-Action";
 const DEMO_RESET_DESTRUCTIVE_ACTION = "demo-reset";
@@ -46,6 +56,7 @@ interface UseStoreStudioActionsOptions {
   persistPrograms: (next: Program[]) => void;
   sessionsRef: StoreRef<ClassSession[]>;
   setCurrentUser: Dispatch<SetStateAction<AuthUserProfile | null>>;
+  setStaffProfilesAvailable: Dispatch<SetStateAction<boolean>>;
   setStaffLoadError: Dispatch<SetStateAction<string | null>>;
   setStaffLoaded: Dispatch<SetStateAction<boolean>>;
   setStaffMembers: Dispatch<SetStateAction<StaffMember[]>>;
@@ -67,6 +78,7 @@ export function useStoreStudioActions({
   persistPrograms,
   sessionsRef,
   setCurrentUser,
+  setStaffProfilesAvailable,
   setStaffLoadError,
   setStaffLoaded,
   setStaffMembers,
@@ -123,6 +135,65 @@ export function useStoreStudioActions({
       )
     );
   }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setCurrentUser, setStaffMembers, supabase]);
+
+  const updateUserLegalName = useCallback(async (firstName: string, lastName: string): Promise<void> => {
+    if (!activeUserId) {
+      throw new Error("Current user identity is required.");
+    }
+
+    const payload: StaffLegalNameUpdate = {
+      legal_first_name: firstName,
+      legal_last_name: lastName,
+    };
+
+    if (isPreviewMode) {
+      setCurrentUser((current) => current && current.id === activeUserId
+        ? {
+            ...current,
+            legal_first_name: payload.legal_first_name,
+            legal_last_name: payload.legal_last_name,
+          }
+        : current);
+      setStaffMembers((current) => current.map((member) =>
+        member.user_id === activeUserId
+          ? {
+              ...member,
+              legal_first_name: payload.legal_first_name,
+              legal_last_name: payload.legal_last_name,
+            }
+          : member
+      ));
+      return;
+    }
+
+    const liveRequest = beginLiveAuthRequest();
+    const response = await api.patch<StaffLegalNameResponse>(
+      `/staff/${activeUserId}/legal-name`,
+      payload,
+      liveRequest.token
+    );
+    if (!liveRequest.isCurrent()) {
+      return;
+    }
+
+    setCurrentUser((current) => current && current.id === response.user_id
+      ? {
+          ...current,
+          legal_first_name: response.legal_first_name,
+          legal_last_name: response.legal_last_name,
+        }
+      : current);
+    setStaffProfilesAvailable(true);
+    setStaffMembers((current) => current.map((member) =>
+      member.user_id === response.user_id
+        ? {
+            ...member,
+            legal_first_name: response.legal_first_name,
+            legal_last_name: response.legal_last_name,
+          }
+        : member
+    ));
+  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setCurrentUser, setStaffMembers, setStaffProfilesAvailable]);
 
   const resetDemoData = useCallback(async (): Promise<DemoResetResponse> => {
     if (isPreviewMode) {
@@ -234,6 +305,7 @@ export function useStoreStudioActions({
     clearStudioData,
     resetDemoData,
     setStudioName,
+    updateUserLegalName,
     updateUserName,
   };
 }

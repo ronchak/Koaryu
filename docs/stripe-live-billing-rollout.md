@@ -148,6 +148,11 @@ npm run verify:deployed-release -- \
   --expected-stripe-mode test
 ```
 
+`--expected-stripe-mode` is **staging-only**: the verifier requires the value be exactly
+`test` *and* the environment be `staging`, and refuses otherwise. Omit the flag when
+verifying production, and read `configured_stripe_mode` from `/health/ready` instead.
+See [cutover gates](cutover-gates.md).
+
 Follow the execution-order capture instructions in [the Stripe test-provider rehearsal worksheet](stripe-test-provider-rehearsal-capture.md). It records only sanitized evidence and remains test mode only.
 
 Do not call the synthetic local Connect smoke provider proof. On a director-approved exact release candidate, first verify `/health/ready` returns the expected SHA and the backend is configured for Stripe test mode. Exercise hosted onboarding and the required test lifecycle through the candidate, capturing only IDs, status, explicit studio/account/scope, idempotency keys, webhook event IDs, and readback outcomes. Then validate the sanitized evidence:

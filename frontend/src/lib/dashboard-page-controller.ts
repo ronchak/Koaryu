@@ -70,7 +70,7 @@ type DashboardPageControllerOptions = {
     StudentsStoreContextValue,
     "refreshStudents" | "students" | "studentsLoaded" | "studentsLoadError" | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "studioName">;
+  studioStore: Pick<StudioStoreContextValue, "currentUserId" | "studioName" | "userName">;
 };
 
 export function useDashboardPageController({
@@ -111,7 +111,7 @@ export function useDashboardPageController({
     studentsLoadError,
     studentsMayBePartial,
   } = studentsStore;
-  const { studioName } = studioStore;
+  const { currentUserId, studioName, userName } = studioStore;
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
@@ -240,6 +240,8 @@ export function useDashboardPageController({
         churnStats,
         testReadinessStats,
       },
+      ownerName: userName || null,
+      ownerSeedKey: currentUserId || userName || null,
       programs,
       rosterSummaryPending,
       sessionCount,
@@ -247,12 +249,15 @@ export function useDashboardPageController({
       studentCount,
       summary,
       templateCount,
+      todayDateKey: displayedToday,
       todayLabel,
     }),
     [
       beltStats,
       canSeeBilling,
       churnStats,
+      currentUserId,
+      displayedToday,
       inactivityStats,
       isPreviewMode,
       leadStats,
@@ -269,6 +274,7 @@ export function useDashboardPageController({
       testReadinessStats,
       todayLabel,
       todaySessions,
+      userName,
     ]
   );
   const kpiBreakdowns = useMemo(() => {

@@ -75,6 +75,7 @@ type BillingSummary = {
 export type DashboardOwnerBrief = {
   tone: "danger" | "warning" | "success";
   label: string;
+  greeting: string;
   primaryAction: OverviewAction | null;
   summary: string;
   setupCopy: string;
@@ -126,7 +127,7 @@ export function DashboardOwnerBriefPanel({
           <div className="max-w-3xl">
             <p className="text-[11px] font-medium uppercase tracking-widest text-muted">Owner brief · {todayLabel}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-2xl font-semibold leading-tight text-text-primary">Run the studio with a clean morning read.</h2>
+              <h2 className="text-2xl font-semibold leading-tight text-text-primary">{ownerBrief.greeting}</h2>
               <span className={`rounded-[4px] border px-2 py-1 text-xs font-medium ${
                 ownerBrief.tone === "danger"
                   ? "border-danger/25 bg-danger/10 text-danger"

@@ -119,11 +119,22 @@ BEGIN
           AND NOT trig.tgisinternal
           AND trig.tgenabled IN ('O', 'A')
           AND (
-              pg_get_triggerdef(trig.oid) ILIKE '%BEFORE UPDATE OF role, user_id ON public.staff_roles%'
-              OR pg_get_triggerdef(trig.oid) ILIKE '%BEFORE UPDATE OF user_id, role ON public.staff_roles%'
+              pg_get_triggerdef(trig.oid) ILIKE '%BEFORE UPDATE OF role, user_id, archived_at ON public.staff_roles%'
+              OR pg_get_triggerdef(trig.oid) ILIKE '%BEFORE UPDATE OF archived_at, role, user_id ON public.staff_roles%'
           )
     ) THEN
-        RAISE EXCEPTION 'prevent_staff_admin_orphan_update_trigger must fire when staff_roles.role or staff_roles.user_id changes.';
+        RAISE EXCEPTION 'prevent_staff_admin_orphan_update_trigger must fire when staff_roles.role, staff_roles.user_id, or staff_roles.archived_at changes.';
+    END IF;
+
+    IF pg_get_functiondef('private.prevent_account_deletion_orphan()'::REGPROCEDURE)
+           NOT ILIKE '%membership.archived_at IS NULL%'
+       OR pg_get_functiondef('private.prevent_staff_admin_orphan()'::REGPROCEDURE)
+           NOT ILIKE '%membership.archived_at IS NULL%'
+       OR pg_get_functiondef('private.prevent_staff_admin_orphan()'::REGPROCEDURE)
+           NOT ILIKE '%OLD.user_id IS NOT NULL%'
+       OR pg_get_functiondef('private.prevent_staff_admin_orphan()'::REGPROCEDURE)
+           NOT ILIKE '%NEW.user_id IS DISTINCT FROM OLD.user_id%' THEN
+        RAISE EXCEPTION 'Last-admin and account-deletion guards must count active memberships and protect linked identity departures.';
     END IF;
 
     SELECT string_agg(format('%s.%s expected ON DELETE %s', expected.table_name, expected.column_name, expected.delete_rule), ', ' ORDER BY expected.table_name, expected.column_name)

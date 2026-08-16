@@ -139,7 +139,10 @@ Operator: `Codex release orchestrator`
 - Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
 - Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
 
-## Database-Parity Remediation Candidate — updated 2026-08-14
+## Database-Parity Remediation Candidate — historical V17 predecessor (2026-08-15)
+
+The V17 values below are retained as historical evidence. The current
+archive/RLS candidate is recorded in the Migration-111 section that follows.
 
 - Read-only inspection confirmed both staging and production at the healthy
   100-migration V7 state, digest `359058cc127e57a47e429f6271453acf`,
@@ -161,12 +164,15 @@ Operator: `Codex release orchestrator`
   replay isolation, exact live-comp provenance, and atomic idempotent belt-ladder
   audit plus atomic student write responses; migration 109 now carries those
   contracts while the candidate uses the versioned writers and V3 readiness.
-  Staging is at exact 108; production
+  Migration 110 appends the reviewed staff identity name model and updates only
+  the V2 compatibility guard and release-readiness definitions to the exact V17
+  count, head, sequence, and V7 compatibility contract. Staging remains at exact 108; production
   remained at the V7 pre-state.
-- Final required database identity: 109 migrations, head
-  `20260814213000_lock_core_trial_decision_to_reservation.sql`. Production has
-  migrations 101 through 109 pending; staging has migration 109 pending.
-  The V16 readiness response attests the complete historical 85-through-109 sequence,
+- Final required database identity: 110 migrations, head
+  `20260815220402_staff_identity_name_model.sql`. Production has migrations 101
+  through 110 pending; staging has migrations 109 and 110 pending. No migration
+  109 or 110 is claimed as applied to either environment.
+  The V17 readiness response attests the complete historical 85-through-110 sequence,
   the starting-belt function/trigger invariant, and the converged trigger-only
   function ACLs plus the bodies, ACLs, and normalized return contracts of both
   public/private student profile and import writer pairs.
@@ -209,11 +215,14 @@ Operator: `Codex release orchestrator`
   six promotion rank/snapshot column identities at V15; `20260814213000`
   atomically decides trial eligibility under the checkout-reservation lock,
   serializes checkout acceptance against operator comps, preserves the
-  predecessor service-role signatures for database-first cutover, isolates
+  predecessor reservation (V1) and V2 readiness signatures for database-first cutover, isolates
   historical replay, binds explicit live-comp provenance, makes belt-ladder
-  sync/audit idempotent, and advances candidate readiness to V3/V16. The packet reports
+  sync/audit idempotent, and advances candidate readiness to V3/V16;
+  `20260815220402` adds the staff legal-name source-of-truth and audit actor-name
+  snapshot schema and updates only the V2 compatibility guard and readiness
+  definitions to V3/V17. The packet reports
   `integration_complete=true` only for
-  the exact 84-to-109 history and twenty-five
+  the exact 84-to-110 history and twenty-six
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
@@ -222,13 +231,63 @@ Operator: `Codex release orchestrator`
   and `stripe_events`. A separate column-ACL manifest covers every ordinary,
   non-dropped column across all fourteen scoped tables, including empty
   `attacl`, and rejects explicit custom/browser grants and grant-option drift.
-  Apparent-post linked inspection also requires exact V16 output before
+  Apparent-post linked inspection also requires exact V17 output before
   certification. Hosted exposed-schema and schema-ACL readback remain a
   separate provider/operator gate that local PostgreSQL cannot certify. The exact 33-file SQL
   contract inventory fails CI on missing or unexpected verification files.
 - Recovery: any partial history, catalog mismatch, readiness failure, or guard
   conflict halts. Preserve applied state and recover only with reviewed
   forward-only migration work; production restore remains disaster recovery.
+
+## Migration-111 Archive/RLS/Readiness Pilot — 2026-08-15
+
+- Worker: `worker-002`, single database writer. Branch:
+  `codex/staff-identity-pr2-archive-delete`. Starting head:
+  `105090af4820f268afac4a0842fc35dbe839a992`.
+- Current dirty-worktree base after CTO rejection:
+  `c38bc2f6c004c2ca2379d71ed72393499f682736`.
+- Candidate database identity: 111 migrations, head
+  `20260816012723_archive_staff_access_and_readiness.sql`, with the exact
+  27-version pending sequence and V18 release string
+  `release-db-attestation-v18`.
+- Current-worktree source packet derivation used:
+
+  ```bash
+  node --input-type=module --eval 'import { verifySourceTree } from "./scripts/studio-comp-migration-rollout.mjs"; const packet = verifySourceTree(".", "c38bc2f6c004c2ca2379d71ed72393499f682736"); console.log(JSON.stringify({ candidateSha: packet.candidateSha, migrationCount: packet.migrationCount, postHistory: packet.postHistory, sourceManifestSha256: packet.sourceManifestSha256, migration111: packet.pendingManifest.at(-1) }, null, 2));'
+  ```
+
+  It returned
+  post-history `111:f23ff28f995f7a5401f7a9580481a365`, source manifest SHA-256
+  `45091bba2938a1f8a42ce93fadc18f0431b326acf662f1846a12b79a035dd14b`, and
+  migration-111 SHA-256
+  `7fd9b371de08d2d098ac8a913b5e248123f356302b400ffbc033e51b671ea31c`.
+  This is a dirty-worktree derivation for review evidence, not a claim that an
+  immutable release commit exists.
+- Migration 111 adds nullable `public.staff_roles.archived_at`; makes the
+  central restrictive guard, role helpers, and staff-profile helper active-only;
+  preserves zero-membership onboarding and any-row single-studio reservation;
+  keeps staff-role writes service-role-only; and guards owner, last-active-admin,
+  and active account-deletion survivor invariants, including linked identity
+  replacement and clearing while preserving nullable pending invite linking.
+- The V17 semantic archive-critical manifest is pinned to the PM-observed
+  zero-invalid value
+  `0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8`.
+  The post-111 V16 compatibility assertion is pinned to
+  `0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239`.
+  The raw PostgreSQL 17 catalog state is pinned to
+  `column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:164af3cd98d7f26bc74994b4f16529ea988ba0e760aa34d3cebddc4f97c4b625:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`.
+- The rollout source packet is derived by
+  `node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>`.
+  The operator raw catalog fingerprint is pinned to the same observed
+  PostgreSQL 17 value; archive-specific column/helper/trigger/policy coverage
+  remains in the V17 semantic catalog manifest rather than being copied into a
+  separate stale hash.
+- Sandbox verification stop: `npm run check:supabase-contracts-local` could not
+  initialize PostgreSQL because the host denied the shared-memory `shmget`
+  operation. The PM-owned PostgreSQL 17 run supplied the current V16 and raw
+  catalog values above; no linked or network fallback was used.
+- No commit, push, deployment, linked-project mutation, or external action was
+  performed by this worker.
 
 ## Release Entry Template
 

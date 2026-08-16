@@ -3,13 +3,24 @@ export const STUDIO_STATE_COOKIE_MAX_AGE_SECONDS = 300;
 export const ACTIVE_STUDIO_COOKIE = "koaryu-active-studio";
 export const ACTIVE_STUDIO_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
+export type StudioMembershipStatus = "none" | "active" | "archived";
+
 type ParsedStudioStateCookie = {
   userId: string;
   hasStudio: boolean;
+  membershipStatus: StudioMembershipStatus;
 };
 
-export function serializeStudioStateCookie(userId: string, hasStudio: boolean) {
-  return `${userId}|${hasStudio ? "1" : "0"}`;
+export function serializeStudioStateCookie(
+  userId: string,
+  hasStudio: boolean,
+  membershipStatus: StudioMembershipStatus = hasStudio ? "active" : "none"
+) {
+  return `${userId}|${hasStudio ? "1" : "0"}|${membershipStatus}`;
+}
+
+function isStudioMembershipStatus(value: string | undefined): value is StudioMembershipStatus {
+  return value === "none" || value === "active" || value === "archived";
 }
 
 export function parseStudioStateCookie(
@@ -27,26 +38,38 @@ export function parseStudioStateCookie(
     return null;
   }
 
-  const [userId, hasStudioFlag, ...rest] = decodedValue.split("|");
+  const [userId, hasStudioFlag, membershipStatusFlag, ...rest] = decodedValue.split("|");
 
-  if (!userId || rest.length > 0 || (hasStudioFlag !== "0" && hasStudioFlag !== "1")) {
+  if (
+    !userId
+    || rest.length > 0
+    || (hasStudioFlag !== "0" && hasStudioFlag !== "1")
+    || (membershipStatusFlag !== undefined && !isStudioMembershipStatus(membershipStatusFlag))
+  ) {
     return null;
   }
 
+  const hasStudio = hasStudioFlag === "1";
+
   return {
     userId,
-    hasStudio: hasStudioFlag === "1",
+    hasStudio,
+    membershipStatus: membershipStatusFlag || (hasStudio ? "active" : "none"),
   };
 }
 
-export function setStudioStateCookie(userId: string, hasStudio: boolean) {
+export function setStudioStateCookie(
+  userId: string,
+  hasStudio: boolean,
+  membershipStatus: StudioMembershipStatus = hasStudio ? "active" : "none"
+) {
   if (typeof document === "undefined") {
     return;
   }
 
   const parts = [
     `${STUDIO_STATE_COOKIE}=${encodeURIComponent(
-      serializeStudioStateCookie(userId, hasStudio)
+      serializeStudioStateCookie(userId, hasStudio, membershipStatus)
     )}`,
     "Path=/",
     `Max-Age=${STUDIO_STATE_COOKIE_MAX_AGE_SECONDS}`,

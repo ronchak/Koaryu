@@ -25,6 +25,8 @@ import type {
   PromoteStudent,
   Promotion,
   StaffInviteCreate,
+  StaffDeletionRequestResponse,
+  StaffLegalNameResponse,
   StaffMember,
   StaffRoleName,
   Student,
@@ -148,13 +150,29 @@ export interface StoreContextValue {
   currentRole: StaffRoleName | null;
   userEmail: string;
   userName: string;
+  staffProfilesAvailable: boolean;
+  legalFirstName: string;
+  legalLastName: string;
   staffMembers: StaffMember[];
   staffLoaded: boolean;
   staffLoadError: string | null;
   setStudioName: (name: string) => Promise<void>;
   updateUserName: (name: string) => Promise<void>;
-  refreshStaff: () => Promise<StaffMember[]>;
+  updateUserLegalName: (firstName: string, lastName: string) => Promise<void>;
+  updateStaffLegalName: (
+    userId: string,
+    firstName: string,
+    lastName: string
+  ) => Promise<StaffLegalNameResponse>;
+  refreshStaff: (includeArchived?: boolean) => Promise<StaffMember[]>;
   inviteStaff: (data: StaffInviteCreate) => Promise<StaffMember>;
+  archiveStaff: (id: string) => Promise<StaffMember>;
+  unarchiveStaff: (id: string) => Promise<StaffMember>;
+  scheduleStaffDeletion: (
+    id: string,
+    confirmationName: string,
+    reason?: string
+  ) => Promise<StaffDeletionRequestResponse>;
   updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
   removeStaff: (id: string) => Promise<void>;
   resetDemoData: () => Promise<DemoResetResponse>;
@@ -257,13 +275,21 @@ export type StudioStoreContextValue = Pick<
   | "currentRole"
   | "userEmail"
   | "userName"
+  | "staffProfilesAvailable"
+  | "legalFirstName"
+  | "legalLastName"
   | "staffMembers"
   | "staffLoaded"
   | "staffLoadError"
   | "setStudioName"
   | "updateUserName"
+  | "updateUserLegalName"
+  | "updateStaffLegalName"
   | "refreshStaff"
   | "inviteStaff"
+  | "archiveStaff"
+  | "unarchiveStaff"
+  | "scheduleStaffDeletion"
   | "updateStaffRole"
   | "removeStaff"
   | "resetDemoData"

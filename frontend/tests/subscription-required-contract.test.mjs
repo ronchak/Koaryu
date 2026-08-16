@@ -31,5 +31,13 @@ describe("subscription-required billing contract", () => {
     assert.match(pageSource, /Start Koaryu Core/);
     assert.match(pageSource, /Customer portal/);
     assert.match(pageSource, /mailto:support@koaryu\.app/);
+    assert.match(pageSource, /parseAuthProfileResponse/);
+    assert.match(pageSource, /syncStoredStudioSessionCookies/);
+    assert.match(pageSource, /profile\.membership_status === "archived"/);
+    assert.match(pageSource, /window\.location\.replace\(ACCOUNT_ARCHIVED_ROUTE\)/);
+    assert.ok(
+      pageSource.indexOf('profile.membership_status === "archived"')
+        < pageSource.indexOf('profile.membership_status !== "active"')
+    );
   });
 });

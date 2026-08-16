@@ -6,8 +6,10 @@ import {
   buildDeferredScheduleDateRange,
   buildLegacyBootstrapResponse,
   buildSessionUserProfile,
+  isStaffProfilesAvailable,
   isDashboardSummaryForStudio,
   isLiveAuthRequestCurrent,
+  parseAuthProfileResponse,
   resolveBootstrapLadders,
   resolveBootstrapStudioName,
 } from "../src/lib/store-bootstrap-model.ts";
@@ -78,6 +80,7 @@ function dashboardSummary(studioId) {
   return {
     auth: {
       user: { id: "user-1", email: "owner@example.test" },
+      staff_profiles_available: false,
       studio_id: studioId,
       role: "admin",
     },
@@ -117,7 +120,11 @@ describe("store bootstrap model", () => {
     const sessionUser = {
       id: "session-user",
       email: "session@example.test",
-      user_metadata: { full_name: "Session User" },
+      user_metadata: {
+        full_name: "Session User",
+        legal_first_name: "Metadata",
+        legal_last_name: "Must Not Leak",
+      },
     };
 
     assert.deepEqual(buildSessionUserProfile(sessionUser), {
@@ -128,13 +135,31 @@ describe("store bootstrap model", () => {
     assert.deepEqual(
       buildAuthUserProfile(
         {
-          user: { id: "auth-user", email: "auth@example.test", full_name: null },
+          user: {
+            id: "auth-user",
+            email: "auth@example.test",
+            full_name: null,
+            legal_first_name: "Authoritative",
+            legal_last_name: "Profile",
+          },
+          staff_profiles_available: true,
+          membership_status: "active",
           studio_id: "studio-1",
           role: "admin",
         }
       ),
-      { id: "auth-user", email: "auth@example.test", full_name: null }
+      {
+        id: "auth-user",
+        email: "auth@example.test",
+        full_name: null,
+        legal_first_name: "Authoritative",
+        legal_last_name: "Profile",
+      }
     );
+
+    assert.equal(isStaffProfilesAvailable({ staff_profiles_available: true }), true);
+    assert.equal(isStaffProfilesAvailable({ staff_profiles_available: false }), false);
+    assert.equal(isStaffProfilesAvailable({}), false);
   });
 
   it("resolves bootstrap studio names and ladders with the same fallback order as the store", () => {
@@ -156,8 +181,15 @@ describe("store bootstrap model", () => {
 
   it("builds the legacy bootstrap response from fallback endpoint results", () => {
     const ladders = [ladder("ladder-1")];
+    const auth = {
+      user: { id: "user-1", email: "owner@example.test" },
+      staff_profiles_available: true,
+      membership_status: "active",
+      studio_id: "studio-1",
+      role: "admin",
+    };
     const response = buildLegacyBootstrapResponse({
-      auth: { user: { id: "user-1", email: "owner@example.test" }, studio_id: "studio-1", role: "admin" },
+      auth,
       studio: { name: "River City" },
       studentsPage: { items: [student("student-1")], total: 1, page: 1, page_size: 200 },
       programs: [program("program-1")],
@@ -182,6 +214,24 @@ describe("store bootstrap model", () => {
         ladderIds: ["ladder-1"],
         primaryLadderId: "ladder-1",
       }
+    );
+    assert.equal(response.auth, auth);
+    assert.equal(response.auth.staff_profiles_available, true);
+    assert.equal(response.auth.membership_status, "active");
+  });
+
+  it("requires an explicit membership status when parsing authoritative auth", () => {
+    const archived = parseAuthProfileResponse({
+      user: { id: "archived-user", email: "archived@example.test", full_name: null },
+      staff_profiles_available: false,
+      membership_status: "archived",
+      studio_id: null,
+      role: null,
+    });
+    assert.equal(archived.membership_status, "archived");
+    assert.throws(
+      () => parseAuthProfileResponse({ user: {}, staff_profiles_available: false }),
+      /explicit membership_status/
     );
   });
 

@@ -62,6 +62,8 @@ export interface ApiAttendanceResponse {
 
 export interface ApiAuthResponse {
   user: ApiUserProfile;
+  staff_profiles_available: boolean;
+  membership_status: "none" | "active" | "archived";
   studio_id?: string | null;
   role?: "admin" | "instructor" | "front_desk" | null;
 }
@@ -1136,9 +1138,28 @@ export interface ApiPromotionResponse {
   to_rank_name?: string | null;
 }
 
+export interface ApiStaffDeletionRequestCreate {
+  confirmation_name: string;
+  reason?: string | null;
+}
+
 export interface ApiStaffInviteCreate {
   email: string;
   role: "admin" | "instructor" | "front_desk";
+  full_name: string;
+  legal_first_name: string;
+  legal_last_name: string;
+}
+
+export interface ApiStaffLegalNameResponse {
+  user_id: string;
+  legal_first_name: string;
+  legal_last_name: string;
+}
+
+export interface ApiStaffLegalNameUpdate {
+  legal_first_name: string;
+  legal_last_name: string;
 }
 
 export interface ApiStaffMemberResponse {
@@ -1147,8 +1168,12 @@ export interface ApiStaffMemberResponse {
   user_id?: string | null;
   email: string;
   full_name?: string | null;
+  deletion_confirmation_name: string;
+  legal_first_name?: string | null;
+  legal_last_name?: string | null;
   role: "admin" | "instructor" | "front_desk";
-  status: "pending" | "active";
+  status: "pending" | "active" | "archived";
+  archived_at?: string | null;
   invited_by?: string | null;
   created_at: string;
   updated_at: string;
@@ -1424,6 +1449,8 @@ export interface ApiUserProfile {
   id: string;
   email: string;
   full_name?: string | null;
+  legal_first_name?: string | null;
+  legal_last_name?: string | null;
 }
 
 export interface ApiValidationError {

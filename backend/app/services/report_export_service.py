@@ -241,9 +241,24 @@ class ReportExportService:
     def _build_staff_rows(self, studio_id: str) -> list[dict[str, Any]]:
         service = StaffService(self.supabase)
         result = service._list_staff_role_rows(studio_id)
+        role_rows = [
+            row for row in (result.data or []) if row.get("studio_id") == studio_id
+        ]
+        user_ids = list(
+            dict.fromkeys(
+                row["user_id"]
+                for row in role_rows
+                if isinstance(row.get("user_id"), str) and row["user_id"].strip()
+            )
+        )
+        profile_map = (
+            service._get_staff_profiles_for_user_ids(user_ids) if user_ids else {}
+        )
         return [
-            service._hydrate_staff_member(row).model_dump()
-            for row in (result.data or [])
+            service._hydrate_staff_member(
+                row, profile=profile_map.get(row.get("user_id"))
+            ).model_dump()
+            for row in role_rows
         ]
 
     def _single_row(self, table: str, columns: str, studio_id: str) -> dict[str, Any]:

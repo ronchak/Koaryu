@@ -6,7 +6,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { getAuthCallbackUrl } from "@/lib/auth-redirect";
-import { clearActiveStudioIdCookie, setActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
+import { ACCOUNT_ARCHIVED_ROUTE } from "@/lib/auth-route-model";
+import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
+import { syncStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -52,19 +54,22 @@ export default function LoginPage() {
     }
 
     try {
-      const authProfile = await api.get<{ studio_id: string | null }>(
+      const authProfile = parseAuthProfileResponse(await api.get<unknown>(
         "/auth/me",
         session.access_token,
         { omitStudioHeader: true }
+      ));
+      syncStoredStudioSessionCookies(
+        session.user.id,
+        authProfile.studio_id,
+        authProfile.membership_status
       );
-      const hasStudio = Boolean(authProfile.studio_id);
-      setStudioStateCookie(session.user.id, hasStudio);
-      if (authProfile.studio_id) {
-        setActiveStudioIdCookie(authProfile.studio_id);
-      } else {
-        clearActiveStudioIdCookie();
-      }
-      router.push(hasStudio ? "/dashboard" : "/onboarding");
+      const destination = authProfile.membership_status === "archived"
+        ? ACCOUNT_ARCHIVED_ROUTE
+        : authProfile.membership_status === "active"
+          ? "/dashboard"
+          : "/onboarding";
+      router.push(destination);
       router.refresh();
     } catch (postLoginError) {
       const message =
