@@ -118,6 +118,7 @@ function renderWithStoreContexts(child) {
     setStudioName: noop,
     updateUserName: noop,
     updateUserLegalName: noop,
+    updateStaffLegalName: async () => ({}),
     refreshStaff: async () => [],
     inviteStaff: async () => ({}),
     updateStaffRole: async () => ({}),
@@ -157,13 +158,13 @@ describe("store context contracts", () => {
         null,
         `${config.token}:${store.studioName}:${store.students.length}:${store.leads.length}:${store.currentRole}`
           + `:${studio.staffProfilesAvailable}:${studio.legalFirstName}:${studio.legalLastName}`
-          + `:${typeof studio.updateUserLegalName}:${Object.hasOwn(config, "staffProfilesAvailable")}`
+          + `:${typeof studio.updateUserLegalName}:${typeof studio.updateStaffLegalName}:${Object.hasOwn(config, "staffProfilesAvailable")}`
       );
     }
 
     assert.equal(
       renderWithStoreContexts(React.createElement(Probe)),
-      "<output>token_1:North Dojo:1:1:admin:true:Ari:Lane:function:false</output>"
+      "<output>token_1:North Dojo:1:1:admin:true:Ari:Lane:function:function:false</output>"
     );
   });
 

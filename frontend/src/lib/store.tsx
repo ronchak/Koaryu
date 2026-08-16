@@ -1613,6 +1613,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     inviteStaff,
     refreshStaff,
     removeStaff,
+    updateStaffLegalName,
     updateStaffRole,
   } = useStoreStaffActions({
     activeUserId,
@@ -1731,6 +1732,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     token,
     updateLead,
     updateProgram,
+    updateStaffLegalName,
     updateStaffRole,
     updateStudent,
     updateUserLegalName,

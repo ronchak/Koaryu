@@ -25,6 +25,7 @@ import type {
   PromoteStudent,
   Promotion,
   StaffInviteCreate,
+  StaffLegalNameResponse,
   StaffMember,
   StaffRoleName,
   Student,
@@ -157,6 +158,11 @@ export interface StoreContextValue {
   setStudioName: (name: string) => Promise<void>;
   updateUserName: (name: string) => Promise<void>;
   updateUserLegalName: (firstName: string, lastName: string) => Promise<void>;
+  updateStaffLegalName: (
+    userId: string,
+    firstName: string,
+    lastName: string
+  ) => Promise<StaffLegalNameResponse>;
   refreshStaff: () => Promise<StaffMember[]>;
   inviteStaff: (data: StaffInviteCreate) => Promise<StaffMember>;
   updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
@@ -270,6 +276,7 @@ export type StudioStoreContextValue = Pick<
   | "setStudioName"
   | "updateUserName"
   | "updateUserLegalName"
+  | "updateStaffLegalName"
   | "refreshStaff"
   | "inviteStaff"
   | "updateStaffRole"

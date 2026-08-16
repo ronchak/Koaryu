@@ -1,13 +1,22 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { api } from "@/lib/api";
 import {
+  applyStaffLegalNameUpdate,
   applyStaffRoleUpdate,
   buildPreviewStaffInvite,
+  mergeStaffLegalNameResponse,
+  normalizeStaffInvite,
   sortStaffMembers,
   upsertStaffMember,
 } from "@/lib/staff-store-model";
 import type { BeginLiveAuthRequest } from "@/lib/store-action-types";
-import type { StaffInviteCreate, StaffMember, StaffRoleName } from "@/types";
+import type {
+  StaffInviteCreate,
+  StaffLegalNameResponse,
+  StaffLegalNameUpdate,
+  StaffMember,
+  StaffRoleName,
+} from "@/types";
 
 interface UseStoreStaffActionsOptions {
   activeUserId: string | null;
@@ -64,8 +73,10 @@ export function useStoreStaffActions({
   }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffLoadError, setStaffLoaded, setStaffMembers, staffMembers]);
 
   const inviteStaff = useCallback(async (data: StaffInviteCreate): Promise<StaffMember> => {
+    const payload = normalizeStaffInvite(data);
+
     if (isPreviewMode) {
-      const previewMember = buildPreviewStaffInvite(data, activeUserId);
+      const previewMember = buildPreviewStaffInvite(payload, activeUserId);
       setStaffMembers((current) =>
         sortStaffMembers([...current, previewMember], activeUserId)
       );
@@ -76,7 +87,7 @@ export function useStoreStaffActions({
 
     const liveRequest = beginLiveAuthRequest();
 
-    const result = await api.post<StaffMember>("/staff/invitations", data, liveRequest.token);
+    const result = await api.post<StaffMember>("/staff/invitations", payload, liveRequest.token);
     if (!liveRequest.isCurrent()) {
       return result;
     }
@@ -87,6 +98,50 @@ export function useStoreStaffActions({
     setStaffLoadError(null);
     return result;
   }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setStaffLoadError, setStaffLoaded, setStaffMembers]);
+
+  const updateStaffLegalName = useCallback(async (
+    userId: string,
+    firstName: string,
+    lastName: string
+  ): Promise<StaffLegalNameResponse> => {
+    if (!userId) {
+      throw new Error("Staff member identity is required.");
+    }
+
+    const payload: StaffLegalNameUpdate = {
+      legal_first_name: firstName,
+      legal_last_name: lastName,
+    };
+
+    if (isPreviewMode) {
+      const previewUpdate = applyStaffLegalNameUpdate(staffMembers, userId, firstName, lastName);
+      if (!previewUpdate.updated) {
+        throw new Error("Staff member not found.");
+      }
+
+      setStaffMembers((current) =>
+        applyStaffLegalNameUpdate(current, userId, firstName, lastName).members
+      );
+      return {
+        user_id: userId,
+        legal_first_name: firstName,
+        legal_last_name: lastName,
+      };
+    }
+
+    const liveRequest = beginLiveAuthRequest();
+    const response = await api.patch<StaffLegalNameResponse>(
+      `/staff/${userId}/legal-name`,
+      payload,
+      liveRequest.token
+    );
+    if (!liveRequest.isCurrent()) {
+      return response;
+    }
+
+    setStaffMembers((current) => mergeStaffLegalNameResponse(current, response).members);
+    return response;
+  }, [beginLiveAuthRequest, isPreviewMode, setStaffMembers, staffMembers]);
 
   const updateStaffRole = useCallback(async (
     id: string,
@@ -133,6 +188,7 @@ export function useStoreStaffActions({
     inviteStaff,
     refreshStaff,
     removeStaff,
+    updateStaffLegalName,
     updateStaffRole,
   };
 }

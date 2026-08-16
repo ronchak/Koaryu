@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Input } from "@/components/ui/input";
 import { ModalFrame } from "@/components/ui/modal-frame";
+import { normalizeLegalName, normalizeLegalNameDraft } from "@/lib/legal-name-model";
 import { useConfigStore, useStudioStore } from "@/lib/store";
 import type { StaffMember, StaffRoleName } from "@/types";
-import { AlertTriangle, MailPlus, RefreshCw, Trash2, Users } from "lucide-react";
+import { AlertTriangle, MailPlus, Pencil, RefreshCw, Trash2, Users } from "lucide-react";
 
 const ROLE_LABELS: Record<StaffRoleName, string> = {
   admin: "Admin",
@@ -42,7 +43,7 @@ function StaffSkeletonRows() {
   return (
     <div className="divide-y divide-border border border-border rounded-[6px] overflow-hidden">
       {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="grid grid-cols-[1fr_130px_110px_120px_90px] gap-3 p-3">
+        <div key={index} className="grid grid-cols-[1fr_140px_100px_120px_180px] gap-3 p-3">
           <div className="space-y-2">
             <div className="h-3 w-36 bg-surface-raised rounded" />
             <div className="h-3 w-48 bg-surface-raised rounded" />
@@ -57,15 +58,42 @@ function StaffSkeletonRows() {
   );
 }
 
-function StaffIdentity({ member, currentUserId }: { member: StaffMember; currentUserId: string }) {
+function StaffIdentity({
+  member,
+  currentUserId,
+  staffProfilesAvailable,
+}: {
+  member: StaffMember;
+  currentUserId: string;
+  staffProfilesAvailable: boolean;
+}) {
+  const displayName = member.full_name || member.email;
+  const legalName = member.legal_first_name?.trim() && member.legal_last_name?.trim()
+    ? `${member.legal_first_name} ${member.legal_last_name}`
+    : "Not provided";
+
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <p className="text-sm font-medium text-text-primary truncate">
-          {member.full_name || member.email}
-        </p>
-        {member.user_id === currentUserId && <Badge variant="accent">You</Badge>}
-      </div>
+      {staffProfilesAvailable ? (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-normal text-muted">Display name</p>
+              <p className="text-sm font-medium text-text-primary truncate">{displayName}</p>
+            </div>
+            {member.user_id === currentUserId && <Badge variant="accent">You</Badge>}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-normal text-muted">Legal name</p>
+            <p className="text-xs text-text-secondary truncate">{legalName}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-sm font-medium text-text-primary truncate">{displayName}</p>
+          {member.user_id === currentUserId && <Badge variant="accent">You</Badge>}
+        </div>
+      )}
       <p className="text-xs text-muted truncate">{member.email}</p>
     </div>
   );
@@ -75,32 +103,108 @@ interface StaffRowProps {
   member: StaffMember;
   currentUserId: string;
   canManageStaff: boolean;
+  staffProfilesAvailable: boolean;
   onlyAdminSelf: boolean;
   pendingRoleId: string | null;
   pendingRemoveId: string | null;
+  pendingLegalNameUserId: string | null;
+  legalNameTargetUserId: string | null;
+  legalFirstName: string;
+  legalLastName: string;
+  legalNameError: string;
+  legalNameCanSubmit: boolean;
   onRoleChange: (member: StaffMember, role: StaffRoleName) => void;
   onRemove: (member: StaffMember) => void;
+  onEditLegalName: (member: StaffMember) => void;
+  onLegalNameFirstChange: (value: string) => void;
+  onLegalNameLastChange: (value: string) => void;
+  onLegalNameSave: (event: FormEvent<HTMLFormElement>) => void;
+  onLegalNameCancel: () => void;
 }
 
 function StaffRow({
   member,
   currentUserId,
   canManageStaff,
+  staffProfilesAvailable,
   onlyAdminSelf,
   pendingRoleId,
   pendingRemoveId,
+  pendingLegalNameUserId,
+  legalNameTargetUserId,
+  legalFirstName,
+  legalLastName,
+  legalNameError,
+  legalNameCanSubmit,
   onRoleChange,
   onRemove,
+  onEditLegalName,
+  onLegalNameFirstChange,
+  onLegalNameLastChange,
+  onLegalNameSave,
+  onLegalNameCancel,
 }: StaffRowProps) {
   const isRolePending = pendingRoleId === member.id;
   const isRemovePending = pendingRemoveId === member.id;
   const isCurrentUser = member.user_id === currentUserId;
+  const hasUserId = member.user_id !== null && member.user_id !== undefined;
+  const isLegalNameEditing = hasUserId && legalNameTargetUserId === member.user_id;
+  const isLegalNamePending = hasUserId && pendingLegalNameUserId === member.user_id;
   const disableProtectedAdmin = isCurrentUser && onlyAdminSelf;
   const actionLabel = member.status === "pending" ? "Revoke" : "Remove";
 
   return (
-    <div className="grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_90px] md:items-center">
-      <StaffIdentity member={member} currentUserId={currentUserId} />
+    <div className="grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center">
+      <div className="min-w-0">
+        <StaffIdentity
+          member={member}
+          currentUserId={currentUserId}
+          staffProfilesAvailable={staffProfilesAvailable}
+        />
+        {staffProfilesAvailable && isLegalNameEditing && (
+          <form onSubmit={onLegalNameSave} className="mt-3 space-y-3 border-t border-border pt-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="Legal first name"
+                value={legalFirstName}
+                onChange={(event) => onLegalNameFirstChange(event.target.value)}
+                autoComplete="given-name"
+                required
+                disabled={isLegalNamePending}
+              />
+              <Input
+                label="Legal last name"
+                value={legalLastName}
+                onChange={(event) => onLegalNameLastChange(event.target.value)}
+                autoComplete="family-name"
+                required
+                disabled={isLegalNamePending}
+              />
+            </div>
+            <p aria-live="polite" className="min-h-4 text-xs text-danger">{legalNameError}</p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onLegalNameCancel}
+                disabled={isLegalNamePending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                isLoading={isLegalNamePending}
+                disabled={!legalNameCanSubmit}
+              >
+                {isLegalNamePending ? "Saving..." : "Save legal name"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
 
       <div>
         <p className="text-[11px] uppercase tracking-normal text-muted md:hidden mb-1">Role</p>
@@ -137,18 +241,33 @@ function StaffRow({
       </div>
 
       {canManageStaff && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => onRemove(member)}
-          disabled={isRemovePending || disableProtectedAdmin}
-          className="justify-start md:justify-center text-danger hover:text-danger"
-          title={disableProtectedAdmin ? "At least one admin must remain." : actionLabel}
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          {isRemovePending ? "Working..." : actionLabel}
-        </Button>
+        <div className="flex flex-wrap items-center gap-1">
+          {staffProfilesAvailable && hasUserId && !isLegalNameEditing && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onEditLegalName(member)}
+              disabled={pendingLegalNameUserId !== null}
+              title="Edit legal name"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Edit legal name
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onRemove(member)}
+            disabled={isRemovePending || disableProtectedAdmin}
+            className="justify-start md:justify-center text-danger hover:text-danger"
+            title={disableProtectedAdmin ? "At least one admin must remain." : actionLabel}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {isRemovePending ? "Working..." : actionLabel}
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -160,16 +279,22 @@ export function StaffRolesSection() {
     currentRole,
     currentUserId,
     userEmail,
+    staffProfilesAvailable,
     staffMembers,
     staffLoaded,
     staffLoadError,
     refreshStaff,
     inviteStaff,
+    updateUserLegalName,
+    updateStaffLegalName,
     updateStaffRole,
     removeStaff,
   } = useStudioStore();
 
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteFullName, setInviteFullName] = useState("");
+  const [inviteLegalFirstName, setInviteLegalFirstName] = useState("");
+  const [inviteLegalLastName, setInviteLegalLastName] = useState("");
   const [inviteRole, setInviteRole] = useState<StaffRoleName>("instructor");
   const [inviteInFlight, setInviteInFlight] = useState(false);
   const [pendingRoleId, setPendingRoleId] = useState<string | null>(null);
@@ -178,11 +303,23 @@ export function StaffRolesSection() {
   const [actionError, setActionError] = useState("");
   const [dismissedStaffLoadError, setDismissedStaffLoadError] = useState("");
   const [removeTarget, setRemoveTarget] = useState<StaffMember | null>(null);
+  const [legalNameTarget, setLegalNameTarget] = useState<StaffMember | null>(null);
+  const [legalFirstName, setLegalFirstName] = useState("");
+  const [legalLastName, setLegalLastName] = useState("");
+  const [pendingLegalNameUserId, setPendingLegalNameUserId] = useState<string | null>(null);
+  const [legalNameError, setLegalNameError] = useState("");
 
   const canManageStaff = currentRole === "admin";
   const adminCount = useMemo(
     () => staffMembers.filter((member) => member.role === "admin").length,
     [staffMembers]
+  );
+  const normalizedLegalNameDraft = normalizeLegalNameDraft({
+    firstName: legalFirstName,
+    lastName: legalLastName,
+  });
+  const legalNameCanSubmit = Boolean(
+    normalizedLegalNameDraft.firstName && normalizedLegalNameDraft.lastName
   );
 
   useEffect(() => {
@@ -205,6 +342,11 @@ export function StaffRolesSection() {
   async function handleInvite(event: React.FormEvent) {
     event.preventDefault();
     const email = inviteEmail.trim().toLowerCase();
+    const fullName = normalizeLegalName(inviteFullName);
+    const normalizedInviteLegalName = normalizeLegalNameDraft({
+      firstName: inviteLegalFirstName,
+      lastName: inviteLegalLastName,
+    });
     setMessage("");
     setActionError("");
 
@@ -216,11 +358,32 @@ export function StaffRolesSection() {
       setActionError("Enter a valid email.");
       return;
     }
+    if (!fullName) {
+      setActionError("Display name is required.");
+      return;
+    }
+    if (!normalizedInviteLegalName.firstName) {
+      setActionError("Legal first name is required.");
+      return;
+    }
+    if (!normalizedInviteLegalName.lastName) {
+      setActionError("Legal last name is required.");
+      return;
+    }
 
     setInviteInFlight(true);
     try {
-      await inviteStaff({ email, role: inviteRole });
+      await inviteStaff({
+        email,
+        role: inviteRole,
+        full_name: fullName,
+        legal_first_name: normalizedInviteLegalName.firstName,
+        legal_last_name: normalizedInviteLegalName.lastName,
+      });
       setInviteEmail("");
+      setInviteFullName("");
+      setInviteLegalFirstName("");
+      setInviteLegalLastName("");
       setMessage(
         isPreviewMode
           ? `Preview staff added for ${email}.`
@@ -271,6 +434,60 @@ export function StaffRolesSection() {
     setRemoveTarget(member);
   }
 
+  function handleEditLegalName(member: StaffMember) {
+    if (member.user_id === null || member.user_id === undefined) return;
+    setMessage("");
+    setLegalNameError("");
+    setLegalNameTarget(member);
+    setLegalFirstName(member.legal_first_name || "");
+    setLegalLastName(member.legal_last_name || "");
+  }
+
+  function handleCancelLegalNameEdit() {
+    if (pendingLegalNameUserId !== null) return;
+    setLegalNameTarget(null);
+    setLegalNameError("");
+  }
+
+  async function handleLegalNameSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pendingLegalNameUserId !== null) return;
+
+    const target = legalNameTarget;
+    if (!target || target.user_id === null || target.user_id === undefined) return;
+
+    if (!legalNameCanSubmit) {
+      setLegalNameError("Enter both legal first and last names.");
+      return;
+    }
+
+    setMessage("");
+    setActionError("");
+    setLegalNameError("");
+    setPendingLegalNameUserId(target.user_id);
+
+    try {
+      if (target.user_id === currentUserId) {
+        await updateUserLegalName(
+          normalizedLegalNameDraft.firstName,
+          normalizedLegalNameDraft.lastName
+        );
+      } else {
+        await updateStaffLegalName(
+          target.user_id,
+          normalizedLegalNameDraft.firstName,
+          normalizedLegalNameDraft.lastName
+        );
+      }
+      setLegalNameTarget(null);
+      setMessage(`Legal name updated for ${target.email}.`);
+    } catch (error) {
+      setLegalNameError(error instanceof Error ? error.message : "Failed to update legal name.");
+    } finally {
+      setPendingLegalNameUserId(null);
+    }
+  }
+
   if (!canManageStaff) {
     return (
       <section className="bg-surface border border-border rounded-[6px] p-5">
@@ -312,7 +529,7 @@ export function StaffRolesSection() {
         </Button>
       </div>
 
-      <form onSubmit={handleInvite} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_150px_auto] md:items-end mb-4">
+      <form onSubmit={handleInvite} className="grid gap-3 md:grid-cols-2 md:items-end mb-4">
         <Input
           label="Email"
           type="email"
@@ -320,6 +537,33 @@ export function StaffRolesSection() {
           onChange={(event) => setInviteEmail(event.target.value)}
           placeholder="instructor@example.com"
           disabled={inviteInFlight}
+          required
+        />
+        <Input
+          label="Display name"
+          value={inviteFullName}
+          onChange={(event) => setInviteFullName(event.target.value)}
+          placeholder="Their display name"
+          disabled={inviteInFlight}
+          required
+        />
+        <Input
+          label="Legal first name"
+          value={inviteLegalFirstName}
+          onChange={(event) => setInviteLegalFirstName(event.target.value)}
+          placeholder="Legal first name"
+          autoComplete="given-name"
+          disabled={inviteInFlight}
+          required
+        />
+        <Input
+          label="Legal last name"
+          value={inviteLegalLastName}
+          onChange={(event) => setInviteLegalLastName(event.target.value)}
+          placeholder="Legal last name"
+          autoComplete="family-name"
+          disabled={inviteInFlight}
+          required
         />
         <div className="flex flex-col gap-1.5">
           <label className="text-sm text-text-secondary font-medium" htmlFor="staff-role">
@@ -385,7 +629,7 @@ export function StaffRolesSection() {
         </div>
       ) : (
         <div className="divide-y divide-border border border-border rounded-[6px] overflow-hidden">
-          <div className="hidden md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_90px] gap-3 px-3 py-2 text-[11px] uppercase tracking-normal text-muted bg-surface-raised">
+          <div className="hidden md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] gap-3 px-3 py-2 text-[11px] uppercase tracking-normal text-muted bg-surface-raised">
             <span>Staff</span>
             <span>Role</span>
             <span>Status</span>
@@ -398,11 +642,23 @@ export function StaffRolesSection() {
               member={member}
               currentUserId={currentUserId}
               canManageStaff={canManageStaff}
+              staffProfilesAvailable={staffProfilesAvailable}
               onlyAdminSelf={member.user_id === currentUserId && member.role === "admin" && adminCount <= 1}
               pendingRoleId={pendingRoleId}
               pendingRemoveId={pendingRemoveId}
+              pendingLegalNameUserId={pendingLegalNameUserId}
+              legalNameTargetUserId={legalNameTarget?.user_id ?? null}
+              legalFirstName={legalFirstName}
+              legalLastName={legalLastName}
+              legalNameError={legalNameError}
+              legalNameCanSubmit={legalNameCanSubmit}
               onRoleChange={handleRoleChange}
               onRemove={handleRemove}
+              onEditLegalName={handleEditLegalName}
+              onLegalNameFirstChange={setLegalFirstName}
+              onLegalNameLastChange={setLegalLastName}
+              onLegalNameSave={handleLegalNameSave}
+              onLegalNameCancel={handleCancelLegalNameEdit}
             />
           ))}
         </div>
