@@ -129,8 +129,12 @@ BEGIN
     IF pg_get_functiondef('private.prevent_account_deletion_orphan()'::REGPROCEDURE)
            NOT ILIKE '%membership.archived_at IS NULL%'
        OR pg_get_functiondef('private.prevent_staff_admin_orphan()'::REGPROCEDURE)
-           NOT ILIKE '%membership.archived_at IS NULL%' THEN
-        RAISE EXCEPTION 'Last-admin and account-deletion guards must count active memberships only.';
+           NOT ILIKE '%membership.archived_at IS NULL%'
+       OR pg_get_functiondef('private.prevent_staff_admin_orphan()'::REGPROCEDURE)
+           NOT ILIKE '%OLD.user_id IS NOT NULL%'
+       OR pg_get_functiondef('private.prevent_staff_admin_orphan()'::REGPROCEDURE)
+           NOT ILIKE '%NEW.user_id IS DISTINCT FROM OLD.user_id%' THEN
+        RAISE EXCEPTION 'Last-admin and account-deletion guards must count active memberships and protect linked identity departures.';
     END IF;
 
     SELECT string_agg(format('%s.%s expected ON DELETE %s', expected.table_name, expected.column_name, expected.delete_rule), ', ' ORDER BY expected.table_name, expected.column_name)

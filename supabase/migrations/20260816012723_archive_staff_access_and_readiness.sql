@@ -262,32 +262,24 @@ DECLARE
     active_admin_departing BOOLEAN := false;
 BEGIN
     IF TG_OP = 'UPDATE' THEN
-        IF OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL THEN
+        IF OLD.user_id IS NOT NULL
+           AND (
+               NEW.user_id IS DISTINCT FROM OLD.user_id
+               OR (OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL)
+               OR (OLD.role = 'admin' AND NEW.role IS DISTINCT FROM 'admin')
+           ) THEN
             affected_studio := OLD.studio_id;
             departing_user := OLD.user_id;
-
-            IF EXISTS (
-                SELECT 1
-                FROM public.studios AS studio
-                WHERE studio.id = affected_studio
-                  AND studio.owner_id = departing_user
-            ) THEN
-                RAISE EXCEPTION 'Transfer studio ownership before archiving this staff member.'
-                    USING ERRCODE = '23514';
-            END IF;
-
-            active_admin_departing := OLD.role = 'admin';
-        ELSIF OLD.role = 'admin' AND NEW.role <> 'admin' THEN
-            affected_studio := OLD.studio_id;
-            departing_user := OLD.user_id;
-            active_admin_departing := OLD.archived_at IS NULL;
+            active_admin_departing := OLD.role = 'admin' AND OLD.archived_at IS NULL;
         ELSE
             RETURN NEW;
         END IF;
     ELSIF TG_OP = 'DELETE' THEN
         affected_studio := OLD.studio_id;
         departing_user := OLD.user_id;
-        active_admin_departing := OLD.role = 'admin' AND OLD.archived_at IS NULL;
+        active_admin_departing := OLD.role = 'admin'
+            AND OLD.archived_at IS NULL
+            AND OLD.user_id IS NOT NULL;
     ELSE
         RETURN NEW;
     END IF;
@@ -298,6 +290,14 @@ BEGIN
         WHERE studio.id = affected_studio
           AND studio.owner_id = departing_user
     ) THEN
+        IF TG_OP = 'UPDATE' AND NEW.user_id IS DISTINCT FROM OLD.user_id THEN
+            RAISE EXCEPTION 'Transfer studio ownership before replacing or clearing this staff member identity.'
+                USING ERRCODE = '23514';
+        ELSIF TG_OP = 'UPDATE' AND OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL THEN
+            RAISE EXCEPTION 'Transfer studio ownership before archiving this staff member.'
+                USING ERRCODE = '23514';
+        END IF;
+
         RAISE EXCEPTION 'Transfer studio ownership before deleting or demoting this staff member.'
             USING ERRCODE = '23514';
     END IF;
@@ -612,7 +612,7 @@ BEGIN
         v_failures := array_append(v_failures, 'student_rank_writer_manifest_v13');
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v17()
-       <> '0:b4d56644fa503da9992d7c60668740dbf8482a07d718513345347732584fd26e' THEN
+       <> '0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8' THEN
         v_failures := array_append(v_failures, 'critical_surface_manifest_v17');
     END IF;
 

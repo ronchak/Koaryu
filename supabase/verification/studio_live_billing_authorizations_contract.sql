@@ -1141,7 +1141,7 @@ BEGIN
             private.koaryu_release_critical_surface_manifest_v16();
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v17()
-       <> '0:b4d56644fa503da9992d7c60668740dbf8482a07d718513345347732584fd26e' THEN
+       <> '0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8' THEN
         RAISE EXCEPTION 'Critical-surface V17 archive manifest mismatch; got %',
             private.koaryu_release_critical_surface_manifest_v17();
     END IF;

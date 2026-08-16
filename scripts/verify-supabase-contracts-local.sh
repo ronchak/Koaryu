@@ -461,13 +461,13 @@ critical_surface_manifest="$(
 SELECT private.koaryu_release_critical_surface_manifest_v17();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:b4d56644fa503da9992d7c60668740dbf8482a07d718513345347732584fd26e" ]]; then
+if [[ "$critical_surface_manifest" != "0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8" ]]; then
   echo "[critical-surface manifest] FAIL archive, checkout, and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi
 echo "[critical-surface manifest] PASS archive, checkout, and promotion identity signal"
 
-echo "[catalog] RUN deterministic pending-object security fingerprint"
+echo "[catalog] RUN deterministic raw catalog security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
@@ -479,10 +479,10 @@ if (
     "import { validateCatalogState } from './scripts/studio-comp-migration-rollout.mjs'; validateCatalogState(process.argv[1]);" \
     "$catalog_state"
 ); then
-  echo "[catalog] PASS deterministic pending-object security fingerprint"
+  echo "[catalog] PASS deterministic raw catalog security fingerprint"
 else
   status=$?
-  echo "[catalog] FAIL deterministic pending-object security fingerprint (exit $status)" >&2
+  echo "[catalog] FAIL deterministic raw catalog security fingerprint (exit $status)" >&2
   exit "$status"
 fi
 

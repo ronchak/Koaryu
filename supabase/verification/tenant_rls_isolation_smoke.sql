@@ -1141,13 +1141,21 @@ $$;
 DO $$
 DECLARE
     v_owner UUID := gen_random_uuid();
+    v_owner_surviving_admin UUID := gen_random_uuid();
     v_active_staff UUID := gen_random_uuid();
     v_archived_caller UUID := gen_random_uuid();
     v_archived_target UUID := gen_random_uuid();
     v_last_admin_owner UUID := gen_random_uuid();
     v_last_admin UUID := gen_random_uuid();
+    v_owner_replacement_user UUID := gen_random_uuid();
+    v_identity_owner UUID := gen_random_uuid();
+    v_identity_departing_admin UUID := gen_random_uuid();
+    v_identity_surviving_admin UUID := gen_random_uuid();
+    v_identity_replacement_user UUID := gen_random_uuid();
+    v_pending_user UUID := gen_random_uuid();
     v_studio UUID := gen_random_uuid();
     v_last_admin_studio UUID := gen_random_uuid();
+    v_identity_studio UUID := gen_random_uuid();
     v_program UUID := gen_random_uuid();
     v_archived_role_count INTEGER;
     v_archived_program_count INTEGER;
@@ -1161,7 +1169,19 @@ DECLARE
     v_denied BOOLEAN := false;
     v_owner_archive_denied BOOLEAN := false;
     v_last_admin_archive_denied BOOLEAN := false;
+    v_owner_identity_denied BOOLEAN := false;
+    v_owner_clear_denied BOOLEAN := false;
+    v_owner_demote_denied BOOLEAN := false;
+    v_owner_archive_error TEXT;
+    v_owner_identity_error TEXT;
+    v_owner_clear_error TEXT;
+    v_owner_demote_error TEXT;
+    v_owner_survivor_predicate_count INTEGER;
+    v_last_admin_identity_denied BOOLEAN := false;
+    v_last_admin_clear_denied BOOLEAN := false;
     v_reservation_denied BOOLEAN := false;
+    v_identity_change_count INTEGER;
+    v_pending_link_count INTEGER;
 BEGIN
     IF NOT EXISTS (
         SELECT 1
@@ -1211,24 +1231,39 @@ BEGIN
     )
     VALUES
         (v_owner, 'authenticated', 'authenticated', 'archive-owner-' || v_owner || '@example.invalid', '{}', '{}', now(), now()),
+        (v_owner_surviving_admin, 'authenticated', 'authenticated', 'archive-owner-survivor-' || v_owner_surviving_admin || '@example.invalid', '{}', '{}', now(), now()),
         (v_active_staff, 'authenticated', 'authenticated', 'archive-active-' || v_active_staff || '@example.invalid', '{}', '{}', now(), now()),
         (v_archived_caller, 'authenticated', 'authenticated', 'archive-caller-' || v_archived_caller || '@example.invalid', '{}', '{}', now(), now()),
         (v_archived_target, 'authenticated', 'authenticated', 'archive-target-' || v_archived_target || '@example.invalid', '{}', '{}', now(), now()),
         (v_last_admin_owner, 'authenticated', 'authenticated', 'archive-last-owner-' || v_last_admin_owner || '@example.invalid', '{}', '{}', now(), now()),
-        (v_last_admin, 'authenticated', 'authenticated', 'archive-last-admin-' || v_last_admin || '@example.invalid', '{}', '{}', now(), now());
+        (v_last_admin, 'authenticated', 'authenticated', 'archive-last-admin-' || v_last_admin || '@example.invalid', '{}', '{}', now(), now()),
+        (v_owner_replacement_user, 'authenticated', 'authenticated', 'archive-owner-replacement-' || v_owner_replacement_user || '@example.invalid', '{}', '{}', now(), now()),
+        (v_identity_owner, 'authenticated', 'authenticated', 'archive-identity-owner-' || v_identity_owner || '@example.invalid', '{}', '{}', now(), now()),
+        (v_identity_departing_admin, 'authenticated', 'authenticated', 'archive-identity-departing-' || v_identity_departing_admin || '@example.invalid', '{}', '{}', now(), now()),
+        (v_identity_surviving_admin, 'authenticated', 'authenticated', 'archive-identity-survivor-' || v_identity_surviving_admin || '@example.invalid', '{}', '{}', now(), now()),
+        (v_identity_replacement_user, 'authenticated', 'authenticated', 'archive-identity-replacement-' || v_identity_replacement_user || '@example.invalid', '{}', '{}', now(), now()),
+        (v_pending_user, 'authenticated', 'authenticated', 'archive-pending-link-' || v_pending_user || '@example.invalid', '{}', '{}', now(), now());
+
+    UPDATE auth.users
+    SET email_confirmed_at = clock_timestamp()
+    WHERE id IN (v_owner_surviving_admin, v_identity_surviving_admin);
 
     INSERT INTO public.studios (id, name, slug, owner_id)
     VALUES
         (v_studio, 'Archive Authorization Studio', 'archive-authorization-' || replace(v_studio::TEXT, '-', ''), v_owner),
-        (v_last_admin_studio, 'Last Active Admin Studio', 'archive-last-admin-' || replace(v_last_admin_studio::TEXT, '-', ''), v_last_admin_owner);
+        (v_last_admin_studio, 'Last Active Admin Studio', 'archive-last-admin-' || replace(v_last_admin_studio::TEXT, '-', ''), v_last_admin_owner),
+        (v_identity_studio, 'Admin Identity Guard Studio', 'archive-identity-guard-' || replace(v_identity_studio::TEXT, '-', ''), v_identity_owner);
 
     INSERT INTO public.staff_roles (studio_id, user_id, role)
     VALUES
         (v_studio, v_owner, 'admin'),
+        (v_studio, v_owner_surviving_admin, 'admin'),
         (v_studio, v_active_staff, 'instructor'),
         (v_studio, v_archived_caller, 'instructor'),
         (v_studio, v_archived_target, 'instructor'),
-        (v_last_admin_studio, v_last_admin, 'admin');
+        (v_last_admin_studio, v_last_admin, 'admin'),
+        (v_identity_studio, v_identity_departing_admin, 'admin'),
+        (v_identity_studio, v_identity_surviving_admin, 'admin');
 
     INSERT INTO public.staff_profiles (user_id, legal_first_name, legal_last_name)
     VALUES
@@ -1344,7 +1379,167 @@ BEGIN
     EXECUTE 'RESET ROLE';
     PERFORM set_config('request.jwt.claim.sub', '', true);
     PERFORM set_config('request.jwt.claim.role', '', true);
+
+    -- The PostgreSQL test owner proves auth confirmation and deletion status;
+    -- service_role intentionally cannot read auth.users directly.
+    SELECT COUNT(*) INTO v_owner_survivor_predicate_count
+    FROM public.staff_roles AS membership
+    JOIN auth.users AS auth_user
+      ON auth_user.id = membership.user_id
+    WHERE membership.studio_id = v_studio
+      AND membership.user_id = v_owner_surviving_admin
+      AND membership.role = 'admin'
+      AND membership.archived_at IS NULL
+      AND (auth_user.email_confirmed_at IS NOT NULL OR auth_user.last_sign_in_at IS NOT NULL)
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.account_deletion_requests AS deletion_request
+          WHERE deletion_request.user_id = membership.user_id
+            AND deletion_request.status = 'scheduled'
+      );
+    IF v_owner_survivor_predicate_count <> 1 THEN
+        RAISE EXCEPTION 'Owner guard survivor fixture is not a confirmed active unscheduled admin.';
+    END IF;
+
+    SELECT COUNT(*) INTO v_identity_change_count
+    FROM public.staff_roles AS membership
+    JOIN auth.users AS auth_user
+      ON auth_user.id = membership.user_id
+    WHERE membership.studio_id = v_identity_studio
+      AND membership.user_id = v_identity_surviving_admin
+      AND membership.role = 'admin'
+      AND membership.archived_at IS NULL
+      AND (auth_user.email_confirmed_at IS NOT NULL OR auth_user.last_sign_in_at IS NOT NULL)
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.account_deletion_requests AS deletion_request
+          WHERE deletion_request.user_id = membership.user_id
+            AND deletion_request.status = 'scheduled'
+      );
+    IF v_identity_change_count <> 1 THEN
+        RAISE EXCEPTION 'Identity-change survivor fixture is not an active unscheduled admin.';
+    END IF;
+
     EXECUTE 'SET LOCAL ROLE service_role';
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET user_id = v_owner_replacement_user
+        WHERE studio_id = v_studio
+          AND user_id = v_owner;
+    EXCEPTION WHEN check_violation THEN
+        GET STACKED DIAGNOSTICS v_owner_identity_error = MESSAGE_TEXT;
+        v_owner_identity_denied := true;
+    END;
+    IF NOT v_owner_identity_denied
+       OR v_owner_identity_error <> 'Transfer studio ownership before replacing or clearing this staff member identity.' THEN
+        RAISE EXCEPTION 'Studio owner identity replacement was not refused by the owner guard: %',
+            COALESCE(v_owner_identity_error, '<no check violation>');
+    END IF;
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET user_id = NULL
+        WHERE studio_id = v_studio
+          AND user_id = v_owner;
+    EXCEPTION WHEN check_violation THEN
+        GET STACKED DIAGNOSTICS v_owner_clear_error = MESSAGE_TEXT;
+        v_owner_clear_denied := true;
+    END;
+    IF NOT v_owner_clear_denied
+       OR v_owner_clear_error <> 'Transfer studio ownership before replacing or clearing this staff member identity.' THEN
+        RAISE EXCEPTION 'Studio owner identity clearing was not refused by the owner guard: %',
+            COALESCE(v_owner_clear_error, '<no check violation>');
+    END IF;
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET role = 'instructor'
+        WHERE studio_id = v_studio
+          AND user_id = v_owner;
+    EXCEPTION WHEN check_violation THEN
+        GET STACKED DIAGNOSTICS v_owner_demote_error = MESSAGE_TEXT;
+        v_owner_demote_denied := true;
+    END;
+    IF NOT v_owner_demote_denied
+       OR v_owner_demote_error <> 'Transfer studio ownership before deleting or demoting this staff member.' THEN
+        RAISE EXCEPTION 'Studio owner demotion was not refused by the owner guard: %',
+            COALESCE(v_owner_demote_error, '<no check violation>');
+    END IF;
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET user_id = v_identity_replacement_user
+        WHERE studio_id = v_last_admin_studio
+          AND user_id = v_last_admin;
+    EXCEPTION WHEN check_violation THEN
+        v_last_admin_identity_denied := true;
+    END;
+    IF NOT v_last_admin_identity_denied THEN
+        RAISE EXCEPTION 'Replacing the last active admin identity was accepted.';
+    END IF;
+
+    BEGIN
+        UPDATE public.staff_roles
+        SET user_id = NULL
+        WHERE studio_id = v_last_admin_studio
+          AND user_id = v_last_admin;
+    EXCEPTION WHEN check_violation THEN
+        v_last_admin_clear_denied := true;
+    END;
+    IF NOT v_last_admin_clear_denied THEN
+        RAISE EXCEPTION 'Clearing the last active admin identity was accepted.';
+    END IF;
+
+    UPDATE public.staff_roles
+    SET user_id = v_identity_replacement_user
+    WHERE studio_id = v_identity_studio
+      AND user_id = v_identity_departing_admin;
+    GET DIAGNOSTICS v_identity_change_count = ROW_COUNT;
+
+    IF v_identity_change_count <> 1
+       OR NOT EXISTS (
+           SELECT 1
+           FROM public.staff_roles
+           WHERE studio_id = v_identity_studio
+             AND user_id = v_identity_replacement_user
+             AND role = 'admin'
+             AND archived_at IS NULL
+       )
+       OR EXISTS (
+           SELECT 1
+           FROM public.staff_roles
+           WHERE studio_id = v_identity_studio
+             AND user_id = v_identity_departing_admin
+       ) THEN
+        RAISE EXCEPTION 'Protected admin identity change did not preserve the survivor guard contract.';
+    END IF;
+
+    INSERT INTO public.staff_roles (studio_id, user_id, role, invited_email)
+    VALUES (
+        v_identity_studio,
+        NULL,
+        'instructor',
+        'archive-pending-' || replace(v_pending_user::TEXT, '-', '') || '@example.invalid'
+    );
+
+    UPDATE public.staff_roles
+    SET user_id = v_pending_user
+    WHERE studio_id = v_identity_studio
+      AND user_id IS NULL
+      AND invited_email = 'archive-pending-' || replace(v_pending_user::TEXT, '-', '') || '@example.invalid';
+    GET DIAGNOSTICS v_pending_link_count = ROW_COUNT;
+
+    IF v_pending_link_count <> 1
+       OR NOT EXISTS (
+           SELECT 1
+           FROM public.staff_roles
+           WHERE studio_id = v_identity_studio
+             AND user_id = v_pending_user
+             AND role = 'instructor'
+       ) THEN
+        RAISE EXCEPTION 'A nullable pending staff reservation could not link to its invited identity.';
+    END IF;
 
     BEGIN
         INSERT INTO public.staff_roles (studio_id, user_id, role)
@@ -1365,10 +1560,13 @@ BEGIN
         WHERE studio_id = v_studio
           AND user_id = v_owner;
     EXCEPTION WHEN check_violation THEN
+        GET STACKED DIAGNOSTICS v_owner_archive_error = MESSAGE_TEXT;
         v_owner_archive_denied := true;
     END;
-    IF NOT v_owner_archive_denied THEN
-        RAISE EXCEPTION 'Studio owner archive was accepted.';
+    IF NOT v_owner_archive_denied
+       OR v_owner_archive_error <> 'Transfer studio ownership before archiving this staff member.' THEN
+        RAISE EXCEPTION 'Studio owner archive was not refused by the owner guard: %',
+            COALESCE(v_owner_archive_error, '<no check violation>');
     END IF;
 
     BEGIN
@@ -1392,7 +1590,7 @@ BEGIN
         RAISE EXCEPTION 'A refused owner or last-admin archive changed persisted state.';
     END IF;
 
-    RAISE NOTICE 'Archive authorization, RLS, reservation, and admin-guard verification passed.';
+    RAISE NOTICE 'Archive authorization, RLS, reservation, and admin identity-guard verification passed.';
 END $$;
 
 ROLLBACK;
