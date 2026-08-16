@@ -4,7 +4,12 @@ import {
   MarketingIndexPage,
   PageStructuredData,
 } from "@/components/marketing/public-pages";
-import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
+import {
+  APP_DESCRIPTION,
+  APP_NAME,
+  PUBLIC_PLATFORM_PRICE,
+  publicPlatformPriceAmount,
+} from "@/lib/constants";
 import { featurePages } from "@/lib/marketing-pages";
 
 export const metadata: Metadata = {
@@ -39,8 +44,8 @@ export default function FeaturesPage() {
           description: APP_DESCRIPTION,
           offers: {
             "@type": "Offer",
-            price: "27",
-            priceCurrency: "USD",
+            price: publicPlatformPriceAmount(),
+            priceCurrency: PUBLIC_PLATFORM_PRICE.currency,
             category: "Subscription",
           },
         }}

@@ -111,12 +111,10 @@ describe("conventional marketing page composition", () => {
     }
   });
 
-  it("layers long-document content and the paper header above the scoped fibre veil", () => {
-    assert.match(
-      css,
-      /\.header,\s*\n\.main,\s*\n\.footer\s*\{[^}]*z-index:\s*21/s
-    );
+  it("keeps document surfaces below the fibre veil and the sticky header above it", () => {
+    assert.match(css, /\.main,\s*\n\.footer\s*\{[^}]*z-index:\s*0/s);
     assert.match(css, /\.header\s*\{[^}]*position:\s*sticky;[^}]*z-index:\s*30/s);
+    assert.doesNotMatch(css, /\.(?:main|footer)[^{]*\{[^}]*z-index:\s*(?:2[0-9]|[3-9][0-9])/s);
     assert.match(css, /overflow-x:\s*clip/);
   });
 });
