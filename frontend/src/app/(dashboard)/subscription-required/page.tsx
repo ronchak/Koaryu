@@ -7,6 +7,9 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
+import { ACCOUNT_ARCHIVED_ROUTE } from "@/lib/auth-route-model";
+import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
+import { syncStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { useConfigStore } from "@/lib/store";
 import type {
   AuthResponse,
@@ -94,13 +97,24 @@ export default function SubscriptionRequiredPage() {
       setAuthToken(session.access_token);
 
       try {
-        const profile = await api.get<AuthResponse>("/auth/me", session.access_token, {
+        const profile = parseAuthProfileResponse(await api.get<unknown>("/auth/me", session.access_token, {
           omitStudioHeader: false,
-        });
+        }));
         if (!mounted) return;
         setAuthProfile(profile);
+        syncStoredStudioSessionCookies(
+          session.user.id,
+          profile.studio_id,
+          profile.membership_status
+        );
 
-        if (!profile.studio_id) {
+        if (profile.membership_status === "archived") {
+          clearSubscriptionRequired();
+          window.location.replace(ACCOUNT_ARCHIVED_ROUTE);
+          return;
+        }
+
+        if (profile.membership_status !== "active" || !profile.studio_id) {
           router.replace("/onboarding");
           return;
         }

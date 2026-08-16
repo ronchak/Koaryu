@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   AUTH_NOINDEX_METADATA,
   PRIVATE_ROUTE_DISALLOW_PATHS,
   buildRobotsMetadata,
 } from "../src/lib/auth-indexing.ts";
+
+const archivedLayoutSource = readFileSync(
+  new URL("../src/app/account-archived/layout.tsx", import.meta.url),
+  "utf8"
+);
+const archivedPageSource = readFileSync(
+  new URL("../src/app/account-archived/page.tsx", import.meta.url),
+  "utf8"
+);
 
 describe("auth noindex coverage", () => {
   it("sets noindex metadata for shared auth pages", () => {
@@ -22,5 +32,17 @@ describe("auth noindex coverage", () => {
     assert.ok(disallow.includes("/login"));
     assert.ok(disallow.includes("/signup"));
     assert.ok(disallow.includes("/reset-password"));
+  });
+
+  it("keeps the archived account route outside the dashboard and noindex", () => {
+    assert.match(archivedLayoutSource, /metadata: Metadata = AUTH_NOINDEX_METADATA/);
+    assert.match(archivedPageSource, /Studio access is archived/);
+    assert.match(archivedPageSource, /reversible/);
+    assert.match(archivedPageSource, /studio admin or owner/);
+    assert.match(archivedPageSource, /supabase\.auth\.signOut\(\)/);
+    assert.doesNotMatch(archivedPageSource, /signOut\(\{\s*scope:\s*"global"/);
+    assert.match(archivedPageSource, /clearStoredStudioSessionCookies/);
+    assert.match(archivedPageSource, /router\.replace\("\/login"\)/);
+    assert.doesNotMatch(archivedPageSource, /api\.get|useStudioStore|StoreProvider/);
   });
 });
