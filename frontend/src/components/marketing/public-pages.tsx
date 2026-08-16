@@ -36,14 +36,28 @@ export function MarketingHeader() {
             </MarketingNavLink>
           ))}
         </nav>
-        <nav className={styles.accountNavigation} aria-label="Account navigation">
-          <MarketingNavLink href="/login" prefetch={false}>
-            Sign in
-          </MarketingNavLink>
-          <MarketingActionLink href="/signup" prefetch={false}>
-            Start setup
-          </MarketingActionLink>
-        </nav>
+        <MarketingNavLink
+          href="/login"
+          prefetch={false}
+          className={styles.desktopSignIn}
+        >
+          Sign in
+        </MarketingNavLink>
+        <details className={styles.mobileNavigation}>
+          <summary aria-label="Navigation menu">
+            <span className={styles.mobileMenuIcon} aria-hidden="true" />
+          </summary>
+          <nav className={styles.mobileMenu} aria-label="Mobile navigation">
+            {publicNavLinks.map((link) => (
+              <MarketingNavLink key={link.href} href={link.href}>
+                {link.label}
+              </MarketingNavLink>
+            ))}
+            <MarketingNavLink href="/login" prefetch={false}>
+              Sign in
+            </MarketingNavLink>
+          </nav>
+        </details>
       </div>
     </header>
   );

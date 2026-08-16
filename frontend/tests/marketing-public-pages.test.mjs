@@ -10,6 +10,10 @@ const css = readFileSync(
   new URL("../src/components/marketing/public-pages.module.css", import.meta.url),
   "utf8"
 );
+const headerSource = source.slice(
+  source.indexOf("export function MarketingHeader"),
+  source.indexOf("export function MarketingFooter")
+);
 
 describe("conventional marketing page composition", () => {
   it("preserves the compatibility-sensitive public API", () => {
@@ -37,12 +41,18 @@ describe("conventional marketing page composition", () => {
     assert.match(source, /<MarketingRoot layout="document"/);
     assert.match(source, /<main className=\{styles\.main\}>/);
     assert.match(source, /aria-label="Primary navigation"/);
-    assert.match(source, /aria-label="Account navigation"/);
+    assert.match(source, /<details className=\{styles\.mobileNavigation\}>/);
+    assert.match(source, /<summary aria-label="Navigation menu">/);
+    assert.match(source, /aria-label="Mobile navigation"/);
     assert.match(source, /aria-label="Footer navigation"/);
-    assert.match(source, /publicNavLinks\.map/);
+    assert.equal(source.match(/publicNavLinks\.map/g)?.length, 2);
     assert.match(source, /publicFooterLinks\.map/);
-    assert.match(source, /href="\/login" prefetch=\{false\}/);
-    assert.match(source, /href="\/signup" prefetch=\{false\}/);
+    assert.equal(source.match(/href="\/login"/g)?.length, 2);
+    assert.equal(
+      source.match(/href="\/login"\s+prefetch=\{false\}/g)?.length,
+      2
+    );
+    assert.doesNotMatch(headerSource, /\/signup|Start setup|MarketingActionLink/);
     assert.doesNotMatch(
       source,
       /["']use client["']|\b(?:window|document|navigator)\s*\.|requestAnimationFrame|use(?:State|Effect|Ref)\s*\(/
@@ -85,6 +95,17 @@ describe("conventional marketing page composition", () => {
     );
     assert.match(css, /\.routeLink\s*\{[^}]*min-height:\s*106px/s);
     assert.match(css, /\.brand\s*\{[^}]*min-height:\s*44px/s);
+    assert.match(
+      css,
+      /\.headerInner\s*\{[^}]*grid-template-columns:[^;]*;[^}]*min-height:\s*76px/s
+    );
+    assert.match(
+      css,
+      /\.mobileNavigation > summary\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*border-radius:\s*50%/s
+    );
+    assert.match(css, /\.mobileMenu\s*\{[^}]*background:\s*var\(--koaryu-sheet\)/s);
+    assert.match(css, /\.mobileNavigation\[open\] \.mobileMenuIcon/s);
+    assert.match(css, /\.mobileNavigation\s*\{[^}]*display:\s*none/s);
     for (const breakpoint of ["1000px", "820px", "560px"]) {
       assert.match(css, new RegExp(`@media \\(max-width: ${breakpoint}\\)`));
     }
