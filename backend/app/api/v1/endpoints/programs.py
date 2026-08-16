@@ -15,7 +15,7 @@ from app.schemas.program import (
     ProgramUsageResponse,
 )
 from app.services.program_service import ProgramService
-from app.services.studio_scope import resolve_program_manager_staff_role_for_user
+from app.services.studio_scope import resolve_admin_staff_role_for_user
 
 router = APIRouter(prefix="/programs", tags=["programs"])
 
@@ -36,7 +36,7 @@ async def create_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(
+    membership = resolve_admin_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
@@ -62,7 +62,7 @@ async def update_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(
+    membership = resolve_admin_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
@@ -78,7 +78,7 @@ async def archive_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(
+    membership = resolve_admin_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
@@ -94,7 +94,7 @@ async def restore_program(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    membership = resolve_program_manager_staff_role_for_user(
+    membership = resolve_admin_staff_role_for_user(
         supabase,
         user_id,
         requested_studio_id,
