@@ -49,6 +49,11 @@ class FakeAuthAdmin:
             for row in self.supabase.tables["staff_roles"]
             if row.get("user_id") != user_id
         ]
+        self.supabase.tables["staff_profiles"] = [
+            row
+            for row in self.supabase.tables["staff_profiles"]
+            if row.get("user_id") != user_id
+        ]
         return True
 
 
@@ -63,6 +68,7 @@ class FakeSupabase(RpcBackedSupabase):
             "account_deletion_requests": [],
             "audit_logs": [],
             "staff_roles": [],
+            "staff_profiles": [],
             "studios": [],
         })
         self.inactive_user_ids = set()
@@ -160,6 +166,121 @@ class AccountServiceTest(unittest.TestCase):
         ))
 
         self.assertEqual(request.id, "delete_1")
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+
+    def test_admin_schedule_uses_actor_identity_and_never_deletes_target(self):
+        supabase = FakeSupabase()
+        supabase.tables["staff_roles"] = [{
+            "id": "role_1",
+            "studio_id": "studio_1",
+            "user_id": "target_1",
+            "role": "instructor",
+            "archived_at": "2026-08-15T00:00:00+00:00",
+        }]
+        supabase.tables["staff_profiles"] = [{
+            "user_id": "target_1",
+            "legal_first_name": "Target",
+            "legal_last_name": "Person",
+        }]
+        supabase.tables["studios"] = [{"id": "studio_1", "owner_id": "owner_1"}]
+        service = AccountService(supabase)
+
+        request = asyncio.run(service.schedule_deletion_for_admin(
+            AccountDeletionRequestCreate(reason="offboarding"),
+            "target_1",
+            "studio_1",
+            "admin_1",
+        ))
+
+        self.assertEqual(request.user_id, "target_1")
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+        row = supabase.tables["account_deletion_requests"][0]
+        self.assertEqual(row["studio_id"], "studio_1")
+        self.assertEqual(row["requested_by"], "admin_1")
+        self.assertEqual(row["requester_email"], "admin_1@example.com")
+        self.assertEqual(row["metadata"], {"delay_days": 30})
+        self.assertEqual(supabase.deleted_user_ids, [])
+        self.assertEqual(supabase.tables["staff_roles"][0]["user_id"], "target_1")
+        self.assertEqual(supabase.tables["staff_profiles"][0]["user_id"], "target_1")
+        self.assertEqual(supabase.tables["audit_logs"][0]["actor_id"], "admin_1")
+
+    def test_admin_schedule_duplicate_returns_original_request(self):
+        supabase = FakeSupabase()
+        supabase.tables["account_deletion_requests"] = [{
+            "id": "delete_1",
+            "user_id": "target_1",
+            "studio_id": "studio_1",
+            "requested_by": "first_admin",
+            "requester_email": "first_admin@example.com",
+            "status": "scheduled",
+            "requested_at": "2026-08-15T00:00:00+00:00",
+            "scheduled_for": "2026-09-14T00:00:00+00:00",
+            "reason": "first request",
+        }]
+        service = AccountService(supabase)
+
+        request = asyncio.run(service.schedule_deletion_for_admin(
+            AccountDeletionRequestCreate(reason="second request"),
+            "target_1",
+            "studio_1",
+            "second_admin",
+        ))
+
+        self.assertEqual(request.id, "delete_1")
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+        self.assertEqual(supabase.deleted_user_ids, [])
+
+    def test_archived_admin_survivors_are_ignored_but_active_survivor_allows_schedule(self):
+        supabase = FakeSupabase()
+        supabase.tables["studios"] = [{"id": "studio_1", "owner_id": "owner_1"}]
+        supabase.tables["staff_roles"] = [
+            {
+                "id": "target-role",
+                "studio_id": "studio_1",
+                "user_id": "target-admin",
+                "role": "admin",
+                "archived_at": "2026-08-15T00:00:00+00:00",
+            },
+            {
+                "id": "archived-survivor-role",
+                "studio_id": "studio_1",
+                "user_id": "archived-survivor",
+                "role": "admin",
+                "archived_at": "2026-08-15T00:00:00+00:00",
+            },
+        ]
+        service = AccountService(supabase)
+
+        with self.assertRaises(HTTPException):
+            asyncio.run(service.schedule_deletion_for_admin(
+                AccountDeletionRequestCreate(),
+                "target-admin",
+                "studio_1",
+                "requesting-admin",
+            ))
+        self.assertEqual(supabase.tables["account_deletion_requests"], [])
+        survivor_queries = [
+            query
+            for query in supabase.query_log
+            if query["table"] == "staff_roles" and query["columns"] == "user_id"
+        ]
+        self.assertTrue(survivor_queries)
+        self.assertIn(("is", "archived_at", None), survivor_queries[-1]["filters"])
+
+        supabase.tables["staff_roles"].append({
+            "id": "active-survivor-role",
+            "studio_id": "studio_1",
+            "user_id": "active-survivor",
+            "role": "admin",
+            "archived_at": None,
+        })
+        request = asyncio.run(service.schedule_deletion_for_admin(
+            AccountDeletionRequestCreate(),
+            "target-admin",
+            "studio_1",
+            "requesting-admin",
+        ))
+        self.assertEqual(request.user_id, "target-admin")
         self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
 
     def test_sole_admin_owner_is_blocked(self):
@@ -275,6 +396,50 @@ class AccountServiceTest(unittest.TestCase):
         self.assertEqual(supabase.tables["staff_roles"], [])
         self.assertEqual(supabase.tables["account_deletion_requests"][0]["status"], "completed")
         self.assertIsNone(supabase.tables["account_deletion_requests"][0]["processing_token"])
+
+    def test_worker_auth_deletion_cascades_profile_and_preserves_frozen_audit_name(self):
+        supabase = FakeSupabase()
+        supabase.tables["account_deletion_requests"] = [{
+            "id": "delete_1",
+            "user_id": "user_1",
+            "studio_id": "studio_1",
+            "requested_by": "admin_1",
+            "requester_email": "admin_1@example.com",
+            "status": "scheduled",
+            "requested_at": "2026-04-01T00:00:00+00:00",
+            "scheduled_for": "2026-04-30T00:00:00+00:00",
+            "reason": None,
+        }]
+        supabase.tables["studios"] = [{"id": "studio_1", "owner_id": "owner_1"}]
+        supabase.tables["staff_roles"] = [{
+            "id": "role_1",
+            "studio_id": "studio_1",
+            "user_id": "user_1",
+            "role": "instructor",
+        }]
+        supabase.tables["staff_profiles"] = [{
+            "user_id": "user_1",
+            "legal_first_name": "Frozen",
+            "legal_last_name": "Identity",
+        }]
+        supabase.tables["audit_logs"] = [{
+            "id": "audit_1",
+            "actor_id": "user_1",
+            "actor_legal_name": "Frozen Identity",
+        }]
+        service = AccountService(supabase)
+
+        result = asyncio.run(service.process_due_deletions())
+
+        self.assertEqual(result.completed, 1)
+        self.assertEqual(supabase.deleted_user_ids, ["user_1"])
+        self.assertEqual(supabase.tables["staff_profiles"], [])
+        self.assertEqual(supabase.tables["staff_roles"], [])
+        self.assertEqual(supabase.tables["audit_logs"], [{
+            "id": "audit_1",
+            "actor_id": "user_1",
+            "actor_legal_name": "Frozen Identity",
+        }])
 
     def test_process_due_deletions_skips_fresh_claimed_request(self):
         supabase = FakeSupabase()

@@ -1,7 +1,7 @@
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 StaffRoleName = Literal["admin", "instructor", "front_desk"]
@@ -16,6 +16,7 @@ class StaffMemberResponse(BaseModel):
     user_id: Optional[str] = None
     email: str
     full_name: Optional[str] = None
+    deletion_confirmation_name: str
     legal_first_name: Optional[str] = None
     legal_last_name: Optional[str] = None
     role: StaffRoleName
@@ -52,6 +53,23 @@ class StaffInviteCreate(BaseModel):
 
 class StaffRoleUpdate(BaseModel):
     role: StaffRoleName
+
+
+class StaffDeletionRequestCreate(BaseModel):
+    confirmation_name: str
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("confirmation_name")
+    @classmethod
+    def normalize_confirmation_name(cls, value: str) -> str:
+        return _normalize_legal_name(value)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def strip_reason(cls, value):
+        if value is None:
+            return value
+        return str(value).strip() or None
 
 
 def _normalize_legal_name(value: str) -> str:

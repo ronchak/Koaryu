@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, Response, status
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
+from app.schemas.account import AccountDeletionRequestResponse
 from app.schemas.staff import (
+    StaffDeletionRequestCreate,
     StaffInviteCreate,
     StaffLegalNameResponse,
     StaffLegalNameUpdate,
@@ -126,6 +128,26 @@ async def unarchive_staff(
 ):
     studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
     return await StaffService(supabase).unarchive_staff(staff_role_id, studio_id, user_id)
+
+
+@router.post(
+    "/{staff_role_id}/deletion-request",
+    response_model=AccountDeletionRequestResponse,
+)
+async def schedule_staff_deletion(
+    staff_role_id: str,
+    data: StaffDeletionRequestCreate,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: Client = Depends(get_supabase),
+):
+    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
+    return await StaffService(supabase).schedule_staff_deletion(
+        staff_role_id,
+        data,
+        studio_id,
+        user_id,
+    )
 
 
 @router.delete("/{staff_role_id}", status_code=status.HTTP_204_NO_CONTENT)

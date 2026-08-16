@@ -310,9 +310,9 @@ class FakeTableQuery:
         if op == "neq":
             return row_value != value
         if op == "is":
-            return row_value is None if value == "null" else row_value is value
+            return row_value is None if value is None or value == "null" else row_value == value
         if op == "not_is":
-            return row_value is not None if value == "null" else row_value is not value
+            return row_value is not None if value is None or value == "null" else row_value != value
         if op == "in":
             return row_value in value
         if op == "lte":

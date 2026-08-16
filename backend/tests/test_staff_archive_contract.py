@@ -16,10 +16,13 @@ from app.services.dashboard_bootstrap_service import DashboardBootstrapService
 from app.services.report_export_service import ReportExportService
 from app.services.staff_service import (
     STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL,
+    STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL,
+    STAFF_DELETE_REQUIRES_LINKED_DETAIL,
     STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL,
     STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL,
     StaffService,
 )
+from app.schemas.staff import StaffDeletionRequestCreate
 from app.services.studio_scope import (
     STAFF_ARCHIVED_DETAIL,
     ensure_staff_user_in_studio,
@@ -73,11 +76,21 @@ class ArchiveAuthAdmin:
     def get_user_by_id(self, user_id: str):
         return SimpleNamespace(user=self.supabase.auth_users.get(user_id))
 
+    def delete_user(self, user_id: str):
+        self.supabase.delete_calls.append(user_id)
+        self.supabase.auth_users.pop(user_id, None)
+        self.supabase.tables["staff_profiles"] = [
+            row
+            for row in self.supabase.tables.get("staff_profiles", [])
+            if row.get("user_id") != user_id
+        ]
+
 
 class ArchiveSupabase(TableBackedSupabase):
     def __init__(self, tables: dict[str, list[dict]] | None = None, *, auth_users=None):
         super().__init__(tables or {})
         self.auth_users = auth_users or {}
+        self.delete_calls = []
         self.auth = SimpleNamespace(admin=ArchiveAuthAdmin(self))
 
 
@@ -357,6 +370,273 @@ class StaffArchiveMutationTest(unittest.TestCase):
         self.assertEqual(raised.exception.detail, STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL)
         self.assertEqual(len(failed_supabase.tables["staff_roles"]), 1)
         self.assertFalse(any(query["delete"] for query in failed_supabase.query_log))
+
+
+class StaffDeletionSchedulingTest(unittest.TestCase):
+    def _base_supabase(self, row, *, auth_users=None, studios=None):
+        return ArchiveSupabase(
+            {
+                "staff_roles": [row],
+                "account_deletion_requests": [],
+                "audit_logs": [],
+                "staff_profiles": [],
+                "studios": studios or [{"id": "studio-1", "owner_id": "owner-1"}],
+            },
+            auth_users=auth_users or {
+                "admin-1": auth_user("admin-1"),
+                row.get("user_id"): auth_user(row["user_id"]),
+            },
+        )
+
+    def test_endpoint_schedules_archived_staff_with_actor_fields_and_no_deletion_side_effect(self):
+        row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
+        supabase = self._base_supabase(row)
+        test_app = FastAPI()
+        test_app.include_router(staff_endpoint.router)
+        test_app.dependency_overrides[get_current_user_id] = lambda: "admin-1"
+        test_app.dependency_overrides[get_requested_studio_id] = lambda: "studio-1"
+        test_app.dependency_overrides[get_supabase] = lambda: supabase
+
+        with patch(
+            "app.api.v1.endpoints.staff._resolve_admin_studio_id",
+            return_value="studio-1",
+        ):
+            response = TestClient(test_app).post(
+                "/staff/archived-role/deletion-request",
+                json={
+                    "confirmation_name": "Display target-1",
+                    "reason": "offboarding",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["user_id"], "target-1")
+        self.assertEqual(body["studio_id"], "studio-1")
+        self.assertEqual(body["requester_email"], "admin-1@example.com")
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+        row = supabase.tables["account_deletion_requests"][0]
+        self.assertEqual(row["requested_by"], "admin-1")
+        self.assertEqual(row["metadata"], {"delay_days": 30})
+        self.assertEqual(supabase.delete_calls, [])
+        self.assertEqual(supabase.tables["staff_profiles"], [])
+
+    def test_duplicate_endpoint_request_returns_same_row(self):
+        row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
+        supabase = self._base_supabase(row)
+        test_app = FastAPI()
+        test_app.include_router(staff_endpoint.router)
+        test_app.dependency_overrides[get_current_user_id] = lambda: "admin-1"
+        test_app.dependency_overrides[get_requested_studio_id] = lambda: "studio-1"
+        test_app.dependency_overrides[get_supabase] = lambda: supabase
+
+        with patch(
+            "app.api.v1.endpoints.staff._resolve_admin_studio_id",
+            return_value="studio-1",
+        ):
+            client = TestClient(test_app)
+            first = client.post(
+                "/staff/archived-role/deletion-request",
+                json={"confirmation_name": "Display target-1"},
+            )
+            second = client.post(
+                "/staff/archived-role/deletion-request",
+                json={"confirmation_name": "Display target-1"},
+            )
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(first.json(), second.json())
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+        self.assertEqual(supabase.delete_calls, [])
+
+    def test_non_archived_and_unlinked_targets_are_refused(self):
+        active = self._base_supabase(staff_role("active-role", "target-1"))
+        with self.assertRaises(HTTPException) as active_error:
+            asyncio.run(StaffService(active).schedule_staff_deletion(
+                "active-role",
+                StaffDeletionRequestCreate(confirmation_name="Display target-1"),
+                "studio-1",
+                "admin-1",
+            ))
+        self.assertEqual(active_error.exception.status_code, 409)
+        self.assertEqual(active_error.exception.detail, STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL)
+        self.assertEqual(active.tables["account_deletion_requests"], [])
+
+        unlinked = self._base_supabase(staff_role("invite-role", None))
+        with self.assertRaises(HTTPException) as unlinked_error:
+            asyncio.run(StaffService(unlinked).schedule_staff_deletion(
+                "invite-role",
+                StaffDeletionRequestCreate(confirmation_name="invite-role@example.com"),
+                "studio-1",
+                "admin-1",
+            ))
+        self.assertEqual(unlinked_error.exception.status_code, 409)
+        self.assertEqual(unlinked_error.exception.detail, STAFF_DELETE_REQUIRES_LINKED_DETAIL)
+        self.assertEqual(unlinked.tables["account_deletion_requests"], [])
+
+    def test_confirmation_uses_email_when_display_and_legal_names_are_missing(self):
+        row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
+        target = SimpleNamespace(
+            id="target-1",
+            email="target@example.com",
+            user_metadata={},
+            confirmed_at="2026-08-15T00:00:00+00:00",
+            email_confirmed_at="2026-08-15T00:00:00+00:00",
+            last_sign_in_at=None,
+        )
+        supabase = self._base_supabase(
+            row,
+            auth_users={"admin-1": auth_user("admin-1"), "target-1": target},
+        )
+
+        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
+            "archived-role",
+            StaffDeletionRequestCreate(confirmation_name=" target@example.com "),
+            "studio-1",
+            "admin-1",
+        ))
+
+        self.assertEqual(request.user_id, "target-1")
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+
+    def test_confirmation_uses_normalized_invitation_email_when_auth_email_is_blank(self):
+        row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
+        row["invited_email"] = " \n invite-target@example.com \t "
+        target = SimpleNamespace(
+            id="target-1",
+            email=" \t ",
+            user_metadata={},
+            confirmed_at="2026-08-15T00:00:00+00:00",
+            email_confirmed_at="2026-08-15T00:00:00+00:00",
+            last_sign_in_at=None,
+        )
+        supabase = self._base_supabase(
+            row,
+            auth_users={"admin-1": auth_user("admin-1"), "target-1": target},
+        )
+
+        target_response = StaffService(supabase)._hydrate_staff_member(row, target)
+        self.assertEqual(target_response.email, "invite-target@example.com")
+        self.assertEqual(target_response.deletion_confirmation_name, "invite-target@example.com")
+
+        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
+            "archived-role",
+            StaffDeletionRequestCreate(confirmation_name="invite-target@example.com"),
+            "studio-1",
+            "admin-1",
+        ))
+
+        self.assertEqual(request.user_id, "target-1")
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+
+    def test_confirmation_uses_normalized_legacy_display_name(self):
+        row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
+        target = SimpleNamespace(
+            id="target-1",
+            email="target@example.com",
+            user_metadata={"full_name": " \t ", "name": "  Legacy\t  Staff  "},
+            confirmed_at="2026-08-15T00:00:00+00:00",
+            email_confirmed_at="2026-08-15T00:00:00+00:00",
+            last_sign_in_at=None,
+        )
+        supabase = self._base_supabase(
+            row,
+            auth_users={"admin-1": auth_user("admin-1"), "target-1": target},
+        )
+
+        target_response = StaffService(supabase)._hydrate_staff_member(row, target)
+        self.assertEqual(target_response.full_name, "Legacy Staff")
+        self.assertEqual(target_response.deletion_confirmation_name, "Legacy Staff")
+
+        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
+            "archived-role",
+            StaffDeletionRequestCreate(confirmation_name="Legacy Staff"),
+            "studio-1",
+            "admin-1",
+        ))
+
+        self.assertEqual(request.user_id, "target-1")
+        self.assertEqual(len(supabase.tables["account_deletion_requests"]), 1)
+
+    def test_confirmation_uses_role_id_when_display_and_email_are_missing(self):
+        row = staff_role("role-fallback", "target-1", archived_at=ARCHIVED_AT)
+        row["invited_email"] = None
+        target = SimpleNamespace(
+            id="target-1",
+            email=None,
+            user_metadata={},
+            confirmed_at="2026-08-15T00:00:00+00:00",
+            email_confirmed_at="2026-08-15T00:00:00+00:00",
+            last_sign_in_at=None,
+        )
+        supabase = self._base_supabase(
+            row,
+            auth_users={"admin-1": auth_user("admin-1"), "target-1": target},
+        )
+
+        target_response = StaffService(supabase)._hydrate_staff_member(row, target)
+        self.assertEqual(target_response.deletion_confirmation_name, "staff role role-fallback")
+        request = asyncio.run(StaffService(supabase).schedule_staff_deletion(
+            "role-fallback",
+            StaffDeletionRequestCreate(confirmation_name="staff role role-fallback"),
+            "studio-1",
+            "admin-1",
+        ))
+
+        self.assertEqual(request.user_id, "target-1")
+
+    def test_confirmation_mismatch_is_stable_and_does_not_schedule(self):
+        row = staff_role("archived-role", "target-1", archived_at=ARCHIVED_AT)
+        supabase = self._base_supabase(row)
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(StaffService(supabase).schedule_staff_deletion(
+                "archived-role",
+                StaffDeletionRequestCreate(confirmation_name="display target-1"),
+                "studio-1",
+                "admin-1",
+            ))
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL)
+        self.assertEqual(supabase.tables["account_deletion_requests"], [])
+
+    def test_owner_and_no_surviving_active_admin_are_refused(self):
+        owner_row = staff_role("owner-role", "owner-1", "admin", archived_at=ARCHIVED_AT)
+        owner_supabase = self._base_supabase(
+            owner_row,
+            auth_users={"admin-1": auth_user("admin-1"), "owner-1": auth_user("owner-1")},
+            studios=[{"id": "studio-1", "owner_id": "owner-1"}],
+        )
+        with self.assertRaises(HTTPException) as owner_error:
+            asyncio.run(StaffService(owner_supabase).schedule_staff_deletion(
+                "owner-role",
+                StaffDeletionRequestCreate(confirmation_name="Display owner-1"),
+                "studio-1",
+                "admin-1",
+            ))
+        self.assertEqual(owner_error.exception.status_code, 409)
+        self.assertEqual(owner_supabase.tables["account_deletion_requests"], [])
+
+        admin_row = staff_role("admin-role", "admin-target", "admin", archived_at=ARCHIVED_AT)
+        no_survivor_supabase = self._base_supabase(
+            admin_row,
+            auth_users={
+                "admin-1": auth_user("admin-1"),
+                "admin-target": auth_user("admin-target"),
+            },
+            studios=[{"id": "studio-1", "owner_id": "owner-1"}],
+        )
+        with self.assertRaises(HTTPException) as survivor_error:
+            asyncio.run(StaffService(no_survivor_supabase).schedule_staff_deletion(
+                "admin-role",
+                StaffDeletionRequestCreate(confirmation_name="Display admin-target"),
+                "studio-1",
+                "admin-1",
+            ))
+        self.assertEqual(survivor_error.exception.status_code, 409)
+        self.assertEqual(no_survivor_supabase.tables["account_deletion_requests"], [])
 
 
 class StaffArchiveMembershipTest(unittest.TestCase):

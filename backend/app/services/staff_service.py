@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -7,13 +8,19 @@ from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
 from app.core.config import get_settings
+from app.schemas.account import (
+    AccountDeletionRequestCreate,
+    AccountDeletionRequestResponse,
+)
 from app.schemas.staff import (
+    StaffDeletionRequestCreate,
     StaffInviteCreate,
     StaffLegalNameResponse,
     StaffLegalNameUpdate,
     StaffMemberResponse,
     StaffRoleUpdate,
 )
+from app.services.account_service import AccountService
 
 BASE_STAFF_ROLE_COLUMNS = "id, studio_id, user_id, role, archived_at, created_at"
 EXTENDED_STAFF_ROLE_COLUMNS = (
@@ -30,6 +37,14 @@ STAFF_PROFILE_ALREADY_EXISTS_DETAIL = "Staff profile already exists."
 STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL = {
     "code": "STAFF_DELETE_REQUIRES_ARCHIVE",
     "message": "Archive this staff membership before using the archived-delete flow.",
+}
+STAFF_DELETE_REQUIRES_LINKED_DETAIL = {
+    "code": "STAFF_DELETE_REQUIRES_LINKED",
+    "message": "Only a linked archived staff account can be scheduled for deletion.",
+}
+STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL = {
+    "code": "STAFF_DELETE_CONFIRMATION_MISMATCH",
+    "message": "Type the staff member's displayed identity exactly to confirm deletion.",
 }
 STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL = (
     "Transfer studio ownership before archiving this staff member."
@@ -49,8 +64,24 @@ def _to_text(value: Any) -> Optional[str]:
 
 def _user_full_name(user: Any) -> Optional[str]:
     metadata = getattr(user, "user_metadata", None) or {}
-    value = metadata.get("full_name") or metadata.get("name")
-    return str(value) if value else None
+    return _normalize_identity_text(metadata.get("full_name")) or _normalize_identity_text(
+        metadata.get("name")
+    )
+
+
+def _normalize_identity_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = re.sub(r"\s+", " ", str(value)).strip()
+    return normalized or None
+
+
+def _deletion_confirmation_name(row: dict, user: Any, email: str) -> str:
+    return (
+        _user_full_name(user)
+        or _normalize_identity_text(email)
+        or f"staff role {row['id']}"
+    )
 
 
 def _staff_status(user: Any, archived_at: Any = None) -> str:
@@ -378,6 +409,40 @@ class StaffService:
             },
         )
         return self._hydrate_staff_member(row)
+
+    async def schedule_staff_deletion(
+        self,
+        staff_role_id: str,
+        data: StaffDeletionRequestCreate,
+        studio_id: str,
+        actor_id: str,
+    ) -> AccountDeletionRequestResponse:
+        staff_role = self._get_staff_role_or_404(staff_role_id, studio_id)
+        target_user_id = staff_role.get("user_id")
+        if not target_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_DELETE_REQUIRES_LINKED_DETAIL,
+            )
+        if staff_role.get("archived_at") is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_DELETE_REQUIRES_ARCHIVE_DETAIL,
+            )
+
+        target = self._hydrate_staff_member(staff_role)
+        if data.confirmation_name != target.deletion_confirmation_name:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL,
+            )
+
+        return await AccountService(self.supabase).schedule_deletion_for_admin(
+            AccountDeletionRequestCreate(reason=data.reason),
+            target_user_id,
+            studio_id,
+            actor_id,
+        )
 
     async def update_staff_legal_name(
         self,
@@ -771,12 +836,19 @@ class StaffService:
         if user is None:
             user = self._get_auth_user(user_id)
 
+        email = (
+            _normalize_identity_text(getattr(user, "email", None))
+            or _normalize_identity_text(row.get("invited_email"))
+            or ""
+        )
+
         return StaffMemberResponse(
             id=row["id"],
             studio_id=row["studio_id"],
             user_id=user_id,
-            email=(getattr(user, "email", None) or row.get("invited_email") or ""),
+            email=email,
             full_name=_user_full_name(user),
+            deletion_confirmation_name=_deletion_confirmation_name(row, user, email),
             legal_first_name=profile.get("legal_first_name") if profile else None,
             legal_last_name=profile.get("legal_last_name") if profile else None,
             role=row["role"],
