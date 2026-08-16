@@ -1,0 +1,128 @@
+# Cutover Gates
+
+What will stop a release cutover, and what will silently damage it. The mechanics of
+each tool are documented elsewhere — `docs/studio-comp-migration-rollout.md` for the
+rollout script, `docs/render-backend-deployment.md` for Render. This file covers only
+the things those docs do not, all of which were found the hard way during the
+2026-08-15 cutover.
+
+Read this before merging a release candidate, migrating a hosted database, or
+promoting a frontend.
+
+## Verify live state; do not trust a written plan
+
+Every generated runbook we have used drifted from reality. The 2026-08-15 plan was
+wrong on five separate counts: it understated how far the `staging` branch was behind,
+its staging apply command omitted two required flags, it promised a health-check string
+that the endpoint never prints, its production verification command passed a flag the
+script rejects, and it assumed a database backup existed when none did.
+
+None of those are exotic. They are what happens when a document is written once and the
+systems keep moving. Before acting, re-derive from the live systems: migration counts
+from both databases, `mergeStateStatus` on the PR, `autoDeploy` on both Render services,
+and whether a restore path actually exists. Treat any written step as a hypothesis.
+
+## The ordering invariant
+
+Database, then backend, then frontend. Always.
+
+Release migrations are written so the *currently deployed* code keeps working after they
+land — that is what makes it safe to migrate before deploying. The reverse is not safe:
+new code against an un-migrated database fails readiness and the service will not serve.
+
+`/health/ready` (`backend/app/api/v1/endpoints/health.py`) calls
+`assert_hosted_release_schema_ready`, which refuses unless the database reports the exact
+manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`
+(`backend/app/services/release_schema_readiness.py`).
+
+That manifest string is **not** echoed in the response body. A runbook that tells you to
+look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
+
+## Gates that will refuse you
+
+**Unresolved review threads block the merge.** The `Koaryu main release gate` ruleset
+sets `required_review_thread_resolution: true`. Any unresolved thread — including ones
+deliberately deferred as known issues — makes `mergeStateStatus` `BLOCKED`, and
+`scripts/merge-release-pr.sh` refuses because it requires `CLEAN`. Resolve or fix them
+before starting, and record *why* on each thread if the finding is being deferred.
+
+**Run the rollout tool from the merged working tree.** The tool pins
+`ROLLOUT.finalMigrationCount` to the release's exact migration count. Before the merge,
+`main` and the release branch pin *different* counts, so running `main`'s copy of the
+script against the new candidate reports `integration_complete=false` and inspection
+refuses. Merge first, then `git checkout main && git reset --hard origin/main`, then run.
+
+**Staging apply needs more than `--approve-staging-apply`.** It also requires
+`--confirm-project <ref>` and `--approval-record <durable-url>`. The usage text implies
+the staging flag alone is enough; it is not.
+
+**Production apply requires a real terminal.** `confirmProductionApply()` throws unless
+both `process.stdin.isTTY` and `process.stdout.isTTY`, then prompts for an exact phrase
+built by `buildProductionConfirmationPhrase()`.
+
+An agent cannot perform this step, and must not allocate a PTY to get around it.
+Faking the terminal and typing the phrase impersonates the human confirmation the control
+exists to capture, on an irreversible migration. The correct handoff is to prepare
+everything else, then give the operator the fully filled-in command and the exact phrase
+to type. Stage long values (the provider fingerprint is ~1000 characters) into a file so
+the command stays pasteable.
+
+## Traps that will not refuse you
+
+These are worse than the gates, because nothing fails. You get a green result and a
+broken system.
+
+**`--expected-stripe-mode` is staging-only.** `stripeRehearsalExpectation()` in
+`scripts/verify-deployed-release.mjs` requires the value be exactly `test` *and* the
+environment be `staging`. For production, omit the flag entirely. Verify production's
+Stripe mode from `/health/ready`'s `configured_stripe_mode` instead.
+
+**Never promote a Vercel preview deployment to production.** This is the most dangerous
+step in the whole cutover.
+
+Vercel inlines `NEXT_PUBLIC_*` at *build* time, and the `koaryu` project defines separate
+preview and production values for `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`. Promoting
+reassigns the production alias to an existing build; it does not rebuild.
+
+The trap is that merging to `main` produces **no Vercel build at all**, because production
+auto-deploy is off. So the only build carrying the merged SHA is a preview produced by the
+`staging` branch push. It shows the right commit and is the wrong build. Promoting it
+points `koaryu.app` at the **staging database with test Stripe keys** — and it fails
+silently, because the app loads perfectly while reading the wrong database.
+
+Instead, create a production-target deployment from git, so it builds with production
+environment variables: `POST https://api.vercel.com/v13/deployments` with
+`target: "production"` and a `gitSource` whose `ref` is the merged SHA.
+
+Then confirm both: `scripts/verify-deployed-release.mjs` reports the frontend as
+`environment: production`, and the live app's XHRs go to `koaryu.onrender.com`, not
+`koaryu-staging.onrender.com`.
+
+## A verified backup is a precondition, not paperwork
+
+The Supabase organization is on the **free plan**: no scheduled backups, no
+point-in-time recovery. There is no managed restore path for production.
+
+`--confirmed-restore-window` is validated only by `assertPlainText` — printable ASCII and
+nothing more. It never checks that a backup exists. It will accept a fabricated claim on
+an irreversible migration against live customer data. **Never pass a value you have not
+personally produced and verified.**
+
+The working recipe, with the parts that bite:
+
+1. The direct host `db.<ref>.supabase.co` is **IPv6-only**, so `supabase db dump` fails
+   DNS resolution inside its Docker container. Use `pg_dump` from the host instead.
+2. Create a temporary login role with `pg_read_all_data` **and** `BYPASSRLS`. Without
+   `BYPASSRLS` the `auth` schema fails to dump partway through.
+3. Pass **no** `--schema` filters. Filtering to `public`/`auth`/`storage` silently omits
+   the `private` schema and the `supabase_migrations` history — the dump looks fine and is
+   not restorable.
+4. Verify by restoring into a throwaway `supabase/postgres:17` container and comparing row
+   counts against live. Run that restore with the **container's** `psql`: a host `psql`
+   under `~/.local/bin` may be broken (`Symbol not found: _PQbackendPID`) and exit
+   silently, which makes a no-op restore look like a clean success.
+5. Drop the temporary role afterward.
+
+Store dumps outside the repository with `chmod 600`. They contain customer PII, and this
+repository is public.

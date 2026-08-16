@@ -290,6 +290,10 @@ release record. Any staging apply requires the same inspection token, exact
 project ref, durable approval record, and `--approve-staging-apply`. After
 application:
 
+> Concretely, staging apply needs `--confirm-project <ref>` and
+> `--approval-record <durable-url>` **in addition to** `--approve-staging-apply`.
+> Passing only the staging flag is refused. See `docs/cutover-gates.md`.
+
 1. require count 110, head `20260815220402`, the exact twenty-six-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
@@ -353,6 +357,12 @@ node scripts/studio-comp-migration-rollout.mjs \
   --confirmed-restore-window <confirmed-window-or-record> \
   --restore-decision-authority <named-human>
 ```
+
+This is enforced, not advisory: `confirmProductionApply()` throws unless both
+`process.stdin.isTTY` and `process.stdout.isTTY`, then prompts for the exact phrase
+built by `buildProductionConfirmationPhrase()`. An agent cannot run this step and must
+not allocate a PTY to defeat the check — it must hand the filled-in command and the
+phrase to a human operator. See `docs/cutover-gates.md`.
 
 The human runs from a private, non-traced shell. No production contract,
 synthetic row, comp action, Auth mutation, Storage action, or Realtime action is
