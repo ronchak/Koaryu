@@ -15,6 +15,7 @@ import {
   useConfigStore,
   useStore,
   useStudentStore,
+  useStudioStore,
 } from "../src/lib/store-contexts.ts";
 
 const noop = async () => undefined;
@@ -108,11 +109,16 @@ function renderWithStoreContexts(child) {
     currentRole: "admin",
     userEmail: "owner@example.test",
     userName: "Owner",
+    staffProfilesAvailable: true,
+    legalFirstName: "Ari",
+    legalLastName: "Lane",
     staffMembers: [],
     staffLoaded: true,
     staffLoadError: null,
     setStudioName: noop,
     updateUserName: noop,
+    updateUserLegalName: noop,
+    updateStaffLegalName: async () => ({}),
     refreshStaff: async () => [],
     inviteStaff: async () => ({}),
     updateStaffRole: async () => ({}),
@@ -145,17 +151,20 @@ describe("store context contracts", () => {
     function Probe() {
       const config = useConfigStore();
       const store = useStore();
+      const studio = useStudioStore();
 
       return React.createElement(
         "output",
         null,
         `${config.token}:${store.studioName}:${store.students.length}:${store.leads.length}:${store.currentRole}`
+          + `:${studio.staffProfilesAvailable}:${studio.legalFirstName}:${studio.legalLastName}`
+          + `:${typeof studio.updateUserLegalName}:${typeof studio.updateStaffLegalName}:${Object.hasOwn(config, "staffProfilesAvailable")}`
       );
     }
 
     assert.equal(
       renderWithStoreContexts(React.createElement(Probe)),
-      "<output>token_1:North Dojo:1:1:admin</output>"
+      "<output>token_1:North Dojo:1:1:admin:true:Ari:Lane:function:function:false</output>"
     );
   });
 

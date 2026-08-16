@@ -139,7 +139,7 @@ Operator: `Codex release orchestrator`
 - Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
 - Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
 
-## Database-Parity Remediation Candidate — updated 2026-08-14
+## Database-Parity Remediation Candidate — updated 2026-08-15
 
 - Read-only inspection confirmed both staging and production at the healthy
   100-migration V7 state, digest `359058cc127e57a47e429f6271453acf`,
@@ -161,12 +161,15 @@ Operator: `Codex release orchestrator`
   replay isolation, exact live-comp provenance, and atomic idempotent belt-ladder
   audit plus atomic student write responses; migration 109 now carries those
   contracts while the candidate uses the versioned writers and V3 readiness.
-  Staging is at exact 108; production
+  Migration 110 appends the reviewed staff identity name model and updates only
+  the V2 compatibility guard and release-readiness definitions to the exact V17
+  count, head, sequence, and V7 compatibility contract. Staging remains at exact 108; production
   remained at the V7 pre-state.
-- Final required database identity: 109 migrations, head
-  `20260814213000_lock_core_trial_decision_to_reservation.sql`. Production has
-  migrations 101 through 109 pending; staging has migration 109 pending.
-  The V16 readiness response attests the complete historical 85-through-109 sequence,
+- Final required database identity: 110 migrations, head
+  `20260815220402_staff_identity_name_model.sql`. Production has migrations 101
+  through 110 pending; staging has migrations 109 and 110 pending. No migration
+  109 or 110 is claimed as applied to either environment.
+  The V17 readiness response attests the complete historical 85-through-110 sequence,
   the starting-belt function/trigger invariant, and the converged trigger-only
   function ACLs plus the bodies, ACLs, and normalized return contracts of both
   public/private student profile and import writer pairs.
@@ -209,11 +212,14 @@ Operator: `Codex release orchestrator`
   six promotion rank/snapshot column identities at V15; `20260814213000`
   atomically decides trial eligibility under the checkout-reservation lock,
   serializes checkout acceptance against operator comps, preserves the
-  predecessor service-role signatures for database-first cutover, isolates
+  predecessor reservation (V1) and V2 readiness signatures for database-first cutover, isolates
   historical replay, binds explicit live-comp provenance, makes belt-ladder
-  sync/audit idempotent, and advances candidate readiness to V3/V16. The packet reports
+  sync/audit idempotent, and advances candidate readiness to V3/V16;
+  `20260815220402` adds the staff legal-name source-of-truth and audit actor-name
+  snapshot schema and updates only the V2 compatibility guard and readiness
+  definitions to V3/V17. The packet reports
   `integration_complete=true` only for
-  the exact 84-to-109 history and twenty-five
+  the exact 84-to-110 history and twenty-six
   expected pending versions. The semantic catalog and hosted preflight include
   the security-relevant billing and alert tables/RLS, grants, functions,
   triggers, indexes, sequences, columns, and constraints. Complete sorted
@@ -222,7 +228,7 @@ Operator: `Codex release orchestrator`
   and `stripe_events`. A separate column-ACL manifest covers every ordinary,
   non-dropped column across all fourteen scoped tables, including empty
   `attacl`, and rejects explicit custom/browser grants and grant-option drift.
-  Apparent-post linked inspection also requires exact V16 output before
+  Apparent-post linked inspection also requires exact V17 output before
   certification. Hosted exposed-schema and schema-ACL readback remain a
   separate provider/operator gate that local PostgreSQL cannot certify. The exact 33-file SQL
   contract inventory fails CI on missing or unexpected verification files.

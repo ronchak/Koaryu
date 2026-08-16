@@ -1136,13 +1136,13 @@ BEGIN
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;
     IF private.koaryu_release_critical_surface_manifest_v16()
-       <> '0:dcfee976320c4472f3b65fd344a643aa783e00064d3d8f4705f511e5c5c6ba4c' THEN
+       <> '0:0953df02aa7cb93c327f60059bd410e4db2af60b90f4f4e710f7baaa7d9204ad' THEN
         RAISE EXCEPTION 'Critical-surface V16 manifest mismatch; got %',
             private.koaryu_release_critical_surface_manifest_v16();
     END IF;
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 109
-       OR v_preflight.migration_head <> '20260814213000'
+       OR v_preflight.migration_count <> 110
+       OR v_preflight.migration_head <> '20260815220402'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
@@ -1152,10 +1152,10 @@ BEGIN
            '20260801131844', '20260814043325', '20260814103046',
            '20260814105424', '20260814114500', '20260814152000',
            '20260814170000', '20260814183000', '20260814200000',
-           '20260814213000'
+           '20260814213000', '20260815220402'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v16' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v17' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 
@@ -1173,7 +1173,7 @@ BEGIN
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
        OR v_preflight.manifest_version <> 'release-db-attestation-v7' THEN
-        RAISE EXCEPTION 'Deployed predecessor V7 compatibility preflight failed on exact V16.';
+        RAISE EXCEPTION 'Deployed predecessor V7 compatibility preflight failed on exact V17.';
     END IF;
 
     EXECUTE 'ALTER TABLE public.stripe_live_billing_reconciliation_checkpoints

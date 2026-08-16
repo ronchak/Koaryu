@@ -16,6 +16,8 @@ class StaffMemberResponse(BaseModel):
     user_id: Optional[str] = None
     email: str
     full_name: Optional[str] = None
+    legal_first_name: Optional[str] = None
+    legal_last_name: Optional[str] = None
     role: StaffRoleName
     status: StaffStatus
     invited_by: Optional[str] = None
@@ -27,6 +29,9 @@ class StaffMemberResponse(BaseModel):
 class StaffInviteCreate(BaseModel):
     email: str
     role: StaffRoleName
+    full_name: str
+    legal_first_name: str
+    legal_last_name: str
 
     @field_validator("email")
     @classmethod
@@ -38,6 +43,34 @@ class StaffInviteCreate(BaseModel):
             raise ValueError("Enter a valid email")
         return normalized
 
+    @field_validator("full_name", "legal_first_name", "legal_last_name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return _normalize_legal_name(value)
+
 
 class StaffRoleUpdate(BaseModel):
     role: StaffRoleName
+
+
+def _normalize_legal_name(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value).strip()
+    if not normalized:
+        raise ValueError("Name is required")
+    return normalized
+
+
+class StaffLegalNameUpdate(BaseModel):
+    legal_first_name: str
+    legal_last_name: str
+
+    @field_validator("legal_first_name", "legal_last_name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return _normalize_legal_name(value)
+
+
+class StaffLegalNameResponse(BaseModel):
+    user_id: str
+    legal_first_name: str
+    legal_last_name: str

@@ -6,6 +6,7 @@ import {
   buildDeferredScheduleDateRange,
   buildLegacyBootstrapResponse,
   buildSessionUserProfile,
+  isStaffProfilesAvailable,
   isDashboardSummaryForStudio,
   isLiveAuthRequestCurrent,
   resolveBootstrapLadders,
@@ -78,6 +79,7 @@ function dashboardSummary(studioId) {
   return {
     auth: {
       user: { id: "user-1", email: "owner@example.test" },
+      staff_profiles_available: false,
       studio_id: studioId,
       role: "admin",
     },
@@ -117,7 +119,11 @@ describe("store bootstrap model", () => {
     const sessionUser = {
       id: "session-user",
       email: "session@example.test",
-      user_metadata: { full_name: "Session User" },
+      user_metadata: {
+        full_name: "Session User",
+        legal_first_name: "Metadata",
+        legal_last_name: "Must Not Leak",
+      },
     };
 
     assert.deepEqual(buildSessionUserProfile(sessionUser), {
@@ -128,13 +134,30 @@ describe("store bootstrap model", () => {
     assert.deepEqual(
       buildAuthUserProfile(
         {
-          user: { id: "auth-user", email: "auth@example.test", full_name: null },
+          user: {
+            id: "auth-user",
+            email: "auth@example.test",
+            full_name: null,
+            legal_first_name: "Authoritative",
+            legal_last_name: "Profile",
+          },
+          staff_profiles_available: true,
           studio_id: "studio-1",
           role: "admin",
         }
       ),
-      { id: "auth-user", email: "auth@example.test", full_name: null }
+      {
+        id: "auth-user",
+        email: "auth@example.test",
+        full_name: null,
+        legal_first_name: "Authoritative",
+        legal_last_name: "Profile",
+      }
     );
+
+    assert.equal(isStaffProfilesAvailable({ staff_profiles_available: true }), true);
+    assert.equal(isStaffProfilesAvailable({ staff_profiles_available: false }), false);
+    assert.equal(isStaffProfilesAvailable({}), false);
   });
 
   it("resolves bootstrap studio names and ladders with the same fallback order as the store", () => {
@@ -156,8 +179,14 @@ describe("store bootstrap model", () => {
 
   it("builds the legacy bootstrap response from fallback endpoint results", () => {
     const ladders = [ladder("ladder-1")];
+    const auth = {
+      user: { id: "user-1", email: "owner@example.test" },
+      staff_profiles_available: true,
+      studio_id: "studio-1",
+      role: "admin",
+    };
     const response = buildLegacyBootstrapResponse({
-      auth: { user: { id: "user-1", email: "owner@example.test" }, studio_id: "studio-1", role: "admin" },
+      auth,
       studio: { name: "River City" },
       studentsPage: { items: [student("student-1")], total: 1, page: 1, page_size: 200 },
       programs: [program("program-1")],
@@ -183,6 +212,8 @@ describe("store bootstrap model", () => {
         primaryLadderId: "ladder-1",
       }
     );
+    assert.equal(response.auth, auth);
+    assert.equal(response.auth.staff_profiles_available, true);
   });
 
   it("builds deferred schedule windows using the existing UTC ISO date-key behavior", () => {

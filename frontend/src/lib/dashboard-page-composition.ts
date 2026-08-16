@@ -13,6 +13,7 @@ import type {
   OverviewAction,
   SetupStep,
 } from "@/components/ui/overview";
+import { selectDashboardBriefGreeting } from "./dashboard-brief-greetings";
 import {
   getDashboardBillingActionKind,
   isDashboardBillingSetupComplete,
@@ -70,6 +71,8 @@ export type DashboardPageCompositionInput = {
   canSeeBilling: boolean;
   isPreviewMode: boolean;
   localStats: DashboardLocalStats;
+  ownerName: string | null;
+  ownerSeedKey: string | null;
   programs: Program[];
   rosterSummaryPending: boolean;
   sessionCount: number;
@@ -77,6 +80,7 @@ export type DashboardPageCompositionInput = {
   studentCount: number;
   summary: DashboardSummary | null;
   templateCount: number;
+  todayDateKey: string;
   todayLabel: string;
 };
 
@@ -110,6 +114,8 @@ export function buildDashboardPageComposition({
   canSeeBilling,
   isPreviewMode,
   localStats,
+  ownerName,
+  ownerSeedKey,
   programs,
   rosterSummaryPending,
   sessionCount,
@@ -117,6 +123,7 @@ export function buildDashboardPageComposition({
   studentCount,
   summary,
   templateCount,
+  todayDateKey,
   todayLabel,
 }: DashboardPageCompositionInput): DashboardPageComposition {
   const displayStats = selectDashboardDisplayStats({
@@ -164,10 +171,13 @@ export function buildDashboardPageComposition({
     canSeeBilling,
     inactivityStats: displayStats.displayedInactivityStats,
     leadStats: displayStats.displayedLeadStats,
+    ownerName,
+    ownerSeedKey,
     rosterSummaryPending,
     setupSteps,
     testReadinessStats: displayStats.displayedTestReadinessStats,
     todayActions,
+    todayDateKey,
     todaySessions: displayStats.displayedTodaySessions,
   });
 
@@ -599,20 +609,26 @@ function buildDashboardOwnerBrief({
   canSeeBilling,
   inactivityStats,
   leadStats,
+  ownerName,
+  ownerSeedKey,
   rosterSummaryPending,
   setupSteps,
   testReadinessStats,
   todayActions,
+  todayDateKey,
   todaySessions,
 }: {
   billingSummary: DashboardBillingSummary;
   canSeeBilling: boolean;
   inactivityStats: DashboardInactivityStats;
   leadStats: DashboardLeadStats;
+  ownerName: string | null;
+  ownerSeedKey: string | null;
   rosterSummaryPending: boolean;
   setupSteps: SetupStep[];
   testReadinessStats: DashboardTestReadinessStats;
   todayActions: OverviewAction[];
+  todayDateKey: string;
   todaySessions: DashboardTodaySessions;
 }): DashboardOwnerBrief {
   const setupCompletedCount = setupSteps.filter((step) => step.complete).length;
@@ -659,6 +675,11 @@ function buildDashboardOwnerBrief({
   return {
     tone,
     label,
+    greeting: selectDashboardBriefGreeting({
+      dateKey: todayDateKey,
+      ownerName,
+      seedKey: ownerSeedKey,
+    }),
     primaryAction,
     summary: reasons.length > 0
       ? reasons.join(" · ")

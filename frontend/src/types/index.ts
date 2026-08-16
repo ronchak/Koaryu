@@ -21,6 +21,8 @@ export interface StaffRole {
 export type StaffMember = ApiContracts.ApiStaffMemberResponse;
 export type StaffInviteCreate = ApiContracts.ApiStaffInviteCreate;
 export type StaffRoleUpdate = ApiContracts.ApiStaffRoleUpdate;
+export type StaffLegalNameUpdate = ApiContracts.ApiStaffLegalNameUpdate;
+export type StaffLegalNameResponse = ApiContracts.ApiStaffLegalNameResponse;
 
 export * from "./dashboard";
 

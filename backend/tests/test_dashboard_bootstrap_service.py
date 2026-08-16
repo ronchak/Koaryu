@@ -25,6 +25,7 @@ class DashboardBootstrapServiceTest(unittest.TestCase):
         service = DashboardBootstrapService(supabase=supabase)
         auth = AuthResponse(
             user=UserProfile(id="user-1", email="owner@example.com", full_name="Owner"),
+            staff_profiles_available=True,
             studio_id="studio-1",
             role="admin",
         )

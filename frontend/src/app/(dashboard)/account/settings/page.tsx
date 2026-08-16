@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AlertTriangle, CreditCard, ExternalLink, Lock, LogOut, Mail, ShieldCheck, Trash2, Users } from "lucide-react";
+import { AlertTriangle, CreditCard, ExternalLink, LogOut, Mail, ShieldCheck, Trash2, UserCircle, Users } from "lucide-react";
 import {
   AccountInfoRow,
   AccountLinkTile,
@@ -11,6 +11,7 @@ import {
   AccountPageShell,
   AccountSection,
 } from "@/components/account-page-shell";
+import { AccountNameSection } from "@/components/account/account-name-section";
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { createClient } from "@/lib/supabase/client";
@@ -189,6 +190,8 @@ export default function AccountSettingsPage() {
       title="Account settings"
       description="Review account-level security and move to the right studio administration tools."
     >
+      <AccountNameSection />
+
       <AccountSection title="Sign-in and access">
         <AccountInfoRow label="Login email" value={userEmail || "Not available"} />
         <AccountInfoRow label="Current studio" value={studioName || "Not selected"} />
@@ -202,9 +205,9 @@ export default function AccountSettingsPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <AccountLinkTile
           href="/account/profile"
-          icon={Lock}
+          icon={UserCircle}
           title="Profile and identity"
-          description="Update the name shown to your team and audit records."
+          description="See your full profile, workspace context, and how your identity is used."
         />
         <AccountLinkTile
           href="/settings"
