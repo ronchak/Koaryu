@@ -23,6 +23,9 @@
       --warn: #75540e;
       --warn-bg: #f3e9c9;
       --focus: #0b63ce;
+      --cobalt: #315a8a;
+      --vermilion: #a94732;
+      --widget-radius: 1.45rem;
       --spine: 13rem;
       --rail: 18rem;
       --radius: 0.45rem;
@@ -32,6 +35,7 @@
     }
 
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html { scroll-behavior: smooth; }
     body { margin: 0; background: var(--paper); color: var(--ink); line-height: 1.45; }
     button, input, select, textarea { font: inherit; color: inherit; }
@@ -212,6 +216,90 @@
     html[data-role="instructor"] #screen-settings > * { display: none; }
     .status-skeleton { height: 0.85rem; max-width: 30rem; background: repeating-linear-gradient(90deg, var(--rule-soft) 0 18px, var(--sheet) 18px 36px); }
 
+    .widget-home { max-width: 90rem; margin-inline: auto; }
+    .home-day-band {
+      display: flex; justify-content: space-between; gap: 1rem; align-items: end;
+      margin-bottom: 1rem; padding: 0.2rem 0.25rem 1rem; border-bottom: 1px solid var(--ink);
+    }
+    .home-day-band h3 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.45rem); }
+    .day-seal {
+      width: 3.25rem; aspect-ratio: 1; border: 1px solid rgb(48 39 25 / 18%); border-radius: 0.55rem;
+      display: grid; place-items: center; color: rgb(48 39 25 / 28%); font-family: serif; font-size: 1.35rem;
+    }
+    .widget-canvas {
+      position: relative; padding: 1rem; overflow: clip; border: 1px solid rgb(48 39 25 / 12%);
+      border-radius: 2rem; background:
+        linear-gradient(rgb(255 255 255 / 18%), rgb(255 255 255 / 0%)),
+        repeating-linear-gradient(0deg, transparent 0 38px, rgb(48 39 25 / 3%) 38px 39px),
+        var(--sheet-warm);
+    }
+    .widget-canvas.is-arranging {
+      background:
+        linear-gradient(90deg, rgb(49 90 138 / 8%) 1px, transparent 1px),
+        linear-gradient(rgb(49 90 138 / 8%) 1px, transparent 1px), var(--sheet-warm);
+      background-size: calc((100% - 5rem) / 4 + 1rem) 10.6rem;
+    }
+    .widget-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.65rem; margin-bottom: 1rem; }
+    .widget-toolbar > div { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .widget-grid {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 9.6rem;
+      grid-auto-flow: dense; gap: 1rem; min-height: 10rem;
+    }
+    .home-widget {
+      min-width: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--sheet);
+      border: 1px solid rgb(48 39 25 / 18%); border-radius: var(--widget-radius);
+      box-shadow: 0 1px 1px rgb(48 39 25 / 5%), 0 8px 24px rgb(48 39 25 / 6%);
+      transition: transform 200ms cubic-bezier(.2,.7,.3,1), box-shadow 160ms ease, border-color 160ms ease;
+      touch-action: pan-y;
+    }
+    .home-widget[data-size="1x1"] { grid-column: span 1; grid-row: span 1; }
+    .home-widget[data-size="2x1"] { grid-column: span 2; grid-row: span 1; }
+    .home-widget[data-size="2x2"] { grid-column: span 2; grid-row: span 2; }
+    .home-widget[data-size="4x1"] { grid-column: span 4; grid-row: span 1; }
+    .home-widget[data-size="4x2"] { grid-column: span 4; grid-row: span 2; }
+    .home-widget:hover { border-color: rgb(48 39 25 / 34%); }
+    .home-widget.is-dragging { opacity: 0.9; transform: scale(1.018) rotate(.35deg); box-shadow: 0 12px 34px rgb(48 39 25 / 18%); z-index: 5; }
+    .home-widget.is-picked { outline: 3px solid var(--cobalt); outline-offset: 3px; }
+    .widget-band {
+      min-height: 2.55rem; display: flex; justify-content: space-between; gap: 0.6rem; align-items: center;
+      padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--rule-soft); background: rgb(255 255 255 / 28%);
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.09em; font-weight: 850;
+    }
+    .widget-window { color: var(--ink-soft); font-size: 0.64rem; white-space: nowrap; }
+    .widget-grip { display: none; border: 0; border-radius: 0.35rem; min-height: 32px; padding: 0.25rem 0.45rem; background: transparent; }
+    .is-arranging .widget-band { background: rgb(49 90 138 / 10%); border-bottom-color: rgb(49 90 138 / 35%); }
+    .is-arranging .home-widget { border-style: dashed; cursor: grab; touch-action: none; }
+    .is-arranging .widget-grip { display: inline-flex; cursor: grab; }
+    .widget-body { min-height: 0; flex: 1; padding: 0.8rem; overflow: hidden; }
+    .widget-body a { font-weight: 800; }
+    .widget-number { font-size: clamp(1.7rem, 4vw, 3.25rem); font-weight: 820; line-height: 1; letter-spacing: -0.055em; }
+    .widget-caption { margin-top: 0.35rem; color: var(--ink-soft); font-size: 0.76rem; }
+    .widget-list { list-style: none; padding: 0; margin: 0; }
+    .widget-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.55rem; align-items: baseline; padding: 0.42rem 0; border-bottom: 1px solid var(--rule-soft); font-size: 0.82rem; }
+    .widget-list li:last-child { border-bottom: 0; }
+    .widget-dot { width: 0.48rem; height: 0.48rem; border-radius: 50%; background: var(--good); }
+    .widget-dot.warn { background: var(--warn); }
+    .widget-dot.danger { background: var(--vermilion); }
+    .widget-attention { border-color: rgb(169 71 50 / 48%); }
+    .widget-attention .widget-band { color: var(--vermilion); border-bottom-color: rgb(169 71 50 / 34%); }
+    .widget-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.45rem; }
+    .widget-actions a { min-height: 42px; display: flex; align-items: center; padding: 0.45rem 0.55rem; border: 1px solid var(--rule); border-radius: 0.8rem; text-decoration: none; font-size: 0.78rem; }
+    .widget-edit-actions { display: none; gap: 0.25rem; align-items: center; }
+    .is-arranging .widget-edit-actions { display: flex; }
+    .widget-edit-actions button { min-height: 32px; padding: 0.25rem 0.45rem; border-color: var(--rule); font-size: 0.7rem; }
+    .widget-library {
+      position: absolute; inset: 0 0 0 auto; z-index: 10; width: min(28rem, 92%); overflow-y: auto;
+      padding: 1rem; border-left: 1px solid var(--ink); background: var(--sheet); box-shadow: -12px 0 34px rgb(48 39 25 / 16%);
+    }
+    .widget-library[hidden] { display: none; }
+    .widget-library header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; padding-bottom: 0.8rem; border-bottom: 2px solid var(--ink); }
+    .widget-library h3 { margin: 0; }
+    .library-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.7rem; margin-top: 1rem; }
+    .library-item { display: grid; gap: 0.3rem; align-content: start; min-height: 8rem; text-align: left; background: var(--paper); border-radius: 1rem; }
+    .library-item .miniature { display: block; height: 2.7rem; border: 1px solid var(--rule); border-radius: 0.65rem; background: repeating-linear-gradient(0deg, transparent 0 10px, rgb(48 39 25 / 7%) 10px 11px); }
+    .layout-note { margin: 0.8rem 0 0; font-size: 0.78rem; color: var(--ink-soft); }
+    .mobile-arrange-note { display: none; }
+
     .storyboards { display: grid; gap: 1.5rem; }
     .storyboard { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ink); }
     .story-step { padding: 1rem; border-right: 1px solid var(--ink); }
@@ -238,6 +326,9 @@
       .screen-layout, .screen-layout.with-index { grid-template-columns: 8rem minmax(0, 1fr); }
       .screen-layout:not(.with-index) { grid-template-columns: 1fr; }
       .screen-layout .margin-rail { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--rule); padding: 1rem 0 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+      .widget-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .home-widget[data-size="4x1"], .home-widget[data-size="4x2"] { grid-column: span 2; }
+      .widget-canvas.is-arranging { background-size: calc((100% - 3rem) / 2 + 1rem) 10.6rem; }
     }
 
     @media (max-width: 760px) {
@@ -274,6 +365,15 @@
       .schedule-scroll { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; }
       .schedule-scroll table { min-width: 52rem; }
       .coverage-wrap { overflow: visible; border: 0; }
+      .widget-canvas { padding: 0.65rem; border-radius: 1.35rem; }
+      .widget-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+      .home-widget { min-height: 9rem; border-radius: 1.2rem; }
+      .home-widget[data-size="2x2"], .home-widget[data-size="4x2"] { min-height: 18rem; }
+      .home-day-band { align-items: flex-start; }
+      .day-seal { width: 2.75rem; }
+      .mobile-arrange-note { display: block; }
+      .library-grid { grid-template-columns: 1fr; }
+      .widget-library { position: fixed; inset: 0; width: 100%; max-width: 100%; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -297,10 +397,10 @@
 <body>
   <a class="skip-link" href="#pitch-main">Skip to pitch content</a>
   <header class="hero">
-    <p class="eyebrow">Koaryu dashboard redesign · decision pitch</p>
-    <h1>One sheet in hand. The whole studio in reach.</h1>
-    <p class="lede">Recommend a Mat-shaped shell with Ledger-shaped data. It gives Today a clear operating focus, lets dense records scan quickly, and keeps scope, freshness, permissions, and non-live truth visible.</p>
-    <p class="decision-line">Decision: Dojo Ledger owns the system. Training Floor remains a bounded temporal view for Today and Schedule. Wall behavior stops at Pin to Today.</p>
+    <p class="eyebrow">Koaryu product redesign · final direction</p>
+    <h1>Your studio, arranged by hand.</h1>
+    <p class="lede">The home becomes a calm, customizable widget canvas inspired by the ease of an iPad home screen. The rest of Koaryu changes shape to fit the work: ledgers for exact records, a time canvas for classes, a folio for each student, and focused sheets for setup.</p>
+    <p class="decision-line">Decision: one visual language, several page-native compositions. Apple supplies the home’s spatial editing discipline; Koaryu supplies the paper, ink, ledger bands, and operational truth.</p>
     <div class="hero-actions">
       <a class="button-link primary" href="#recommended-prototype">Open the recommended prototype</a>
       <a class="button-link" href="#coverage-manifest">Audit all 27 routes</a>
@@ -312,48 +412,53 @@
     <section class="pitch-section" id="concepts" aria-labelledby="concepts-heading">
       <div class="section-intro">
         <div>
-          <p class="eyebrow">Two interaction systems</p>
-          <h2 id="concepts-heading">Different composition, not different paint</h2>
+          <p class="eyebrow">A family of work surfaces</p>
+          <h2 id="concepts-heading">One character. The right tool for each page.</h2>
         </div>
-        <p>Both concepts use calm paper, strong ink, and restrained motion. They disagree on how work is organized. Ledger treats the product as indexed records. Training Floor treats it as spatial lanes with time and a commit line.</p>
+        <p>The redesign does not force every task into a card grid or a ledger. Home is personal and spatial. Records are exact. Time is visual. Long forms are indexed. The shared language comes from material, type, rules, motion, and honest state disclosure.</p>
       </div>
       <div class="concepts">
         <article class="concept recommended">
-          <p class="eyebrow">Concept A · recommended</p>
-          <h3>Dojo Ledger</h3>
-          <p>Global spine, declared scope, ruled records, contextual history. Stable columns make comparison fast; current selection gets one margin rail.</p>
+          <p class="eyebrow">Home owner · Apple-inspired, Koaryu-made</p>
+          <h3>The Tatami Home</h3>
+          <p>A user-arranged field of glanceable studio widgets. Large continuous corners and magnetic reflow create the iPad ease; posted-paper surfaces, ledger bands, warm ink, and strict operational content keep it Koaryu.</p>
           <div class="concept-diagram ledger-demo" aria-label="Diagram of the Dojo Ledger composition">
-            <span class="demo-spine">Indexed spine</span>
-            <span class="demo-slug">Students · 214 active · all programs · as of 6:12am</span>
-            <span class="demo-sheet">Ruled roster</span><span class="demo-rail">Selection history</span>
-            <span class="demo-sheet">State gutter + fields</span>
-            <span class="demo-sheet">Batch band</span>
+            <span class="demo-spine">Studio spine</span>
+            <span class="demo-slug">Sunday · Pacific Jiu-Jitsu · studio time</span>
+            <span class="demo-sheet">Needs attention · fixed</span><span class="demo-rail">Add panel</span>
+            <span class="demo-sheet">Classes today · wide</span>
+            <span class="demo-sheet">Student pulse · small</span>
           </div>
-          <p><strong>Best at:</strong> roster, student file, billing books, reports, settings, account.</p>
+          <p><strong>Best at:</strong> the one place customers should compose for themselves: Dashboard.</p>
         </article>
         <article class="concept">
-          <p class="eyebrow">Concept B · bounded alternative</p>
-          <h3>Training Floor</h3>
-          <p>Fixed work lanes, horizontal time or urgency, and a visible commit edge. Work moves across the floor as its state changes.</p>
+          <p class="eyebrow">Operational pages · stable by design</p>
+          <h3>Purpose-built sheets</h3>
+          <p>Ledger, folio, workbench, progression rail, time canvas, and analytical sheet each own the pages where their structure makes the work faster and safer.</p>
           <div class="concept-diagram floor-demo" aria-label="Diagram of the Training Floor composition">
-            <span class="lane-title">Waiting</span><span class="lane-title">On mat</span><span class="lane-title">Committed</span>
-            <span class="work">Lead · 3d</span><span class="work">Trial tonight</span><span>Converted</span>
-            <span>CSV read</span><span class="work">Map 18 fields</span><span>Land roster</span>
-            <span>Class due</span><span class="work">Mark attendance</span><span>Close sheet</span>
+            <span class="lane-title">Records</span><span class="lane-title">Time</span><span class="lane-title">Process</span>
+            <span class="work">Student ledger</span><span class="work">Week canvas</span><span>Import sheet</span>
+            <span>Billing books</span><span class="work">Attendance</span><span>Rank rail</span>
+            <span>Report sheet</span><span class="work">History</span><span>Indexed forms</span>
           </div>
-          <p><strong>Best at:</strong> time-based work, attendance, import progression, lead aging.</p>
+          <p><strong>Best at:</strong> dense comparison, exact money, chronology, time planning, and consequential forms.</p>
         </article>
       </div>
 
       <h3 style="margin-top:2rem">Page-level alternatives</h3>
       <table class="stress-table responsive-table">
-        <thead><tr><th>Family</th><th>Dojo Ledger</th><th>Training Floor</th><th>Decision</th></tr></thead>
+        <thead><tr><th>Family</th><th>Stable-sheet option</th><th>Spatial option</th><th>Final owner</th></tr></thead>
         <tbody>
-          <tr><td data-label="Family">Today</td><td data-label="Dojo Ledger">Linked metric sentence, day band, verb-first queue, bounded pins.</td><td data-label="Training Floor">Fixed Now / Next / Done lanes, with age shown as distance from the commit edge.</td><td data-label="Decision">Ledger owns; temporal day band borrows Floor.</td></tr>
+          <tr><td data-label="Family">Dashboard / Today</td><td data-label="Dojo Ledger">Canonical attention register and source-truth bands.</td><td data-label="Training Floor">User-arranged, size-aware Tatami Home with magnetic reflow.</td><td data-label="Decision">Tatami Home owns; critical attention remains pinned and exact.</td></tr>
           <tr><td data-label="Family">Students</td><td data-label="Dojo Ledger">Ruled roster, state gutter, sticky column filters, batch band.</td><td data-label="Training Floor">Lifecycle lanes with students positioned by time since last attendance.</td><td data-label="Decision">Ledger. Floor loses multi-field comparison.</td></tr>
           <tr><td data-label="Family">Student Detail</td><td data-label="Dojo Ledger">Card-file leaves with fixed identity and a chronological History leaf.</td><td data-label="Training Floor">A person-centered timeline with facts in a separate drawer.</td><td data-label="Decision">Ledger; use the timeline only for History.</td></tr>
-          <tr><td data-label="Family">Schedule / Attendance</td><td data-label="Dojo Ledger">Ruled Week Sheet and explicit attendance commit.</td><td data-label="Training Floor">Continuous day roll with classes positioned by time and capacity.</td><td data-label="Decision">Ledger Week Sheet; Floor remains an optional temporal view.</td></tr>
+          <tr><td data-label="Family">Schedule / Attendance</td><td data-label="Dojo Ledger">Explicit attendance register and commit.</td><td data-label="Training Floor">Continuous week canvas with classes positioned by time and capacity.</td><td data-label="Decision">Time canvas owns planning; Ledger owns attendance.</td></tr>
           <tr><td data-label="Family">Billing</td><td data-label="Dojo Ledger">Setup plus four books and Advanced, persistent money band, addressable invoice detail.</td><td data-label="Training Floor">Exception lanes organized by age and distance from resolution.</td><td data-label="Decision">Ledger. Exception age may supplement, never replace the books.</td></tr>
+          <tr><td data-label="Family">CSV Import</td><td data-label="Stable-sheet option">One persistent worksheet with mapping ledger, inline row errors, and landing receipt.</td><td data-label="Spatial option">Upload / Map / Validate / Land stations with a visible commit edge.</td><td data-label="Final owner">Worksheet owns; spatial progression appears only in the margin index.</td></tr>
+          <tr><td data-label="Family">Belt Tracker</td><td data-label="Stable-sheet option">Ranked roster with eligibility rules and an atomic plan ledger.</td><td data-label="Spatial option">Students positioned along a belt-colored progression path.</td><td data-label="Final owner">Ranked roster owns; a progression rail supplements it without becoming an infographic.</td></tr>
+          <tr><td data-label="Family">Leads</td><td data-label="Stable-sheet option">Follow-up ledger sorted by days since contact, with stage and next action visible.</td><td data-label="Spatial option">Kanban lanes with drag and stage as position.</td><td data-label="Final owner">Aging ledger. Leads are obligations to follow up, not objects on a floor.</td></tr>
+          <tr><td data-label="Family">Reports</td><td data-label="Stable-sheet option">Print-first analytical sheet with one scoped visual, table, method, and export catalog.</td><td data-label="Spatial option">Metric wall of configurable charts.</td><td data-label="Final owner">Analytical sheet; only a saved result may become a Home panel.</td></tr>
+          <tr><td data-label="Family">Settings / Account / Help</td><td data-label="Stable-sheet option">Indexed operations manual and focused transition sheets.</td><td data-label="Spatial option">Nested settings cards and drawers.</td><td data-label="Final owner">Indexed forms. Consequential controls stay addressable and explicit.</td></tr>
         </tbody>
       </table>
 
@@ -365,7 +470,7 @@
           <tr><td data-label="Surface"><strong>Student Detail</strong></td><td data-label="Training Floor failure">Current identity, conditional guardian/emergency data, lifecycle actions, program/rank state, photo, notes, and chronology compete for the same spatial axis.</td><td data-label="Ledger answer">A card file keeps facts in indexed leaves; the History leaf and margin rail carry time without hiding editable fields.</td></tr>
         </tbody>
       </table>
-      <div class="chosen-constraint"><strong>Chosen hybrid constraint.</strong> Mat supplies one stable focal zone. Ledger supplies every data surface. Training Floor may shape Today’s day band and Schedule’s Week Sheet. Wall is limited to pinning an existing view onto Today; no freeform dashboard builder.</div>
+      <div class="chosen-constraint"><strong>Chosen hybrid constraint.</strong> Dashboard is a real, user-configurable widget home with a small legal size vocabulary, saved arrangements, role-aware availability, keyboard reordering, and a mobile arrange list. Students and Billing remain ledgers; Student Detail is a folio; Schedule is a time canvas plus attendance register; Import is a worksheet; Reports are print-first sheets; Settings, Account, Help, and transition routes are indexed or focused sheets.</div>
     </section>
 
     <section id="recommended-prototype" aria-labelledby="prototype-heading">
@@ -405,7 +510,7 @@
           <div class="spine-inner">
             <div class="spine-brand">KOARYU</div>
             <nav>
-              <button type="button" data-screen-target="screen-today" aria-current="page">Today</button>
+              <button type="button" data-screen-target="screen-today" aria-current="page">Home</button>
               <button type="button" data-screen-target="screen-students">Students</button>
               <button type="button" data-screen-target="screen-student">Student detail</button>
               <button type="button" data-screen-target="screen-import">Import</button>
@@ -424,8 +529,8 @@
         <div class="prototype-main">
           <div class="slug-band" aria-label="Current prototype scope">
             <div>
-              <div class="slug-title" id="slug-title">Dashboard / Today · 214 active</div>
-              <div class="slug-meta" id="slug-meta">All programs · America/Los_Angeles · server summary as of Aug 17, 6:12am</div>
+              <div class="slug-title" id="slug-title">Dashboard / My home · 214 active</div>
+              <div class="slug-meta" id="slug-meta">My arrangement · America/Los_Angeles · server summary as of Aug 17, 6:12am</div>
             </div>
             <div class="slug-actions">
               <span class="fixture-stamp">Prototype fixture</span>
@@ -440,48 +545,101 @@
           <div class="notice danger denied-proof"><strong>Fail closed</strong> Unknown roles receive no capabilities. Protected route data is not loaded.</div>
           <div class="notice danger billing-denied-proof"><strong>Billing route denied for Instructor</strong> Return to Dashboard. No billing data was requested.</div>
 
-          <section class="screen" id="screen-today" data-screen data-slug="Dashboard / Today · 214 active" data-meta="All programs · America/Los_Angeles · server summary as of Aug 17, 6:12am" aria-labelledby="today-heading">
+          <section class="screen" id="screen-today" data-screen data-slug="Dashboard / My home · 214 active" data-meta="My arrangement · America/Los_Angeles · server summary as of Aug 17, 6:12am" aria-labelledby="today-heading">
             <div class="screen-heading">
-              <div><p class="eyebrow">Primary focal zone</p><h2 id="today-heading">Today</h2></div>
+              <div><p class="eyebrow">Tatami Home · personal arrangement</p><h2 id="today-heading">My studio</h2></div>
               <div class="action-row">
-                <button type="button" class="prototype-only">Explain metrics</button>
-                <button type="button" class="primary prototype-only" data-roles="admin front-desk">Add student</button>
+                <button type="button" id="arrange-widgets" aria-pressed="false">Arrange</button>
+                <button type="button" id="open-widget-library">Add panel</button>
               </div>
             </div>
-            <div class="screen-layout">
-              <div>
-                <p class="metric-sentence">214 active · 6 at risk · $4,205 due this week</p>
-                <div class="notice state-partial"><strong>Partial roster</strong> Summary counts are server-owned. The roster preview is capped, so exact retention detail is intentionally suppressed.</div>
-                <section class="ledger" aria-labelledby="day-band-heading">
-                  <div class="ledger-header"><h3 id="day-band-heading">Today’s classes</h3><a href="#screen-schedule">Open Week Sheet</a></div>
-                  <div class="day-band">
-                    <div><strong>6:00am</strong>Adult BJJ Fundamentals<br>18 / 24 present<div class="ink-meter" aria-label="75 percent attendance"><span style="width:75%"></span></div></div>
-                    <div><strong>12:00pm</strong>Open Mat<br>9 / 20 expected<div class="ink-meter" aria-label="45 percent expected"><span style="width:45%"></span></div></div>
-                    <div><strong>4:30pm</strong>Kids Fundamentals<br>22 / 24 expected<div class="ink-meter" aria-label="92 percent expected"><span style="width:92%"></span></div></div>
-                    <div><strong>6:30pm</strong>Adult BJJ All Levels<br>19 / 28 expected<div class="ink-meter" aria-label="68 percent expected"><span style="width:68%"></span></div></div>
-                  </div>
-                </section>
-                <section class="ledger" aria-labelledby="queue-heading">
-                  <div class="ledger-header"><h3 id="queue-heading">Owner queue · oldest overdue first</h3><span>7 open</span></div>
-                  <div class="queue-row"><span class="state-mark danger" aria-hidden="true"></span><strong>Remedy invoice</strong><span>Maya Chen · $145 failed Aug 15 · payer Alice Chen</span><button type="button" class="prototype-only" data-roles="admin front-desk">Open invoice</button></div>
-                  <div class="queue-row"><span class="state-mark warning" aria-hidden="true"></span><strong>Follow up</strong><span>Jordan Lee · trial lead · due Aug 16</span><button type="button" class="prototype-only" data-roles="admin front-desk">Open lead</button></div>
-                  <div class="queue-row"><span class="state-mark warning" aria-hidden="true"></span><strong>Review attendance</strong><span>Noah Williams · absent 3 classes · last seen Aug 8</span><button type="button" class="prototype-only">Open student</button></div>
-                  <div class="queue-row"><span class="state-mark" aria-hidden="true"></span><strong>Approve rank</strong><span>Priya Shah · Purple Belt requirements met</span><button type="button" class="prototype-only" data-roles="admin instructor">Review</button></div>
-                </section>
-                <section class="ledger" aria-labelledby="setup-heading">
-                  <div class="ledger-header"><h3 id="setup-heading">Setup progress and quick links</h3><span class="stamp warn">4 of 5 complete</span></div>
-                  <div class="ruled-row"><span class="state-mark warning"></span><strong>Finish emergency contacts</strong><span>11 active students are missing a contact.</span><a href="#screen-students">Review roster</a></div>
-                  <div class="ruled-row"><span class="state-mark"></span><strong>Recent student</strong><span>Maya Chen · Adult BJJ · Blue Belt, 2 stripes</span><a href="#screen-student">Open file</a></div>
-                  <div class="ruled-row"><span class="state-mark"></span><strong>Quick link</strong><span>Take attendance for the 6:00am session.</span><a href="#screen-schedule">Open attendance</a></div>
-                  <div class="ruled-row" data-roles="admin front-desk"><span class="state-mark danger"></span><strong>Billing signal</strong><span>1 failed invoice · $145 outstanding.</span><a href="#billing-invoices">Review billing</a></div>
-                </section>
-                <div class="heavy-proof notice"><strong>Heavy fixture</strong> Today retains one focal queue while 12 pinned blocks and 84 queue items paginate below it; the canonical day band does not move.</div>
+            <div class="widget-home">
+              <div class="home-day-band">
+                <div><p class="eyebrow">Sunday · August 17</p><h3>Pacific Jiu-Jitsu is ready for the day.</h3><small>All programs · studio time · updated 6:12am</small></div>
+                <div class="day-seal" aria-label="Day remains open" title="The day seal appears after every obligation clears">締</div>
               </div>
-              <aside class="margin-rail" aria-label="Today context">
-                <section><h3>Pinned to Today</h3><p><strong>Kids Fundamentals capacity</strong><br>22 / 24 tonight</p><button type="button" class="prototype-only">Remove pin</button></section>
-                <section><h3>Operational signals</h3><p>4 leads awaiting follow-up<br>2 rank approvals<br>11 missing emergency contacts</p></section>
-                <section><h3>Source truth</h3><p>Counts: server summary<br>Roster preview: partial<br>Billing: hidden when role is denied</p></section>
-              </aside>
+              <div class="notice state-partial"><strong>Partial roster</strong> Widget counts still use server-owned summaries. Exact retention is never derived from the capped roster preview.</div>
+              <div class="widget-canvas" id="widget-canvas">
+                <div class="widget-toolbar">
+                  <div><span class="stamp good">My arrangement</span><span class="muted">Saved per user + role</span></div>
+                  <div><button type="button" id="reset-widgets">Reset to default</button><button type="button" id="done-arranging" hidden>Done</button></div>
+                </div>
+                <p class="mobile-arrange-note"><strong>Phone behavior:</strong> Arrange switches to a compact reorder list in production; this pitch keeps each widget visible so its content can be reviewed.</p>
+                <aside class="widget-library" id="widget-library" aria-labelledby="widget-library-heading" hidden>
+                  <header><div><p class="eyebrow">Panel library</p><h3 id="widget-library-heading">Choose what belongs on your home</h3><small>Today · People · Money · Setup</small></div><button type="button" id="close-widget-library" aria-label="Close panel library">Close</button></header>
+                  <div class="library-grid">
+                    <button type="button" class="library-item" data-add-widget="recent"><span class="miniature"></span><strong>Recent students</strong><small>People · medium</small></button>
+                    <button type="button" class="library-item" data-add-widget="contacts"><span class="miniature"></span><strong>Emergency contacts</strong><small>People · medium</small></button>
+                    <button type="button" class="library-item" data-add-widget="report"><span class="miniature"></span><strong>Saved report</strong><small>Studio · medium or large</small></button>
+                    <button type="button" class="library-item" data-add-widget="setup"><span class="miniature"></span><strong>Setup progress</strong><small>Setup · small or medium</small></button>
+                  </div>
+                  <p class="layout-note">Billing panels are absent for Instructors, rather than teased as disabled. Version one uses product-owned role defaults; owner-published studio defaults arrive with cross-device persistence.</p>
+                </aside>
+
+                <div class="widget-grid" id="widget-grid" aria-label="Customizable home panels">
+                  <article class="home-widget widget-attention" data-widget-id="attention" data-size="4x1" data-default-size="4x1" data-fixed="true" tabindex="0">
+                    <div class="widget-band"><span>Needs attention</span><span class="widget-window">7 open · oldest first</span><button type="button" class="widget-grip" aria-label="Move Needs attention">☷</button></div>
+                    <div class="widget-body"><ul class="widget-list"><li><span class="widget-dot danger"></span><span><strong>Remedy invoice</strong> · Maya Chen · $145 failed Aug 15</span><a href="#billing-invoices">Open</a></li><li><span class="widget-dot warn"></span><span><strong>Follow up</strong> · Jordan Lee · trial lead · due yesterday</span><a href="#screen-leads">Open</a></li><li><span class="widget-dot warn"></span><span><strong>Review attendance</strong> · Noah Williams · missed 3</span><a href="#screen-student">Open</a></li></ul></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="classes" data-size="4x2" data-default-size="4x2" data-sizes="2x2 4x2" tabindex="0">
+                    <div class="widget-band"><span>Classes today</span><span class="widget-window">4 sessions · studio time</span><span class="widget-edit-actions"><button type="button" data-resize-widget aria-label="Resize Classes today">Resize</button><button type="button" data-remove-widget aria-label="Remove Classes today">Remove</button></span><button type="button" class="widget-grip" aria-label="Move Classes today">☷</button></div>
+                    <div class="widget-body"><ul class="widget-list"><li><span>6:00am</span><span><strong>Adult BJJ Fundamentals</strong><br><small>18 / 24 present</small></span><span class="stamp good">Taken</span></li><li><span>12:00pm</span><span><strong>Open Mat</strong><br><small>9 / 20 expected</small></span><a href="#screen-schedule">Roster</a></li><li><span>4:30pm</span><span><strong>Kids Fundamentals</strong><br><small>22 / 24 expected</small></span><a href="#screen-schedule">Open</a></li><li><span>6:30pm</span><span><strong>Adult BJJ All Levels</strong><br><small>19 / 28 expected</small></span><a href="#screen-schedule">Open</a></li></ul></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="students" data-size="1x1" data-default-size="1x1" data-sizes="1x1 2x1" tabindex="0">
+                    <div class="widget-band"><span>Student pulse</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Student pulse">☷</button></div>
+                    <div class="widget-body"><div class="widget-number">214</div><div class="widget-caption">active · 6 need attention</div></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="attendance" data-size="1x1" data-default-size="1x1" data-sizes="1x1 2x1" tabindex="0">
+                    <div class="widget-band"><span>Attendance</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Attendance">☷</button></div>
+                    <div class="widget-body"><div class="widget-number">75%</div><div class="widget-caption">morning class · 18 of 24</div></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="leads" data-size="2x1" data-default-size="2x1" data-sizes="1x1 2x1 2x2" data-roles="admin front-desk" tabindex="0">
+                    <div class="widget-band"><span>Lead follow-ups</span><span class="widget-window">4 due</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Lead follow-ups">☷</button></div>
+                    <div class="widget-body"><ul class="widget-list"><li><span class="widget-dot warn"></span><span>Jordan Lee · Trial</span><span>1d</span></li><li><span class="widget-dot"></span><span>Sam Rivera · New</span><span>Today</span></li></ul></div>
+                  </article>
+
+                  <article class="home-widget widget-attention" data-widget-id="billing" data-size="2x1" data-default-size="2x1" data-sizes="1x1 2x1 2x2" data-roles="admin front-desk" tabindex="0">
+                    <div class="widget-band"><span>Billing exceptions</span><span class="widget-window">1 failed · $145</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Billing exceptions">☷</button></div>
+                    <div class="widget-body"><ul class="widget-list"><li><span class="widget-dot danger"></span><span>Maya Chen · payer Alice Chen</span><a href="#billing-invoices">Review</a></li><li><span class="widget-dot"></span><span>$4,205 due this week</span><span>12 invoices</span></li></ul></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="promotions" data-size="2x1" data-default-size="2x1" data-sizes="1x1 2x1" data-roles="admin instructor" tabindex="0">
+                    <div class="widget-band"><span>Promotions due</span><span class="widget-window">2 ready</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Promotions due">☷</button></div>
+                    <div class="widget-body"><ul class="widget-list"><li><span class="widget-dot warn"></span><span>Priya Shah · Purple Belt</span><a href="#screen-belts">Review</a></li><li><span class="widget-dot"></span><span>Mateo Cruz · Blue Belt</span><a href="#screen-belts">Review</a></li></ul></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="quick" data-size="2x1" data-default-size="2x1" data-sizes="2x1 4x1" tabindex="0">
+                    <div class="widget-band"><span>Quick actions</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Quick actions">☷</button></div>
+                    <div class="widget-body widget-actions"><a href="#screen-students">Add student</a><a href="#screen-import">Import CSV</a><a href="#screen-leads">Add lead</a><a href="#screen-schedule">Take attendance</a></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="setup" data-size="1x1" data-default-size="1x1" data-sizes="1x1 2x1" data-library="setup" tabindex="0">
+                    <div class="widget-band"><span>Setup</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Setup progress">☷</button></div>
+                    <div class="widget-body"><div class="widget-number">4/5</div><div class="widget-caption">Emergency contacts remain</div></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="recent" data-size="2x1" data-default-size="2x1" data-sizes="2x1 2x2" data-library="recent" tabindex="0">
+                    <div class="widget-band"><span>Recent students</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Recent students">☷</button></div>
+                    <div class="widget-body"><ul class="widget-list"><li><span class="widget-dot"></span><span>Maya Chen · Blue, 2 stripes</span><a href="#screen-student">Open</a></li><li><span class="widget-dot"></span><span>Lena Ortiz · Grey Belt</span><a href="#screen-students">Open</a></li></ul></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="contacts" data-size="2x1" data-default-size="2x1" data-sizes="2x1 2x2" data-library="contacts" tabindex="0">
+                    <div class="widget-band"><span>Emergency contacts</span><span class="widget-window">11 missing</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Emergency contacts">☷</button></div>
+                    <div class="widget-body"><ul class="widget-list"><li><span class="widget-dot warn"></span><span>Active minors missing a complete contact</span><a href="#screen-students">Review</a></li></ul></div>
+                  </article>
+
+                  <article class="home-widget" data-widget-id="report" data-size="2x1" data-default-size="2x1" data-sizes="2x1 2x2" data-library="report" tabindex="0">
+                    <div class="widget-band"><span>Saved report</span><span class="widget-window">30 days</span><span class="widget-edit-actions"><button type="button" data-resize-widget>Resize</button><button type="button" data-remove-widget>Remove</button></span><button type="button" class="widget-grip" aria-label="Move Saved report">☷</button></div>
+                    <div class="widget-body"><div class="widget-number">82%</div><div class="widget-caption">schedule utilization · open methodology</div><a href="#screen-reports">Open report sheet</a></div>
+                  </article>
+                </div>
+                <p class="layout-note">Arrange mode: drag a panel band, or focus a panel and use explicit move and resize controls. Escape cancels. Critical “Needs attention” stays fixed. Version one saves one browser-local arrangement per user, studio, and role; cross-device personal layouts and owner-published role defaults are the next persistence phase.</p>
+                <div class="heavy-proof notice"><strong>Heavy fixture</strong> A personal home remains bounded to a product-set panel library. Each panel answers one question, shows at most five rows, and links to the owning page for full work.</div>
+              </div>
             </div>
           </section>
 
@@ -612,7 +770,7 @@
 
           <section class="screen" id="screen-import" data-screen data-slug="Students / Import · Map" data-meta="maya-cohort.csv · 18 columns · 126 rows · preview only" aria-labelledby="import-heading">
             <div class="screen-heading">
-              <div><p class="eyebrow">Training Floor sequence inside Ledger rules</p><h2 id="import-heading">Read → Map → Land</h2></div>
+              <div><p class="eyebrow">Persistent import worksheet</p><h2 id="import-heading">Read → Map → Land</h2></div>
               <div class="action-row"><button type="button" class="prototype-only">Cancel import</button><button type="button" class="primary prototype-only" data-roles="admin front-desk">Continue to preview</button></div>
             </div>
             <div class="day-band" aria-label="Import stations"><div><strong>1 · Read</strong>maya-cohort.csv<br>126 rows parsed</div><div><strong>2 · Map · current</strong>18 headers<br>2 warnings</div><div><strong>3 · Land</strong>Not started<br>execute after validation</div><div><strong>Result</strong>0 created<br>0 updated</div></div>
@@ -692,7 +850,7 @@
 
           <section class="screen" id="screen-leads" data-screen data-slug="Leads · 19 open" data-meta="All programs · next touch ascending · as of Aug 17, 6:12am" aria-labelledby="leads-heading">
             <div class="screen-heading">
-              <div><p class="eyebrow">Pipeline time map</p><h2 id="leads-heading">Leads</h2></div>
+              <div><p class="eyebrow">Aging follow-up ledger</p><h2 id="leads-heading">Leads</h2></div>
               <button type="button" class="primary prototype-only" data-roles="admin front-desk">Add lead</button>
             </div>
             <p class="notice"><strong>Interaction choice</strong> Stage bands remain, but horizontal position means days in stage. Drag and keyboard Move controls have equal capability. There is intentionally no lead delete control.</p>
@@ -873,7 +1031,7 @@
           <section class="screen" id="screen-reports" data-screen data-slug="Reports · past 30 days" data-meta="All programs · Aug 17 as-of · live aggregates, fixture values" aria-labelledby="reports-heading">
             <div class="screen-heading">
               <div><p class="eyebrow">Printable evidence, not a chart wall</p><h2 id="reports-heading">Reports</h2></div>
-              <button type="button" class="prototype-only">Pin this report to Today</button>
+              <button type="button" class="prototype-only">Add report panel to Home</button>
             </div>
             <section class="ledger">
               <div class="ledger-header"><h3>30-day operating report</h3><span>Scope: all programs · method below</span></div>
@@ -903,7 +1061,7 @@
             <p class="notice"><strong>No live builder</strong> These sentences describe future workflows and link to existing live queues. There is no create, enable, dry-run, run-ledger, API, or mutation control today.</p>
             <section class="ledger future">
               <div class="ledger-header"><h3>Potential rules</h3><span>Examples only</span></div>
-              <div class="ruled-row"><span class="state-mark warning"></span><strong>When a student misses 3 classes</strong><span>prepare a follow-up for staff review</span><a href="#screen-today">Open live Today queue</a></div>
+              <div class="ruled-row"><span class="state-mark warning"></span><strong>When a student misses 3 classes</strong><span>prepare a follow-up for staff review</span><a href="#screen-today">Open Home attention</a></div>
               <div class="ruled-row"><span class="state-mark warning"></span><strong>When a lead’s next touch is overdue</strong><span>place it in the existing Leads follow-up view</span><a href="#screen-leads">Open live Leads</a></div>
               <div class="ruled-row"><span class="state-mark warning"></span><strong>When an invoice fails</strong><span>surface the current billing exception and allowed remedy</span><a href="#billing-invoices">Open live Billing</a></div>
               <div class="ruled-row"><span class="state-mark warning"></span><strong>When rank requirements are met</strong><span>surface an approval candidate without auto-promoting</span><a href="#screen-belts">Open live Belt Tracker</a></div>
@@ -999,10 +1157,10 @@
     <section class="pitch-section" id="storyboards" aria-labelledby="storyboards-heading">
       <div class="section-intro"><div><p class="eyebrow">Three linked workflows</p><h2 id="storyboards-heading">The system proves its joins</h2></div><p>Each storyboard uses the same fixture records as the screens. Select a step to hear the modeled state change. These are prototype transitions, not claims that a backend mutation occurred.</p></div>
       <div class="storyboards">
-        <article class="storyboard" aria-label="Attendance to student history and Today queue flow">
+        <article class="storyboard" aria-label="Attendance to student history and Home attention flow">
           <div class="story-step"><span class="step-number">Flow 1 · Step 1</span><h3>Take attendance</h3><p>Mark Maya Chen present at Adult BJJ Fundamentals, 6:00am. The sheet shows 18 present and one visible offline-pending mark.</p><button type="button" data-story-step="Attendance step 1 selected: Maya Chen is marked present in the prototype check sheet." aria-pressed="true">Select step 1</button></div>
           <div class="story-step"><span class="step-number">Step 2</span><h3>Close the sheet</h3><p>Commit attendance explicitly. The record owner returns a check-in at 6:14am; pending failures remain in the tray.</p><button type="button" data-story-step="Attendance step 2 selected: close and commit, with pending failures still visible." aria-pressed="false">Select step 2</button></div>
-          <div class="story-step"><span class="step-number">Step 3</span><h3>History updates</h3><p>Maya’s History leaf gains the event; the Today queue removes the attendance task while server-owned counts refresh.</p><button type="button" data-story-step="Attendance step 3 selected: student history gains the event and Today removes the completed task." aria-pressed="false">Select step 3</button> <a href="#student-history">See history</a></div>
+          <div class="story-step"><span class="step-number">Step 3</span><h3>History updates</h3><p>Maya’s History leaf gains the event; Home attention removes the attendance task while server-owned widgets refresh.</p><button type="button" data-story-step="Attendance step 3 selected: student history gains the event and Home attention removes the completed task." aria-pressed="false">Select step 3</button> <a href="#student-history">See history</a></div>
         </article>
         <article class="storyboard" aria-label="CSV import to roster and belt resolution flow">
           <div class="story-step"><span class="step-number">Flow 2 · Step 1</span><h3>Read and map</h3><p>Parse 126 rows and map all supported fields. First/last resolution is required; duplicate targets are blocked except Notes.</p><button type="button" data-story-step="Import step 1 selected: 126 rows parsed and mapping rules applied." aria-pressed="true">Select step 1</button></div>
@@ -1040,7 +1198,7 @@
         <table class="responsive-table">
           <thead><tr><th>#</th><th>Route</th><th>Purpose</th><th>Fields / data</th><th>Actions</th><th>States / roles</th><th>Status and artifact anchor</th></tr></thead>
           <tbody>
-            <tr id="coverage-dashboard"><td data-label="#">1</td><td data-label="Route"><code>/dashboard</code></td><td data-label="Purpose">Morning brief, setup, queue, recent records, operational/billing signals</td><td data-label="Fields / data">Server summary, partial roster, Today classes, setup progress</td><td data-label="Actions">Quick links, explain metrics, add student, pin/remove view</td><td data-label="States / roles">Loading/error/retry/empty/setup/preview/partial; billing hidden by role</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-today">Today</a></td></tr>
+            <tr id="coverage-dashboard"><td data-label="#">1</td><td data-label="Route"><code>/dashboard</code></td><td data-label="Purpose">Personal widget home, morning brief, setup, recent records, operational/billing signals</td><td data-label="Fields / data">Server summary, partial roster, Today classes, setup progress, per-user + role layout</td><td data-label="Actions">Add/arrange/resize/remove/reset panels, keyboard/touch reorder, quick links</td><td data-label="States / roles">Loading/error/retry/empty/setup/preview/partial; catalog and billing panels filtered by role</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-today">Tatami Home</a></td></tr>
             <tr id="coverage-students"><td data-label="#">2</td><td data-label="Route"><code>/students</code></td><td data-label="Purpose">Searchable, filterable roster and bulk work</td><td data-label="Fields / data">Identity, status, program/rank, attendance, contact</td><td data-label="Actions">Add/import/select/all/tags/status/archive/open/page</td><td data-label="States / roles">Partial/full, query notice, loading/error/retry/empty/no-results, mutation feedback; Admin/Front desk mutate</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-students">Students</a></td></tr>
             <tr id="coverage-student-detail"><td data-label="#">3</td><td data-label="Route"><code>/students/[id]</code></td><td data-label="Purpose">Complete student record</td><td data-label="Fields / data">Identity/contact/address/emergency/guardian/lifecycle/hold/program/rank/promotion/photo/notes</td><td data-label="Actions">Edit, lifecycle, archive, upload/remove photo, promote/demote</td><td data-label="States / roles">Loading/not-found/validation/progress/error/confirm; field/action permissions</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-student">Student Detail</a></td></tr>
             <tr id="coverage-import"><td data-label="#">4</td><td data-label="Route"><code>/students/import</code></td><td data-label="Purpose">Read, map, validate, execute CSV</td><td data-label="Fields / data">All mappings; duplicate/missing-program/rank policies; row results</td><td data-label="Actions">Upload/demo, back/cancel/retry/execute/results</td><td data-label="States / roles">Denied/file/parse/map/row/setup warning/error; Admin/Front desk</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-import">Import</a></td></tr>
@@ -1049,7 +1207,7 @@
             <tr id="coverage-schedule"><td data-label="#">7</td><td data-label="Route"><code>/schedule</code></td><td data-label="Purpose">Calendar, session detail, attendance</td><td data-label="Fields / data">Template/session recurrence/date/time/program/instructor/capacity/status/notes; attendance fields</td><td data-label="Actions">Month/week/day, filter, add, detail, attendance, delete occurrence/future</td><td data-label="States / roles">Loading/error/empty/partial/materialization; schedule vs attendance permissions</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-schedule">Schedule</a></td></tr>
             <tr id="coverage-billing"><td data-label="#">8</td><td data-label="Route"><code>/billing</code></td><td data-label="Purpose">Six billing books and exception remedy</td><td data-label="Fields / data">Core/Connect, plans/prices/programs, payer/family, enrollment, invoice/item/payment refs, readiness</td><td data-label="Actions">Core/Connect admin, external enrollment/payment, reconcile, allowed links</td><td data-label="States / roles">Admin/Front desk route, Instructor denied; provider/preview guards; read-only/unavailable truth</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-billing">Billing</a></td></tr>
             <tr id="coverage-automations"><td data-label="#">9</td><td data-label="Route"><code>/automations</code></td><td data-label="Purpose">Planned workflow catalog and live-queue links</td><td data-label="Fields / data">Rule descriptions only</td><td data-label="Actions">Navigate to existing queues</td><td data-label="States / roles">Explicitly read-only; no builder/API/mutation</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-automations">Automations</a></td></tr>
-            <tr id="coverage-reports"><td data-label="#">10</td><td data-label="Route"><code>/reports</code></td><td data-label="Purpose">30-day analytics and 29 CSV exports</td><td data-label="Fields / data">Lead/attendance/utilization methods; six export groups</td><td data-label="Actions">Choose/download/retry/pin report</td><td data-label="States / roles">Loading/error/retry/empty/preview/token/pending/success; Admin and selected Front desk</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-reports">Reports</a></td></tr>
+            <tr id="coverage-reports"><td data-label="#">10</td><td data-label="Route"><code>/reports</code></td><td data-label="Purpose">30-day analytics and 29 CSV exports</td><td data-label="Fields / data">Lead/attendance/utilization methods; six export groups</td><td data-label="Actions">Choose/download/retry/add saved report panel</td><td data-label="States / roles">Loading/error/retry/empty/preview/token/pending/success; Admin and selected Front desk</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-reports">Reports</a></td></tr>
             <tr id="coverage-settings"><td data-label="#">11</td><td data-label="Route"><code>/settings</code></td><td data-label="Purpose">Studio, program, staff, guarded data controls</td><td data-label="Fields / data">Studio name; program config/usage/archive; staff identity/role/status</td><td data-label="Actions">CRUD/archive/restore/invite/revoke/delete/reset/clear</td><td data-label="States / roles">Admin only; guards, confirmations, load/action errors</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-settings">Settings</a></td></tr>
             <tr id="coverage-account"><td data-label="#">12</td><td data-label="Route"><code>/account</code></td><td data-label="Purpose">Identity/studio/role summary and destinations</td><td data-label="Fields / data">User email/name, studio, role</td><td data-label="Actions">Profile/security/preferences/data/billing/help/policy links</td><td data-label="States / roles">Hydrated identity context</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-account">Account</a></td></tr>
             <tr id="coverage-account-profile"><td data-label="#">13</td><td data-label="Route"><code>/account/profile</code></td><td data-label="Purpose">Display profile</td><td data-label="Fields / data">Display name, disabled auth email, read-only legal/workspace context</td><td data-label="Actions">Save display name</td><td data-label="States / roles">Validation/pending/error; legal names read-only here</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-account-profile">Profile</a></td></tr>
@@ -1102,6 +1260,266 @@
         instructor: "Instructor",
         unknown: "Unknown / denied"
       };
+      const widgetGrid = document.getElementById("widget-grid");
+      const widgetCanvas = document.getElementById("widget-canvas");
+      const arrangeButton = document.getElementById("arrange-widgets");
+      const doneArrangingButton = document.getElementById("done-arranging");
+      const widgetLibrary = document.getElementById("widget-library");
+      const widgetStorageKey = "koaryu-pitch-widget-layout-v2";
+      const defaultWidgetOrder = [...widgetGrid.children].map((widget) => widget.dataset.widgetId);
+      let arranging = false;
+      let pickedWidget = null;
+      let arrangeSnapshot = null;
+
+      function widgets() {
+        return [...widgetGrid.querySelectorAll(".home-widget")];
+      }
+
+      function widgetTitle(widget) {
+        return widget.querySelector(".widget-band > span")?.textContent.trim() || "Panel";
+      }
+
+      function animateReflow(before) {
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        widgets().forEach((widget) => {
+          const first = before.get(widget);
+          const last = widget.getBoundingClientRect();
+          if (!first) return;
+          const x = first.left - last.left;
+          const y = first.top - last.top;
+          if (x || y) widget.animate([{ transform: `translate(${x}px, ${y}px)` }, { transform: "translate(0, 0)" }], { duration: 200, easing: "cubic-bezier(.2,.7,.3,1)" });
+        });
+      }
+
+      function mutateWithReflow(mutation) {
+        const before = new Map(widgets().map((widget) => [widget, widget.getBoundingClientRect()]));
+        mutation();
+        animateReflow(before);
+      }
+
+      function serializeWidgets() {
+        return widgets().map((widget) => ({ id: widget.dataset.widgetId, size: widget.dataset.size, removed: widget.dataset.removed === "true" }));
+      }
+
+      function saveWidgets() {
+        try { localStorage.setItem(widgetStorageKey, JSON.stringify(serializeWidgets())); } catch (_) { /* local prototype may block storage */ }
+      }
+
+      function restoreWidgets() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(widgetStorageKey) || "null");
+          if (!Array.isArray(saved)) return;
+          saved.forEach((item) => {
+            const widget = widgetGrid.querySelector(`[data-widget-id="${item.id}"]`);
+            if (!widget) return;
+            widget.dataset.size = item.size || widget.dataset.defaultSize;
+            widget.dataset.removed = String(Boolean(item.removed));
+            widget.hidden = Boolean(item.removed);
+            widgetGrid.append(widget);
+          });
+        } catch (_) { /* malformed local demo state falls back to fixture */ }
+      }
+
+      function announceWidget(widget, verb = "moved") {
+        const visible = widgets().filter((item) => !item.hidden && item.dataset.removed !== "true");
+        const index = visible.indexOf(widget);
+        announcement.textContent = `${widgetTitle(widget)} ${verb}. Position ${index + 1} of ${visible.length}. Size ${widget.dataset.size}.`;
+      }
+
+      function setArranging(next) {
+        arranging = next;
+        if (next) arrangeSnapshot = serializeWidgets();
+        else arrangeSnapshot = null;
+        widgetCanvas.classList.toggle("is-arranging", next);
+        arrangeButton.setAttribute("aria-pressed", String(next));
+        arrangeButton.textContent = next ? "Arranging…" : "Arrange";
+        doneArrangingButton.hidden = !next;
+        widgets().forEach((widget) => { widget.draggable = next && widget.dataset.fixed !== "true"; });
+        if (!next && pickedWidget) {
+          pickedWidget.classList.remove("is-picked");
+          pickedWidget = null;
+        }
+        announcement.textContent = next ? "Arrange mode. Drag panel bands or use Enter, Arrow keys, and Enter to drop." : "Arrangement saved for this prototype.";
+        if (!next) saveWidgets();
+      }
+
+      function cycleWidgetSize(widget, direction = 1) {
+        const legal = (widget.dataset.sizes || widget.dataset.size).split(" ");
+        if (legal.length < 2) return;
+        const current = legal.indexOf(widget.dataset.size);
+        widget.dataset.size = legal[(current + direction + legal.length) % legal.length];
+        announceWidget(widget, "resized");
+        saveWidgets();
+      }
+
+      function restoreSnapshot(snapshot) {
+        if (!snapshot) return;
+        snapshot.forEach((item) => {
+          const widget = widgetGrid.querySelector(`[data-widget-id="${item.id}"]`);
+          if (!widget) return;
+          widget.dataset.size = item.size;
+          widget.dataset.removed = String(item.removed);
+          widget.hidden = item.removed;
+          widgetGrid.append(widget);
+        });
+      }
+
+      arrangeButton.addEventListener("click", () => setArranging(!arranging));
+      doneArrangingButton.addEventListener("click", () => setArranging(false));
+      document.getElementById("open-widget-library").addEventListener("click", () => { widgetLibrary.hidden = false; document.getElementById("close-widget-library").focus(); });
+      document.getElementById("close-widget-library").addEventListener("click", () => { widgetLibrary.hidden = true; document.getElementById("open-widget-library").focus(); });
+      document.getElementById("reset-widgets").addEventListener("click", () => {
+        mutateWithReflow(() => defaultWidgetOrder.forEach((id) => {
+          const widget = widgetGrid.querySelector(`[data-widget-id="${id}"]`);
+          widget.dataset.size = widget.dataset.defaultSize;
+          widget.dataset.removed = "false";
+          widget.hidden = false;
+          widgetGrid.append(widget);
+        }));
+        saveWidgets();
+        applyPermissions(root.dataset.role);
+        announcement.textContent = "Home reset to the Admin role default fixture.";
+      });
+
+      document.querySelectorAll("[data-add-widget]").forEach((button) => button.addEventListener("click", () => {
+        const widget = widgetGrid.querySelector(`[data-library="${button.dataset.addWidget}"]`);
+        if (!widget) return;
+        const allowedRoles = widget.dataset.roles?.split(" ");
+        if (allowedRoles && !allowedRoles.includes(root.dataset.role)) {
+          announcement.textContent = `${widgetTitle(widget)} is unavailable for the ${roleLabels[root.dataset.role]} role.`;
+          return;
+        }
+        widget.dataset.removed = "false";
+        widget.hidden = false;
+        widgetGrid.append(widget);
+        saveWidgets();
+        widgetLibrary.hidden = true;
+        widget.focus();
+        announceWidget(widget, "added");
+      }));
+
+      widgetGrid.addEventListener("click", (event) => {
+        const resize = event.target.closest("[data-resize-widget]");
+        const remove = event.target.closest("[data-remove-widget]");
+        const widget = event.target.closest(".home-widget");
+        if (!widget) return;
+        if (resize) cycleWidgetSize(widget);
+        if (remove) {
+          widget.dataset.removed = "true";
+          widget.hidden = true;
+          saveWidgets();
+          announcement.textContent = `${widgetTitle(widget)} removed. Add it again from the panel library or reset to the role default.`;
+        }
+      });
+
+      widgetGrid.addEventListener("dragstart", (event) => {
+        const widget = event.target.closest(".home-widget");
+        if (!arranging || !widget || widget.dataset.fixed === "true") { event.preventDefault(); return; }
+        pickedWidget = widget;
+        widget.classList.add("is-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", widget.dataset.widgetId);
+      });
+      widgetGrid.addEventListener("dragover", (event) => {
+        if (!pickedWidget) return;
+        event.preventDefault();
+        const target = event.target.closest(".home-widget");
+        if (!target || target === pickedWidget || target.dataset.fixed === "true") return;
+        const rect = target.getBoundingClientRect();
+        const beforeTarget = event.clientY < rect.top + rect.height / 2 || event.clientX < rect.left + rect.width / 2;
+        mutateWithReflow(() => widgetGrid.insertBefore(pickedWidget, beforeTarget ? target : target.nextSibling));
+      });
+      widgetGrid.addEventListener("dragend", () => {
+        if (!pickedWidget) return;
+        pickedWidget.classList.remove("is-dragging");
+        announceWidget(pickedWidget);
+        pickedWidget = null;
+        saveWidgets();
+      });
+
+      widgetGrid.addEventListener("keydown", (event) => {
+        const widget = event.target.closest(".home-widget");
+        if (!arranging || !widget || event.target.closest("a, button") || widget.dataset.fixed === "true") return;
+        if (event.shiftKey && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+          event.preventDefault();
+          cycleWidgetSize(widget, event.key === "ArrowRight" ? 1 : -1);
+          return;
+        }
+        if (["Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          if (pickedWidget === widget) {
+            widget.classList.remove("is-picked");
+            pickedWidget = null;
+            saveWidgets();
+            announceWidget(widget, "dropped");
+          } else {
+            if (pickedWidget) pickedWidget.classList.remove("is-picked");
+            pickedWidget = widget;
+            widget.classList.add("is-picked");
+            announcement.textContent = `${widgetTitle(widget)} picked up. Use Arrow keys to move, Enter to drop, Escape to cancel.`;
+          }
+          return;
+        }
+        if (pickedWidget === widget && ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) {
+          event.preventDefault();
+          const visible = widgets().filter((item) => !item.hidden && item.dataset.fixed !== "true");
+          const current = visible.indexOf(widget);
+          const delta = ["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1;
+          const target = visible[current + delta];
+          if (target) mutateWithReflow(() => widgetGrid.insertBefore(widget, delta < 0 ? target : target.nextSibling));
+          announceWidget(widget);
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "e") { event.preventDefault(); setArranging(!arranging); }
+        if (event.key === "Escape" && pickedWidget) {
+          restoreSnapshot(arrangeSnapshot);
+          pickedWidget.classList.remove("is-picked", "is-dragging");
+          pickedWidget = null;
+          announcement.textContent = "Widget move canceled; the prior arrangement was restored.";
+        } else if (event.key === "Escape" && !widgetLibrary.hidden) {
+          widgetLibrary.hidden = true;
+          document.getElementById("open-widget-library").focus();
+        }
+      });
+
+      let touchTimer = null;
+      let touchWidget = null;
+      widgetGrid.addEventListener("pointerdown", (event) => {
+        if (event.pointerType !== "touch" || !event.target.closest(".widget-band") || event.target.closest("button, a")) return;
+        const widget = event.target.closest(".home-widget");
+        if (!widget || widget.dataset.fixed === "true") return;
+        touchWidget = widget;
+        touchTimer = window.setTimeout(() => {
+          if (!arranging) setArranging(true);
+          pickedWidget = widget;
+          widget.classList.add("is-dragging");
+          widget.setPointerCapture(event.pointerId);
+          announcement.textContent = `${widgetTitle(widget)} picked up. Drag to a new position.`;
+        }, 500);
+      });
+      widgetGrid.addEventListener("pointermove", (event) => {
+        if (event.pointerType !== "touch" || pickedWidget !== touchWidget) return;
+        event.preventDefault();
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".home-widget");
+        if (target && target !== pickedWidget && target.dataset.fixed !== "true") mutateWithReflow(() => widgetGrid.insertBefore(pickedWidget, target));
+        const edge = 80;
+        if (event.clientY < edge) window.scrollBy({ top: -16 });
+        if (event.clientY > window.innerHeight - edge) window.scrollBy({ top: 16 });
+      });
+      function endTouchMove() {
+        window.clearTimeout(touchTimer);
+        if (pickedWidget === touchWidget) {
+          pickedWidget.classList.remove("is-dragging");
+          announceWidget(pickedWidget, "dropped");
+          pickedWidget = null;
+          saveWidgets();
+        }
+        touchWidget = null;
+      }
+      widgetGrid.addEventListener("pointerup", endTouchMove);
+      widgetGrid.addEventListener("pointercancel", endTouchMove);
 
       function applyPermissions(role) {
         document.querySelectorAll("[data-roles]").forEach((control) => {
@@ -1112,6 +1530,9 @@
             control.hidden = !allowed;
           }
           control.setAttribute("aria-disabled", String(!allowed));
+        });
+        widgets().forEach((widget) => {
+          if (widget.dataset.removed === "true") widget.hidden = true;
         });
       }
 
@@ -1161,6 +1582,7 @@
         button.closest(".storyboard").querySelectorAll("[data-story-step]").forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
         announcement.textContent = button.dataset.storyStep;
       }));
+      restoreWidgets();
       applyPermissions("admin");
     })();
   </script>
