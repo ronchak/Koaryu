@@ -28,7 +28,7 @@ describe("dashboard shell and Home source contracts", () => {
     const readIndex = homeSource.indexOf("readDashboardLayout(");
     assert.ok(effectIndex >= 0 && readIndex > effectIndex);
     assert.doesNotMatch(homeSource.slice(0, effectIndex), /localStorage|readDashboardLayout\(/);
-    for (const label of ["Add panels", "Customize", "Done", "Reset", "Earlier", "Later", "Resize", "Remove"]) {
+    for (const label of ["Add panels", "Customize", "Cancel", "Done", "Reset", "Earlier", "Later", "Resize", "Remove"]) {
       assert.ok(homeSource.includes(label), label);
     }
     assert.match(homeSource, /aria-live="polite"/);
@@ -36,6 +36,10 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /500/);
     assert.match(homeSource, /elementFromPoint/);
     assert.match(homeSource, /window\.scrollBy/);
+    assert.match(homeSource, /onPointerCancel=\{onPointerCancel\}/);
+    assert.match(homeSource, /clearDragSession\(\);[\s\S]*snapshotRef\.current = null/);
+    assert.match(homeSource, /viewModels\[entry\.id\]\?\.state !== "unavailable"/);
+    assert.match(homeSource, /This browser could not save your arrangement/);
     assert.match(homeSource, /isCustomizing && !catalog\.fixed/);
     assert.match(homeSource, /activeDragWidgetId === item\.widget_id/);
     assert.match(homeSource, /role="dialog" aria-modal="true"/);

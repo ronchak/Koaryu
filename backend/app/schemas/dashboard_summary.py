@@ -48,7 +48,7 @@ class DashboardSummaryTodaySession(BaseModel):
 class DashboardSummaryTodaySchedule(BaseModel):
     available: bool = False
     expected_counts_available: bool = False
-    rows: list[DashboardSummaryTodaySession] = Field(default_factory=list)
+    rows: list[DashboardSummaryTodaySession] = Field(default_factory=list, max_length=5)
     overflow_count: Optional[int] = Field(default=None, ge=0)
 
     @model_serializer(mode="wrap")
@@ -132,8 +132,8 @@ class DashboardSummaryBillingCounts(BaseModel):
 class DashboardSummaryEmergencyContacts(BaseModel):
     available: bool = False
     active_students: int = Field(default=0, ge=0)
-    complete_students: int = Field(default=0, ge=0)
-    missing_students: int = Field(default=0, ge=0)
+    students_with_contact_name: int = Field(default=0, ge=0)
+    students_missing_contact_name: int = Field(default=0, ge=0)
 
 
 class DashboardSummarySetupFlags(BaseModel):

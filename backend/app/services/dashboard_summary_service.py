@@ -53,7 +53,7 @@ class DashboardSummaryService:
         normalized_timezone = timezone_name or "UTC"
         try:
             zone = ZoneInfo(normalized_timezone)
-        except ZoneInfoNotFoundError:
+        except (ZoneInfoNotFoundError, ValueError):
             normalized_timezone = "UTC"
             zone = timezone.utc
         return datetime.now(zone).date(), normalized_timezone

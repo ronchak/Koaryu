@@ -31,7 +31,7 @@ class DashboardSummaryAttendanceMetrics:
     def _as_start_of_day(value: date, timezone_name: Optional[str]) -> str:
         try:
             zone = ZoneInfo(timezone_name or "UTC")
-        except ZoneInfoNotFoundError:
+        except (ZoneInfoNotFoundError, ValueError):
             zone = timezone.utc
         return datetime.combine(value, datetime_time.min, tzinfo=zone).astimezone(timezone.utc).isoformat()
 
@@ -41,7 +41,7 @@ class DashboardSummaryAttendanceMetrics:
             return None
         try:
             zone = ZoneInfo(timezone_name or "UTC")
-        except ZoneInfoNotFoundError:
+        except (ZoneInfoNotFoundError, ValueError):
             zone = timezone.utc
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if parsed.tzinfo is None:

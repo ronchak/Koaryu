@@ -743,8 +743,8 @@ export interface ApiDashboardSummaryChurnCounts {
 export interface ApiDashboardSummaryEmergencyContacts {
   available: boolean;
   active_students: number;
-  complete_students: number;
-  missing_students: number;
+  students_with_contact_name: number;
+  students_missing_contact_name: number;
 }
 
 export interface ApiDashboardSummaryInactivityCounts {

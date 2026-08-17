@@ -136,13 +136,8 @@ function sessionTime(value: string): string {
   return `${displayHour}:${minute}${suffix}`;
 }
 
-function hasCompleteEmergencyContact(student: Student): boolean {
-  if (student.emergency_contact_name?.trim() && student.emergency_contact_phone?.trim()) {
-    return true;
-  }
-  return student.guardians.some((guardian) => Boolean(
-    guardian.first_name?.trim() && guardian.last_name?.trim() && guardian.phone?.trim()
-  ));
+function hasNamedEmergencyContact(student: Student): boolean {
+  return Boolean(student.emergency_contact_name?.trim());
 }
 
 export function buildDashboardWidgetViewModels(
@@ -284,19 +279,19 @@ export function buildDashboardWidgetViewModels(
   const activeStudents = input.students.filter((student) => (
     student.status === "active" || student.status === "trialing"
   ));
-  const missingEmergencyContacts = activeStudents.filter((student) => !hasCompleteEmergencyContact(student)).length;
+  const studentsMissingEmergencyContactName = activeStudents.filter((student) => !hasNamedEmergencyContact(student)).length;
   const liveEmergencyContacts = summaryEnrichments.emergencyContacts;
   const emergencyState: DashboardWidgetState = input.isPreviewMode
     ? input.studentsLoadError
       ? "error"
       : !input.studentsLoaded
         ? "loading"
-        : missingEmergencyContacts === 0
+        : studentsMissingEmergencyContactName === 0
           ? "empty"
           : "ready"
     : !liveEmergencyContacts.available
       ? "unavailable"
-      : liveEmergencyContacts.missingStudents === 0
+      : liveEmergencyContacts.studentsMissingContactName === 0
         ? "empty"
         : "ready";
 
@@ -461,12 +456,12 @@ export function buildDashboardWidgetViewModels(
       state: emergencyState,
       metric: emergencyState === "unavailable"
         ? "—"
-        : String(input.isPreviewMode ? missingEmergencyContacts : liveEmergencyContacts.missingStudents),
+        : String(input.isPreviewMode ? studentsMissingEmergencyContactName : liveEmergencyContacts.studentsMissingContactName),
       detail: emergencyState === "unavailable"
-        ? "An exact contact-completeness count is not available from this summary."
+        ? "An exact emergency-contact-name count is not available from this summary."
         : emergencyState === "empty"
-          ? "Every active student has a complete emergency contact."
-          : "Active students are missing a complete emergency contact.",
+          ? "Every active student has a named emergency contact."
+          : "Active students are missing a named emergency contact.",
       rows: [],
       actions: [],
     }),

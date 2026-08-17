@@ -9,7 +9,11 @@ from fastapi import HTTPException, Response
 from app.api.v1.endpoints.dashboard import _set_private_dashboard_headers
 from app.main import app
 from app.schemas.auth import AuthResponse, UserProfile
-from app.schemas.dashboard_summary import DashboardSummaryTestReadinessCounts
+from app.schemas.dashboard_summary import (
+    DashboardSummaryTestReadinessCounts,
+    DashboardSummaryTodaySchedule,
+    DashboardSummaryTodaySession,
+)
 from app.services.dashboard_summary_service import (
     PRIVATE_CACHE_CONTROL,
     PRIVATE_VARY,
@@ -122,6 +126,17 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertIsNone(counts.needs_approval)
         self.assertEqual(fake_supabase.log, [])
 
+    def test_today_schedule_schema_enforces_the_five_row_contract(self):
+        row = DashboardSummaryTodaySession(
+            id="session-1",
+            start_time="09:00:00",
+            end_time="10:00:00",
+            name="Fundamentals",
+        )
+
+        with self.assertRaises(ValueError):
+            DashboardSummaryTodaySchedule(available=True, rows=[row] * 6)
+
     def base_tables(self):
         today = "2026-05-20"
         return {
@@ -206,8 +221,8 @@ class DashboardSummaryServiceTest(unittest.TestCase):
         self.assertEqual(summary.belts.tip_count, 1)
         self.assertTrue(summary.emergency_contacts.available)
         self.assertEqual(summary.emergency_contacts.active_students, 251)
-        self.assertEqual(summary.emergency_contacts.complete_students, 249)
-        self.assertEqual(summary.emergency_contacts.missing_students, 2)
+        self.assertEqual(summary.emergency_contacts.students_with_contact_name, 249)
+        self.assertEqual(summary.emergency_contacts.students_missing_contact_name, 2)
         self.assertEqual(summary.recent_students[0].display_name.startswith("Trial"), True)
         self.assertFalse(hasattr(summary.recent_students[0], "email"))
 
@@ -446,11 +461,14 @@ class DashboardSummaryServiceTest(unittest.TestCase):
     def test_studio_today_uses_valid_timezone_and_falls_back_to_utc(self):
         local_today, local_timezone = DashboardSummaryService._studio_today("America/Los_Angeles")
         utc_today, utc_timezone = DashboardSummaryService._studio_today("Not/A-Timezone")
+        malformed_today, malformed_timezone = DashboardSummaryService._studio_today("../timezone")
 
         self.assertEqual(local_timezone, "America/Los_Angeles")
         self.assertEqual(local_today, datetime.now(ZoneInfo("America/Los_Angeles")).date())
         self.assertEqual(utc_timezone, "UTC")
         self.assertEqual(utc_today, datetime.now(timezone.utc).date())
+        self.assertEqual(malformed_timezone, "UTC")
+        self.assertEqual(malformed_today, datetime.now(timezone.utc).date())
 
     def test_no_studio_summary_does_not_read_protected_tables(self):
         fake_supabase = FakeSupabase({"students": [{"id": "should-not-read", "studio_id": "studio-1"}]})

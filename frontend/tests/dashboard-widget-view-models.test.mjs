@@ -25,8 +25,8 @@ function baseInput(overrides = {}) {
       emergency_contacts: {
         available: true,
         active_students: 1,
-        complete_students: 1,
-        missing_students: 0,
+        students_with_contact_name: 1,
+        students_missing_contact_name: 0,
       },
     },
     isInitialDashboardLoading: false,
@@ -131,8 +131,8 @@ describe("dashboard widget view models", () => {
         emergency_contacts: {
           available: true,
           active_students: 0,
-          complete_students: 0,
-          missing_students: 0,
+          students_with_contact_name: 0,
+          students_missing_contact_name: 0,
         },
       },
       composition: {
@@ -219,8 +219,8 @@ describe("dashboard widget view models", () => {
         emergency_contacts: {
           available: true,
           active_students: 17,
-          complete_students: 13,
-          missing_students: 4,
+          students_with_contact_name: 13,
+          students_missing_contact_name: 4,
         },
       },
     }));
@@ -243,8 +243,8 @@ describe("dashboard widget view models", () => {
       emergency_contacts: {
         available: true,
         active_students: 4,
-        complete_students: 3,
-        missing_students: 2,
+        students_with_contact_name: 3,
+        students_missing_contact_name: 2,
       },
     });
     assert.equal(malformed.emergencyContacts.available, false);

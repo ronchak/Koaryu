@@ -9,6 +9,7 @@
   --text-secondary: var(--product-soft-ink);
   --muted: var(--product-soft-ink);
   --accent: var(--product-cobalt);
+  --accent-contrast: var(--product-paper);
   --success: #386b56;
   --warning: #80561c;
   --danger: var(--product-vermilion);

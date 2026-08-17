@@ -424,7 +424,7 @@ export function SchedulePageSection({
       )}
 
       {view === "week" && (
-        <div className="flex-1 overflow-x-auto overscroll-x-contain" data-schedule-scroll-owner="internal" tabIndex={0} aria-label="Scrollable weekly time canvas">
+        <div className="flex-1 overflow-x-auto overscroll-x-contain" data-schedule-scroll-owner="internal" role="region" tabIndex={0} aria-label="Scrollable weekly time canvas">
           <div className="min-w-[1040px] border-b border-border bg-surface" data-schedule-time-canvas="week">
             <div className="grid grid-cols-[4.5rem_repeat(7,minmax(8.5rem,1fr))] border-b border-border">
               <div className="border-r border-border px-2 py-3 text-[10px] uppercase tracking-widest text-muted">Studio time</div>

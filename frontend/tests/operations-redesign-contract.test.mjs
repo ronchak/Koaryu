@@ -73,6 +73,7 @@ describe("operations behavior proof", () => {
     assert.match(schedule, /data-schedule-time-canvas="day"/);
     assert.match(schedule, /data-overlap=\{block\.overlaps/);
     assert.match(schedule, /data-schedule-scroll-owner="internal"/);
+    assert.match(schedule, /role="region"/);
     assert.match(attendance, /Saved as marked\. Each row saves immediately\./);
     assert.match(attendance, /Saving \$\{pendingAttendanceStudentIds\.size\}/);
     assert.match(attendance, /rolled back/);

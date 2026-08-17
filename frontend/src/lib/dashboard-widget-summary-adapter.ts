@@ -18,8 +18,8 @@ export type DashboardTodayScheduleEnrichment = {
 export type DashboardEmergencyContactsEnrichment = {
   available: boolean;
   activeStudents: number;
-  completeStudents: number;
-  missingStudents: number;
+  studentsWithContactName: number;
+  studentsMissingContactName: number;
 };
 
 export type DashboardWidgetSummaryEnrichments = {
@@ -37,8 +37,8 @@ const unavailableTodaySchedule = (): DashboardTodayScheduleEnrichment => ({
 const unavailableEmergencyContacts = (): DashboardEmergencyContactsEnrichment => ({
   available: false,
   activeStudents: 0,
-  completeStudents: 0,
-  missingStudents: 0,
+  studentsWithContactName: 0,
+  studentsMissingContactName: 0,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -103,17 +103,17 @@ function parseEmergencyContacts(value: unknown): DashboardEmergencyContactsEnric
     return unavailableEmergencyContacts();
   }
   const activeStudents = nonNegativeInteger(value.active_students);
-  const completeStudents = nonNegativeInteger(value.complete_students);
-  const missingStudents = nonNegativeInteger(value.missing_students);
+  const studentsWithContactName = nonNegativeInteger(value.students_with_contact_name);
+  const studentsMissingContactName = nonNegativeInteger(value.students_missing_contact_name);
   if (
     activeStudents === null
-    || completeStudents === null
-    || missingStudents === null
-    || completeStudents + missingStudents !== activeStudents
+    || studentsWithContactName === null
+    || studentsMissingContactName === null
+    || studentsWithContactName + studentsMissingContactName !== activeStudents
   ) {
     return unavailableEmergencyContacts();
   }
-  return { available: true, activeStudents, completeStudents, missingStudents };
+  return { available: true, activeStudents, studentsWithContactName, studentsMissingContactName };
 }
 
 export function readDashboardWidgetSummaryEnrichments(

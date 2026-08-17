@@ -110,7 +110,7 @@ class DashboardSummaryCounts:
         student_rows: list[dict[str, Any]],
         active_students: int,
     ) -> DashboardSummaryEmergencyContacts:
-        complete_students = sum(
+        students_with_contact_name = sum(
             1
             for row in student_rows
             if row.get("status") in {"active", "trialing"}
@@ -119,8 +119,8 @@ class DashboardSummaryCounts:
         return DashboardSummaryEmergencyContacts(
             available=True,
             active_students=active_students,
-            complete_students=complete_students,
-            missing_students=max(0, active_students - complete_students),
+            students_with_contact_name=students_with_contact_name,
+            students_missing_contact_name=max(0, active_students - students_with_contact_name),
         )
 
     def lead_counts(self, studio_id: str, today: date) -> DashboardSummaryLeadCounts:

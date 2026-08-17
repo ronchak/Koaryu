@@ -246,9 +246,9 @@ export const DASHBOARD_WIDGET_CATALOG: readonly DashboardWidgetCatalogEntry[] = 
     category: "people",
     fixed: false,
     removable: true,
-    provenanceCopy: "Complete active roster",
+    provenanceCopy: "Complete active roster · contact name only",
     windowCopy: "Current roster",
-    stateCopy: standardStateCopy("Emergency-contact completeness"),
+    stateCopy: standardStateCopy("Emergency-contact names"),
   },
 ] as const;
 
