@@ -44,18 +44,18 @@ export default function AccountDataPage() {
       </div>
 
       <AccountSection title="Data controls">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-[6px] border border-border bg-surface-raised p-4">
+        <div className="grid border-y border-border md:grid-cols-3 md:divide-x md:divide-border">
+          <div className="border-b border-border bg-surface p-4 md:border-b-0">
             <Database className="mb-3 h-4 w-4 text-accent" />
             <p className="text-sm font-medium text-text-primary">Export records</p>
             <p className="mt-1 text-sm text-text-secondary">Use CSV reports for portable studio records.</p>
           </div>
-          <div className="rounded-[6px] border border-border bg-surface-raised p-4">
+          <div className="border-b border-border bg-surface p-4 md:border-b-0">
             <ShieldCheck className="mb-3 h-4 w-4 text-accent" />
             <p className="text-sm font-medium text-text-primary">Preserve billing access</p>
             <p className="mt-1 text-sm text-text-secondary">Platform access rows are preserved by demo cleanup tools.</p>
           </div>
-          <div className="rounded-[6px] border border-danger/25 bg-danger/5 p-4">
+          <div className="bg-danger/5 p-4">
             <Trash2 className="mb-3 h-4 w-4 text-danger" />
             <p className="text-sm font-medium text-danger">Clear studio data</p>
             <p className="mt-1 text-sm text-text-secondary">Only admins should use destructive cleanup from Settings.</p>

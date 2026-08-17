@@ -18,6 +18,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 type EligibilityPanelProps = {
   canConfigureBelts: boolean;
@@ -67,7 +68,7 @@ export function EligibilityPanel({
   selectedProgramName,
 }: EligibilityPanelProps) {
   return (
-    <div className="flex-1 overflow-x-auto">
+    <div className={`flex-1 min-w-0 ${styles.eligibilityWorkspace}`}>
       {ladderError && (
         <div className="mx-8 mt-6">
           <DismissibleNotice tone="danger" onDismiss={onDismissLadderError}>
@@ -119,7 +120,7 @@ export function EligibilityPanel({
           </div>
         </div>
       ) : (
-        <table className="w-full text-sm">
+        <table className={styles.eligibilityTable}>
           <thead>
             <tr className="border-b border-border">
               <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">Student</th>
@@ -137,7 +138,7 @@ export function EligibilityPanel({
 
               return (
                 <Fragment key={group.key}>
-                  <tr className="border-b border-border bg-surface-raised/60">
+                  <tr className={styles.rankGroupHeader}>
                     <td colSpan={7} className="px-4 py-3">
                       <button
                         type="button"
@@ -187,17 +188,18 @@ export function EligibilityPanel({
                     return (
                       <tr
                         key={`${entry.student_program_membership_id ?? entry.program_id ?? "legacy"}-${entry.student_id}`}
+                        data-readiness={allMet ? entry.needs_approval ? "approval" : "ready" : "progress"}
                         className="border-b border-border hover:bg-surface-raised/50 transition-colors"
                       >
-                        <td className="px-6 py-3">
+                        <th scope="row" data-label="Student" className="px-6 py-3 text-left">
                           <Link
                             href={`/students/${entry.student_id}`}
                             className="inline-flex rounded-[4px] font-medium text-text-primary transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
                           >
                             {entry.student_name}
                           </Link>
-                        </td>
-                        <td className="px-4 py-3">
+                        </th>
+                        <td data-label="Current rank" className="px-4 py-3">
                           {entry.current_rank_name && entry.current_rank_color
                             ? (
                               <RankBadge
@@ -209,7 +211,7 @@ export function EligibilityPanel({
                             )
                             : <span className="text-xs text-muted">Unranked</span>}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Next rank" className="px-4 py-3">
                           {entry.next_rank_name && entry.next_rank_color
                             ? (
                               <RankBadge
@@ -221,21 +223,21 @@ export function EligibilityPanel({
                             )
                             : <span className="text-xs text-muted">{"\u2014"}</span>}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Classes" className="px-4 py-3">
                           <ProgressBar
                             current={entry.classes_since_promo}
                             required={entry.classes_required}
                             met={entry.classes_met}
                           />
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Time at rank" className="px-4 py-3">
                           <ProgressBar
                             current={entry.days_at_rank}
                             required={entry.days_required}
                             met={entry.time_met}
                           />
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Readiness" className="px-4 py-3">
                           {allMet
                             ? entry.needs_approval
                               ? (
@@ -254,7 +256,7 @@ export function EligibilityPanel({
                               </span>
                             )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-label="Actions" className="px-4 py-3">
                           {canPromoteStudents ? (
                             <div className="flex flex-wrap gap-2">
                               {previousRank ? (

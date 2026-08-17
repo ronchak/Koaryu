@@ -719,11 +719,18 @@ export interface ApiDashboardSummaryBeltCounts {
   tip_count: number;
 }
 
+export interface ApiDashboardSummaryBillingAmounts {
+  available: boolean;
+  payment_attention_amount_cents?: number | null;
+  due_this_week_amount_cents?: number | null;
+}
+
 export interface ApiDashboardSummaryBillingCounts {
   can_view_billing: boolean;
   payment_attention_count?: number | null;
   has_plans?: boolean | null;
   payments_ready?: boolean | null;
+  amounts?: ApiDashboardSummaryBillingAmounts | null;
 }
 
 export interface ApiDashboardSummaryChurnCounts {
@@ -731,6 +738,13 @@ export interface ApiDashboardSummaryChurnCounts {
   canceled_students: number;
   churn_marked_students: number;
   churn_rate?: number | null;
+}
+
+export interface ApiDashboardSummaryEmergencyContacts {
+  available: boolean;
+  active_students: number;
+  students_with_contact_name: number;
+  students_missing_contact_name: number;
 }
 
 export interface ApiDashboardSummaryInactivityCounts {
@@ -774,6 +788,8 @@ export interface ApiDashboardSummaryResponse {
   generated_at: string;
   today?: string | null;
   timezone?: string | null;
+  today_schedule?: ApiDashboardSummaryTodaySchedule | null;
+  emergency_contacts?: ApiDashboardSummaryEmergencyContacts | null;
   students: ApiDashboardSummaryStudentCounts;
   leads: ApiDashboardSummaryLeadCounts;
   schedule: ApiDashboardSummaryScheduleCounts;
@@ -818,6 +834,23 @@ export interface ApiDashboardSummaryTestReadinessCounts {
   ready_to_test?: number | null;
   needs_approval?: number | null;
   available: boolean;
+}
+
+export interface ApiDashboardSummaryTodaySchedule {
+  available: boolean;
+  expected_counts_available: boolean;
+  rows: ApiDashboardSummaryTodaySession[];
+  overflow_count?: number | null;
+}
+
+export interface ApiDashboardSummaryTodaySession {
+  id: string;
+  start_time: string;
+  end_time: string;
+  name: string;
+  capacity?: number | null;
+  attendance_count: number;
+  expected_count?: number | null;
 }
 
 export interface ApiDemoResetCounts {

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { LEAD_SOURCE_ICONS } from "@/components/leads/lead-source-icons";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import {
+  LOST_REASON_LABELS,
   PIPELINE_STAGES,
   SOURCE_LABELS,
   formatDate,
@@ -15,48 +17,73 @@ import {
   getProgramLabel,
   getStageLabel,
 } from "@/lib/leads-page-model";
-import type { Lead, LeadStage, Program } from "@/types";
-import { Mail, Phone, X } from "lucide-react";
+import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffMember } from "@/types";
+import { Clock, Mail, Phone, X } from "lucide-react";
 
 interface LeadDetailModalProps {
+  activities: LeadActivity[];
+  activityError: string | null;
+  activityStatus: "idle" | "loading" | "ready" | "error";
+  activeStaff: StaffMember[];
+  currentAssignedStaff: StaffMember | null;
   canConvertLeads: boolean;
   canManageLeads: boolean;
   followUpValue: string;
   lead: Lead;
   leadActionError: string | null;
+  leadActionMessage: string | null;
   pendingLeadId: string | null;
   programById: Map<string, Program>;
   today: string;
+  onAssignStaff: (lead: Lead, assignedStaffId: string | null) => void | Promise<void>;
   onClose: () => void;
   onConvertLead: (lead: Lead) => void | Promise<void>;
   onDismissError: () => void;
+  onDismissMessage: () => void;
   onFollowUpValueChange: (leadId: string, value: string) => void;
   onMarkContacted: (lead: Lead, advanceStage: boolean) => void | Promise<void>;
-  onMarkLost: (lead: Lead) => void | Promise<void>;
+  onMarkLost: (lead: Lead, lostReason: LostReason) => void | Promise<void>;
+  onRetryActivities: () => void;
   onRescheduleLead: (lead: Lead) => void | Promise<void>;
   onStageSelection: (lead: Lead, nextStage: LeadStage) => void | Promise<void>;
 }
 
 export function LeadDetailModal({
+  activities,
+  activityError,
+  activityStatus,
+  activeStaff,
+  currentAssignedStaff,
   canConvertLeads,
   canManageLeads,
   followUpValue,
   lead,
   leadActionError,
+  leadActionMessage,
   pendingLeadId,
   programById,
   today,
+  onAssignStaff,
   onClose,
   onConvertLead,
   onDismissError,
+  onDismissMessage,
   onFollowUpValueChange,
   onMarkContacted,
   onMarkLost,
+  onRetryActivities,
   onRescheduleLead,
   onStageSelection,
 }: LeadDetailModalProps) {
   const isPending = pendingLeadId === lead.id;
   const nextStage = getNextStage(lead.stage);
+  const [lostReason, setLostReason] = useState<LostReason>(lead.lost_reason ?? "other");
+  const detailStageOptions = lead.stage === "closed_lost"
+    ? [...PIPELINE_STAGES, { id: "closed_lost" as LeadStage, label: "Closed Lost" }]
+    : PIPELINE_STAGES;
+  const assigneeChoices = currentAssignedStaff && currentAssignedStaff.status !== "active"
+    ? [currentAssignedStaff, ...activeStaff.filter((member) => member.id !== currentAssignedStaff.id)]
+    : activeStaff;
 
   return (
     <ModalFrame
@@ -85,6 +112,11 @@ export function LeadDetailModal({
             {leadActionError}
           </DismissibleNotice>
         )}
+        {leadActionMessage && (
+          <DismissibleNotice tone="success" onDismiss={onDismissMessage}>
+            {leadActionMessage}
+          </DismissibleNotice>
+        )}
 
         <div>
           <label htmlFor="lead-detail-stage" className="block text-xs text-muted mb-1.5">Stage</label>
@@ -97,8 +129,7 @@ export function LeadDetailModal({
             }}
             className="w-full px-3 py-1.5 text-sm bg-surface-raised border border-border text-text-primary focus:border-accent focus:outline-none"
           >
-            {[...PIPELINE_STAGES, { id: "closed_lost" as LeadStage, label: "Closed Lost" }].map(
-              (stage) => (
+            {detailStageOptions.map((stage) => (
                 <option
                   key={stage.id}
                   value={stage.id}
@@ -106,8 +137,7 @@ export function LeadDetailModal({
                 >
                   {stage.label}
                 </option>
-              )
-            )}
+              ))}
           </select>
         </div>
 
@@ -142,6 +172,25 @@ export function LeadDetailModal({
               fallback={getProgramLabel(lead, null)}
             />
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="lead-detail-assignee" className="block text-xs text-muted mb-1.5">Assigned staff</label>
+          <select
+            id="lead-detail-assignee"
+            value={lead.assigned_staff_id ?? ""}
+            disabled={isPending || !canManageLeads}
+            onChange={(event) => void onAssignStaff(lead, event.target.value || null)}
+            className="min-h-11 w-full border border-border bg-surface-raised px-3 text-sm text-text-primary focus:border-accent focus:outline-none"
+          >
+            <option value="">Unassigned</option>
+            {assigneeChoices.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.full_name || member.email}
+                {member.status === "active" ? "" : ` · ${member.status}`}
+              </option>
+            ))}
+          </select>
         </div>
 
         {lead.is_minor && lead.guardian_name && (
@@ -251,6 +300,43 @@ export function LeadDetailModal({
           </div>
         )}
 
+        <section className="border-y border-border py-4" aria-labelledby="lead-activity-title">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Activity</p>
+              <h3 id="lead-activity-title" className="mt-1 text-sm font-semibold text-text-primary">Recorded follow-up trail</h3>
+            </div>
+            {activityStatus === "loading" ? (
+              <Clock aria-hidden="true" className="h-4 w-4 animate-pulse text-muted motion-reduce:animate-none" />
+            ) : null}
+          </div>
+          {activityStatus === "error" ? (
+            <div className="mt-3 text-sm text-danger">
+              <p>{activityError || "Could not load lead activity."}</p>
+              <Button variant="ghost" size="sm" className="mt-2" onClick={onRetryActivities}>Retry activity</Button>
+            </div>
+          ) : activityStatus === "ready" && activities.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">No activity has been recorded for this lead yet.</p>
+          ) : (
+            <ol className="mt-3 space-y-3">
+              {activities.map((activity) => (
+                <li key={activity.id} className="border-l-2 border-border pl-3">
+                  <p className="text-sm text-text-primary">{activity.description || activity.activity_type.replace(/_/g, " ")}</p>
+                  <p className="mt-1 text-xs text-muted">
+                    {new Date(activity.created_at).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
         {lead.stage === "closed_lost" && lead.lost_reason && (
           <div className="bg-danger/5 border border-danger/20 p-3">
             <p className="text-xs text-danger mb-1">Lost reason</p>
@@ -275,16 +361,30 @@ export function LeadDetailModal({
             </Button>
           )}
           {lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
-            <Button
-              variant="danger"
-              size="sm"
-              disabled={isPending}
-              onClick={() => {
-                void onMarkLost(lead);
-              }}
-            >
-              Mark lost
-            </Button>
+            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 border-l-2 border-danger/40 pl-3">
+              <label className="min-w-40 flex-1 text-xs text-muted" htmlFor="lead-lost-reason">
+                Lost reason
+                <select
+                  id="lead-lost-reason"
+                  value={lostReason}
+                  disabled={isPending}
+                  onChange={(event) => setLostReason(event.target.value as LostReason)}
+                  className="mt-1 min-h-11 w-full border border-border bg-surface-raised px-2 text-sm text-text-primary"
+                >
+                  {Object.entries(LOST_REASON_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={isPending}
+                onClick={() => void onMarkLost(lead, lostReason)}
+              >
+                Mark lost
+              </Button>
+            </div>
           )}
           </div>
         ) : null}

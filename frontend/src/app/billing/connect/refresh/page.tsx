@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FocusedOperationsSheet } from "@/components/operations/operations-surface";
 import { api } from "@/lib/api";
 import {
   acknowledgeConnectOnboardingBeforeNavigation,
@@ -79,8 +80,8 @@ export default function StripeConnectRefreshPage() {
   }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <section className="w-full max-w-md rounded-[6px] border border-border bg-surface p-6 text-center">
+    <FocusedOperationsSheet page="connect-refresh" eyebrow="Stripe Connect">
+      <div className="text-center">
         {error ? (
           <>
             <h1 className="text-base font-semibold text-text-primary">Stripe link expired</h1>
@@ -96,7 +97,7 @@ export default function StripeConnectRefreshPage() {
             <p className="text-sm text-muted">Creating a fresh secure onboarding link.</p>
           </div>
         )}
-      </section>
-    </main>
+      </div>
+    </FocusedOperationsSheet>
   );
 }

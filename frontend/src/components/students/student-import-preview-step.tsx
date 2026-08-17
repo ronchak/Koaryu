@@ -11,6 +11,7 @@ import {
 import type { CsvImportOptions, CsvImportResult } from "@/types";
 import { AlertCircle, ExternalLink, Info } from "lucide-react";
 import { StudentImportSectionCard } from "./student-import-panels";
+import styles from "./student-records.module.css";
 
 type ImportOptionChangeHandler = <K extends keyof CsvImportOptions>(
   key: K,
@@ -51,7 +52,7 @@ export function StudentImportPreviewStep({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className={styles.previewStats}>
         <StudentImportPreviewStat
           label="Total rows"
           value={validationResult.total_rows}
@@ -155,7 +156,7 @@ function StudentImportPreviewStat({
   valueClassName: string;
 }) {
   return (
-    <div className={`bg-surface border rounded-[6px] p-4 text-center ${className}`}>
+    <div className={`bg-surface border p-4 text-center ${className} ${styles.previewStat}`}>
       <p className={`text-2xl font-bold font-mono ${valueClassName}`}>{value}</p>
       <p className="text-xs text-muted mt-1">{label}</p>
     </div>

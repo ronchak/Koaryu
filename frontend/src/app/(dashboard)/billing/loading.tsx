@@ -1,11 +1,11 @@
-import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
+import { OperationsLoading } from "@/components/operations/operations-surface";
 
 export default function Loading() {
   return (
-    <DashboardLoadingSkeleton
+    <OperationsLoading
+      page="billing"
       title="Billing"
       description="Loading tuition plans, family payers, invoices, and payment readiness."
-      variant="billing"
     />
   );
 }

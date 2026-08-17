@@ -5,22 +5,17 @@ export function MetricCard({
   label,
   value,
   sub,
-  accent,
 }: {
   icon: ElementType;
   label: string;
   value: string;
   sub: string;
-  accent: string;
 }) {
   return (
-    <div className="bg-surface border border-border p-5">
+    <div className="bg-surface p-5">
       <div className="flex items-center gap-3 mb-3">
-        <div
-          className="w-8 h-8 flex items-center justify-center"
-          style={{ backgroundColor: `${accent}12` }}
-        >
-          <Icon className="w-4 h-4" style={{ color: accent }} />
+        <div className="flex h-8 w-8 items-center justify-center border-r border-border text-accent">
+          <Icon className="h-4 w-4" />
         </div>
         <span className="text-[11px] font-medium uppercase tracking-widest text-text-secondary">
           {label}

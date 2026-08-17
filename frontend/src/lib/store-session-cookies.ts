@@ -5,10 +5,12 @@ import {
   setStudioStateCookie,
   type StudioMembershipStatus,
 } from "@/lib/studio-state-cookie";
+import { purgeDashboardLayoutNamespace } from "@/lib/dashboard-layout-store";
 
 export function clearStoredStudioSessionCookies() {
   clearStudioStateCookie();
   clearActiveStudioIdCookie();
+  purgeDashboardLayoutNamespace();
 }
 
 export function syncStoredStudioSessionCookies(

@@ -15,14 +15,13 @@ import {
   Users,
 } from "lucide-react";
 import { Header } from "@/components/header";
+import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import {
   OverviewPanel,
   OverviewPanelHeader,
-  SegmentedTabs,
   SetupStepList,
-  type SegmentedTab,
   type SetupStep,
 } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
@@ -30,14 +29,14 @@ import { SectionHeader } from "./billing-page-sections";
 export type BillingTab = "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
 export type BillingSetupStep = SetupStep;
 
-const BILLING_TABS: SegmentedTab<BillingTab>[] = [
+const BILLING_TABS = [
   { id: "overview", label: "Setup", icon: ListChecks },
   { id: "plans", label: "Tuition Plans", icon: Receipt },
   { id: "families", label: "Families", icon: Users },
   { id: "enrollments", label: "Student Billing", icon: CreditCard },
   { id: "invoices", label: "Invoices", icon: FileText },
   { id: "reports", label: "Advanced", icon: Download },
-];
+] as const;
 
 export function BillingPageFrame({
   activeTab,
@@ -75,7 +74,7 @@ export function BillingPageFrame({
   showLoading: boolean;
 }) {
   return (
-    <>
+    <OperationsSurface page="billing">
       <Header title="Billing" description="Koaryu Core, family payments, invoices, and revenue reporting.">
         <Button
           variant="ghost"
@@ -89,7 +88,7 @@ export function BillingPageFrame({
         </Button>
       </Header>
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 p-4 sm:p-6" data-billing-ledger="six-books">
         <div className="mx-auto max-w-[1240px] space-y-5">
           {isLiveRestricted ? (
             <BillingAccessLimitedNotice />
@@ -110,6 +109,12 @@ export function BillingPageFrame({
                 showLoading={showLoading}
               />
 
+              <section className="grid border-y border-border bg-surface text-xs sm:grid-cols-3" data-billing-register-context="true">
+                <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r"><strong className="block uppercase tracking-widest text-muted">Scope</strong><span className="mt-1 block text-text-primary">Current studio</span></div>
+                <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r"><strong className="block uppercase tracking-widest text-muted">As of</strong><span className="mt-1 block text-text-primary">Latest loaded billing refresh</span></div>
+                <div className="px-4 py-3"><strong className="block uppercase tracking-widest text-muted">Values</strong><span className="mt-1 block text-text-primary">Exact integer cents, formatted for display</span></div>
+              </section>
+
               <section className="rounded-[6px] border border-warning/40 bg-warning/5 p-4 text-xs text-text-secondary">
                 {billingBoundaryMessage}
               </section>
@@ -121,7 +126,7 @@ export function BillingPageFrame({
           )}
         </div>
       </div>
-    </>
+    </OperationsSurface>
   );
 }
 
@@ -159,12 +164,28 @@ export function BillingSetupNavigation({
         <SetupStepList steps={steps} />
       </OverviewPanel>
 
-      <SegmentedTabs
-        tabs={BILLING_TABS}
-        activeTab={activeTab}
-        onChange={onChangeTab}
-        ariaLabel="Billing sections"
-      />
+      <nav className="border-y border-border bg-surface" aria-label="Billing books" data-billing-book-index="six-books" data-print-hide="true">
+        <ol className="grid list-none grid-cols-2 p-0 sm:grid-cols-3 xl:grid-cols-6">
+          {BILLING_TABS.map((tab, index) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <li key={tab.id} className="border-b border-r border-border last:border-r-0 sm:[&:nth-last-child(-n+3)]:border-b-0 xl:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => onChangeTab(tab.id)}
+                  aria-pressed={isActive}
+                  className={`grid min-h-16 w-full grid-cols-[auto_1fr] items-center gap-x-2 px-3 py-2 text-left ${isActive ? "bg-accent/10 text-text-primary" : "text-text-secondary hover:bg-surface-raised"}`}
+                >
+                  <span className="font-mono text-[10px] text-accent">{String(index + 1).padStart(2, "0")}</span>
+                  <strong className="text-xs font-semibold">{tab.label}</strong>
+                  <Icon aria-hidden="true" className="col-start-2 h-3.5 w-3.5 text-muted" />
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
     </>
   );
 }

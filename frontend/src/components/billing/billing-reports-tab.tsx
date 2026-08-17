@@ -108,8 +108,8 @@ export function BillingReportsTab({
         </form>
       </section>
 
-      <section className="border border-border bg-surface rounded-[6px]">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted">
+      <section className="border-y border-border bg-surface">
+        <div className="hidden grid-cols-[1fr_auto_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted sm:grid">
           <span>Payment</span>
           <span>Amount</span>
           <span>Status</span>
@@ -117,13 +117,14 @@ export function BillingReportsTab({
         {billingPayments.length === 0 ? (
           <p className="p-4 text-sm text-muted">No payments recorded yet.</p>
         ) : billingPayments.map((payment) => (
-          <div key={payment.id} className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border px-4 py-4 text-sm last:border-b-0">
+          <div key={payment.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-4 text-sm last:border-b-0 sm:grid-cols-[1fr_auto_auto] sm:gap-4">
             <div>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted sm:hidden">Payment</p>
               <p className="font-medium text-text-primary">{payment.external_method || payment.payment_method_type || "Payment"}</p>
               <p className="text-xs text-muted">{payment.note || formatDate(payment.processed_at)}</p>
             </div>
-            <p className="font-medium text-text-primary">{formatMoney(payment.amount_cents, payment.currency)}</p>
-            <StatusPill status={payment.status} />
+            <div><p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted sm:hidden">Amount</p><p className="font-medium text-text-primary">{formatMoney(payment.amount_cents, payment.currency)}</p></div>
+            <div><p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted sm:hidden">Status</p><StatusPill status={payment.status} /></div>
           </div>
         ))}
       </section>

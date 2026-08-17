@@ -63,7 +63,7 @@ export function BillingEnrollmentsTab({
 }) {
   return (
     <div className="space-y-5">
-      <section className="rounded-[6px] border border-border bg-surface p-5">
+      <section className="border-y border-border bg-surface p-5">
         <SectionHeader
           icon={Users}
           title="Attach external student billing"
@@ -105,29 +105,33 @@ export function BillingEnrollmentsTab({
         </form>
       </section>
 
-      <section className="rounded-[6px] border border-border bg-surface">
-        <div className="grid grid-cols-[1fr_1fr_0.8fr_1fr] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted">
+      <section className="border-y border-border bg-surface">
+        <div className="hidden grid-cols-[1fr_1fr_0.8fr_1fr] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
           <span>Student</span><span>Plan</span><span>Dates</span><span>Provider refs</span>
         </div>
         {billingEnrollments.length === 0 ? (
           <p className="p-4 text-sm text-muted">No billing enrollments yet.</p>
         ) : billingEnrollments.map((enrollment) => (
-          <div key={enrollment.id} className="grid grid-cols-[1fr_1fr_0.8fr_1fr] gap-4 border-b border-border px-4 py-4 text-sm last:border-b-0">
+          <div key={enrollment.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-4 text-sm last:border-b-0 md:grid-cols-[1fr_1fr_0.8fr_1fr] md:gap-4">
             <div>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Student</p>
               <p className="font-medium text-text-primary">{studentNameById.get(enrollment.student_id) || "Student"}</p>
               <p className="text-xs text-muted">{payerNameById.get(enrollment.payer_id || "") || "No payer"}</p>
               <div className="mt-1"><StatusPill status={enrollment.status} /></div>
             </div>
             <div>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Plan</p>
               <p className="text-text-primary">{planNameById.get(enrollment.billing_plan_id || enrollment.plan_id || "") || "Plan"}</p>
               <p className="mt-2 text-xs capitalize text-muted">{enrollment.collection_mode.replace(/_/g, " ")}</p>
             </div>
             <div className="text-xs text-muted">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Dates</p>
               <p>Start {formatDate(enrollment.start_date)}</p>
               <p>End {formatDate(enrollment.end_date)}</p>
               <p>Next {formatDate(enrollment.next_bill_on || enrollment.next_bill_date)}</p>
             </div>
             <div className="min-w-0 text-xs text-muted">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Provider references</p>
               <p className="truncate">{enrollment.stripe_subscription_id || "No subscription"}</p>
               <p className="truncate">{enrollment.stripe_subscription_item_id || "No item"}</p>
               <p className="mt-1">Lifecycle and mode changes are read-only.</p>

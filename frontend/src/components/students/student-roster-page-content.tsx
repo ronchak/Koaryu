@@ -21,6 +21,7 @@ import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
 import type { SortDir, SortKey, StudentRosterRow } from "@/lib/students-page-model";
 import type { Program, StudentCreate, StudentStatus } from "@/types";
 import { Upload, UserPlus } from "lucide-react";
+import styles from "./student-records.module.css";
 
 const StudentForm = dynamic(
   () => import("@/components/students/student-form").then((mod) => mod.StudentForm),
@@ -174,7 +175,7 @@ export function StudentRosterPageContent({
   visibleTotal,
 }: StudentRosterPageContentProps) {
   return (
-    <>
+    <div className={`flex min-h-full flex-col ${styles.rosterPrintRoot}`}>
       <Header
         title="Students"
         description={
@@ -197,7 +198,12 @@ export function StudentRosterPageContent({
         ) : null}
       </Header>
 
-      <div className="flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col ${styles.rosterWorkspace}`}>
+        <section className={styles.rosterDecision} aria-labelledby="roster-decision-title">
+          <p>Operational ledger</p>
+          <h2 id="roster-decision-title">Which student record needs attention?</h2>
+          <span>Compare lifecycle, program, contact, tags, and inactivity in one ruled roster instead of opening card after card.</span>
+        </section>
         <StudentRosterNotices
           actionMessage={actionMessage}
           fullRosterRequested={fullRosterRequested}
@@ -247,7 +253,7 @@ export function StudentRosterPageContent({
           />
         ) : null}
 
-        <div className="overflow-x-auto flex-1">
+        <div className={`flex-1 ${styles.rosterViewport}`}>
           {activeLoadError ? (
             <StudentRosterLoadError
               activeLoadError={activeLoadError}
@@ -305,6 +311,6 @@ export function StudentRosterPageContent({
           isLoading={isAdding}
         />
       ) : null}
-    </>
+    </div>
   );
 }

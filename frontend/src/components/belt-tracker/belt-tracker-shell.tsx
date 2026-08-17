@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import type { Program } from "@/types";
 import { Award, Settings } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 export type BeltTrackerTab = "eligibility" | "ladder";
 
@@ -45,7 +46,7 @@ export function BeltTrackerShell({
   tab,
 }: BeltTrackerShellProps) {
   return (
-    <>
+    <div className={`flex min-h-full flex-col ${styles.beltPage}`}>
       <Header
         title="Belt Tracker"
         description="Track rank progression and promotion readiness."
@@ -64,7 +65,18 @@ export function BeltTrackerShell({
       </Header>
 
       <div className="flex-1 flex flex-col">
-        <div className="flex items-center gap-4 px-8 py-3 border-b border-border">
+        <section className={styles.beltIntro} aria-labelledby="belt-workspace-purpose">
+          <p>Progression roster</p>
+          <h2 id="belt-workspace-purpose">
+            {tab === "eligibility" ? "Who has earned the next decision?" : "What is the exact path through rank?"}
+          </h2>
+          <span>
+            {tab === "eligibility"
+              ? "Read readiness by rank, class count, time, and approval instead of scanning disconnected progress cards."
+              : "Edit one ordered rail with atomic save and discard, replacing generic rank cards with a legible ladder."}
+          </span>
+        </section>
+        <div className={`flex items-center gap-4 px-4 py-3 sm:px-6 lg:px-8 border-b border-border ${styles.beltControls}`}>
           {TABS.filter((item) => item.id !== "ladder" || canConfigureBelts).map((item) => (
             <button
               key={item.id}
@@ -78,9 +90,9 @@ export function BeltTrackerShell({
               {item.label}
             </button>
           ))}
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex min-w-0 items-center gap-3">
             {beltPrograms.length > 0 ? (
-              <div className="w-64">
+              <div className="w-full min-w-0 sm:w-64">
                 <ProgramPicker
                   programs={beltPrograms}
                   value={selectedProgramId ?? ""}
@@ -111,6 +123,6 @@ export function BeltTrackerShell({
 
         {children}
       </div>
-    </>
+    </div>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
+
 import {
-  AlertTriangle,
   ArrowUpRight,
   Banknote,
   CheckCircle2,
@@ -9,11 +10,11 @@ import {
   CreditCard,
   Link2,
   Mail,
+  RotateCcw,
   type LucideIcon,
-  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { OverviewMetricCard } from "@/components/ui/overview";
+import { ModalFrame } from "@/components/ui/modal-frame";
 import { formatMoney, statusTone } from "@/lib/billing-page-utils";
 import type {
   PlatformBillingStatus,
@@ -91,6 +92,7 @@ export function BillingOverviewTab({
   canManageKoaryuSubscription,
   canOpenCustomerPortal,
   canOpenStripeDashboard,
+  canResetConnect,
   connectActionLabel,
   connectRequirementItems,
   externalPaymentTotal,
@@ -99,6 +101,7 @@ export function BillingOverviewTab({
   isActionLoading,
   isLoadingAction,
   onConnectClick,
+  onConnectReset,
   openBillingLink,
   openInvoiceTotal,
   paidRevenue,
@@ -119,6 +122,7 @@ export function BillingOverviewTab({
   canManageKoaryuSubscription: boolean;
   canOpenCustomerPortal: boolean;
   canOpenStripeDashboard: boolean;
+  canResetConnect: boolean;
   connectActionLabel: string;
   connectRequirementItems: ConnectRequirementItem[];
   externalPaymentTotal: number;
@@ -127,6 +131,7 @@ export function BillingOverviewTab({
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
   onConnectClick: () => void;
+  onConnectReset: () => Promise<void>;
   openBillingLink: OpenBillingLink;
   openInvoiceTotal: number;
   paidRevenue: number;
@@ -137,41 +142,36 @@ export function BillingOverviewTab({
   connectOnboardingEnabled: boolean;
 }) {
   const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
+  const [showConnectResetConfirm, setShowConnectResetConfirm] = useState(false);
+  const moneyBand = [
+    {
+      label: "UTC-month payment cohort",
+      value: paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable",
+      helper: paymentCohortAvailable
+        ? `${currentMonthPaymentCount} payments, net of cumulative refunds`
+        : "Complete cohort could not be loaded",
+    },
+    { label: "Open balance", value: formatMoney(openInvoiceTotal), helper: `${billingInvoicesLength} invoices tracked` },
+    { label: "Needs attention", value: String(failedInvoiceCount), helper: "Failed or past-due tuition" },
+    { label: "Student billing", value: studentsLoaded ? String(activeStudents) : "Loading", helper: `${activeSubscriptionCount} active subscriptions` },
+  ];
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <OverviewMetricCard
-          icon={Banknote}
-          label="UTC-month payment cohort"
-          value={paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable"}
-          helper={paymentCohortAvailable
-            ? `${currentMonthPaymentCount} payments processed this UTC month, net of cumulative refunds`
-            : "Complete UTC-month cohort could not be loaded"}
-          tone="success"
-        />
-        <OverviewMetricCard
-          icon={CreditCard}
-          label="Open Balance"
-          value={formatMoney(openInvoiceTotal)}
-          helper={`${billingInvoicesLength} invoices tracked`}
-          tone={openInvoiceTotal > 0 ? "warning" : "neutral"}
-        />
-        <OverviewMetricCard
-          icon={AlertTriangle}
-          label="Needs Attention"
-          value={failedInvoiceCount}
-          helper="Families with failed or past-due tuition"
-          tone={failedInvoiceCount > 0 ? "danger" : "neutral"}
-        />
-        <OverviewMetricCard
-          icon={Users}
-          label="Student Billing"
-          value={studentsLoaded ? String(activeStudents) : "Loading"}
-          helper={`${activeSubscriptionCount} active billing subscriptions`}
-          tone="info"
-        />
-      </div>
+      <section className="border-y-2 border-border bg-surface" aria-label="Billing money comparison" data-billing-money-band="true">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
+          {moneyBand.map((metric, index) => (
+            <div key={metric.label} className="border-b border-r border-border px-4 py-5 last:border-r-0 sm:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">{String(index + 1).padStart(2, "0")} · {metric.label}</p>
+              <p className="mt-2 font-mono text-2xl font-semibold text-text-primary">{metric.value}</p>
+              <p className="mt-1 text-xs leading-5 text-text-secondary">{metric.helper}</p>
+            </div>
+          ))}
+        </div>
+        <p className="border-t border-border px-4 py-2 text-[11px] text-muted">
+          Scope: current studio · As of latest loaded billing refresh · Method: current UTC-month payment cohort net of cumulative refunds
+        </p>
+      </section>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="border border-border bg-surface rounded-[6px] p-5">
@@ -328,6 +328,17 @@ export function BillingOverviewTab({
             {hasStripeConnectedAccount ? (
               <span className="self-center text-xs text-muted">Reconnect is currently unavailable.</span>
             ) : null}
+            {canResetConnect ? (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={isActionLoading}
+                onClick={() => setShowConnectResetConfirm(true)}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset connection
+              </Button>
+            ) : null}
           </div>
         </section>
       </div>
@@ -352,6 +363,36 @@ export function BillingOverviewTab({
           </div>
         </div>
       </section>
+      {showConnectResetConfirm ? (
+        <ModalFrame
+          role="alertdialog"
+          ariaLabelledBy="connect-reset-title"
+          ariaDescribedBy="connect-reset-description"
+          panelClassName="w-[min(92vw,30rem)] border-y-2 border-danger bg-surface p-5"
+          onBackdropClick={() => setShowConnectResetConfirm(false)}
+        >
+          <h2 id="connect-reset-title" className="text-base font-semibold text-text-primary">Reset Stripe connection?</h2>
+          <p id="connect-reset-description" className="mt-2 text-sm leading-6 text-text-secondary">
+            This clears Koaryu&apos;s current connected-account reference so an admin can start onboarding again. Existing provider history is not edited here.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowConnectResetConfirm(false)}>Keep connection</Button>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              isLoading={isLoadingAction("connect-reset")}
+              disabled={!canResetConnect || isActionLoading}
+              onClick={() => {
+                setShowConnectResetConfirm(false);
+                void onConnectReset();
+              }}
+            >
+              Reset connection
+            </Button>
+          </div>
+        </ModalFrame>
+      ) : null}
     </div>
   );
 }

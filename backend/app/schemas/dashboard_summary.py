@@ -1,6 +1,6 @@
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from app.schemas.auth import AuthResponse
 
@@ -26,6 +26,37 @@ class DashboardSummaryLeadCounts(BaseModel):
 
 class DashboardSummaryScheduleCounts(BaseModel):
     today_sessions: int = 0
+
+
+class DashboardSummaryTodaySession(BaseModel):
+    id: str
+    start_time: str
+    end_time: str
+    name: str
+    capacity: Optional[int] = None
+    attendance_count: int = Field(default=0, ge=0)
+    expected_count: Optional[int] = Field(default=None, ge=0)
+
+    @model_serializer(mode="wrap")
+    def _omit_unavailable_expected_count(self, handler: Any):
+        data = handler(self)
+        if self.expected_count is None:
+            data.pop("expected_count", None)
+        return data
+
+
+class DashboardSummaryTodaySchedule(BaseModel):
+    available: bool = False
+    expected_counts_available: bool = False
+    rows: list[DashboardSummaryTodaySession] = Field(default_factory=list, max_length=5)
+    overflow_count: Optional[int] = Field(default=None, ge=0)
+
+    @model_serializer(mode="wrap")
+    def _omit_unavailable_overflow_count(self, handler: Any):
+        data = handler(self)
+        if self.overflow_count is None:
+            data.pop("overflow_count", None)
+        return data
 
 
 class DashboardSummaryBeltCounts(BaseModel):
@@ -68,11 +99,41 @@ class DashboardSummaryTestReadinessCounts(BaseModel):
     available: bool = False
 
 
+class DashboardSummaryBillingAmounts(BaseModel):
+    available: bool = False
+    payment_attention_amount_cents: Optional[int] = None
+    due_this_week_amount_cents: Optional[int] = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unavailable_amount_values(self, handler: Any):
+        data = handler(self)
+        if self.payment_attention_amount_cents is None:
+            data.pop("payment_attention_amount_cents", None)
+        if self.due_this_week_amount_cents is None:
+            data.pop("due_this_week_amount_cents", None)
+        return data
+
+
 class DashboardSummaryBillingCounts(BaseModel):
     can_view_billing: bool = False
     payment_attention_count: Optional[int] = None
     has_plans: Optional[bool] = None
     payments_ready: Optional[bool] = None
+    amounts: Optional[DashboardSummaryBillingAmounts] = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unauthorized_amounts(self, handler: Any):
+        data = handler(self)
+        if self.amounts is None:
+            data.pop("amounts", None)
+        return data
+
+
+class DashboardSummaryEmergencyContacts(BaseModel):
+    available: bool = False
+    active_students: int = Field(default=0, ge=0)
+    students_with_contact_name: int = Field(default=0, ge=0)
+    students_missing_contact_name: int = Field(default=0, ge=0)
 
 
 class DashboardSummarySetupFlags(BaseModel):
@@ -105,6 +166,8 @@ class DashboardSummaryResponse(BaseModel):
     generated_at: str
     today: Optional[str] = None
     timezone: Optional[str] = None
+    today_schedule: Optional[DashboardSummaryTodaySchedule] = None
+    emergency_contacts: Optional[DashboardSummaryEmergencyContacts] = None
     students: DashboardSummaryStudentCounts = Field(default_factory=DashboardSummaryStudentCounts)
     leads: DashboardSummaryLeadCounts = Field(default_factory=DashboardSummaryLeadCounts)
     schedule: DashboardSummaryScheduleCounts = Field(default_factory=DashboardSummaryScheduleCounts)
@@ -118,3 +181,12 @@ class DashboardSummaryResponse(BaseModel):
     setup: DashboardSummarySetupFlags = Field(default_factory=DashboardSummarySetupFlags)
     recent_students: list[DashboardSummaryRecentStudent] = Field(default_factory=list)
     actions: list[DashboardSummaryAction] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_enrichments(self, handler: Any):
+        data = handler(self)
+        if self.today_schedule is None:
+            data.pop("today_schedule", None)
+        if self.emergency_contacts is None:
+            data.pop("emergency_contacts", None)
+        return data

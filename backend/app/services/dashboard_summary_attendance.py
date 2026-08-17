@@ -1,10 +1,13 @@
-from datetime import date, datetime, time as datetime_time, timezone
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.schemas.dashboard_summary import (
     DashboardSummaryInactivityCounts,
     DashboardSummaryOperationalCounts,
+    DashboardSummaryScheduleCounts,
+    DashboardSummaryTodaySchedule,
+    DashboardSummaryTodaySession,
 )
 from app.services.dashboard_summary_store import DashboardSummaryStore
 
@@ -28,7 +31,7 @@ class DashboardSummaryAttendanceMetrics:
     def _as_start_of_day(value: date, timezone_name: Optional[str]) -> str:
         try:
             zone = ZoneInfo(timezone_name or "UTC")
-        except ZoneInfoNotFoundError:
+        except (ZoneInfoNotFoundError, ValueError):
             zone = timezone.utc
         return datetime.combine(value, datetime_time.min, tzinfo=zone).astimezone(timezone.utc).isoformat()
 
@@ -38,7 +41,7 @@ class DashboardSummaryAttendanceMetrics:
             return None
         try:
             zone = ZoneInfo(timezone_name or "UTC")
-        except ZoneInfoNotFoundError:
+        except (ZoneInfoNotFoundError, ValueError):
             zone = timezone.utc
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if parsed.tzinfo is None:
@@ -72,23 +75,40 @@ class DashboardSummaryAttendanceMetrics:
             or DashboardSummaryAttendanceMetrics._parse_date(row.get("created_at"))
         )
 
-    def today_class_count(self, studio_id: str, today: date) -> int:
+    @staticmethod
+    def _session_time(value: Any) -> Optional[datetime_time]:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            return datetime_time.fromisoformat(value)
+        except ValueError:
+            return None
+
+    def today_schedule(
+        self,
+        studio_id: str,
+        today: date,
+    ) -> tuple[DashboardSummaryScheduleCounts, DashboardSummaryTodaySchedule]:
         today_text = today.isoformat()
+        tomorrow_text = (today + timedelta(days=1)).isoformat()
         session_rows = self.store.fetch_rows(
             "class_sessions",
-            "id, template_id, status, deleted_at",
-            lambda query: query.eq("studio_id", studio_id).eq("date", today_text),
+            "id, template_id, name, start_time, end_time, capacity, status, deleted_at",
+            lambda query: query
+            .eq("studio_id", studio_id)
+            .gte("date", today_text)
+            .lt("date", tomorrow_text),
         )
         represented_template_ids = {
             row["template_id"]
             for row in session_rows
             if row.get("template_id")
         }
-        persisted_live_count = sum(
-            1
+        live_session_rows = [
+            row
             for row in session_rows
             if not row.get("deleted_at") and row.get("status") != "canceled"
-        )
+        ]
 
         template_rows = self.store.fetch_rows(
             "class_templates",
@@ -98,10 +118,10 @@ class DashboardSummaryAttendanceMetrics:
             .eq("is_active", True)
             .eq("day_of_week", self._studio_weekday(today)),
         )
-        generated_count = 0
+        applicable_template_ids: set[str] = set()
         for row in template_rows:
             template_id = row.get("id")
-            if not template_id or template_id in represented_template_ids:
+            if not template_id:
                 continue
             start_date = self._parse_date(row.get("start_date"))
             end_date = self._parse_date(row.get("end_date"))
@@ -109,9 +129,67 @@ class DashboardSummaryAttendanceMetrics:
                 continue
             if end_date and end_date < today:
                 continue
-            generated_count += 1
+            applicable_template_ids.add(template_id)
 
-        return persisted_live_count + generated_count
+        unmaterialized_template_ids = applicable_template_ids - represented_template_ids
+        schedule_counts = DashboardSummaryScheduleCounts(
+            today_sessions=len(live_session_rows) + len(unmaterialized_template_ids),
+        )
+        if unmaterialized_template_ids:
+            return schedule_counts, DashboardSummaryTodaySchedule(available=False)
+
+        validated_rows: list[tuple[datetime_time, str, dict[str, Any]]] = []
+        for row in live_session_rows:
+            session_id = row.get("id")
+            name = row.get("name")
+            start_time = self._session_time(row.get("start_time"))
+            end_time = self._session_time(row.get("end_time"))
+            if (
+                not isinstance(session_id, str)
+                or not session_id.strip()
+                or not isinstance(name, str)
+                or not name.strip()
+                or start_time is None
+                or end_time is None
+            ):
+                return schedule_counts, DashboardSummaryTodaySchedule(available=False)
+            validated_rows.append((start_time, session_id, row))
+
+        validated_rows.sort(key=lambda item: (item[0], item[1]))
+        returned_rows = validated_rows[:5]
+        returned_session_ids = [session_id for _start_time, session_id, _row in returned_rows]
+        attendance_by_session: dict[str, int] = {}
+        if returned_session_ids:
+            result = (
+                self.store.supabase.table("attendance")
+                .select("session_id")
+                .eq("studio_id", studio_id)
+                .in_("session_id", returned_session_ids)
+                .neq("status", "absent")
+                .execute()
+            )
+            for attendance_row in result.data or []:
+                session_id = attendance_row.get("session_id")
+                if session_id:
+                    attendance_by_session[session_id] = attendance_by_session.get(session_id, 0) + 1
+
+        return schedule_counts, DashboardSummaryTodaySchedule(
+            available=True,
+            expected_counts_available=False,
+            rows=[
+                DashboardSummaryTodaySession(
+                    id=session_id,
+                    start_time=str(row["start_time"]),
+                    end_time=str(row["end_time"]),
+                    name=str(row["name"]),
+                    capacity=row.get("capacity"),
+                    attendance_count=attendance_by_session.get(session_id, 0),
+                    expected_count=None,
+                )
+                for _start_time, session_id, row in returned_rows
+            ],
+            overflow_count=max(0, len(validated_rows) - len(returned_rows)),
+        )
 
     def inactivity_counts(
         self,

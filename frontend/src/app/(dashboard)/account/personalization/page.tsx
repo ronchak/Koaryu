@@ -27,7 +27,7 @@ export default function PersonalizationPage() {
         title="Appearance"
         description="Theme preference applies immediately and follows you across browser tabs on this device."
       >
-        <div id="appearance" className="grid gap-3 sm:grid-cols-3">
+        <div id="appearance" className="grid border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
           {(["system", "dark", "light"] as ThemePreference[]).map((theme) => {
             const selected = preference === theme;
             const Icon = theme === "light" ? Sun : Moon;
@@ -37,8 +37,8 @@ export default function PersonalizationPage() {
                 type="button"
                 aria-pressed={selected}
                 onClick={() => setTheme(theme)}
-                className={`rounded-[6px] border p-4 text-left transition-colors ${
-                  selected ? "border-accent bg-accent/10" : "border-border bg-surface-raised hover:bg-surface-hover"
+                className={`min-h-32 border-b border-border p-4 text-left transition-colors last:border-b-0 sm:border-b-0 ${
+                  selected ? "bg-accent/10" : "bg-surface hover:bg-surface-raised"
                 }`}
               >
                 <span className="mb-3 flex items-center justify-between">
@@ -74,17 +74,17 @@ export default function PersonalizationPage() {
         title="Language"
         description="Koaryu is currently English-first. Language switching is planned for a later localization pass."
       >
-        <div id="language" className="grid gap-3 sm:grid-cols-2">
+        <div id="language" className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border">
           <div
             aria-current="true"
-            className="rounded-[6px] border border-accent bg-accent/10 p-4 text-left opacity-80"
+            className="border-b border-border bg-accent/10 p-4 text-left opacity-80 sm:border-b-0"
           >
             <Palette className="mb-3 h-4 w-4 text-accent" />
             <span className="block text-sm font-medium text-text-primary">Default</span>
             <span className="mt-1 block text-xs text-muted">Koaryu currently uses the default English interface.</span>
           </div>
           <div
-            className="rounded-[6px] border border-border bg-surface-raised p-4 text-left opacity-60"
+            className="bg-surface-raised p-4 text-left opacity-60"
           >
             <Languages className="mb-3 h-4 w-4 text-accent" />
             <span className="block text-sm font-medium text-text-primary">English (US)</span>

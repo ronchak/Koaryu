@@ -1,390 +1,167 @@
 "use client";
 
-import type { DragEvent, KeyboardEvent } from "react";
-import { LEAD_SOURCE_ICONS } from "@/components/leads/lead-source-icons";
+import { Button } from "@/components/ui/button";
 import {
   PIPELINE_STAGES,
   SOURCE_LABELS,
   formatDate,
   fullName,
-  getLeadFollowUpTone,
   getFollowUpStatusLabel,
   getProgramLabel,
-  timeAgo,
+  getStageLabel,
 } from "@/lib/leads-page-model";
-import type { Lead, LeadStage, Program } from "@/types";
-import { Calendar, GripVertical } from "lucide-react";
+import type { Lead, LeadStage, Program, StaffMember } from "@/types";
+import { ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
+import styles from "./leads-ledger.module.css";
 
 interface LeadPipelineBoardProps {
   canConvertLeads: boolean;
   canManageLeads: boolean;
-  draggedLeadId: string | null;
-  draggedLeadRecord: Lead | null;
-  dropTargetStage: LeadStage | null;
-  leadsByStage: Partial<Record<LeadStage, Lead[]>>;
+  leads: Lead[];
   pendingLeadId: string | null;
   programById: Map<string, Program>;
+  staffById: Map<string, StaffMember>;
   today: string;
   onAddLead: () => void;
-  onCardDragEnd: () => void;
-  onCardDragStart: (
-    event: DragEvent<HTMLDivElement>,
-    leadId: string
-  ) => void;
-  onDrop: (
-    event: DragEvent<HTMLDivElement>,
-    stage: LeadStage
-  ) => void | Promise<void>;
   onKeyboardMoveLead: (lead: Lead, direction: -1 | 1) => void | Promise<void>;
   onSelectLead: (leadId: string) => void;
-  onStageDragLeave: (
-    event: DragEvent<HTMLDivElement>,
-    stage: LeadStage
-  ) => void;
-  onStageDragOver: (
-    event: DragEvent<HTMLDivElement>,
-    stage: LeadStage
-  ) => void;
+  onStageSelection: (lead: Lead, nextStage: LeadStage) => void | Promise<void>;
 }
 
 export function LeadPipelineBoard({
   canConvertLeads,
   canManageLeads,
-  draggedLeadId,
-  draggedLeadRecord,
-  dropTargetStage,
-  leadsByStage,
+  leads,
   pendingLeadId,
   programById,
+  staffById,
   today,
   onAddLead,
-  onCardDragEnd,
-  onCardDragStart,
-  onDrop,
   onKeyboardMoveLead,
   onSelectLead,
-  onStageDragLeave,
-  onStageDragOver,
+  onStageSelection,
 }: LeadPipelineBoardProps) {
-  return (
-    <div className="flex-1 p-4 sm:p-6">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-5">
-        {PIPELINE_STAGES.map((stage) => {
-          const stageLeads = leadsByStage[stage.id] || [];
-          const canDropIntoStage =
-            canManageLeads &&
-            draggedLeadRecord?.stage !== undefined &&
-            draggedLeadRecord.stage !== stage.id &&
-            (stage.id !== "enrolled" || canConvertLeads);
-          const isDropActive = canDropIntoStage && dropTargetStage === stage.id;
+  const overdue = leads.filter((lead) => lead.follow_up_date && lead.follow_up_date < today).length;
+  const dueToday = leads.filter((lead) => lead.follow_up_date === today).length;
+  const unassigned = leads.filter((lead) => !lead.assigned_staff_id).length;
 
-          return (
-            <LeadPipelineStageColumn
-              key={stage.id}
-              canDropIntoStage={canDropIntoStage}
-              canManageLeads={canManageLeads}
-              draggedLeadId={draggedLeadId}
-              isDropActive={isDropActive}
-              pendingLeadId={pendingLeadId}
-              programById={programById}
-              stage={stage}
-              stageLeads={stageLeads}
-              today={today}
-              onAddLead={onAddLead}
-              onCardDragEnd={onCardDragEnd}
-              onCardDragStart={onCardDragStart}
-              onDrop={onDrop}
-              onKeyboardMoveLead={onKeyboardMoveLead}
-              onSelectLead={onSelectLead}
-              onStageDragLeave={onStageDragLeave}
-              onStageDragOver={onStageDragOver}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-interface LeadPipelineStageColumnProps {
-  canDropIntoStage: boolean;
-  canManageLeads: boolean;
-  draggedLeadId: string | null;
-  isDropActive: boolean;
-  pendingLeadId: string | null;
-  programById: Map<string, Program>;
-  stage: (typeof PIPELINE_STAGES)[number];
-  stageLeads: Lead[];
-  today: string;
-  onAddLead: () => void;
-  onCardDragEnd: () => void;
-  onCardDragStart: (
-    event: DragEvent<HTMLDivElement>,
-    leadId: string
-  ) => void;
-  onDrop: (
-    event: DragEvent<HTMLDivElement>,
-    stage: LeadStage
-  ) => void | Promise<void>;
-  onKeyboardMoveLead: (lead: Lead, direction: -1 | 1) => void | Promise<void>;
-  onSelectLead: (leadId: string) => void;
-  onStageDragLeave: (
-    event: DragEvent<HTMLDivElement>,
-    stage: LeadStage
-  ) => void;
-  onStageDragOver: (
-    event: DragEvent<HTMLDivElement>,
-    stage: LeadStage
-  ) => void;
-}
-
-function LeadPipelineStageColumn({
-  canDropIntoStage,
-  canManageLeads,
-  draggedLeadId,
-  isDropActive,
-  pendingLeadId,
-  programById,
-  stage,
-  stageLeads,
-  today,
-  onAddLead,
-  onCardDragEnd,
-  onCardDragStart,
-  onDrop,
-  onKeyboardMoveLead,
-  onSelectLead,
-  onStageDragLeave,
-  onStageDragOver,
-}: LeadPipelineStageColumnProps) {
-  return (
-    <div
-      className={`min-w-0 flex flex-col transition-colors ${
-        isDropActive ? "ring-1 ring-accent/50" : ""
-      }`}
-      onDragOver={(event) => onStageDragOver(event, stage.id)}
-      onDragLeave={(event) => onStageDragLeave(event, stage.id)}
-      onDrop={(event) => {
-        event.stopPropagation();
-        void onDrop(event, stage.id);
-      }}
-    >
-      <span
-        className="block h-[3px] w-full shrink-0"
-        style={{ backgroundColor: stage.hex }}
-      />
-
-      <div className="flex items-center justify-between px-3 py-2.5 bg-surface border-x border-border">
-        <h3 className="text-[11px] font-medium text-text-secondary uppercase tracking-widest">
-          {stage.label}
-        </h3>
-        <span className="text-[11px] text-muted font-mono">
-          {stageLeads.length}
-        </span>
-      </div>
-
-      <div
-        className={`flex-1 border border-border border-t-0 p-2 transition-colors ${
-          isDropActive ? "bg-accent/[0.04]" : "bg-surface/30"
-        } min-h-[240px]`}
-        onDragOver={(event) => onStageDragOver(event, stage.id)}
-        onDragLeave={(event) => onStageDragLeave(event, stage.id)}
-        onDrop={(event) => {
-          event.stopPropagation();
-          void onDrop(event, stage.id);
-        }}
-      >
-        {canDropIntoStage && (
-          <div
-            className={`border border-dashed px-3 py-2 text-xs mb-2 transition-colors ${
-              isDropActive
-                ? "border-accent/60 bg-accent/10 text-accent"
-                : "border-border bg-surface-raised/40 text-muted"
-            }`}
-          >
-            Drop to move to {stage.label.toLowerCase()}
-          </div>
-        )}
-
-        {stageLeads.map((lead) => (
-          <LeadPipelineCard
-            key={lead.id}
-            draggedLeadId={draggedLeadId}
-            canManageLeads={canManageLeads}
-            lead={lead}
-            pendingLeadId={pendingLeadId}
-            programById={programById}
-            today={today}
-            onCardDragEnd={onCardDragEnd}
-            onCardDragStart={onCardDragStart}
-            onKeyboardMoveLead={onKeyboardMoveLead}
-            onSelectLead={onSelectLead}
-          />
-        ))}
-
-        {stageLeads.length === 0 && (
-          <LeadStageEmptyState
-            canManageLeads={canManageLeads}
-            stage={stage}
-            onAddLead={onAddLead}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface LeadPipelineCardProps {
-  canManageLeads: boolean;
-  draggedLeadId: string | null;
-  lead: Lead;
-  pendingLeadId: string | null;
-  programById: Map<string, Program>;
-  today: string;
-  onCardDragEnd: () => void;
-  onCardDragStart: (
-    event: DragEvent<HTMLDivElement>,
-    leadId: string
-  ) => void;
-  onKeyboardMoveLead: (lead: Lead, direction: -1 | 1) => void | Promise<void>;
-  onSelectLead: (leadId: string) => void;
-}
-
-function LeadPipelineCard({
-  canManageLeads,
-  draggedLeadId,
-  lead,
-  pendingLeadId,
-  programById,
-  today,
-  onCardDragEnd,
-  onCardDragStart,
-  onKeyboardMoveLead,
-  onSelectLead,
-}: LeadPipelineCardProps) {
-  const program = lead.program_id ? programById.get(lead.program_id) : null;
-  const cardAccent = program?.color_hex || "var(--border)";
-  const followUpTone = getLeadFollowUpTone(lead.follow_up_date, today);
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelectLead(lead.id);
-      return;
-    }
-
-    if (event.key === "ArrowRight") {
-      if (!canManageLeads) return;
-      event.preventDefault();
-      void onKeyboardMoveLead(lead, 1);
-      return;
-    }
-
-    if (event.key === "ArrowLeft") {
-      if (!canManageLeads) return;
-      event.preventDefault();
-      void onKeyboardMoveLead(lead, -1);
-    }
+  if (leads.length === 0) {
+    return (
+      <section className={styles.empty} aria-labelledby="lead-ledger-title">
+        <p className={styles.eyebrow}>Obligation ledger</p>
+        <h2 id="lead-ledger-title">No open lead obligations.</h2>
+        <p>The old stage columns are gone. New inquiries will appear here in follow-up order.</p>
+        {canManageLeads ? (
+          <Button variant="primary" size="sm" onClick={onAddLead}>
+            <UserPlus aria-hidden="true" className="h-3.5 w-3.5" />
+            Add lead
+          </Button>
+        ) : null}
+      </section>
+    );
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      draggable={canManageLeads}
-      onDragStart={(event) => onCardDragStart(event, lead.id)}
-      onDragEnd={onCardDragEnd}
-      onClick={() => onSelectLead(lead.id)}
-      onKeyDown={handleKeyDown}
-      aria-label={`${fullName(lead)} lead card`}
-      data-follow-up-state={followUpTone ?? "none"}
-      className={`group relative mb-2 min-w-0 cursor-pointer overflow-hidden border transition-colors ${
-        followUpTone === "overdue"
-          ? "border-danger/60 bg-danger/[0.07] hover:border-danger"
-          : followUpTone === "due-today"
-            ? "border-warning/60 bg-warning/[0.07] hover:border-warning"
-            : "border-border bg-surface hover:border-[color:var(--accent)]/30"
-      } ${
-        draggedLeadId === lead.id || pendingLeadId === lead.id
-          ? "opacity-50"
-          : ""
-      }`}
-    >
-      <span
-        className="absolute left-0 top-0 bottom-0 w-[3px]"
-        style={{ backgroundColor: cardAccent }}
-      />
-      <div className="pl-3.5 pr-3 py-2.5">
-        <div className="flex items-start justify-between gap-1">
-          <p className="break-words text-sm font-semibold text-text-primary leading-tight">
-            {fullName(lead)}
-          </p>
-          {canManageLeads ? (
-            <GripVertical className="w-3 h-3 text-border flex-shrink-0 cursor-grab mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-          ) : null}
+    <section className={styles.workspace} aria-labelledby="lead-ledger-title">
+      <div className={styles.intro}>
+        <div>
+          <p className={styles.eyebrow}>Obligation ledger</p>
+          <h2 id="lead-ledger-title">Who needs a follow-up next?</h2>
+          <p>Ordered by the promise due, replacing stage columns with one accountable queue.</p>
         </div>
-        <p className="text-[10px] text-text-secondary mt-1 truncate">
-          {getProgramLabel(lead, program)}
-        </p>
-
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 border border-border bg-surface-raised px-1.5 py-0.5 text-[10px] text-text-secondary">
-            {LEAD_SOURCE_ICONS[lead.source]}
-            <span className="truncate">{SOURCE_LABELS[lead.source]}</span>
-          </span>
-          {lead.is_minor && (
-            <span className="text-[10px] text-warning">Minor</span>
-          )}
-          {lead.follow_up_date && lead.follow_up_date <= today && (
-            <span
-              className={`text-[10px] px-1.5 py-0.5 ${
-                lead.follow_up_date < today
-                  ? "bg-danger/10 text-danger"
-                  : "bg-warning/10 text-warning"
-              }`}
-            >
-              {getFollowUpStatusLabel(lead.follow_up_date, today)}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3 mt-2 pt-1.5 border-t border-border/40 text-[10px] text-muted">
-          {lead.follow_up_date && (
-            <span className="flex items-center gap-0.5">
-              <Calendar className="w-2.5 h-2.5" />
-              {formatDate(lead.follow_up_date)}
-            </span>
-          )}
-          <span>{timeAgo(lead.created_at)}</span>
-        </div>
+        <dl className={styles.totals}>
+          <div><dt>Overdue</dt><dd>{overdue}</dd></div>
+          <div><dt>Due today</dt><dd>{dueToday}</dd></div>
+          <div><dt>Unassigned</dt><dd>{unassigned}</dd></div>
+        </dl>
       </div>
-    </div>
-  );
-}
 
-interface LeadStageEmptyStateProps {
-  canManageLeads: boolean;
-  stage: (typeof PIPELINE_STAGES)[number];
-  onAddLead: () => void;
-}
+      <div className={styles.tableFrame}>
+        <table className={styles.ledger}>
+          <thead>
+            <tr>
+              <th scope="col">Obligation</th>
+              <th scope="col">Lead</th>
+              <th scope="col">Stage</th>
+              <th scope="col">Program / source</th>
+              <th scope="col">Owner</th>
+              <th scope="col"><span className="sr-only">Open record</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {leads.map((lead) => {
+              const stageIndex = PIPELINE_STAGES.findIndex((stage) => stage.id === lead.stage);
+              const owner = lead.assigned_staff_id ? staffById.get(lead.assigned_staff_id) : null;
+              const isPending = pendingLeadId === lead.id;
+              const obligation = lead.follow_up_date
+                ? getFollowUpStatusLabel(lead.follow_up_date, today)
+                : lead.stage === "enrolled" ? "Completed" : "Not scheduled";
+              const tone = lead.follow_up_date && lead.follow_up_date < today
+                ? "overdue"
+                : lead.follow_up_date === today ? "today" : "quiet";
 
-function LeadStageEmptyState({ canManageLeads, stage, onAddLead }: LeadStageEmptyStateProps) {
-  return (
-    <div className="text-center py-8">
-      <p className="text-xs text-muted">
-        {stage.id === "inquiry"
-          ? "New inquiries will start here."
-          : `No leads in ${stage.label.toLowerCase()}.`}
-      </p>
-      {canManageLeads && stage.id === "inquiry" ? (
-        <button
-          type="button"
-          onClick={onAddLead}
-          className="mt-3 text-xs font-medium text-accent hover:text-accent-hover cursor-pointer"
-        >
-          Add lead
-        </button>
-      ) : null}
-    </div>
+              return (
+                <tr key={lead.id} data-obligation={tone} aria-busy={isPending || undefined}>
+                  <td data-label="Obligation" className={styles.obligation}>
+                    <span>{obligation}</span>
+                    {lead.follow_up_date ? <small>{formatDate(lead.follow_up_date, true)}</small> : null}
+                  </td>
+                  <th scope="row" data-label="Lead">
+                    <button type="button" onClick={() => onSelectLead(lead.id)} className={styles.nameButton}>
+                      {fullName(lead)}
+                    </button>
+                    <small>{lead.email || lead.phone || "No contact details"}</small>
+                  </th>
+                  <td data-label="Stage" className={styles.stageCell}>
+                    {canManageLeads ? (
+                      <>
+                        <select
+                          aria-label={`Stage for ${fullName(lead)}`}
+                          value={lead.stage}
+                          disabled={isPending}
+                          onChange={(event) => void onStageSelection(lead, event.target.value as LeadStage)}
+                        >
+                          {PIPELINE_STAGES.map((stage) => (
+                            <option key={stage.id} value={stage.id} disabled={stage.id === "enrolled" && !canConvertLeads}>
+                              {stage.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className={styles.stageMoves} aria-label={`Move ${fullName(lead)} one stage`}>
+                          <button
+                            type="button"
+                            aria-label={`Move ${fullName(lead)} to the previous stage`}
+                            disabled={stageIndex <= 0 || isPending}
+                            onClick={() => void onKeyboardMoveLead(lead, -1)}
+                          ><ChevronLeft aria-hidden="true" /></button>
+                          <button
+                            type="button"
+                            aria-label={`Move ${fullName(lead)} to the next stage`}
+                            disabled={stageIndex < 0 || stageIndex >= PIPELINE_STAGES.length - 1 || isPending || (PIPELINE_STAGES[stageIndex + 1]?.id === "enrolled" && !canConvertLeads)}
+                            onClick={() => void onKeyboardMoveLead(lead, 1)}
+                          ><ChevronRight aria-hidden="true" /></button>
+                        </div>
+                      </>
+                    ) : <span className={styles.readOnlyStage}>{getStageLabel(lead.stage)}</span>}
+                  </td>
+                  <td data-label="Program / source">
+                    <span>{getProgramLabel(lead, lead.program_id ? programById.get(lead.program_id) : null)}</span>
+                    <small>{SOURCE_LABELS[lead.source]}{lead.is_minor ? " · Minor" : ""}</small>
+                  </td>
+                  <td data-label="Owner">
+                    <span>{owner?.full_name || owner?.email || "Unassigned"}</span>
+                  </td>
+                  <td data-label="Record">
+                    <Button variant="ghost" size="sm" disabled={isPending} onClick={() => onSelectLead(lead.id)}>
+                      Open
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

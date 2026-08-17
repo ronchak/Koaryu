@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/logo";
+import { FocusedOperationsSheet } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -179,11 +180,8 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-bg">
-      {/* Accent line */}
-      <div className="fixed top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
-
-      <div className="w-full max-w-[440px]">
+    <FocusedOperationsSheet page="onboarding" eyebrow="Studio setup">
+      <div className="mx-auto w-full max-w-[440px]">
         {/* Logo */}
         <div className="mb-8 text-center">
           <div className="flex justify-center mb-3">
@@ -193,7 +191,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Onboarding card */}
-        <div className="bg-surface border border-border rounded-[6px] p-6">
+        <div className="border-y border-border bg-surface py-6">
           <h2 className="text-lg font-semibold text-text-primary mb-1">
             Set up your studio
           </h2>
@@ -260,6 +258,6 @@ export default function OnboardingPage() {
           You can update these settings anytime.
         </p>
       </div>
-    </div>
+    </FocusedOperationsSheet>
   );
 }

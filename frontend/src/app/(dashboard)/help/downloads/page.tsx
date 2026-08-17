@@ -6,6 +6,7 @@ import { AccountNotice, AccountPageShell, AccountSection } from "@/components/ac
 export default function DownloadsPage() {
   return (
     <AccountPageShell
+      family="help"
       title="Download apps"
       description="Install Koaryu from the browser for faster access on front-desk and instructor devices."
     >

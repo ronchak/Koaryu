@@ -1,181 +1,98 @@
 import Link from "next/link";
-import {
-  Award,
-  BellRing,
-  CalendarClock,
-  CreditCard,
-  Mail,
-  ShieldCheck,
-  TrendingDown,
-  UserPlus,
-  Zap,
-} from "lucide-react";
+import { BellRing } from "lucide-react";
 import { Header } from "@/components/header";
+import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
-import { OverviewActionList, OverviewPanel, OverviewPanelHeader, type OverviewAction } from "@/components/ui/overview";
 import { crmLinkPrefetch } from "@/lib/constants";
 
-const MANUAL_SIGNALS: OverviewAction[] = [
-  {
-    id: "lead-followups",
-    title: "Lead follow-ups",
-    description: "Use Dashboard and Leads to see which prospects need a call, trial reminder, or next step today.",
-    href: "/leads",
-    icon: UserPlus,
-    tone: "accent",
-  },
-  {
-    id: "missed-class",
-    title: "Students going quiet",
-    description: "Dashboard highlights students crossing inactivity thresholds before they become cancellations.",
-    href: "/dashboard",
-    icon: TrendingDown,
-    tone: "warning",
-  },
-  {
-    id: "ready-to-promote",
-    title: "Ready to promote",
-    description: "Belt Tracker shows students who meet class, time, and approval requirements for the next rank.",
-    href: "/belt-tracker",
-    icon: Award,
-    tone: "success",
-  },
-  {
-    id: "tuition-attention",
-    title: "Tuition needs attention",
-    description: "Billing keeps failed payments, past-due families, and open invoices in one operational queue.",
-    href: "/billing",
-    icon: CreditCard,
-    tone: "danger",
-  },
-];
+const LIVE_QUEUES = [
+  { title: "Lead follow-ups", description: "Call, trial, and next-step obligations already live in Leads.", href: "/leads" },
+  { title: "Students going quiet", description: "Dashboard surfaces students crossing inactivity thresholds.", href: "/dashboard" },
+  { title: "Ready to promote", description: "Belt Tracker applies the current rank and approval requirements.", href: "/belt-tracker" },
+  { title: "Tuition needs attention", description: "Billing holds failed payments, past-due families, and open invoices.", href: "/billing" },
+] as const;
 
-const UPCOMING_WORKFLOWS = [
-  {
-    icon: UserPlus,
-    title: "Trial reminders",
-    description: "Send a prewritten reminder before a lead's trial class and a follow-up afterward.",
-  },
-  {
-    icon: TrendingDown,
-    title: "Missed-class nudges",
-    description: "Email families after configurable 14-day or 30-day attendance gaps.",
-  },
-  {
-    icon: CreditCard,
-    title: "Payment recovery",
-    description: "Notify families when a payment fails, then stop reminders when Stripe recovers it.",
-  },
-  {
-    icon: Award,
-    title: "Promotion congratulations",
-    description: "Send a polished note after a promotion is recorded in the belt history.",
-  },
-  {
-    icon: CalendarClock,
-    title: "Belt test announcements",
-    description: "Notify eligible students and families before a testing cycle.",
-  },
-];
+const FUTURE_WORKFLOWS = [
+  ["Trial reminders", "Reminder before a trial class and a follow-up afterward."],
+  ["Missed-class nudges", "Family email after a configurable attendance gap."],
+  ["Payment recovery", "Failed-payment notice that stops after provider recovery."],
+  ["Promotion congratulations", "Studio-approved note after a promotion is recorded."],
+  ["Belt test announcements", "Notice to eligible students and families before a testing cycle."],
+] as const;
 
 export default function AutomationsPage() {
   return (
-    <>
+    <OperationsSurface page="automations">
       <Header
         title="Automations"
-        description="Rules-based email workflows are planned; today's retention signals already live across Dashboard, Leads, Belt Tracker, and Billing."
+        description="A read-only catalog of live manual queues and future studio-approved workflows."
       >
-        <Button asChild variant="secondary" size="sm">
+        <Button asChild variant="primary" size="sm">
           <Link href="/dashboard" prefetch={crmLinkPrefetch("/dashboard")}>
             <BellRing className="h-3.5 w-3.5" />
-            Today&apos;s actions
+            Open today&apos;s work
           </Link>
         </Button>
       </Header>
 
-      <div className="flex-1 p-6 sm:p-8">
-        <div className="mx-auto max-w-6xl space-y-5">
-          <OverviewPanel>
-            <div className="grid gap-px bg-border lg:grid-cols-[0.9fr_1.1fr]">
-              <section className="bg-surface px-5 py-6 sm:px-6">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-[6px] border border-warning/20 bg-warning/10 text-warning">
-                    <Zap className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <p className="text-[11px] font-medium uppercase tracking-widest text-warning">Planned module</p>
-                    <h2 className="mt-1 text-lg font-semibold text-text-primary">Automation builder is not live yet</h2>
-                  </div>
-                </div>
-                <p className="mt-4 text-sm leading-6 text-text-secondary">
-                  Koaryu will use deterministic templates and studio-approved rules, not AI-written messages in the critical path. Until this ships, this page stays honest and points you to the manual queues that already protect retention.
-                </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <Button asChild variant="primary" size="sm">
-                    <Link href="/dashboard" prefetch={crmLinkPrefetch("/dashboard")}>Open Dashboard</Link>
-                  </Button>
-                  <Button asChild variant="secondary" size="sm">
-                    <Link href="/billing" prefetch={crmLinkPrefetch("/billing")}>Review Billing</Link>
-                  </Button>
-                </div>
-              </section>
-
-              <section className="bg-surface px-5 py-6 sm:px-6">
-                <div className="flex items-start gap-3 rounded-[6px] border border-border bg-bg px-4 py-4">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                  <div>
-                    <h3 className="text-sm font-medium text-text-primary">What will ship here</h3>
-                    <p className="mt-1 text-xs leading-5 text-text-secondary">
-                      Studio admins will be able to toggle templates, edit copy, choose triggers, and review email usage before anything sends automatically.
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-start gap-3 rounded-[6px] border border-border bg-bg px-4 py-4">
-                  <Mail className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-                  <div>
-                    <h3 className="text-sm font-medium text-text-primary">What will not happen silently</h3>
-                    <p className="mt-1 text-xs leading-5 text-text-secondary">
-                      No hidden SMS charges, no unreviewed AI copy, and no surprise messages to families before the studio turns a workflow on.
-                    </p>
-                  </div>
-                </div>
-              </section>
+      <div className="flex-1 px-4 py-7 sm:px-8 lg:py-10" data-automations-readonly="true">
+        <div className="mx-auto max-w-5xl space-y-9">
+          <section className="border-y-2 border-border bg-surface">
+            <div className="grid gap-4 px-5 py-6 sm:grid-cols-[minmax(12rem,0.36fr)_1fr] sm:gap-8">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-accent">Current status</p>
+                <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">No automation builder is live.</h2>
+              </div>
+              <p className="text-sm leading-6 text-text-secondary">
+                There are no message toggles, schedules, forms, or hidden sends on this page. Koaryu will use deterministic templates and explicit studio approval when this work ships. Today, the four live queues below are the honest operating path.
+              </p>
             </div>
-          </OverviewPanel>
+          </section>
 
-          <OverviewPanel>
-            <OverviewPanelHeader
-              title="Use these queues now"
-              description="The automation builder is future work, but these live screens already surface the moments a studio owner cares about."
-            />
-            <OverviewActionList
-              actions={MANUAL_SIGNALS}
-              emptyTitle="No manual queues configured"
-              emptyDescription="Dashboard, Leads, Belt Tracker, and Billing become more useful as setup data is added."
-            />
-          </OverviewPanel>
-
-          <OverviewPanel>
-            <OverviewPanelHeader
-              title="Workflow library coming next"
-              description="Initial automations should be simple, editable, and safe enough for a busy front desk to trust."
-            />
-            <div className="grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-5">
-              {UPCOMING_WORKFLOWS.map((workflow) => {
-                const Icon = workflow.icon;
-
-                return (
-                  <div key={workflow.title} className="bg-surface px-4 py-4">
-                    <Icon className="h-4 w-4 text-accent" />
-                    <h3 className="mt-3 text-sm font-medium text-text-primary">{workflow.title}</h3>
-                    <p className="mt-1 text-xs leading-5 text-text-secondary">{workflow.description}</p>
-                  </div>
-                );
-              })}
+          <section aria-labelledby="live-queues-title">
+            <div className="mb-3 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Available now</p>
+                <h2 id="live-queues-title" className="mt-1 text-base font-semibold text-text-primary">Four live queue destinations</h2>
+              </div>
+              <span className="font-mono text-xs text-muted">04</span>
             </div>
-          </OverviewPanel>
+            <ol className="border-y border-border bg-surface">
+              {LIVE_QUEUES.map((queue, index) => (
+                <li key={queue.href} className="border-b border-border last:border-b-0">
+                  <Link href={queue.href} prefetch={crmLinkPrefetch(queue.href)} className="grid min-h-20 grid-cols-[2rem_1fr_auto] items-center gap-3 px-3 py-4 hover:bg-surface-raised">
+                    <span className="font-mono text-xs text-accent">{String(index + 1).padStart(2, "0")}</span>
+                    <span>
+                      <strong className="block text-sm font-semibold text-text-primary">{queue.title}</strong>
+                      <span className="mt-1 block text-sm leading-5 text-text-secondary">{queue.description}</span>
+                    </span>
+                    <span aria-hidden="true" className="text-accent">→</span>
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section aria-labelledby="future-workflows-title">
+            <div className="mb-3 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Future catalog</p>
+                <h2 id="future-workflows-title" className="mt-1 text-base font-semibold text-text-primary">Five proposed workflows</h2>
+              </div>
+              <span className="font-mono text-xs text-muted">Read only · 05</span>
+            </div>
+            <dl className="border-y border-border bg-surface">
+              {FUTURE_WORKFLOWS.map(([title, description], index) => (
+                <div key={title} className="grid gap-1 border-b border-border px-4 py-4 last:border-b-0 sm:grid-cols-[2rem_minmax(12rem,0.36fr)_1fr] sm:gap-4">
+                  <span aria-hidden="true" className="font-mono text-xs text-muted">{String(index + 1).padStart(2, "0")}</span>
+                  <dt className="text-sm font-semibold text-text-primary">{title}</dt>
+                  <dd className="text-sm leading-5 text-text-secondary">{description}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
         </div>
       </div>
-    </>
+    </OperationsSurface>
   );
 }

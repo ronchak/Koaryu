@@ -9,10 +9,11 @@ import {
 export default function HelpPage() {
   return (
     <AccountPageShell
+      family="help"
       title="Help center"
       description="Quick answers and support routes for running Koaryu in a real studio."
     >
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="border-y border-border divide-y divide-border">
         <AccountLinkTile
           href="/help/get-started"
           icon={BookOpen}

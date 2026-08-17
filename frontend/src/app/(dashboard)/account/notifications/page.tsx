@@ -56,9 +56,9 @@ export default function NotificationsPage() {
             return (
               <div
                 key={option.title}
-                className="flex w-full items-start gap-3 rounded-[6px] border border-border bg-surface-raised p-4 text-left"
+                className="flex w-full items-start gap-3 border-b border-border bg-surface px-1 py-4 text-left last:border-b-0"
               >
-                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[6px] bg-accent/10 text-accent">
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center border-r border-border text-accent">
                   <Icon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">

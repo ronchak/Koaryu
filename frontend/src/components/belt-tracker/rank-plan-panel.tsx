@@ -17,6 +17,7 @@ import {
   Tag,
   Trash2,
 } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 type RankPlanPanelProps = {
   collapsedGroups: Set<string>;
@@ -112,9 +113,9 @@ export function RankPlanPanel({
   tipCount,
 }: RankPlanPanelProps) {
   return (
-    <div className="flex-1 p-8 overflow-y-auto">
-      <div className="max-w-xl">
-        <div className="flex items-start justify-between mb-5">
+    <div className={`flex-1 overflow-y-auto ${styles.rankPlanWorkspace}`}>
+      <div className={styles.rankPlan}>
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
           <div>
             <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
             <p className="text-xs text-muted mt-0.5">
@@ -159,7 +160,7 @@ export function RankPlanPanel({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {dirty && (
               <Button
                 variant="ghost"
@@ -220,7 +221,7 @@ export function RankPlanPanel({
           Drag belts to reorder. Drag {subRankTerm.toLowerCase()}s within a belt to reorder them.
         </p>
 
-        <div className="space-y-2">
+        <div className={styles.rankRail}>
           {groups.map((group, groupIndex) => {
             const isCollapsed = collapsedGroups.has(group.belt.id);
             const isDraggingThisGroup = draggingGroupIdx === groupIndex;
@@ -229,7 +230,7 @@ export function RankPlanPanel({
             return (
               <div
                 key={group.belt.id}
-                className={`rounded-[6px] border transition-[background-color,border-color,opacity] ${
+                className={`${styles.rankGroup} border transition-[background-color,border-color,opacity] ${
                   isDropTarget
                     ? "border-accent bg-accent/5"
                     : "border-border bg-surface"
@@ -238,8 +239,9 @@ export function RankPlanPanel({
                 <div
                   onDragOver={(event) => onBeltDragOver(groupIndex, event)}
                   onDrop={() => onBeltDrop(groupIndex)}
-                  className="flex items-center gap-3 px-4 py-3 cursor-default select-none"
+                  className={`flex items-center gap-3 px-4 py-3 cursor-default select-none ${styles.rankHeader}`}
                 >
+                  <span className={styles.rankOrdinal} aria-hidden="true">{String(groupIndex + 1).padStart(2, "0")}</span>
                   <span
                     draggable
                     data-belt-drag-handle={group.belt.id}
@@ -265,27 +267,28 @@ export function RankPlanPanel({
                       : <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" />}
                   </button>
 
-                  <BeltVisual rank={group.belt} />
-
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-text-primary truncate">
-                      {group.belt.name}
-                    </p>
-                    <p className="text-xs text-muted mt-0.5">
-                      {group.belt.min_classes > 0 ? `${group.belt.min_classes} classes` : ""}
-                      {group.belt.min_classes > 0 && group.belt.min_months > 0 ? " · " : ""}
-                      {group.belt.min_months > 0 ? `${group.belt.min_months} months` : ""}
-                      {group.belt.requires_approval ? " · Approval" : ""}
-                      {!group.belt.min_classes && !group.belt.min_months && !group.belt.requires_approval
-                        ? groupIndex === 0 ? "Starting belt" : "No requirements"
-                        : ""}
-                      {group.tips.length > 0
-                        ? ` · ${group.tips.length} ${subRankTerm.toLowerCase()}${group.tips.length !== 1 ? "s" : ""}`
-                        : ""}
-                    </p>
+                  <div className={styles.rankIdentity}>
+                    <BeltVisual rank={group.belt} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-text-primary">
+                        {group.belt.name}
+                      </p>
+                      <p className="text-xs text-muted mt-0.5">
+                        {group.belt.min_classes > 0 ? `${group.belt.min_classes} classes` : ""}
+                        {group.belt.min_classes > 0 && group.belt.min_months > 0 ? " · " : ""}
+                        {group.belt.min_months > 0 ? `${group.belt.min_months} months` : ""}
+                        {group.belt.requires_approval ? " · Approval" : ""}
+                        {!group.belt.min_classes && !group.belt.min_months && !group.belt.requires_approval
+                          ? groupIndex === 0 ? "Starting belt" : "No requirements"
+                          : ""}
+                        {group.tips.length > 0
+                          ? ` · ${group.tips.length} ${subRankTerm.toLowerCase()}${group.tips.length !== 1 ? "s" : ""}`
+                          : ""}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className={`flex items-center gap-1 flex-shrink-0 ${styles.rankActions}`}>
                     <button
                       type="button"
                       onClick={() => onMoveBelt(groupIndex, -1)}
@@ -345,7 +348,7 @@ export function RankPlanPanel({
                           key={tip.id}
                           onDragOver={(event) => onTipDragOver(groupIndex, tipIndex, event)}
                           onDrop={() => onTipDrop(groupIndex, tipIndex)}
-                          className={`flex items-center gap-2.5 py-2 px-2 rounded-[4px] mb-0.5 transition-[background-color,color,opacity] select-none ${
+                          className={`flex items-center gap-2.5 py-2 px-2 rounded-[4px] mb-0.5 transition-[background-color,color,opacity] select-none ${styles.tipRow} ${
                             isTipDragging ? "opacity-30" : "opacity-100"
                           } ${isTipOver ? "bg-accent/10" : "hover:bg-surface-raised/60"}`}
                         >
@@ -360,17 +363,19 @@ export function RankPlanPanel({
                           >
                             <GripVertical aria-hidden="true" className="h-3 w-3" />
                           </span>
-                          <BeltVisual rank={tip} size="sm" />
-                          <span className="text-xs text-text-secondary flex-1 truncate font-medium">
-                            {tip.name}
-                          </span>
-                          <span className="text-xs text-muted">
+                          <div className={styles.tipIdentity}>
+                            <BeltVisual rank={tip} size="sm" />
+                            <span className="text-xs text-text-secondary font-medium">
+                              {tip.name}
+                            </span>
+                          </div>
+                          <span className={`text-xs text-muted ${styles.tipRequirements}`}>
                             {tip.min_classes > 0 ? `${tip.min_classes} cl` : ""}
                             {tip.min_classes > 0 && tip.min_months > 0 ? " · " : ""}
                             {tip.min_months > 0 ? `${tip.min_months} mo` : ""}
                             {tip.requires_approval ? " · ✓" : ""}
                           </span>
-                          <div className="flex items-center gap-0.5 flex-shrink-0">
+                          <div className={`flex items-center gap-0.5 flex-shrink-0 ${styles.rankActions}`}>
                             <button
                               type="button"
                               onClick={() => onMoveTip(groupIndex, tipIndex, -1)}

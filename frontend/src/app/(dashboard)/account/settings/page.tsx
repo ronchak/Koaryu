@@ -17,11 +17,12 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { useConfigStore } from "@/lib/store";
-import { clearActiveStudioIdCookie, clearStudioStateCookie } from "@/lib/studio-state-cookie";
+import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { useStudioStore } from "@/lib/store";
 import type { AccountDeletionRequest, Studio } from "@/types";
 
 type AccountConfirmAction = "schedule-deletion" | "transfer-ownership" | null;
+const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
 
 function roleLabel(role?: string | null) {
   if (role === "admin") return "Admin";
@@ -32,7 +33,7 @@ function roleLabel(role?: string | null) {
 
 export default function AccountSettingsPage() {
   const { token } = useConfigStore();
-  const { currentRole, currentUserId, refreshStaff, staffMembers, studioName, userEmail } = useStudioStore();
+  const { currentRole, currentUserId, refreshStaff, staffLoaded, staffMembers, studioName, userEmail } = useStudioStore();
   const router = useRouter();
   const [supabase] = useState(() => createClient());
   const [isSendingReset, setIsSendingReset] = useState(false);
@@ -40,6 +41,7 @@ export default function AccountSettingsPage() {
   const [isSchedulingDeletion, setIsSchedulingDeletion] = useState(false);
   const [isCancelingDeletion, setIsCancelingDeletion] = useState(false);
   const [isTransferringOwnership, setIsTransferringOwnership] = useState(false);
+  const [isLoadingDeletionRequest, setIsLoadingDeletionRequest] = useState(!isPreviewMode);
   const [deletionRequest, setDeletionRequest] = useState<AccountDeletionRequest | null>(null);
   const [nextOwnerId, setNextOwnerId] = useState("");
   const [accessMessage, setAccessMessage] = useState("");
@@ -49,6 +51,7 @@ export default function AccountSettingsPage() {
   const [deletionMessage, setDeletionMessage] = useState("");
   const [deletionError, setDeletionError] = useState("");
   const [confirmAction, setConfirmAction] = useState<AccountConfirmAction>(null);
+  const [deletionConfirmation, setDeletionConfirmation] = useState("");
   const isAdmin = currentRole === "admin";
 
   useEffect(() => {
@@ -57,10 +60,14 @@ export default function AccountSettingsPage() {
     const controller = new AbortController();
     api
       .get<AccountDeletionRequest | null>("/account/deletion-request", token, { signal: controller.signal })
-      .then(setDeletionRequest)
+      .then((request) => {
+        setDeletionRequest(request);
+        setIsLoadingDeletionRequest(false);
+      })
       .catch((error) => {
         if (error instanceof Error && error.name === "AbortError") return;
         setDeletionError(error instanceof Error ? error.message : "Could not load account deletion status.");
+        setIsLoadingDeletionRequest(false);
       });
 
     return () => {
@@ -69,9 +76,9 @@ export default function AccountSettingsPage() {
   }, [token]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || staffLoaded) return;
     void refreshStaff().catch(() => undefined);
-  }, [isAdmin, refreshStaff]);
+  }, [isAdmin, refreshStaff, staffLoaded]);
 
   async function handlePasswordReset() {
     if (!userEmail) return;
@@ -106,8 +113,7 @@ export default function AccountSettingsPage() {
       if (error) {
         throw error;
       }
-      clearStudioStateCookie();
-      clearActiveStudioIdCookie();
+      clearStoredStudioSessionCookies();
       router.push("/login");
       router.refresh();
     } catch (error) {
@@ -135,6 +141,7 @@ export default function AccountSettingsPage() {
   }
 
   function handleScheduleDeletion() {
+    setDeletionConfirmation("");
     setConfirmAction("schedule-deletion");
   }
 
@@ -202,7 +209,7 @@ export default function AccountSettingsPage() {
         />
       </AccountSection>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="border-y border-border divide-y divide-border">
         <AccountLinkTile
           href="/account/profile"
           icon={UserCircle}
@@ -313,7 +320,9 @@ export default function AccountSettingsPage() {
       )}
 
       <AccountSection title="Account deletion" description="Request deletion for your Koaryu login account.">
-        {deletionRequest ? (
+        {isLoadingDeletionRequest ? (
+          <p role="status" className="text-sm text-text-secondary">Checking account deletion status…</p>
+        ) : deletionRequest ? (
           <div className="space-y-3">
             <AccountNotice>
               Your account has been scheduled for deletion within 30 days. You have until{" "}
@@ -354,7 +363,10 @@ export default function AccountSettingsPage() {
           role="alertdialog"
           ariaLabelledBy="account-confirm-title"
           ariaDescribedBy="account-confirm-description"
-          onBackdropClick={() => setConfirmAction(null)}
+          onBackdropClick={() => {
+            setConfirmAction(null);
+            setDeletionConfirmation("");
+          }}
           panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
         >
           <div className="flex items-start gap-3">
@@ -372,8 +384,27 @@ export default function AccountSettingsPage() {
               </p>
             </div>
           </div>
+          {confirmAction === "schedule-deletion" ? (
+            <label className="mt-5 flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-text-primary">Type DELETE to continue</span>
+              <input
+                value={deletionConfirmation}
+                onChange={(event) => setDeletionConfirmation(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                aria-describedby="account-deletion-confirm-help"
+                className="min-h-11 px-3 py-2 font-mono text-sm"
+              />
+              <span id="account-deletion-confirm-help" className="text-xs leading-5 text-muted">
+                This is an extra Koaryu interface confirmation. The account-deletion API does not require this phrase.
+              </span>
+            </label>
+          ) : null}
           <div className="mt-5 flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmAction(null)}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => {
+              setConfirmAction(null);
+              setDeletionConfirmation("");
+            }}>
               Cancel
             </Button>
             {confirmAction === "schedule-deletion" ? (
@@ -382,8 +413,10 @@ export default function AccountSettingsPage() {
                 variant="danger"
                 size="sm"
                 isLoading={isSchedulingDeletion}
+                disabled={deletionConfirmation !== "DELETE" || isSchedulingDeletion}
                 onClick={() => {
                   setConfirmAction(null);
+                  setDeletionConfirmation("");
                   void runScheduleDeletion();
                 }}
               >

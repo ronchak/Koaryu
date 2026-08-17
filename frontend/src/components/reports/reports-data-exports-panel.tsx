@@ -1,16 +1,19 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
-import { Download, FileText, Plus } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Download, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { toLocalDateKey } from "@/lib/date";
+import { canRunReportExport, getReportExportMinimumRole } from "@/lib/report-metrics";
+import type { StaffRoleName } from "@/types";
 
 type ExportReport = {
   id: string;
   title: string;
   description: string;
+  minimumRole?: "front_desk";
 };
 
 type ExportGroup = {
@@ -19,7 +22,7 @@ type ExportGroup = {
   reports: ExportReport[];
 };
 
-const EXPORT_GROUPS: ExportGroup[] = [
+export const EXPORT_GROUPS: ExportGroup[] = [
   {
     title: "Owner Intelligence",
     emphasis: true,
@@ -55,18 +58,18 @@ const EXPORT_GROUPS: ExportGroup[] = [
   {
     title: "Programs and Ranks",
     reports: [
-      { id: "programs", title: "Programs", description: "Program setup, colors, ordering, archived state, and system flags." },
-      { id: "belt_ladders", title: "Belt Ladders", description: "Rank ladder definitions and per-ladder sub-rank terminology." },
-      { id: "belt_ranks", title: "Belt Ranks", description: "Belt and stripe/tip requirements, ordering, colors, and approval rules." },
+      { id: "programs", title: "Programs", description: "Program setup, colors, ordering, archived state, and system flags.", minimumRole: "front_desk" },
+      { id: "belt_ladders", title: "Belt Ladders", description: "Rank ladder definitions and per-ladder sub-rank terminology.", minimumRole: "front_desk" },
+      { id: "belt_ranks", title: "Belt Ranks", description: "Belt and stripe/tip requirements, ordering, colors, and approval rules.", minimumRole: "front_desk" },
       { id: "promotions", title: "Promotion History", description: "Immutable promotion records, rank changes, notes, and approving staff IDs." },
     ],
   },
   {
     title: "Schedule",
     reports: [
-      { id: "class_templates", title: "Recurring Class Templates", description: "Weekly schedule definitions, dates, capacity, program, and instructor IDs." },
-      { id: "class_sessions", title: "Class Sessions", description: "Individual class occurrences, status, notes, capacity, and soft-delete state." },
-      { id: "attendance", title: "Attendance Records", description: "Check-ins, absences, cross-program credit, eligibility overrides, and staff IDs." },
+      { id: "class_templates", title: "Recurring Class Templates", description: "Weekly schedule definitions, dates, capacity, program, and instructor IDs.", minimumRole: "front_desk" },
+      { id: "class_sessions", title: "Class Sessions", description: "Individual class occurrences, status, notes, capacity, and soft-delete state.", minimumRole: "front_desk" },
+      { id: "attendance", title: "Attendance Records", description: "Check-ins, absences, cross-program credit, eligibility overrides, and staff IDs.", minimumRole: "front_desk" },
     ],
   },
   {
@@ -130,34 +133,26 @@ function ExportPanelHeader({
   );
 }
 
-function ExportGroupDisclosure({
+function ExportGroupRegister({
   group,
   exportingReportId,
   isPreviewMode,
-  canExportStudioData,
+  currentRole,
   onDownload,
 }: {
   group: ExportGroup;
   exportingReportId: string | null;
   isPreviewMode: boolean;
-  canExportStudioData: boolean;
+  currentRole: StaffRoleName | null;
   onDownload: (report: ExportReport) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const panelId = useId();
   const headerClassName = group.emphasis
-    ? "relative flex w-full cursor-pointer items-start justify-between gap-4 py-4 pl-4 pr-1 text-left before:absolute before:left-0 before:top-4 before:bottom-4 before:w-[2px] before:rounded-full before:bg-accent"
-    : "flex w-full cursor-pointer items-start justify-between gap-4 py-4 text-left";
+    ? "relative flex w-full items-start justify-between gap-4 py-4 pl-4 pr-1 text-left before:absolute before:left-0 before:top-4 before:bottom-4 before:w-[2px] before:bg-accent"
+    : "flex w-full items-start justify-between gap-4 py-4 text-left";
 
   return (
-    <section className="faq-item" data-state={isOpen ? "open" : "closed"}>
-      <button
-        type="button"
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        className={headerClassName}
-        onClick={() => setIsOpen((current) => !current)}
-      >
+    <section data-export-group={group.title}>
+      <div className={headerClassName}>
         <span className="flex min-w-0 items-start gap-3">
           <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
           <span className="min-w-0">
@@ -169,15 +164,14 @@ function ExportGroupDisclosure({
             </span>
           </span>
         </span>
-        <Plus className="faq-icon mt-0.5 h-4 w-4 shrink-0 text-accent" />
-      </button>
+      </div>
 
-      <div id={panelId} className="faq-body" aria-hidden={!isOpen}>
-        <div>
           <div className="divide-y divide-border border-t border-border pb-2">
             {group.reports.map((report) => {
               const isExporting = exportingReportId === report.id;
-              const isDisabled = Boolean(exportingReportId) || isPreviewMode || !canExportStudioData;
+              const minimumRole = getReportExportMinimumRole(report.id);
+              const isAuthorized = canRunReportExport(currentRole, report.id);
+              const isDisabled = Boolean(exportingReportId) || isPreviewMode || !isAuthorized;
 
               return (
                 <div
@@ -188,6 +182,10 @@ function ExportGroupDisclosure({
                     <p className="text-sm font-medium text-text-primary">{report.title}</p>
                     <p className="mt-1 text-xs leading-relaxed text-text-secondary">
                       {report.description}
+                    </p>
+                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-widest text-muted">
+                      Minimum role: {minimumRole === "front_desk" ? "Front desk" : "Admin"}
+                      {!isAuthorized ? " · Your role cannot download this report" : ""}
                     </p>
                   </div>
                   <Button
@@ -206,8 +204,6 @@ function ExportGroupDisclosure({
               );
             })}
           </div>
-        </div>
-      </div>
     </section>
   );
 }
@@ -215,11 +211,11 @@ function ExportGroupDisclosure({
 export function ReportsDataExportsPanel({
   isPreviewMode,
   token,
-  canExportStudioData,
+  currentRole,
 }: {
   isPreviewMode: boolean;
   token: string | null;
-  canExportStudioData: boolean;
+  currentRole: StaffRoleName | null;
 }) {
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState("");
@@ -229,13 +225,15 @@ export function ReportsDataExportsPanel({
     setExportError("");
     setExportMessage("");
 
-    if (isPreviewMode) {
-      setExportError("Live CSV exports are available when Koaryu is connected to a studio database.");
+    if (!canRunReportExport(currentRole, report.id)) {
+      setExportError(getReportExportMinimumRole(report.id) === "front_desk"
+        ? "Admin or Front desk access is required for this export."
+        : "Admin access is required for this export.");
       return;
     }
 
-    if (!canExportStudioData) {
-      setExportError("Only admins and front desk staff can export studio data.");
+    if (isPreviewMode) {
+      setExportError("Live CSV exports are available when Koaryu is connected to a studio database.");
       return;
     }
 
@@ -284,12 +282,12 @@ export function ReportsDataExportsPanel({
 
       <div className="divide-y divide-border border-y border-border">
         {EXPORT_GROUPS.map((group) => (
-          <ExportGroupDisclosure
+          <ExportGroupRegister
             key={group.title}
             group={group}
             exportingReportId={exportingReportId}
             isPreviewMode={isPreviewMode}
-            canExportStudioData={canExportStudioData}
+            currentRole={currentRole}
             onDownload={(report) => void handleDownloadReport(report)}
           />
         ))}

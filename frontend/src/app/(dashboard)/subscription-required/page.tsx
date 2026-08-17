@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, CheckCircle2, CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
+import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
@@ -194,7 +195,7 @@ export default function SubscriptionRequiredPage() {
   }
 
   return (
-    <>
+    <OperationsSurface page="subscription-required">
       <Header
         title={isAdmin ? "Subscription required" : "Workspace access required"}
         description={isAdmin
@@ -349,6 +350,6 @@ export default function SubscriptionRequiredPage() {
           ) : null}
         </div>
       </div>
-    </>
+    </OperationsSurface>
   );
 }

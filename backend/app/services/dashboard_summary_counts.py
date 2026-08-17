@@ -5,8 +5,10 @@ from supabase import Client
 
 from app.schemas.dashboard_summary import (
     DashboardSummaryBeltCounts,
+    DashboardSummaryBillingAmounts,
     DashboardSummaryBillingCounts,
     DashboardSummaryChurnCounts,
+    DashboardSummaryEmergencyContacts,
     DashboardSummaryLeadCounts,
     DashboardSummaryNewStudentCounts,
     DashboardSummaryRecentStudent,
@@ -101,6 +103,24 @@ class DashboardSummaryCounts:
             active_students=active_students,
             trialing_students=trialing_students,
             on_hold_students=on_hold_students,
+        )
+
+    def emergency_contact_counts(
+        self,
+        student_rows: list[dict[str, Any]],
+        active_students: int,
+    ) -> DashboardSummaryEmergencyContacts:
+        students_with_contact_name = sum(
+            1
+            for row in student_rows
+            if row.get("status") in {"active", "trialing"}
+            and bool(row.get("emergency_contact_name"))
+        )
+        return DashboardSummaryEmergencyContacts(
+            available=True,
+            active_students=active_students,
+            students_with_contact_name=students_with_contact_name,
+            students_missing_contact_name=max(0, active_students - students_with_contact_name),
         )
 
     def lead_counts(self, studio_id: str, today: date) -> DashboardSummaryLeadCounts:
@@ -270,6 +290,7 @@ class DashboardSummaryCounts:
             payment_attention_count=payer_attention_count + uncollectible_invoice_count + overdue_open_invoice_count,
             has_plans=active_plan_count > 0,
             payments_ready=bool(payment_account and payment_account.get("charges_enabled")),
+            amounts=DashboardSummaryBillingAmounts(available=False),
         )
 
     def setup_flags(
