@@ -29,7 +29,7 @@ For a live dojo-floor demo, use the configured starter service only after it is 
 
 ## Config Vars
 
-Render will prompt for values marked `sync: false` in `render.yaml`. Use `backend/.env.render.example` as the checklist.
+Render will prompt for values marked `sync: false` in `render.yaml`. Use `backend/.env.render.example` as the checklist. That reusable example intentionally keeps `LIVE_BILLING_ENABLED=false`; production is the explicit exception below.
 
 Fixed values:
 
@@ -41,7 +41,7 @@ DEMO_RESET_ENABLED=false
 DEMO_RESET_STUDIO_IDS=
 BILLING_PLATFORM_FEE_BPS=50
 STRIPE_MODE=live
-LIVE_BILLING_ENABLED=false
+LIVE_BILLING_ENABLED=true
 CORE_SELF_CHECKOUT_ENABLED=true
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
 SUPABASE_DEVELOPMENT_PROJECT_REF=
@@ -79,7 +79,7 @@ Keep `OPERATIONAL_ALERTS_ENABLED=false` in production until the primary/backup h
 
 Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
 
-Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. `CORE_SELF_CHECKOUT_ENABLED=true` authorizes only `customer.create`, `core_checkout_session.create`, and `customer_portal_session.create` for an authenticated studio Admin and explicit studio ID. Keep `LIVE_BILLING_ENABLED=false` until the separately approved per-studio rollout in `stripe-live-billing-rollout.md`; Core self-checkout does not enable Connect onboarding, Connect payments, tuition collection, refunds, or any other live provider mutation. Matching live webhook events continue through signature verification and reconciliation while non-Core outbound live Stripe mutations remain closed. Wrong-mode or malformed-mode events are rejected before storage. The platform route quarantines account-bearing events as `wrong_route_connect_event`; the Connect route quarantines account-less platform-contract events as `wrong_route_platform_event` and other account-less events as `missing_connect_account_context`. These permanent route failures return `400` and never project product state. A live Connect event with a real but unmapped account remains a distinct transient failure: it is durably marked `unmapped_live_connect_account` and returns `503` so Stripe retries after the mapping exists. Unexpected projector failures store a stable `error_reference` and emit an event-linked log containing only sanitized identifiers, the failure class, and that reference.
+Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. `CORE_SELF_CHECKOUT_ENABLED=true` authorizes only `customer.create`, `core_checkout_session.create`, and `customer_portal_session.create` for an authenticated studio Admin and explicit studio ID. Production intentionally sets `LIVE_BILLING_ENABLED=true`, but that value is only the necessary global interlock. It creates no studio scope, reconciliation checkpoint, provider authority, or tenant financial permission; every Connect or tuition mutation remains fail-closed without the exact enabled, unexpired studio scope and exact-candidate all-clear reconciliation checkpoint defined in `stripe-live-billing-rollout.md`. Core self-checkout remains a separate bounded path and does not enable Connect onboarding, Connect payments, tuition collection, refunds, or any other live provider mutation. Matching live webhook events continue through signature verification and reconciliation. Wrong-mode or malformed-mode events are rejected before storage. The platform route quarantines account-bearing events as `wrong_route_connect_event`; the Connect route quarantines account-less platform-contract events as `wrong_route_platform_event` and other account-less events as `missing_connect_account_context`. These permanent route failures return `400` and never project product state. A live Connect event with a real but unmapped account remains a distinct transient failure: it is durably marked `unmapped_live_connect_account` and returns `503` so Stripe retries after the mapping exists. Unexpected projector failures store a stable `error_reference` and emit an event-linked log containing only sanitized identifiers, the failure class, and that reference.
 
 ### Hosted Runtime Guard
 
@@ -121,7 +121,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, the service also refuses
 
 `SUPABASE_URL` must be a public HTTPS URL in production. Production requires the exact canonical `FRONTEND_URL=https://koaryu.app`; paths, query strings, fragments, userinfo, ports, whitespace, and control characters are rejected before CORS or staff-invite redirects use it. Both Stripe webhook-secret settings use the same exact comma-rotation format: nonempty candidates without surrounding whitespace or control characters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode and mismatched keys. If `LIVE_BILLING_ENABLED=true` or `CORE_SELF_CHECKOUT_ENABLED=true`, startup additionally requires an exact validated `RENDER_GIT_COMMIT`. The general live-billing flag still requires the matching unexpired checkpoint and studio scope at runtime; the Core flag is limited to the three named self-service operations. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
 
-Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `CORE_SELF_CHECKOUT_ENABLED=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
+Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `LIVE_BILLING_ENABLED=false`, `CORE_SELF_CHECKOUT_ENABLED=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
 
 Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
 
@@ -221,10 +221,13 @@ npm run verify:deployed-release -- \
   --backend-api https://koaryu.onrender.com/api/v1
 ```
 
+The production-shaped startup check must use that same exact deployed 40-character `$RELEASE_SHA` as `RENDER_GIT_COMMIT`; do not substitute a branch or tag.
+
 ```bash
 cd backend
 ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
-  STRIPE_MODE=live LIVE_BILLING_ENABLED=false \
+  STRIPE_MODE=live LIVE_BILLING_ENABLED=true \
+  RENDER_GIT_COMMIT="$RELEASE_SHA" \
   SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co \
   SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
   SUPABASE_ALLOW_LEGACY_HS256=false \
@@ -273,7 +276,7 @@ SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
 
 ## Stripe Webhooks
 
-After Render is live, configure Stripe webhook endpoints in the mode declared by `STRIPE_MODE`. Prove the full workflow in Stripe test mode first. A separately approved live-mode deployment may ingest matching signed live events with outbound writes still closed; do not repeat test mutations in live mode or enable live billing until durable scoped authorization is implemented and reviewed.
+After Render is live, configure Stripe webhook endpoints in the mode declared by `STRIPE_MODE`. Prove the full workflow in Stripe test mode first. The already-live global production `LIVE_BILLING_ENABLED=true` interlock may coexist with matching signed live-event ingestion, but it alone authorizes no outbound write; do not activate a studio scope, record a reconciliation checkpoint, repeat test mutations in live mode, or perform a live Connect or tuition mutation without separate approval and the exact runtime authorization.
 
 Treat a Connect delivery that returns `503` because its account mapping is not ready as an operational quarantine, not a successful ignore. Confirm the Stripe account belongs to the intended studio, complete or repair the normal `studio_payment_accounts.stripe_connected_account_id` mapping, and then let Stripe retry or resend the same event from the Dashboard. Confirm the existing `stripe_events` row becomes `processed` with a cleared error. Never add an account mapping from an unverified event payload, and never acknowledge the delivery with `2xx` merely to clear Stripe's retry queue.
 
@@ -382,7 +385,7 @@ Before daily use at a dojo:
 - Open the app on the actual studio device and complete login, dashboard, Students, student detail, Schedule, attendance, Settings, and Help checks.
 - Verify Admin and Front Desk can read existing billing state and use only external-only local attachment, payer-level external-payment recording, and read-based reconciliation of an existing Stripe-linked invoice.
 - Verify an Instructor receives the billing access-denied page before any billing data is shown or fetched.
-- Confirm `LIVE_BILLING_ENABLED=false`; do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
+- Confirm production reports `LIVE_BILLING_ENABLED=true`, and treat it only as the global interlock. Do not treat that value as evidence that any studio has a scope or checkpoint, and do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
 - Use the preserved production dataset. Do not reset, replace, clean, or reseed production records.
 - Keep `DEMO_RESET_STUDIO_IDS` empty in production; in demo/staging, list only disposable studio IDs that demo reset or clear-studio-data may target.
 

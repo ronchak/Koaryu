@@ -25,7 +25,7 @@ services:
       - key: STRIPE_MODE
         value: live
       - key: LIVE_BILLING_ENABLED
-        value: "false"
+        value: "true"
       - key: CORE_SELF_CHECKOUT_ENABLED
         value: "true"
       - key: SUPABASE_URL
