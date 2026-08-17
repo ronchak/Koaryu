@@ -22,6 +22,7 @@ import {
   FAQ_HASHES,
   INITIAL_WHEEL_GESTURE_STATE,
   canScrollablePanelMove,
+  decideJourneyHashChange,
   decideJourneyKey,
   decideTouchChapter,
   nextFaqTopicIndex,
@@ -62,7 +63,7 @@ interface JourneyControllerProps {
 interface NavigateOptions {
   readonly canonicalHash?: string;
   readonly faqGroup?: number | null;
-  readonly replaceHash?: boolean;
+  readonly writeHash?: boolean;
 }
 
 function metricsFor(element: HTMLElement): ScrollMetrics {
@@ -174,7 +175,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
       animateScene(nextChapter.scene);
 
-      if (options.replaceHash !== false && typeof window !== "undefined") {
+      if (options.writeHash !== false && typeof window !== "undefined") {
         const nextHash = options.canonicalHash ?? nextChapter.id;
         window.history.replaceState(null, "", `#${nextHash}`);
       }
@@ -253,9 +254,11 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
     };
     const onHashChange = () => {
-      const resolved = resolveJourneyHash(window.location.hash);
-      if (resolved) {
-        applyResolvedHash(resolved, true);
+      const decision = decideJourneyHashChange(window.location.hash);
+      if (decision.action === "reset") {
+        navigateTo(decision.chapterIndex, { writeHash: decision.writeHash });
+      } else if (decision.action === "navigate") {
+        applyResolvedHash(decision.resolved, true);
       }
     };
 
@@ -268,7 +271,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       window.removeEventListener("hashchange", onHashChange);
       motionQuery.removeEventListener("change", onMotionChange);
     };
-  }, [applyResolvedHash, stopAnimation]);
+  }, [applyResolvedHash, navigateTo, stopAnimation]);
 
   useEffect(() => stopAnimation, [stopAnimation]);
 
@@ -542,17 +545,26 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const destination = new URL(anchor.href, window.location.href);
     if (
       destination.origin !== window.location.origin ||
-      destination.pathname !== window.location.pathname ||
-      !destination.hash
+      destination.pathname !== window.location.pathname
     ) {
       return;
     }
-    const resolved = resolveJourneyHash(destination.hash);
-    if (!resolved) {
+
+    const decision = decideJourneyHashChange(destination.hash);
+    if (decision.action === "ignore") {
       return;
     }
     event.preventDefault();
-    applyResolvedHash(resolved, true);
+    if (decision.action === "reset") {
+      window.history.replaceState(
+        null,
+        "",
+        `${destination.pathname}${destination.search}`
+      );
+      navigateTo(decision.chapterIndex, { writeHash: decision.writeHash });
+      return;
+    }
+    applyResolvedHash(decision.resolved, true);
   };
 
   const activeChapter = chapters[pageIndex] ?? firstChapter;

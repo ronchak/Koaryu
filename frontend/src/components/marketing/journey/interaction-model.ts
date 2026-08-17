@@ -57,6 +57,15 @@ export interface ResolvedJourneyHash {
   readonly wasAlias: boolean;
 }
 
+export type JourneyHashChangeDecision =
+  | {
+      readonly action: "reset";
+      readonly chapterIndex: number;
+      readonly writeHash: false;
+    }
+  | { readonly action: "navigate"; readonly resolved: ResolvedJourneyHash }
+  | { readonly action: "ignore" };
+
 export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   const normalized = hash.trim().replace(/^#/, "").toLowerCase();
   if (!normalized) {
@@ -99,6 +108,24 @@ export function resolveJourneyHash(hash: string): ResolvedJourneyHash | null {
   }
 
   return null;
+}
+
+export function decideJourneyHashChange(
+  hash: string
+): JourneyHashChangeDecision {
+  const normalized = hash.trim().replace(/^#/, "");
+  if (!normalized) {
+    return {
+      action: "reset",
+      chapterIndex: CHAPTER_INDEX.welcome,
+      writeHash: false,
+    };
+  }
+
+  const resolved = resolveJourneyHash(hash);
+  return resolved
+    ? { action: "navigate", resolved }
+    : { action: "ignore" };
 }
 
 export function normalizeWheelDelta(

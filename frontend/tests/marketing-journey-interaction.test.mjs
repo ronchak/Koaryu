@@ -13,6 +13,7 @@ import {
   WHEEL_LOCK_MS,
   WHEEL_THRESHOLD,
   canScrollablePanelMove,
+  decideJourneyHashChange,
   decideJourneyKey,
   decideTouchChapter,
   nextFaqTopicIndex,
@@ -36,6 +37,34 @@ describe("Journey hash model", () => {
     });
     assert.equal(resolveJourneyHash(""), null);
     assert.equal(resolveJourneyHash("#not-a-journey-stop"), null);
+  });
+
+  it("resets only an empty hash without writing one and ignores invalid hashes", () => {
+    assert.deepEqual(decideJourneyHashChange(""), {
+      action: "reset",
+      chapterIndex: 0,
+      writeHash: false,
+    });
+    assert.deepEqual(decideJourneyHashChange("#"), {
+      action: "reset",
+      chapterIndex: 0,
+      writeHash: false,
+    });
+    assert.deepEqual(decideJourneyHashChange("  #  "), {
+      action: "reset",
+      chapterIndex: 0,
+      writeHash: false,
+    });
+    assert.deepEqual(decideJourneyHashChange("#not-a-journey-stop"), {
+      action: "ignore",
+    });
+
+    const features = decideJourneyHashChange("#features");
+    assert.equal(features.action, "navigate");
+    if (features.action === "navigate") {
+      assert.equal(features.resolved.chapterId, "features");
+      assert.equal(features.resolved.chapterIndex, 4);
+    }
   });
 
   it("normalizes all 12 legacy aliases and all six FAQ topic hashes", () => {

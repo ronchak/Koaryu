@@ -160,10 +160,31 @@ describe("Journey progressive enhancement and accessibility", () => {
     assert.match(controllerSource, /shouldHandleJourneyKeyboardFocus/);
     assert.match(controllerSource, /window\.history\.replaceState/);
     assert.doesNotMatch(controllerSource, /pushState/);
+    assert.match(controllerSource, /decideJourneyHashChange\(window\.location\.hash\)/);
+    assert.match(
+      controllerSource,
+      /decision\.action === "reset"[\s\S]*navigateTo\(decision\.chapterIndex, \{ writeHash: decision\.writeHash \}\)/
+    );
+    assert.match(
+      controllerSource,
+      /decision\.action === "navigate"[\s\S]*applyResolvedHash\(decision\.resolved, true\)/
+    );
+    assert.match(controllerSource, /options\.writeHash !== false/);
     assert.match(controllerSource, /event\.metaKey/);
     assert.match(controllerSource, /event\.ctrlKey/);
     assert.match(controllerSource, /event\.shiftKey/);
     assert.match(controllerSource, /event\.altKey/);
+    assert.match(controllerSource, /<MarketingBrandLink href="\/" prefetch=\{false\} \/>/);
+    assert.match(
+      controllerSource,
+      /const decision = decideJourneyHashChange\(destination\.hash\)/,
+      "same-document hashless links must use the explicit reset decision"
+    );
+    assert.match(
+      controllerSource,
+      /window\.history\.replaceState\([\s\S]*destination\.pathname[\s\S]*navigateTo\(decision\.chapterIndex, \{ writeHash: decision\.writeHash \}\)/,
+      "the hashless brand link must replace the URL and reset without writing a hash"
+    );
     assert.match(
       controllerSource,
       /rangeProgress\(sceneProgress, 0\.48, 0\.52\)/,
