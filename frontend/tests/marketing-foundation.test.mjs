@@ -39,7 +39,17 @@ const canonicalTokens = new Map([
   ["rule-soft", "rgb(59 47 28 / 14%)"],
 ]);
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 describe("marketing foundation", () => {
+  it("escapes every regular-expression metacharacter at the dynamic boundary", () => {
+    const literal = String.raw`\\.^$*+?()[]{}|`;
+
+    assert.match(literal, new RegExp(`^${escapeRegExp(literal)}$`));
+  });
+
   it("owns an explicit route scope and both server-renderable layout modes", () => {
     assert.match(rootSource, /data-koaryu-marketing=""/);
     assert.match(rootSource, /type MarketingLayoutMode = "document" \| "viewport"/);
@@ -65,11 +75,15 @@ describe("marketing foundation", () => {
     for (const [name, value] of canonicalTokens) {
       assert.match(
         rootRule.groups.body,
-        new RegExp(`--koaryu-${name}:\\s*${value.replace(/[()/%]/g, "\\$&")};`),
+        new RegExp(
+          `--koaryu-${escapeRegExp(name)}:\\s*${escapeRegExp(value)};`
+        ),
         `missing --koaryu-${name}`
       );
       assert.equal(
-        foundationCss.match(new RegExp(`--koaryu-${name}:`, "g"))?.length,
+        foundationCss.match(
+          new RegExp(`--koaryu-${escapeRegExp(name)}:`, "g")
+        )?.length,
         1,
         `--koaryu-${name} must have one scoped definition`
       );
