@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
@@ -10,7 +11,16 @@ import {
   verifyPostCaptureRelease,
 } from "../scripts/capture-dashboard-performance.mjs";
 
+const homeSource = readFileSync(new URL("../src/components/dashboard/dashboard-home.tsx", import.meta.url), "utf8");
+
 describe("privacy-safe performance evidence", () => {
+  it("marks identity-scoped geometry readiness instead of all-data settlement", () => {
+    assert.match(homeSource, /data-koaryu-dashboard-ready=\{layoutResolved \? "true" : "false"\}/);
+    assert.match(homeSource, /const layoutResolved = identityReady && identityScope !== null && resolvedLayoutScope === identityScope/);
+    assert.match(homeSource, /readDashboardLayout\([\s\S]*setResolvedLayoutScope\(identityScope\)/);
+    assert.doesNotMatch(homeSource, /data-koaryu-dashboard-ready=\{[^}]*dataset/i);
+  });
+
   it("verifies the exact SHA before launching a browser", async () => {
     const order = [];
     const browser = {};

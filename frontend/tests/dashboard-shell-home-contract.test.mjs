@@ -8,6 +8,10 @@ const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const layoutSource = source("../src/app/(dashboard)/layout.tsx");
 const sidebarSource = source("../src/components/sidebar.tsx");
 const homeSource = source("../src/components/dashboard/dashboard-home.tsx");
+const contentSource = source("../src/components/dashboard/dashboard-page-content.tsx");
+const controllerSource = source("../src/lib/dashboard-page-controller.ts");
+const shellStyles = source("../src/components/dashboard-shell.module.css");
+const routeTransitionSource = source("../src/components/dashboard-route-transition.tsx");
 const sessionSource = source("../src/lib/store-session-cookies.ts");
 const storeSource = source("../src/lib/store.tsx");
 
@@ -49,6 +53,35 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /focusTarget/);
     assert.doesNotMatch(homeSource, /Open source/);
     assert.match(homeSource, /isMaterialState\(model\.state\)/);
+    assert.match(homeSource, /data-koaryu-dashboard-ready=\{layoutResolved \? "true" : "false"\}/);
+    assert.match(homeSource, /aria-busy=\{!layoutResolved\}/);
+    assert.match(homeSource, /disabled=\{!layoutResolved\}/);
+    assert.match(homeSource, /identityReady && identity|!identityReady \|\| !identity/);
+    assert.match(homeSource, /getBoundingClientRect\(\)/);
+    assert.match(homeSource, /node\.animate\(\[/);
+    assert.match(homeSource, /prefers-reduced-motion: reduce/);
+  });
+
+  it("mounts Home on authoritative identity and owns authenticated material and motion semantics", () => {
+    assert.match(controllerSource, /const isDashboardIdentityReady = Boolean\(/);
+    assert.match(controllerSource, /normalizeDashboardWidgetRole\(currentRole\)/);
+    assert.match(contentSource, /if \(!isDashboardIdentityReady\)/);
+    assert.match(contentSource, /identityReady=\{isDashboardIdentityReady\}/);
+    for (const token of [
+      "--product-ground",
+      "--product-paper",
+      "--product-card-stock",
+      "--product-lifted",
+      "--product-motion-travel-duration",
+      "--product-motion-open-duration",
+      "--product-motion-gather-duration",
+      "--product-motion-settle-duration",
+      "--product-motion-change-duration",
+    ]) {
+      assert.ok(shellStyles.includes(token), token);
+    }
+    assert.match(routeTransitionSource, /styles\.routeTravel/);
+    assert.doesNotMatch(routeTransitionSource, /koaryu-route-enter/);
   });
 
   it("owns authoritative studio identity in the split store and purges layouts at session cleanup", () => {
