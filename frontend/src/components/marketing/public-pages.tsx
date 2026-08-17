@@ -24,6 +24,18 @@ import styles from "./public-pages.module.css";
 export { detailNextSteps, indexNextSteps } from "@/lib/marketing-public-content";
 export type { MarketingNextStep } from "@/lib/marketing-public-content";
 
+function detailFamilyClass(pageHref: string) {
+  if (pageHref.startsWith("/features/")) {
+    return styles.featureDetail;
+  }
+
+  if (pageHref.startsWith("/use-cases/")) {
+    return styles.useCaseDetail;
+  }
+
+  return styles.studioTypeDetail;
+}
+
 export function MarketingHeader() {
   return (
     <header className={styles.header}>
@@ -233,6 +245,8 @@ export function MarketingIndexPage({
     basePath === "/features"
       ? { label: "Browse use cases", href: "/use-cases" }
       : { label: "Compare features", href: "/features" };
+  const indexFamilyClass =
+    basePath === "/features" ? styles.featureIndex : styles.useCaseIndex;
 
   return (
     <PublicPageShell>
@@ -245,7 +259,10 @@ export function MarketingIndexPage({
         sceneLabel={sectionTitle}
         sceneFocus="Public product map"
       />
-      <section className={styles.indexSection} aria-labelledby="marketing-index">
+      <section
+        className={`${styles.indexSection} ${indexFamilyClass}`}
+        aria-labelledby="marketing-index"
+      >
         <div className={styles.indexHeading}>
           <p className={styles.eyebrow}>{sectionTitle}</p>
           <h2 id="marketing-index">{listHeading}</h2>
@@ -298,6 +315,8 @@ export function MarketingDetailPage({
   relatedHeading?: string;
   relatedActionLabel?: string;
 }) {
+  const familyClass = detailFamilyClass(page.href);
+
   return (
     <PublicPageShell>
       <MarketingHero
@@ -309,7 +328,10 @@ export function MarketingDetailPage({
         sceneLabel={page.eyebrow}
         sceneFocus="Workflow detail"
       />
-      <section className={styles.proofBand} aria-label="Product proof">
+      <section
+        className={`${styles.proofBand} ${familyClass}`}
+        aria-label="Product proof"
+      >
         <dl>
           {page.proof.map((item) => (
             <div key={item.label}>
@@ -324,7 +346,7 @@ export function MarketingDetailPage({
       </section>
       <section
         id="page-details"
-        className={styles.detailSection}
+        className={`${styles.detailSection} ${familyClass}`}
         aria-labelledby="detail-heading"
       >
         <div className={styles.detailHeading}>
@@ -348,7 +370,10 @@ export function MarketingDetailPage({
           ))}
         </div>
       </section>
-      <section className={styles.relatedSection} aria-labelledby="related-heading">
+      <section
+        className={`${styles.relatedSection} ${familyClass}`}
+        aria-labelledby="related-heading"
+      >
         <div className={styles.relatedHeading}>
           <div>
             <p className={styles.eyebrow}>{relatedEyebrow}</p>

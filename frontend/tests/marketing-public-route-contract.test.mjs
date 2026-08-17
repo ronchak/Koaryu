@@ -343,13 +343,16 @@ describe("public marketing route contract", () => {
     assert.match(legalCss, /\.legalDocument\s*\{[^}]*max-width:\s*68ch/s);
     assert.match(legalCss, /\.legalBody p\s*\{[^}]*line-height:\s*1\.75;[^}]*opacity:\s*0\.78/s);
     assert.match(legalCss, /\.legalSectionNavigation a\s*\{[^}]*min-height:\s*44px/s);
+    assert.match(legalCss, /\.legalSectionNavigation\s*\{[^}]*position:\s*sticky;[^}]*top:\s*32px/s);
+    assert.match(legalCss, /\.legalSection\s*\{[^}]*scroll-margin-top:\s*32px/s);
     assert.match(legalCss, /\.legalNotice\s*\{[^}]*background:\s*var\(--koaryu-sheet\)/s);
     assert.doesNotMatch(legalCss, /gradient|backdrop|glass|position:\s*fixed|100dvh|overflow:\s*hidden|#[fF]{6}|#[0]{6}/i);
     for (const breakpoint of ["1000px", "820px", "560px"]) {
       assert.match(css, new RegExp(`@media \\(max-width: ${breakpoint}\\)`));
     }
 
-    assert.match(css, /\.header\s*\{[^}]*z-index:\s*30/s);
+    assert.match(css, /\.header\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*10/s);
+    assert.doesNotMatch(css, /\.header\s*\{[^}]*position:\s*(?:sticky|fixed)/s);
     assert.match(css, /\.main,\s*\n\.footer\s*\{[^}]*z-index:\s*0/s);
     assert.doesNotMatch(css, /\.(?:main|footer)[^{]*\{[^}]*z-index:\s*(?:2[0-9]|[3-9][0-9])/s);
   });

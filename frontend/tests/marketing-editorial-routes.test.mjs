@@ -143,7 +143,7 @@ describe("Explore and About editorial routes", () => {
     assert.doesNotMatch(routeSources, /card|badge|pill|rounded|shadow|translate-y/i);
     assert.doesNotMatch(
       routeCss,
-      /gradient|backdrop|glass|#[fF]{6}|#[0]{6}|position:\s*fixed|height:\s*100dvh|overflow:\s*hidden|animation\s*:/i
+      /gradient|backdrop|glass|#[fF]{6}|#[0]{6}|position:\s*fixed|height:\s*100dvh|overflow:\s*hidden/i
     );
     assert.match(routeCss, /\.aboutScope\s*\{[^}]*color:\s*var\(--koaryu-ink-light\);[^}]*background:\s*var\(--koaryu-deep-brown\)/s);
     assert.match(routeCss, /\.exploreRouteLink\s*\{[^}]*min-height:\s*132px/s);
@@ -160,18 +160,14 @@ describe("Explore and About editorial routes", () => {
     assert.ok(includedTitleOpacity >= 0.72);
   });
 
-  it("anchors feature and use-case indexes with static canonical material", () => {
+  it("keeps the feature ledger calm and gives use cases a separate workflow rail", () => {
     const indexSection = css.match(/\.indexSection\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
-    const material = css.match(/\.indexSection::before\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
 
-    assert.match(indexSection, /position:\s*relative/);
-    assert.match(indexSection, /isolation:\s*isolate/);
-    assert.match(material, /position:\s*absolute/);
-    assert.match(material, /pointer-events:\s*none/);
-    assert.match(material, /background:\s*var\(--koaryu-sheet\)/);
-    assert.match(material, /var\(--koaryu-wood-pale\)/);
-    assert.match(material, /var\(--koaryu-sheet-raised\)/);
-    assert.match(material, /var\(--koaryu-rule(?:-soft)?\)/);
-    assert.doesNotMatch(material, /fixed|svg|gradient|glow|backdrop|animation|url\(/i);
+    assert.match(indexSection, /grid-template-columns:\s*minmax\(230px, 0\.55fr\) minmax\(0, 1\.45fr\)/);
+    assert.doesNotMatch(css, /\.indexSection::before/);
+    assert.match(css, /\.featureIndex \.indexHeading\s*\{[^}]*max-width:\s*34ch/s);
+    assert.match(css, /\.useCaseIndex\s*\{[^}]*grid-template-columns:\s*1fr/s);
+    assert.match(css, /\.useCaseIndex \.ledger li::before\s*\{[^}]*position:\s*absolute[^}]*background:\s*var\(--koaryu-rule-soft\)/s);
+    assert.match(css, /\.useCaseIndex \.ledger li::after\s*\{[^}]*border-radius:\s*50%/s);
   });
 });
