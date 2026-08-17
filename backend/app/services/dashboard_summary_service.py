@@ -14,6 +14,7 @@ from app.schemas.dashboard_summary import (
     DashboardSummaryScheduleCounts,
     DashboardSummaryStudio,
     DashboardSummaryTestReadinessCounts,
+    DashboardSummaryTodaySchedule,
 )
 from app.services.auth_service import AuthService
 from app.services.dashboard_summary_attendance import DashboardSummaryAttendanceMetrics
@@ -60,8 +61,12 @@ class DashboardSummaryService:
     def _fetch_studio_summary(self, studio_id: str) -> dict[str, Any]:
         return self._counts().fetch_studio_summary(studio_id)
 
-    def _today_class_count(self, studio_id: str, today: date) -> int:
-        return self._attendance_metrics().today_class_count(studio_id, today)
+    def _today_schedule(
+        self,
+        studio_id: str,
+        today: date,
+    ) -> tuple[DashboardSummaryScheduleCounts, DashboardSummaryTodaySchedule]:
+        return self._attendance_metrics().today_schedule(studio_id, today)
 
     def _inactivity_counts(
         self,
@@ -135,15 +140,19 @@ class DashboardSummaryService:
             "student_rows",
             lambda: counts.fetch_rows(
                 "students",
-                "id, legal_first_name, legal_last_name, preferred_name, status, hold_start_date, hold_end_date, membership_start_date, created_at, program_id, current_belt_rank_id",
+                "id, legal_first_name, legal_last_name, preferred_name, status, hold_start_date, hold_end_date, membership_start_date, created_at, program_id, current_belt_rank_id, emergency_contact_name",
                 lambda query: query.eq("studio_id", studio_id).is_("deleted_at", "null"),
             ),
         )
         student_counts = timed("student_counts", lambda: counts.student_counts(studio_id, student_rows, today))
+        emergency_contacts = timed(
+            "emergency_contacts",
+            lambda: counts.emergency_contact_counts(student_rows, student_counts.active_students),
+        )
         lead_counts = timed("lead_counts", lambda: counts.lead_counts(studio_id, today))
-        schedule_counts = timed(
+        schedule_counts, today_schedule = timed(
             "schedule_counts",
-            lambda: DashboardSummaryScheduleCounts(today_sessions=self._today_class_count(studio_id, today)),
+            lambda: self._today_schedule(studio_id, today),
         )
         belt_counts = timed("belt_counts", lambda: counts.belt_counts(studio_id))
         inactivity_counts = timed(
@@ -200,6 +209,8 @@ class DashboardSummaryService:
                 generated_at=generated_at,
                 today=today_text,
                 timezone=normalized_timezone,
+                today_schedule=today_schedule,
+                emergency_contacts=emergency_contacts,
                 students=student_counts,
                 leads=lead_counts,
                 schedule=schedule_counts,

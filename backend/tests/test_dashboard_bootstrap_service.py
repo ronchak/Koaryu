@@ -4,10 +4,56 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.schemas.auth import AuthResponse, UserProfile
+from app.schemas.dashboard_bootstrap import DashboardBootstrapResponse
 from app.services.dashboard_bootstrap_service import DashboardBootstrapService
 
 
 class DashboardBootstrapServiceTest(unittest.TestCase):
+    def test_bootstrap_schema_inherits_optional_dashboard_enrichments(self):
+        schema = DashboardBootstrapResponse.model_json_schema()
+
+        self.assertEqual(
+            schema["properties"]["summary"]["anyOf"][0]["$ref"],
+            "#/$defs/DashboardSummaryResponse",
+        )
+        summary_schema = schema["$defs"]["DashboardSummaryResponse"]
+        self.assertIn("today_schedule", summary_schema["properties"])
+        self.assertIn("emergency_contacts", summary_schema["properties"])
+        self.assertNotIn("today_schedule", summary_schema["required"])
+        self.assertNotIn("emergency_contacts", summary_schema["required"])
+        billing_schema = schema["$defs"]["DashboardSummaryBillingCounts"]
+        self.assertIn("amounts", billing_schema["properties"])
+        self.assertNotIn("amounts", billing_schema.get("required", []))
+        amounts_schema = schema["$defs"]["DashboardSummaryBillingAmounts"]
+        self.assertEqual(
+            set(amounts_schema["properties"]),
+            {
+                "available",
+                "payment_attention_amount_cents",
+                "due_this_week_amount_cents",
+            },
+        )
+        today_schema = schema["$defs"]["DashboardSummaryTodaySchedule"]
+        self.assertEqual(
+            set(today_schema["properties"]),
+            {"available", "expected_counts_available", "rows", "overflow_count"},
+        )
+        self.assertNotIn("overflow_count", today_schema.get("required", []))
+        today_row_schema = schema["$defs"]["DashboardSummaryTodaySession"]
+        self.assertEqual(
+            set(today_row_schema["properties"]),
+            {
+                "id",
+                "start_time",
+                "end_time",
+                "name",
+                "capacity",
+                "attendance_count",
+                "expected_count",
+            },
+        )
+        self.assertNotIn("expected_count", today_row_schema.get("required", []))
+
     def test_server_timing_value_uses_safe_labels_and_durations(self):
         value = DashboardBootstrapService.server_timing_value({
             "studio": 12.345,
