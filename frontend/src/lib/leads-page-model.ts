@@ -1,4 +1,4 @@
-import type { Lead, LeadSource, LeadStage, Program } from "@/types";
+import type { Lead, LeadSource, LeadStage, LostReason, Program } from "@/types";
 
 export const PIPELINE_STAGES: { id: LeadStage; label: string; hex: string }[] = [
   { id: "inquiry", label: "Inquiry", hex: "var(--accent)" },
@@ -14,6 +14,14 @@ export const SOURCE_LABELS: Record<LeadSource, string> = {
   social: "Social",
   search: "Search",
   website: "Website",
+  other: "Other",
+};
+
+export const LOST_REASON_LABELS: Record<LostReason, string> = {
+  no_show: "No-show",
+  price_objection: "Price objection",
+  timing: "Timing",
+  no_response: "No response",
   other: "Other",
 };
 
@@ -34,6 +42,7 @@ interface LeadsPageModel {
   dueTodayCount: number;
   enrolledCount: number;
   followUpQueue: Lead[];
+  obligationLedgerLeads: Lead[];
   leads: Lead[];
   leadsByStage: Partial<Record<LeadStage, Lead[]>>;
   lostLeads: Lead[];
@@ -169,6 +178,23 @@ export function getDueFollowUpQueue(leads: Lead[], today: string) {
     .sort((a, b) => (a.follow_up_date ?? "").localeCompare(b.follow_up_date ?? ""));
 }
 
+export function getObligationLedgerLeads(leads: Lead[]) {
+  return leads
+    .filter((lead) => lead.stage !== "closed_lost")
+    .sort((a, b) => {
+      if (a.stage === "enrolled" && b.stage !== "enrolled") return 1;
+      if (b.stage === "enrolled" && a.stage !== "enrolled") return -1;
+      const aDate = a.follow_up_date ?? "9999-12-31";
+      const bDate = b.follow_up_date ?? "9999-12-31";
+      if (aDate !== bDate) return aDate.localeCompare(bDate);
+
+      const aStage = PIPELINE_STAGES.findIndex((stage) => stage.id === a.stage);
+      const bStage = PIPELINE_STAGES.findIndex((stage) => stage.id === b.stage);
+      if (aStage !== bStage) return aStage - bStage;
+      return fullName(a).localeCompare(fullName(b));
+    });
+}
+
 export function getDueTodayCount(followUpQueue: Lead[], today: string) {
   return followUpQueue.filter((lead) => lead.follow_up_date === today).length;
 }
@@ -199,6 +225,7 @@ export function buildLeadsPageModel({
   const leadsByStage = groupLeadsByStage(leads);
   const lostLeads = getLostLeads(leads);
   const followUpQueue = getDueFollowUpQueue(leads, today);
+  const obligationLedgerLeads = getObligationLedgerLeads(leads);
   const dueTodayCount = getDueTodayCount(followUpQueue, today);
 
   return {
@@ -207,6 +234,7 @@ export function buildLeadsPageModel({
     dueTodayCount,
     enrolledCount: leads.filter((lead) => lead.stage === "enrolled").length,
     followUpQueue,
+    obligationLedgerLeads,
     leads,
     leadsByStage,
     lostLeads,

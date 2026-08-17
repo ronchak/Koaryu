@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { pluralize } from "@/lib/student-import-page-model";
 import type { CsvImportOptions, CsvImportResult } from "@/types";
 import { AlertCircle, CheckCircle, Upload } from "lucide-react";
+import styles from "./student-records.module.css";
 
 export function StudentImportSectionCard({
   title,
@@ -27,7 +28,7 @@ export function StudentImportSectionCard({
   } as const;
 
   return (
-    <div className={`bg-surface border rounded-[6px] overflow-hidden ${toneClasses[tone]}`}>
+    <section className={`bg-surface border overflow-hidden ${toneClasses[tone]} ${styles.worksheetSection}`}>
       <div className="px-4 py-3 border-b border-border flex items-start gap-2">
         {icon}
         <div>
@@ -36,7 +37,7 @@ export function StudentImportSectionCard({
         </div>
       </div>
       <div className="p-4">{children}</div>
-    </div>
+    </section>
   );
 }
 

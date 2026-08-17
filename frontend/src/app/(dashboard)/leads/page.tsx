@@ -9,17 +9,22 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useLeadsPageController } from "@/lib/leads-page-controller";
 import { todayDateString } from "@/lib/leads-page-model";
-import { useConfigStore, useLeadStore, useProgramStore } from "@/lib/store";
-import { UserPlus } from "lucide-react";
+import { useConfigStore, useLeadStore, useProgramStore, useStudioStore } from "@/lib/store";
+import { AlertTriangle, Clock, UserPlus } from "lucide-react";
+import styles from "@/components/leads/leads-ledger.module.css";
 
 export default function LeadsPage() {
   const { currentRole, isPreviewMode, token } = useConfigStore();
   const { programs } = useProgramStore();
+  const { staffMembers } = useStudioStore();
   const {
     leads: baseLeads,
     addLead,
     updateLead,
     convertLeadToStudent,
+    leadsLoaded,
+    leadsLoadError,
+    refreshLeads,
   } = useLeadStore();
   const today = todayDateString();
   const controller = useLeadsPageController({
@@ -35,17 +40,20 @@ export default function LeadsPage() {
   });
   const {
     activePrograms,
-    draggedLeadRecord,
     enrolledCount,
-    leadsByStage,
     lostLeads,
     programById,
     selectedLead,
     totalActive,
   } = controller.model;
+  const activeStaff = staffMembers.filter((member) => member.status === "active");
+  const staffById = new Map(staffMembers.map((member) => [member.id, member]));
+  const currentAssignedStaff = selectedLead?.assigned_staff_id
+    ? staffById.get(selectedLead.assigned_staff_id) ?? null
+    : null;
 
   return (
-    <>
+    <div className={`flex min-h-0 flex-1 flex-col ${styles.pageRoot}`}>
       <Header
         title="Leads"
         description={`${totalActive} active · ${enrolledCount} enrolled · ${lostLeads.length} lost`}
@@ -86,25 +94,38 @@ export default function LeadsPage() {
       )}
 
       <div className="flex-1 flex flex-col overflow-x-hidden">
-        <LeadPipelineBoard
-          canConvertLeads={controller.canConvertLeads}
-          canManageLeads={controller.canManageLeads}
-          draggedLeadId={controller.draggedLead}
-          draggedLeadRecord={draggedLeadRecord}
-          dropTargetStage={controller.dropTargetStage}
-          leadsByStage={leadsByStage}
-          pendingLeadId={controller.pendingLeadId}
-          programById={programById}
-          today={today}
-          onAddLead={controller.openAddLeadModal}
-          onCardDragEnd={controller.clearDragState}
-          onCardDragStart={controller.handleCardDragStart}
-          onDrop={controller.handleDrop}
-          onKeyboardMoveLead={controller.handleKeyboardMoveLead}
-          onSelectLead={controller.selectLead}
-          onStageDragLeave={controller.handleStageDragLeave}
-          onStageDragOver={controller.handleStageDragOver}
-        />
+        {leadsLoadError ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center" role="alert">
+            <AlertTriangle aria-hidden="true" className="h-7 w-7 text-danger" />
+            <p className="max-w-md text-sm text-text-secondary">{leadsLoadError}</p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void refreshLeads().catch(() => undefined)}
+            >
+              Retry lead roster
+            </Button>
+          </div>
+        ) : !leadsLoaded ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center" role="status">
+            <Clock aria-hidden="true" className="h-7 w-7 animate-pulse text-muted motion-reduce:animate-none" />
+            <p className="text-sm text-text-secondary">Loading follow-up obligations…</p>
+          </div>
+        ) : (
+          <LeadPipelineBoard
+            canConvertLeads={controller.canConvertLeads}
+            canManageLeads={controller.canManageLeads}
+            leads={controller.model.obligationLedgerLeads}
+            pendingLeadId={controller.pendingLeadId}
+            programById={programById}
+            staffById={staffById}
+            today={today}
+            onAddLead={controller.openAddLeadModal}
+            onKeyboardMoveLead={controller.handleKeyboardMoveLead}
+            onSelectLead={controller.selectLead}
+            onStageSelection={controller.handleStageSelection}
+          />
+        )}
 
         {controller.showLost && (
           <LostLeadsSection
@@ -117,20 +138,30 @@ export default function LeadsPage() {
 
       {selectedLead && (
         <LeadDetailModal
+          key={selectedLead.id}
+          activities={controller.selectedLeadActivities}
+          activityError={controller.selectedLeadActivityError}
+          activityStatus={controller.selectedLeadActivityStatus}
+          activeStaff={activeStaff}
+          currentAssignedStaff={currentAssignedStaff}
           canConvertLeads={controller.canConvertLeads}
           canManageLeads={controller.canManageLeads}
           followUpValue={controller.getFollowUpInputValue(selectedLead)}
           lead={selectedLead}
           leadActionError={controller.leadActionError}
+          leadActionMessage={controller.actionMessage}
           pendingLeadId={controller.pendingLeadId}
           programById={programById}
           today={today}
+          onAssignStaff={controller.handleAssignedStaff}
           onClose={controller.clearSelectedLead}
           onConvertLead={controller.handleConvertLead}
           onDismissError={controller.dismissLeadActionError}
+          onDismissMessage={controller.dismissActionMessage}
           onFollowUpValueChange={controller.setFollowUpInputValue}
           onMarkContacted={controller.handleMarkContacted}
           onMarkLost={controller.handleMarkLost}
+          onRetryActivities={controller.retrySelectedLeadActivities}
           onRescheduleLead={controller.handleRescheduleLead}
           onStageSelection={controller.handleStageSelection}
         />
@@ -139,6 +170,7 @@ export default function LeadsPage() {
       {controller.canManageLeads && controller.showAddLead && (
         <AddLeadModal
           activePrograms={activePrograms}
+          activeStaff={activeStaff}
           addLeadError={controller.addLeadError}
           isAddingLead={controller.isAddingLead}
           programById={programById}
@@ -150,6 +182,6 @@ export default function LeadsPage() {
           onSubmit={controller.handleAddLead}
         />
       )}
-    </>
+    </div>
   );
 }

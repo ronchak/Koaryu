@@ -24,6 +24,7 @@ import {
   User,
   UserPlus,
 } from "lucide-react";
+import styles from "./student-records.module.css";
 
 export function StudentRosterLoading() {
   return (
@@ -216,7 +217,18 @@ export function StudentRosterTable({
   toggleSelectAll: () => void;
 }) {
   return (
-    <table className="w-full text-sm">
+    <>
+      {canManageRoster ? (
+        <label className={styles.mobileSelectAll}>
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleSelectAll}
+          />
+          {allSelected ? "Deselect all visible students" : "Select all visible students"}
+        </label>
+      ) : null}
+      <table className={styles.rosterTable}>
       <thead>
         <tr className="border-b border-border">
           {canManageRoster ? (
@@ -296,6 +308,7 @@ export function StudentRosterTable({
           return (
             <tr
               key={student.id}
+              data-state={student.status}
               onClick={() => onOpenStudent(student.id)}
               className={`
                 border-b border-border cursor-pointer
@@ -306,6 +319,7 @@ export function StudentRosterTable({
             >
               {canManageRoster ? (
                 <td
+                  data-label="Select"
                   className="px-4 py-3"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -322,7 +336,7 @@ export function StudentRosterTable({
                   />
                 </td>
               ) : null}
-              <td className="px-4 py-3">
+              <th scope="row" data-label="Student" className="px-4 py-3">
                 <button
                   type="button"
                   onClick={(event) => {
@@ -341,11 +355,11 @@ export function StudentRosterTable({
                     {student.is_minor && <p className="text-xs text-muted">Minor</p>}
                   </div>
                 </button>
-              </td>
-              <td className="px-4 py-3">
+              </th>
+              <td data-label="Status" className="px-4 py-3">
                 <StatusBadge status={student.status} />
               </td>
-              <td className="px-4 py-3">
+              <td data-label="Programs" className="px-4 py-3">
                 <div className="flex flex-wrap gap-1">
                   {row.programs.length > 0 ? (
                     row.programs.map((program) => (
@@ -356,10 +370,10 @@ export function StudentRosterTable({
                   )}
                 </div>
               </td>
-              <td className="px-4 py-3 text-text-secondary font-mono text-xs">
+              <td data-label="Contact" className="px-4 py-3 text-text-secondary font-mono text-xs">
                 {row.contact}
               </td>
-              <td className="px-4 py-3">
+              <td data-label="Tags" className="px-4 py-3">
                 <div className="flex flex-wrap gap-1">
                   {row.visibleTags.map((tag) => (
                     <span
@@ -376,11 +390,11 @@ export function StudentRosterTable({
                   )}
                 </div>
               </td>
-              <td className="px-4 py-3 text-text-secondary font-mono text-xs">
+              <td data-label="Member since" className="px-4 py-3 text-text-secondary font-mono text-xs">
                 {formatDate(student.membership_start_date)}
               </td>
               {inactivityThreshold && (
-                <td className="px-4 py-3 text-text-secondary font-mono text-xs">
+                <td data-label="Days inactive" className="px-4 py-3 text-text-secondary font-mono text-xs">
                   {inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`}
                 </td>
               )}
@@ -388,7 +402,8 @@ export function StudentRosterTable({
           );
         })}
       </tbody>
-    </table>
+      </table>
+    </>
   );
 }
 

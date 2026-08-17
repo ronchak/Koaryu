@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import type { StudentDetailPageController } from "@/lib/student-detail-page-controller";
 import { AlertTriangle, ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import styles from "./student-records.module.css";
 
 type StudentDetailPageContentProps = StudentDetailPageController["contentProps"];
 
@@ -73,7 +74,7 @@ export function StudentDetailPageContent({
   }
 
   return (
-    <>
+    <div className={`flex min-h-full flex-col ${styles.folioRoot}`}>
       <Header title={detail.fullName} description="Student profile">
         <Button variant="ghost" size="sm" onClick={onBackToStudents}>
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -91,6 +92,12 @@ export function StudentDetailPageContent({
         ) : null}
       </Header>
 
+      <section className={styles.folioIntro} aria-labelledby="student-folio-purpose">
+        <p>Student folio</p>
+        <h2 id="student-folio-purpose">One durable record before the next decision.</h2>
+        <span>Identity and urgent context stay in reach while the training, guardian, hold, and immutable promotion leaves read in sequence.</span>
+      </section>
+
       {actionMessage ? (
         <div className="px-8 pt-4">
           <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
@@ -100,9 +107,9 @@ export function StudentDetailPageContent({
       ) : null}
 
       <div className="flex-1 p-4 sm:p-6 lg:p-8">
-        <div className="grid max-w-3xl grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className={`grid grid-cols-1 gap-6 lg:grid-cols-[minmax(14rem,0.34fr)_minmax(0,1fr)] ${styles.folioGrid}`}>
           {canManageRoster && (showDeleteConfirm || deleteError) && (
-            <div className="col-span-1 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3 lg:col-span-3">
+            <div className="col-span-1 rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3 lg:col-span-2">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -181,6 +188,6 @@ export function StudentDetailPageContent({
           canManageLifecycle={canManageStudentLifecycle}
         />
       )}
-    </>
+    </div>
   );
 }

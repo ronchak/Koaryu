@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { SOURCE_LABELS } from "@/lib/leads-page-model";
-import type { Lead, LeadSource, Program } from "@/types";
+import type { Lead, LeadSource, Program, StaffMember } from "@/types";
 import { X } from "lucide-react";
 
 interface AddLeadModalProps {
   activePrograms: Program[];
+  activeStaff: StaffMember[];
   addLeadError: string | null;
   isAddingLead: boolean;
   programById: Map<string, Program>;
@@ -23,6 +24,7 @@ interface AddLeadModalProps {
 
 export function AddLeadModal({
   activePrograms,
+  activeStaff,
   addLeadError,
   isAddingLead,
   programById,
@@ -74,6 +76,8 @@ export function AddLeadModal({
               : undefined,
             follow_up_date:
               (formData.get("follow_up_date") as string) || undefined,
+            assigned_staff_id:
+              (formData.get("assigned_staff_id") as string) || undefined,
             is_minor: formData.get("is_minor") === "on",
             guardian_name:
               (formData.get("guardian_name") as string) || undefined,
@@ -177,6 +181,24 @@ export function AddLeadModal({
             disabled={isAddingLead}
             className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="lead-assigned-staff" className="text-sm text-text-secondary font-medium">
+            Assigned staff
+          </label>
+          <select
+            id="lead-assigned-staff"
+            name="assigned_staff_id"
+            disabled={isAddingLead}
+            className="min-h-11 w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+          >
+            <option value="">Unassigned</option>
+            {activeStaff.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.full_name || member.email}
+              </option>
+            ))}
+          </select>
         </div>
         <label className="flex items-center gap-2 text-sm text-text-secondary">
           <input

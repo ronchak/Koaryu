@@ -12,6 +12,7 @@ import {
 } from "@/lib/student-import-page-model";
 import { AlertCircle, ChevronRight, FileText, Info, X } from "lucide-react";
 import { StudentImportSectionCard } from "./student-import-panels";
+import styles from "./student-records.module.css";
 
 interface StudentImportMappingStepProps {
   fileName?: string;
@@ -144,8 +145,8 @@ export function StudentImportMappingStep({
         </StudentImportSectionCard>
       ) : null}
 
-      <div className="bg-surface border border-border rounded-[6px] overflow-hidden">
-        <div className="grid grid-cols-[1.2fr_1fr] border-b border-border">
+      <div className={styles.mappingTable}>
+        <div className={styles.mappingHeader}>
           <div className="px-4 py-2.5 text-xs font-medium text-text-secondary bg-surface-raised">
             Your CSV column
           </div>
@@ -162,7 +163,7 @@ export function StudentImportMappingStep({
           const isRequired = REQUIRED_FIELDS.includes(selectedField);
 
           return (
-            <div key={header} className="grid grid-cols-[1.2fr_1fr] border-b border-border last:border-0">
+            <div key={header} className={styles.mappingRow}>
               <div className="px-4 py-3 border-r border-border">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-sm text-text-primary font-mono truncate">{header}</p>

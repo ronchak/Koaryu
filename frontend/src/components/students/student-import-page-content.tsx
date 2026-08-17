@@ -16,7 +16,8 @@ import {
   type StudentImportStage,
 } from "@/lib/student-import-page-model";
 import type { CsvImportOptions, CsvImportResult } from "@/types";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import styles from "./student-records.module.css";
 
 type ImportOptionChangeHandler = <K extends keyof CsvImportOptions>(
   key: K,
@@ -92,7 +93,7 @@ export function StudentImportPageContent({
 
   if (!canManageRoster) {
     return (
-      <>
+      <div className={`flex min-h-full flex-col ${styles.importPage}`}>
         <Header title="Import Students" description="Bulk roster imports are limited by staff role.">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -102,12 +103,12 @@ export function StudentImportPageContent({
         <div className="flex-1 p-8 text-sm text-text-secondary">
           Only admins and front-desk staff can import students.
         </div>
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className={`flex min-h-full flex-col ${styles.importPage}`}>
       <Header title="Import Students" description="Import students from a .csv exported from your spreadsheet.">
         <Button
           variant="ghost"
@@ -120,37 +121,31 @@ export function StudentImportPageContent({
         </Button>
       </Header>
 
-      <div className="flex-1 p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-2 mb-8 flex-wrap">
-            {STUDENT_IMPORT_STAGE_STEPS.map((step, index) => (
-              <div key={step.id} className="flex items-center gap-2">
+      <div className={`flex-1 ${styles.importWorkspace}`}>
+        <div className={styles.importSheet}>
+          <aside className={styles.importIndex} aria-label="Import worksheet progress">
+            <h2>One auditable worksheet.</h2>
+            <p>Source, mapping, policy choices, row blockers, and the landing result stay in one sequence.</p>
+            <dl className="mt-4 border-y border-border py-3 text-xs">
+              <div className="flex justify-between gap-3"><dt className="text-muted">Source</dt><dd className="truncate text-text-primary">{fileName || "Awaiting CSV"}</dd></div>
+              <div className="mt-2 flex justify-between gap-3"><dt className="text-muted">Rows</dt><dd className="font-mono text-text-primary">{rowCount || "—"}</dd></div>
+            </dl>
+            <div className={styles.importStages}>
+              {STUDENT_IMPORT_STAGE_STEPS.map((step, index) => (
                 <div
-                  className={`flex items-center gap-2 text-sm ${
-                    index < stageIndex
-                      ? "text-success"
-                      : index === stageIndex
-                        ? "text-text-primary"
-                        : "text-muted"
-                  }`}
+                  key={step.id}
+                  className={styles.importStage}
+                  data-state={index < stageIndex ? "complete" : index === stageIndex ? "active" : "upcoming"}
+                  aria-current={index === stageIndex ? "step" : undefined}
                 >
-                  <div
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                      index < stageIndex
-                        ? "bg-success/20 text-success"
-                        : index === stageIndex
-                          ? "bg-accent/20 text-accent"
-                          : "bg-surface-raised text-muted"
-                    }`}
-                  >
-                    {index < stageIndex ? "✓" : index + 1}
-                  </div>
-                  {step.label}
+                  <strong>{String(index + 1).padStart(2, "0")}</strong>
+                  <span>{step.label}</span>
                 </div>
-                {index < STUDENT_IMPORT_STAGE_STEPS.length - 1 ? <ChevronRight className="w-3.5 h-3.5 text-border" /> : null}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </aside>
+
+          <div className={styles.importBody}>
 
           {errorMessage ? (
             <DismissibleNotice
@@ -207,8 +202,9 @@ export function StudentImportPageContent({
               onViewStudents={onViewStudents}
             />
           ) : null}
+          </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

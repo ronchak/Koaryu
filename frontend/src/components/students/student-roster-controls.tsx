@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
 import type { Program, StudentStatus } from "@/types";
 import { AlertTriangle, Search, Trash2 } from "lucide-react";
+import styles from "./student-records.module.css";
 
 export type StudentRosterBulkPanel = "tags" | "status" | "delete";
 
@@ -127,7 +128,7 @@ export function StudentRosterToolbar({
   statusFilter: StudentRosterStatusFilter | "";
 }) {
   return (
-    <div className="flex flex-col items-stretch gap-3 border-b border-border px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:px-8">
+    <div className={`flex flex-col items-stretch gap-3 border-b border-border px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:px-8 ${styles.rosterToolbar}`}>
       <div className="relative w-full flex-1 lg:max-w-xs">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
         <input
@@ -136,7 +137,7 @@ export function StudentRosterToolbar({
           placeholder="Search students..."
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+          className="min-h-11 w-full pl-9 pr-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
         />
       </div>
 
@@ -144,7 +145,7 @@ export function StudentRosterToolbar({
         aria-label="Filter by status"
         value={statusFilter}
         onChange={(event) => onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")}
-        className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
+        className="min-h-11 w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
       >
         {STATUS_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
@@ -157,7 +158,7 @@ export function StudentRosterToolbar({
         aria-label="Filter by program"
         value={programFilter}
         onChange={(event) => onProgramFilterChange(event.target.value)}
-        className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
+        className="min-h-11 w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
       >
         <option value="">All programs</option>
         {programs.filter((program) => !program.archived_at).map((program) => (
@@ -172,7 +173,7 @@ export function StudentRosterToolbar({
       ) : null}
 
       {canManageRoster && selectedCount > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-border bg-surface-raised px-3 py-2 lg:ml-auto">
+        <div className={`flex flex-wrap items-center gap-2 rounded-[6px] border border-border bg-surface-raised px-3 py-2 lg:ml-auto ${styles.selectionBand}`}>
           <span className="text-xs text-text-secondary">
             {selectedCount} selected
           </span>
@@ -180,7 +181,7 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("tags")}
-            className={`text-xs cursor-pointer ${
+            className={`min-h-11 px-2 text-xs cursor-pointer ${
               activeBulkPanel === "tags"
                 ? "text-accent"
                 : "text-text-secondary hover:text-text-primary"
@@ -191,7 +192,7 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("status")}
-            className={`text-xs cursor-pointer ${
+            className={`min-h-11 px-2 text-xs cursor-pointer ${
               activeBulkPanel === "status"
                 ? "text-accent"
                 : "text-text-secondary hover:text-text-primary"
@@ -202,7 +203,7 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("delete")}
-            className="text-xs text-danger hover:text-danger/80 cursor-pointer"
+            className="min-h-11 px-2 text-xs text-danger hover:text-danger/80 cursor-pointer"
           >
             Archive
           </button>

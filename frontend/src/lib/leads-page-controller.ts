@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { hasStaffPermission } from "@/lib/staff-permissions";
@@ -15,7 +15,16 @@ import {
   getStageLabel,
   removeOptimisticLeadUpdate,
 } from "@/lib/leads-page-model";
-import type { Lead, LeadStage, Program, StaffRoleName } from "@/types";
+import type {
+  Lead,
+  LeadActivity,
+  LeadStage,
+  LostReason,
+  Program,
+  StaffRoleName,
+} from "@/types";
+
+type LeadActivityStatus = "idle" | "loading" | "ready" | "error";
 
 type LeadStoreActions = {
   addLead: (data: Partial<Lead>) => Promise<void>;
@@ -59,6 +68,10 @@ export function useLeadsPageController({
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
   const [optimisticLeads, setOptimisticLeads] = useState<Record<string, Lead>>({});
   const [addLeadProgramId, setAddLeadProgramId] = useState<string | null>(null);
+  const [selectedLeadActivities, setSelectedLeadActivities] = useState<LeadActivity[]>([]);
+  const [selectedLeadActivityError, setSelectedLeadActivityError] = useState<string | null>(null);
+  const [selectedLeadActivityStatus, setSelectedLeadActivityStatus] = useState<LeadActivityStatus>("idle");
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
 
   const model = useMemo(
     () =>
@@ -73,6 +86,29 @@ export function useLeadsPageController({
     [baseLeads, draggedLead, optimisticLeads, programs, selectedLeadId, today]
   );
 
+  useEffect(() => {
+    if (!selectedLeadId || isPreviewMode || !token) return;
+
+    const requestController = new AbortController();
+    void api
+      .get<LeadActivity[]>(`/leads/${selectedLeadId}/activities`, token, {
+        signal: requestController.signal,
+      })
+      .then((activities) => {
+        setSelectedLeadActivities(activities);
+        setSelectedLeadActivityStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setSelectedLeadActivityError(
+          error instanceof Error ? error.message : "Could not load lead activity."
+        );
+        setSelectedLeadActivityStatus("error");
+      });
+
+    return () => requestController.abort();
+  }, [activityRefreshKey, isPreviewMode, selectedLeadId, token]);
+
   function getFollowUpInputValue(lead: Lead) {
     return getLeadFollowUpInputValue(lead, followUpDrafts, today);
   }
@@ -84,6 +120,9 @@ export function useLeadsPageController({
   function clearSelectedLead() {
     if (!pendingLeadId) {
       setSelectedLeadId(null);
+      setSelectedLeadActivities([]);
+      setSelectedLeadActivityError(null);
+      setSelectedLeadActivityStatus("idle");
     }
   }
 
@@ -107,6 +146,25 @@ export function useLeadsPageController({
   function selectLead(leadId: string) {
     setLeadActionError(null);
     setSelectedLeadId(leadId);
+    setSelectedLeadActivities([]);
+    if (isPreviewMode) {
+      setSelectedLeadActivityError(null);
+      setSelectedLeadActivityStatus("ready");
+    } else if (!token) {
+      setSelectedLeadActivityError("Activity history is unavailable until the current session is ready.");
+      setSelectedLeadActivityStatus("error");
+    } else {
+      setSelectedLeadActivityError(null);
+      setSelectedLeadActivityStatus("loading");
+    }
+  }
+
+  function retrySelectedLeadActivities() {
+    if (!selectedLeadId || isPreviewMode || !token) return;
+    setSelectedLeadActivities([]);
+    setSelectedLeadActivityError(null);
+    setSelectedLeadActivityStatus("loading");
+    setActivityRefreshKey((current) => current + 1);
   }
 
   function beginOptimisticLeadUpdate(lead: Lead, updates: Partial<Lead>) {
@@ -302,7 +360,7 @@ export function useLeadsPageController({
       return;
     }
 
-    await api.post(
+    const activity = await api.post<LeadActivity>(
       `/leads/${leadId}/activities`,
       {
         activity_type: "follow_up",
@@ -310,6 +368,10 @@ export function useLeadsPageController({
       },
       token
     );
+    if (selectedLeadId === leadId) {
+      setSelectedLeadActivities((current) => [activity, ...current]);
+      setSelectedLeadActivityStatus("ready");
+    }
   }
 
   async function handleRescheduleLead(lead: Lead) {
@@ -379,13 +441,18 @@ export function useLeadsPageController({
     }
   }
 
-  function handleMarkLost(lead: Lead) {
+  function handleMarkLost(lead: Lead, lostReason: LostReason) {
     if (!canManageLeads) return;
     return handleLeadUpdate(
       lead,
-      { stage: "closed_lost", lost_reason: "other" },
+      { stage: "closed_lost", lost_reason: lostReason },
       { closeAfterSuccess: true }
     );
+  }
+
+  function handleAssignedStaff(lead: Lead, assignedStaffId: string | null) {
+    if (!canManageLeads) return;
+    return handleLeadUpdate(lead, { assigned_staff_id: assignedStaffId });
   }
 
   return {
@@ -404,6 +471,7 @@ export function useLeadsPageController({
     draggedLead,
     getFollowUpInputValue,
     handleAddLead,
+    handleAssignedStaff,
     handleCardDragStart,
     handleConvertLead,
     handleDrop,
@@ -419,6 +487,10 @@ export function useLeadsPageController({
     model,
     openAddLeadModal,
     pendingLeadId,
+    retrySelectedLeadActivities,
+    selectedLeadActivities,
+    selectedLeadActivityError,
+    selectedLeadActivityStatus,
     selectLead,
     setAddLeadProgramId,
     setFollowUpInputValue,

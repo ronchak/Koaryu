@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { BeltRank, Program, Student } from "@/types";
 import { Camera, X } from "lucide-react";
+import styles from "./student-records.module.css";
 
 type PhotoSelectResult = boolean | void | Promise<boolean | void>;
 
@@ -80,8 +81,8 @@ export function StudentDetailSidebar({
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <div className="col-span-1 min-w-0 space-y-4">
-      <div className="bg-surface border border-border rounded-[6px] p-5 text-center">
+    <aside className={`col-span-1 min-w-0 space-y-4 ${styles.identityRail}`} aria-label="Student identity and current context">
+      <div className="border-x-0 border-y-2 border-[color:var(--text-primary)] bg-surface p-5 text-center">
         <StudentAvatar
           student={student}
           size="lg"
@@ -161,7 +162,7 @@ export function StudentDetailSidebar({
         )}
       </div>
 
-      <div className="bg-surface border border-border rounded-[6px] p-4 space-y-2">
+      <div className="border-y border-border bg-surface p-4 space-y-2">
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Age</span>
           <span className="text-text-primary font-mono text-xs">
@@ -185,7 +186,7 @@ export function StudentDetailSidebar({
         )}
       </div>
 
-      <div className="bg-surface border border-border rounded-[6px] p-4 space-y-3">
+      <div className="border-y border-border bg-surface p-4 space-y-3">
         <div>
           <p className="text-xs font-medium text-text-secondary mb-2">Current belt</p>
           {currentRank ? (
@@ -239,7 +240,7 @@ export function StudentDetailSidebar({
       </div>
 
       {student.tags.length > 0 && (
-        <div className="bg-surface border border-border rounded-[6px] p-4">
+        <div className="border-y border-border bg-surface p-4">
           <p className="text-xs font-medium text-text-secondary mb-2">Tags</p>
           <div className="flex flex-wrap gap-1.5">
             {student.tags.map((tag) => (
@@ -253,6 +254,6 @@ export function StudentDetailSidebar({
           </div>
         </div>
       )}
-    </div>
+    </aside>
   );
 }

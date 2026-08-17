@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  LOST_REASON_LABELS,
   SOURCE_LABELS,
   buildLeadUpdateSuccessMessage,
   buildLeadsPageModel,
@@ -15,6 +16,7 @@ import {
   getLeadFollowUpTone,
   getLostLeads,
   getNextStage,
+  getObligationLedgerLeads,
   getProgramLabel,
   getStageLabel,
   getUpcomingFollowUpCount,
@@ -72,6 +74,7 @@ describe("leads page model", () => {
     assert.equal(getStageLabel("offer_sent"), "Offer Sent");
     assert.equal(getStageLabel("closed_lost"), "Closed Lost");
     assert.equal(SOURCE_LABELS.referral, "Referral");
+    assert.equal(LOST_REASON_LABELS.price_objection, "Price objection");
   });
 
   it("formats lead names, dates, and follow-up status copy", () => {
@@ -105,6 +108,22 @@ describe("leads page model", () => {
     assert.deepEqual(queue.map((item) => item.id), ["overdue", "due"]);
     assert.equal(getDueTodayCount(queue, "2026-05-24"), 1);
     assert.equal(getUpcomingFollowUpCount(leads, "2026-05-24"), 1);
+  });
+
+  it("orders the obligation ledger by due promise before stage and name", () => {
+    const ordered = getObligationLedgerLeads([
+      lead({ id: "unscheduled", first_name: "Zoe", follow_up_date: null }),
+      lead({ id: "future", first_name: "Mina", follow_up_date: "2026-05-26" }),
+      lead({ id: "due-b", first_name: "Bea", stage: "offer_sent", follow_up_date: "2026-05-24" }),
+      lead({ id: "due-a", first_name: "Ari", stage: "inquiry", follow_up_date: "2026-05-24" }),
+      lead({ id: "lost", stage: "closed_lost", follow_up_date: "2026-05-20" }),
+      lead({ id: "overdue", follow_up_date: "2026-05-22" }),
+    ]);
+
+    assert.deepEqual(
+      ordered.map((item) => item.id),
+      ["overdue", "due-a", "due-b", "future", "unscheduled"]
+    );
   });
 
   it("merges optimistic lead state and derives program fallback labels", () => {
@@ -157,6 +176,7 @@ describe("leads page model", () => {
     assert.deepEqual(model.leadsByStage.offer_sent?.map((item) => item.id), ["lead-1"]);
     assert.deepEqual(model.lostLeads.map((item) => item.id), ["lead-4"]);
     assert.deepEqual(model.followUpQueue.map((item) => item.id), ["lead-2", "lead-1"]);
+    assert.deepEqual(model.obligationLedgerLeads.map((item) => item.id), ["lead-2", "lead-1", "lead-3"]);
     assert.equal(model.dueTodayCount, 1);
     assert.equal(model.overdueCount, 1);
     assert.equal(model.upcomingFollowUps, 0);

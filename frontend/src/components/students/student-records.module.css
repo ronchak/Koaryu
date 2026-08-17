@@ -1,0 +1,249 @@
+.rosterPrintRoot,
+.folioRoot,
+.importPage {
+  --bg: var(--product-sheet);
+  --surface: var(--product-sheet);
+  --surface-raised: var(--product-paper);
+  --border: var(--product-rule-soft);
+  --text-primary: var(--product-ink);
+  --text-secondary: var(--product-soft-ink);
+  --muted: var(--product-soft-ink);
+  --accent: var(--product-cobalt);
+  --success: #386b56;
+  --warning: #80561c;
+  --danger: var(--product-vermilion);
+}
+
+.rosterPrintRoot,
+.rosterWorkspace { min-width: 0; }
+
+.rosterPrintRoot :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+.folioRoot :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+.importPage :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+}
+
+.rosterDecision {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.32fr) minmax(15rem, 0.72fr) minmax(16rem, 1fr);
+  gap: clamp(1rem, 3vw, 3rem);
+  align-items: end;
+  margin: clamp(1rem, 2.4vw, 2rem) clamp(1rem, 2.4vw, 2rem) 0;
+  padding: 0 0 1.25rem;
+  border-bottom: 2px solid var(--text-primary);
+}
+
+.rosterDecision > p {
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.rosterDecision h2 {
+  color: var(--text-primary);
+  font-size: clamp(1.35rem, 2.6vw, 2.25rem);
+  font-weight: 680;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.rosterDecision span {
+  max-width: 58ch;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.rosterToolbar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  margin-top: 1rem;
+  background: color-mix(in srgb, var(--bg) 94%, var(--surface));
+}
+
+.selectionBand { box-shadow: inset 3px 0 0 var(--accent); }
+.rosterViewport { min-width: 0; padding: 0 clamp(1rem, 2.4vw, 2rem); }
+
+.rosterTable {
+  width: 100%;
+  border-collapse: collapse;
+  border-top: 2px solid var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.rosterTable thead {
+  position: sticky;
+  top: 4.75rem;
+  z-index: 5;
+  background: var(--surface-raised);
+}
+
+.rosterTable th,
+.rosterTable td { vertical-align: middle; }
+.rosterTable tbody tr { box-shadow: inset 3px 0 0 transparent; }
+.rosterTable tbody tr[data-state="paused"] { box-shadow: inset 3px 0 0 var(--warning); }
+.rosterTable tbody tr[data-state="inactive"],
+.rosterTable tbody tr[data-state="canceled"] { box-shadow: inset 3px 0 0 var(--muted); }
+.rosterTable tbody tr[data-state="trialing"] { box-shadow: inset 3px 0 0 var(--accent); }
+.rosterTable tbody tr:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mobileSelectAll { display: none; }
+
+.folioRoot { min-width: 0; }
+.folioIntro {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.28fr) minmax(14rem, 0.72fr) minmax(16rem, 1fr);
+  gap: clamp(1rem, 3vw, 3rem);
+  align-items: end;
+  margin: clamp(1rem, 2.4vw, 2rem) clamp(1rem, 2.4vw, 2rem) 0;
+  padding-bottom: 1.25rem;
+  border-bottom: 2px solid var(--text-primary);
+}
+.folioIntro > p { color: var(--accent); font-size: 0.66rem; font-weight: 750; letter-spacing: 0.16em; text-transform: uppercase; }
+.folioIntro h2 { color: var(--text-primary); font-size: clamp(1.35rem, 2.6vw, 2.25rem); font-weight: 680; letter-spacing: -0.04em; line-height: 1; }
+.folioIntro span { max-width: 58ch; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.5; }
+.folioGrid { align-items: start; max-width: 76rem; }
+.identityRail { position: sticky; top: 1rem; }
+.folioLeaves { min-width: 0; }
+.folioSection {
+  overflow: hidden;
+  border: 0;
+  border-top: 2px solid var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+}
+.folioSection + .folioSection { margin-top: 1.15rem; }
+.historyEntry { position: relative; padding-left: 1.25rem; border-left: 2px solid var(--border); }
+.historyEntry::before {
+  position: absolute;
+  top: 1rem;
+  left: -0.31rem;
+  width: 0.52rem;
+  height: 0.52rem;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+}
+
+.importPage { min-width: 0; }
+.importWorkspace { min-width: 0; padding: clamp(1rem, 2.8vw, 2rem); }
+.importSheet { display: grid; max-width: 72rem; grid-template-columns: minmax(10rem, 0.28fr) minmax(0, 1fr); gap: clamp(1.25rem, 4vw, 3.5rem); margin: 0 auto; }
+.importIndex { align-self: start; position: sticky; top: 1rem; border-top: 2px solid var(--text-primary); }
+.importIndex h2 { margin: 1rem 0 0.45rem; color: var(--text-primary); font-size: 1.35rem; letter-spacing: -0.03em; }
+.importIndex > p { color: var(--text-secondary); font-size: 0.75rem; line-height: 1.5; }
+.importStages { margin-top: 1.25rem; border-bottom: 1px solid var(--border); }
+.importStage { display: grid; grid-template-columns: 1.5rem 1fr; gap: 0.6rem; padding: 0.75rem 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.75rem; }
+.importStage strong { font-family: var(--font-mono); font-weight: 550; }
+.importStage[data-state="active"] { color: var(--text-primary); font-weight: 700; box-shadow: inset 3px 0 0 var(--accent); padding-left: 0.7rem; }
+.importStage[data-state="complete"] { color: var(--success); }
+.importBody { min-width: 0; border-top: 2px solid var(--text-primary); padding-top: 1rem; }
+.worksheetSection { border-radius: 0 !important; border-inline: 0 !important; background: var(--surface) !important; }
+.mappingTable { overflow: hidden; border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); background: var(--surface); }
+.mappingHeader,
+.mappingRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(12rem, 1fr); }
+.mappingHeader { border-bottom: 1px solid var(--border); background: var(--surface-raised); }
+.mappingRow { border-bottom: 1px solid var(--border); }
+.mappingRow:last-child { border-bottom: 0; }
+.previewStats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); }
+.previewStat { border-block: 0 !important; border-radius: 0 !important; }
+
+@media (max-width: 820px) {
+  .rosterDecision { grid-template-columns: 1fr; gap: 0.6rem; }
+  .rosterToolbar { position: static; }
+  .rosterViewport { padding: 0 0.85rem; }
+  .rosterTable,
+  .rosterTable tbody,
+  .rosterTable tr,
+  .rosterTable th,
+  .rosterTable td { display: block; width: 100%; }
+  .rosterTable thead { display: none; }
+  .rosterTable tbody { display: grid; gap: 0.75rem; }
+  .rosterTable tbody tr { padding: 0.65rem 0.85rem; border: 1px solid var(--border); background: var(--surface); }
+  .rosterTable tbody th,
+  .rosterTable tbody td { display: grid; grid-template-columns: minmax(6.5rem, 0.38fr) minmax(0, 1fr); gap: 0.75rem; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border); text-align: left; overflow-wrap: anywhere; }
+  .rosterTable tbody td:last-child { border-bottom: 0; }
+  .rosterTable tbody th::before,
+  .rosterTable tbody td::before { content: attr(data-label); color: var(--muted); font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .mobileSelectAll { display: flex; min-height: 2.75rem; align-items: center; gap: 0.6rem; padding: 0.75rem 0; color: var(--text-secondary); font-size: 0.75rem; }
+  .identityRail { position: static; }
+  .folioIntro { grid-template-columns: 1fr; gap: 0.6rem; }
+  .importSheet { grid-template-columns: 1fr; }
+  .importIndex { position: static; }
+  .importStages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .importStage { display: block; min-width: 0; padding: 0.65rem 0.35rem; text-align: center; }
+  .importStage strong { display: block; margin-bottom: 0.2rem; }
+  .importStage span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mappingHeader { display: none; }
+  .mappingRow { grid-template-columns: 1fr; }
+  .mappingRow > div:first-child { border-right: 0; border-bottom: 1px solid var(--border); }
+}
+
+@media (max-width: 420px) {
+  .rosterDecision { margin-inline: 0.85rem; }
+  .rosterTable tbody th,
+  .rosterTable tbody td { grid-template-columns: minmax(5.4rem, 0.36fr) minmax(0, 1fr); }
+  .folioIntro { margin-inline: 0.85rem; }
+  .importWorkspace { padding: 0.85rem; }
+  .importStage { font-size: 0.65rem; }
+  .previewStats { grid-template-columns: 1fr; }
+}
+
+@media print {
+  :global([data-koaryu-dashboard-shell="true"]),
+  :global([data-koaryu-dashboard-shell="true"] > main),
+  .rosterPrintRoot,
+  .folioRoot { background: #fff !important; color: #000 !important; }
+  :global([data-koaryu-dashboard-shell="true"] > aside),
+  :global([data-koaryu-dashboard-shell="true"] > [class*="mobileSpine"]),
+  :global([data-koaryu-dashboard-shell="true"] [class*="slugBand"]),
+  .rosterToolbar,
+  .selectionBand,
+  .mobileSelectAll { display: none !important; }
+  :global([data-koaryu-dashboard-shell="true"] > main) {
+    width: 100% !important;
+    min-height: 0 !important;
+    margin-left: 0 !important;
+    overflow: visible !important;
+  }
+  .rosterPrintRoot > header,
+  .folioRoot > header,
+  .folioRoot button,
+  .folioRoot input[type="file"],
+  .rosterPrintRoot :global([role="dialog"]),
+  .folioRoot :global([role="dialog"]) { display: none !important; }
+  .rosterPrintRoot,
+  .folioRoot {
+    --bg: #fff;
+    --surface: #fff;
+    --surface-raised: #fff;
+    --text-primary: #000;
+    --text-secondary: #000;
+    --muted: #333;
+    --border: #777;
+    display: block;
+    width: 100%;
+    overflow: visible !important;
+  }
+  .rosterDecision { margin: 0 0 1rem; }
+  .rosterViewport { padding: 0; }
+  .rosterTable { display: table; color: #000; font-size: 9pt; }
+  .rosterTable thead { display: table-header-group; position: static; background: #fff; }
+  .rosterTable tbody { display: table-row-group; }
+  .rosterTable tr { display: table-row; break-inside: avoid; }
+  .rosterTable th,
+  .rosterTable td { display: table-cell; width: auto; padding: 5pt; border-color: #777; }
+  .rosterTable th::before,
+  .rosterTable td::before { display: none; }
+  .identityRail { position: static; }
+  .folioSection { break-inside: avoid; background: #fff; color: #000; }
+  .folioIntro { margin: 0 0 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rosterWorkspace *, .folioRoot *, .importWorkspace * { transition: none !important; }
+}
