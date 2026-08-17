@@ -220,6 +220,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const authUserIdRef = useRef<string | null>(isPreviewMode ? "preview-user" : null);
   const activeUserId = currentUser?.id || null;
+  const [currentStudioId, setCurrentStudioId] = useState<string | null>(() =>
+    isPreviewMode ? "preview-studio" : null
+  );
   const [currentRole, setCurrentRole] = useState<StaffRoleName | null>(() =>
     isPreviewMode ? "admin" : null
   );
@@ -613,6 +616,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dashboardSummaryRequestSeqRef.current += 1;
     authUserIdRef.current = null;
     setCurrentUser(null);
+    setCurrentStudioId(null);
     setCurrentRole(null);
     setStaffProfilesAvailable(false);
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
@@ -620,6 +624,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const commitAuthoritativeAuthProfile = useCallback((authProfile: AuthProfileResponse) => {
     setCurrentUser(buildAuthUserProfile(authProfile));
+    setCurrentStudioId(
+      authProfile.membership_status === "active" ? authProfile.studio_id ?? null : null
+    );
     setCurrentRole(authProfile.role ?? null);
     setStaffProfilesAvailable(isStaffProfilesAvailable(authProfile));
   }, []);
@@ -1723,6 +1730,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     createProgram,
     currentLadderId,
     currentRole,
+    currentStudioId,
     currentUserId: activeUserId || "",
     dashboardSummary,
     dashboardSummaryLoaded,

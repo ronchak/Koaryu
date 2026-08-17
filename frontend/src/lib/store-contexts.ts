@@ -147,6 +147,7 @@ export interface StoreContextValue {
 
   studioName: string;
   currentUserId: string;
+  currentStudioId: string | null;
   currentRole: StaffRoleName | null;
   userEmail: string;
   userName: string;
@@ -272,6 +273,7 @@ export type StudioStoreContextValue = Pick<
   StoreContextValue,
   | "studioName"
   | "currentUserId"
+  | "currentStudioId"
   | "currentRole"
   | "userEmail"
   | "userName"

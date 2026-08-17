@@ -17,7 +17,7 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { useConfigStore } from "@/lib/store";
-import { clearActiveStudioIdCookie, clearStudioStateCookie } from "@/lib/studio-state-cookie";
+import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { useStudioStore } from "@/lib/store";
 import type { AccountDeletionRequest, Studio } from "@/types";
 
@@ -106,8 +106,7 @@ export default function AccountSettingsPage() {
       if (error) {
         throw error;
       }
-      clearStudioStateCookie();
-      clearActiveStudioIdCookie();
+      clearStoredStudioSessionCookies();
       router.push("/login");
       router.refresh();
     } catch (error) {

@@ -30,6 +30,7 @@ import {
   resolvePageDatasetReadiness,
 } from "@/lib/page-dataset-readiness";
 import { buildStudentInactivityRows } from "@/lib/student-insights";
+import { buildDashboardWidgetViewModels } from "@/lib/dashboard-widget-view-models";
 import type {
   BeltsStoreContextValue,
   ConfigStoreContextValue,
@@ -70,7 +71,10 @@ type DashboardPageControllerOptions = {
     StudentsStoreContextValue,
     "refreshStudents" | "students" | "studentsLoaded" | "studentsLoadError" | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentUserId" | "studioName" | "userName">;
+  studioStore: Pick<
+    StudioStoreContextValue,
+    "currentStudioId" | "currentUserId" | "studioName" | "userName"
+  >;
 };
 
 export function useDashboardPageController({
@@ -111,7 +115,7 @@ export function useDashboardPageController({
     studentsLoadError,
     studentsMayBePartial,
   } = studentsStore;
-  const { currentUserId, studioName, userName } = studioStore;
+  const { currentStudioId, currentUserId, studioName, userName } = studioStore;
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
@@ -295,6 +299,53 @@ export function useDashboardPageController({
     () => buildDashboardRecentStudentRows(summary?.recent_students, students, hasPartialStudentSample),
     [hasPartialStudentSample, students, summary?.recent_students]
   );
+  const widgetViewModels = useMemo(() => buildDashboardWidgetViewModels({
+    isPreviewMode,
+    dashboardSummary: summary,
+    isInitialDashboardLoading,
+    datasetLoadError: datasetReadiness.error,
+    hasDashboardSummary,
+    hasPartialStudentSample,
+    rosterSummaryPending,
+    studentsLoaded,
+    studentsLoadError,
+    leadsLoaded,
+    leadsLoadError,
+    scheduleStatus,
+    scheduleLoadError,
+    eligibilityPending: Boolean(eligibilityPendingLadderId),
+    eligibilityLoadError,
+    today,
+    students,
+    leads,
+    sessions,
+    eligibility,
+    recentStudentRows,
+    composition: dashboardComposition,
+  }), [
+    dashboardComposition,
+    summary,
+    datasetReadiness.error,
+    eligibility,
+    eligibilityLoadError,
+    eligibilityPendingLadderId,
+    hasDashboardSummary,
+    hasPartialStudentSample,
+    isInitialDashboardLoading,
+    isPreviewMode,
+    leads,
+    leadsLoadError,
+    leadsLoaded,
+    recentStudentRows,
+    rosterSummaryPending,
+    scheduleLoadError,
+    scheduleStatus,
+    sessions,
+    students,
+    studentsLoadError,
+    studentsLoaded,
+    today,
+  ]);
   const programBuckets = useMemo(
     () => buildDashboardProgramBuckets(programs, programById, students, leads, sessions, today),
     [leads, programById, programs, sessions, students, today]
@@ -306,6 +357,9 @@ export function useDashboardPageController({
   return {
     contentProps: {
       canSeeBilling,
+      currentRole,
+      currentStudioId,
+      currentUserId,
       dashboardComposition,
       datasetLoadError: datasetReadiness.error,
       hasDashboardSummary,
@@ -322,6 +376,8 @@ export function useDashboardPageController({
       studioDescription,
       today,
       todayLabel,
+      isPreviewMode,
+      widgetViewModels,
     },
   };
 }

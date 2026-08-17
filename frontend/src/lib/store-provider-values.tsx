@@ -60,6 +60,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     createProgram,
     currentLadderId,
     currentRole,
+    currentStudioId,
     currentUserId,
     dashboardSummary,
     dashboardSummaryLoaded,
@@ -297,6 +298,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const studioValue = useMemo<StudioStoreContextValue>(() => ({
     studioName,
+    currentStudioId,
     currentUserId,
     currentRole,
     userEmail,
@@ -323,6 +325,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
   }), [
     clearStudioData,
     currentRole,
+    currentStudioId,
     currentUserId,
     archiveStaff,
     inviteStaff,
