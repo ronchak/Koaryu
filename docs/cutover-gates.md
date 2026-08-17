@@ -38,6 +38,20 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`
 That manifest string is **not** echoed in the response body. A runbook that tells you to
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
 
+If migration 110 commits and migration 111 does not, stop. No approved
+application is eligible to serve at that V17 head. The prior `709239` application
+requires V16, while the release candidate requires V18. Older V2 consumers from
+before verified history boundary
+`d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
+110's exact V17 compatibility guard, but none is an approved recovery artifact.
+Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
+post-110 rollback set. From the exact immutable candidate, run a fresh guarded
+inspection that must return `state=staff-identity`, use its state-bound token to
+dry-run exactly `20260816012723_archive_staff_access_and_readiness.sql`, and let
+the human operator run the existing production apply gate. Promotion remains
+blocked until migration 111 produces exact V18 readiness and the final raw
+catalog/provider fingerprint.
+
 ## Gates that will refuse you
 
 **Unresolved review threads block the merge.** The `Koaryu main release gate` ruleset

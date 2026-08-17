@@ -28,6 +28,7 @@ export const ROLLOUT = Object.freeze({
   criticalMigrationCount: 107,
   columnAttestedMigrationCount: 108,
   trialLockedMigrationCount: 109,
+  staffIdentityMigrationCount: 110,
   finalMigrationCount: 111,
   releasePendingVersions: Object.freeze([
     "20260814043325",
@@ -113,6 +114,14 @@ export const EXPECTED_TRIAL_LOCKED_OPERATIONAL_READINESS =
       (ROLLOUT.finalMigrationCount - ROLLOUT.trialLockedMigrationCount),
   ).join(",") +
   "|0||release-db-attestation-v16";
+
+export const EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS =
+  `true|${ROLLOUT.staffIdentityMigrationCount}|20260815220402|` +
+  ROLLOUT.finalPendingVersions.slice(
+    0,
+    -(ROLLOUT.finalMigrationCount - ROLLOUT.staffIdentityMigrationCount),
+  ).join(",") +
+  "|0||release-db-attestation-v17";
 
 export const EXPECTED_RETURN_ATTESTED_OPERATIONAL_READINESS =
   "true|105|20260814152000|" +
@@ -1487,6 +1496,7 @@ export function formatNonSuccessProbeState(result) {
     result?.state === "critical" ||
     result?.state === "column-attested" ||
     result?.state === "trial-locked" ||
+    result?.state === "staff-identity" ||
     result?.state === "post"
   ) return null;
   if (
@@ -1513,11 +1523,21 @@ export function buildInspectionTokenForAcceptedState(packet, target, result) {
     result?.state !== "critical" &&
     result?.state !== "column-attested" &&
     result?.state !== "trial-locked" &&
+    result?.state !== "staff-identity" &&
     result?.state !== "post"
   ) {
-    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, or post probe state.");
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
+}
+
+export function assertInspectionToken(packet, target, result, inspectionToken) {
+  const expected = buildInspectionTokenForAcceptedState(packet, target, result);
+  if (inspectionToken !== expected) {
+    throw new RolloutError(
+      "--inspection-token does not match the preceding inspection's candidate, target, and state.",
+    );
+  }
 }
 
 export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCommand) {
@@ -1649,6 +1669,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
   )}`;
+  const staffIdentityHistory = `${ROLLOUT.staffIdentityMigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.staffIdentityMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -1685,6 +1714,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     criticalHistory,
     columnAttestedHistory,
     trialLockedHistory,
+    staffIdentityHistory,
     preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -1751,6 +1781,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
+    staffIdentityTargetHistory: filenames.slice(84, ROLLOUT.staffIdentityMigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -1766,19 +1802,29 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
 export function packetForAcceptedState(packet, state) {
   if (state === "pre") return packet;
   const consumedMigrations =
-    state === "intermediate" ? 1
-      : state === "recovery" ? 2
-        : state === "convergence" ? 3
-          : state === "attested" ? 4
-            : state === "return-attested" ? 5
-              : state === "retained" ? 6
-                : state === "critical" ? 7
-                  : state === "column-attested" ? 8
+    state === "intermediate"
+      ? 1
+      : state === "recovery"
+        ? 2
+        : state === "convergence"
+          ? 3
+          : state === "attested"
+            ? 4
+            : state === "return-attested"
+              ? 5
+              : state === "retained"
+                ? 6
+                : state === "critical"
+                  ? 7
+                  : state === "column-attested"
+                    ? 8
                     : state === "trial-locked"
                       ? ROLLOUT.trialLockedMigrationCount - ROLLOUT.baselineMigrationCount
-                      : null;
+                      : state === "staff-identity"
+                        ? ROLLOUT.staffIdentityMigrationCount - ROLLOUT.baselineMigrationCount
+                        : null;
   if (consumedMigrations === null) {
-    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, or trial-locked state.");
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, or staff-identity state.");
   }
   const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
   const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
@@ -1939,6 +1985,15 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     }
     return { state: "trial-locked", providerFingerprint: null };
   }
+  if (history === packet.staffIdentityHistory) {
+    if (targetHistory !== packet.staffIdentityTargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("Migration history is staff-identity but its exact V17 target history is missing.");
+    }
+    if (operationalReadiness !== EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS) {
+      throw new RolloutError("V17 operational readiness did not match the exact migration-110 state.");
+    }
+    return { state: "staff-identity", providerFingerprint: null };
+  }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete) {
       throw new RolloutError(
@@ -1965,7 +2020,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, or post-state.`,
   );
 }
 
@@ -2232,13 +2287,15 @@ export function readRemoteState(
         snapshot.history === packet.criticalHistory ||
         snapshot.history === packet.columnAttestedHistory ||
         snapshot.history === packet.trialLockedHistory ||
+        snapshot.history === packet.staffIdentityHistory ||
         snapshot.history === packet.postHistory
       )
     ) {
       snapshot.operationalReadiness = query(
         sourceRoot,
         snapshot.history === packet.postHistory ||
-        snapshot.history === packet.trialLockedHistory
+        snapshot.history === packet.trialLockedHistory ||
+        snapshot.history === packet.staffIdentityHistory
           ? OPERATIONAL_READINESS_SQL
           : PREDECESSOR_OPERATIONAL_READINESS_SQL,
         "operational_readiness",
@@ -2579,18 +2636,14 @@ export async function main(
       before.state !== "retained" &&
       before.state !== "critical" &&
       before.state !== "column-attested" &&
-      before.state !== "trial-locked"
+      before.state !== "trial-locked" &&
+      before.state !== "staff-identity"
     ) {
       throw new RolloutError(
-        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, critical, column-attested, or trial-locked state.`,
+        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, critical, column-attested, trial-locked, or staff-identity state.`,
       );
     }
-    const inspectionToken = buildInspectionTokenForAcceptedState(packet, config.target, before);
-    if (config.inspectionToken !== inspectionToken) {
-      throw new RolloutError(
-        "--inspection-token does not match the preceding inspection's candidate, target, and state.",
-      );
-    }
+    assertInspectionToken(packet, config.target, before, config.inspectionToken);
 
     const remainingPacket = packetForAcceptedState(packet, before.state);
     const pending = runDryRun(sourceRoot, remainingPacket, env);
