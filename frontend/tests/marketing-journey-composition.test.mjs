@@ -185,6 +185,16 @@ describe("Journey progressive enhancement and accessibility", () => {
       /@media \(max-width: 820px\) and \(max-height: 700px\)[\s\S]*\.ledgerRow p[\s\S]*display:\s*none/,
       "description hiding must remain confined to the canonical short-height tier"
     );
+    assert.match(
+      journeyCss,
+      /@media \(max-width: 820px\) and \(max-height: 700px\)[\s\S]*chapter\[data-chapter-id="features"\][\s\S]*padding-top:\s*max\(72px, env\(safe-area-inset-top\)\)[\s\S]*\.ledgerPlane \.ledgerRow\s*\{[\s\S]*padding-block:\s*0/,
+      "short mobile must compact the feature plane without shrinking its 44px title links"
+    );
+    assert.match(
+      journeyCss,
+      /@media \(max-width: 820px\) and \(max-height: 700px\)[\s\S]*\.faqShell\s*\{[\s\S]*height:\s*calc\(100dvh - 148px\)[\s\S]*\.faqPanel\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;/,
+      "short mobile must reserve a bounded scroll region above the pager"
+    );
   });
 
   it("uses only scoped marketing materials and no external runtime", () => {

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -10,14 +9,9 @@ import {
   publicPlatformPriceAmount,
 } from "../src/lib/constants.ts";
 import { landingPageContent } from "../src/lib/landing-page-content.ts";
-import * as legacyContent from "../src/lib/landing-page-legacy-content.ts";
 import { featurePages } from "../src/lib/marketing-pages.ts";
 
 const frontendRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-
-function sha256(source) {
-  return createHash("sha256").update(source).digest("hex");
-}
 
 function chapter(id) {
   const value = landingPageContent.chapters.find((item) => item.id === id);
@@ -164,44 +158,19 @@ describe("marketing content contract", () => {
     assert.doesNotMatch(source, /new\s+(?:Date|Map|Set)\b|\bSymbol\s*\(/);
   });
 
-  it("keeps the old landing composition unchanged except for its compatibility import", () => {
+  it("retires the old landing composition after the complete Journey takes ownership", () => {
     const landingSource = readFileSync(
       join(frontendRoot, "src/components/marketing/landing-page.tsx"),
       "utf8"
     );
-    const legacyImport = "@/lib/landing-page-legacy-content";
-    const canonicalImport = "@/lib/landing-page-content";
-    assert.equal(landingSource.match(new RegExp(legacyImport, "g"))?.length, 1);
-    assert.doesNotMatch(landingSource, /from ["']@\/lib\/landing-page-content["']/);
+    assert.match(landingSource, /<JourneyController>/);
+    assert.match(landingSource, /<JourneyChapters\s*\/>/);
+    assert.doesNotMatch(landingSource, /landing-page-legacy-content/);
     assert.equal(
-      sha256(landingSource.replace(legacyImport, canonicalImport)),
-      "607fe4aed130e565eb7b39776261acb796143c148d5bc73125fb44fd5b1e306c"
+      existsSync(join(frontendRoot, "src/lib/landing-page-legacy-content.ts")),
+      false
     );
-
-    const legacySource = readFileSync(
-      join(frontendRoot, "src/lib/landing-page-legacy-content.ts"),
-      "utf8"
-    );
-    const compatibilityComment =
-      "// Temporary compatibility for the old landing composition. Delete this module with that composition in WS-2.";
-    assert.equal(legacySource.startsWith(`${compatibilityComment}\n`), true);
-    assert.equal(
-      sha256(legacySource.slice(compatibilityComment.length + 1)),
-      "af769bb0fa76bc89c0d0c92a2d0f4fc4c5a7292fd1bb2658a78aebca4483bacf"
-    );
-
-    assert.deepEqual(Object.keys(legacyContent).sort(), [
-      "assuranceItems",
-      "faqGroups",
-      "features",
-      "previewActions",
-      "previewMetrics",
-      "previewProgramBuckets",
-      "pricingItems",
-      "privacyItems",
-      "promises",
-      "workflows",
-    ]);
+    assert.equal(existsSync(join(frontendRoot, "src/app/page.module.css")), false);
   });
 
   it("preserves the provider-write availability boundary", () => {

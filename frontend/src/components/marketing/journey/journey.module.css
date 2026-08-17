@@ -1113,8 +1113,37 @@
     padding-block: 16px;
   }
 
+  .journey[data-enhanced="true"]
+    .chapter[data-chapter-id="features"] {
+    padding-top: max(72px, env(safe-area-inset-top));
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane {
+    padding-block: 12px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .ledgerList {
+    margin-top: 8px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow {
+    padding-block: 0;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .planeLink {
+    margin-top: 0;
+  }
+
+  .journey[data-enhanced="true"] .faqShell {
+    display: flex;
+    height: calc(100dvh - 148px);
+    flex-direction: column;
+  }
+
   .journey[data-enhanced="true"] .faqPanel {
-    max-height: calc(100dvh - 142px);
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
   }
 }
 
