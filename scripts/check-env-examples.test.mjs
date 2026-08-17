@@ -13,6 +13,7 @@ import {
   validateOperationalAlertCadence,
   validateProviderDeploymentControls,
   validateRenderManifest,
+  validateStagingRenderService,
 } from "./check-env-examples.mjs";
 
 const reviewedVercelConfig = {
@@ -171,6 +172,83 @@ envVars:
       assert.ok(failures.some((failure) => failure.includes(key) && failure.includes("must equal")));
     }
     assert.ok(failures.some((failure) => failure.includes("FRONTEND_URL") && failure.includes("must match")));
+  });
+
+  it("accepts only the exact fail-closed example divergence for production live billing", () => {
+    const entries = extractRenderEnvEntries(`
+envVars:
+  - key: LIVE_BILLING_ENABLED
+    value: "true"
+`);
+
+    assert.deepEqual(validateRenderManifest(
+      ["LIVE_BILLING_ENABLED"],
+      entries,
+      [],
+      new Map([["LIVE_BILLING_ENABLED", "false"]]),
+    ), []);
+
+    const unsafeExampleFailures = validateRenderManifest(
+      ["LIVE_BILLING_ENABLED"],
+      entries,
+      [],
+      new Map([["LIVE_BILLING_ENABLED", "true"]]),
+    );
+    assert.ok(unsafeExampleFailures.some(
+      (failure) => failure.includes("backend/.env.render.example")
+        && failure.includes("LIVE_BILLING_ENABLED")
+        && failure.includes('must equal "false"'),
+    ));
+  });
+
+  it("rejects production live billing disabled even when the example stays fail-closed", () => {
+    const entries = extractRenderEnvEntries(`
+envVars:
+  - key: LIVE_BILLING_ENABLED
+    value: "false"
+`);
+    const failures = validateRenderManifest(
+      ["LIVE_BILLING_ENABLED"],
+      entries,
+      [],
+      new Map([["LIVE_BILLING_ENABLED", "false"]]),
+    );
+
+    assert.ok(failures.some(
+      (failure) => failure.includes("LIVE_BILLING_ENABLED")
+        && failure.includes('must equal "true"'),
+    ));
+  });
+
+  it("rejects live billing enabled on the staging Render service", () => {
+    const renderSource = `
+services:
+  - type: web
+    name: koaryu-staging
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "true"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+`;
+    const failures = validateStagingRenderService(renderSource, []);
+
+    assert.ok(failures.some(
+      (failure) => failure.includes("staging LIVE_BILLING_ENABLED")
+        && failure.includes('must equal "false"'),
+    ));
   });
 
   it("requires manual production promotion while preserving staging and cron controls", () => {

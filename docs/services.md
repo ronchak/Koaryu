@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Last verified against live systems: 2026-08-15.
+Last verified against live systems: 2026-08-16.
 
 ## Quick map
 
@@ -19,6 +19,7 @@ Last verified against live systems: 2026-08-15.
 | Backend | Render `koaryu` → `koaryu.onrender.com` | Render `koaryu-staging` |
 | Database + Auth | Supabase `mimguepumzsgmcaycdsh` | Supabase `nxgsektqsgrtyfhawxbc` |
 | Payments | Stripe live mode | Stripe test mode |
+| `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 
 Neither production surface auto-deploys. Both are promoted by hand, on purpose —
 see [Deployment triggers](#deployment-triggers).
@@ -115,8 +116,12 @@ a human through `scripts/studio-comp-migration-rollout.mjs`.
 - Production runs in **live** mode; staging and local run in **test** mode.
 - `STRIPE_MODE` must match the secret key prefix (`sk_live_` / `sk_test_`), and
   the backend refuses to start otherwise.
-- `LIVE_BILLING_ENABLED` is `false` and gates Connect onboarding and tuition
-  payments.
+- Production intentionally sets `LIVE_BILLING_ENABLED=true`; staging, local, and
+  reusable environment examples remain `false`. The production value is only the
+  necessary global interlock. It creates no studio scope, reconciliation
+  checkpoint, provider authority, or tenant financial permission. Connect and
+  tuition mutations additionally require the exact enabled, unexpired studio
+  scope and exact-candidate all-clear reconciliation checkpoint.
 - `CORE_SELF_CHECKOUT_ENABLED` is a separate, narrower production-only switch for
   Core subscription checkout. `config.py` rejects it outside production, so the
   checkout flow cannot be exercised on staging.

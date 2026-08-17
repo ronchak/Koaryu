@@ -38,7 +38,7 @@ Routine billing currently means only viewing existing billing state, attaching a
 3. Import or add the current student roster. Check guardian, emergency, program, rank, and status data for a small sample before continuing.
 4. Configure belt ladders and recurring classes, then verify the current week on a phone used at the studio.
 5. Take attendance for a test class and confirm the result appears in student history.
-6. Review Billing with an Admin or Front Desk account. Use only the three supported routine transitions and confirm `LIVE_BILLING_ENABLED=false` remains unchanged.
+6. Review Billing with an Admin or Front Desk account. Use only the three supported routine transitions and confirm production's `LIVE_BILLING_ENABLED=true` is treated only as the global interlock, never as evidence of a studio scope, checkpoint, or permission to move money.
 7. Confirm that an Instructor receives the billing access-denied page without seeing billing data.
 8. Submit a signed-in test request at `/help/contact` and verify the owner receives the expected support notification or digest.
 9. Record the deployed application SHA, migration head, smoke results, and rollback target in the release ledger.

@@ -29,7 +29,7 @@ For a live dojo-floor demo, use the configured starter service only after it is 
 
 ## Config Vars
 
-Render will prompt for values marked `sync: false` in `render.yaml`. Use `backend/.env.render.example` as the checklist.
+Render will prompt for values marked `sync: false` in `render.yaml`. Use `backend/.env.render.example` as the checklist. That reusable example intentionally keeps `LIVE_BILLING_ENABLED=false`; production is the explicit exception below.
 
 Fixed values:
 
@@ -41,7 +41,7 @@ DEMO_RESET_ENABLED=false
 DEMO_RESET_STUDIO_IDS=
 BILLING_PLATFORM_FEE_BPS=50
 STRIPE_MODE=live
-LIVE_BILLING_ENABLED=false
+LIVE_BILLING_ENABLED=true
 CORE_SELF_CHECKOUT_ENABLED=true
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
 SUPABASE_DEVELOPMENT_PROJECT_REF=
@@ -79,7 +79,7 @@ Keep `OPERATIONAL_ALERTS_ENABLED=false` in production until the primary/backup h
 
 Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
 
-Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. `CORE_SELF_CHECKOUT_ENABLED=true` authorizes only `customer.create`, `core_checkout_session.create`, and `customer_portal_session.create` for an authenticated studio Admin and explicit studio ID. Keep `LIVE_BILLING_ENABLED=false` until the separately approved per-studio rollout in `stripe-live-billing-rollout.md`; Core self-checkout does not enable Connect onboarding, Connect payments, tuition collection, refunds, or any other live provider mutation. Matching live webhook events continue through signature verification and reconciliation while non-Core outbound live Stripe mutations remain closed. Wrong-mode or malformed-mode events are rejected before storage. The platform route quarantines account-bearing events as `wrong_route_connect_event`; the Connect route quarantines account-less platform-contract events as `wrong_route_platform_event` and other account-less events as `missing_connect_account_context`. These permanent route failures return `400` and never project product state. A live Connect event with a real but unmapped account remains a distinct transient failure: it is durably marked `unmapped_live_connect_account` and returns `503` so Stripe retries after the mapping exists. Unexpected projector failures store a stable `error_reference` and emit an event-linked log containing only sanitized identifiers, the failure class, and that reference.
+Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. `CORE_SELF_CHECKOUT_ENABLED=true` authorizes only `customer.create`, `core_checkout_session.create`, and `customer_portal_session.create` for an authenticated studio Admin and explicit studio ID. Production intentionally sets `LIVE_BILLING_ENABLED=true`, but that value is only the necessary global interlock. It creates no studio scope, reconciliation checkpoint, provider authority, or tenant financial permission; every Connect or tuition mutation remains fail-closed without the exact enabled, unexpired studio scope and exact-candidate all-clear reconciliation checkpoint defined in `stripe-live-billing-rollout.md`. Core self-checkout remains a separate bounded path and does not enable Connect onboarding, Connect payments, tuition collection, refunds, or any other live provider mutation. Matching live webhook events continue through signature verification and reconciliation. Wrong-mode or malformed-mode events are rejected before storage. The platform route quarantines account-bearing events as `wrong_route_connect_event`; the Connect route quarantines account-less platform-contract events as `wrong_route_platform_event` and other account-less events as `missing_connect_account_context`. These permanent route failures return `400` and never project product state. A live Connect event with a real but unmapped account remains a distinct transient failure: it is durably marked `unmapped_live_connect_account` and returns `503` so Stripe retries after the mapping exists. Unexpected projector failures store a stable `error_reference` and emit an event-linked log containing only sanitized identifiers, the failure class, and that reference.
 
 ### Hosted Runtime Guard
 
@@ -121,7 +121,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, the service also refuses
 
 `SUPABASE_URL` must be a public HTTPS URL in production. Production requires the exact canonical `FRONTEND_URL=https://koaryu.app`; paths, query strings, fragments, userinfo, ports, whitespace, and control characters are rejected before CORS or staff-invite redirects use it. Both Stripe webhook-secret settings use the same exact comma-rotation format: nonempty candidates without surrounding whitespace or control characters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode and mismatched keys. If `LIVE_BILLING_ENABLED=true` or `CORE_SELF_CHECKOUT_ENABLED=true`, startup additionally requires an exact validated `RENDER_GIT_COMMIT`. The general live-billing flag still requires the matching unexpired checkpoint and studio scope at runtime; the Core flag is limited to the three named self-service operations. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
 
-Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `CORE_SELF_CHECKOUT_ENABLED=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
+Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `LIVE_BILLING_ENABLED=false`, `CORE_SELF_CHECKOUT_ENABLED=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
 
 Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
 
@@ -180,12 +180,17 @@ curl https://koaryu.onrender.com/api/v1/health/ready
 curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V3 database preflight. It returns 503 unless Supabase reports exactly 111 migrations, head `20260816012723`, the exact twenty-seven-version pending sequence, manifest version `release-db-attestation-v18`, and no required-object/security failure. The V3 contract also requires the exact zero-invalid V17 archive-critical semantic manifest `0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8` to attest `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware triggers, and restrictive policy coverage. The post-111 V16 compatibility assertion is pinned to `0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239`. The repository-pinned raw PostgreSQL 17 catalog fingerprint is pinned to `column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:164af3cd98d7f26bc74994b4f16529ea988ba0e760aa34d3cebddc4f97c4b625:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`. Migration 109 retains the deployed `origin/main` predecessor reservation (V1) and V2 readiness signatures for the database-first cutover. Migration 110 preserves the V7-shaped V2 response while the candidate advances V3 to V17, and migration 111 advances the exact candidate to V18. Exact migration 109/head `20260814213000`/V16 is the single accepted `trial-locked` resume state and may continue only with migrations 110 and 111 after fresh inspection and dry-run. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V3 database preflight. It returns 503 unless Supabase reports exactly 111 migrations, head `20260816012723`, the exact twenty-seven-version pending sequence, manifest version `release-db-attestation-v18`, and no required-object/security failure. The V3 contract also requires the exact zero-invalid V17 archive-critical semantic manifest `0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8` to attest `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware triggers, and restrictive policy coverage. The post-111 V16 compatibility assertion is pinned to `0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239`. The repository-pinned raw PostgreSQL 17 catalog fingerprint is pinned to `column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:164af3cd98d7f26bc74994b4f16529ea988ba0e760aa34d3cebddc4f97c4b625:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`. Migration 109 retains the deployed `origin/main` predecessor reservation (V1) and V2 readiness signatures for the database-first cutover. Migration 110 preserves the V7-shaped V2 response while the candidate advances V3 to V17, and migration 111 advances the exact candidate to V18. Exact migration 109/head `20260814213000`/V16 is the accepted `trial-locked` resume state for migrations 110 and 111; exact migration 110/head `20260815220402`/V17 is the guarded `staff-identity` resume state for migration 111 only. Each requires fresh candidate-bound inspection and exact dry-run. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
 
 Promote the database first. Do not route the new backend to a Supabase project
 until the final staging fingerprint and preflight pass. The exact-head manifest
 includes the billing, Connect delivery, and alert security surfaces; an application
-deploy that reaches schema 84 or any partial 85-109 state remains unhealthy.
+deploy that reaches schema 84 or any partial 85-110 state remains unhealthy.
+No approved application may serve at 110. Exclude `709239`/V16 and every
+V2-consuming SHA before verified history boundary
+`d63a5116c0a47f1933f15360cd5db7b66237bb80` from the rollback set: older V2
+consumers can report ready through the 110/V17 compatibility guard, but they are
+not approved recovery artifacts.
 Local PostgreSQL does not prove hosted PostgREST exposed schemas or actual schema
 ACLs; authenticated operator readback must separately prove `private` is not
 exposed and the hosted schema ACL state matches the approved release gate.
@@ -221,10 +226,13 @@ npm run verify:deployed-release -- \
   --backend-api https://koaryu.onrender.com/api/v1
 ```
 
+The production-shaped startup check must use that same exact deployed 40-character `$RELEASE_SHA` as `RENDER_GIT_COMMIT`; do not substitute a branch or tag.
+
 ```bash
 cd backend
 ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
-  STRIPE_MODE=live LIVE_BILLING_ENABLED=false \
+  STRIPE_MODE=live LIVE_BILLING_ENABLED=true \
+  RENDER_GIT_COMMIT="$RELEASE_SHA" \
   SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co \
   SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
   SUPABASE_ALLOW_LEGACY_HS256=false \
@@ -273,7 +281,7 @@ SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
 
 ## Stripe Webhooks
 
-After Render is live, configure Stripe webhook endpoints in the mode declared by `STRIPE_MODE`. Prove the full workflow in Stripe test mode first. A separately approved live-mode deployment may ingest matching signed live events with outbound writes still closed; do not repeat test mutations in live mode or enable live billing until durable scoped authorization is implemented and reviewed.
+After Render is live, configure Stripe webhook endpoints in the mode declared by `STRIPE_MODE`. Prove the full workflow in Stripe test mode first. The already-live global production `LIVE_BILLING_ENABLED=true` interlock may coexist with matching signed live-event ingestion, but it alone authorizes no outbound write; do not activate a studio scope, record a reconciliation checkpoint, repeat test mutations in live mode, or perform a live Connect or tuition mutation without separate approval and the exact runtime authorization.
 
 Treat a Connect delivery that returns `503` because its account mapping is not ready as an operational quarantine, not a successful ignore. Confirm the Stripe account belongs to the intended studio, complete or repair the normal `studio_payment_accounts.stripe_connected_account_id` mapping, and then let Stripe retry or resend the same event from the Dashboard. Confirm the existing `stripe_events` row becomes `processed` with a cleared error. Never add an account mapping from an unverified event payload, and never acknowledge the delivery with `2xx` merely to clear Stripe's retry queue.
 
@@ -382,7 +390,7 @@ Before daily use at a dojo:
 - Open the app on the actual studio device and complete login, dashboard, Students, student detail, Schedule, attendance, Settings, and Help checks.
 - Verify Admin and Front Desk can read existing billing state and use only external-only local attachment, payer-level external-payment recording, and read-based reconciliation of an existing Stripe-linked invoice.
 - Verify an Instructor receives the billing access-denied page before any billing data is shown or fetched.
-- Confirm `LIVE_BILLING_ENABLED=false`; do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
+- Confirm production reports `LIVE_BILLING_ENABLED=true`, and treat it only as the global interlock. Do not treat that value as evidence that any studio has a scope or checkpoint, and do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
 - Use the preserved production dataset. Do not reset, replace, clean, or reseed production records.
 - Keep `DEMO_RESET_STUDIO_IDS` empty in production; in demo/staging, list only disposable studio IDs that demo reset or clear-studio-data may target.
 

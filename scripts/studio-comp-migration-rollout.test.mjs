@@ -21,10 +21,12 @@ import {
   EXPECTED_COLUMN_ATTESTED_OPERATIONAL_READINESS,
   EXPECTED_OPERATIONAL_READINESS,
   EXPECTED_TRIAL_LOCKED_OPERATIONAL_READINESS,
+  EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS,
   EXPECTED_WRITER_RETURN_CONTRACT_STATE,
   WRITER_RETURN_CONTRACT_STATE_SQL,
   assertApplyableState,
   assertExactPendingMigrations,
+  assertInspectionToken,
   assertSafeCredentialedTransport,
   buildInspectionToken,
   buildInspectionTokenForAcceptedState,
@@ -238,6 +240,21 @@ function trialLockedSnapshot(packet, overrides = {}) {
   };
 }
 
+function staffIdentitySnapshot(packet, overrides = {}) {
+  return {
+    historyColumns: minimalHistoryColumns,
+    history: packet.staffIdentityHistory,
+    targetHistory: packet.staffIdentityTargetHistory,
+    objectCounts: "3:1",
+    functionState: null,
+    triggerState: null,
+    catalogState: null,
+    operationalReadiness: EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS,
+    writerReturnContractState: null,
+    ...overrides,
+  };
+}
+
 function assertReadOnlySql(sql) {
   const normalized = sql.trim();
   const executableSql = normalized
@@ -357,6 +374,8 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(packet.criticalHistory, /^107:[0-9a-f]{32}$/);
     assert.match(packet.columnAttestedHistory, /^108:[0-9a-f]{32}$/);
     assert.match(packet.trialLockedHistory, new RegExp(`^${ROLLOUT.trialLockedMigrationCount}:[0-9a-f]{32}$`));
+    assert.equal(packet.staffIdentityHistory, "110:65664dce61981374e865f081fc2f9347");
+    assert.match(packet.staffIdentityTargetHistory, /20260815220402:staff_identity_name_model$/);
     assert.match(packet.postHistory, new RegExp(`^${packet.migrationCount}:[0-9a-f]{32}$`));
     assert.equal(
       packet.pendingMigrations.length,
@@ -682,7 +701,7 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("accepts exact pre-, intermediate-, recovery-, convergence-, attested-, trial-locked, or semantically valid post-state", () => {
+  it("accepts exact pre-, intermediate-, recovery-, convergence-, attested-, trial-locked, staff-identity, or semantically valid post-state", () => {
     const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(preSnapshot(), packet), {
       state: "pre",
@@ -706,6 +725,10 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.deepEqual(classifyStateSnapshot(attestedSnapshot(packet), packet), {
       state: "attested",
+      providerFingerprint: null,
+    });
+    assert.deepEqual(classifyStateSnapshot(staffIdentitySnapshot(packet), packet), {
+      state: "staff-identity",
       providerFingerprint: null,
     });
     assert.throws(
@@ -844,7 +867,49 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("validates V7-V18 pre, recovery, attested, critical, column-attested, trial-locked, and post-state readiness", () => {
+  it("rejects substituted history, target history, object counts, or V17 readiness for staff-identity migration 110", () => {
+    const packet = candidatePacket();
+    assert.throws(
+      () => classifyStateSnapshot(
+        staffIdentitySnapshot(packet, { history: "110:00000000000000000000000000000000" }),
+        packet,
+      ),
+      /Unexpected migration history/,
+    );
+    assert.throws(
+      () => classifyStateSnapshot(
+        staffIdentitySnapshot(packet, { targetHistory: `${packet.staffIdentityTargetHistory}|substituted` }),
+        packet,
+      ),
+      /exact V17 target history/,
+    );
+    assert.throws(
+      () => classifyStateSnapshot(staffIdentitySnapshot(packet, { objectCounts: "4:1" }), packet),
+      /exact V17 target history/,
+    );
+    for (const operationalReadiness of [
+      EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS.replace("|110|", "|109|"),
+      EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS.replace(
+        "|20260815220402|",
+        "|20260814213000|",
+      ),
+      EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS.replace(
+        ",20260815220402|",
+        "|",
+      ),
+      EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS.replace(
+        "release-db-attestation-v17",
+        "release-db-attestation-v18",
+      ),
+    ]) {
+      assert.throws(
+        () => classifyStateSnapshot(staffIdentitySnapshot(packet, { operationalReadiness }), packet),
+        /V17 operational readiness/,
+      );
+    }
+  });
+
+  it("validates V7-V18 pre, recovery, attested, critical, column-attested, trial-locked, staff-identity, and post-state readiness", () => {
     const packet = candidatePacket();
     const postValues = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -890,6 +955,23 @@ describe("studio-comp migration rollout guard", () => {
       { state: "trial-locked", providerFingerprint: null },
     );
     assert.match(trialLockedSql.at(-1), /koaryu_release_schema_preflight_v3/);
+
+    const staffIdentityValues = new Map([
+      ["history_columns", extendedHistoryColumns],
+      ["history_state", packet.staffIdentityHistory],
+      ["target_history", packet.staffIdentityTargetHistory],
+      ["object_counts", "3:1"],
+      ["operational_readiness", EXPECTED_STAFF_IDENTITY_OPERATIONAL_READINESS],
+    ]);
+    const staffIdentitySql = [];
+    assert.deepEqual(
+      readRemoteState(repositoryRoot, packet, {}, null, (_root, sql, header) => {
+        staffIdentitySql.push(sql);
+        return parseSingleValueCsv(singleValueCsv(header, staffIdentityValues.get(header)), header);
+      }),
+      { state: "staff-identity", providerFingerprint: null },
+    );
+    assert.match(staffIdentitySql.at(-1), /koaryu_release_schema_preflight_v3/);
 
     const intermediateValues = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -1072,7 +1154,7 @@ describe("studio-comp migration rollout guard", () => {
 
     assert.deepEqual(result, {
       state: "diverged",
-      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, or post-state.`,
+      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, or post-state.`,
     });
   });
 
@@ -1223,6 +1305,10 @@ describe("studio-comp migration rollout guard", () => {
         expected: { state: "trial-locked", providerFingerprint: null },
       },
       {
+        snapshot: staffIdentitySnapshot(packet),
+        expected: { state: "staff-identity", providerFingerprint: null },
+      },
+      {
         snapshot: intermediateSnapshot(packet),
         expected: { state: "intermediate", providerFingerprint: null },
       },
@@ -1248,8 +1334,8 @@ describe("studio-comp migration rollout guard", () => {
         ["critical_surface_manifest", snapshot.criticalSurfaceManifest],
         ["operational_readiness", snapshot.operationalReadiness],
         ["writer_return_contract_state", snapshot.writerReturnContractState],
-        ["migration_row_count", expected.state === "pre" ? "84" : expected.state === "intermediate" ? "101" : expected.state === "recovery" ? "102" : expected.state === "convergence" ? "103" : expected.state === "attested" ? "104" : expected.state === "column-attested" ? "108" : expected.state === "trial-locked" ? String(ROLLOUT.trialLockedMigrationCount) : "111"],
-        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : expected.state === "attested" ? "20260814114500" : expected.state === "column-attested" ? "20260814200000" : expected.state === "trial-locked" ? "20260814213000" : "20260816012723"],
+        ["migration_row_count", expected.state === "pre" ? "84" : expected.state === "intermediate" ? "101" : expected.state === "recovery" ? "102" : expected.state === "convergence" ? "103" : expected.state === "attested" ? "104" : expected.state === "column-attested" ? "108" : expected.state === "trial-locked" ? String(ROLLOUT.trialLockedMigrationCount) : expected.state === "staff-identity" ? String(ROLLOUT.staffIdentityMigrationCount) : "111"],
+        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : expected.state === "attested" ? "20260814114500" : expected.state === "column-attested" ? "20260814200000" : expected.state === "trial-locked" ? "20260814213000" : expected.state === "staff-identity" ? "20260815220402" : "20260816012723"],
       ]);
       const headers = [];
       const diagnosis = readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, sql, header) => {
@@ -1507,6 +1593,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(formatNonSuccessProbeState({ state: "attested", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "column-attested", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "trial-locked", providerFingerprint: null }), null);
+    assert.equal(formatNonSuccessProbeState({ state: "staff-identity", providerFingerprint: null }), null);
     assert.equal(
       formatNonSuccessProbeState({ state: "post", providerFingerprint: validFingerprint }),
       null,
@@ -1515,7 +1602,7 @@ describe("studio-comp migration rollout guard", () => {
 
   it("makes an inspection token available only for accepted probe states", () => {
     const packet = candidatePacket();
-    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "post"]) {
+    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "post"]) {
       assert.equal(
         buildInspectionTokenForAcceptedState(packet, "staging", { state }),
         buildInspectionToken(packet, "staging", state),
@@ -1528,7 +1615,7 @@ describe("studio-comp migration rollout guard", () => {
     ]) {
       assert.throws(
         () => buildInspectionTokenForAcceptedState(packet, "staging", result),
-        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, or post probe state/,
+        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, or post probe state/,
       );
     }
   });
@@ -1554,7 +1641,7 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("selects exact remaining migrations through column-attested state", () => {
+  it("selects exact remaining migrations through staff-identity state", () => {
     const packet = candidatePacket();
     const intermediateRemaining = packetForAcceptedState(packet, "intermediate");
     assert.deepEqual(intermediateRemaining.pendingMigrations, packet.pendingMigrations.slice(1));
@@ -1590,10 +1677,21 @@ describe("studio-comp migration rollout guard", () => {
       trialLockedRemaining.pendingManifest,
       packet.pendingManifest.slice(ROLLOUT.trialLockedMigrationCount - ROLLOUT.baselineMigrationCount),
     );
+    const staffIdentityRemaining = packetForAcceptedState(packet, "staff-identity");
+    assert.deepEqual(
+      staffIdentityRemaining.pendingMigrations,
+      ["20260816012723_archive_staff_access_and_readiness.sql"],
+    );
+    assert.deepEqual(
+      staffIdentityRemaining.pendingManifest,
+      packet.pendingManifest.slice(ROLLOUT.staffIdentityMigrationCount - ROLLOUT.baselineMigrationCount),
+    );
+    assert.match(staffIdentityRemaining.sourceManifestSha256, /^[0-9a-f]{64}$/);
+    assert.notEqual(staffIdentityRemaining.sourceManifestSha256, trialLockedRemaining.sourceManifestSha256);
     assert.equal(packetForAcceptedState(packet, "pre"), packet);
     assert.throws(
       () => packetForAcceptedState(packet, "post"),
-        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, or trial-locked state/,
+        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, or staff-identity state/,
     );
   });
 
@@ -1605,7 +1703,7 @@ describe("studio-comp migration rollout guard", () => {
         new RegExp(`Apply is disabled from ${state} state`),
       );
     }
-    for (const state of ["pre", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked"]) {
+    for (const state of ["pre", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity"]) {
       assert.doesNotThrow(() => assertApplyableState("apply", state));
     }
   });
@@ -1615,6 +1713,28 @@ describe("studio-comp migration rollout guard", () => {
     const stagingToken = buildInspectionToken(packet, "staging", "pre");
     assert.match(stagingToken, /^[0-9a-f]{64}$/);
     assert.notEqual(stagingToken, buildInspectionToken(packet, "production", "pre"));
+    const staffIdentityResult = { state: "staff-identity", providerFingerprint: null };
+    const staffIdentityToken = buildInspectionTokenForAcceptedState(
+      packet,
+      "staging",
+      staffIdentityResult,
+    );
+    assert.doesNotThrow(() =>
+      assertInspectionToken(packet, "staging", staffIdentityResult, staffIdentityToken));
+    for (const substitutedToken of [
+      buildInspectionToken(packet, "staging", "trial-locked"),
+      buildInspectionToken(packet, "production", "staff-identity"),
+      buildInspectionToken(
+        { ...packet, sourceManifestSha256: "0".repeat(64) },
+        "staging",
+        "staff-identity",
+      ),
+    ]) {
+      assert.throws(
+        () => assertInspectionToken(packet, "staging", staffIdentityResult, substitutedToken),
+        /candidate, target, and state/,
+      );
+    }
     assert.throws(
       () => parseArguments([
         "--mode", "packet", "--candidate-sha", candidateSha,
@@ -1655,10 +1775,29 @@ describe("studio-comp migration rollout guard", () => {
       () => assertExactPendingMigrations(`${exact}\n20260728120000_unapproved.sql`, packet),
       /Dry-run migration set mismatch/,
     );
+
+    const staffIdentityPacket = packetForAcceptedState(packet, "staff-identity");
+    const exactStaffIdentity = [
+      "Would push these migrations:",
+      "20260816012723_archive_staff_access_and_readiness.sql",
+    ].join("\n");
+    assert.deepEqual(
+      assertExactPendingMigrations(exactStaffIdentity, staffIdentityPacket),
+      staffIdentityPacket.pendingMigrations,
+    );
+    for (const substitutedPendingSet of [
+      `${exactStaffIdentity}\n20260815220402_staff_identity_name_model.sql`,
+      "Would push these migrations:\n20260815220402_staff_identity_name_model.sql",
+    ]) {
+      assert.throws(
+        () => assertExactPendingMigrations(substitutedPendingSet, staffIdentityPacket),
+        /Dry-run migration set mismatch/,
+      );
+    }
   });
 
-  it("parses the pinned CLI dry-run migration list from stderr", (t) => {
-    const packet = candidatePacket();
+  it("dry-runs exactly migration 111 from staff-identity using the pinned CLI output", (t) => {
+    const packet = packetForAcceptedState(candidatePacket(), "staff-identity");
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-dry-run-cli-"));
     const fakeBin = path.join(temporaryRoot, "bin");
     const fakeSupabase = path.join(fakeBin, "supabase");
@@ -1744,5 +1883,26 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(phrase, new RegExp(candidateSha));
     assert.match(phrase, /MANIFEST a{64}/);
     assert.match(phrase, new RegExp(`${ROLLOUT.productionRef}$`));
+  });
+
+  it("binds staff-identity production confirmation to exactly migration 111 and its manifest", () => {
+    const packet = candidatePacket();
+    const staffIdentityPacket = packetForAcceptedState(packet, "staff-identity");
+    assert.deepEqual(
+      staffIdentityPacket.pendingMigrations,
+      ["20260816012723_archive_staff_access_and_readiness.sql"],
+    );
+    assert.notEqual(staffIdentityPacket.sourceManifestSha256, packet.sourceManifestSha256);
+    assert.equal(
+      buildProductionConfirmationPhrase(staffIdentityPacket),
+      [
+        "APPLY 1 MIGRATIONS FROM",
+        candidateSha,
+        "MANIFEST",
+        staffIdentityPacket.sourceManifestSha256,
+        "TO",
+        ROLLOUT.productionRef,
+      ].join(" "),
+    );
   });
 });

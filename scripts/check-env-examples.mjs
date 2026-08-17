@@ -96,11 +96,31 @@ const renderCriticalValues = new Map([
   ["SUPABASE_ALLOW_LEGACY_HS256", "false"],
   ["SUPABASE_DEVELOPMENT_PROJECT_REF", ""],
   ["STRIPE_MODE", "live"],
-  ["LIVE_BILLING_ENABLED", "false"],
+  ["LIVE_BILLING_ENABLED", "true"],
   ["CORE_SELF_CHECKOUT_ENABLED", "true"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
+
+// Reusable examples stay fail-closed even where production must deliberately
+// differ. Each exception names both sides so neither value can drift silently.
+const productionRenderExampleDivergences = new Map([
+  ["LIVE_BILLING_ENABLED", { exampleValue: "false", manifestValue: "true" }],
+]);
+
+function isAllowedProductionRenderExampleDivergence(
+  key,
+  manifestValue,
+  exampleValue,
+  criticalValues,
+) {
+  const allowed = productionRenderExampleDivergences.get(key);
+  return (
+    allowed?.manifestValue === manifestValue
+    && allowed.exampleValue === exampleValue
+    && criticalValues.get(key) === manifestValue
+  );
+}
 
 function unique(values) {
   return [...new Set(values)].sort();
@@ -324,8 +344,16 @@ export function validateRenderManifest(
     failures.push(`render.yaml: missing backend setting key(s): ${missing.join(", ")}`);
   }
   for (const [key, expectedValue] of criticalValues) {
-    if (exampleValues.has(key) && exampleValues.get(key) !== expectedValue) {
-      failures.push(`backend/.env.render.example: ${key} must equal ${JSON.stringify(expectedValue)}`);
+    if (!exampleValues.has(key)) {
+      continue;
+    }
+    const exampleValue = exampleValues.get(key);
+    const allowedDivergence = productionRenderExampleDivergences.get(key);
+    const expectedExampleValue = allowedDivergence?.manifestValue === expectedValue
+      ? allowedDivergence.exampleValue
+      : expectedValue;
+    if (exampleValue !== expectedExampleValue) {
+      failures.push(`backend/.env.render.example: ${key} must equal ${JSON.stringify(expectedExampleValue)}`);
     }
   }
   for (const entry of entries) {
@@ -343,7 +371,16 @@ export function validateRenderManifest(
       failures.push(`render.yaml: fixed key ${entry.key} must contain a literal value`);
       continue;
     }
-    if (exampleValues.has(entry.key) && entry.value !== exampleValues.get(entry.key)) {
+    if (
+      exampleValues.has(entry.key)
+      && entry.value !== exampleValues.get(entry.key)
+      && !isAllowedProductionRenderExampleDivergence(
+        entry.key,
+        entry.value,
+        exampleValues.get(entry.key),
+        criticalValues,
+      )
+    ) {
       failures.push(`render.yaml: fixed key ${entry.key} must match backend/.env.render.example`);
     }
     if (criticalValues.has(entry.key) && entry.value !== criticalValues.get(entry.key)) {

@@ -1,10 +1,11 @@
 # Studio-Comp Migration Rollout
 
-Status: **staging at exact migration 108; migrations 109-111 rehearsal pending; production human apply locked**
+Status: **staging last verified at exact migration 111/head 20260816012723; fresh candidate-bound re-read required; production human apply locked**
 
-This packet reconciles the production and staging 100-migration V7 baseline
-with the immutable 111-migration release candidate. It is specialized to this rollout, not a
-generic migration or history-repair framework.
+This packet reconciles the production 100-migration V7 baseline and the last
+verified staging 111-state with the immutable 111-migration release candidate.
+It is specialized to this rollout, not a generic migration or history-repair
+framework.
 
 Agents may inspect staging or production read-only when authorized. Agents must
 never run migration or contract SQL against production. Only the named human
@@ -81,6 +82,17 @@ V18 readiness signal retains the complete migration-85-through-111 sequence:
 20260815220402
 20260816012723
 ```
+
+Exact migration count 110 at head `20260815220402` is the accepted
+`staff-identity` inspection state. It requires candidate-derived history
+`110:65664dce61981374e865f081fc2f9347`, the exact ordered migration-85-through-110
+target history, `object_counts=3:1`, and the exact V17 V3 readiness result with
+`ready=true`, no security failures, and manifest version
+`release-db-attestation-v17`. This state can authorize only the immutable
+`20260816012723_archive_staff_access_and_readiness.sql` remainder after a fresh
+state-bound inspection token and exact one-file dry-run. Remote version/name
+history still is not content-hash proof; only the final post-111 raw catalog and
+provider fingerprint can certify release authority.
 
 The checker derives filenames and source hashes from the final candidate, pins
 the first 100 identities to the observed V7 baseline, and reports
@@ -167,8 +179,10 @@ exact source files:
 
 They remain pinned as the first two migrations after historical migration 84.
 They are already present in the 100-state baseline. Production must apply
-migrations 101 through 111; staging, already at exact migration 108,
-must dry-run and apply only migrations 109, 110, and 111.
+migrations 101 through 111. Staging was last verified at exact migration 111,
+head `20260816012723`; do not rely on that recorded observation without a fresh
+candidate-bound re-read. An exact post-state has no migrations left to dry-run
+or apply.
 
 Historical intermediate migrations 101 through 103 remain read-only
 inspectable, but apply is deliberately disabled from intermediate 101,
@@ -176,8 +190,9 @@ recovery 102, and convergence 103. Those readiness versions do not attest the
 complete object surface needed for safe forward recovery. Only exact pre-state
 100, attested state 104, return-attested state 105, retained state 106,
 critical state 107, column-attested state 108, or trial-locked state 109 may
-enter apply after a matching inspection token and dry-run; final post-state 111
-is inspect-only and has nothing left to apply.
+enter apply after a matching inspection token and dry-run. Exact
+`staff-identity` state 110 is also a guarded forward-resume origin for migration
+111 only. Final post-state 111 is inspect-only and has nothing left to apply.
 
 ## Transaction and old-application classification
 
@@ -204,8 +219,8 @@ The August release files have the following operational profile:
 | 107 | Replaces Core checkout acceptance/reservation functions, records durable one-time trial and accepted-subscription proof, prelocks every target-program membership holder before ladder sync, and adds the V14 critical-surface manifest. | Requires the new backend and remains database-first. Existing completed subscriptions are preserved; old acceptance RPC execution is revoked. | One migration transaction. Exact V13 state is guarded and may resume with immutable 107 after fresh inspection and dry-run. |
 | 108 | Replaces Core checkout reservation/acceptance so completed bindings remain terminal until exact terminal projection, archives accepted bindings for later webhook replay, and adds the V15 critical-surface manifest with exact promotion-column state. | Requires the new backend and remains database-first. Returning canceled subscriptions may start a new epoch without receiving a second trial. | One migration transaction. Exact V14 state is guarded and may resume with immutable 108 after fresh inspection and dry-run. |
 | 109 | Adds the V2 checkout-reservation RPC, computes trial eligibility under the subscription row lock, serializes checkout acceptance against operator comp grants in both lock orders, preserves archived acceptance without projecting historical provider state, binds explicit live-subscription comp overrides to the exact accepted Core subscription, makes belt-ladder mutation plus audit an idempotent atomic operation, returns student write response data from the write transaction, and advances the critical-surface/readiness manifests to V16. | Requires the new backend and remains database-first. The predecessor reservation (V1), student-writer, and V2 readiness signatures remain service-role callable only for mixed-version cutover and rollback; the candidate uses the versioned writers and readiness V3. Core self-checkout stays disabled until the new backend is deployed after database promotion. | One migration transaction. Exact V15 state is guarded and may resume with migrations 109 through 111 after fresh inspection and dry-run. |
-| 110 | Adds the staff legal-name source-of-truth and audit actor-name snapshot schema, preserves its reviewed table/RLS/backfill/grant/trigger semantics, and updates only the V2 compatibility guard and V3 release-readiness definitions to require the exact V17 count, head, sequence, and manifest contract. | The identity schema is additive; the V2 response remains V7-shaped for the deployed predecessor and the candidate backend uses V3. | One migration transaction. Exact V16 state 109 is the single `trial-locked` partial state and may resume with immutable 110 and 111 after fresh inspection and dry-run. |
-| 111 | Adds nullable `staff_roles.archived_at`; replaces central membership, role, and staff-profile authorization with active-membership checks; keeps any-row single-studio reservation and pending invites; blocks owner and last-active-admin archive, identity-replacement, identity-clearing, and demotion transitions; updates account-deletion survivor checks; reasserts the all-public-RLS restrictive guard; and advances the V3 release contract to V18 with the V17 archive-critical semantic manifest. | Additive archive state with service-role-only staff-role writes. Active same-studio access and zero-membership onboarding remain valid, while archived identities lose all tenant access immediately. Nullable pending rows may still link to an invited identity. | One migration transaction. Exact V16 state 109 or V17 post-state 110 may resume with immutable 110/111 or 111 respectively after fresh inspection and dry-run. |
+| 110 | Adds the staff legal-name source-of-truth and audit actor-name snapshot schema, preserves its reviewed table/RLS/backfill/grant/trigger semantics, and updates only the V2 compatibility guard and V3 release-readiness definitions to require the exact V17 count, head, sequence, and manifest contract. | The identity schema is additive; the V2 response remains V7-shaped and reports ready only when V3 proves exact 110/V17. No approved application may serve at this head: `709239` requires V16, the candidate requires V18, and older V2 consumers that can report ready are not approved recovery artifacts. | One migration transaction. Exact V16 state 109 may resume with immutable 110 and 111. If 110 commits and 111 does not, stop and obtain a fresh exact candidate-bound inspection of `staff-identity`, dry-run exactly 111, then continue forward under the normal human production gate. |
+| 111 | Adds nullable `staff_roles.archived_at`; replaces central membership, role, and staff-profile authorization with active-membership checks; keeps any-row single-studio reservation and pending invites; blocks owner and last-active-admin archive, identity-replacement, identity-clearing, and demotion transitions; updates account-deletion survivor checks; reasserts the all-public-RLS restrictive guard; and advances the V3 release contract to V18 with the V17 archive-critical semantic manifest. | Additive archive state with service-role-only staff-role writes. Active same-studio access and zero-membership onboarding remain valid, while archived identities lose all tenant access immediately. Nullable pending rows may still link to an invited identity. | One migration transaction. Exact V16 state 109 or exact V17 `staff-identity` state 110 may resume with immutable 110/111 or 111 respectively after fresh inspection and dry-run. |
 
 Before staging apply, record cardinalities for `student_program_memberships`,
 active unranked memberships eligible for the 101 backfill, `students`,
@@ -273,7 +288,7 @@ The command is unavailable until the packet reports
 `integration_complete=true`. Acceptance requires the pinned staging ref
 `nxgsektqsgrtyfhawxbc`, one exact accepted history (`pre`, `intermediate`,
 `recovery`, `convergence`, `attested`, `return-attested`, `retained`, `critical`,
-`column-attested`, `trial-locked`, or `post`), its corresponding readiness
+`column-attested`, `trial-locked`, `staff-identity`, or `post`), its corresponding readiness
 result, the complete
 historical target sequence, the expected studio-comp objects, and an
 `inspection_token`. Any other partial, ahead, or manually altered state stops.
@@ -290,13 +305,11 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-From the current staging state, the dry-run must report exactly, in order,
-`20260814213000_lock_core_trial_decision_to_reservation.sql`,
-`20260815220402_staff_identity_name_model.sql`, and
-`20260816012723_archive_staff_access_and_readiness.sql` with their final
-candidate hashes.
-A missing, extra, or unparseable name halts
-the rollout.
+Staging was last verified at exact 111/head `20260816012723`. Re-read it from the
+exact candidate before relying on that state. The inspection must classify
+`post`, emit the final provider fingerprint, and report no remaining migration
+packet. Any different history, readiness, fingerprint, or unexpected remaining
+migration halts the rollout.
 
 The exact candidate's staging rehearsal was approved through its durable PR
 release record. Any staging apply requires the same inspection token, exact
@@ -399,6 +412,21 @@ If apply fails, inspect before doing anything else. Preserve any applied history
 and objects. After review, either apply the still-pending immutable migration or
 add a new forward corrective migration. Never mark history reverted, drop the
 trigger/functions, or use a production restore as ordinary rollback.
+
+If migration 110 committed but 111 did not, the supported path is exact and
+forward-only: stop; run a fresh candidate-bound inspection that must classify
+`staff-identity`; mint its state-bound token; dry-run exactly
+`20260816012723_archive_staff_access_and_readiness.sql`; then let the human
+operator run the existing production apply gate. After 111, require the exact
+V18 readiness result and final raw catalog/provider fingerprint before promoting
+an application. No approved application serves at 110. The pre-release
+application SHA `709239680c9097a2ed647c3781c63fd957e58ed8` requires V16 and the
+candidate requires V18, so both fail readiness at V17. Pre-boundary V2 consumers
+from before `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through
+migration 110's exact V17 compatibility guard, but they are not approved
+recovery artifacts. Keep both `709239`/V16 and every such pre-boundary
+V2-consuming SHA out of the post-110 application rollback set; recovery is
+forward to 111.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is

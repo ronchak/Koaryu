@@ -2,6 +2,15 @@
 
 This ledger ties every environment change to an exact commit, database migration head, operator, verification record, and rollback target. Update it in the same PR as release-affecting work; never include secrets or production PII.
 
+## Production release authorization boundary — 2026-08-16
+
+Operator: `Ronak Chakraborty / Codex release orchestrator`
+
+- Ronak explicitly authorized the required production migration, exact-candidate application deployment, and repository alignment for the already-live global `LIVE_BILLING_ENABLED=true` interlock.
+- This authorization creates no studio scope or reconciliation checkpoint and grants no provider authority, tenant financial permission, live Connect or tuition mutation, or live-money action. Each requires separate approval and remains fail-closed behind the exact-studio, exact-scope, unexpired, exact-candidate authorization contract.
+- CTO readback on 2026-08-16 observed production Render with the global interlock set to `true`, zero enabled studio grants, and zero reconciliation checkpoints. This is dated, mutable evidence rather than a permanent invariant; re-read current state before any separately authorized activation.
+- This entry records authorization and observed starting state only. It does not name a final release SHA or claim that a migration, application deployment, checkpoint, grant, provider mutation, or financial action completed.
+
 ## Wave 0 Evidence — 2026-07-10
 
 Operator: `Ronak Chakraborty / Codex session`
