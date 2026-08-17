@@ -2,7 +2,7 @@
   "schema_version": 1,
   "inventory_id": "koaryu-supabase-auth-backup-controls",
   "owner": "Ronak Chakraborty",
-  "reviewed_at": "2026-07-28T03:00:56Z",
+  "reviewed_at": "2026-08-17T03:36:15Z",
   "approval_packet": "docs/audit-notes/authentication-backup-controls.md#approval-packet",
   "environments": {
     "production": {
@@ -18,11 +18,11 @@
         "project_health": {
           "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly and before a release or recovery action",
           "evidence": [
-            "Connected Supabase project inventory returned ACTIVE_HEALTHY in us-west-2 on PostgreSQL 17.6.1.105."
+            "Current connected Supabase project inventory returned ACTIVE_HEALTHY in us-west-2 on PostgreSQL 17.6.1.105."
           ],
           "current_state": "The pinned production project is active and healthy.",
           "target_state": "The pinned production project remains active, healthy, and distinct from staging.",
@@ -33,32 +33,31 @@
           "approval_required": false
         },
         "auth_public_sign_in": {
-          "status": "blocked",
+          "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly configuration readback",
           "evidence": [
-            "The connected provider surfaces exposed project metadata but not the production public Auth settings or Management API Auth configuration.",
-            "No production Auth user records or credentials were accessed."
+            "The public production Auth settings endpoint was read with an enabled publishable key selected at runtime; only sanitized boolean results were recorded in this inventory, with no user or credential data and no unsanitized response persisted.",
+            "Sanitized boolean readback reported sign-up enabled, email enabled with confirmation required, and phone, anonymous, passkeys, SAML, and all 23 exposed social-provider fields disabled."
           ],
-          "current_state": "Production sign-up, email confirmation, phone, anonymous, social, SAML, and passkey settings were not read back.",
+          "current_state": "Email is the only exposed sign-in provider; sign-up is enabled and email is not auto-confirmed.",
           "target_state": "Only approved sign-in methods are enabled, email confirmation is required, and anonymous sign-in is disabled.",
           "compensating_controls": [
             "The backend requires a valid authenticated Supabase JWT and fails closed in production."
           ],
-          "next_action": "Run the allowlisted Management API read or complete the read-only dashboard worksheet, then update this inventory.",
-          "approval_required": true,
-          "blocker": "No reusable Management API token or authenticated dashboard session was available."
+          "next_action": "Repeat the sanitized public-settings read weekly and after an Auth provider change.",
+          "approval_required": false
         },
         "auth_password_security": {
           "status": "blocked",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Monthly and after an Auth configuration change",
           "evidence": [
-            "Password minimum length, character policy, reauthentication, and leaked-password protection were not exposed by the available read-only provider surfaces."
+            "The current public Auth settings response does not expose password minimum length, character policy, reauthentication, or leaked-password protection."
           ],
           "current_state": "Provider password-security settings are unverified.",
           "target_state": "A documented minimum password policy and reauthentication posture are enforced; leaked-password protection is either enabled or explicitly approval-gated by plan.",
@@ -73,12 +72,12 @@
         "auth_session_tokens": {
           "status": "blocked",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly and after a signing-key or session change",
           "evidence": [
             "Repository tests prove issuer, audience, expiry, issued-at, signature, role, algorithm, and JWKS-key validation.",
-            "Production JWT expiry, refresh rotation, and refresh-token reuse interval were not read back."
+            "The current public Auth settings response does not expose JWT expiry, refresh rotation, or refresh-token reuse interval."
           ],
           "current_state": "Application token validation is verified; provider token lifetime and refresh settings are not.",
           "target_state": "JWT expiry is no more than 3600 seconds, refresh-token rotation is enabled, and any reuse interval is documented.",
@@ -93,12 +92,12 @@
         "auth_session_limits": {
           "status": "blocked",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Monthly and after a plan or Auth session change",
           "evidence": [
-            "Time-box, inactivity timeout, and single-session settings were not exposed by the available provider surfaces.",
-            "Current Supabase documentation marks these controls as Pro-plan-and-up features."
+            "The current public Auth settings response does not expose time-box, inactivity timeout, or single-session settings.",
+            "Current organization metadata reports the Free plan, while Supabase documentation marks these controls as Pro-plan-and-up features."
           ],
           "current_state": "Provider session lifetime limits are unverified and may be unavailable on the Free plan.",
           "target_state": "The business chooses and documents time-box, inactivity, and concurrent-session policy, or accepts the absence with an explicit compensating-control decision.",
@@ -206,11 +205,11 @@
         "backup_entitlement": {
           "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly and before recovery planning",
           "evidence": [
-            "Connected Supabase organization metadata reported the Koaryu CRM organization on the Free plan."
+            "Current connected Supabase organization metadata reported both pinned projects in the Koaryu CRM organization on the Free plan."
           ],
           "current_state": "The organization is on the Free plan.",
           "target_state": "The selected entitlement matches an approved RPO/RTO and cost decision.",
@@ -223,11 +222,11 @@
         "backup_inventory": {
           "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Daily until native or automated evidence closes the RPO gap",
           "evidence": [
-            "supabase backups list returned backup_count=0, pitr_enabled=false, walg_enabled=true for production."
+            "Supabase CLI v2.95.4 sanitized JSON returned backup_count=0, pitr_enabled=false, walg_enabled=true, and region=us-west-2 for production without emitting backup timestamps."
           ],
           "current_state": "No provider-restorable backup was listed. WAL-G plumbing being enabled is not treated as an entitlement or restore point.",
           "target_state": "A current restorable copy exists inside the approved RPO and is evidenced without backup contents.",
@@ -240,11 +239,11 @@
         "backup_retention": {
           "status": "gap",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly inventory review",
           "evidence": [
-            "The provider listed no backups, so no native retention window was evidenced.",
+            "The current provider readback listed no backups, so no native retention window was evidenced.",
             "The logical-copy retention and deletion policy is not yet approved."
           ],
           "current_state": "Neither native nor off-site logical retention meets a documented approved window.",
@@ -258,11 +257,11 @@
         "backup_pitr": {
           "status": "gap",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly readback",
           "evidence": [
-            "supabase backups list returned pitr_enabled=false.",
+            "Supabase CLI v2.95.4 sanitized JSON returned pitr_enabled=false for production.",
             "Current documentation identifies PITR as a paid add-on with compute and retention costs."
           ],
           "current_state": "PITR is disabled and was not enabled by this work.",
@@ -312,12 +311,12 @@
         "backup_logical_copy": {
           "status": "gap",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Daily capture target; quarterly recovery-key exercise",
           "evidence": [
-            "Five July 10 encrypted artifacts were checksum-verified on a second machine.",
-            "No approved provider-independent off-site destination or current daily capture was evidenced."
+            "Five July 10 encrypted artifacts remain the last recorded checksum-verified second-machine copy.",
+            "The current provider readback listed no provider backup and did not establish an approved provider-independent off-site destination or current daily logical capture."
           ],
           "current_state": "The existing copy is stale relative to the provisional 24-hour RPO and is not proven off-site.",
           "target_state": "Daily encrypted captures, approved off-site retention, monitored failures, and separate recovery-key custody meet the accepted RPO.",
@@ -353,11 +352,11 @@
         "project_health": {
           "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly and before a synthetic or release test",
           "evidence": [
-            "Connected Supabase project inventory returned ACTIVE_HEALTHY in us-west-1 on PostgreSQL 17.6.1.141."
+            "Current connected Supabase project inventory returned ACTIVE_HEALTHY in us-west-1 on PostgreSQL 17.6.1.155."
           ],
           "current_state": "The pinned staging project is active, healthy, and distinct from production.",
           "target_state": "Staging remains isolated, synthetic-only, healthy, and pinned.",
@@ -370,13 +369,13 @@
         "auth_public_sign_in": {
           "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly and after an Auth provider change",
           "evidence": [
-            "The public staging Auth settings endpoint reported sign-up enabled, email enabled, email confirmation required, phone and anonymous sign-in disabled, and no enabled social provider."
+            "The public staging Auth settings endpoint was read with an enabled publishable key selected at runtime; sanitized booleans reported sign-up enabled, email enabled with confirmation required, and phone, anonymous, passkeys, SAML, and all 23 exposed social-provider fields disabled."
           ],
-          "current_state": "Email/password is the only exposed sign-in method; email is not auto-confirmed.",
+          "current_state": "Email is the only exposed sign-in provider; sign-up is enabled and email is not auto-confirmed.",
           "target_state": "Staging mirrors the approved production sign-in methods without enabling anonymous or unreviewed providers.",
           "compensating_controls": [
             "Synthetic users are admin-confirmed and deleted by the bounded test rather than sending email."
@@ -387,11 +386,11 @@
         "auth_password_security": {
           "status": "blocked",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Monthly and after an Auth configuration change",
           "evidence": [
-            "Public settings do not expose password minimum, required characters, reauthentication, or leaked-password controls."
+            "The current public Auth settings response does not expose password minimum, required characters, reauthentication, or leaked-password controls."
           ],
           "current_state": "Staging password-security settings are unverified.",
           "target_state": "Staging exercises the approved production password policy before production change.",
@@ -532,11 +531,11 @@
         "backup_entitlement": {
           "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly",
           "evidence": [
-            "Staging belongs to the same Free-plan Koaryu CRM organization."
+            "Current organization metadata confirms staging and production belong to the same Free-plan Koaryu CRM organization."
           ],
           "current_state": "No paid staging backup entitlement is assumed.",
           "target_state": "Staging cost remains minimal unless a separately approved recovery exercise requires a disposable resource.",
@@ -549,11 +548,11 @@
         "backup_inventory": {
           "status": "verified",
           "owner": "Ronak Chakraborty",
-          "reviewed_at": "2026-07-28T03:00:56Z",
+          "reviewed_at": "2026-08-17T03:36:15Z",
           "review_cadence_days": 7,
           "operation_cadence": "Weekly",
           "evidence": [
-            "supabase backups list returned backup_count=0, pitr_enabled=false, walg_enabled=true for staging."
+            "Supabase CLI v2.95.4 sanitized JSON returned backup_count=0, pitr_enabled=false, walg_enabled=true, and region=us-west-1 for staging without emitting backup timestamps."
           ],
           "current_state": "No staging provider backup is listed.",
           "target_state": "Staging remains reproducible from repository migrations and sanitized fixtures.",
