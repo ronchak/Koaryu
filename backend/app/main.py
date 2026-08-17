@@ -2,6 +2,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
+from app.core.release_identity import API_SCHEMA_VERSION, PRODUCT_RELEASE_VERSION
 from app.core.request_body_limits import RequestBodyLimitMiddleware
 from app.api.v1.endpoints.health import health_live, health_ready
 from app.api.v1.router import router as v1_router
@@ -23,7 +24,7 @@ elif frontend_origin.startswith("http://127.0.0.1:"):
 app = FastAPI(
     title="Koaryu API",
     description="Backend API for Koaryu — Martial Arts Studio OS",
-    version="1.0.0",
+    version=API_SCHEMA_VERSION,
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
 )
@@ -52,7 +53,12 @@ app.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/")
 async def root():
-    return {"name": "Koaryu API", "version": "1.0.0"}
+    return {
+        "name": "Koaryu API",
+        "version": API_SCHEMA_VERSION,
+        "product_version": PRODUCT_RELEASE_VERSION,
+        "api_schema_version": API_SCHEMA_VERSION,
+    }
 
 
 @app.api_route("/health", methods=["GET", "HEAD"], include_in_schema=False)

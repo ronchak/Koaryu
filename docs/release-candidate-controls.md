@@ -10,7 +10,7 @@ workflow, script, and documentation changes cannot produce a zero-check PR.
 `.github/workflows/release-candidate.yml` checks out the pull-request head SHA
 directly and verifies it before running:
 
-- repository workflow, environment-example, and support-privacy controls;
+- repository workflow, product-release identity, environment-example, and support-privacy controls;
 - frontend tests, lint, production build, and high-severity runtime audit;
 - backend dependency consistency, hash-lock drift, vulnerability audit, tests,
   and generated API contract verification;
@@ -32,6 +32,16 @@ Run the static workflow guard locally with:
 ```bash
 npm run check:release-workflow
 ```
+
+Run the release-identity drift guard with:
+
+```bash
+npm run check:release-identity
+```
+
+The identity guard keeps the private frontend package unversioned and requires
+the first dated changelog entry to match the single product release source at
+`backend/release.json`. Ordinary candidate PRs do not bump that source.
 
 ## Provider Promotion Controls
 
@@ -68,7 +78,7 @@ configuration or actual schema ACL state. Authenticated operator readback must
 separately prove that `private` is not exposed and that hosted schema ACLs match
 the approved release gate before promotion.
 
-`npm run check:env-examples` fails if either repository provider control drifts or if the account-deletion cron is removed. Repository text cannot prove Render's current service setting: before the bootstrap merge, an authenticated operator must turn production auto-deploy off through Render and capture an authenticated readback. The guarded merge command independently rechecks that live provider state and refuses to merge without it. After the fixed candidate passes staging, deploy or promote that exact SHA explicitly, read back Vercel `/api/version` and Render `/health/ready`, and compare both full SHAs with the release ledger before assigning production traffic.
+`npm run check:env-examples` fails if either repository provider control drifts or if the account-deletion cron is removed. Repository text cannot prove Render's current service setting: before the bootstrap merge, an authenticated operator must turn production auto-deploy off through Render and capture an authenticated readback. The guarded merge command independently rechecks that live provider state and refuses to merge without it. After the fixed candidate passes staging, deploy or promote that exact SHA explicitly, read back Vercel `/api/version` and Render `/health/ready`, and compare both full SHAs with the release ledger before assigning production traffic. Matching product versions are useful consistency evidence, but they never satisfy or replace the exact-SHA comparison.
 
 The exact `codex/launch-readiness-candidate` branch does not auto-deploy to Vercel. GitHub CI performs its production frontend build. The operational-alert evaluator's primary trigger is the director-operated home server's external scheduler at the required five-minute cadence; the committed Vercel cron is a daily 09:00 UTC backup. This resolves the Vercel funded-plan gate by moving the primary trigger source, not by weakening the cadence. Nobody may weaken the five-minute cadence merely to make a preview deploy. Deploy the approved exact SHA through the database-first manual promotion path.
 

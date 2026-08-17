@@ -50,6 +50,18 @@ test("release-candidate workflow requires the exact-SHA verifier tests", () => {
   );
 });
 
+test("release-candidate workflow rejects a missing release identity check", () => {
+  const weakened = workflow.replace(
+    "npm run check:release-identity",
+    "npm run omitted-release-identity-check",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /npm run check:release-identity/,
+  );
+});
+
 test("release-candidate repository controls require complete history", () => {
   const weakened = workflow.replace("          fetch-depth: 0\n", "");
 
