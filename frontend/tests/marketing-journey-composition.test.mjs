@@ -137,7 +137,10 @@ describe("Journey progressive enhancement and accessibility", () => {
     assert.match(controllerSource, /topic\.tabIndex = active \? 0 : -1/);
     assert.match(controllerSource, /nextFaqTopicIndex\(/);
     assert.match(controllerSource, /\.querySelector<HTMLElement>\(`\[data-faq-topic=/);
-    assert.doesNotMatch(journeyCss, /\.faqIndex a\s*\{[^}]*min-height:\s*36px/s);
+    assert.match(
+      journeyCss,
+      /\.faqIndex a\s*\{[^}]*min-width:\s*24px;[^}]*min-height:\s*44px;/s
+    );
     assert.match(
       journeyCss,
       /@media \(max-width: 560px\)[\s\S]*\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*padding-inline:\s*20px 48px;/

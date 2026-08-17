@@ -465,7 +465,9 @@
 
 .faqIndex a {
   display: inline-flex;
+  min-width: 24px;
   align-items: center;
+  justify-content: center;
   min-height: 44px;
   border-bottom: 2px solid transparent;
   font-size: 10px;
