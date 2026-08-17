@@ -141,6 +141,13 @@ export function ScheduleSessionDetailModal({
     rosterComplete: isStudentRosterComplete,
     rosterLoading: isLoadingStudentRoster,
   });
+  const attendanceCommitCopy = !attendanceCountersReady
+    ? "Attendance unavailable until the complete roster and class records load."
+    : pendingAttendanceStudentIds.size > 0
+      ? `Saving ${pendingAttendanceStudentIds.size} ${pendingAttendanceStudentIds.size === 1 ? "student" : "students"}…`
+      : attendanceError
+        ? "Last attendance change rolled back. Review the error, then try that row again."
+        : "Saved as marked. Each row saves immediately.";
   const isRecurring = Boolean(activeSession.template_id);
   const canDeleteSeries = Boolean(isRecurring && onDeleteSeries);
   const isDeleting = deleteInFlight !== null;
@@ -409,11 +416,23 @@ export function ScheduleSessionDetailModal({
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-text-primary">Attendance</p>
-                <p className="mt-0.5 text-xs text-muted">
-                  {!attendanceCountersReady
-                    ? "Attendance is unavailable until the complete roster and class records load."
-                    : "Tap any student to toggle check-in"}
+                <p
+                  className="mt-1 text-xs text-text-secondary"
+                  role="status"
+                  aria-live="polite"
+                  data-attendance-commit-state={
+                    !attendanceCountersReady
+                      ? "unavailable"
+                      : pendingAttendanceStudentIds.size > 0
+                        ? "saving"
+                        : attendanceError
+                          ? "rollback-error"
+                          : "saved"
+                  }
+                >
+                  {attendanceCommitCopy}
                 </p>
+                {attendanceCountersReady ? <p className="mt-1 text-[11px] text-muted">Select a student to cycle attendance status.</p> : null}
               </div>
               <span className="text-xs text-muted font-mono">
                 {attendanceCountersReady

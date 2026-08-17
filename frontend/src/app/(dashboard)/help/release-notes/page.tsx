@@ -7,6 +7,7 @@ export default async function ReleaseNotesPage() {
 
   return (
     <AccountPageShell
+      family="help"
       title="Release notes"
       description="Released Koaryu changes pulled directly from the changelog."
     >

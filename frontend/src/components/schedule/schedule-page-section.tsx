@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import {
   Calendar,
   ChevronLeft,
   ChevronRight,
   Plus,
-  Users,
 } from "lucide-react";
 
 import { ProgramBadge } from "@/components/programs/program-picker";
@@ -16,7 +15,10 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import {
   formatScheduleDateKey,
+  getScheduleTimeCanvasBounds,
   getScheduleWeekDates,
+  layoutScheduleTimeItems,
+  SCHEDULE_CANVAS_PIXELS_PER_HOUR,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
 import type { ClassSession, ClassTemplate, Program } from "@/types";
@@ -46,6 +48,15 @@ const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SCHEDULE_VIEWS: SchedulePageView[] = ["month", "week", "day"];
 const DATE_RANGE_SEPARATOR = String.fromCharCode(8211);
 
+type TimeCanvasEntry = {
+  id: string;
+  kind: "session" | "template";
+  start_time: string;
+  end_time: string;
+  session?: ClassSession;
+  template?: ClassTemplate;
+};
+
 function formatTime(value: string) {
   const [hoursText = "0", minutes = "00"] = value.split(":");
   const hours = Number(hoursText);
@@ -66,6 +77,13 @@ function templateAppliesToDate(template: ClassTemplate, date: Date) {
 
 function getSessionButtonLabel(session: ClassSession) {
   return `Open ${session.name} at ${formatTime(session.start_time)}`;
+}
+
+function formatCanvasHour(minute: number) {
+  const hour = Math.floor(minute / 60) % 24;
+  if (hour === 0) return "12 AM";
+  if (hour === 12) return "12 PM";
+  return `${hour > 12 ? hour - 12 : hour} ${hour >= 12 ? "PM" : "AM"}`;
 }
 
 export function SchedulePageSection({
@@ -136,6 +154,118 @@ export function SchedulePageSection({
   }, [filteredTemplates]);
 
   const daySessionList = sessionsByDate[formatScheduleDateKey(currentDate)] || [];
+  const entriesByDate = useMemo(() => {
+    const grouped: Record<string, TimeCanvasEntry[]> = {};
+    const dates = view === "day" ? [currentDate] : weekDates;
+    dates.forEach((date) => {
+      const key = formatScheduleDateKey(date);
+      const daySessions = sessionsByDate[key] || [];
+      const dayTemplates = (templatesByDay[date.getDay()] || []).filter((template) =>
+        templateAppliesToDate(template, date)
+      );
+      grouped[key] = daySessions.map((session) => ({
+        id: session.id,
+        kind: "session" as const,
+        start_time: session.start_time,
+        end_time: session.end_time,
+        session,
+      }));
+      if (daySessions.length === 0) {
+        grouped[key].push(...dayTemplates.map((template) => ({
+          id: template.id,
+          kind: "template" as const,
+          start_time: template.start_time,
+          end_time: template.end_time,
+          template,
+        })));
+      }
+    });
+    return grouped;
+  }, [currentDate, sessionsByDate, templatesByDay, view, weekDates]);
+  const canvasBounds = useMemo(
+    () => getScheduleTimeCanvasBounds(Object.values(entriesByDate).flat()),
+    [entriesByDate]
+  );
+  const canvasHourMarks = useMemo(
+    () => Array.from(
+      { length: Math.floor((canvasBounds.endMinute - canvasBounds.startMinute) / 60) + 1 },
+      (_, index) => canvasBounds.startMinute + index * 60
+    ),
+    [canvasBounds.endMinute, canvasBounds.startMinute]
+  );
+  const canvasHeight = ((canvasBounds.endMinute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
+
+  function renderTimeColumn(date: Date, compact: boolean) {
+    const key = formatScheduleDateKey(date);
+    const blocks = layoutScheduleTimeItems(entriesByDate[key] || []);
+    return (
+      <div
+        className="relative border-r border-border last:border-r-0"
+        style={{ height: canvasHeight }}
+        data-time-canvas-day={key}
+      >
+        {canvasHourMarks.map((minute) => (
+          <span
+            key={minute}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 border-t border-border/60"
+            style={{ top: ((minute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR }}
+          />
+        ))}
+        {blocks.map((block) => {
+          const top = ((block.startMinute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
+          const height = Math.max(28, ((block.endMinute - block.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR);
+          const laneWidth = 100 / block.laneCount;
+          const left = laneWidth * block.lane;
+          const entry = block.item;
+          const session = entry.session;
+          const template = entry.template;
+          const programId = session?.program_id || template?.program_id || null;
+          const program = programId ? programById.get(programId) : null;
+          const title = session?.name || template?.name || "Class";
+
+          if (!session) {
+            return (
+              <div
+                key={`template-${entry.id}`}
+                className="absolute overflow-hidden border border-dashed border-border bg-surface-raised px-2 py-1 text-left text-[10px] text-muted"
+                style={{ top, height, left: `calc(${left}% + 2px)`, width: `calc(${laneWidth}% - 4px)` }}
+                data-time-canvas-block="template"
+              >
+                <strong className="block truncate font-medium">{title}</strong>
+                <span>{formatTime(entry.start_time)} · recurring</span>
+              </div>
+            );
+          }
+
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => onOpenSession(session)}
+              aria-label={getSessionButtonLabel(session)}
+              className="absolute overflow-hidden border border-border bg-surface px-2 py-1 text-left shadow-[inset_3px_0_0_var(--program-color)] hover:border-accent"
+              style={{
+                top,
+                height,
+                left: `calc(${left}% + 2px)`,
+                width: `calc(${laneWidth}% - 4px)`,
+                "--program-color": program?.color_hex || "var(--operations-cobalt)",
+              } as CSSProperties}
+              data-time-canvas-block="session"
+              data-overlap={block.overlaps ? "true" : "false"}
+            >
+              <strong className="block truncate text-[11px] font-semibold text-text-primary">{title}</strong>
+              <span className="block truncate font-mono text-[10px] text-text-secondary">
+                {formatTime(entry.start_time)}–{formatTime(entry.end_time)}
+              </span>
+              {!compact && program ? <span className="block truncate text-[10px] text-muted">{program.name}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
 
   function getToolbarLabel() {
     if (view === "day") {
@@ -294,134 +424,43 @@ export function SchedulePageSection({
       )}
 
       {view === "week" && (
-        <div className="flex-1 overflow-x-auto">
-          <div className="grid grid-cols-7 min-w-[980px]">
-            {weekDates.map((date) => {
-              const key = formatScheduleDateKey(date);
-              const isToday = key === today;
-              return (
-                <div
-                  key={`header-${key}`}
-                  className={`relative px-3 py-3 text-center border-b border-r border-border last:border-r-0 ${
-                    isToday ? "bg-accent/[0.04]" : ""
-                  }`}
-                >
-                  {isToday && (
-                    <span className="absolute top-0 left-0 right-0 h-[2px] bg-accent" />
-                  )}
-                  <p className="text-[11px] text-muted uppercase tracking-widest">{DAY_NAMES[date.getDay()]}</p>
-                  <p className={`text-lg font-mono mt-0.5 ${isToday ? "text-accent font-bold" : "text-text-primary"}`}>
-                    {date.getDate()}
-                  </p>
-                </div>
-              );
-            })}
-
-            {weekDates.map((date) => {
-              const key = formatScheduleDateKey(date);
-              const isToday = key === today;
-              const daySessions = sessionsByDate[key] || [];
-              const dayTemplates = (templatesByDay[date.getDay()] || []).filter((template) =>
-                templateAppliesToDate(template, date)
-              );
-              const isEmpty = daySessions.length === 0 && dayTemplates.length === 0;
-
-              return (
-                <div
-                  key={`cell-${key}`}
-                  className={`min-h-[180px] border-r border-b border-border p-2 last:border-r-0 ${
-                    isToday ? "bg-accent/[0.02]" : ""
-                  }`}
-                >
-                  {daySessions.map((session) => {
-                    const program = session.program_id ? programById.get(session.program_id) : null;
-                    const accentColor = program?.color_hex || "var(--border)";
-
-                    return (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => onOpenSession(session)}
-                        aria-label={getSessionButtonLabel(session)}
-                        className="group relative w-full text-left mb-2 bg-surface-raised border border-border hover:border-[color:var(--accent)]/40 transition-colors cursor-pointer overflow-hidden"
-                      >
-                        <span
-                          className="absolute left-0 top-0 bottom-0 w-[3px]"
-                          style={{ backgroundColor: accentColor }}
-                        />
-
-                        <div className="pl-3 pr-2.5 py-2.5">
-                          <p className="text-xs font-semibold text-text-primary truncate leading-tight">
-                            {session.name}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <span className="text-[10px] text-muted font-mono leading-none">
-                              {formatTime(session.start_time)}
-                            </span>
-                            {program && (
-                              <span className="text-[10px] text-text-secondary truncate leading-none">
-                                {program.name}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-border/50">
-                            {session.capacity ? (
-                              <span className="text-[10px] text-muted">
-                                Cap {session.capacity}
-                              </span>
-                            ) : (
-                              <span />
-                            )}
-                            <span className="text-[10px] text-text-secondary font-mono flex items-center gap-1">
-                              <Users aria-hidden="true" className="w-2.5 h-2.5 text-muted" />
-                              {session.attendance_count}
-                              {session.capacity ? `/${session.capacity}` : ""}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  {daySessions.length === 0 && dayTemplates.length > 0 && (
-                    dayTemplates.map((template) => {
-                      const program = template.program_id ? programById.get(template.program_id) : null;
-
-                      return (
-                        <div
-                          key={template.id}
-                          className="relative w-full mb-2 border border-dashed border-border/60 opacity-60 overflow-hidden"
-                        >
-                          <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-border/40" />
-                          <div className="pl-3 pr-2.5 py-2">
-                            <p className="text-xs text-muted truncate">{template.name}</p>
-                            <div className="mt-1 flex items-center gap-1.5">
-                              <span className="text-[10px] text-muted font-mono">{formatTime(template.start_time)}</span>
-                              {program && (
-                                <span className="text-[10px] text-muted truncate">{program.name}</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-
-                  {isEmpty && (
-                    <div className="flex items-center justify-center h-full min-h-[60px]">
-                      <span className="text-[10px] text-muted/40 uppercase tracking-widest">&mdash;</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+        <div className="flex-1 overflow-x-auto overscroll-x-contain" data-schedule-scroll-owner="internal" tabIndex={0} aria-label="Scrollable weekly time canvas">
+          <div className="min-w-[1040px] border-b border-border bg-surface" data-schedule-time-canvas="week">
+            <div className="grid grid-cols-[4.5rem_repeat(7,minmax(8.5rem,1fr))] border-b border-border">
+              <div className="border-r border-border px-2 py-3 text-[10px] uppercase tracking-widest text-muted">Studio time</div>
+              {weekDates.map((date) => {
+                const key = formatScheduleDateKey(date);
+                const isToday = key === today;
+                return (
+                  <div key={key} className={`relative border-r border-border px-2 py-3 text-center last:border-r-0 ${isToday ? "bg-accent/10" : ""}`}>
+                    <p className="text-[10px] uppercase tracking-widest text-muted">{DAY_NAMES[date.getDay()]}</p>
+                    <p className={`mt-1 font-mono text-base ${isToday ? "font-bold text-accent" : "text-text-primary"}`}>{date.getDate()}</p>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-[4.5rem_repeat(7,minmax(8.5rem,1fr))]">
+              <div className="relative border-r border-border" style={{ height: canvasHeight }} aria-hidden="true">
+                {canvasHourMarks.map((minute) => (
+                  <span
+                    key={minute}
+                    className="absolute right-2 -translate-y-1/2 font-mono text-[9px] text-muted"
+                    style={{ top: ((minute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR }}
+                  >
+                    {formatCanvasHour(minute)}
+                  </span>
+                ))}
+              </div>
+              {weekDates.map((date) => <div key={formatScheduleDateKey(date)}>{renderTimeColumn(date, true)}</div>)}
+            </div>
           </div>
         </div>
       )}
 
       {view === "day" && (
-        <div className="flex-1 p-6 sm:p-8">
-          <h2 className="text-sm font-semibold text-text-primary mb-5">
+        <div className="flex-1 px-3 py-6 sm:px-8">
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-3">
+          <h2 className="text-sm font-semibold text-text-primary">
             {currentDate.toLocaleDateString("en-US", {
               weekday: "long",
               month: "long",
@@ -429,6 +468,8 @@ export function SchedulePageSection({
               year: "numeric",
             })}
           </h2>
+          <p className="text-xs text-muted">Classes are placed by start time and duration. Overlaps share the same time lane.</p>
+          </div>
 
           {daySessionList.length === 0 ? (
             <div className="text-center py-16 border border-border bg-surface">
@@ -447,39 +488,19 @@ export function SchedulePageSection({
               ) : null}
             </div>
           ) : (
-            <div className="space-y-2">
-              {daySessionList.map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  onClick={() => onOpenSession(session)}
-                  aria-label={getSessionButtonLabel(session)}
-                  className="group relative w-full text-left p-5 bg-surface border border-border hover:border-[color:var(--accent)]/30 transition-colors cursor-pointer"
-                >
-                  <span className="absolute top-0 left-0 right-0 h-[2px] bg-accent opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
-
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-text-primary">{session.name}</p>
-                        {session.program_id ? (
-                          <ProgramBadge program={programById.get(session.program_id)} />
-                        ) : null}
-                      </div>
-                      <p className="text-xs text-muted font-mono mt-1.5">
-                        {formatTime(session.start_time)} &ndash; {formatTime(session.end_time)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-text-secondary shrink-0">
-                      <Users aria-hidden="true" className="w-3.5 h-3.5" />
-                      <span className="text-sm font-mono">
-                        {session.attendance_count}
-                        {session.capacity ? `/${session.capacity}` : ""}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              ))}
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] border-y border-border bg-surface" data-schedule-time-canvas="day">
+              <div className="relative border-r border-border" style={{ height: canvasHeight }} aria-hidden="true">
+                {canvasHourMarks.map((minute) => (
+                  <span
+                    key={minute}
+                    className="absolute right-2 -translate-y-1/2 font-mono text-[9px] text-muted"
+                    style={{ top: ((minute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR }}
+                  >
+                    {formatCanvasHour(minute)}
+                  </span>
+                ))}
+              </div>
+              {renderTimeColumn(currentDate, false)}
             </div>
           )}
         </div>

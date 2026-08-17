@@ -45,7 +45,7 @@ export default function AccountPage() {
         />
       </AccountSection>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="border-y border-border divide-y divide-border">
         <AccountLinkTile
           href="/account/profile"
           icon={UserCircle}

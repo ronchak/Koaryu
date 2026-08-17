@@ -201,6 +201,12 @@ export function useBillingPageController({
   const canOpenCustomerPortal = canManageKoaryuSubscription && Boolean(billingPlatform?.stripe_customer_id);
   const hasStripeConnectedAccount = Boolean(billingConnect?.stripe_connected_account_id);
   const canOpenStripeDashboard = Boolean(hasStripeConnectedAccount && billingConnect?.status !== "deauthorized");
+  const canResetConnect = Boolean(
+    !isPreviewMode
+      && canManageKoaryuSubscription
+      && hasStripeConnectedAccount
+      && connectOnboardingEnabled
+  );
   const needsConnectOnboarding = Boolean(
     hasStripeConnectedAccount
       && (
@@ -468,6 +474,7 @@ export function useBillingPageController({
         canManageRoutineBilling: canManageRoutineBillingActions,
         canOpenCustomerPortal,
         canOpenStripeDashboard,
+        canResetConnect,
         canSubmitEnrollmentForm,
         connectActionLabel,
         connectRequirementItems,

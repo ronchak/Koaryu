@@ -7,7 +7,9 @@ import {
   buildReportProgramLeadRows,
   buildReportSessionRows,
   buildReportsPageModel,
+  canRunReportExport,
   countUniqueReportAttendees,
+  FRONT_DESK_REPORT_EXPORT_IDS,
   formatReportPercent,
   subtractReportDays,
 } from "../src/lib/report-metrics.ts";
@@ -86,6 +88,22 @@ function attendance(overrides = {}) {
 }
 
 describe("reports page model", () => {
+  it("matches the backend export role split and fails closed for unknown roles", () => {
+    assert.deepEqual(FRONT_DESK_REPORT_EXPORT_IDS, [
+      "programs",
+      "belt_ladders",
+      "belt_ranks",
+      "class_templates",
+      "class_sessions",
+      "attendance",
+    ]);
+    assert.equal(canRunReportExport("front_desk", "attendance"), true);
+    assert.equal(canRunReportExport("front_desk", "students"), false);
+    assert.equal(canRunReportExport("admin", "students"), true);
+    assert.equal(canRunReportExport("instructor", "attendance"), false);
+    assert.equal(canRunReportExport(null, "attendance"), false);
+  });
+
   it("formats report ranges and percentages deterministically", () => {
     assert.equal(subtractReportDays("2026-05-24", 29), "2026-04-25");
     assert.equal(formatReportPercent(0.625), "63%");
@@ -117,7 +135,7 @@ describe("reports page model", () => {
     assert.equal(metrics.sourceRows[0].conversionRate, 0.5);
   });
 
-  it("builds attendance session rows from non-absent records and keeps raw date-window unique attendee semantics", () => {
+  it("builds attendance and unique attendees from the same non-canceled date-window session set", () => {
     const attendanceRows = [
       attendance({ id: "a-1", session_id: "session-1", student_id: "student-1", status: "present" }),
       attendance({ id: "a-2", session_id: "session-1", student_id: "student-2", status: "absent" }),
@@ -144,7 +162,7 @@ describe("reports page model", () => {
       lookbackStart: "2026-04-25",
       sessions,
       today: "2026-05-24",
-    }), 2);
+    }), 1);
   });
 
   it("derives complete reports page state for the route", () => {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
+import { OperationsIndex, OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramsSection } from "@/components/settings/programs-section";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
 import { api } from "@/lib/api";
@@ -17,10 +18,10 @@ export default function SettingsPage() {
   const { currentRole } = useStudioStore();
 
   return (
-    <>
+    <OperationsSurface page="settings">
       <Header title="Settings" description="Studio configuration and preferences." />
       {canAccessSettings(currentRole) ? <AdminSettingsContent /> : <SettingsAccessNotice />}
-    </>
+    </OperationsSurface>
   );
 }
 
@@ -236,10 +237,19 @@ function AdminSettingsContent() {
 
   return (
     <>
-      <div className="flex-1 p-8">
+      <OperationsIndex
+        label="Settings section index"
+        items={[
+          { href: "#studio", label: "Studio" },
+          { href: "#programs", label: "Programs" },
+          { href: "#staff-roles", label: "Staff & roles" },
+          { href: "#data-controls", label: "Data controls" },
+        ]}
+      />
+      <div className="flex-1 p-4 sm:p-8">
         <div className="max-w-3xl space-y-6">
           {/* Studio info */}
-          <section className="bg-surface border border-border rounded-[6px] p-5">
+          <section id="studio" className="scroll-mt-8 border-y border-border bg-surface p-5">
             <h3 className="text-sm font-medium text-text-primary mb-4">Studio Information</h3>
             <div className="space-y-4">
               <div className="flex flex-col gap-1.5">
@@ -268,13 +278,13 @@ function AdminSettingsContent() {
             </div>
           </section>
 
-          <ProgramsSection />
+          <div id="programs" className="scroll-mt-8"><ProgramsSection /></div>
 
-          <StaffRolesSection />
+          <div id="staff-roles" className="scroll-mt-8"><StaffRolesSection /></div>
 
           {/* Data section */}
           {canManageStudioData ? (
-          <section className="rounded-[6px] border border-danger/25 bg-danger/5 p-5">
+          <section id="data-controls" className="scroll-mt-8 border-y border-danger/25 bg-danger/5 p-5">
             <h3 className="text-sm font-medium text-text-primary mb-1">Studio Data</h3>
             <p className="text-xs text-text-secondary mb-4">
               Replace or clear this studio&apos;s working records when preparing a demo or resetting a workspace.
@@ -342,7 +352,14 @@ function AdminSettingsContent() {
               </div>
             </div>
           </section>
-          ) : null}
+          ) : (
+            <section id="data-controls" className="scroll-mt-8 border-y border-border bg-surface p-5">
+              <h3 className="text-sm font-medium text-text-primary">Data controls</h3>
+              <p className="mt-2 text-sm text-text-secondary">
+                Reset and clear actions are unavailable unless this workspace is explicitly allowlisted for demo tooling.
+              </p>
+            </section>
+          )}
         </div>
       </div>
       {confirmDialog ? (

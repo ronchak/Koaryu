@@ -8,11 +8,13 @@ import {
   DEFAULT_SCHEDULE_PAGE_VIEW,
   formatScheduleDateKey,
   getActiveScheduleStudents,
+  getScheduleTimeCanvasBounds,
   getScheduleSessionAttendance,
   getScheduleWeekDates,
   getVisibleScheduleRange,
   isCompleteScheduleRoster,
   isSessionAttendanceReady,
+  layoutScheduleTimeItems,
   navigateScheduleDate,
   recurringClassOverlapsRange,
   runSessionAttendanceRefresh,
@@ -81,6 +83,32 @@ describe("schedule page model", () => {
       formatScheduleDateKey(navigateScheduleDate(new Date(2026, 11, 31, 12), "month", -1)),
       "2026-11-30"
     );
+  });
+
+  it("lays out duration and overlap on one deterministic time canvas", () => {
+    const items = [
+      { id: "early", start_time: "05:30", end_time: "06:30" },
+      { id: "a", start_time: "09:00", end_time: "10:30" },
+      { id: "b", start_time: "09:30", end_time: "10:00" },
+      { id: "c", start_time: "11:00", end_time: "12:00" },
+      { id: "late", start_time: "21:30", end_time: "22:30" },
+    ];
+
+    assert.deepEqual(getScheduleTimeCanvasBounds(items), {
+      startMinute: 5 * 60,
+      endMinute: 23 * 60,
+    });
+    const blocks = layoutScheduleTimeItems(items);
+    const a = blocks.find((block) => block.item.id === "a");
+    const b = blocks.find((block) => block.item.id === "b");
+    const c = blocks.find((block) => block.item.id === "c");
+    assert.equal(a.endMinute - a.startMinute, 90);
+    assert.equal(a.laneCount, 2);
+    assert.equal(b.laneCount, 2);
+    assert.notEqual(a.lane, b.lane);
+    assert.equal(a.overlaps, true);
+    assert.equal(c.laneCount, 1);
+    assert.equal(c.overlaps, false);
   });
 
   it("checks recurring-class overlap and selected-session attendance outside the route", () => {

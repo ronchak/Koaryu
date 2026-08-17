@@ -3,6 +3,7 @@
 import { ClassFormModal } from "@/components/schedule/class-form-modal";
 import { SchedulePageSection } from "@/components/schedule/schedule-page-section";
 import { ScheduleSessionDetailModal } from "@/components/schedule/session-detail-modal";
+import { OperationsSurface } from "@/components/operations/operations-surface";
 import type { SchedulePageController } from "@/lib/schedule-page-controller";
 
 type SchedulePageContentProps = SchedulePageController["contentProps"];
@@ -51,7 +52,7 @@ export function SchedulePageContent({
   onViewChange,
 }: SchedulePageContentProps) {
   return (
-    <>
+    <OperationsSurface page="schedule" allowInternalOverflow>
       <SchedulePageSection
         canManageSchedule={canManageSchedule}
         currentDate={currentDate}
@@ -108,6 +109,6 @@ export function SchedulePageContent({
         programs={programs}
         onSubmit={onCreateClass}
       />
-    </>
+    </OperationsSurface>
   );
 }

@@ -183,7 +183,7 @@ export function ProgramsSection() {
         </form>
       ) : (
         <p className="mb-4 rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-xs text-muted">
-          Programs are managed by admins and front desk staff.
+          Program editing on this Admin-only settings page is available to studio admins.
         </p>
       )}
 

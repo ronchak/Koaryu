@@ -40,6 +40,7 @@ const steps = [
 export default function GetStartedPage() {
   return (
     <AccountPageShell
+      family="help"
       title="Get started"
       description="A practical first-day path for operating one Koaryu studio."
     >
@@ -51,9 +52,9 @@ export default function GetStartedPage() {
               <Link
                 key={step.href}
                 href={step.href}
-                className="flex items-start gap-4 rounded-[6px] border border-border bg-surface-raised p-4 hover:bg-surface-hover"
+                className="flex items-start gap-4 border-b border-border bg-surface px-1 py-4 last:border-b-0 hover:bg-surface-raised"
               >
-                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-accent/10 text-xs font-semibold text-accent">
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center border-r border-border text-xs font-semibold text-accent">
                   {index + 1}
                 </span>
                 <span className="min-w-0 flex-1">

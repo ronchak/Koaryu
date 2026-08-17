@@ -40,6 +40,7 @@ type BillingTabContentProps = {
   canManageRoutineBilling: boolean;
   canOpenCustomerPortal: boolean;
   canOpenStripeDashboard: boolean;
+  canResetConnect: boolean;
   canSubmitEnrollmentForm: boolean;
   connectActionLabel: string;
   connectRequirementItems: { id: string; label: string; description: string; complete: boolean }[];
@@ -85,6 +86,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
     canManageRoutineBilling,
     canOpenCustomerPortal,
     canOpenStripeDashboard,
+    canResetConnect,
     canSubmitEnrollmentForm,
     connectActionLabel,
     connectRequirementItems,
@@ -151,6 +153,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         canManageKoaryuSubscription={canManageKoaryuSubscription}
         canOpenCustomerPortal={canOpenCustomerPortal}
         canOpenStripeDashboard={canOpenStripeDashboard}
+        canResetConnect={canResetConnect}
         connectActionLabel={connectActionLabel}
         connectRequirementItems={connectRequirementItems}
         externalPaymentTotal={externalPaymentTotal}
@@ -159,6 +162,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
         onConnectClick={onConnectClick}
+        onConnectReset={actions.onConnectReset}
         openBillingLink={openBillingLink}
         openInvoiceTotal={openInvoiceTotal}
         paidRevenue={paidRevenue}

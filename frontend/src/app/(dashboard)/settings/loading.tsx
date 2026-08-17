@@ -1,11 +1,11 @@
-import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
+import { OperationsLoading } from "@/components/operations/operations-surface";
 
 export default function Loading() {
   return (
-    <DashboardLoadingSkeleton
+    <OperationsLoading
+      page="settings"
       title="Settings"
       description="Loading studio settings, programs, and staff controls."
-      variant="settings"
     />
   );
 }

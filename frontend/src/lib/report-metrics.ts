@@ -1,5 +1,30 @@
 import type { AttendanceRecord, ClassSession, Lead, LeadSource, LeadStage, Program } from "@/types";
 
+export type ReportExportMinimumRole = "admin" | "front_desk";
+
+export const FRONT_DESK_REPORT_EXPORT_IDS = [
+  "programs",
+  "belt_ladders",
+  "belt_ranks",
+  "class_templates",
+  "class_sessions",
+  "attendance",
+] as const;
+
+export function getReportExportMinimumRole(reportId: string): ReportExportMinimumRole {
+  return (FRONT_DESK_REPORT_EXPORT_IDS as readonly string[]).includes(reportId)
+    ? "front_desk"
+    : "admin";
+}
+
+export function canRunReportExport(
+  role: "admin" | "front_desk" | "instructor" | null | undefined,
+  reportId: string
+) {
+  if (role === "admin") return true;
+  return role === "front_desk" && getReportExportMinimumRole(reportId) === "front_desk";
+}
+
 export type ReportSessionMetricRow = {
   attendees: number;
   capacity?: number | null;
@@ -283,7 +308,12 @@ export function countUniqueReportAttendees({
 }) {
   const sessionIds = new Set(
     sessions
-      .filter((session) => session.date >= lookbackStart && session.date <= today)
+      .filter(
+        (session) =>
+          session.status !== "canceled"
+          && session.date >= lookbackStart
+          && session.date <= today
+      )
       .map((session) => session.id)
   );
   const studentIds = new Set<string>();
