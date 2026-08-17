@@ -1,0 +1,1176 @@
+.journey {
+  position: relative;
+  min-height: 100dvh;
+  color: var(--koaryu-ink);
+  background: var(--koaryu-paper);
+}
+
+.sceneLayer,
+.pager,
+.rail,
+.liveStatus,
+.menuButton {
+  display: none;
+}
+
+.topbar {
+  position: sticky;
+  z-index: 12;
+  top: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+  min-height: 68px;
+  padding: 10px clamp(20px, 3.2vw, 52px);
+  border-bottom: 1px solid var(--koaryu-line);
+  color: var(--koaryu-ink);
+  background: var(--koaryu-sheet);
+}
+
+.primaryNav {
+  display: flex;
+  gap: clamp(14px, 2.2vw, 34px);
+  align-items: center;
+  justify-content: center;
+}
+
+.signIn {
+  justify-self: end;
+}
+
+.mobileNav {
+  display: none;
+}
+
+.storyRegion {
+  display: block;
+}
+
+.chapter {
+  position: relative;
+  display: grid;
+  min-height: max(600px, 82dvh);
+  padding: clamp(72px, 9vw, 132px) clamp(20px, 7vw, 112px);
+  align-items: center;
+  scroll-margin-top: 68px;
+  border-bottom: 1px solid var(--koaryu-rule-soft);
+  overflow: clip;
+}
+
+.chapter[data-ink="light"] {
+  color: var(--koaryu-ink-light);
+  background: var(--koaryu-deep-brown);
+}
+
+.chapter[data-placement="upper"] {
+  align-items: start;
+}
+
+.heroCopy,
+.problemCopy,
+.transitionCopy,
+.plane,
+.framedPlane,
+.faqShell {
+  width: min(100%, 1180px);
+  margin-inline: auto;
+}
+
+.heroCopy {
+  max-width: 1100px;
+}
+
+.kicker {
+  margin: 0 0 14px;
+  font-size: clamp(10px, 0.8vw, 12px);
+  font-weight: 730;
+  line-height: 1.25;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.76;
+}
+
+.heroHeading,
+.statementHeading,
+.planeHeading {
+  margin: 0;
+  text-wrap: balance;
+}
+
+.heroHeading {
+  max-width: 11ch;
+  font-size: clamp(58px, 9vw, 134px);
+  font-weight: 720;
+  line-height: 0.88;
+  letter-spacing: -0.045em;
+}
+
+.heroHeading span {
+  display: block;
+}
+
+.statementHeading {
+  max-width: 17ch;
+  font-size: clamp(42px, 6.8vw, 92px);
+  font-weight: 660;
+  line-height: 0.94;
+  letter-spacing: -0.04em;
+}
+
+.planeHeading {
+  max-width: 17ch;
+  font-size: clamp(34px, 3.5vw, 50px);
+  font-weight: 675;
+  line-height: 0.94;
+  letter-spacing: -0.044em;
+}
+
+.lede {
+  max-width: 58ch;
+  margin: 22px 0 0;
+  font-size: clamp(14px, 1.45vw, 19px);
+  font-weight: 470;
+  line-height: 1.55;
+  opacity: 0.76;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.action {
+  min-width: 150px;
+}
+
+.scrollHint {
+  margin: 44px 0 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.problemCopy {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.72fr);
+  gap: clamp(48px, 9vw, 130px);
+  align-items: end;
+}
+
+.problemResponse {
+  padding-bottom: 8px;
+  font-size: clamp(15px, 1.55vw, 21px);
+  line-height: 1.55;
+  opacity: 0.76;
+}
+
+.problemResponse p {
+  margin: 0;
+}
+
+.problemAside {
+  margin-top: 28px !important;
+  font-size: 13px;
+  font-style: italic;
+  opacity: 0.82;
+}
+
+.plane,
+.framedPlane {
+  padding: clamp(22px, 2.5vw, 32px);
+  color: var(--koaryu-ink);
+  background: var(--koaryu-sheet);
+}
+
+.plane {
+  border-block: 1px solid var(--koaryu-rule);
+}
+
+.framedPlane {
+  max-width: 680px;
+  border: 1px solid var(--koaryu-rule);
+  border-radius: 9px;
+  box-shadow:
+    12px 12px 0 rgb(39 28 13 / 13%),
+    0 30px 76px rgb(36 24 10 / 24%);
+}
+
+.darkPlane {
+  margin-left: 0;
+  color: var(--koaryu-ink-light);
+  background: var(--koaryu-deep-brown);
+  --koaryu-action-label: var(--koaryu-deep-brown);
+}
+
+.morningPlane {
+  max-width: 720px;
+  margin-left: 0;
+}
+
+.proofBlock {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.25fr) minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid var(--koaryu-rule-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.proofBlock p {
+  margin: 0;
+}
+
+.rowLabel {
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.76;
+}
+
+.ledgerPlane {
+  width: 100%;
+  max-width: 780px;
+  margin-left: 0;
+}
+
+.ledgerList,
+.bandList,
+.routeList,
+.statementList,
+.priceFacts,
+.faqList {
+  padding: 0;
+  margin: 24px 0 0;
+  list-style: none;
+}
+
+.ledgerRow {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 13px 0;
+  border-top: 1px solid var(--koaryu-rule-soft);
+}
+
+.ledgerRow h3,
+.ledgerRow p,
+.bandRow h3,
+.bandRow p {
+  margin: 0;
+}
+
+.ledgerRow h3,
+.bandRow h3,
+.statementList dt,
+.priceFacts dt {
+  font-size: 13px;
+  font-weight: 710;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.ledgerRow a,
+.bandRow a,
+.routeRow a,
+.planeLink,
+.finalLinks a,
+.faqIndex a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ledgerRow h3 a,
+.bandRow h3 a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+.ledgerRow p,
+.bandRow p,
+.statementList dd,
+.priceFacts dd {
+  font-size: 12.5px;
+  line-height: 1.48;
+  opacity: 0.76;
+}
+
+.planeLink {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.planeLink span,
+.routeRow a > span:last-child {
+  transition: transform 180ms ease;
+}
+
+.planeLink:hover span,
+.routeRow a:hover > span:last-child {
+  transform: translateX(3px);
+}
+
+.bandPlane {
+  align-self: end;
+}
+
+.bandHeading {
+  display: flex;
+  gap: 28px;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.bandList {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--koaryu-rule-soft);
+}
+
+.bandRow {
+  min-width: 0;
+  padding: 18px 16px;
+  border-left: 1px solid var(--koaryu-rule-soft);
+}
+
+.bandRow:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.bandRow p {
+  margin-top: 8px;
+}
+
+.transitionCopy {
+  max-width: 1100px;
+  margin-left: 0;
+}
+
+.mapPlane {
+  width: 100%;
+  max-width: 780px;
+  margin-right: 0;
+}
+
+.routeRow {
+  border-top: 1px solid var(--koaryu-rule-soft);
+}
+
+.routeRow a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  min-height: 74px;
+  padding: 12px 0;
+}
+
+.routeRow strong,
+.routeRow a > span:first-child > span,
+.routeRow small {
+  display: block;
+}
+
+.routeRow strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.routeRow a > span:first-child > span {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  opacity: 0.76;
+}
+
+.routeRow small {
+  margin-top: 7px;
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.76;
+}
+
+.pricePlane {
+  width: 100%;
+  max-width: 620px;
+  margin-left: 0;
+}
+
+.price {
+  margin: 30px 0 0;
+  font-size: clamp(74px, 9vw, 124px);
+  font-weight: 720;
+  line-height: 0.78;
+  letter-spacing: -0.07em;
+}
+
+.pricePeriod {
+  margin: 14px 0 0;
+  font-size: 13px;
+  opacity: 0.76;
+}
+
+.priceFacts > div,
+.statementList > div {
+  padding: 13px 0;
+  border-top: 1px solid var(--koaryu-rule-soft);
+}
+
+.priceFacts dd,
+.statementList dd,
+.priceFacts dt,
+.statementList dt {
+  margin: 0;
+}
+
+.priceFacts dd,
+.statementList dd {
+  margin-top: 5px;
+}
+
+.aboutPlane {
+  width: 100%;
+  max-width: 780px;
+  margin-left: 0;
+}
+
+.faqShell {
+  width: 100%;
+  max-width: 800px;
+  margin-left: 0;
+}
+
+.faqIndex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  margin-bottom: 10px;
+}
+
+.faqIndex a {
+  display: inline-flex;
+  min-width: 24px;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-bottom: 2px solid transparent;
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  opacity: 0.76;
+}
+
+.faqIndex a[aria-current="true"] {
+  border-bottom-color: currentColor;
+  opacity: 1;
+}
+
+.faqGroup + .faqGroup {
+  margin-top: 42px;
+  padding-top: 42px;
+  border-top: 1px solid var(--koaryu-rule);
+}
+
+.faqItem {
+  border-top: 1px solid var(--koaryu-rule-soft);
+}
+
+.faqQuestion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 1px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: 650 13px/1.35 inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.faqIcon {
+  font-size: 18px;
+  font-weight: 400;
+  opacity: 0.64;
+  transition: transform 250ms ease;
+}
+
+.faqAnswer {
+  padding: 0 28px 14px 1px;
+}
+
+.faqAnswer p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  opacity: 0.76;
+}
+
+.finalPlane {
+  margin-inline: auto;
+  text-align: center;
+  background: var(--koaryu-sheet-raised);
+  box-shadow:
+    10px 10px 0 rgb(59 47 28 / 9%),
+    0 28px 70px rgb(49 36 17 / 15%);
+}
+
+.finalPlane .planeHeading,
+.finalPlane .lede {
+  margin-inline: auto;
+}
+
+.finalPlane .actions {
+  justify-content: center;
+}
+
+.finalLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.finalLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 12px;
+  opacity: 0.76;
+}
+
+.copyright {
+  margin: 18px 0 0;
+  font-size: 11px;
+  opacity: 0.76;
+}
+
+.journey a:focus-visible,
+.journey button:focus-visible,
+.faqPanel:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
+
+.faqPanel:focus-visible {
+  outline-offset: 3px;
+}
+
+/* Fixed positioning, hidden chapters, scene staging, and overflow lock are
+   intentionally unavailable until the client controller sets this marker. */
+.journey[data-enhanced="true"] {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.journey[data-enhanced="true"] .sceneLayer {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+}
+
+.journey[data-enhanced="true"] .topbar {
+  position: absolute;
+  z-index: 10;
+  inset: 0 0 auto;
+  color: var(--journey-chrome-color, var(--koaryu-ink));
+  background: transparent;
+  border-bottom-color: transparent;
+  transition: color 550ms ease;
+}
+
+.journey[data-enhanced="true"] .storyRegion {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+}
+
+.journey[data-enhanced="true"] .chapter {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  padding: max(86px, env(safe-area-inset-top)) clamp(20px, 7vw, 112px)
+    max(70px, env(safe-area-inset-bottom));
+  border: 0;
+  color: var(--koaryu-ink);
+  background: transparent;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate3d(0, 12px, 0);
+  transition: none;
+}
+
+.journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
+  z-index: 3;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
+    transform 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
+    visibility 0s;
+}
+
+.journey[data-enhanced="true"] .chapter[data-ink="light"] {
+  color: var(--koaryu-ink-light);
+}
+
+.journey[data-enhanced="true"] .chapter[data-kind="morning"] {
+  transition-delay: 0ms;
+  transition-duration: 200ms;
+}
+
+.journey[data-enhanced="true"] .chapter[data-kind="problem"] {
+  transition-delay: 660ms;
+}
+
+.journey[data-enhanced="true"] .chapter[data-placement="upper"] {
+  padding-top: clamp(110px, 14vh, 165px);
+}
+
+.journey[data-enhanced="true"] .ledgerPlane {
+  width: min(450px, 42%);
+  max-width: none;
+}
+
+.journey[data-enhanced="true"] .mapPlane {
+  width: min(500px, 46%);
+  max-width: none;
+}
+
+.journey[data-enhanced="true"] .pricePlane {
+  width: min(370px, 35%);
+  max-width: none;
+}
+
+.journey[data-enhanced="true"] .aboutPlane {
+  width: min(540px, 49%);
+  max-width: none;
+}
+
+.journey[data-enhanced="true"] .faqShell {
+  width: min(560px, 48%);
+  max-width: none;
+}
+
+.journey[data-enhanced="true"] .chapter[data-chapter-id="stillness"]::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  background: radial-gradient(
+    circle at 52% 58%,
+    rgb(248 225 179 / 42%),
+    rgb(123 86 35 / 8%) 44%,
+    rgb(48 34 18 / 18%)
+  );
+  animation: closing-wash 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes closing-wash {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.journey[data-enhanced="true"] .scrollHint {
+  animation: hint-bob 1800ms ease-in-out infinite;
+}
+
+@keyframes hint-bob {
+  50% {
+    transform: translateY(5px);
+  }
+}
+
+.journey[data-enhanced="true"] .faqPanel {
+  max-height: min(66dvh, 590px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.journey[data-enhanced="true"] .faqGroup {
+  display: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.journey[data-enhanced="true"] .faqGroup[aria-hidden="false"] {
+  display: block;
+  animation: faq-group-in 220ms cubic-bezier(0.22, 0.75, 0.2, 1) both;
+}
+
+@keyframes faq-group-in {
+  from {
+    opacity: 0.58;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.journey[data-enhanced="true"] .faqAnswer {
+  max-height: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height 420ms ease,
+    opacity 300ms ease,
+    padding-bottom 420ms ease;
+}
+
+.journey[data-enhanced="true"] .faqItem[data-open="true"] .faqAnswer {
+  max-height: min(40dvh, 320px);
+  padding-bottom: 14px;
+  opacity: 1;
+}
+
+.journey[data-enhanced="true"]
+  .faqQuestion[aria-expanded="true"]
+  .faqIcon {
+  transform: rotate(45deg);
+}
+
+.journey[data-enhanced="true"] .pager,
+.journey[data-enhanced="true"] .rail,
+.journey[data-enhanced="true"] .liveStatus {
+  position: absolute;
+  z-index: 11;
+  display: flex;
+}
+
+.pager {
+  left: clamp(14px, 2vw, 30px);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  gap: 10px;
+  color: var(--journey-chrome-color, var(--koaryu-ink));
+}
+
+.pager button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
+  font: 600 16px/1 inherit;
+  cursor: pointer;
+  opacity: 0.76;
+}
+
+.pager button:disabled {
+  cursor: default;
+  opacity: 0.24;
+}
+
+.rail {
+  top: 50%;
+  right: 4px;
+  flex-direction: column;
+  transform: translateY(-50%);
+  color: var(--journey-chrome-color, var(--koaryu-ink));
+}
+
+.rail button {
+  display: grid;
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.rail button span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.32;
+  transition:
+    width 180ms ease,
+    height 180ms ease,
+    opacity 180ms ease;
+}
+
+.rail button[aria-current="step"] span {
+  width: 6px;
+  height: 6px;
+  opacity: 0.96;
+}
+
+.rail button:focus-visible {
+  outline-width: 1px;
+  outline-offset: -4px;
+}
+
+.liveStatus {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1000px) {
+  .journey[data-enhanced="true"] .chapter {
+    padding-inline: 50px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane {
+    width: min(450px, 52%);
+  }
+
+  .journey[data-enhanced="true"] .mapPlane {
+    width: min(500px, 56%);
+  }
+
+  .journey[data-enhanced="true"] .pricePlane {
+    width: min(370px, 45%);
+  }
+
+  .journey[data-enhanced="true"] .aboutPlane,
+  .journey[data-enhanced="true"] .faqShell {
+    width: min(560px, 60%);
+  }
+}
+
+@media (max-width: 820px) {
+  .topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .primaryNav {
+    justify-content: end;
+    flex-wrap: wrap;
+  }
+
+  .journey[data-enhanced="true"] .topbar {
+    grid-template-columns: auto 1fr auto auto;
+    gap: 10px;
+    padding-inline: 14px;
+  }
+
+  .journey[data-enhanced="true"] .primaryNav {
+    display: none;
+  }
+
+  .journey[data-enhanced="true"] .menuButton {
+    display: inline-grid;
+  }
+
+  .journey[data-enhanced="true"] .mobileNav {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 14px;
+    display: grid;
+    width: min(280px, calc(100vw - 28px));
+    padding: 12px 18px;
+    border: 1px solid var(--koaryu-rule);
+    border-radius: 8px;
+    color: var(--koaryu-ink);
+    background: var(--koaryu-sheet);
+    box-shadow:
+      8px 8px 0 rgb(45 34 18 / 8%),
+      0 18px 50px rgb(45 34 18 / 15%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-8px);
+    transition:
+      opacity 200ms ease,
+      transform 200ms ease,
+      visibility 0s linear 200ms;
+  }
+
+  .journey[data-enhanced="true"][data-menu-open="true"] .mobileNav {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+    transition:
+      opacity 200ms ease,
+      transform 200ms ease,
+      visibility 0s;
+  }
+
+  .journey[data-enhanced="true"] .chapter {
+    padding: max(82px, env(safe-area-inset-top)) 20px
+      max(66px, env(safe-area-inset-bottom));
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane,
+  .journey[data-enhanced="true"] .mapPlane,
+  .journey[data-enhanced="true"] .pricePlane,
+  .journey[data-enhanced="true"] .aboutPlane,
+  .journey[data-enhanced="true"] .faqShell {
+    width: 100%;
+    max-width: 560px;
+    margin-inline: auto;
+  }
+
+  .journey[data-enhanced="true"] .bandList {
+    grid-template-columns: 1fr;
+  }
+
+  .journey[data-enhanced="true"] .bandRow,
+  .journey[data-enhanced="true"] .bandRow:first-child {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.4fr) minmax(0, 1fr);
+    gap: 14px;
+    padding: 10px 0;
+    border-top: 1px solid var(--koaryu-rule-soft);
+    border-left: 0;
+  }
+
+  .journey[data-enhanced="true"] .bandRow p {
+    margin: 0;
+  }
+
+  .journey[data-enhanced="true"] .problemCopy {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .journey[data-enhanced="true"] .pager {
+    left: 50%;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    padding-inline: 16px;
+  }
+
+  .primaryNav {
+    gap: 8px 16px;
+  }
+
+  .chapter {
+    min-height: 0;
+    padding: 68px 18px;
+  }
+
+  .heroHeading {
+    font-size: clamp(50px, 16vw, 72px);
+  }
+
+  .statementHeading {
+    font-size: clamp(38px, 12vw, 62px);
+  }
+
+  .planeHeading {
+    font-size: clamp(30px, 9.5vw, 44px);
+  }
+
+  .problemCopy,
+  .proofBlock,
+  .ledgerRow,
+  .bandHeading {
+    grid-template-columns: 1fr;
+  }
+
+  .bandHeading {
+    display: grid;
+  }
+
+  .bandList {
+    grid-template-columns: 1fr;
+  }
+
+  .bandRow,
+  .bandRow:first-child {
+    padding: 14px 0;
+    border-top: 1px solid var(--koaryu-rule-soft);
+    border-left: 0;
+  }
+
+  .actions {
+    display: grid;
+  }
+
+  .action {
+    width: 100%;
+  }
+
+  .journey[data-enhanced="true"] .faqPanel {
+    max-height: calc(100dvh - 174px);
+  }
+
+  .journey[data-enhanced="true"] .chapter {
+    padding-inline: 20px 48px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane {
+    padding: 18px 20px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .kicker {
+    margin-bottom: 10px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .planeHeading {
+    font-size: clamp(30px, 9vw, 40px);
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .supportingLede {
+    margin-top: 11px;
+    font-size: 13px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .ledgerList {
+    margin-top: 13px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow {
+    gap: 4px;
+    padding-block: 9px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow p {
+    font-size: 12px;
+    line-height: 1.42;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .planeLink {
+    margin-top: 6px;
+  }
+
+  .journey[data-enhanced="true"] .faqIndex {
+    gap: 2px 12px;
+  }
+
+  .journey[data-enhanced="true"] .faqIndex a {
+    min-height: 44px;
+  }
+}
+
+@media (min-width: 821px) and (max-height: 800px) {
+  .journey[data-enhanced="true"] .ledgerPlane .supportingLede,
+  .journey[data-enhanced="true"] .mapPlane .supportingLede,
+  .journey[data-enhanced="true"] .aboutPlane .supportingLede {
+    display: none;
+  }
+
+  .journey[data-enhanced="true"] .plane {
+    padding-block: 20px;
+  }
+}
+
+@media (max-width: 820px) and (max-height: 700px) {
+  .journey[data-enhanced="true"] .ledgerRow p,
+  .journey[data-enhanced="true"] .bandRow p,
+  .journey[data-enhanced="true"] .mapPlane .supportingLede,
+  .journey[data-enhanced="true"] .aboutPlane .supportingLede {
+    display: none;
+  }
+
+  .journey[data-enhanced="true"] .plane {
+    padding-block: 16px;
+  }
+
+  .journey[data-enhanced="true"]
+    .chapter[data-chapter-id="features"] {
+    padding-top: max(72px, env(safe-area-inset-top));
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane {
+    padding-block: 12px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .ledgerList {
+    margin-top: 8px;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow {
+    padding-block: 0;
+  }
+
+  .journey[data-enhanced="true"] .ledgerPlane .planeLink {
+    margin-top: 0;
+  }
+
+  .journey[data-enhanced="true"] .faqShell {
+    display: flex;
+    height: calc(100dvh - 148px);
+    flex-direction: column;
+  }
+
+  .journey[data-enhanced="true"] .faqPanel {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .rail button {
+    width: 44px;
+    height: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .journey *,
+  .journey *::before,
+  .journey *::after {
+    scroll-behavior: auto !important;
+    animation-delay: 0ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+
+  .journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+  }
+}
