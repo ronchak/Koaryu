@@ -1,0 +1,1168 @@
+<!doctype html>
+<html lang="en" data-fixture-state="typical" data-role="admin">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Koaryu dashboard redesign pitch</title>
+  <style>
+    :root {
+      --paper: #f7f3e9;
+      --sheet: #fbf7ee;
+      --sheet-warm: #eee3cf;
+      --ink: #302719;
+      --ink-soft: #665b4c;
+      --beam: #493718;
+      --wood: #947648;
+      --rule: #b8aa92;
+      --rule-soft: #d8cdbb;
+      --danger: #8d2f25;
+      --danger-bg: #f6e4de;
+      --good: #315d43;
+      --good-bg: #e0ecdf;
+      --warn: #75540e;
+      --warn-bg: #f3e9c9;
+      --focus: #0b63ce;
+      --spine: 13rem;
+      --rail: 18rem;
+      --radius: 0.45rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--paper); color: var(--ink); line-height: 1.45; }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button, a, summary, input, select, textarea { scroll-margin-top: 7rem; }
+    button, .button-link {
+      min-height: 44px;
+      border: 1px solid var(--ink);
+      border-radius: var(--radius);
+      padding: 0.58rem 0.82rem;
+      background: transparent;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      font-weight: 700;
+    }
+    button:hover, .button-link:hover { background: var(--sheet-warm); }
+    button.primary, .button-link.primary { background: var(--ink); color: var(--paper); }
+    button[disabled], [aria-disabled="true"] { cursor: not-allowed; opacity: 0.48; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+    a { color: #59420e; text-underline-offset: 0.18em; }
+    h1, h2, h3, h4 { line-height: 1.08; letter-spacing: -0.025em; }
+    h1 { max-width: 13ch; font-size: clamp(2.5rem, 7vw, 6rem); margin: 0; }
+    h2 { font-size: clamp(1.8rem, 4vw, 3.3rem); margin: 0 0 1rem; }
+    h3 { font-size: 1.35rem; margin: 0 0 0.65rem; }
+    h4 { font-size: 1rem; margin: 0 0 0.45rem; }
+    p { max-width: 70ch; }
+    small, .muted { color: var(--ink-soft); }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+    .skip-link {
+      position: fixed; top: 0.5rem; left: 0.5rem; z-index: 100;
+      transform: translateY(-180%); background: var(--ink); color: var(--paper);
+      padding: 0.7rem 1rem; border-radius: var(--radius);
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .eyebrow { margin: 0 0 0.7rem; text-transform: uppercase; letter-spacing: 0.16em; font-size: 0.72rem; font-weight: 800; }
+    .hero { min-height: 78vh; display: grid; align-content: center; padding: clamp(2rem, 8vw, 8rem); border-bottom: 1px solid var(--rule); }
+    .hero .lede { font-size: clamp(1.08rem, 2vw, 1.35rem); max-width: 48rem; color: var(--ink-soft); }
+    .decision-line { margin-top: 2rem; padding: 1rem 0; border-block: 1px solid var(--ink); font-weight: 800; max-width: 58rem; }
+    .hero-actions, .control-row, .action-row { display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: center; }
+    .hero-actions { margin-top: 1.2rem; }
+
+    .pitch-section { padding: clamp(2rem, 6vw, 6rem) clamp(1rem, 6vw, 6rem); border-bottom: 1px solid var(--rule); }
+    .section-intro { display: grid; grid-template-columns: minmax(13rem, 0.7fr) minmax(18rem, 1.3fr); gap: 2rem; align-items: start; margin-bottom: 2rem; }
+    .concepts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--ink); border: 1px solid var(--ink); }
+    .concept { background: var(--sheet); padding: clamp(1.2rem, 3vw, 2.5rem); }
+    .concept.recommended { background: var(--sheet-warm); }
+    .concept-diagram { display: grid; gap: 0.5rem; margin: 1.4rem 0; min-height: 16rem; }
+    .ledger-demo { grid-template-columns: 4rem 1fr 7rem; grid-template-rows: 3rem 1fr 1fr 1fr; }
+    .ledger-demo span, .floor-demo span { border: 1px solid var(--rule); padding: 0.55rem; font-size: 0.78rem; }
+    .ledger-demo .demo-spine { grid-row: 1 / 5; background: var(--beam); color: var(--paper); writing-mode: vertical-rl; }
+    .ledger-demo .demo-slug { grid-column: 2 / 4; font-weight: 800; }
+    .ledger-demo .demo-sheet { grid-column: 2; }
+    .ledger-demo .demo-rail { grid-column: 3; grid-row: 2 / 5; background: var(--paper); }
+    .floor-demo { grid-template-columns: repeat(3, 1fr); grid-template-rows: 3rem repeat(3, 1fr); }
+    .floor-demo .lane-title { background: var(--beam); color: var(--paper); font-weight: 800; }
+    .floor-demo .work { margin-left: 20%; border-left: 4px solid var(--warn); }
+    .stress-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border-bottom: 1px solid var(--rule-soft); padding: 0.68rem; text-align: left; vertical-align: top; }
+    th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    .chosen-constraint { margin-top: 1.5rem; padding: 1.2rem; border-left: 5px solid var(--wood); background: var(--sheet); }
+
+    .demo-controls { position: relative; z-index: 40; background: var(--beam); color: var(--paper); padding: 0.75rem clamp(0.75rem, 3vw, 2rem); border-bottom: 2px solid var(--ink); }
+    .demo-controls-inner { display: grid; grid-template-columns: auto 1fr; gap: 0.75rem 1.4rem; align-items: center; }
+    .demo-controls h2 { font-size: 1rem; margin: 0; letter-spacing: 0; }
+    .demo-controls button { border-color: var(--paper); color: var(--paper); min-height: 40px; padding: 0.4rem 0.65rem; }
+    .demo-controls button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: inset 0 -3px 0 var(--wood); }
+    .demo-groups { display: flex; flex-wrap: wrap; gap: 0.75rem 1.4rem; }
+    .demo-group { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .demo-group > span { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.09em; font-weight: 800; }
+    .demo-announcement { grid-column: 1 / -1; min-height: 1.3em; font-size: 0.82rem; color: #fff7e8; }
+
+    .prototype { display: grid; grid-template-columns: var(--spine) minmax(0, 1fr); min-height: 100vh; background: var(--sheet); }
+    .spine { background: var(--ink); color: var(--paper); padding: 1rem 0.8rem; }
+    .spine-inner { position: sticky; top: 1rem; }
+    .spine-brand { padding: 0.7rem; border-bottom: 1px solid #857761; margin-bottom: 0.75rem; font-weight: 900; letter-spacing: 0.18em; }
+    .spine nav { display: grid; gap: 0.2rem; }
+    .spine button { width: 100%; border-color: transparent; color: inherit; justify-content: flex-start; text-align: left; font-weight: 650; }
+    .spine button[aria-current="page"] { background: var(--paper); color: var(--ink); border-left: 4px solid var(--wood); }
+    .spine-note { margin: 1rem 0.7rem; font-size: 0.76rem; color: #ddd3c1; }
+    .prototype-main { min-width: 0; }
+    .slug-band {
+      position: sticky; top: 0; z-index: 30; min-height: 4.8rem; background: var(--sheet);
+      border-bottom: 2px solid var(--ink); display: flex; align-items: center;
+      justify-content: space-between; gap: 1rem; padding: 0.8rem clamp(1rem, 3vw, 2rem);
+    }
+    .slug-title { font-weight: 900; text-transform: uppercase; letter-spacing: 0.09em; }
+    .slug-meta { color: var(--ink-soft); font-size: 0.82rem; }
+    .slug-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; max-width: 100%; }
+    .fixture-stamp { padding: 0.3rem 0.5rem; border: 1px solid currentColor; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+    .mode-banner { margin: 1rem clamp(1rem, 3vw, 2rem) 0; padding: 0.7rem 0.9rem; border: 1px solid var(--rule); background: var(--paper); }
+    .screen { padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 3vw, 2rem); border-bottom: 5px solid var(--beam); scroll-margin-top: 5.8rem; }
+    .screen-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: end; border-bottom: 1px solid var(--ink); padding-bottom: 1rem; margin-bottom: 1.2rem; }
+    .screen-heading h2 { margin: 0; }
+    .screen-layout { display: grid; grid-template-columns: minmax(0, 1fr) var(--rail); gap: 1.5rem; align-items: start; }
+    .screen-layout.with-index { grid-template-columns: 8.5rem minmax(0, 1fr) var(--rail); }
+    .gutter-index { position: sticky; top: 5.8rem; border-top: 3px solid var(--ink); }
+    .gutter-index a { display: block; padding: 0.6rem 0; border-bottom: 1px solid var(--rule-soft); font-size: 0.8rem; text-decoration: none; }
+    .margin-rail { border-left: 1px solid var(--rule); padding-left: 1rem; }
+    .margin-rail section { border-top: 3px solid var(--wood); padding: 0.85rem 0; }
+    .ledger, .record-leaf { border-top: 3px solid var(--ink); margin-bottom: 1.3rem; }
+    .ledger-header, .record-leaf > header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: 0.8rem 0; border-bottom: 1px solid var(--ink); }
+    .ledger-header h3, .record-leaf > header h3 { margin: 0; }
+    .metric-sentence { font-size: clamp(1.4rem, 3vw, 2.5rem); font-weight: 760; letter-spacing: -0.035em; padding: 1rem 0 1.4rem; border-bottom: 1px solid var(--rule); }
+    .day-band { display: grid; grid-template-columns: repeat(4, 1fr); border-block: 1px solid var(--ink); }
+    .day-band > div { padding: 0.9rem; border-right: 1px solid var(--rule); }
+    .day-band > div:last-child { border-right: 0; }
+    .day-band strong { display: block; }
+    .ink-meter { height: 0.45rem; margin-top: 0.5rem; background: var(--rule-soft); }
+    .ink-meter span { display: block; height: 100%; background: var(--ink); }
+    .queue-row, .ruled-row { display: grid; grid-template-columns: 0.4rem minmax(7rem, 0.7fr) minmax(12rem, 1.5fr) auto; gap: 0.8rem; padding: 0.8rem 0; border-bottom: 1px solid var(--rule-soft); align-items: center; }
+    .state-mark { align-self: stretch; background: var(--good); }
+    .state-mark.warning { background: repeating-linear-gradient(135deg, var(--warn) 0 4px, transparent 4px 7px); border: 1px solid var(--warn); }
+    .state-mark.danger { background: repeating-linear-gradient(45deg, var(--danger) 0 3px, transparent 3px 6px); border: 1px solid var(--danger); }
+    .stamp { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid currentColor; padding: 0.2rem 0.45rem; font-size: 0.72rem; font-weight: 800; }
+    .stamp::before { content: ""; width: 0.55rem; height: 0.55rem; border: 2px solid currentColor; }
+    .stamp.good { color: var(--good); background: var(--good-bg); }
+    .stamp.warn { color: var(--warn); background: var(--warn-bg); }
+    .stamp.danger { color: var(--danger); background: var(--danger-bg); }
+    .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+    .field { padding: 0.7rem 0; border-bottom: 1px solid var(--rule-soft); min-width: 0; }
+    .field:nth-child(odd) { padding-right: 1rem; }
+    .field label, .field dt, .field .label { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; color: var(--ink-soft); margin-bottom: 0.2rem; }
+    .field dd { margin: 0; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+    .form-field { display: grid; gap: 0.25rem; }
+    .form-field.full { grid-column: 1 / -1; }
+    .form-field label { font-weight: 750; font-size: 0.82rem; }
+    input, select, textarea { width: 100%; min-height: 44px; border: 1px solid var(--ink-soft); border-radius: 0.25rem; padding: 0.55rem; background: var(--sheet); }
+    input[type="checkbox"], input[type="radio"] { width: auto; min-height: auto; }
+    textarea { min-height: 5rem; resize: vertical; }
+    fieldset { border: 1px solid var(--rule); margin: 0 0 1rem; padding: 1rem; }
+    legend { font-weight: 800; padding: 0 0.4rem; }
+    .check-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; }
+    .check-row label { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 44px; }
+    .check-row input { width: 1.1rem; min-height: auto; }
+    .notice { padding: 0.85rem; margin: 0.8rem 0; border-left: 5px solid var(--warn); background: var(--warn-bg); }
+    .notice.danger { border-color: var(--danger); background: var(--danger-bg); }
+    .notice.good { border-color: var(--good); background: var(--good-bg); }
+    .notice strong { display: block; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    tbody tr[aria-selected="true"] { background: var(--sheet-warm); }
+    .money-band { display: grid; grid-template-columns: repeat(4, 1fr); border-block: 2px solid var(--ink); margin-bottom: 1.5rem; }
+    .money-band > div { padding: 0.8rem; border-right: 1px solid var(--rule); }
+    .money-band > div:last-child { border-right: 0; }
+    .money-band strong { display: block; font-size: 1.35rem; }
+    .book-index { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1.2rem; }
+    .book-index a { min-height: 44px; display: inline-flex; align-items: center; padding: 0.55rem 0.75rem; border: 1px solid var(--ink); text-decoration: none; font-weight: 750; }
+    .book-index a:first-child { background: var(--ink); color: var(--paper); }
+    details { border-top: 1px solid var(--rule); padding: 0.4rem 0; }
+    summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 800; }
+    .future { background: repeating-linear-gradient(-45deg, var(--sheet) 0 8px, var(--paper) 8px 16px); }
+    .prototype-only::after { content: " · prototype only"; font-size: 0.68rem; font-weight: 700; }
+    .heavy-proof { display: none; }
+    html[data-fixture-state="heavy"] .heavy-proof { display: block; }
+    .state-explainer { display: none; }
+    html[data-fixture-state="loading"] .state-loading,
+    html[data-fixture-state="error"] .state-error,
+    html[data-fixture-state="empty"] .state-empty,
+    html[data-fixture-state="partial"] .state-partial { display: block; }
+    html[data-role="unknown"] .denied-proof,
+    html[data-role="instructor"] .billing-denied-proof { display: block; }
+    .denied-proof, .billing-denied-proof { display: none; }
+    html[data-role="unknown"] .screen > * { display: none; }
+    html[data-role="unknown"] .screen::before,
+    html[data-role="instructor"] #screen-billing::before,
+    html[data-role="front-desk"] #screen-settings::before,
+    html[data-role="instructor"] #screen-settings::before {
+      content: "Access denied before protected data load. Return to Dashboard.";
+      display: block; padding: 1rem; border: 2px solid var(--danger); background: var(--danger-bg); font-weight: 800;
+    }
+    html[data-role="instructor"] #screen-billing > *,
+    html[data-role="front-desk"] #screen-settings > *,
+    html[data-role="instructor"] #screen-settings > * { display: none; }
+    .status-skeleton { height: 0.85rem; max-width: 30rem; background: repeating-linear-gradient(90deg, var(--rule-soft) 0 18px, var(--sheet) 18px 36px); }
+
+    .storyboards { display: grid; gap: 1.5rem; }
+    .storyboard { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ink); }
+    .story-step { padding: 1rem; border-right: 1px solid var(--ink); }
+    .story-step:last-child { border-right: 0; }
+    .story-step .step-number { font-size: 0.72rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; }
+
+    .route-contracts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .route-card { border-top: 3px solid var(--ink); padding: 1rem 0; }
+    .route-card h3 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .route-card ul { padding-left: 1.2rem; }
+    .coverage-wrap { overflow-x: auto; border: 1px solid var(--rule); }
+    .coverage-wrap tr:target, .route-card:target, .screen:target, .record-leaf:target { background: #fff3bd; outline: 3px solid var(--warn); outline-offset: 2px; }
+    .coverage-status { font-weight: 900; color: var(--good); }
+    .coverage-status::before { content: "✓ "; }
+    .legend { display: flex; flex-wrap: wrap; gap: 0.8rem; padding: 0; list-style: none; }
+    .legend li { display: inline-flex; gap: 0.35rem; align-items: center; }
+
+    .prototype-footer { padding: 2rem; background: var(--ink); color: var(--paper); }
+    dialog { max-width: 34rem; border: 2px solid var(--ink); border-radius: 0.5rem; background: var(--sheet); color: var(--ink); padding: 1.2rem; }
+    dialog::backdrop { background: rgb(48 39 25 / 55%); }
+
+    @media (max-width: 1050px) {
+      :root { --spine: 10.5rem; --rail: 100%; }
+      .screen-layout, .screen-layout.with-index { grid-template-columns: 8rem minmax(0, 1fr); }
+      .screen-layout:not(.with-index) { grid-template-columns: 1fr; }
+      .screen-layout .margin-rail { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--rule); padding: 1rem 0 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+    }
+
+    @media (max-width: 760px) {
+      html { scroll-behavior: auto; }
+      .section-intro, .concepts { grid-template-columns: 1fr; }
+      .prototype { grid-template-columns: minmax(0, 1fr); width: 100%; max-width: 100%; min-width: 0; }
+      .hero { min-height: auto; padding-block: 5rem; }
+      .demo-controls { position: static; }
+      .demo-controls-inner { grid-template-columns: 1fr; }
+      .demo-announcement { grid-column: 1; }
+      .spine { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; padding: 0.7rem; }
+      .spine-inner, .prototype-main { position: static; width: 100%; max-width: 100%; min-width: 0; }
+      .spine nav { display: flex; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: 0.4rem; }
+      .spine button { min-width: 9.5rem; width: auto; }
+      .spine-note { display: none; }
+      .slug-band, .slug-actions, .screen, .screen-layout, .screen-layout > *, .gutter-index, .book-index, .table-wrap { width: 100%; max-width: 100%; min-width: 0; }
+      .slug-band { position: static; align-items: flex-start; flex-direction: column; }
+      .screen-layout, .screen-layout.with-index { grid-template-columns: 1fr; }
+      .gutter-index { position: static; display: flex; overflow-x: auto; border-top-width: 1px; }
+      .gutter-index a { min-width: max-content; padding: 0.7rem; border: 1px solid var(--rule); }
+      .screen-layout .margin-rail { grid-column: 1; grid-template-columns: 1fr; }
+      .field-grid, .form-grid, .day-band, .money-band, .storyboard, .route-contracts { grid-template-columns: 1fr; }
+      .field:nth-child(odd) { padding-right: 0; }
+      .day-band > div, .money-band > div, .story-step { border-right: 0; border-bottom: 1px solid var(--rule); }
+      .day-band > div:last-child, .money-band > div:last-child, .story-step:last-child { border-bottom: 0; }
+      .screen-heading { align-items: flex-start; flex-direction: column; }
+      .ruled-row, .queue-row { grid-template-columns: 0.4rem 1fr; }
+      .ruled-row > :nth-child(n+3), .queue-row > :nth-child(n+3) { grid-column: 2; }
+      table.responsive-table thead { display: none; }
+      table.responsive-table, table.responsive-table tbody, table.responsive-table tr, table.responsive-table td { display: block; width: 100%; }
+      table.responsive-table tr { border-bottom: 3px solid var(--ink); padding: 0.5rem 0; }
+      table.responsive-table td { display: grid; grid-template-columns: minmax(7rem, 0.42fr) minmax(0, 1fr); gap: 0.6rem; border-bottom: 1px solid var(--rule-soft); overflow-wrap: anywhere; }
+      table.responsive-table td::before { content: attr(data-label); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 850; }
+      .schedule-scroll { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; }
+      .schedule-scroll table { min-width: 52rem; }
+      .coverage-wrap { overflow: visible; border: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+    }
+
+    @media print {
+      :root { --paper: #fff; --sheet: #fff; --sheet-warm: #fff; --ink: #000; --ink-soft: #333; --rule: #777; --rule-soft: #bbb; }
+      .skip-link, .demo-controls, .spine, .slug-actions, .action-row, button, dialog, .prototype-footer { display: none !important; }
+      .prototype, .screen-layout, .screen-layout.with-index { display: block; }
+      .slug-band { position: static; border-top: 2px solid #000; }
+      .screen, .record-leaf, .ledger { break-inside: avoid; }
+      .screen { border-bottom: 3px solid #000; }
+      .margin-rail { border-left: 0; padding-left: 0; }
+      a { color: #000; text-decoration: none; }
+      body { font-size: 10pt; }
+      @page { margin: 14mm; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#pitch-main">Skip to pitch content</a>
+  <header class="hero">
+    <p class="eyebrow">Koaryu dashboard redesign · decision pitch</p>
+    <h1>One sheet in hand. The whole studio in reach.</h1>
+    <p class="lede">Recommend a Mat-shaped shell with Ledger-shaped data. It gives Today a clear operating focus, lets dense records scan quickly, and keeps scope, freshness, permissions, and non-live truth visible.</p>
+    <p class="decision-line">Decision: Dojo Ledger owns the system. Training Floor remains a bounded temporal view for Today and Schedule. Wall behavior stops at Pin to Today.</p>
+    <div class="hero-actions">
+      <a class="button-link primary" href="#recommended-prototype">Open the recommended prototype</a>
+      <a class="button-link" href="#coverage-manifest">Audit all 27 routes</a>
+      <a class="button-link" href="#storyboards">Follow three workflows</a>
+    </div>
+  </header>
+
+  <main id="pitch-main">
+    <section class="pitch-section" id="concepts" aria-labelledby="concepts-heading">
+      <div class="section-intro">
+        <div>
+          <p class="eyebrow">Two interaction systems</p>
+          <h2 id="concepts-heading">Different composition, not different paint</h2>
+        </div>
+        <p>Both concepts use calm paper, strong ink, and restrained motion. They disagree on how work is organized. Ledger treats the product as indexed records. Training Floor treats it as spatial lanes with time and a commit line.</p>
+      </div>
+      <div class="concepts">
+        <article class="concept recommended">
+          <p class="eyebrow">Concept A · recommended</p>
+          <h3>Dojo Ledger</h3>
+          <p>Global spine, declared scope, ruled records, contextual history. Stable columns make comparison fast; current selection gets one margin rail.</p>
+          <div class="concept-diagram ledger-demo" aria-label="Diagram of the Dojo Ledger composition">
+            <span class="demo-spine">Indexed spine</span>
+            <span class="demo-slug">Students · 214 active · all programs · as of 6:12am</span>
+            <span class="demo-sheet">Ruled roster</span><span class="demo-rail">Selection history</span>
+            <span class="demo-sheet">State gutter + fields</span>
+            <span class="demo-sheet">Batch band</span>
+          </div>
+          <p><strong>Best at:</strong> roster, student file, billing books, reports, settings, account.</p>
+        </article>
+        <article class="concept">
+          <p class="eyebrow">Concept B · bounded alternative</p>
+          <h3>Training Floor</h3>
+          <p>Fixed work lanes, horizontal time or urgency, and a visible commit edge. Work moves across the floor as its state changes.</p>
+          <div class="concept-diagram floor-demo" aria-label="Diagram of the Training Floor composition">
+            <span class="lane-title">Waiting</span><span class="lane-title">On mat</span><span class="lane-title">Committed</span>
+            <span class="work">Lead · 3d</span><span class="work">Trial tonight</span><span>Converted</span>
+            <span>CSV read</span><span class="work">Map 18 fields</span><span>Land roster</span>
+            <span>Class due</span><span class="work">Mark attendance</span><span>Close sheet</span>
+          </div>
+          <p><strong>Best at:</strong> time-based work, attendance, import progression, lead aging.</p>
+        </article>
+      </div>
+
+      <h3 style="margin-top:2rem">Page-level alternatives</h3>
+      <table class="stress-table responsive-table">
+        <thead><tr><th>Family</th><th>Dojo Ledger</th><th>Training Floor</th><th>Decision</th></tr></thead>
+        <tbody>
+          <tr><td data-label="Family">Today</td><td data-label="Dojo Ledger">Linked metric sentence, day band, verb-first queue, bounded pins.</td><td data-label="Training Floor">Fixed Now / Next / Done lanes, with age shown as distance from the commit edge.</td><td data-label="Decision">Ledger owns; temporal day band borrows Floor.</td></tr>
+          <tr><td data-label="Family">Students</td><td data-label="Dojo Ledger">Ruled roster, state gutter, sticky column filters, batch band.</td><td data-label="Training Floor">Lifecycle lanes with students positioned by time since last attendance.</td><td data-label="Decision">Ledger. Floor loses multi-field comparison.</td></tr>
+          <tr><td data-label="Family">Student Detail</td><td data-label="Dojo Ledger">Card-file leaves with fixed identity and a chronological History leaf.</td><td data-label="Training Floor">A person-centered timeline with facts in a separate drawer.</td><td data-label="Decision">Ledger; use the timeline only for History.</td></tr>
+          <tr><td data-label="Family">Schedule / Attendance</td><td data-label="Dojo Ledger">Ruled Week Sheet and explicit attendance commit.</td><td data-label="Training Floor">Continuous day roll with classes positioned by time and capacity.</td><td data-label="Decision">Ledger Week Sheet; Floor remains an optional temporal view.</td></tr>
+          <tr><td data-label="Family">Billing</td><td data-label="Dojo Ledger">Setup plus four books and Advanced, persistent money band, addressable invoice detail.</td><td data-label="Training Floor">Exception lanes organized by age and distance from resolution.</td><td data-label="Decision">Ledger. Exception age may supplement, never replace the books.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:2rem">Stress test: why Training Floor does not own the product</h3>
+      <table class="stress-table responsive-table">
+        <thead><tr><th>Surface</th><th>Training Floor failure</th><th>Ledger answer</th></tr></thead>
+        <tbody>
+          <tr><td data-label="Surface"><strong>Billing</strong></td><td data-label="Training Floor failure">Six entity families, exact references, Core/Connect role boundaries, provider availability, reconciliation, and deliberate read-only states fragment into lanes plus drawers.</td><td data-label="Ledger answer">Four books plus Setup and Advanced, one money band, stable references, and addressable invoice detail preserve density and truth.</td></tr>
+          <tr><td data-label="Surface"><strong>Student Detail</strong></td><td data-label="Training Floor failure">Current identity, conditional guardian/emergency data, lifecycle actions, program/rank state, photo, notes, and chronology compete for the same spatial axis.</td><td data-label="Ledger answer">A card file keeps facts in indexed leaves; the History leaf and margin rail carry time without hiding editable fields.</td></tr>
+        </tbody>
+      </table>
+      <div class="chosen-constraint"><strong>Chosen hybrid constraint.</strong> Mat supplies one stable focal zone. Ledger supplies every data surface. Training Floor may shape Today’s day band and Schedule’s Week Sheet. Wall is limited to pinning an existing view onto Today; no freeform dashboard builder.</div>
+    </section>
+
+    <section id="recommended-prototype" aria-labelledby="prototype-heading">
+      <div class="pitch-section">
+        <p class="eyebrow">Interactive evidence</p>
+        <h2 id="prototype-heading">Recommended shell prototype</h2>
+        <p>This is one offline prototype fixture, not a live backend. Use the screen, dataset, and role controls to inspect the proposed system and its fail-closed disclosure.</p>
+      </div>
+
+      <div class="demo-controls" aria-label="Prototype controls">
+        <div class="demo-controls-inner">
+          <h2>Global demo controls</h2>
+          <div class="demo-groups">
+            <div class="demo-group" role="group" aria-label="Fixture state">
+              <span>Dataset</span>
+              <button type="button" data-state="typical" aria-pressed="true">Typical</button>
+              <button type="button" data-state="heavy" aria-pressed="false">Heavy</button>
+              <button type="button" data-state="loading" aria-pressed="false">Loading</button>
+              <button type="button" data-state="error" aria-pressed="false">Error</button>
+              <button type="button" data-state="empty" aria-pressed="false">Empty</button>
+              <button type="button" data-state="partial" aria-pressed="false">Partial / preview</button>
+            </div>
+            <div class="demo-group" role="group" aria-label="Role mode">
+              <span>Role</span>
+              <button type="button" data-role="admin" aria-pressed="true">Admin</button>
+              <button type="button" data-role="front-desk" aria-pressed="false">Front desk</button>
+              <button type="button" data-role="instructor" aria-pressed="false">Instructor</button>
+              <button type="button" data-role="unknown" aria-pressed="false">Unknown / denied</button>
+            </div>
+          </div>
+          <div class="demo-announcement" id="demo-announcement" aria-live="polite">Typical fixture, Admin role. Prototype controls do not change backend data.</div>
+        </div>
+      </div>
+
+      <div class="prototype">
+        <aside class="spine" aria-label="Prototype screen navigation">
+          <div class="spine-inner">
+            <div class="spine-brand">KOARYU</div>
+            <nav>
+              <button type="button" data-screen-target="screen-today" aria-current="page">Today</button>
+              <button type="button" data-screen-target="screen-students">Students</button>
+              <button type="button" data-screen-target="screen-student">Student detail</button>
+              <button type="button" data-screen-target="screen-import">Import</button>
+              <button type="button" data-screen-target="screen-belts">Belt tracker</button>
+              <button type="button" data-screen-target="screen-leads">Leads</button>
+              <button type="button" data-screen-target="screen-schedule">Schedule</button>
+              <button type="button" data-screen-target="screen-billing">Billing</button>
+              <button type="button" data-screen-target="screen-reports">Reports</button>
+              <button type="button" data-screen-target="screen-automations">Automations</button>
+              <button type="button" data-screen-target="screen-settings">Settings</button>
+              <button type="button" data-screen-target="screen-account">Account</button>
+            </nav>
+            <p class="spine-note">The current product’s unfiltered navigation is preserved as an unresolved decision. Destinations still deny before protected data loads.</p>
+          </div>
+        </aside>
+        <div class="prototype-main">
+          <div class="slug-band" aria-label="Current prototype scope">
+            <div>
+              <div class="slug-title" id="slug-title">Dashboard / Today · 214 active</div>
+              <div class="slug-meta" id="slug-meta">All programs · America/Los_Angeles · server summary as of Aug 17, 6:12am</div>
+            </div>
+            <div class="slug-actions">
+              <span class="fixture-stamp">Prototype fixture</span>
+              <button type="button" class="primary prototype-only" data-roles="admin front-desk">Add student</button>
+            </div>
+          </div>
+          <div class="mode-banner" id="mode-summary" role="status">Typical fixture. Live-shaped values are static and internally reconciled; no network calls occur.</div>
+          <div class="notice state-explainer state-loading"><strong>Loading demonstration</strong> Skeleton rows preserve the sheet structure and labels while domain data is pending. <span class="status-skeleton" aria-hidden="true"></span></div>
+          <div class="notice danger state-explainer state-error"><strong>Dataset error demonstration</strong> The owning section names the failure and offers Retry; unaffected sections remain readable.</div>
+          <div class="notice state-explainer state-empty"><strong>Empty/setup demonstration</strong> Empty states state what will appear here and provide the allowed setup action.</div>
+          <div class="notice state-explainer state-partial"><strong>Partial / preview demonstration</strong> Counts from the server summary stay authoritative. Exact retention is not calculated from the capped roster. Exports and provider mutations remain disabled in preview.</div>
+          <div class="notice danger denied-proof"><strong>Fail closed</strong> Unknown roles receive no capabilities. Protected route data is not loaded.</div>
+          <div class="notice danger billing-denied-proof"><strong>Billing route denied for Instructor</strong> Return to Dashboard. No billing data was requested.</div>
+
+          <section class="screen" id="screen-today" data-screen data-slug="Dashboard / Today · 214 active" data-meta="All programs · America/Los_Angeles · server summary as of Aug 17, 6:12am" aria-labelledby="today-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">Primary focal zone</p><h2 id="today-heading">Today</h2></div>
+              <div class="action-row">
+                <button type="button" class="prototype-only">Explain metrics</button>
+                <button type="button" class="primary prototype-only" data-roles="admin front-desk">Add student</button>
+              </div>
+            </div>
+            <div class="screen-layout">
+              <div>
+                <p class="metric-sentence">214 active · 6 at risk · $4,205 due this week</p>
+                <div class="notice state-partial"><strong>Partial roster</strong> Summary counts are server-owned. The roster preview is capped, so exact retention detail is intentionally suppressed.</div>
+                <section class="ledger" aria-labelledby="day-band-heading">
+                  <div class="ledger-header"><h3 id="day-band-heading">Today’s classes</h3><a href="#screen-schedule">Open Week Sheet</a></div>
+                  <div class="day-band">
+                    <div><strong>6:00am</strong>Adult BJJ Fundamentals<br>18 / 24 present<div class="ink-meter" aria-label="75 percent attendance"><span style="width:75%"></span></div></div>
+                    <div><strong>12:00pm</strong>Open Mat<br>9 / 20 expected<div class="ink-meter" aria-label="45 percent expected"><span style="width:45%"></span></div></div>
+                    <div><strong>4:30pm</strong>Kids Fundamentals<br>22 / 24 expected<div class="ink-meter" aria-label="92 percent expected"><span style="width:92%"></span></div></div>
+                    <div><strong>6:30pm</strong>Adult BJJ All Levels<br>19 / 28 expected<div class="ink-meter" aria-label="68 percent expected"><span style="width:68%"></span></div></div>
+                  </div>
+                </section>
+                <section class="ledger" aria-labelledby="queue-heading">
+                  <div class="ledger-header"><h3 id="queue-heading">Owner queue · oldest overdue first</h3><span>7 open</span></div>
+                  <div class="queue-row"><span class="state-mark danger" aria-hidden="true"></span><strong>Remedy invoice</strong><span>Maya Chen · $145 failed Aug 15 · payer Alice Chen</span><button type="button" class="prototype-only" data-roles="admin front-desk">Open invoice</button></div>
+                  <div class="queue-row"><span class="state-mark warning" aria-hidden="true"></span><strong>Follow up</strong><span>Jordan Lee · trial lead · due Aug 16</span><button type="button" class="prototype-only" data-roles="admin front-desk">Open lead</button></div>
+                  <div class="queue-row"><span class="state-mark warning" aria-hidden="true"></span><strong>Review attendance</strong><span>Noah Williams · absent 3 classes · last seen Aug 8</span><button type="button" class="prototype-only">Open student</button></div>
+                  <div class="queue-row"><span class="state-mark" aria-hidden="true"></span><strong>Approve rank</strong><span>Priya Shah · Purple Belt requirements met</span><button type="button" class="prototype-only" data-roles="admin instructor">Review</button></div>
+                </section>
+                <section class="ledger" aria-labelledby="setup-heading">
+                  <div class="ledger-header"><h3 id="setup-heading">Setup progress and quick links</h3><span class="stamp warn">4 of 5 complete</span></div>
+                  <div class="ruled-row"><span class="state-mark warning"></span><strong>Finish emergency contacts</strong><span>11 active students are missing a contact.</span><a href="#screen-students">Review roster</a></div>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Recent student</strong><span>Maya Chen · Adult BJJ · Blue Belt, 2 stripes</span><a href="#screen-student">Open file</a></div>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Quick link</strong><span>Take attendance for the 6:00am session.</span><a href="#screen-schedule">Open attendance</a></div>
+                  <div class="ruled-row" data-roles="admin front-desk"><span class="state-mark danger"></span><strong>Billing signal</strong><span>1 failed invoice · $145 outstanding.</span><a href="#billing-invoices">Review billing</a></div>
+                </section>
+                <div class="heavy-proof notice"><strong>Heavy fixture</strong> Today retains one focal queue while 12 pinned blocks and 84 queue items paginate below it; the canonical day band does not move.</div>
+              </div>
+              <aside class="margin-rail" aria-label="Today context">
+                <section><h3>Pinned to Today</h3><p><strong>Kids Fundamentals capacity</strong><br>22 / 24 tonight</p><button type="button" class="prototype-only">Remove pin</button></section>
+                <section><h3>Operational signals</h3><p>4 leads awaiting follow-up<br>2 rank approvals<br>11 missing emergency contacts</p></section>
+                <section><h3>Source truth</h3><p>Counts: server summary<br>Roster preview: partial<br>Billing: hidden when role is denied</p></section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="screen" id="screen-students" data-screen data-slug="Students · 214 active" data-meta="All programs · name ascending · page 1 of 22 · live roster" aria-labelledby="students-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">Ruled roster + batch band</p><h2 id="students-heading">Students</h2></div>
+              <div class="action-row">
+                <button type="button" class="prototype-only" data-roles="admin front-desk">Import CSV</button>
+                <button type="button" class="primary prototype-only" data-roles="admin front-desk">Add student</button>
+              </div>
+            </div>
+            <section class="ledger" aria-labelledby="roster-controls-heading">
+              <div class="ledger-header"><h3 id="roster-controls-heading">Roster controls</h3><span>214 active · 219 total</span></div>
+              <form class="form-grid" onsubmit="return false">
+                <div class="form-field"><label for="student-search">Search students</label><input id="student-search" type="search" value="Maya"></div>
+                <div class="form-field"><label for="student-program-filter">Program</label><select id="student-program-filter"><option>All programs</option><option selected>Adult BJJ</option><option>Kids Fundamentals</option></select></div>
+                <div class="form-field"><label for="student-status-filter">Status</label><select id="student-status-filter"><option>All</option><option selected>Active</option><option>Trial</option><option>Inactive</option><option>Paused</option><option>Canceled</option></select></div>
+                <div class="form-field"><label for="student-sort">Sort</label><select id="student-sort"><option selected>Name A–Z</option><option>Newest</option><option>Last attendance</option></select></div>
+                <div class="form-field full action-row"><button type="button" class="primary prototype-only">Apply filters</button><button type="button" class="prototype-only">Clear</button></div>
+              </form>
+              <p class="notice"><strong>Query notice</strong> Showing active Adult BJJ students matching “Maya.” Program-filter order is preserved.</p>
+            </section>
+            <div class="table-wrap">
+              <table class="responsive-table">
+                <thead><tr><th><label><input type="checkbox" aria-label="Select all visible students"> All</label></th><th>Student</th><th>Status</th><th>Program / rank</th><th>Last attendance</th><th>Contact</th><th>Action</th></tr></thead>
+                <tbody>
+                  <tr aria-selected="true"><td data-label="Select"><input type="checkbox" checked aria-label="Select Maya Chen"></td><td data-label="Student"><strong>Maya Chen</strong><br><small>Preferred: Maya · joined Jan 8, 2024</small></td><td data-label="Status"><span class="stamp good">Active</span></td><td data-label="Program / rank">Adult BJJ · Blue Belt, 2 stripes</td><td data-label="Last attendance">Aug 17 · 6:00am · Present</td><td data-label="Contact">maya@example.test<br>(415) 555-0142</td><td data-label="Action"><a href="#screen-student">Open profile</a></td></tr>
+                  <tr><td data-label="Select"><input type="checkbox" aria-label="Select Noah Williams"></td><td data-label="Student"><strong>Noah Williams</strong><br><small>joined May 3, 2023</small></td><td data-label="Status"><span class="stamp warn">At risk</span></td><td data-label="Program / rank">Adult BJJ · White Belt</td><td data-label="Last attendance">Aug 8 · Absent</td><td data-label="Contact">noah@example.test</td><td data-label="Action"><button type="button" class="prototype-only">Open profile</button></td></tr>
+                  <tr><td data-label="Select"><input type="checkbox" aria-label="Select Lena Ortiz"></td><td data-label="Student"><strong>Lena Ortiz</strong><br><small>minor · guardian on file</small></td><td data-label="Status"><span class="stamp good">Active</span></td><td data-label="Program / rank">Kids Fundamentals · Grey Belt</td><td data-label="Last attendance">Aug 16 · Present</td><td data-label="Contact">via guardian</td><td data-label="Action"><button type="button" class="prototype-only">Open profile</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="ledger" aria-label="Selected student bulk actions">
+              <div class="ledger-header"><h3>1 selected</h3><div class="action-row"><button type="button" class="prototype-only" data-roles="admin front-desk">Add tags</button><button type="button" class="prototype-only" data-roles="admin front-desk">Change status</button><button type="button" class="prototype-only" data-roles="admin front-desk" data-open-dialog>Archive</button><button type="button" class="prototype-only">Clear selection</button></div></div>
+            </div>
+            <nav class="action-row" aria-label="Roster pagination"><button type="button" disabled>Previous</button><span>Page 1 of 22</span><button type="button" class="prototype-only">Next</button></nav>
+            <details>
+              <summary>Add / edit student form contract</summary>
+              <form class="form-grid" onsubmit="return false">
+                <div class="form-field"><label for="student-first">Legal first name *</label><input id="student-first" value="Maya" required></div>
+                <div class="form-field"><label for="student-last">Legal last name *</label><input id="student-last" value="Chen" required></div>
+                <div class="form-field"><label for="student-preferred">Preferred name</label><input id="student-preferred" value="Maya"></div>
+                <div class="form-field"><label for="student-dob">Date of birth</label><input id="student-dob" type="date" value="1996-03-12"></div>
+                <div class="form-field"><label for="student-email">Email</label><input id="student-email" type="email" value="maya@example.test"></div>
+                <div class="form-field"><label for="student-phone">Phone</label><input id="student-phone" type="tel" value="(415) 555-0142"></div>
+                <div class="form-field full"><label for="student-address">Address</label><input id="student-address" value="1420 Valencia St"></div>
+                <div class="form-field"><label for="student-city">City</label><input id="student-city" value="San Francisco"></div>
+                <div class="form-field"><label for="student-region">State</label><input id="student-region" value="CA"></div>
+                <div class="form-field"><label for="student-postal">ZIP</label><input id="student-postal" value="94110"></div>
+                <div class="form-field"><label for="student-start">Membership start</label><input id="student-start" type="date" value="2024-01-08"></div>
+                <div class="form-field"><label for="student-hold-start">Hold start</label><input id="student-hold-start" type="date"></div>
+                <div class="form-field"><label for="student-hold-end">Hold end</label><input id="student-hold-end" type="date" aria-describedby="hold-rule"></div>
+                <div class="form-field"><label for="student-status">Lifecycle status</label><select id="student-status"><option selected>Active</option><option>Trial</option><option>Inactive</option><option>Paused</option><option>Canceled</option></select></div>
+                <div class="form-field full"><label for="student-programs">Programs</label><select id="student-programs" multiple><option selected>Adult BJJ</option><option>Judo</option></select></div>
+                <div class="form-field"><label for="student-tags">Tags</label><input id="student-tags" value="competition-team"></div>
+                <div class="form-field full"><label for="student-notes">Notes</label><textarea id="student-notes">Prefers morning classes.</textarea></div>
+                <p id="hold-rule" class="form-field full muted">Hold end requires a hold start and cannot precede it. Default status is Active.</p>
+                <fieldset class="form-field full"><legend>Emergency contact</legend><div class="form-grid"><div class="form-field"><label for="emergency-name">Name</label><input id="emergency-name" value="Alice Chen"></div><div class="form-field"><label for="emergency-phone">Phone</label><input id="emergency-phone" value="(415) 555-0191"></div><div class="form-field"><label for="emergency-relation">Relation</label><input id="emergency-relation" value="Mother"></div></div></fieldset>
+                <fieldset class="form-field full"><legend>Guardian</legend><div class="form-grid"><div class="form-field"><label for="guardian-first">First name</label><input id="guardian-first" value=""></div><div class="form-field"><label for="guardian-last">Last name</label><input id="guardian-last" value=""></div><div class="form-field"><label for="guardian-email">Email</label><input id="guardian-email" type="email"></div><div class="form-field"><label for="guardian-phone">Phone</label><input id="guardian-phone"></div><div class="form-field"><label for="guardian-relation">Relation</label><input id="guardian-relation"></div></div></fieldset>
+                <div class="form-field full action-row"><button type="button" class="primary prototype-only" data-roles="admin front-desk">Save student</button><button type="button" class="prototype-only">Cancel</button></div>
+              </form>
+            </details>
+            <div class="heavy-proof notice"><strong>Heavy fixture</strong> 500-row roster contract uses virtualization in production, sticky filters, and server pagination. This artifact shows representative rows without pretending to render all 500.</div>
+          </section>
+
+          <section class="screen" id="screen-student" data-screen data-slug="Students / Maya Chen · Active" data-meta="Adult BJJ · Blue Belt, 2 stripes · record updated Aug 17, 6:14am" aria-labelledby="student-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">High-risk density proof</p><h2 id="student-heading">Maya Chen</h2></div>
+              <div class="action-row"><button type="button" class="prototype-only" data-roles="admin front-desk instructor">Edit permitted fields</button><button type="button" class="prototype-only" data-roles="admin front-desk">Upload / replace photo</button><button type="button" class="prototype-only" data-roles="admin front-desk">Remove photo</button><button type="button" class="prototype-only" data-roles="admin front-desk" data-open-dialog>Archive</button></div>
+            </div>
+            <div class="screen-layout with-index">
+              <nav class="gutter-index" aria-label="Student record sections"><a href="#student-identity">Identity</a><a href="#student-contact">Contact</a><a href="#student-lifecycle">Lifecycle</a><a href="#student-program-rank">Programs &amp; rank</a><a href="#student-history">History</a><a href="#student-notes-leaf">Notes</a></nav>
+              <div>
+                <section class="record-leaf" id="student-identity">
+                  <header><h3>Identity</h3><span class="stamp good">Active</span></header>
+                  <dl class="field-grid">
+                    <div class="field"><dt>Legal name</dt><dd>Maya Chen</dd></div><div class="field"><dt>Preferred name</dt><dd>Maya</dd></div>
+                    <div class="field"><dt>Date of birth</dt><dd>Mar 12, 1996</dd></div><div class="field"><dt>Photo</dt><dd>Profile photo on file · updated Jul 2</dd></div>
+                    <div class="field"><dt>Student reference</dt><dd><code>STU-0042</code></dd></div><div class="field"><dt>Tags</dt><dd>competition-team</dd></div>
+                  </dl>
+                </section>
+                <section class="record-leaf" id="student-contact">
+                  <header><h3>Contact, address, emergency, guardian</h3><span>Complete</span></header>
+                  <dl class="field-grid">
+                    <div class="field"><dt>Email</dt><dd>maya@example.test</dd></div><div class="field"><dt>Phone</dt><dd>(415) 555-0142</dd></div>
+                    <div class="field"><dt>Address</dt><dd>1420 Valencia St</dd></div><div class="field"><dt>City / state / ZIP</dt><dd>San Francisco, CA 94110</dd></div>
+                    <div class="field"><dt>Emergency contact</dt><dd>Alice Chen · Mother</dd></div><div class="field"><dt>Emergency phone</dt><dd>(415) 555-0191</dd></div>
+                    <div class="field"><dt>Guardian</dt><dd>Not required · none linked</dd></div><div class="field"><dt>Guardian contact</dt><dd>Not applicable</dd></div>
+                  </dl>
+                </section>
+                <section class="record-leaf" id="student-lifecycle">
+                  <header><h3>Lifecycle and hold</h3><button type="button" class="prototype-only" data-roles="admin front-desk">Change status</button></header>
+                  <dl class="field-grid">
+                    <div class="field"><dt>Status</dt><dd>Active</dd></div><div class="field"><dt>Membership start</dt><dd>Jan 8, 2024</dd></div>
+                    <div class="field"><dt>Hold start</dt><dd>None</dd></div><div class="field"><dt>Hold end</dt><dd>None</dd></div>
+                    <div class="field"><dt>Archived</dt><dd>No</dd></div><div class="field"><dt>Last attendance</dt><dd>Aug 17, 6:00am · Present</dd></div>
+                  </dl>
+                </section>
+                <section class="record-leaf" id="student-program-rank">
+                  <header><h3>Program, rank, and promotion</h3><a href="#screen-belts">Open belt tracker</a></header>
+                  <dl class="field-grid">
+                    <div class="field"><dt>Program</dt><dd>Adult BJJ · active membership</dd></div><div class="field"><dt>Current rank</dt><dd>Blue Belt · 2 stripes</dd></div>
+                    <div class="field"><dt>Rank since</dt><dd>Feb 10, 2026</dd></div><div class="field"><dt>Classes at rank</dt><dd>68 of 80 minimum</dd></div>
+                    <div class="field"><dt>Months at rank</dt><dd>6 of 8 minimum</dd></div><div class="field"><dt>Approval</dt><dd>Required · not yet eligible</dd></div>
+                    <div class="field"><dt>Billing enrollment</dt><dd><code>ENR-1042</code> · Adult Unlimited</dd></div><div class="field"><dt>Attendance summary</dt><dd>14 visits in past 30 days</dd></div>
+                  </dl>
+                  <div class="action-row"><button type="button" class="prototype-only" data-roles="admin instructor">Promote</button><button type="button" class="prototype-only" data-roles="admin instructor">Demote</button></div>
+                </section>
+                <section class="record-leaf" id="student-history">
+                  <header><h3>History</h3><span>Recorded events</span></header>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Attended</strong><span>Adult BJJ Fundamentals · Aug 17, 6:00am · checked in by Front desk</span><span>6:14am</span></div>
+                  <div class="ruled-row"><span class="state-mark danger"></span><strong>Invoice failed</strong><span><code>INV-2081</code> · $145 · payer Alice Chen</span><span>Aug 15</span></div>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Promoted</strong><span>White Belt → Blue Belt · approved by Ana Torres</span><span>Feb 10</span></div>
+                </section>
+                <section class="record-leaf" id="student-notes-leaf">
+                  <header><h3>Notes</h3><button type="button" class="prototype-only" data-roles="admin front-desk instructor">Edit notes</button></header>
+                  <p>Prefers morning classes. Competition team candidate; verify schedule before adding a second program.</p>
+                </section>
+                <div class="notice danger"><strong>Archive confirmation preserved</strong> Archive remains destructive, permission-gated, and explicitly confirmed. Loading, not-found, validation, upload progress/error, and remove-photo error states retain in-flow feedback.</div>
+              </div>
+              <aside class="margin-rail" aria-label="Maya Chen context">
+                <section><h3>Current selection</h3><p>Maya Chen<br><code>STU-0042</code><br>Adult BJJ</p></section>
+                <section><h3>Related records</h3><p>14 recent attendances<br>3 promotion events<br>1 open failed invoice<br>1 active billing enrollment</p></section>
+                <section><h3>Audit</h3><p>Profile edited Aug 12 by Ana Torres. Audit metadata is visible as record history, not raw audit-log CRUD.</p></section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="screen" id="screen-import" data-screen data-slug="Students / Import · Map" data-meta="maya-cohort.csv · 18 columns · 126 rows · preview only" aria-labelledby="import-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">Training Floor sequence inside Ledger rules</p><h2 id="import-heading">Read → Map → Land</h2></div>
+              <div class="action-row"><button type="button" class="prototype-only">Cancel import</button><button type="button" class="primary prototype-only" data-roles="admin front-desk">Continue to preview</button></div>
+            </div>
+            <div class="day-band" aria-label="Import stations"><div><strong>1 · Read</strong>maya-cohort.csv<br>126 rows parsed</div><div><strong>2 · Map · current</strong>18 headers<br>2 warnings</div><div><strong>3 · Land</strong>Not started<br>execute after validation</div><div><strong>Result</strong>0 created<br>0 updated</div></div>
+            <section class="ledger">
+              <div class="ledger-header"><h3>Source</h3><div class="action-row"><button type="button" class="prototype-only" data-roles="admin front-desk">Upload CSV</button><button type="button" class="prototype-only" data-roles="admin front-desk">Use demo CSV</button></div></div>
+              <p>File: <strong>maya-cohort.csv</strong> · UTF-8 · 126 data rows. File, parse, setup, and authorization errors appear here with Retry, Back, and Cancel.</p>
+            </section>
+            <section class="ledger">
+              <div class="ledger-header"><h3>Mapping ledger</h3><span>Every supported destination is represented</span></div>
+              <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Imported header</th><th>Koaryu field</th><th>Rule / preview</th></tr></thead><tbody>
+                <tr><td data-label="Imported header">full_name</td><td data-label="Koaryu field"><select aria-label="Map full_name"><option>Skip</option><option selected>Full name</option><option>First name</option><option>Last name</option></select></td><td data-label="Rule / preview">Maya Chen · first/last resolution required</td></tr>
+                <tr><td data-label="Imported header">preferred</td><td data-label="Koaryu field"><select aria-label="Map preferred"><option>Skip</option><option selected>Preferred name</option></select></td><td data-label="Rule / preview">Maya</td></tr>
+                <tr><td data-label="Imported header">birth_date</td><td data-label="Koaryu field"><select aria-label="Map birth date"><option>Skip</option><option selected>Date of birth</option></select></td><td data-label="Rule / preview">1996-03-12</td></tr>
+                <tr><td data-label="Imported header">email</td><td data-label="Koaryu field"><select aria-label="Map email"><option>Skip</option><option selected>Email</option></select></td><td data-label="Rule / preview">maya@example.test</td></tr>
+                <tr><td data-label="Imported header">phone</td><td data-label="Koaryu field"><select aria-label="Map phone"><option>Skip</option><option selected>Phone</option></select></td><td data-label="Rule / preview">(415) 555-0142</td></tr>
+                <tr><td data-label="Imported header">membership_status</td><td data-label="Koaryu field"><select aria-label="Map status"><option>Skip</option><option selected>Status</option></select></td><td data-label="Rule / preview">Active</td></tr>
+                <tr><td data-label="Imported header">joined</td><td data-label="Koaryu field"><select aria-label="Map membership start"><option>Skip</option><option selected>Membership start</option></select></td><td data-label="Rule / preview">2024-01-08</td></tr>
+                <tr><td data-label="Imported header">program</td><td data-label="Koaryu field"><select aria-label="Map program"><option>Skip</option><option selected>Program</option></select></td><td data-label="Rule / preview">Adult BJJ</td></tr>
+                <tr><td data-label="Imported header">belt</td><td data-label="Koaryu field"><select aria-label="Map current belt"><option>Skip</option><option selected>Current belt</option></select></td><td data-label="Rule / preview">Blue · missing-rank policy applies</td></tr>
+                <tr><td data-label="Imported header">notes</td><td data-label="Koaryu field"><select aria-label="Map notes"><option>Skip</option><option selected>Notes</option></select></td><td data-label="Rule / preview">Duplicate target allowed only for Notes</td></tr>
+                <tr><td data-label="Imported header">tags</td><td data-label="Koaryu field"><select aria-label="Map tags"><option>Skip</option><option selected>Tags</option></select></td><td data-label="Rule / preview">competition-team</td></tr>
+                <tr><td data-label="Imported header">address_bundle</td><td data-label="Koaryu field"><select aria-label="Map address"><option>Skip</option><option selected>Address</option></select></td><td data-label="Rule / preview">1420 Valencia St, San Francisco CA 94110</td></tr>
+                <tr><td data-label="Imported header">emergency_bundle</td><td data-label="Koaryu field"><select aria-label="Map emergency"><option>Skip</option><option selected>Emergency contact</option></select></td><td data-label="Rule / preview">Alice Chen · Mother · (415) 555-0191</td></tr>
+                <tr><td data-label="Imported header">guardian_bundle</td><td data-label="Koaryu field"><select aria-label="Map guardian"><option>Skip</option><option selected>Guardian</option></select></td><td data-label="Rule / preview">Empty for adult record</td></tr>
+              </tbody></table></div>
+              <p class="muted">Separate First name and Last name mappings are also supported; Skip is available for every imported column.</p>
+            </section>
+            <fieldset><legend>Import policies and options</legend><div class="form-grid">
+              <div class="form-field full"><span class="label">Current option defaults</span><div class="check-row"><label><input type="checkbox"> Create missing programs · off</label><label><input type="checkbox"> Create missing belts / ranks · off</label><label><input type="checkbox" checked> Import unresolved belt text · on</label></div><small>Unchecked and checked states above are the current create-form defaults, not fixture choices.</small></div>
+              <div class="form-field"><label for="missing-program-policy">Missing program</label><select id="missing-program-policy"><option selected>Flag row and do not assign</option><option>Reject import</option></select></div>
+              <div class="form-field"><label for="missing-rank-policy">Missing rank</label><select id="missing-rank-policy"><option selected>Flag row and leave rank unresolved</option><option>Reject row</option></select></div>
+              <div class="form-field"><label for="duplicate-policy">Duplicate student</label><select id="duplicate-policy"><option selected>Review before update</option><option>Skip duplicate</option></select></div>
+              <div class="form-field"><label for="import-mode">Execution mode</label><select id="import-mode"><option selected>Validate only</option><option>Execute after preview</option></select></div>
+            </div></fieldset>
+            <div class="notice"><strong>Errata · 2 warnings</strong> Row 27: “Navy” is not a rank in Adult BJJ. Row 88: “After School” program is missing. <a href="#screen-import">Jump to row 27</a>. Warnings remain marginal and do not block reviewing valid rows.</div>
+            <section class="ledger"><div class="ledger-header"><h3>Preview and result controls</h3><span>126 rows · 124 valid · 2 warnings</span></div><div class="action-row"><button type="button" class="prototype-only">Back to mapping</button><button type="button" class="prototype-only">Retry validation</button><button type="button" class="prototype-only">Cancel</button><button type="button" class="primary prototype-only" data-roles="admin front-desk">Execute import</button><button type="button" class="prototype-only">View results</button></div></section>
+          </section>
+
+          <section class="screen" id="screen-belts" data-screen data-slug="Belt Tracker · Adult BJJ" data-meta="Eligibility · 34 ranked students · ladder updated Aug 10" aria-labelledby="belts-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">Rank scroll + atomic plan</p><h2 id="belts-heading">Belt Tracker</h2></div>
+              <div class="action-row"><button type="button" class="prototype-only">Discard changes</button><button type="button" class="primary prototype-only" data-roles="admin">Save rank plan atomically</button></div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field"><label for="belt-program">Program</label><select id="belt-program"><option selected>Adult BJJ</option><option>Kids Fundamentals</option></select></div>
+              <div class="form-field"><label for="belt-view">View</label><select id="belt-view"><option selected>Eligibility</option><option>Rank plan</option></select></div>
+            </div>
+            <section class="ledger">
+              <div class="ledger-header"><h3>Eligibility ledger</h3><span>2 ready · 1 approval pending</span></div>
+              <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Student</th><th>Current → next</th><th>Classes</th><th>Months</th><th>Approval</th><th>Action</th></tr></thead><tbody>
+                <tr><td data-label="Student">Priya Shah</td><td data-label="Current → next">Blue → Purple</td><td data-label="Classes">126 / 120 met</td><td data-label="Months">26 / 24 met</td><td data-label="Approval"><span class="stamp warn">Required</span></td><td data-label="Action"><button type="button" class="prototype-only" data-roles="admin instructor">Promote</button></td></tr>
+                <tr><td data-label="Student">Maya Chen</td><td data-label="Current → next">Blue, 2 stripes → Blue, 3 stripes</td><td data-label="Classes">68 / 80</td><td data-label="Months">6 / 8</td><td data-label="Approval">Not eligible</td><td data-label="Action"><button type="button" class="prototype-only" data-roles="admin instructor">Review</button></td></tr>
+                <tr><td data-label="Student">Noah Williams</td><td data-label="Current → next">White → Blue</td><td data-label="Classes">44 / 60</td><td data-label="Months">11 / 12</td><td data-label="Approval">Attendance drift</td><td data-label="Action"><button type="button" class="prototype-only" data-roles="admin instructor">Review</button></td></tr>
+              </tbody></table></div>
+              <div class="action-row"><button type="button" class="prototype-only" data-roles="admin instructor">Promote with checklist</button><button type="button" class="prototype-only" data-roles="admin instructor">Demote with confirmation</button></div>
+            </section>
+            <section class="ledger">
+              <div class="ledger-header"><h3>Rank plan</h3><div class="action-row"><button type="button" class="prototype-only" data-roles="admin">Edit sub-rank term</button><button type="button" class="prototype-only" data-roles="admin">Add rank</button></div></div>
+              <p>Sub-rank term: <strong>stripe</strong> · Program-scoped order</p>
+              <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Order</th><th>Rank name</th><th>Kind</th><th>Belt / tip colors</th><th>Minimums</th><th>Approval</th><th>Actions</th></tr></thead><tbody>
+                <tr><td data-label="Order">1</td><td data-label="Rank name">White Belt</td><td data-label="Kind">Belt</td><td data-label="Belt / tip colors">White / none</td><td data-label="Minimums">0 classes · 0 months</td><td data-label="Approval">No</td><td data-label="Actions"><button type="button" class="prototype-only" data-roles="admin">Edit</button> <button type="button" class="prototype-only" data-roles="admin">Reorder</button></td></tr>
+                <tr><td data-label="Order">2</td><td data-label="Rank name">Blue Belt</td><td data-label="Kind">Belt</td><td data-label="Belt / tip colors">Blue / white</td><td data-label="Minimums">60 classes · 12 months</td><td data-label="Approval">Required</td><td data-label="Actions"><button type="button" class="prototype-only" data-roles="admin">Edit</button> <button type="button" class="prototype-only" data-roles="admin" data-open-dialog data-confirm-title="Delete Blue Belt rank?" data-confirm-description="The production flow must show affected students and block unsafe deletion. This prototype changes nothing." data-confirm-action="Delete rank">Delete</button></td></tr>
+              </tbody></table></div>
+              <details><summary>Rank form fields</summary><form class="form-grid" onsubmit="return false">
+                <div class="form-field"><label for="rank-name">Rank name</label><input id="rank-name" value="Purple Belt"></div>
+                <div class="form-field"><label for="rank-kind">Kind</label><select id="rank-kind"><option selected>Belt</option><option>Stripe / tip</option></select></div>
+                <div class="form-field"><label for="belt-color">Belt color</label><input id="belt-color" value="Purple"></div>
+                <div class="form-field"><label for="tip-color">Tip color</label><input id="tip-color" value="White"></div>
+                <div class="form-field"><label for="minimum-classes">Minimum classes</label><input id="minimum-classes" type="number" value="120" min="0"></div>
+                <div class="form-field"><label for="minimum-months">Minimum months</label><input id="minimum-months" type="number" value="24" min="0"></div>
+                <div class="form-field full check-row"><label><input type="checkbox" checked> Approval required</label></div>
+                <div class="form-field full action-row"><button type="button" class="primary prototype-only" data-roles="admin">Save rank</button><button type="button" class="prototype-only">Cancel</button></div>
+              </form></details>
+              <div class="notice"><strong>Conflict-safe plan</strong> Unsaved, saving, saved, and atomic conflict states retain the full draft. No program, no ladder, no eligibility, loading, and error/retry states each have explicit copy.</div>
+            </section>
+          </section>
+
+          <section class="screen" id="screen-leads" data-screen data-slug="Leads · 19 open" data-meta="All programs · next touch ascending · as of Aug 17, 6:12am" aria-labelledby="leads-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">Pipeline time map</p><h2 id="leads-heading">Leads</h2></div>
+              <button type="button" class="primary prototype-only" data-roles="admin front-desk">Add lead</button>
+            </div>
+            <p class="notice"><strong>Interaction choice</strong> Stage bands remain, but horizontal position means days in stage. Drag and keyboard Move controls have equal capability. There is intentionally no lead delete control.</p>
+            <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Stage / age</th><th>Lead</th><th>Contact and source</th><th>Program</th><th>Next touch</th><th>Actions</th></tr></thead><tbody>
+              <tr><td data-label="Stage / age"><span class="stamp warn">Trial · 3d</span></td><td data-label="Lead"><strong>Jordan Lee</strong><br>Adult · not a minor</td><td data-label="Contact and source">jordan@example.test<br>(415) 555-0170 · Website</td><td data-label="Program">Adult BJJ</td><td data-label="Next touch">Aug 16 · overdue</td><td data-label="Actions"><button type="button" class="prototype-only">Open</button> <button type="button" class="prototype-only" data-roles="admin front-desk">Move stage</button></td></tr>
+              <tr><td data-label="Stage / age"><span class="stamp good">New · 1d</span></td><td data-label="Lead"><strong>Eli Ramos</strong><br>Minor · guardian Sam Ramos</td><td data-label="Contact and source">sam@example.test<br>Walk-in</td><td data-label="Program">Kids Fundamentals</td><td data-label="Next touch">Aug 17 · today</td><td data-label="Actions"><button type="button" class="prototype-only">Open</button> <button type="button" class="prototype-only" data-roles="admin front-desk">Move stage</button></td></tr>
+            </tbody></table></div>
+            <p class="muted">Empty stage bands remain visible with “No leads in this stage.” Lost leads are available as a separate ruled section.</p>
+            <section class="record-leaf">
+              <header><h3>Lead file · Jordan Lee</h3><span class="stamp warn">Trial</span></header>
+              <dl class="field-grid">
+                <div class="field"><dt>First / last *</dt><dd>Jordan Lee</dd></div><div class="field"><dt>Email / phone</dt><dd>jordan@example.test · (415) 555-0170</dd></div>
+                <div class="field"><dt>Source</dt><dd>Website · default for new form is Walk-in</dd></div><div class="field"><dt>Program</dt><dd>Adult BJJ</dd></div>
+                <div class="field"><dt>Follow-up</dt><dd>Aug 16 · default for new form is today</dd></div><div class="field"><dt>Minor / guardian</dt><dd>No · guardian not required</dd></div>
+                <div class="field"><dt>Assignee</dt><dd>Ana Torres</dd></div><div class="field"><dt>Notes</dt><dd>Completed intro class; asked about morning schedule.</dd></div>
+                <div class="field"><dt>Lost reason</dt><dd>Not lost</dd></div><div class="field"><dt>Conversion</dt><dd>Not converted</dd></div>
+              </dl>
+              <form class="form-grid" onsubmit="return false">
+                <div class="form-field"><label for="lead-stage">Stage</label><select id="lead-stage"><option>New</option><option selected>Trial</option><option>Won</option><option>Lost</option></select></div>
+                <div class="form-field"><label for="lead-follow-up">Follow-up date</label><input id="lead-follow-up" type="date" value="2026-08-16"></div>
+                <div class="form-field"><label for="activity-type">Activity type</label><select id="activity-type"><option>Note</option><option selected>Call</option><option>Email</option><option>Meeting</option><option>Follow-up</option></select></div>
+                <div class="form-field"><label for="lost-reason">Lost reason</label><input id="lost-reason" placeholder="Required when marking lost"></div>
+                <div class="form-field full"><label for="lead-activity">Activity content</label><textarea id="lead-activity">Left schedule details by voicemail.</textarea></div>
+                <div class="form-field full action-row"><button type="button" class="prototype-only" data-roles="admin front-desk">Save follow-up</button><button type="button" class="prototype-only" data-roles="admin front-desk">Add activity</button><button type="button" class="prototype-only" data-roles="admin front-desk">Convert to student</button><button type="button" class="prototype-only" data-roles="admin front-desk">Mark lost</button></div>
+              </form>
+              <div class="notice"><strong>Current gap preserved as a decision</strong> Mutation pending/feedback is in-flow. A dedicated initial Leads load-error surface is not invented until retry ownership is specified.</div>
+            </section>
+          </section>
+
+          <section class="screen" id="screen-schedule" data-screen data-slug="Schedule · Week of Aug 17" data-meta="All programs · America/Los_Angeles · sessions materialized through Sep 14" aria-labelledby="schedule-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">Week Sheet + full-bleed attendance</p><h2 id="schedule-heading">Schedule / Attendance</h2></div>
+              <div class="action-row"><button type="button" class="prototype-only" data-roles="admin front-desk">Add one-off class</button><button type="button" class="primary prototype-only" data-roles="admin front-desk">Add weekly class</button></div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field"><label for="schedule-view">Calendar view</label><select id="schedule-view"><option>Month</option><option selected>Week</option><option>Day</option></select></div>
+              <div class="form-field"><label for="schedule-program">Program</label><select id="schedule-program"><option selected>All programs</option><option>Adult BJJ</option><option>Kids Fundamentals</option></select></div>
+            </div>
+            <section class="ledger">
+              <div class="ledger-header"><h3>Week Sheet</h3><span>Only this matrix scrolls horizontally on narrow screens</span></div>
+              <div class="schedule-scroll"><table><thead><tr><th>Time</th><th>Mon 17</th><th>Tue 18</th><th>Wed 19</th><th>Thu 20</th><th>Fri 21</th><th>Sat 22</th></tr></thead><tbody>
+                <tr><th>6:00am</th><td><strong>Adult BJJ Fundamentals</strong><br>18/24 present<br><button type="button" class="prototype-only">Open session</button></td><td>Open mat · 9/20</td><td>Adult BJJ · 16/24</td><td>Open mat · 8/20</td><td>Adult BJJ · 14/24</td><td>Competition · 12/16</td></tr>
+                <tr><th>4:30pm</th><td>Kids Fundamentals · 22/24</td><td>Kids All Levels · 18/24</td><td>Kids Fundamentals · 20/24</td><td>Kids All Levels · 19/24</td><td>Kids Fundamentals · 21/24</td><td>—</td></tr>
+                <tr><th>6:30pm</th><td>Adult All Levels · 19/28</td><td>Judo · 13/20</td><td>Adult All Levels · 21/28</td><td>Judo · 15/20</td><td>Adult All Levels · 20/28</td><td>—</td></tr>
+              </tbody></table></div>
+            </section>
+            <section class="record-leaf">
+              <header><h3>Session detail · Adult BJJ Fundamentals</h3><span class="stamp good">Completed</span></header>
+              <dl class="field-grid"><div class="field"><dt>Date / time</dt><dd>Aug 17 · 6:00–7:00am</dd></div><div class="field"><dt>Program</dt><dd>Adult BJJ</dd></div><div class="field"><dt>Instructor</dt><dd>Ana Torres</dd></div><div class="field"><dt>Capacity</dt><dd>24</dd></div><div class="field"><dt>Template origin</dt><dd>Weekly Monday series</dd></div><div class="field"><dt>Status / notes</dt><dd>Completed · Fundamentals curriculum</dd></div></dl>
+              <div class="action-row"><button type="button" class="primary prototype-only" data-roles="admin front-desk instructor">Take attendance</button><button type="button" class="prototype-only" data-roles="admin front-desk">Edit session</button><button type="button" class="prototype-only" data-roles="admin front-desk" data-open-dialog data-confirm-title="Delete this occurrence?" data-confirm-description="Only the Aug 17 session is in scope. The weekly series remains." data-confirm-action="Delete occurrence">Delete this occurrence</button><button type="button" class="prototype-only" data-roles="admin front-desk" data-open-dialog data-confirm-title="Delete this and future sessions?" data-confirm-description="The Aug 17 session and every future occurrence in this series are in scope. Past sessions remain." data-confirm-action="Delete future series">Delete this and future</button></div>
+              <p class="muted">Production proposal: this deep context is a URL-addressable sheet, not a modal containing a table.</p>
+            </section>
+            <section class="ledger">
+              <div class="ledger-header"><h3>Attendance check sheet</h3><span>18 present · 2 absent · 4 unmarked</span></div>
+              <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Student</th><th>Status</th><th>Check-in</th><th>Cross-program / override</th><th>Action</th></tr></thead><tbody>
+                <tr><td data-label="Student">Maya Chen</td><td data-label="Status"><span class="stamp good">Present</span></td><td data-label="Check-in">6:14am</td><td data-label="Cross-program / override">No / none</td><td data-label="Action"><button type="button" class="prototype-only" data-roles="admin front-desk instructor">Mark absent</button></td></tr>
+                <tr><td data-label="Student">Noah Williams</td><td data-label="Status"><span class="stamp danger">Absent</span></td><td data-label="Check-in">—</td><td data-label="Cross-program / override">No / none</td><td data-label="Action"><button type="button" class="prototype-only" data-roles="admin front-desk instructor">Mark present</button></td></tr>
+                <tr><td data-label="Student">Kai Morgan</td><td data-label="Status"><span class="stamp warn">Pending</span></td><td data-label="Check-in">—</td><td data-label="Cross-program / override">Judo credit / approved</td><td data-label="Action"><button type="button" class="prototype-only" data-roles="admin front-desk instructor">Mark present</button></td></tr>
+              </tbody></table></div>
+              <div class="notice"><strong>Visible pending tray</strong> 1 offline mark awaits sync. It is never a silent queue. Calendar/session/attendance loading, error/retry, empty, partial, and pending-materialization states remain in the owning sheet.</div>
+              <div class="action-row"><button type="button" class="prototype-only">Discard pending marks</button><button type="button" class="primary prototype-only" data-roles="admin front-desk instructor">Close sheet and commit attendance</button></div>
+            </section>
+            <details><summary>Class form fields and validation</summary><form class="form-grid" onsubmit="return false">
+              <div class="form-field"><label for="class-kind">Class type</label><select id="class-kind"><option selected>Weekly</option><option>One-off</option></select></div>
+              <div class="form-field"><label for="class-name">Name</label><input id="class-name" value="Adult BJJ Fundamentals"></div>
+              <div class="form-field"><label for="class-program">Program</label><select id="class-program"><option selected>Adult BJJ</option></select></div>
+              <div class="form-field"><label for="class-date">Date / weekday</label><input id="class-date" value="Monday · 2026-08-17"></div>
+              <div class="form-field"><label for="class-start-date">Start date</label><input id="class-start-date" type="date" value="2026-08-17"></div>
+              <div class="form-field"><label for="class-end-date">Optional end date</label><input id="class-end-date" type="date"></div>
+              <div class="form-field"><label for="class-start-time">Start time</label><input id="class-start-time" type="time" value="18:00"></div>
+              <div class="form-field"><label for="class-end-time">End time</label><input id="class-end-time" type="time" value="19:30"></div>
+              <div class="form-field"><label for="class-capacity">Capacity</label><input id="class-capacity" type="number" min="1" value="24"></div>
+              <p class="form-field full muted">Defaults: weekly, today, 18:00–19:30, open-ended. End must follow start; capacity must be positive; series range must be valid.</p>
+              <div class="form-field full action-row"><button type="button" class="primary prototype-only" data-roles="admin front-desk">Save class</button><button type="button" class="prototype-only">Cancel</button></div>
+            </form></details>
+          </section>
+
+          <section class="screen" id="screen-billing" data-screen data-slug="Billing · $4,205 due" data-meta="All programs · USD · live provider snapshot verified Aug 17, 6:12am" aria-labelledby="billing-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">High-risk density proof</p><h2 id="billing-heading">Billing</h2></div>
+              <div class="action-row"><button type="button" class="prototype-only" data-roles="admin">Core portal</button><button type="button" class="prototype-only" data-roles="admin">Connect dashboard</button><button type="button" class="primary prototype-only" data-roles="admin front-desk">Record external payment</button></div>
+            </div>
+            <div class="notice danger billing-denied-proof"><strong>Access denied</strong> Instructors return to Dashboard before any Billing loader runs.</div>
+            <div class="money-band" aria-label="Billing summary">
+              <div><small>Collected · 30d</small><strong>$18,460</strong><span>126 payments</span></div>
+              <div><small>Due this week</small><strong>$4,205</strong><span>31 invoices</span></div>
+              <div><small>Failed</small><strong>$145</strong><span>1 invoice</span></div>
+              <div><small>MRR</small><strong>Unavailable</strong><span>external / record-only mix</span></div>
+            </div>
+            <nav class="book-index" aria-label="Billing books"><a href="#billing-setup">Setup</a><a href="#billing-plans">Plans</a><a href="#billing-families">Families</a><a href="#billing-enrollments">Student Billing / Enrollments</a><a href="#billing-invoices">Invoices</a><a href="#billing-advanced">Advanced</a></nav>
+            <div class="screen-layout with-index">
+              <nav class="gutter-index" aria-label="Billing section index"><a href="#billing-setup">Setup</a><a href="#billing-plans">Plans</a><a href="#billing-families">Families</a><a href="#billing-enrollments">Enrollments</a><a href="#billing-invoices">Invoices</a><a href="#billing-advanced">Advanced</a></nav>
+              <div>
+                <section class="record-leaf" id="billing-setup">
+                  <header><h3>Setup · Core and Connect</h3><span class="stamp good">Ready</span></header>
+                  <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Hop</th><th>Status</th><th>Exact reference</th><th>Verified</th><th>Allowed action</th></tr></thead><tbody>
+                    <tr><td data-label="Hop"><strong>Koaryu Core</strong><br>platform subscription</td><td data-label="Status">Active · trial ended Aug 1 · renews Sep 1, 2026</td><td data-label="Exact reference"><code>core_sub_demo_107</code><br>billing: owner@example.test</td><td data-label="Verified">Aug 17, 6:12am</td><td data-label="Allowed action"><button type="button" class="prototype-only" data-roles="admin">Open checkout / portal</button></td></tr>
+                    <tr><td data-label="Hop"><strong>Stripe Connect</strong><br>studio payment account</td><td data-label="Status">Charges enabled · payouts enabled · details submitted</td><td data-label="Exact reference"><code>acct_demo_107</code><br>provider mode: connected</td><td data-label="Verified">Aug 17, 6:12am</td><td data-label="Allowed action"><button type="button" class="prototype-only" data-roles="admin">Open onboarding / dashboard</button></td></tr>
+                    <tr><td data-label="Hop"><strong>Payout account</strong></td><td data-label="Status">Ready · bank ending 4821</td><td data-label="Exact reference">Provider-managed; masked only</td><td data-label="Verified">Aug 17, 6:12am</td><td data-label="Allowed action"><button type="button" class="prototype-only" data-roles="admin">Sync status</button></td></tr>
+                  </tbody></table></div>
+                  <div class="notice"><strong>Role and provider boundary</strong> Admin owns Core checkout/portal and Connect onboarding/dashboard/sync/reset. Front desk can use routine enrollment, external payment, and reconciliation only. Provider availability and live authorization gate every mutation.</div>
+                  <div class="action-row"><button type="button" class="prototype-only" data-roles="admin">Refresh Core status</button><button type="button" class="prototype-only" data-roles="admin">Sync Connect</button><button type="button" class="prototype-only" data-roles="admin" data-open-dialog data-confirm-title="Reset Stripe Connect?" data-confirm-description="Reset is Admin-only and provider-capability-gated. The production confirmation must state the exact connected account. This prototype changes nothing." data-confirm-action="Reset Connect">Reset Connect</button></div>
+                  <p class="muted">Preview mode shows local feedback only; no provider navigation or mutation. Loading, provider unavailable, authorization failure, redirect pending/error, and stale readiness stay in this section.</p>
+                </section>
+
+                <section class="record-leaf" id="billing-plans">
+                  <header><h3>Plans</h3><span class="stamp warn">Read-only</span></header>
+                  <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Plan</th><th>Price</th><th>Programs</th><th>Enrollment proof</th><th>Status</th></tr></thead><tbody>
+                    <tr><td data-label="Plan"><strong>Adult Unlimited</strong><br><code>PLAN-ADULT-U</code></td><td data-label="Price">$145.00 USD · monthly<br><code>price_demo_145</code></td><td data-label="Programs">Adult BJJ, Judo</td><td data-label="Enrollment proof">41 active at this price</td><td data-label="Status"><span class="stamp good">Active</span></td></tr>
+                    <tr><td data-label="Plan"><strong>Kids Fundamentals</strong><br><code>PLAN-KIDS-F</code></td><td data-label="Price">$120.00 USD · monthly<br><code>price_demo_120</code></td><td data-label="Programs">Kids Fundamentals</td><td data-label="Enrollment proof">36 active at this price</td><td data-label="Status"><span class="stamp good">Active</span></td></tr>
+                  </tbody></table></div>
+                  <p class="notice"><strong>Deliberate boundary</strong> Plan and price data are visible, but plan creation/editing is not a live dashboard capability. No Create plan button is presented.</p>
+                </section>
+
+                <section class="record-leaf" id="billing-families">
+                  <header><h3>Families / payers</h3><span class="stamp warn">Read-only structure</span></header>
+                  <div class="ruled-row"><span class="state-mark danger"></span><strong>Alice Chen · payer</strong><span><code>PAY-031</code> · alice@example.test · (415) 555-0191 · autopay external<br>└ Maya Chen · Adult Unlimited · <code>ENR-1042</code> · $145 failed</span><button type="button" class="prototype-only">Open related invoice</button></div>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Sam Ramos · payer</strong><span><code>PAY-052</code> · sam@example.test · autopay not recorded<br>└ Eli Ramos · no enrollment yet</span><button type="button" class="prototype-only">Open student</button></div>
+                  <p class="notice"><strong>Deliberate boundary</strong> Payer → student → enrollment relationships are visible for diagnosis. Family/payer creation and broad CRUD remain unavailable until the product contract supports them.</p>
+                </section>
+
+                <section class="record-leaf" id="billing-enrollments">
+                  <header><h3>Student Billing / Enrollments</h3><button type="button" class="primary prototype-only" data-roles="admin front-desk">Add external enrollment</button></header>
+                  <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Student</th><th>Plan / provider</th><th>Dates</th><th>Payer</th><th>Collection</th><th>Status</th></tr></thead><tbody>
+                    <tr><td data-label="Student">Maya Chen<br><code>STU-0042</code></td><td data-label="Plan / provider">Adult Unlimited<br><code>ENR-1042</code> · <code>sub_ext_1042</code></td><td data-label="Dates">Start Jan 8, 2024<br>End — · next bill Sep 15, 2026</td><td data-label="Payer">Alice Chen · <code>PAY-031</code></td><td data-label="Collection">External / record-only</td><td data-label="Status"><span class="stamp good">Active</span></td></tr>
+                    <tr><td data-label="Student">Lena Ortiz<br><code>STU-0098</code></td><td data-label="Plan / provider">Kids Fundamentals<br><code>ENR-1098</code> · provider ref unavailable</td><td data-label="Dates">Start Mar 3, 2025<br>End — · next bill Sep 3, 2026</td><td data-label="Payer">Rosa Ortiz · <code>PAY-044</code></td><td data-label="Collection">Record-only</td><td data-label="Status"><span class="stamp good">Active</span></td></tr>
+                  </tbody></table></div>
+                  <details open><summary>External enrollment form</summary><form class="form-grid" onsubmit="return false">
+                    <div class="form-field"><label for="enroll-student">Student *</label><select id="enroll-student"><option selected>Maya Chen · STU-0042</option></select></div>
+                    <div class="form-field"><label for="enroll-plan">Plan *</label><select id="enroll-plan"><option selected>Adult Unlimited · $145 monthly</option></select></div>
+                    <div class="form-field"><label for="enroll-start">Start date *</label><input id="enroll-start" type="date" value="2024-01-08"></div>
+                    <div class="form-field"><label for="enroll-end">Optional end date</label><input id="enroll-end" type="date"></div>
+                    <div class="form-field"><label for="enroll-payer">Optional payer</label><select id="enroll-payer"><option selected>Alice Chen · PAY-031</option></select></div>
+                    <div class="form-field"><label for="enroll-next-bill">Optional next bill</label><input id="enroll-next-bill" type="date" value="2026-09-15"></div>
+                    <div class="form-field"><label for="enroll-collection">Collection mode</label><select id="enroll-collection"><option selected>External / record-only</option></select></div>
+                    <div class="form-field full action-row"><button type="button" class="primary prototype-only" data-roles="admin front-desk">Save external enrollment</button><button type="button" class="prototype-only">Cancel</button></div>
+                  </form></details>
+                </section>
+
+                <section class="record-leaf" id="billing-invoices">
+                  <header><h3>Invoices</h3><span>31 due this week · 1 failed</span></header>
+                  <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Invoice</th><th>Payer / student</th><th>Dates</th><th>Amounts</th><th>Provider refs</th><th>Status / actions</th></tr></thead><tbody>
+                    <tr><td data-label="Invoice"><strong><code>INV-2081</code></strong><br>Adult Unlimited · Aug tuition</td><td data-label="Payer / student">Alice Chen · <code>PAY-031</code><br>Maya Chen · <code>STU-0042</code></td><td data-label="Dates">Issued Aug 1<br>Due Aug 15, 2026<br>Failed Aug 15, 7:42am</td><td data-label="Amounts">Total $145.00<br>Paid $0.00<br><strong>Outstanding $145.00</strong></td><td data-label="Provider refs"><code>in_demo_2081</code><br><code>pi_demo_2081</code></td><td data-label="Status"><span class="stamp danger">Failed</span><br><button type="button" class="prototype-only" data-roles="admin front-desk">Open remedy sheet</button></td></tr>
+                    <tr><td data-label="Invoice"><strong><code>INV-2074</code></strong><br>Kids Fundamentals · Aug tuition</td><td data-label="Payer / student">Rosa Ortiz · <code>PAY-044</code><br>Lena Ortiz · <code>STU-0098</code></td><td data-label="Dates">Issued Aug 1<br>Due Aug 3, 2026<br>Paid Aug 2, 9:18am</td><td data-label="Amounts">Total $120.00<br>Paid $120.00<br>Outstanding $0.00</td><td data-label="Provider refs">External receipt <code>ZELLE-8821</code></td><td data-label="Status"><span class="stamp good">Paid</span></td></tr>
+                  </tbody></table></div>
+                  <div class="notice danger"><strong>Inline remedy · INV-2081</strong> Provider retry is not promised by this UI. Allowed evidence path: request a new card externally, record an external payment, or reconcile the invoice to existing provider evidence. Write-off is shown only if a future authorized contract supports it.</div>
+                  <div class="action-row"><button type="button" class="prototype-only" data-roles="admin front-desk">Request new card externally</button><button type="button" class="prototype-only" data-roles="admin front-desk">Record external payment</button><button type="button" class="primary prototype-only" data-roles="admin front-desk">Reconcile invoice</button></div>
+                  <details open><summary>External payment form</summary><form class="form-grid" onsubmit="return false">
+                    <div class="form-field"><label for="payment-payer">Payer *</label><select id="payment-payer"><option selected>Alice Chen · PAY-031</option></select></div>
+                    <div class="form-field"><label for="payment-amount">Positive amount *</label><input id="payment-amount" type="number" min="0.01" step="0.01" value="145.00"></div>
+                    <div class="form-field"><label for="payment-method">Method</label><select id="payment-method"><option selected>Zelle</option><option>Cash</option><option>Check</option><option>Other external</option></select></div>
+                    <div class="form-field"><label for="payment-note">Optional note</label><input id="payment-note" value="Fixture payment received Aug 17"></div>
+                    <div class="form-field full action-row"><button type="button" class="primary prototype-only" data-roles="admin front-desk">Record payment</button><button type="button" class="prototype-only">Cancel</button></div>
+                  </form></details>
+                  <details><summary>Reconciliation evidence</summary><dl class="field-grid"><div class="field"><dt>Invoice</dt><dd><code>INV-2081</code></dd></div><div class="field"><dt>Provider invoice</dt><dd><code>in_demo_2081</code></dd></div><div class="field"><dt>Candidate payment</dt><dd><code>ZELLE-9042</code> · $145 · Aug 17</dd></div><div class="field"><dt>Result</dt><dd>Review required · no automatic match claimed</dd></div></dl><div class="action-row"><button type="button" class="prototype-only" data-roles="admin front-desk">Confirm reconciliation</button><button type="button" class="prototype-only">Leave unresolved</button></div></details>
+                  <div class="heavy-proof notice"><strong>Heavy fixture</strong> 800-row invoice register uses server pagination or virtualization in production. Exact references, labels, and row actions remain discoverable without a tiny desktop squeeze.</div>
+                </section>
+
+                <section class="record-leaf future" id="billing-advanced">
+                  <header><h3>Advanced</h3><span class="stamp warn">Read-only / unavailable</span></header>
+                  <dl class="field-grid">
+                    <div class="field"><dt>Payments</dt><dd>Summary available through current billing views; no broad dashboard CRUD.</dd></div><div class="field"><dt>Refunds</dt><dd>Provider-linked records may exist; no current authenticated list/action surface.</dd></div>
+                    <div class="field"><dt>Disputes</dt><dd>Unavailable in dashboard.</dd></div><div class="field"><dt>Adjustments</dt><dd>Unavailable in dashboard.</dd></div>
+                    <div class="field"><dt>Billing exports</dt><dd>Deferred and filtered from the effective CSV catalog.</dd></div><div class="field"><dt>Email usage</dt><dd>Available through the existing Reports export catalog, not a new billing export.</dd></div>
+                  </dl>
+                  <p class="notice"><strong>Internal boundary</strong> Provider retries, worker claims, authorization/reconciliation evidence tables, operational alerts, and compensation tools remain internal. This surface exposes capability/readiness summaries only.</p>
+                </section>
+              </div>
+              <aside class="margin-rail" aria-label="Billing context">
+                <section><h3>Current selection</h3><p><code>INV-2081</code><br>$145.00 outstanding<br>Failed Aug 15</p></section>
+                <section><h3>Relationship</h3><p>Alice Chen · payer<br>└ Maya Chen · student<br>└ Adult Unlimited · enrollment</p></section>
+                <section><h3>Provider boundary</h3><p>Koaryu records the references shown. Provider retry capability is not assumed. Reconciliation requires explicit evidence.</p></section>
+                <section><h3>Permission</h3><p>Admin: all current controls<br>Front desk: routine billing only<br>Instructor: route denied<br>Unknown: fail closed</p></section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="screen" id="screen-reports" data-screen data-slug="Reports · past 30 days" data-meta="All programs · Aug 17 as-of · live aggregates, fixture values" aria-labelledby="reports-heading">
+            <div class="screen-heading">
+              <div><p class="eyebrow">Printable evidence, not a chart wall</p><h2 id="reports-heading">Reports</h2></div>
+              <button type="button" class="prototype-only">Pin this report to Today</button>
+            </div>
+            <section class="ledger">
+              <div class="ledger-header"><h3>30-day operating report</h3><span>Scope: all programs · method below</span></div>
+              <p class="metric-sentence">214 active students · 1,284 check-ins · 88% attendance · 42 leads · 31% conversion</p>
+              <div class="day-band"><div><strong>Adult BJJ</strong>612 check-ins<br>78% average utilization</div><div><strong>Kids Fundamentals</strong>438 check-ins<br>91% average utilization</div><div><strong>Judo</strong>234 check-ins<br>64% average utilization</div><div><strong>Quiet churn</strong>6 students<br>server-owned signals</div></div>
+              <p><small>Method: attendance and utilization use completed sessions from Jul 19–Aug 17 in studio timezone. Lead conversion uses leads converted in the same window. Test-readiness summary remains unavailable and is not inferred.</small></p>
+            </section>
+            <div class="notice state-partial"><strong>Partial / preview</strong> Export is disabled in preview. Aggregate labels retain provenance; no exact retention is derived from the capped roster.</div>
+            <section class="ledger">
+              <div class="ledger-header"><h3>Take a copy · existing CSV catalog</h3><span>6 groups · 29 exports</span></div>
+              <p>Each export names columns, row count, and format before download in production. Pending, token, success, error, Retry, empty, and dataset-error states remain in flow. Instructor export is denied. Front desk receives only catalog-authorized exports.</p>
+              <details open><summary>Owner Intelligence · 11</summary><ul>
+                <li><code>owner_kpi_summary</code> · Owner KPI Summary</li><li><code>quiet_churn_watchlist</code> · Quiet Churn Watchlist</li><li><code>first_90_days_onboarding</code> · First 90 Days Onboarding</li><li><code>lead_quality_after_enrollment</code> · Lead Quality After Enrollment</li><li><code>belt_momentum_testing_pipeline</code> · Belt Momentum and Testing Pipeline</li><li><code>revenue_leakage</code> · Revenue Leakage</li><li><code>schedule_utilization_demand</code> · Schedule Utilization and Demand</li><li><code>family_account_health</code> · Family Account Health</li><li><code>lifecycle_segmentation</code> · Lifecycle Segmentation</li><li><code>instructor_staff_impact</code> · Instructor and Staff Impact</li><li><code>data_hygiene_readiness</code> · Data Hygiene and Studio Readiness</li>
+              </ul><button type="button" class="prototype-only" data-roles="admin">Choose Owner Intelligence export</button></details>
+              <details><summary>Student Records · 3</summary><ul><li><code>students</code> · Students</li><li><code>guardian_contacts</code> · Guardians and Contacts</li><li><code>student_program_memberships</code> · Program Enrollments</li></ul><button type="button" class="prototype-only" data-roles="admin">Choose Student Records export</button></details>
+              <details><summary>Growth · 2</summary><ul><li><code>leads</code> · Leads</li><li><code>lead_activities</code> · Lead Activities</li></ul><button type="button" class="prototype-only" data-roles="admin">Choose Growth export</button></details>
+              <details><summary>Programs and Ranks · 4</summary><ul><li><code>programs</code> · Programs</li><li><code>belt_ladders</code> · Belt Ladders</li><li><code>belt_ranks</code> · Belt Ranks</li><li><code>promotions</code> · Promotion History</li></ul><button type="button" class="prototype-only" data-roles="admin front-desk">Choose authorized program/rank export</button></details>
+              <details><summary>Schedule · 3</summary><ul><li><code>class_templates</code> · Recurring Class Templates</li><li><code>class_sessions</code> · Class Sessions</li><li><code>attendance</code> · Attendance Records</li></ul><button type="button" class="prototype-only" data-roles="admin front-desk">Choose authorized schedule export</button></details>
+              <details><summary>Administration · 6</summary><ul><li><code>studio_overview</code> · Studio Overview</li><li><code>staff_roles</code> · Staff Roles</li><li><code>audit_logs</code> · Audit Logs</li><li><code>email_usage_events</code> · Email Usage</li><li><code>student_import_runs</code> · Student Import Runs</li><li><code>export_jobs</code> · Export Jobs</li></ul><button type="button" class="prototype-only" data-roles="admin">Choose Administration export</button></details>
+              <div class="action-row"><button type="button" class="primary prototype-only" data-roles="admin front-desk">Download authorized CSV</button><button type="button" class="prototype-only">Retry failed export</button></div>
+              <p class="notice"><strong>Export honesty</strong> Deferred billing table reports are not listed. Promotion CSV does not claim later snapshot/operation fields. Audit/staff exports do not claim fields outside the current catalog.</p>
+            </section>
+          </section>
+
+          <section class="screen" id="screen-automations" data-screen data-slug="Automations · planned" data-meta="Workflow catalog · no builder or mutation API" aria-labelledby="automations-heading">
+            <div class="screen-heading"><div><p class="eyebrow">Honest future catalog</p><h2 id="automations-heading">Automations</h2></div><span class="stamp warn">Planned · read-only</span></div>
+            <p class="notice"><strong>No live builder</strong> These sentences describe future workflows and link to existing live queues. There is no create, enable, dry-run, run-ledger, API, or mutation control today.</p>
+            <section class="ledger future">
+              <div class="ledger-header"><h3>Potential rules</h3><span>Examples only</span></div>
+              <div class="ruled-row"><span class="state-mark warning"></span><strong>When a student misses 3 classes</strong><span>prepare a follow-up for staff review</span><a href="#screen-today">Open live Today queue</a></div>
+              <div class="ruled-row"><span class="state-mark warning"></span><strong>When a lead’s next touch is overdue</strong><span>place it in the existing Leads follow-up view</span><a href="#screen-leads">Open live Leads</a></div>
+              <div class="ruled-row"><span class="state-mark warning"></span><strong>When an invoice fails</strong><span>surface the current billing exception and allowed remedy</span><a href="#billing-invoices">Open live Billing</a></div>
+              <div class="ruled-row"><span class="state-mark warning"></span><strong>When rank requirements are met</strong><span>surface an approval candidate without auto-promoting</span><a href="#screen-belts">Open live Belt Tracker</a></div>
+            </section>
+          </section>
+
+          <section class="screen" id="screen-settings" data-screen data-slug="Settings · Redwood Jiu-Jitsu" data-meta="Admin only · studio, programs, staff, and guarded data controls" aria-labelledby="settings-heading">
+            <div class="screen-heading"><div><p class="eyebrow">Indexed long form</p><h2 id="settings-heading">Settings</h2></div><span class="stamp danger">Admin only</span></div>
+            <div class="screen-layout with-index">
+              <nav class="gutter-index" aria-label="Settings sections"><a href="#settings-studio">Studio</a><a href="#settings-programs">Programs</a><a href="#settings-staff">Staff &amp; roles</a><a href="#settings-data">Data controls</a></nav>
+              <div>
+                <section class="record-leaf" id="settings-studio"><header><h3>Studio</h3><span class="stamp good">Saved 2m ago</span></header><form class="form-grid" onsubmit="return false"><div class="form-field"><label for="studio-name">Studio name</label><input id="studio-name" value="Redwood Jiu-Jitsu"></div><div class="form-field"><label for="studio-timezone">Timezone</label><input id="studio-timezone" value="America/Los_Angeles" disabled></div><div class="form-field full action-row"><button type="button" class="primary prototype-only" data-roles="admin">Save studio</button></div></form></section>
+                <section class="record-leaf" id="settings-programs">
+                  <header><h3>Programs</h3><button type="button" class="primary prototype-only" data-roles="admin">Add program</button></header>
+                  <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Program</th><th>Description / color / order</th><th>Usage / system</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+                    <tr><td data-label="Program">Adult BJJ</td><td data-label="Description / color / order">Adult Brazilian Jiu-Jitsu · Brown label + text · order 1</td><td data-label="Usage / system">3 class series · 41 enrollments · not system</td><td data-label="Status">Active</td><td data-label="Actions"><button type="button" class="prototype-only" data-roles="admin">Edit</button> <button type="button" class="prototype-only" data-roles="admin" data-open-dialog data-confirm-title="Archive Adult BJJ?" data-confirm-description="Blast radius: 3 class series and 41 enrollments. The production flow must preserve recovery through Restore." data-confirm-action="Archive program">Archive</button></td></tr>
+                    <tr><td data-label="Program">Intro Course</td><td data-label="Description / color / order">Six-week introduction · outlined label · order 4</td><td data-label="Usage / system">0 class series · 0 enrollments · not system</td><td data-label="Status">Archived</td><td data-label="Actions"><button type="button" class="prototype-only" data-roles="admin">Restore</button></td></tr>
+                  </tbody></table></div>
+                  <p class="muted">Archive shows blast radius. If deletion is ever offered, reassignment must precede it; the current contract uses archive/restore.</p>
+                </section>
+                <section class="record-leaf" id="settings-staff">
+                  <header><h3>Staff and roles</h3><button type="button" class="primary prototype-only" data-roles="admin">Invite staff</button></header>
+                  <form class="form-grid" onsubmit="return false">
+                    <div class="form-field"><label for="invite-email">Invite email</label><input id="invite-email" type="email" value="coach@example.test"></div>
+                    <div class="form-field"><label for="invite-display">Display name</label><input id="invite-display" value="Coach Rivera"></div>
+                    <div class="form-field"><label for="invite-legal-first">Legal first name</label><input id="invite-legal-first" value="Alex"></div>
+                    <div class="form-field"><label for="invite-legal-last">Legal last name</label><input id="invite-legal-last" value="Rivera"></div>
+                    <div class="form-field"><label for="invite-role">Role</label><select id="invite-role"><option>Admin</option><option>Front desk</option><option selected>Instructor</option></select></div>
+                    <div class="form-field action-row"><button type="button" class="primary prototype-only" data-roles="admin">Send invite</button></div>
+                  </form>
+                  <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Staff</th><th>Role / status</th><th>Last sign-in</th><th>Actions</th></tr></thead><tbody>
+                    <tr><td data-label="Staff">Ana Torres<br>ana@example.test</td><td data-label="Role / status">Admin · Active · current user</td><td data-label="Last sign-in">Aug 17, 5:58am</td><td data-label="Actions"><button type="button" class="prototype-only" data-roles="admin">Edit name</button> <button type="button" disabled>Archive last admin</button></td></tr>
+                    <tr><td data-label="Staff">Devon Park<br>devon@example.test</td><td data-label="Role / status">Front desk · Invited</td><td data-label="Last sign-in">Never</td><td data-label="Actions"><button type="button" class="prototype-only" data-roles="admin">Change role</button> <button type="button" class="prototype-only" data-roles="admin">Revoke invite</button></td></tr>
+                    <tr><td data-label="Staff">Morgan Bell<br>morgan@example.test</td><td data-label="Role / status">Instructor · Archived</td><td data-label="Last sign-in">Jul 30</td><td data-label="Actions"><button type="button" class="prototype-only" data-roles="admin">Restore</button> <button type="button" class="prototype-only" data-roles="admin">Delete permanently</button></td></tr>
+                  </tbody></table></div>
+                  <details><summary>Permanent deletion confirmation fields</summary><div class="form-grid"><div class="form-field"><label for="delete-identity">Type exact deletion identity, case-sensitive after whitespace normalization</label><input id="delete-identity" value="morgan@example.test"></div><div class="form-field action-row"><button type="button" class="prototype-only" data-roles="admin">Confirm permanent delete</button></div></div><p class="muted">Self, last-active-admin, identity, pending, action-error, archive/restore, and revoked-invite guards remain explicit.</p></details>
+                </section>
+                <section class="record-leaf" id="settings-data">
+                  <header><h3>Demo and data controls</h3><span class="stamp danger">Destructive</span></header>
+                  <p>Capability checks require Admin, subscribed studio, configured allowlist, and explicit confirmation. Load and action errors remain in this section.</p>
+                  <div class="action-row"><button type="button" class="prototype-only" data-roles="admin" data-open-dialog data-confirm-title="Reset demo data?" data-confirm-description="This current action requires Admin, subscription, allowlist, capability, and confirmation checks." data-confirm-action="Reset demo">Reset demo data</button><button type="button" class="prototype-only" data-roles="admin" data-open-dialog data-confirm-title="Clear studio data?" data-confirm-description="This destructive current action requires Admin, subscription, allowlist, capability, and confirmation checks." data-confirm-action="Clear studio data">Clear studio data</button></div>
+                </section>
+              </div>
+              <aside class="margin-rail" aria-label="Settings context"><section><h3>Role preview</h3><p>Admin sees all current settings. Front desk and Instructor are denied before settings data loads.</p></section><section><h3>Guards</h3><p>Last active Admin protected<br>Self-action protected<br>Archived items remain recoverable</p></section></aside>
+            </div>
+          </section>
+
+          <section class="screen" id="screen-account" data-screen data-slug="Account · Ana Torres" data-meta="owner@example.test · Redwood Jiu-Jitsu · Admin" aria-labelledby="account-heading">
+            <div class="screen-heading"><div><p class="eyebrow">Identity, security, preferences, data</p><h2 id="account-heading">Account</h2></div><button type="button" class="prototype-only">Sign out</button></div>
+            <div class="screen-layout with-index">
+              <nav class="gutter-index" aria-label="Account sections"><a href="#route-account-profile">Profile</a><a href="#route-account-settings">Security &amp; ownership</a><a href="#route-account-personalization">Personalization</a><a href="#route-account-notifications">Notifications</a><a href="#route-account-data">Data</a></nav>
+              <div>
+                <section class="record-leaf" id="route-account-profile">
+                  <header><h3>/account/profile · Profile</h3><span class="stamp good">Live</span></header>
+                  <form class="form-grid" onsubmit="return false"><div class="form-field"><label for="display-name">Display name</label><input id="display-name" value="Ana Torres"></div><div class="form-field"><label for="auth-email">Authentication email · read-only</label><input id="auth-email" type="email" value="owner@example.test" disabled></div><div class="form-field"><label for="legal-first">Legal first name · read-only here</label><input id="legal-first" value="Ana" disabled></div><div class="form-field"><label for="legal-last">Legal last name · read-only here</label><input id="legal-last" value="Torres" disabled></div><div class="form-field full"><span class="label">Workspace context</span>Redwood Jiu-Jitsu · Admin · Studio owner</div><div class="form-field full action-row"><button type="button" class="primary prototype-only">Save display name</button></div></form>
+                  <p class="muted">Validation, save pending, and save error appear in flow. Missing legal names withhold the entire shell in the separate legal-name blocker.</p>
+                </section>
+                <section class="record-leaf" id="route-account-settings">
+                  <header><h3>/account/settings · Security, ownership, deletion</h3><span>Owner / Admin gates</span></header>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Password</strong><span>Send a reset through the authentication owner.</span><button type="button" class="prototype-only">Reset password</button></div>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Sessions</strong><span>Sign out all sessions with pending/error/status feedback.</span><button type="button" class="prototype-only">Sign out all sessions</button></div>
+                  <div class="ruled-row"><span class="state-mark warning"></span><strong>Transfer ownership</strong><span>Eligible Admin: Devon Park · eligibility loading/error retained.</span><button type="button" class="prototype-only" data-roles="admin">Transfer to eligible Admin</button></div>
+                  <div class="ruled-row"><span class="state-mark danger"></span><strong>Self-deletion</strong><span>Not scheduled · typed confirmation required · cancellable while pending.</span><button type="button" class="prototype-only" data-roles="admin" data-open-dialog data-confirm-title="Schedule account deletion?" data-confirm-description="Typed confirmation and owner eligibility are required. A pending request remains cancellable until processing begins." data-confirm-action="Schedule deletion">Schedule deletion</button></div>
+                  <div class="form-field"><label for="account-delete-confirm">Typed confirmation</label><input id="account-delete-confirm" placeholder="Type DELETE MY ACCOUNT"></div>
+                  <div class="action-row"><button type="button" class="prototype-only" disabled>Cancel scheduled deletion</button></div>
+                </section>
+                <section class="record-leaf" id="route-account-personalization">
+                  <header><h3>/account/personalization · Theme</h3><span class="stamp good">Theme is live</span></header>
+                  <fieldset><legend>Theme</legend><div class="check-row"><label><input type="radio" name="theme" checked> System</label><label><input type="radio" name="theme"> Light</label><label><input type="radio" name="theme"> Dark</label></div></fieldset>
+                  <fieldset class="future" disabled><legend>Future preferences · read-only</legend><div class="form-grid"><div class="form-field"><label for="density">Density</label><select id="density"><option>Standard · unavailable</option></select></div><div class="form-field"><label for="language">Language</label><select id="language"><option>English · unavailable</option></select></div></div></fieldset>
+                  <p class="muted">The pitch’s global dataset switch is not a proposed production density preference.</p>
+                </section>
+                <section class="record-leaf future" id="route-account-notifications">
+                  <header><h3>/account/notifications · Delivery preferences</h3><span class="stamp warn">Planned · no API</span></header>
+                  <div class="table-wrap"><table class="responsive-table"><thead><tr><th>Category</th><th>Email</th><th>In-app</th><th>Truth</th></tr></thead><tbody><tr><td data-label="Category">Billing exceptions</td><td data-label="Email">Unavailable</td><td data-label="In-app">Current queues only</td><td data-label="Truth">No preference mutation</td></tr><tr><td data-label="Category">Lead follow-up</td><td data-label="Email">Unavailable</td><td data-label="In-app">Current Leads / Today views</td><td data-label="Truth">No preference mutation</td></tr><tr><td data-label="Category">Rank readiness</td><td data-label="Email">Unavailable</td><td data-label="In-app">Belt Tracker only</td><td data-label="Truth">No preference mutation</td></tr></tbody></table></div>
+                </section>
+                <section class="record-leaf" id="route-account-data">
+                  <header><h3>/account/data · Data destinations</h3><span>Links, not a duplicate engine</span></header>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Reports exports</strong><span>Use the existing 29-report catalog; role wording changes for non-Admin.</span><a href="#screen-reports">Open Reports</a></div>
+                  <div class="ruled-row"><span class="state-mark danger"></span><strong>Studio data controls</strong><span>Admin-only reset/clear actions remain in Settings.</span><a href="#settings-data">Open Settings</a></div>
+                  <div class="ruled-row"><span class="state-mark"></span><strong>Policies</strong><span>Privacy and Terms remain linked destinations.</span><button type="button" class="prototype-only">Open policy links</button></div>
+                </section>
+              </div>
+              <aside class="margin-rail" aria-label="Account context"><section><h3>Identity</h3><p>Ana Torres<br>owner@example.test<br>Redwood Jiu-Jitsu · Admin</p></section><section><h3>Account links</h3><p>Billing<br>Help<br>Privacy<br>Terms</p></section><section><h3>Shell blocker</h3><p>If either legal name is missing, the shell is replaced by the required legal-name form plus Sign out.</p></section></aside>
+            </div>
+          </section>
+
+          <footer class="prototype-footer"><strong>Prototype boundary:</strong> every value above is a reconciled fixture. Controls demonstrate placement, permissions, state, and feedback. They do not call a backend, provider, email service, or export endpoint.</footer>
+        </div>
+      </div>
+    </section>
+
+    <section class="pitch-section" id="storyboards" aria-labelledby="storyboards-heading">
+      <div class="section-intro"><div><p class="eyebrow">Three linked workflows</p><h2 id="storyboards-heading">The system proves its joins</h2></div><p>Each storyboard uses the same fixture records as the screens. Select a step to hear the modeled state change. These are prototype transitions, not claims that a backend mutation occurred.</p></div>
+      <div class="storyboards">
+        <article class="storyboard" aria-label="Attendance to student history and Today queue flow">
+          <div class="story-step"><span class="step-number">Flow 1 · Step 1</span><h3>Take attendance</h3><p>Mark Maya Chen present at Adult BJJ Fundamentals, 6:00am. The sheet shows 18 present and one visible offline-pending mark.</p><button type="button" data-story-step="Attendance step 1 selected: Maya Chen is marked present in the prototype check sheet." aria-pressed="true">Select step 1</button></div>
+          <div class="story-step"><span class="step-number">Step 2</span><h3>Close the sheet</h3><p>Commit attendance explicitly. The record owner returns a check-in at 6:14am; pending failures remain in the tray.</p><button type="button" data-story-step="Attendance step 2 selected: close and commit, with pending failures still visible." aria-pressed="false">Select step 2</button></div>
+          <div class="story-step"><span class="step-number">Step 3</span><h3>History updates</h3><p>Maya’s History leaf gains the event; the Today queue removes the attendance task while server-owned counts refresh.</p><button type="button" data-story-step="Attendance step 3 selected: student history gains the event and Today removes the completed task." aria-pressed="false">Select step 3</button> <a href="#student-history">See history</a></div>
+        </article>
+        <article class="storyboard" aria-label="CSV import to roster and belt resolution flow">
+          <div class="story-step"><span class="step-number">Flow 2 · Step 1</span><h3>Read and map</h3><p>Parse 126 rows and map all supported fields. First/last resolution is required; duplicate targets are blocked except Notes.</p><button type="button" data-story-step="Import step 1 selected: 126 rows parsed and mapping rules applied." aria-pressed="true">Select step 1</button></div>
+          <div class="story-step"><span class="step-number">Step 2</span><h3>Resolve errata</h3><p>Row 27 has an unknown Navy rank; row 88 has a missing program. Policies keep both warnings addressable.</p><button type="button" data-story-step="Import step 2 selected: two row warnings require rank and program policy resolution." aria-pressed="false">Select step 2</button></div>
+          <div class="story-step"><span class="step-number">Step 3</span><h3>Land and verify</h3><p>After execution, results link to the roster and Belt Tracker. The import run retains idempotent result/error evidence.</p><button type="button" data-story-step="Import step 3 selected: landed records link to roster and Belt Tracker for verification." aria-pressed="false">Select step 3</button> <a href="#screen-import">See import</a></div>
+        </article>
+        <article class="storyboard" aria-label="Failed charge to remedy reconciliation and paid invoice flow">
+          <div class="story-step"><span class="step-number">Flow 3 · Step 1</span><h3>Open failed invoice</h3><p><code>INV-2081</code> shows Maya, payer Alice Chen, $145 outstanding, Aug 15 failure, and provider references.</p><button type="button" data-story-step="Billing step 1 selected: failed invoice INV-2081 is open with exact payer and provider references." aria-pressed="true">Select step 1</button></div>
+          <div class="story-step"><span class="step-number">Step 2</span><h3>Record remedy</h3><p>Do not promise provider retry. Record a $145 Zelle payment or inspect provider evidence, then explicitly reconcile.</p><button type="button" data-story-step="Billing step 2 selected: external payment or provider evidence is reviewed without assuming retry capability." aria-pressed="false">Select step 2</button></div>
+          <div class="story-step"><span class="step-number">Step 3</span><h3>Confirm paid</h3><p>The accepted reconciliation changes invoice status to Paid, outstanding to $0, and removes the Today exception with an audit event.</p><button type="button" data-story-step="Billing step 3 selected: accepted reconciliation marks the invoice paid and clears the Today exception." aria-pressed="false">Select step 3</button> <a href="#billing-invoices">See invoices</a></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="pitch-section" id="secondary-contracts" aria-labelledby="secondary-heading">
+      <div class="section-intro"><div><p class="eyebrow">Concise route destinations</p><h2 id="secondary-heading">Help and authenticated transitions</h2></div><p>These smaller surfaces retain their own fields, actions, states, and deep links. The pitch does not silently decide whether secondary Account and Help pages stay routes or become addressable panels.</p></div>
+      <article class="route-card" id="route-help"><h3>/help</h3><p><strong>Purpose:</strong> help directory with setup, contact, downloads, release, policy, and bug paths plus diagnostics.</p><div class="action-row"><a class="button-link" href="#route-help-started">Get started</a><a class="button-link" href="#route-help-contact">Contact support</a><a class="button-link" href="#route-help-downloads">Downloads</a><a class="button-link" href="#route-help-releases">Release notes</a></div><p class="muted">Informational. Diagnostics stay bounded and do not expose secrets or raw internal tooling.</p></article>
+      <div class="route-contracts">
+        <article class="route-card" id="route-help-started"><h3>/help/get-started</h3><p>Setup order, role boundaries, first-day steps, and daily guidance with links back to live destinations.</p><ul><li>Finish studio and program setup</li><li>Import or add students</li><li>Build the schedule and take attendance</li><li>Admin-only billing and settings boundaries stated</li></ul></article>
+        <article class="route-card" id="route-help-releases"><h3>/help/release-notes</h3><p>Changelog-derived releases in a ruled list. If the changelog has no entries, show “No release notes published yet.”</p><button type="button" class="prototype-only">Open latest release</button></article>
+        <article class="route-card" id="route-help-downloads"><h3>/help/downloads</h3><p>Browser and PWA installation guidance. Koaryu does not claim a native app.</p><div class="action-row"><button type="button" class="prototype-only">Show iOS PWA steps</button><button type="button" class="prototype-only">Show Android / desktop steps</button></div></article>
+        <article class="route-card" id="route-help-contact"><h3>/help/contact</h3><form class="form-grid" onsubmit="return false"><div class="form-field"><label for="support-topic">Topic</label><select id="support-topic"><option selected>Billing</option><option>Students</option><option>Schedule</option><option>Account</option></select></div><div class="form-field"><label for="support-severity">Severity</label><select id="support-severity"><option selected>Normal</option><option>Urgent</option></select></div><div class="form-field full"><label for="support-subject">Subject · 3–160 characters</label><input id="support-subject" minlength="3" maxlength="160" value="Invoice reconciliation question"></div><div class="form-field full"><label for="support-details">Details · 10–5000 characters</label><textarea id="support-details" minlength="10" maxlength="5000">INV-2081 has an external payment that needs review.</textarea></div><div class="form-field"><label for="support-current">Optional current page</label><input id="support-current" value="/billing"></div><div class="form-field"><label for="support-expected">Optional expected result</label><input id="support-expected" value="Invoice shows paid"></div><div class="form-field full"><label for="support-actual">Optional actual result</label><input id="support-actual" value="Invoice remains failed"></div><div class="form-field full action-row"><button type="button" class="primary prototype-only">Submit ticket</button><button type="button" class="prototype-only">Use email fallback</button></div></form><p class="muted">Recent-ticket list loading/error/empty and submission validation/pending/success/error remain in flow.</p></article>
+        <article class="route-card" id="route-subscription"><h3>/subscription-required</h3><p>Membership/Core gate. Admin sees provider availability plus checkout/portal; non-Admin sees explanation and return/support paths. Loading, provider unavailable, redirect pending/error, and support remain explicit.</p><div class="action-row"><button type="button" class="prototype-only" data-roles="admin">Open Core checkout</button><button type="button" class="prototype-only" data-roles="admin">Open Core portal</button><button type="button" class="prototype-only">Return to Dashboard</button><button type="button" class="prototype-only">Contact support</button></div></article>
+        <article class="route-card" id="route-onboarding"><h3>/onboarding</h3><form class="form-grid" onsubmit="return false"><div class="form-field"><label for="onboarding-studio">Studio name *</label><input id="onboarding-studio" required value="Redwood Jiu-Jitsu"></div><div class="form-field"><label for="onboarding-timezone">IANA timezone *</label><select id="onboarding-timezone"><option selected>America/Los_Angeles</option><option>America/New_York</option></select></div><div class="form-field full action-row"><button type="button" class="primary prototype-only">Create studio idempotently</button></div></form><p>Trimmed name and allowlisted IANA timezone. This fixture selects <code>America/Los_Angeles</code>; the current create-form default is <code>America/New_York</code>. Preview proceeds to Dashboard; live success proceeds to subscription review. Validation, auth, API, pending, and retry states remain explicit.</p></article>
+        <article class="route-card" id="route-account-archived"><h3>/account-archived</h3><p>No studio data loads. Explain reversible access loss and the owner/admin recovery path.</p><div class="action-row"><button type="button" class="prototype-only">Sign out</button></div><p class="muted">Sign-out pending and error remain in the focused transition sheet.</p></article>
+        <article class="route-card" id="route-access-denied"><h3>/access-denied</h3><p>Billing role denial before protected-data load. State the role boundary plainly.</p><button type="button" class="primary prototype-only">Return to Dashboard</button></article>
+        <article class="route-card" id="route-connect-refresh"><h3>/billing/connect/refresh</h3><p>Admin-only expired-link recovery. Create and acknowledge a fresh Stripe link before external navigation; never reuse an expired link.</p><div class="action-row"><button type="button" class="prototype-only" data-roles="admin">Create fresh Connect link</button><button type="button" class="prototype-only">Return to Billing</button></div><p class="muted">Loading, authorization error, provider error, acknowledgement, and return states remain explicit.</p></article>
+      </div>
+      <article class="route-card" id="shell-contract"><h3>Shared shell contract</h3><p>Nine top-level destinations, active state, desktop collapse, responsive navigation, account/help/personalization menus, live theme, and sign out. Missing legal first or last name replaces the entire shell with a required legal-name form and Sign out; save and sign-out pending/error states remain visible.</p><div class="action-row"><button type="button" class="prototype-only">Collapse navigation</button><button type="button" class="prototype-only" aria-expanded="false">Open mobile navigation</button><button type="button" class="prototype-only" aria-expanded="false">Open account menu</button><button type="button" class="prototype-only">Help</button><button type="button" class="prototype-only">Personalization</button><button type="button" class="prototype-only">Change theme</button><button type="button" class="prototype-only">Sign out</button></div><details><summary>Legal-name blocker form</summary><form class="form-grid" onsubmit="return false"><div class="form-field"><label for="blocker-legal-first">Legal first name *</label><input id="blocker-legal-first" required value="Ana"></div><div class="form-field"><label for="blocker-legal-last">Legal last name *</label><input id="blocker-legal-last" required value="Torres"></div><div class="form-field full action-row"><button type="button" class="primary prototype-only">Save legal identity</button><button type="button" class="prototype-only">Sign out</button></div></form><p class="muted">The normal shell is withheld until save succeeds. Validation, save pending/error, and sign-out pending/error stay in this focused screen.</p></details></article>
+    </section>
+
+    <section class="pitch-section" id="coverage-manifest" aria-labelledby="coverage-heading">
+      <div class="section-intro"><div><p class="eyebrow">Completeness audit</p><h2 id="coverage-heading">23 dashboard-group routes + 4 transitions</h2></div><div><p>Every row names the current purpose, data/fields, actions, roles/states, and the artifact destination where the contract is demonstrated.</p><ul class="legend"><li><span class="coverage-status">Covered</span> present in this artifact</li><li><span class="stamp warn">Read-only</span> deliberately not live</li><li><span class="stamp danger">Denied</span> no protected-data preload</li></ul></div></div>
+      <div class="coverage-wrap">
+        <table class="responsive-table">
+          <thead><tr><th>#</th><th>Route</th><th>Purpose</th><th>Fields / data</th><th>Actions</th><th>States / roles</th><th>Status and artifact anchor</th></tr></thead>
+          <tbody>
+            <tr id="coverage-dashboard"><td data-label="#">1</td><td data-label="Route"><code>/dashboard</code></td><td data-label="Purpose">Morning brief, setup, queue, recent records, operational/billing signals</td><td data-label="Fields / data">Server summary, partial roster, Today classes, setup progress</td><td data-label="Actions">Quick links, explain metrics, add student, pin/remove view</td><td data-label="States / roles">Loading/error/retry/empty/setup/preview/partial; billing hidden by role</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-today">Today</a></td></tr>
+            <tr id="coverage-students"><td data-label="#">2</td><td data-label="Route"><code>/students</code></td><td data-label="Purpose">Searchable, filterable roster and bulk work</td><td data-label="Fields / data">Identity, status, program/rank, attendance, contact</td><td data-label="Actions">Add/import/select/all/tags/status/archive/open/page</td><td data-label="States / roles">Partial/full, query notice, loading/error/retry/empty/no-results, mutation feedback; Admin/Front desk mutate</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-students">Students</a></td></tr>
+            <tr id="coverage-student-detail"><td data-label="#">3</td><td data-label="Route"><code>/students/[id]</code></td><td data-label="Purpose">Complete student record</td><td data-label="Fields / data">Identity/contact/address/emergency/guardian/lifecycle/hold/program/rank/promotion/photo/notes</td><td data-label="Actions">Edit, lifecycle, archive, upload/remove photo, promote/demote</td><td data-label="States / roles">Loading/not-found/validation/progress/error/confirm; field/action permissions</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-student">Student Detail</a></td></tr>
+            <tr id="coverage-import"><td data-label="#">4</td><td data-label="Route"><code>/students/import</code></td><td data-label="Purpose">Read, map, validate, execute CSV</td><td data-label="Fields / data">All mappings; duplicate/missing-program/rank policies; row results</td><td data-label="Actions">Upload/demo, back/cancel/retry/execute/results</td><td data-label="States / roles">Denied/file/parse/map/row/setup warning/error; Admin/Front desk</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-import">Import</a></td></tr>
+            <tr id="coverage-belts"><td data-label="#">5</td><td data-label="Route"><code>/belt-tracker</code></td><td data-label="Purpose">Eligibility and rank-plan management</td><td data-label="Fields / data">Program, ladder, sub-rank term, rank fields, requirements, history</td><td data-label="Actions">Add/edit/delete/reorder/save/discard/promote/demote</td><td data-label="States / roles">No data/loading/error/unsaved/saving/conflict; Admin config, Admin/Instructor transitions</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-belts">Belt Tracker</a></td></tr>
+            <tr id="coverage-leads"><td data-label="#">6</td><td data-label="Route"><code>/leads</code></td><td data-label="Purpose">Lead pipeline, follow-up, activity, conversion</td><td data-label="Fields / data">Name/contact/source/stage/program/minor/guardian/assignee/follow-up/lost/notes/activity</td><td data-label="Actions">Add/open/move by drag or keyboard/update/activity/convert/mark lost; no delete</td><td data-label="States / roles">Stage empty, pending/action feedback; Admin/Front desk mutation; load-error decision unresolved</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-leads">Leads</a></td></tr>
+            <tr id="coverage-schedule"><td data-label="#">7</td><td data-label="Route"><code>/schedule</code></td><td data-label="Purpose">Calendar, session detail, attendance</td><td data-label="Fields / data">Template/session recurrence/date/time/program/instructor/capacity/status/notes; attendance fields</td><td data-label="Actions">Month/week/day, filter, add, detail, attendance, delete occurrence/future</td><td data-label="States / roles">Loading/error/empty/partial/materialization; schedule vs attendance permissions</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-schedule">Schedule</a></td></tr>
+            <tr id="coverage-billing"><td data-label="#">8</td><td data-label="Route"><code>/billing</code></td><td data-label="Purpose">Six billing books and exception remedy</td><td data-label="Fields / data">Core/Connect, plans/prices/programs, payer/family, enrollment, invoice/item/payment refs, readiness</td><td data-label="Actions">Core/Connect admin, external enrollment/payment, reconcile, allowed links</td><td data-label="States / roles">Admin/Front desk route, Instructor denied; provider/preview guards; read-only/unavailable truth</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-billing">Billing</a></td></tr>
+            <tr id="coverage-automations"><td data-label="#">9</td><td data-label="Route"><code>/automations</code></td><td data-label="Purpose">Planned workflow catalog and live-queue links</td><td data-label="Fields / data">Rule descriptions only</td><td data-label="Actions">Navigate to existing queues</td><td data-label="States / roles">Explicitly read-only; no builder/API/mutation</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-automations">Automations</a></td></tr>
+            <tr id="coverage-reports"><td data-label="#">10</td><td data-label="Route"><code>/reports</code></td><td data-label="Purpose">30-day analytics and 29 CSV exports</td><td data-label="Fields / data">Lead/attendance/utilization methods; six export groups</td><td data-label="Actions">Choose/download/retry/pin report</td><td data-label="States / roles">Loading/error/retry/empty/preview/token/pending/success; Admin and selected Front desk</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-reports">Reports</a></td></tr>
+            <tr id="coverage-settings"><td data-label="#">11</td><td data-label="Route"><code>/settings</code></td><td data-label="Purpose">Studio, program, staff, guarded data controls</td><td data-label="Fields / data">Studio name; program config/usage/archive; staff identity/role/status</td><td data-label="Actions">CRUD/archive/restore/invite/revoke/delete/reset/clear</td><td data-label="States / roles">Admin only; guards, confirmations, load/action errors</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-settings">Settings</a></td></tr>
+            <tr id="coverage-account"><td data-label="#">12</td><td data-label="Route"><code>/account</code></td><td data-label="Purpose">Identity/studio/role summary and destinations</td><td data-label="Fields / data">User email/name, studio, role</td><td data-label="Actions">Profile/security/preferences/data/billing/help/policy links</td><td data-label="States / roles">Hydrated identity context</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#screen-account">Account</a></td></tr>
+            <tr id="coverage-account-profile"><td data-label="#">13</td><td data-label="Route"><code>/account/profile</code></td><td data-label="Purpose">Display profile</td><td data-label="Fields / data">Display name, disabled auth email, read-only legal/workspace context</td><td data-label="Actions">Save display name</td><td data-label="States / roles">Validation/pending/error; legal names read-only here</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-account-profile">Profile</a></td></tr>
+            <tr id="coverage-account-settings"><td data-label="#">14</td><td data-label="Route"><code>/account/settings</code></td><td data-label="Purpose">Security, ownership, self-deletion</td><td data-label="Fields / data">Eligible Admin, deletion status, typed confirmation</td><td data-label="Actions">Reset password, sign out all, transfer, schedule/cancel deletion</td><td data-label="States / roles">Owner/Admin gates, loading/status/error/confirm</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-account-settings">Security</a></td></tr>
+            <tr id="coverage-account-personalization"><td data-label="#">15</td><td data-label="Route"><code>/account/personalization</code></td><td data-label="Purpose">Theme and future preferences</td><td data-label="Fields / data">System/light/dark; density/language</td><td data-label="Actions">Choose live theme</td><td data-label="States / roles">Density/language visibly future and disabled</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-account-personalization">Personalization</a></td></tr>
+            <tr id="coverage-account-notifications"><td data-label="#">16</td><td data-label="Route"><code>/account/notifications</code></td><td data-label="Purpose">Planned notification categories</td><td data-label="Fields / data">Event/channel examples</td><td data-label="Actions">None</td><td data-label="States / roles">Intentionally read-only; no API</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-account-notifications">Notifications</a></td></tr>
+            <tr id="coverage-account-data"><td data-label="#">17</td><td data-label="Route"><code>/account/data</code></td><td data-label="Purpose">Data/export/control/policy destinations</td><td data-label="Fields / data">Role-aware wording and link inventory</td><td data-label="Actions">Open Reports, Settings, Privacy, Terms</td><td data-label="States / roles">Admin vs non-Admin; no duplicate export engine</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-account-data">Data</a></td></tr>
+            <tr id="coverage-help"><td data-label="#">18</td><td data-label="Route"><code>/help</code></td><td data-label="Purpose">Help directory and diagnostics</td><td data-label="Fields / data">Setup/contact/download/release/policy/bug links</td><td data-label="Actions">Navigate to help destinations</td><td data-label="States / roles">Informational</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-help">Help</a></td></tr>
+            <tr id="coverage-help-started"><td data-label="#">19</td><td data-label="Route"><code>/help/get-started</code></td><td data-label="Purpose">First-day and daily guidance</td><td data-label="Fields / data">Setup order and role boundary</td><td data-label="Actions">Links to live destinations</td><td data-label="States / roles">Informational</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-help-started">Get started</a></td></tr>
+            <tr id="coverage-help-releases"><td data-label="#">20</td><td data-label="Route"><code>/help/release-notes</code></td><td data-label="Purpose">Changelog-derived releases</td><td data-label="Fields / data">Release title/date/body</td><td data-label="Actions">Open release</td><td data-label="States / roles">Empty changelog state</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-help-releases">Release notes</a></td></tr>
+            <tr id="coverage-help-downloads"><td data-label="#">21</td><td data-label="Route"><code>/help/downloads</code></td><td data-label="Purpose">Install guidance</td><td data-label="Fields / data">Browser/PWA steps</td><td data-label="Actions">Choose platform guidance</td><td data-label="States / roles">Explicitly no native app</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-help-downloads">Downloads</a></td></tr>
+            <tr id="coverage-help-contact"><td data-label="#">22</td><td data-label="Route"><code>/help/contact</code></td><td data-label="Purpose">Support ticket and recent inbox</td><td data-label="Fields / data">Topic/severity/subject/details/page/expected/actual</td><td data-label="Actions">Submit, email fallback, inspect recent tickets</td><td data-label="States / roles">List loading/error/empty; validation/pending/success/error</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-help-contact">Contact</a></td></tr>
+            <tr id="coverage-subscription"><td data-label="#">23</td><td data-label="Route"><code>/subscription-required</code></td><td data-label="Purpose">Membership/Core access gate</td><td data-label="Fields / data">Subscription and provider availability</td><td data-label="Actions">Admin checkout/portal; return/support</td><td data-label="States / roles">Admin vs non-Admin, loading/error/unavailable/redirect</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-subscription">Subscription gate</a></td></tr>
+            <tr id="coverage-onboarding"><td data-label="#">24</td><td data-label="Route"><code>/onboarding</code></td><td data-label="Purpose">Create first studio</td><td data-label="Fields / data">Trimmed studio name, allowlisted IANA timezone</td><td data-label="Actions">Idempotent create</td><td data-label="States / roles">Preview/live, validation/auth/API/pending/success</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-onboarding">Onboarding</a></td></tr>
+            <tr id="coverage-archived"><td data-label="#">25</td><td data-label="Route"><code>/account-archived</code></td><td data-label="Purpose">Archived-membership transition</td><td data-label="Fields / data">Reversible access explanation; no studio data</td><td data-label="Actions">Sign out</td><td data-label="States / roles">Pending/error; fail closed</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-account-archived">Archived</a></td></tr>
+            <tr id="coverage-denied"><td data-label="#">26</td><td data-label="Route"><code>/access-denied</code></td><td data-label="Purpose">Billing role denial</td><td data-label="Fields / data">No protected data</td><td data-label="Actions">Return to Dashboard</td><td data-label="States / roles">Instructor/unknown denied before load</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-access-denied">Access denied</a></td></tr>
+            <tr id="coverage-connect-refresh"><td data-label="#">27</td><td data-label="Route"><code>/billing/connect/refresh</code></td><td data-label="Purpose">Expired Connect link recovery</td><td data-label="Fields / data">Fresh-link acknowledgement and provider state</td><td data-label="Actions">Create fresh link, navigate, return</td><td data-label="States / roles">Admin only, loading/error/acknowledgement</td><td data-label="Status"><span class="coverage-status">Covered</span> · <a href="#route-connect-refresh">Connect refresh</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="notice good"><strong>Coverage result: 27 of 27 destinations represented. None missing.</strong> Shared-shell legal-name and sign-out behavior is also shown in the shell contract above.</p>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
+    <h2 id="confirm-title">Confirm archive</h2>
+    <p id="confirm-description">This focused prototype dialog demonstrates a destructive confirmation. No record will change.</p>
+    <div class="action-row">
+      <button type="button" data-close-dialog>Cancel</button>
+      <button type="button" id="confirm-action" class="primary prototype-only" data-close-dialog>Archive record</button>
+    </div>
+  </dialog>
+
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const announcement = document.getElementById("demo-announcement");
+      const modeSummary = document.getElementById("mode-summary");
+      const stateLabels = {
+        typical: "Typical fixture",
+        heavy: "Heavy fixture: roster 500 rows; invoice register 800 rows (representative rows shown)",
+        loading: "Loading state",
+        error: "Dataset error state",
+        empty: "Empty / setup state",
+        partial: "Partial / preview state"
+      };
+      const roleLabels = {
+        admin: "Admin",
+        "front-desk": "Front desk",
+        instructor: "Instructor",
+        unknown: "Unknown / denied"
+      };
+
+      function applyPermissions(role) {
+        document.querySelectorAll("[data-roles]").forEach((control) => {
+          const allowed = control.dataset.roles.split(" ").includes(role);
+          if (control instanceof HTMLButtonElement || control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement) {
+            control.disabled = !allowed;
+          } else {
+            control.hidden = !allowed;
+          }
+          control.setAttribute("aria-disabled", String(!allowed));
+        });
+      }
+
+      document.querySelectorAll("[data-state]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const state = button.dataset.state;
+          root.dataset.fixtureState = state;
+          document.querySelectorAll("[data-state]").forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+          const role = root.dataset.role;
+          modeSummary.textContent = `${stateLabels[state]}. Static evidence only; no backend data changes.`;
+          announcement.textContent = `${stateLabels[state]}, ${roleLabels[role]} role. Prototype controls do not change backend data.`;
+        });
+      });
+
+      document.querySelectorAll("button[data-role]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const role = button.dataset.role;
+          root.dataset.role = role;
+          document.querySelectorAll("button[data-role]").forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+          applyPermissions(role);
+          announcement.textContent = `${stateLabels[root.dataset.fixtureState]}, ${roleLabels[role]} role. ${role === "unknown" ? "All capabilities denied." : "Unavailable controls are disabled."}`;
+        });
+      });
+
+      document.querySelectorAll("[data-screen-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const target = document.getElementById(button.dataset.screenTarget);
+          if (!target) return;
+          document.querySelectorAll("[data-screen-target]").forEach((candidate) => candidate.removeAttribute("aria-current"));
+          button.setAttribute("aria-current", "page");
+          document.getElementById("slug-title").textContent = target.dataset.slug;
+          document.getElementById("slug-meta").textContent = target.dataset.meta;
+          target.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+          announcement.textContent = `${target.dataset.slug} prototype screen selected.`;
+        });
+      });
+
+      const dialog = document.getElementById("confirm-dialog");
+      document.querySelectorAll("[data-open-dialog]").forEach((button) => button.addEventListener("click", () => {
+        document.getElementById("confirm-title").textContent = button.dataset.confirmTitle || "Confirm archive";
+        document.getElementById("confirm-description").textContent = button.dataset.confirmDescription || "This focused prototype dialog demonstrates a destructive confirmation. No record will change.";
+        document.getElementById("confirm-action").textContent = button.dataset.confirmAction || "Archive record";
+        dialog.showModal();
+      }));
+      document.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => dialog.close()));
+      document.querySelectorAll("[data-story-step]").forEach((button) => button.addEventListener("click", () => {
+        button.closest(".storyboard").querySelectorAll("[data-story-step]").forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+        announcement.textContent = button.dataset.storyStep;
+      }));
+      applyPermissions("admin");
+    })();
+  </script>
+</body>
+</html>
