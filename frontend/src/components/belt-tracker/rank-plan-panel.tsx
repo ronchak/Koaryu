@@ -230,6 +230,7 @@ export function RankPlanPanel({
             return (
               <div
                 key={group.belt.id}
+                data-progression-stratum={groupIndex + 1}
                 className={`${styles.rankGroup} border transition-[background-color,border-color,opacity] ${
                   isDropTarget
                     ? "border-accent bg-accent/5"
@@ -260,7 +261,7 @@ export function RankPlanPanel({
                     aria-expanded={!isCollapsed}
                     aria-controls={`rank-group-${group.belt.id}-tips`}
                     aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${group.belt.name}`}
-                    className="text-muted hover:text-text-secondary transition-colors cursor-pointer flex-shrink-0"
+                    className={styles.rankCollapseButton}
                   >
                     {isCollapsed
                       ? <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />

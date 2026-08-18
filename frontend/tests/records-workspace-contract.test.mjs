@@ -7,11 +7,16 @@ const source = async (path) => readFile(new URL(path, import.meta.url), "utf8");
 describe("records workspace composition contracts", () => {
   it("keeps the student roster semantic, responsive, and printable", async () => {
     const roster = await source("../src/components/students/student-roster-sections.tsx");
+    const page = await source("../src/components/students/student-roster-page-content.tsx");
     const styles = await source("../src/components/students/student-records.module.css");
 
     assert.match(roster, /<table className=\{styles\.rosterTable\}>/);
     assert.match(roster, /data-label="Student"/);
     assert.match(roster, /data-state=\{student\.status\}/);
+    assert.match(roster, /<aside className=\{styles\.studentReadingRail\}/);
+    assert.match(roster, /Open full record/);
+    assert.match(page, /focusedStudentId/);
+    assert.match(page, /inactivityByStudentId\.get\(focusedRow\.student\.id\)/);
     assert.match(styles, /@media \(max-width: 820px\)/);
     assert.match(styles, /@media print/);
   });
@@ -32,16 +37,29 @@ describe("records workspace composition contracts", () => {
     }
   });
 
-  it("uses a ranked belt roster and an obligation ledger instead of cards or Kanban", async () => {
+  it("uses progression strata and an age-banded lead workbench instead of cards or Kanban", async () => {
     const belt = await source("../src/components/belt-tracker/rank-plan-panel.tsx");
+    const eligibility = await source("../src/components/belt-tracker/eligibility-panel.tsx");
     const leads = await source("../src/components/leads/lead-pipeline-board.tsx");
     const leadPage = await source("../src/app/(dashboard)/leads/page.tsx");
 
     assert.match(belt, /styles\.rankRail/);
+    assert.match(belt, /data-progression-stratum/);
+    assert.match(eligibility, /styles\.decisionRegister/);
+    for (const readiness of ["ready", "approval", "progress"]) {
+      assert.match(eligibility, new RegExp(`data-readiness="${readiness}"`));
+    }
     assert.match(leads, /<dl className=\{styles\.totals\}>/);
-    assert.match(leads, /<table className=\{styles\.ledger\}>/);
+    assert.match(leads, /<ol className=\{styles\.stageRail\}/);
+    assert.match(leads, /<div className=\{styles\.ageQueue\}/);
+    for (const band of ["8+ days overdue", "3–7 days overdue", "1–2 days overdue", "Due today", "Upcoming", "Unscheduled / completed"]) {
+      assert.ok(leads.includes(band));
+    }
+    assert.match(leads, /getLeadNextAction\(lead\)/);
     assert.match(leadPage, /leadsLoadError/);
     assert.match(leadPage, /refreshLeads/);
+    assert.match(leadPage, /leads=\{controller\.model\.obligationLedgerLeads\}/);
+    assert.doesNotMatch(leads, /bandLeads\.sort/);
     assert.doesNotMatch(leads, /draggable|onDragStart|Drop to move/);
   });
 
@@ -54,6 +72,14 @@ describe("records workspace composition contracts", () => {
     assert.match(add, /assigned_staff_id/);
     assert.match(detail, /LOST_REASON_LABELS/);
     assert.match(detail, /Recorded follow-up trail/);
+    assert.match(detail, /<aside/);
+    assert.match(detail, /ref=\{inspectorRef\}/);
+    assert.match(detail, /tabIndex=\{-1\}/);
+    assert.match(detail, /inspectorRef\.current\?\.focus\(\)/);
+    assert.match(detail, /event\.key !== "Escape"/);
+    assert.match(detail, /handleClose\(\)/);
+    assert.match(detail, /\[data-lead-id=\"\$\{CSS\.escape\(lead\.id\)\}\"\]/);
+    assert.doesNotMatch(detail, /ModalFrame|role="dialog"/);
     assert.match(controller, /\/leads\/\$\{selectedLeadId\}\/activities/);
     assert.doesNotMatch(leadsUi, /deleteLead|api\.delete|>\s*Delete\s*</);
   });
@@ -147,7 +173,10 @@ describe("records workspace composition contracts", () => {
     assert.match(beltStyles, /\.eligibilityTable thead[\s\S]*top: 158px/);
     assert.match(studentStyles, /:global\(#main-content\)[\s\S]*margin-left: 0 !important/);
     assert.match(studentStyles, /\.importStage span \{[^}]*white-space: normal/);
-    assert.match(leadStyles, /\.ledger thead \{ position: sticky; top: 70px/);
+    assert.match(leadStyles, /\.inspector \{[\s\S]*position: sticky/);
+    assert.match(leadStyles, /\.inspector:focus \{ outline: 2px solid var\(--accent\); outline-offset: 2px; \}/);
+    assert.match(leadStyles, /\.stageRail \{/);
+    assert.match(leadStyles, /\.ageBand \{/);
     assert.match(leadStyles, /\.totals dt \{[^}]*font-size: 0\.75rem/);
     assert.doesNotMatch(leadStyles, /font-size: 0\.58rem/);
 
@@ -157,6 +186,22 @@ describe("records workspace composition contracts", () => {
     }
     for (const variant of ["roster", "folio", "import", "belt"]) {
       assert.match(loading, new RegExp(`variant === "${variant}"`));
+    }
+  });
+
+  it("keeps records workbenches touch-safe, focus-visible, reduced-motion safe, and printable", async () => {
+    const stylesheets = await Promise.all([
+      source("../src/components/students/student-records.module.css"),
+      source("../src/components/belt-tracker/belt-tracker.module.css"),
+      source("../src/components/leads/leads-ledger.module.css"),
+    ]);
+
+    for (const styles of stylesheets) {
+      assert.match(styles, /button \{ min-height: 44px; \}/);
+      assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--accent\)/);
+      assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+      assert.match(styles, /@media print/);
+      assert.doesNotMatch(styles, /--product-shadow-resting/);
     }
   });
 });

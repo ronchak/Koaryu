@@ -191,10 +191,12 @@ export function StudentRosterTable({
   allSelected,
   canManageRoster,
   filtered,
+  focusedStudentId,
   handleSort,
   inactivityByStudentId,
   inactivityThreshold,
   onOpenStudent,
+  onFocusStudent,
   programs,
   selectedIds,
   sortDir,
@@ -205,10 +207,12 @@ export function StudentRosterTable({
   allSelected: boolean;
   canManageRoster: boolean;
   filtered: StudentRosterRow[];
+  focusedStudentId: string | null;
   handleSort: (key: SortKey) => void;
   inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
   onOpenStudent: (studentId: string) => void;
+  onFocusStudent: (studentId: string) => void;
   programs: Program[];
   selectedIds: Set<string>;
   sortDir: SortDir;
@@ -273,10 +277,10 @@ export function StudentRosterTable({
           <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
             Programs
           </th>
-          <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+          <th data-column="contact" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
             Contact
           </th>
-          <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+          <th data-column="tags" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
             Tags
           </th>
           <th
@@ -309,6 +313,9 @@ export function StudentRosterTable({
             <tr
               key={student.id}
               data-state={student.status}
+              data-focused={focusedStudentId === student.id || undefined}
+              onFocusCapture={() => onFocusStudent(student.id)}
+              onPointerEnter={() => onFocusStudent(student.id)}
               onClick={() => onOpenStudent(student.id)}
               className={`
                 border-b border-border cursor-pointer
@@ -370,10 +377,10 @@ export function StudentRosterTable({
                   )}
                 </div>
               </td>
-              <td data-label="Contact" className="px-4 py-3 text-text-secondary font-mono text-xs">
+              <td data-column="contact" data-label="Contact" className="px-4 py-3 text-text-secondary font-mono text-xs">
                 {row.contact}
               </td>
-              <td data-label="Tags" className="px-4 py-3">
+              <td data-column="tags" data-label="Tags" className="px-4 py-3">
                 <div className="flex flex-wrap gap-1">
                   {row.visibleTags.map((tag) => (
                     <span
@@ -404,6 +411,89 @@ export function StudentRosterTable({
       </tbody>
       </table>
     </>
+  );
+}
+
+export function StudentRosterReadingRail({
+  inactivity,
+  onOpenStudent,
+  row,
+}: {
+  inactivity: string | null;
+  onOpenStudent: (studentId: string) => void;
+  row: StudentRosterRow;
+}) {
+  const { student } = row;
+  const studentName = getStudentName(row);
+  const guardian = student.is_minor ? student.guardians[0] : null;
+
+  return (
+    <aside className={styles.studentReadingRail} aria-labelledby="student-reading-title">
+      <div className={styles.readingRailHeading}>
+        <p>Roster record</p>
+        <StatusBadge status={student.status} />
+      </div>
+      <div className={styles.readingIdentity}>
+        <StudentAvatar student={student} />
+        <div>
+          <h2 id="student-reading-title">{studentName}</h2>
+          <p>{student.is_minor ? "Minor student" : "Student record"}</p>
+        </div>
+      </div>
+
+      <dl className={styles.readingFacts}>
+        <div>
+          <dt>Programs</dt>
+          <dd>
+            {row.programs.length > 0
+              ? row.programs.map((program) => program.name).join(", ")
+              : "No active program"}
+          </dd>
+        </div>
+        <div>
+          <dt>Contact</dt>
+          <dd>{row.contact}</dd>
+        </div>
+        <div>
+          <dt>Member since</dt>
+          <dd>{formatDate(student.membership_start_date || student.created_at)}</dd>
+        </div>
+        {inactivity ? (
+          <div>
+            <dt>Inactive</dt>
+            <dd>{inactivity}</dd>
+          </div>
+        ) : null}
+        {guardian ? (
+          <div>
+            <dt>Guardian</dt>
+            <dd>{`${guardian.first_name} ${guardian.last_name}`.trim()}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      {student.tags.length > 0 ? (
+        <div className={styles.readingTags} aria-label="Student tags">
+          {student.tags.map((tag) => <span key={tag}>{tag}</span>)}
+        </div>
+      ) : null}
+
+      {student.notes ? (
+        <div className={styles.readingNote}>
+          <p>Record note</p>
+          <span>{student.notes}</span>
+        </div>
+      ) : null}
+
+      <Button
+        variant="primary"
+        size="sm"
+        className={styles.openRecordButton}
+        onClick={() => onOpenStudent(student.id)}
+      >
+        Open full record
+      </Button>
+    </aside>
   );
 }
 
