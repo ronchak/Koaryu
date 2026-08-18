@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
+import { Header } from "@/components/header";
 import { OperationsLoading, OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { ReportsDataExportsPanel } from "@/components/reports/reports-data-exports-panel";
@@ -134,8 +135,9 @@ export default function ReportsPage() {
 
   return (
     <OperationsSurface page="reports">
-      <div className="flex-1 p-6 sm:p-8">
-        <div className="max-w-6xl space-y-6">
+      <Header title="Reports" description="Studio performance, operating comparisons, and controlled data exports." />
+      <article className="flex-1 p-4 sm:p-8" data-reports-reading-document="true">
+        <div className="mx-auto max-w-6xl space-y-8">
 
           <section className="border-y-2 border-border bg-surface" aria-label="Report scope and method" data-report-method-sheet="true">
             <div className="grid sm:grid-cols-3">
@@ -157,8 +159,8 @@ export default function ReportsPage() {
             </p>
           </section>
 
-          {/* ── Metric Cards ── */}
-          <div className="grid gap-px bg-border md:grid-cols-2 xl:grid-cols-4">
+          {/* ── Headline comparison figures ── */}
+          <section className="grid border-y-2 border-border bg-border gap-px md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1.2fr_0.8fr]" aria-label="Headline report figures" data-report-figure-band="comparisons">
             <MetricCard
               icon={BarChart3}
               label="Leads Captured"
@@ -191,7 +193,7 @@ export default function ReportsPage() {
                   : "Add class capacities to unlock utilization"
               }
             />
-          </div>
+          </section>
 
           {/* ── Lead Funnel + Lead Sources ── */}
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -212,7 +214,7 @@ export default function ReportsPage() {
                     </div>
                     <div className="h-1.5 bg-surface-raised overflow-hidden">
                       <div
-                        className="h-full bg-accent transition-[width] duration-150"
+                        className="h-full bg-[var(--operations-cobalt)] transition-[width] duration-150"
                         style={{ width: `${Math.max(row.share * 100, row.count > 0 ? 10 : 0)}%` }}
                       />
                     </div>
@@ -395,7 +397,7 @@ export default function ReportsPage() {
             currentRole={currentRole}
           />
         </div>
-      </div>
+      </article>
     </OperationsSurface>
   );
 }

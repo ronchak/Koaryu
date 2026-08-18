@@ -753,7 +753,7 @@ export function StaffRolesSection() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
-          <label className="flex items-center gap-2 text-xs text-text-secondary">
+          <label className="flex min-h-11 items-center gap-2 text-xs text-text-secondary">
             <input
               type="checkbox"
               checked={showArchived}

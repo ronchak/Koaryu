@@ -22,8 +22,8 @@
   --text-primary: var(--product-ink);
   --text-secondary: var(--product-soft-ink);
   --muted: var(--product-soft-ink);
-  --accent: var(--product-cobalt);
-  --accent-hover: var(--product-cobalt);
+  --accent: var(--product-wood);
+  --accent-hover: var(--product-wood-deep);
   --accent-contrast: var(--product-paper);
   --danger: var(--product-vermilion);
   --operations-cobalt: var(--product-cobalt);
@@ -69,7 +69,7 @@
 }
 
 .surface :is(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent) !important;
+  outline: 2px solid var(--product-wood-deep, var(--accent)) !important;
   outline-offset: 3px;
 }
 
@@ -112,7 +112,7 @@
   text-transform: uppercase;
 }
 
-.index ol {
+.index ul {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   margin: 0;
@@ -127,9 +127,10 @@
 
 .index a {
   min-height: 3.5rem;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
   gap: 0.3rem 0.65rem;
   padding: 0.65rem 0.85rem;
   color: var(--text-primary);
@@ -140,20 +141,74 @@
   background: var(--product-card-stock, var(--surface-raised));
 }
 
-.index a > span {
-  color: var(--accent);
-  font: 650 0.75rem/1 var(--font-mono);
-}
-
 .index strong {
   font-size: 0.8125rem;
   font-weight: 680;
 }
 
 .index small {
-  grid-column: 2;
   color: var(--muted);
   font-size: 0.8125rem;
+}
+
+/* Each owned route uses the same material vocabulary but a different document
+   model: time sheet, ledger, rules worksheet, reading report, or form folio. */
+.surface[data-operations-page="schedule"] :global([data-schedule-day-sheet="true"]) {
+  background: var(--product-paper);
+  box-shadow: inset 4px 0 0 var(--product-wood);
+}
+
+.surface[data-operations-page="schedule"] :global([data-schedule-register="visible-range"]) {
+  background: color-mix(in srgb, var(--product-paper) 82%, var(--product-straw) 18%);
+}
+
+.surface[data-operations-page="schedule"] :global([data-schedule-time-canvas]) {
+  background: var(--product-card-stock);
+  box-shadow: var(--product-shadow-card);
+}
+
+.surface[data-operations-page="billing"] :global([data-billing-ledger="six-books"]) {
+  background: color-mix(in srgb, var(--product-ground) 82%, var(--product-paper) 18%);
+}
+
+.surface[data-operations-page="billing"] :global([data-billing-setup-register="true"]),
+.surface[data-operations-page="billing"] :global([data-billing-money-band="exceptions-first"]) {
+  box-shadow: var(--product-shadow-card);
+}
+
+.surface[data-operations-page="billing"] :global([data-ledger-tone="exception"]) {
+  background: var(--product-alert-surface);
+}
+
+.surface[data-operations-page="automations"] :global([data-automation-worksheet="trigger-action-status"]) {
+  background: var(--product-paper);
+  box-shadow: inset 4px 0 0 var(--product-rule);
+}
+
+.surface[data-operations-page="reports"] :global([data-reports-reading-document="true"]) {
+  background: var(--product-paper);
+}
+
+.surface[data-operations-page="reports"] :global([data-reports-reading-document="true"] > div) {
+  border-inline: 1px solid var(--product-rule-soft);
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+.surface[data-operations-page="reports"] :global([data-report-figure-band="comparisons"] > figure:first-child) {
+  box-shadow: inset 4px 0 0 var(--product-wood);
+}
+
+.surface[data-operations-page="reports"] :global([data-report-section="reading-block"]),
+.surface[data-operations-page="reports"] :global([data-report-appendix="data-exports"]) {
+  box-shadow: none;
+}
+
+.surface[data-operations-page="settings"] :global([data-settings-folio="admin-ownership"]) {
+  background: color-mix(in srgb, var(--product-paper) 64%, var(--product-ground) 36%);
+}
+
+.surface[data-operations-page="settings"] :global([data-settings-owner]) {
+  box-shadow: var(--product-shadow-card);
 }
 
 .focusedPage {
@@ -238,12 +293,6 @@
 
 .loadingIndex span:last-child {
   border-right: 0;
-}
-
-.loadingIndex i {
-  color: var(--accent);
-  font: 650 0.75rem/1 var(--font-mono);
-  font-style: normal;
 }
 
 .loadingRules {
@@ -340,6 +389,11 @@
 
   .loading[data-loading-family="reports"] .loadingRules {
     grid-template-columns: 1fr;
+  }
+
+  .surface[data-operations-page="reports"] :global([data-reports-reading-document="true"] > div) {
+    border-inline: 0;
+    padding-inline: 0;
   }
 }
 

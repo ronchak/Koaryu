@@ -12,7 +12,7 @@ export function MetricCard({
   sub: string;
 }) {
   return (
-    <div className="bg-surface p-5">
+    <figure className="bg-surface p-5" data-report-figure="headline">
       <div className="flex items-center gap-3 mb-3">
         <div className="flex h-8 w-8 items-center justify-center border-r border-border text-accent">
           <Icon className="h-4 w-4" />
@@ -23,7 +23,7 @@ export function MetricCard({
       </div>
       <p className="text-3xl font-bold text-text-primary font-mono leading-none">{value}</p>
       <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>
-    </div>
+    </figure>
   );
 }
 
@@ -35,7 +35,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`bg-surface border border-border p-5 ${className}`}>
+    <section className={`border-y border-border bg-surface px-5 py-5 ${className}`} data-report-section="reading-block">
       {children}
     </section>
   );

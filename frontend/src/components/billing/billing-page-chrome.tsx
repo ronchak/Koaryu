@@ -19,8 +19,6 @@ import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import {
-  OverviewPanel,
-  OverviewPanelHeader,
   SetupStepList,
   type SetupStep,
 } from "@/components/ui/overview";
@@ -155,18 +153,22 @@ export function BillingSetupNavigation({
 }) {
   return (
     <>
-      <OverviewPanel>
-        <OverviewPanelHeader
-          eyebrow={`${completedStepCount} / ${steps.length} complete`}
-          title="Billing review"
-          description="Review current provider state, plans, and families; attach external billing records; then record external payments or reconcile invoices."
-        />
+      <section className="border-y-2 border-border bg-surface" data-billing-setup-register="true">
+        <div className="grid border-b border-border px-4 py-4 sm:grid-cols-[minmax(12rem,0.35fr)_1fr] sm:gap-8 sm:px-5">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">{completedStepCount} of {steps.length} ready</p>
+            <h2 className="mt-1 text-base font-semibold text-text-primary">Billing review</h2>
+          </div>
+          <p className="text-xs leading-5 text-text-secondary">
+            Review provider state, plans, and families before posting external payments or reconciling open invoices.
+          </p>
+        </div>
         <SetupStepList steps={steps} />
-      </OverviewPanel>
+      </section>
 
       <nav className="border-y border-border bg-surface" aria-label="Billing books" data-billing-book-index="six-books" data-print-hide="true">
         <ol className="grid list-none grid-cols-2 p-0 sm:grid-cols-3 xl:grid-cols-6">
-          {BILLING_TABS.map((tab, index) => {
+          {BILLING_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -175,11 +177,13 @@ export function BillingSetupNavigation({
                   type="button"
                   onClick={() => onChangeTab(tab.id)}
                   aria-pressed={isActive}
-                  className={`grid min-h-16 w-full grid-cols-[auto_1fr] items-center gap-x-2 px-3 py-2 text-left ${isActive ? "bg-accent/10 text-text-primary" : "text-text-secondary hover:bg-surface-raised"}`}
+                  className={`grid min-h-16 w-full grid-cols-[1fr_auto] items-center gap-x-2 border-t-2 px-3 py-2 text-left ${isActive ? "border-accent bg-accent/10 text-text-primary" : "border-transparent text-text-secondary hover:bg-surface-raised"}`}
                 >
-                  <span className="font-mono text-[10px] text-accent">{String(index + 1).padStart(2, "0")}</span>
                   <strong className="text-xs font-semibold">{tab.label}</strong>
-                  <Icon aria-hidden="true" className="col-start-2 h-3.5 w-3.5 text-muted" />
+                  <Icon aria-hidden="true" className="h-3.5 w-3.5 text-muted" />
+                  <span className="col-span-2 mt-1 text-[10px] uppercase tracking-widest text-muted">
+                    {isActive ? "Open book" : "View book"}
+                  </span>
                 </button>
               </li>
             );

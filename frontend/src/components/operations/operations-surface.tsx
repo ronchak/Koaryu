@@ -45,17 +45,16 @@ export function OperationsIndex({
   return (
     <nav className={styles.index} aria-label={label}>
       <p className={styles.indexLabel}>{label}</p>
-      <ol>
-        {items.map((item, index) => (
+      <ul>
+        {items.map((item) => (
           <li key={item.href}>
             <a href={item.href}>
-              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
               <strong>{item.label}</strong>
               {item.meta ? <small>{item.meta}</small> : null}
             </a>
           </li>
         ))}
-      </ol>
+      </ul>
     </nav>
   );
 }
@@ -110,9 +109,8 @@ export function OperationsLoading({
         </div>
         <div className={styles.loadingWorkbench} aria-hidden="true">
           <div className={styles.loadingIndex}>
-            {labels.map((label, index) => (
+            {labels.map((label) => (
               <span key={label}>
-                <i>{String(index + 1).padStart(2, "0")}</i>
                 {label}
               </span>
             ))}

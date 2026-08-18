@@ -258,7 +258,7 @@ export function ReportsDataExportsPanel({
   }
 
   return (
-    <section className="bg-surface border border-border p-5">
+    <section className="border-y-2 border-border bg-surface px-5 py-5" data-report-appendix="data-exports">
       <ExportPanelHeader
         title="Data Exports"
         subtitle="Separate CSV downloads for the core records owned by this studio."

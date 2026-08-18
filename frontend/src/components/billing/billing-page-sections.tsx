@@ -144,25 +144,26 @@ export function BillingOverviewTab({
   const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
   const [showConnectResetConfirm, setShowConnectResetConfirm] = useState(false);
   const moneyBand = [
+    { label: "Needs attention", value: String(failedInvoiceCount), helper: "Failed or past-due tuition", tone: "exception" },
+    { label: "Open receivables", value: formatMoney(openInvoiceTotal), helper: `${billingInvoicesLength} invoices tracked`, tone: "receivable" },
     {
-      label: "UTC-month payment cohort",
+      label: "Collected this UTC month",
       value: paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable",
       helper: paymentCohortAvailable
         ? `${currentMonthPaymentCount} payments, net of cumulative refunds`
         : "Complete cohort could not be loaded",
+      tone: "collected",
     },
-    { label: "Open balance", value: formatMoney(openInvoiceTotal), helper: `${billingInvoicesLength} invoices tracked` },
-    { label: "Needs attention", value: String(failedInvoiceCount), helper: "Failed or past-due tuition" },
-    { label: "Student billing", value: studentsLoaded ? String(activeStudents) : "Loading", helper: `${activeSubscriptionCount} active subscriptions` },
+    { label: "Student coverage", value: studentsLoaded ? String(activeStudents) : "Loading", helper: `${activeSubscriptionCount} active subscriptions`, tone: "coverage" },
   ];
 
   return (
     <div className="space-y-5">
-      <section className="border-y-2 border-border bg-surface" aria-label="Billing money comparison" data-billing-money-band="true">
+      <section className="border-y-2 border-border bg-surface" aria-label="Billing exceptions and receivables" data-billing-money-band="exceptions-first">
         <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-          {moneyBand.map((metric, index) => (
-            <div key={metric.label} className="border-b border-r border-border px-4 py-5 last:border-r-0 sm:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">{String(index + 1).padStart(2, "0")} · {metric.label}</p>
+          {moneyBand.map((metric) => (
+            <div key={metric.label} data-ledger-tone={metric.tone} className="border-b border-r border-border px-4 py-5 first:border-l-[3px] first:border-l-danger last:border-r-0 sm:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">{metric.label}</p>
               <p className="mt-2 font-mono text-2xl font-semibold text-text-primary">{metric.value}</p>
               <p className="mt-1 text-xs leading-5 text-text-secondary">{metric.helper}</p>
             </div>

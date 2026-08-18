@@ -57,12 +57,16 @@ describe("operations surface route coverage", () => {
 
   it("keeps styling local, opaque, reduced-motion safe, and print aware", () => {
     const css = source("src/components/operations/operations-surface.module.css");
+    const operations = source("src/components/operations/operations-surface.tsx");
     assert.doesNotMatch(css, /gradient|backdrop-filter|backdrop-blur/);
     assert.match(css, /\[data-theme="dark"\]/);
     assert.match(css, /prefers-reduced-motion/);
     assert.match(css, /@media print/);
     assert.match(css, /data-print-hide/);
     assert.match(css, /--operations-cobalt:\s*var\(--product-cobalt\);/);
+    assert.match(css, /--accent:\s*var\(--product-wood\);/);
+    assert.match(css, /outline:\s*2px solid var\(--product-wood-deep, var\(--accent\)\)/);
+    assert.doesNotMatch(operations, /padStart\(2, "0"\)/);
     assert.match(css, /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\) \{\s*min-height: 44px;/);
     assert.doesNotMatch(css, /\.surface :global\(button\) \{\s*min-height: 44px;/);
     assert.match(css, /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\),\s*\.surface :global\(\[data-print-hide="true"\]\)/);
@@ -80,6 +84,8 @@ describe("operations behavior proof", () => {
     const attendance = source("src/components/schedule/session-detail-modal.tsx");
     assert.match(schedule, /data-schedule-time-canvas="week"/);
     assert.match(schedule, /data-schedule-time-canvas="day"/);
+    assert.match(schedule, /data-schedule-day-sheet="true"/);
+    assert.match(schedule, /data-schedule-register="visible-range"/);
     assert.match(schedule, /style=\{\{ top, height,[\s\S]{0,200}?data-time-canvas-block="template"/);
     assert.match(schedule, /style=\{\{\s*top,\s*height,[\s\S]{0,300}?data-time-canvas-block="session"/);
     assert.match(schedule, /data-overlap=\{block\.overlaps/);
@@ -118,6 +124,10 @@ describe("operations behavior proof", () => {
       assert.match(chrome, new RegExp(`label: "${label}"`));
     }
     assert.match(chrome, /data-billing-money-band|data-billing-register-context/);
+    assert.match(chrome, /data-billing-setup-register="true"/);
+    assert.doesNotMatch(chrome, /String\(index \+ 1\)\.padStart/);
+    assert.match(sections, /data-billing-money-band="exceptions-first"/);
+    assert.match(sections, /label: "Needs attention"[\s\S]*label: "Open receivables"[\s\S]*label: "Collected this UTC month"/);
     assert.match(sections, /Reset Stripe connection\?/);
     assert.match(sections, /onConnectReset/);
     assert.match(controller, /!isPreviewMode[\s\S]*canManageKoaryuSubscription[\s\S]*hasStripeConnectedAccount[\s\S]*connectOnboardingEnabled/);
@@ -133,10 +143,14 @@ describe("operations behavior proof", () => {
     const programs = source("src/components/settings/programs-section.tsx");
     const staff = source("src/components/settings/staff-roles-section.tsx");
     assert.equal((automations.match(/href: "\/(?:leads|dashboard|belt-tracker|billing)"/g) || []).length, 4);
-    assert.equal((automations.match(/^  \["/gm) || []).length, 5);
+    assert.equal((automations.match(/status: "Proposal only"/g) || []).length, 5);
     assert.doesNotMatch(automations, /<form|<input|<select|onChange=|\bapi\./);
     assert.match(automations, /data-automations-readonly="true"/);
+    assert.match(automations, /data-automation-worksheet="trigger-action-status"/);
+    for (const label of ["Trigger", "Action", "Status"]) assert.match(automations, new RegExp(`>${label}<`));
     assert.match(settings, /canAccessSettings\(currentRole\) \? <AdminSettingsContent \/> : <SettingsAccessNotice \/>/);
+    assert.match(settings, /data-settings-folio="admin-ownership"/);
+    assert.equal((settings.match(/data-settings-owner=/g) || []).length, 5);
     for (const id of ["studio", "programs", "staff-roles", "data-controls"]) {
       assert.match(settings, new RegExp(`(?:href="#${id}"|id="${id}")`));
     }
@@ -146,6 +160,18 @@ describe("operations behavior proof", () => {
     for (const marker of ["inviteEmail", "inviteFullName", "inviteLegalFirstName", "inviteLegalLastName", 'useState<StaffRoleName>("instructor")', "matchesStaffDeletionConfirmation", "archiveStaff", "unarchiveStaff", "scheduleStaffDeletion", "showArchived"]) {
       assert.match(staff, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
+    assert.match(staff, /<label className="flex min-h-11 items-center[\s\S]*aria-label="Show archived staff"/);
+  });
+
+  it("renders Reports as an exact-heading analytical document with cobalt reserved for its data series", () => {
+    const reports = source("src/app/(dashboard)/reports/page.tsx");
+    const sections = source("src/components/reports/reports-page-sections.tsx");
+    assert.match(reports, /<Header title="Reports"/);
+    assert.match(reports, /data-reports-reading-document="true"/);
+    assert.match(reports, /data-report-figure-band="comparisons"/);
+    assert.match(reports, /bg-\[var\(--operations-cobalt\)\]/);
+    assert.match(sections, /<figure[\s\S]*data-report-figure="headline"/);
+    assert.match(sections, /data-report-section="reading-block"/);
   });
 
   it("adds the typed deletion gate and complete support context/inbox states without new APIs", () => {

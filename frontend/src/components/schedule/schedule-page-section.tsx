@@ -309,7 +309,31 @@ export function SchedulePageSection({
         ) : null}
       </Header>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col" data-schedule-day-sheet="true">
+      <section
+        className="grid border-b border-border bg-surface sm:grid-cols-[1.25fr_0.75fr_0.75fr_1fr]"
+        aria-label="Visible schedule register"
+        data-schedule-register="visible-range"
+      >
+        <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r sm:px-6 lg:px-8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Working sheet</p>
+          <p className="mt-1 text-sm font-semibold text-text-primary">{getToolbarLabel()}</p>
+        </div>
+        <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Scheduled</p>
+          <p className="mt-1 font-mono text-lg font-semibold text-text-primary">{filteredSessions.length}</p>
+        </div>
+        <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Recurring slots</p>
+          <p className="mt-1 font-mono text-lg font-semibold text-text-primary">{filteredTemplates.length}</p>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Program scope</p>
+          <p className="mt-1 text-sm text-text-primary">
+            {programFilter ? programById.get(programFilter)?.name || "Selected program" : "All programs"}
+          </p>
+        </div>
+      </section>
       <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-4">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5" role="group" aria-label="Schedule date navigation">
           <button
