@@ -9,29 +9,55 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "src" / "app"
 PUBLIC_ICONS_DIR = ROOT / "public" / "icons"
 
-GOLD = "#D6B25E"
-DARK = "#0B0D10"
+INK = "#2D2212"
+BEAM = "#56431F"
+GOLD = "#CFAE60"
+WOOD = "#9B7E4F"
+PAPER = "#F7F3E9"
+WOOD_PALE = "#C6B183"
 
 
 def draw_koaryu_mark(size: int) -> Image.Image:
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
 
-    pad = round(size * 0.10)
-    rect = (pad, pad, size - pad, size - pad)
-    radius = round(size * 0.18)
-    draw.rounded_rectangle(rect, radius=radius, fill=GOLD)
+    scale = size / 64
 
-    stroke = max(1, round(size * 0.11))
-    left_x = round(size * 0.31)
-    top_y = round(size * 0.24)
-    mid_y = round(size * 0.50)
-    bottom_y = round(size * 0.76)
-    right_x = round(size * 0.67)
+    def point(x: float, y: float) -> tuple[int, int]:
+        return (round(x * scale), round(y * scale))
 
-    draw.line((left_x, top_y, left_x, bottom_y), fill=DARK, width=stroke)
-    draw.line((left_x + round(stroke * 0.2), mid_y, right_x, top_y), fill=DARK, width=stroke)
-    draw.line((left_x + round(stroke * 0.2), mid_y, right_x, bottom_y), fill=DARK, width=stroke)
+    draw.rounded_rectangle(
+        (*point(3, 3), *point(61, 61)),
+        radius=round(14 * scale),
+        fill=INK,
+    )
+
+    planes = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    planes_draw = ImageDraw.Draw(planes)
+    planes_draw.rectangle((*point(16, 16), *point(48, 48)), fill=PAPER)
+
+    polygons = (
+        ([(48, 16), (38, 16), (48, 26)], BEAM),
+        ([(38, 16), (26, 16), (48, 38), (48, 26)], GOLD),
+        ([(26, 16), (16, 16), (16, 24), (40, 48), (48, 48), (48, 38)], WOOD),
+        ([(16, 24), (16, 34), (30, 48), (40, 48)], PAPER),
+        ([(16, 34), (16, 42), (22, 48), (30, 48)], WOOD_PALE),
+        ([(16, 42), (16, 48), (22, 48)], GOLD),
+    )
+    for coordinates, color in polygons:
+        planes_draw.polygon([point(x, y) for x, y in coordinates], fill=color)
+
+    divider_width = max(1, round(scale))
+    for start, end in (
+        ((38, 16), (48, 26)),
+        ((26, 16), (48, 38)),
+        ((16, 24), (40, 48)),
+        ((16, 34), (30, 48)),
+        ((16, 42), (22, 48)),
+    ):
+        planes_draw.line((*point(*start), *point(*end)), fill=INK, width=divider_width)
+
+    image.alpha_composite(planes)
 
     return image
 

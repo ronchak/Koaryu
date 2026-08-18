@@ -18,39 +18,57 @@ const sizes = {
   lg: "text-3xl",
 };
 
+const markSizes = {
+  sm: "w-5 h-5",
+  md: "w-6 h-6",
+  lg: "w-8 h-8",
+};
+
+export function KoaryuMark({ size = "md" }: Pick<LogoProps, "size">) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      className={markSizes[size]}
+    >
+      <rect x="3" y="3" width="58" height="58" rx="14" fill="#2D2212" />
+      <g>
+        <rect x="16" y="16" width="32" height="32" fill="#F7F3E9" />
+        <path d="M48 16H38L48 26V16Z" fill="#56431F" />
+        <path d="M38 16H26L48 38V26L38 16Z" fill="#CFAE60" />
+        <path d="M26 16H16V24L40 48H48V38L26 16Z" fill="#9B7E4F" />
+        <path d="M16 24V34L30 48H40L16 24Z" fill="#F7F3E9" />
+        <path d="M16 34V42L22 48H30L16 34Z" fill="#C6B183" />
+        <path d="M16 42V48H22L16 42Z" fill="#CFAE60" />
+        <path
+          d="M38 16L48 26M26 16L48 38M16 24L40 48M16 34L30 48M16 42L22 48"
+          stroke="#2D2212"
+          strokeWidth="1"
+        />
+      </g>
+    </svg>
+  );
+}
+
 export function Logo({ size = "md", showText = true }: LogoProps) {
   return (
-    <div className="flex items-center gap-2.5">
-      {/* Koaryu mark — stylized K with accent */}
-      <div
-        className={`${sizes[size]} font-bold tracking-tight`}
-        style={{ color: "var(--accent)" }}
-      >
-        <svg
-          viewBox="0 0 28 28"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          className={size === "sm" ? "w-5 h-5" : size === "md" ? "w-6 h-6" : "w-8 h-8"}
-        >
-          <rect
-            width="28"
-            height="28"
-            rx="6"
-            fill="currentColor"
-          />
-          <path
-            d="M8 7h3v6l5.5-6H20l-6 6.5L20.5 21H17l-4.5-5.5L10 18v3H8V7z"
-            fill="var(--bg)"
-          />
-        </svg>
-      </div>
-      {showText && (
+    <div className="flex items-center">
+      {showText ? (
         <span
-          className={`${sizes[size]} font-semibold tracking-tight`}
-          style={{ color: "var(--text-primary)" }}
+          className={`${sizes[size]} uppercase tracking-[0.32em]`}
+          style={{
+            color: "var(--text-primary)",
+            fontFamily:
+              '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Inter, "Segoe UI", Roboto, sans-serif',
+            fontWeight: 760,
+          }}
         >
           {APP_NAME}
         </span>
+      ) : (
+        <KoaryuMark size={size} />
       )}
     </div>
   );
