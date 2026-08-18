@@ -38,7 +38,7 @@ describe("records workspace composition contracts", () => {
     const leadPage = await source("../src/app/(dashboard)/leads/page.tsx");
 
     assert.match(belt, /styles\.rankRail/);
-    assert.match(leads, /Who needs a follow-up next/);
+    assert.match(leads, /<dl className=\{styles\.totals\}>/);
     assert.match(leads, /<table className=\{styles\.ledger\}>/);
     assert.match(leadPage, /leadsLoadError/);
     assert.match(leadPage, /refreshLeads/);

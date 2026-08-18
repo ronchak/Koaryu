@@ -47,10 +47,7 @@ export function BeltTrackerShell({
 }: BeltTrackerShellProps) {
   return (
     <div className={`flex min-h-full flex-col ${styles.beltPage}`}>
-      <Header
-        title="Belt Tracker"
-        description="Track rank progression and promotion readiness."
-      >
+      <Header title="Belt Tracker">
         {tab === "eligibility" && canConfigureBelts ? (
           <Button variant="secondary" size="sm" onClick={() => onTabChange("ladder")}>
             <Settings className="w-3.5 h-3.5" />
@@ -65,17 +62,6 @@ export function BeltTrackerShell({
       </Header>
 
       <div className="flex-1 flex flex-col">
-        <section className={styles.beltIntro} aria-labelledby="belt-workspace-purpose">
-          <p>Progression roster</p>
-          <h2 id="belt-workspace-purpose">
-            {tab === "eligibility" ? "Who has earned the next decision?" : "What is the exact path through rank?"}
-          </h2>
-          <span>
-            {tab === "eligibility"
-              ? "Read readiness by rank, class count, time, and approval instead of scanning disconnected progress cards."
-              : "Edit one ordered rail with atomic save and discard, replacing generic rank cards with a legible ladder."}
-          </span>
-        </section>
         <div className={`flex items-center gap-4 px-4 py-3 sm:px-6 lg:px-8 border-b border-border ${styles.beltControls}`}>
           {TABS.filter((item) => item.id !== "ladder" || canConfigureBelts).map((item) => (
             <button

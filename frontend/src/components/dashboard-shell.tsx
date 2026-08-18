@@ -24,8 +24,12 @@ export function DashboardSlugBand({
           <span>{studioName || "Studio scope"}</span>
           <span aria-hidden="true">·</span>
           <span>{formatDashboardRole(role)}</span>
-          <span aria-hidden="true">·</span>
-          <span>{isPreviewMode ? "Preview fixture" : "Authenticated studio"}</span>
+          {isPreviewMode ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>Preview fixture</span>
+            </>
+          ) : null}
         </p>
       </div>
       <span className={styles.scopeStamp}>{isPreviewMode ? "Preview" : "Live scope"}</span>

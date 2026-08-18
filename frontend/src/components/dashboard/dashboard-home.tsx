@@ -914,7 +914,6 @@ export function DashboardHome({
     >
       <section className={styles.homeHeading} aria-labelledby="dashboard-home-heading">
         <div>
-          <p className={styles.eyebrow}>Tatami Home · personal arrangement</p>
           <h1 id="dashboard-home-heading">My studio</h1>
           <p>{studioDescription}</p>
         </div>

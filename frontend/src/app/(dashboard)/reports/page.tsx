@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
-import { Header } from "@/components/header";
 import { OperationsLoading, OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { ReportsDataExportsPanel } from "@/components/reports/reports-data-exports-panel";
@@ -120,10 +119,6 @@ export default function ReportsPage() {
   if (datasetReadiness.status === "error") {
     return (
       <OperationsSurface page="reports">
-        <Header
-          title="Reports"
-          description="Live lead funnel, source, and attendance trends for the current studio."
-        />
         <div className="flex-1 p-6 sm:p-8">
           <div className="max-w-6xl">
             <DatasetReadinessErrorPanel
@@ -139,11 +134,6 @@ export default function ReportsPage() {
 
   return (
     <OperationsSurface page="reports">
-      <Header
-        title="Reports"
-        description="Live lead funnel, source, and attendance trends for the current studio."
-      />
-
       <div className="flex-1 p-6 sm:p-8">
         <div className="max-w-6xl space-y-6">
 

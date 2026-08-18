@@ -199,11 +199,6 @@ export function StudentRosterPageContent({
       </Header>
 
       <div className={`flex-1 flex flex-col ${styles.rosterWorkspace}`}>
-        <section className={styles.rosterDecision} aria-labelledby="roster-decision-title">
-          <p>Operational ledger</p>
-          <h2 id="roster-decision-title">Which student record needs attention?</h2>
-          <span>Compare lifecycle, program, contact, tags, and inactivity in one ruled roster instead of opening card after card.</span>
-        </section>
         <StudentRosterNotices
           actionMessage={actionMessage}
           fullRosterRequested={fullRosterRequested}

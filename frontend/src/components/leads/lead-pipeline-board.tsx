@@ -34,8 +34,6 @@ function LeadLedgerIntroLoading() {
   return (
     <div className={styles.intro}>
       <div>
-        <p className={styles.eyebrow}>Obligation ledger</p>
-        <h2 id="lead-ledger-state-title">Who needs a follow-up next?</h2>
         <p>Loading the accountable queue and its current owners.</p>
       </div>
       <dl className={styles.totals} aria-hidden="true">
@@ -51,7 +49,6 @@ function LeadLedgerErrorIntro() {
   return (
     <div className={styles.intro}>
       <div>
-        <p className={styles.eyebrow}>Obligation ledger</p>
         <h2 id="lead-ledger-state-title">The follow-up queue could not be loaded.</h2>
         <p>Review the error below, then retry to restore the accountable queue and its current owners.</p>
       </div>
@@ -66,7 +63,7 @@ function LeadLedgerErrorIntro() {
 
 export function LeadLedgerLoading() {
   return (
-    <section className={styles.workspace} aria-labelledby="lead-ledger-state-title" role="status">
+    <section className={styles.workspace} aria-label="Loading lead follow-up obligations" role="status">
       <LeadLedgerIntroLoading />
       <p className="sr-only">Loading follow-up obligations…</p>
       <div className={styles.stateFrame} aria-hidden="true">
@@ -122,9 +119,8 @@ export function LeadPipelineBoard({
   if (leads.length === 0) {
     return (
       <section className={styles.empty} aria-labelledby="lead-ledger-title">
-        <p className={styles.eyebrow}>Obligation ledger</p>
         <h2 id="lead-ledger-title">No open lead obligations.</h2>
-        <p>The old stage columns are gone. New inquiries will appear here in follow-up order.</p>
+        <p>New inquiries will appear here in follow-up order.</p>
         {canManageLeads ? (
           <Button variant="primary" size="sm" onClick={onAddLead}>
             <UserPlus aria-hidden="true" className="h-3.5 w-3.5" />
@@ -136,13 +132,8 @@ export function LeadPipelineBoard({
   }
 
   return (
-    <section className={styles.workspace} aria-labelledby="lead-ledger-title">
+    <section className={styles.workspace} aria-label="Open lead obligations">
       <div className={styles.intro}>
-        <div>
-          <p className={styles.eyebrow}>Obligation ledger</p>
-          <h2 id="lead-ledger-title">Who needs a follow-up next?</h2>
-          <p>Ordered by the promise due, replacing stage columns with one accountable queue.</p>
-        </div>
         <dl className={styles.totals}>
           <div><dt>Overdue</dt><dd>{overdue}</dd></div>
           <div><dt>Due today</dt><dd>{dueToday}</dd></div>
