@@ -133,8 +133,14 @@ describe("dashboard shell and Home source contracts", () => {
 
   it("renders Home as a continuous source-owned register with primary operational ledgers", () => {
     assert.match(homeSource, /className=\{styles\.registerBand\}/);
+    assert.match(homeSource, /aria-label="Opening operating summary"/);
+    assert.match(homeSource, /label="Needs attention" model=\{viewModels\.needs_attention\}/);
+    assert.match(homeSource, /label="Classes today" model=\{viewModels\.classes_today\}/);
+    assert.match(homeSource, /const metric = model\.metric \|\| state/);
     assert.match(homeSource, /<footer className=\{styles\.widgetFooting\}>/);
-    assert.match(homeSource, /model\.provenanceLabel/);
+    assert.match(homeSource, /catalog\.provenanceCopy/);
+    assert.match(homeSource, /isPreviewMode \? "Preview" : "Live"/);
+    assert.match(homeSource, /stateLabel\(model\.state\)/);
     assert.match(homeSource, /catalog\.windowCopy/);
     assert.match(homeSource, /<footer className=\{styles\.registerFooting\}>/);
     assert.match(homeStyles, /\.grid\s*\{[\s\S]*gap:\s*1px;[\s\S]*background:\s*var\(--product-rule-soft\);/);
@@ -142,6 +148,11 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeStyles, /data-widget-id="classes_today"/);
     assert.match(homeStyles, /@media print/);
     assert.match(shellStyles, /@media print/);
+  });
+
+  it("puts the 44px target on queue and brand anchors themselves", () => {
+    assert.match(homeStyles, /\.queue a\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?flex:\s*1 1 auto;/);
+    assert.match(shellStyles, /\.brandLink,[\s\S]*?\.mobileBrand\s*\{[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/);
   });
 
   it("owns authoritative studio identity in the split store and purges layouts at session cleanup", () => {

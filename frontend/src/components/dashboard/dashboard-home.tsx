@@ -103,6 +103,8 @@ function moveLayoutItem(
 }
 
 function stateLabel(state: DashboardWidgetViewModel["state"]): string {
+  if (state === "ready") return "Ready";
+  if (state === "empty") return "Empty";
   if (state === "loading") return "Loading";
   if (state === "error") return "Error";
   if (state === "partial") return "Partial";
@@ -156,6 +158,27 @@ function MaterialState({ model }: { model: DashboardWidgetViewModel }) {
     <div className={styles.stateLine}>
       <span className={styles.stateStamp}>{stateLabel(model.state)}</span>
       <span>{model.provenanceLabel}</span>
+    </div>
+  );
+}
+
+function RegisterSummaryFact({
+  label,
+  model,
+}: {
+  label: string;
+  model: DashboardWidgetViewModel;
+}) {
+  const state = stateLabel(model.state);
+  const metric = model.metric || state;
+
+  return (
+    <div data-state={model.state}>
+      <dt>{label}</dt>
+      <dd>
+        <strong>{metric}</strong>
+        {model.metric ? <small>{state}</small> : null}
+      </dd>
     </div>
   );
 }
@@ -340,6 +363,7 @@ function HomeWidget({
   item,
   isCustomizing,
   isPickedUp,
+  isPreviewMode,
   model,
   onMove,
   onPointerDown,
@@ -355,6 +379,7 @@ function HomeWidget({
   item: DashboardLayoutItem;
   isCustomizing: boolean;
   isPickedUp: boolean;
+  isPreviewMode: boolean;
   model: DashboardWidgetViewModel;
   onMove: (widgetId: DashboardWidgetId, direction: -1 | 1) => void;
   onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, widgetId: DashboardWidgetId) => void;
@@ -448,7 +473,9 @@ function HomeWidget({
 
       <footer className={styles.widgetFooting}>
         <div className={styles.provenance}>
-          <span>{model.provenanceLabel}</span>
+          <span>{catalog.provenanceCopy}</span>
+          <span aria-hidden="true">·</span>
+          <span>{isPreviewMode ? "Preview" : "Live"} · {stateLabel(model.state)}</span>
           <span aria-hidden="true">·</span>
           <span>{catalog.windowCopy}</span>
         </div>
@@ -987,10 +1014,14 @@ export function DashboardHome({
           aria-label="Customizable home panels"
         >
           <header className={styles.registerBand}>
-            <div>
+            <div className={styles.registerHeading}>
               <span>Daily register</span>
               <strong>Operating workbench</strong>
             </div>
+            <dl className={styles.registerSummary} aria-label="Opening operating summary">
+              <RegisterSummaryFact label="Needs attention" model={viewModels.needs_attention} />
+              <RegisterSummaryFact label="Classes today" model={viewModels.classes_today} />
+            </dl>
             <p>Source-owned records · role-safe view</p>
           </header>
           <div className={styles.grid} data-layout-resolved="true">
@@ -1001,6 +1032,7 @@ export function DashboardHome({
                 item={item}
                 isCustomizing={isCustomizing}
                 isPickedUp={activeDragWidgetId === item.widget_id}
+                isPreviewMode={isPreviewMode}
                 model={viewModels[item.widget_id]}
                 onMove={moveWidget}
                 onPointerCancel={onPointerCancel}

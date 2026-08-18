@@ -180,14 +180,14 @@
   border-bottom: 1px solid var(--product-rule);
 }
 
-.registerBand > div {
+.registerHeading {
   display: flex;
   min-width: 0;
   align-items: baseline;
   gap: 0.65rem;
 }
 
-.registerBand span,
+.registerHeading span,
 .registerBand p,
 .registerFooting {
   color: var(--product-soft-ink);
@@ -196,15 +196,73 @@
   text-transform: uppercase;
 }
 
-.registerBand span {
+.registerHeading span {
   color: var(--product-vermilion);
   font-weight: 820;
 }
 
-.registerBand strong {
+.registerHeading strong {
   color: var(--product-ink);
   font-size: 0.78rem;
   letter-spacing: 0.025em;
+}
+
+.registerSummary {
+  display: grid;
+  min-width: 19rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 auto;
+  border-inline: 1px solid var(--product-rule-soft);
+}
+
+.registerSummary > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.registerSummary > div + div {
+  border-left: 1px solid var(--product-rule-soft);
+}
+
+.registerSummary dt {
+  overflow: hidden;
+  color: var(--product-soft-ink);
+  font-size: 0.62rem;
+  font-weight: 680;
+  letter-spacing: 0.035em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.registerSummary dd {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--product-ink);
+}
+
+.registerSummary dd strong {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.registerSummary dd small {
+  color: var(--product-soft-ink);
+  font-size: 0.58rem;
+  font-weight: 720;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.registerSummary > div:is([data-state="error"], [data-state="partial"], [data-state="unavailable"]) dd small {
+  color: var(--product-vermilion);
 }
 
 .registerBand p {
@@ -576,12 +634,16 @@
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 44px;
-  padding-block: 0.375rem;
+  padding-block: 0;
   border-bottom: 1px solid var(--product-rule-soft);
   font-size: 0.8125rem;
 }
 
 .queue a {
+  display: flex;
+  min-height: 44px;
+  flex: 1 1 auto;
+  align-items: center;
   overflow: hidden;
   color: var(--product-ink);
   font-weight: 760;
@@ -962,6 +1024,14 @@
 
   .registerBand p {
     text-align: left;
+  }
+
+  .registerSummary {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    border-block: 1px solid var(--product-rule-soft);
+    border-inline: 0;
   }
 }
 

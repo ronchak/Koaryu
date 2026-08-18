@@ -244,6 +244,14 @@
   color: inherit;
 }
 
+.brandLink,
+.mobileBrand {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+}
+
 .spineToggle {
   display: inline-grid;
   width: 44px;
