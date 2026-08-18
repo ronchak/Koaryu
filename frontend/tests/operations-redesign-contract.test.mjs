@@ -62,6 +62,11 @@ describe("operations surface route coverage", () => {
     assert.match(css, /prefers-reduced-motion/);
     assert.match(css, /@media print/);
     assert.match(css, /data-print-hide/);
+    assert.match(css, /--operations-cobalt:\s*var\(--product-cobalt\);/);
+    assert.doesNotMatch(css, /\.surface > :global\(header\),/);
+    assert.match(css, /\.surface > :global\(header\) \{[\s\S]*?position: static !important;[\s\S]*?display: flex !important;/);
+    assert.match(css, /a\[href="#main-content"\]/);
+    assert.match(css, /\[class\*="bg-surface"\][\s\S]*?background: #fff !important;/);
   });
 });
 
@@ -78,6 +83,17 @@ describe("operations behavior proof", () => {
     assert.match(attendance, /Saving \$\{pendingAttendanceStudentIds\.size\}/);
     assert.match(attendance, /rolled back/);
     assert.match(attendance, /data-attendance-commit-state/);
+  });
+
+  it("keeps Month responsive while Week remains the sole horizontal schedule canvas", () => {
+    const month = source("src/components/schedule/month-schedule-view.tsx");
+    const schedule = source("src/components/schedule/schedule-page-section.tsx");
+    assert.doesNotMatch(month, /overflow-x-auto|min-w-\[980px\]/);
+    assert.match(month, /grid grid-cols-2 lg:grid-cols-7/);
+    assert.match(month, /MONTH_DAY_NAMES\[day\.date\.getDay\(\)\]/);
+    assert.match(schedule, /overflow-x-auto overscroll-x-contain/);
+    assert.match(schedule, /data-schedule-scroll-owner="internal"/);
+    assert.match(schedule, /min-w-\[1040px\]/);
   });
 
   it("keeps six billing books, negative capabilities, and the connected Admin reset gate", () => {
