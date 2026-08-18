@@ -1,7 +1,7 @@
 .home {
   position: relative;
   min-width: 0;
-  min-height: calc(100vh - 70px);
+  min-height: calc(100dvh - 70px);
   padding: clamp(1rem, 2.4vw, 2rem);
   background: var(--product-ground);
   color: var(--product-ink);
@@ -123,9 +123,9 @@
   margin-top: 0;
   margin-bottom: 0.8rem;
   padding: 0.65rem 0.8rem;
-  border-left: 3px solid var(--product-vermilion);
-  background: rgb(169 71 50 / 8%);
-  color: #6f3024;
+  border-left: 3px solid var(--product-alert-rule);
+  background: var(--product-alert-surface);
+  color: var(--product-alert-ink);
   font-size: 0.8125rem;
 }
 
@@ -267,9 +267,9 @@
   height: 44px;
   flex: 0 0 44px;
   padding: 0;
-  border-color: rgb(49 90 138 / 38%);
-  background: #edf2f6;
-  color: var(--product-cobalt);
+  border-color: var(--product-control-rule);
+  background: var(--product-control-surface);
+  color: var(--product-control-ink);
   touch-action: pan-y;
 }
 
@@ -290,10 +290,10 @@
   height: 44px;
   padding: 0;
   place-items: center;
-  border: 1px solid rgb(49 90 138 / 35%);
+  border: 1px solid var(--product-control-rule);
   border-radius: 7px;
-  background: #f4f7fa;
-  color: var(--product-cobalt);
+  background: var(--product-control-surface);
+  color: var(--product-control-ink);
   cursor: pointer;
 }
 
@@ -323,9 +323,10 @@
   min-height: 28px;
   align-items: center;
   padding-inline: 0.55rem;
-  border: 1px solid rgb(169 71 50 / 25%);
+  border: 1px solid var(--product-alert-rule);
   border-radius: 4px;
-  color: #8e4637;
+  background: var(--product-alert-surface);
+  color: var(--product-alert-ink);
   font-size: 0.75rem;
   font-weight: 760;
 }
@@ -740,6 +741,11 @@
 }
 
 @media (max-width: 1023px) {
+  .home {
+    min-height: 0;
+    flex: 1 0 auto;
+  }
+
   .grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -752,7 +758,7 @@
 
 @media (max-width: 640px) {
   .home {
-    min-height: calc(100vh - 104px);
+    min-height: 0;
     padding: 1rem 1rem 1.5rem;
   }
 
@@ -824,7 +830,7 @@
   }
 
   .editControls button {
-    background: var(--product-card-stock);
+    background: var(--product-control-surface);
   }
 
   .layoutLoading {
