@@ -64,7 +64,7 @@
   min-height: 5.5rem;
 }
 
-.surface :global(button) {
+.surface :global(button:not([data-time-canvas-block])) {
   min-height: 44px;
 }
 
@@ -366,7 +366,7 @@
   :global([data-koaryu-dashboard-shell="true"] > [class*="mobileSpine"]),
   :global([data-koaryu-dashboard-shell="true"] [class*="slugBand"]),
   .index,
-  .surface :global(button),
+  .surface :global(button:not([data-time-canvas-block])),
   .surface :global([data-print-hide="true"]) {
     display: none !important;
   }

@@ -83,6 +83,15 @@
   background: color-mix(in srgb, var(--product-paper) 96%, transparent);
   box-shadow: 0 6px 14px rgb(48 39 25 / 5%);
 }
+.beltProgramLockNotice {
+  margin: 0;
+  padding: 0.625rem clamp(1rem, 2.4vw, 2rem);
+  border-bottom: 1px solid var(--product-rule-soft);
+  background: var(--product-paper);
+  color: var(--warning);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
 .eligibilityWorkspace { padding: 0 clamp(1rem, 2.4vw, 2rem) 2rem; }
 .eligibilityTable { width: 100%; border-collapse: collapse; border-top: 2px solid var(--text-primary); background: var(--product-paper); font-size: 0.8125rem; }
 .eligibilityTable thead { position: sticky; top: 158px; z-index: 12; background: var(--product-card-stock); }

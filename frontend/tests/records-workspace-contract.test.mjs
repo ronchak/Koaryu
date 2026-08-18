@@ -74,6 +74,39 @@ describe("records workspace composition contracts", () => {
     assert.match(detail, /: PIPELINE_STAGES;/);
   });
 
+  it("keeps records loading and failure announcements truthful and singular", async () => {
+    const leads = await source("../src/components/leads/lead-pipeline-board.tsx");
+    const loading = await source("../src/components/records/records-loading.tsx");
+    const leadErrorState = leads.slice(
+      leads.indexOf("export function LeadLedgerLoadError"),
+      leads.indexOf("export function LeadPipelineBoard"),
+    );
+
+    assert.match(leads, /function LeadLedgerErrorIntro/);
+    assert.match(leads, /The follow-up queue could not be loaded/);
+    assert.match(leadErrorState, /<LeadLedgerErrorIntro \/>/);
+    assert.doesNotMatch(leadErrorState, /LeadLedgerIntroLoading|Loading the accountable queue/);
+    assert.match(leadErrorState, /Retry lead roster/);
+    assert.equal((loading.match(/role="status"/g) ?? []).length, 1);
+    assert.equal((loading.match(/aria-live="polite"/g) ?? []).length, 1);
+    assert.match(loading, /<div className=\{styles\.root\}>[\s\S]*<Header title=\{title\} description=\{description\} \/>[\s\S]*<p className="sr-only" role="status" aria-live="polite">\{description\}<\/p>/);
+  });
+
+  it("keeps the dirty Belt program warning outside fixed-height sticky controls", async () => {
+    const shell = await source("../src/components/belt-tracker/belt-tracker-shell.tsx");
+    const styles = await source("../src/components/belt-tracker/belt-tracker.module.css");
+    const controlsStart = shell.indexOf("styles.beltControls");
+    const noticeStart = shell.indexOf("styles.beltProgramLockNotice");
+
+    assert.ok(controlsStart >= 0 && noticeStart > controlsStart);
+    assert.doesNotMatch(shell.slice(controlsStart, noticeStart), /Save or discard changes before switching programs/);
+    assert.equal((shell.match(/Save or discard changes before switching programs/g) ?? []).length, 1);
+    const noticeRule = styles.match(/\.beltProgramLockNotice \{[\s\S]*?\}/)?.[0] ?? "";
+    assert.match(noticeRule, /padding: 0\.625rem/);
+    assert.doesNotMatch(noticeRule, /position:\s*sticky|position:\s*fixed/);
+    assert.match(styles, /\.eligibilityTable thead \{ position: sticky; top: 158px/);
+  });
+
   it("keeps the two-column folio, print shell reset, product tokens, and local focus treatment", async () => {
     const detail = await source("../src/components/students/student-detail-page-content.tsx");
     const studentStyles = await source("../src/components/students/student-records.module.css");

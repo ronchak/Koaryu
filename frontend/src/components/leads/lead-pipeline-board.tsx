@@ -47,6 +47,23 @@ function LeadLedgerIntroLoading() {
   );
 }
 
+function LeadLedgerErrorIntro() {
+  return (
+    <div className={styles.intro}>
+      <div>
+        <p className={styles.eyebrow}>Obligation ledger</p>
+        <h2 id="lead-ledger-state-title">The follow-up queue could not be loaded.</h2>
+        <p>Review the error below, then retry to restore the accountable queue and its current owners.</p>
+      </div>
+      <dl className={styles.totals} aria-hidden="true">
+        <div><dt>Overdue</dt><dd>—</dd></div>
+        <div><dt>Due today</dt><dd>—</dd></div>
+        <div><dt>Unassigned</dt><dd>—</dd></div>
+      </dl>
+    </div>
+  );
+}
+
 export function LeadLedgerLoading() {
   return (
     <section className={styles.workspace} aria-labelledby="lead-ledger-state-title" role="status">
@@ -69,7 +86,7 @@ export function LeadLedgerLoading() {
 export function LeadLedgerLoadError({ error, onRetry }: { error: string; onRetry: () => void }) {
   return (
     <section className={styles.workspace} aria-labelledby="lead-ledger-state-title">
-      <LeadLedgerIntroLoading />
+      <LeadLedgerErrorIntro />
       <div className={styles.stateFrame} role="alert">
         <div className={`${styles.stateMessage} p-6 sm:p-8`}>
           <AlertTriangle aria-hidden="true" className="h-6 w-6 shrink-0 text-danger" />

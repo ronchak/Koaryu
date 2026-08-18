@@ -191,7 +191,7 @@ export function MonthScheduleView({
       <div>
         <div className="min-w-0">
           {/* Day name headers */}
-          <div className="hidden grid-cols-7 border-b border-border bg-surface-raised/60 lg:grid">
+          <div className="hidden grid-cols-7 border-b border-border bg-surface-raised/60 xl:grid">
             {MONTH_DAY_NAMES.map((dayName) => (
               <div key={dayName} className="border-r border-border px-3 py-2 last:border-r-0">
                 <p className="text-[11px] font-medium uppercase tracking-widest text-muted">{dayName}</p>
@@ -200,14 +200,14 @@ export function MonthScheduleView({
           </div>
 
           {/* Calendar grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-7">
+          <div className="grid grid-cols-2 xl:grid-cols-7">
             {calendarDays.map((day) => {
               const isToday = day.dateKey === todayKey;
               const isSelected = day.dateKey === selectedDateKey;
               return (
                 <div
                   key={day.dateKey}
-                  className={`group relative flex min-h-[132px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors even:border-r-0 hover:bg-surface-raised/50 lg:min-h-[156px] lg:even:border-r lg:[&:nth-child(7n)]:border-r-0 ${
+                  className={`group relative flex min-h-[132px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors even:border-r-0 hover:bg-surface-raised/50 xl:min-h-[156px] xl:even:border-r xl:[&:nth-child(7n)]:border-r-0 ${
                     day.inCurrentMonth ? "bg-surface" : "bg-bg text-text-secondary"
                   } ${isSelected ? "ring-1 ring-inset ring-accent" : ""} ${
                     isToday ? "bg-accent/[0.04]" : ""
@@ -235,7 +235,7 @@ export function MonthScheduleView({
                         {day.date.getDate()}
                       </span>
                       <div className="flex flex-col">
-                        <span className="text-[10px] uppercase tracking-widest text-muted lg:hidden">
+                        <span className="text-[10px] uppercase tracking-widest text-muted xl:hidden">
                           {MONTH_DAY_NAMES[day.date.getDay()]}
                         </span>
                         <span className={`text-[10px] uppercase tracking-widest ${day.inCurrentMonth ? "text-muted" : "text-muted"}`}>

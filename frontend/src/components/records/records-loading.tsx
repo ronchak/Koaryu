@@ -124,9 +124,9 @@ function BeltLoading() {
 
 export function RecordsLoading({ description, title, variant }: RecordsLoadingProps) {
   return (
-    <div className={styles.root} role="status" aria-live="polite">
+    <div className={styles.root}>
       <Header title={title} description={description} />
-      <p className="sr-only">{description}</p>
+      <p className="sr-only" role="status" aria-live="polite">{description}</p>
       {variant === "roster" ? <RosterLoading /> : null}
       {variant === "folio" ? <FolioLoading /> : null}
       {variant === "import" ? <ImportLoading /> : null}

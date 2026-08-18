@@ -63,6 +63,10 @@ describe("operations surface route coverage", () => {
     assert.match(css, /@media print/);
     assert.match(css, /data-print-hide/);
     assert.match(css, /--operations-cobalt:\s*var\(--product-cobalt\);/);
+    assert.match(css, /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\) \{\s*min-height: 44px;/);
+    assert.doesNotMatch(css, /\.surface :global\(button\) \{\s*min-height: 44px;/);
+    assert.match(css, /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\),\s*\.surface :global\(\[data-print-hide="true"\]\)/);
+    assert.doesNotMatch(css, /\.surface :global\(button\),\s*\.surface :global\(\[data-print-hide="true"\]\)/);
     assert.doesNotMatch(css, /\.surface > :global\(header\),/);
     assert.match(css, /\.surface > :global\(header\) \{[\s\S]*?position: static !important;[\s\S]*?display: flex !important;/);
     assert.match(css, /a\[href="#main-content"\]/);
@@ -76,6 +80,8 @@ describe("operations behavior proof", () => {
     const attendance = source("src/components/schedule/session-detail-modal.tsx");
     assert.match(schedule, /data-schedule-time-canvas="week"/);
     assert.match(schedule, /data-schedule-time-canvas="day"/);
+    assert.match(schedule, /style=\{\{ top, height,[\s\S]{0,200}?data-time-canvas-block="template"/);
+    assert.match(schedule, /style=\{\{\s*top,\s*height,[\s\S]{0,300}?data-time-canvas-block="session"/);
     assert.match(schedule, /data-overlap=\{block\.overlaps/);
     assert.match(schedule, /data-schedule-scroll-owner="internal"/);
     assert.match(schedule, /role="region"/);
@@ -89,7 +95,9 @@ describe("operations behavior proof", () => {
     const month = source("src/components/schedule/month-schedule-view.tsx");
     const schedule = source("src/components/schedule/schedule-page-section.tsx");
     assert.doesNotMatch(month, /overflow-x-auto|min-w-\[980px\]/);
-    assert.match(month, /grid grid-cols-2 lg:grid-cols-7/);
+    assert.match(month, /grid grid-cols-2 xl:grid-cols-7/);
+    assert.match(month, /hidden grid-cols-7[^"\n]*xl:grid/);
+    assert.doesNotMatch(month, /lg:grid-cols-7|lg:grid|lg:hidden/);
     assert.match(month, /MONTH_DAY_NAMES\[day\.date\.getDay\(\)\]/);
     assert.match(schedule, /overflow-x-auto overscroll-x-contain/);
     assert.match(schedule, /data-schedule-scroll-owner="internal"/);
