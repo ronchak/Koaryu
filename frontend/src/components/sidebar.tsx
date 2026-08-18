@@ -2,7 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Award,
+  BarChart3,
+  Calendar,
+  CreditCard,
+  LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  UserPlus,
+  Users,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { AccountMenu } from "@/components/account-menu";
 import { Logo } from "./logo";
 import { NAV_ITEMS } from "@/lib/constants";
@@ -23,21 +36,33 @@ function isActiveRoute(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+const NAV_ICONS: Record<string, LucideIcon> = {
+  Award,
+  BarChart3,
+  Calendar,
+  CreditCard,
+  LayoutDashboard,
+  Settings,
+  UserPlus,
+  Users,
+  Zap,
+};
+
 function NavigationLinks({ pathname }: { pathname: string }) {
-  return NAV_ITEMS.map((item, index) => {
+  return NAV_ITEMS.map((item) => {
     const isActive = isActiveRoute(pathname, item.href);
+    const Icon = NAV_ICONS[item.icon] ?? LayoutDashboard;
     return (
       <li key={item.href}>
         <Link
           href={item.href}
           prefetch={item.prefetch}
           aria-current={isActive ? "page" : undefined}
-          aria-label={`${String(index + 1).padStart(2, "0")} ${item.label}`}
+          aria-label={item.label}
+          title={item.label}
           className={styles.navLink}
         >
-          <span className={styles.navIndex} aria-hidden="true">
-            {String(index + 1).padStart(2, "0")}
-          </span>
+          <Icon className={styles.navIcon} aria-hidden="true" size={17} strokeWidth={1.8} />
           <span className={styles.navLabel}>{item.label}</span>
         </Link>
       </li>
@@ -79,9 +104,9 @@ export function Sidebar({
           />
         </div>
         <nav aria-label="Product navigation">
-          <ol className={styles.mobileNav}>
+          <ul className={styles.mobileNav}>
             <NavigationLinks pathname={pathname} />
-          </ol>
+          </ul>
         </nav>
       </div>
 
@@ -104,7 +129,7 @@ export function Sidebar({
           ) : null}
         </div>
         <nav className={styles.spineNav} aria-label="Product navigation">
-          <ol className={styles.spineList}>
+          <ul className={styles.spineList}>
             {isCollapsed && onToggleCollapsed ? (
               <li>
                 <button
@@ -120,7 +145,7 @@ export function Sidebar({
               </li>
             ) : null}
             <NavigationLinks pathname={pathname} />
-          </ol>
+          </ul>
         </nav>
         <div className={styles.accountBand}>
           <AccountMenu

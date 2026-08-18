@@ -2,10 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { resolveDashboardRouteSlug } from "../src/lib/dashboard-shell-route.ts";
-
 const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const layoutSource = source("../src/app/(dashboard)/layout.tsx");
+const scopeSource = source("../src/components/dashboard-shell.tsx");
 const sidebarSource = source("../src/components/sidebar.tsx");
 const homeSource = source("../src/components/dashboard/dashboard-home.tsx");
 const contentSource = source("../src/components/dashboard/dashboard-page-content.tsx");
@@ -17,15 +16,17 @@ const sessionSource = source("../src/lib/store-session-cookies.ts");
 const storeSource = source("../src/lib/store.tsx");
 
 describe("dashboard shell and Home source contracts", () => {
-  it("provides the skip target, indexed semantic navigation, and route scope", () => {
+  it("provides the skip target, icon-and-text navigation, and a non-duplicative scope band", () => {
     assert.match(layoutSource, /href="#main-content"/);
     assert.match(layoutSource, /id="main-content"/);
     assert.match(layoutSource, /data-koaryu-dashboard-shell="true"/);
-    assert.match(sidebarSource, /<ol className=\{styles\.(?:mobileNav|spineList)\}>/);
+    assert.match(sidebarSource, /<ul className=\{styles\.(?:mobileNav|spineList)\}>/);
     assert.match(sidebarSource, /aria-current=\{isActive \? "page" : undefined\}/);
-    assert.equal(resolveDashboardRouteSlug("/dashboard"), "Dashboard / My Home");
-    assert.equal(resolveDashboardRouteSlug("/students/123"), "Students / Record");
-    assert.equal(resolveDashboardRouteSlug("/help/contact"), "Help / Contact");
+    assert.match(sidebarSource, /const Icon = NAV_ICONS\[item\.icon\]/);
+    assert.doesNotMatch(sidebarSource, /padStart|navIndex|\$\{String\(index \+ 1\)/);
+    assert.doesNotMatch(scopeSource, /resolveDashboardRouteSlug|slugTitle|routeSlug/);
+    assert.match(scopeSource, /aria-label="Current workspace scope"/);
+    assert.match(homeSource, /<h1 id="dashboard-home-heading">Dashboard<\/h1>/);
   });
 
   it("hydrates storage only in an effect after identity and exposes complete controls", () => {
@@ -73,6 +74,8 @@ describe("dashboard shell and Home source contracts", () => {
       "--product-paper",
       "--product-card-stock",
       "--product-lifted",
+      "--product-wood",
+      "--product-straw",
       "--product-motion-travel-duration",
       "--product-motion-open-duration",
       "--product-motion-gather-duration",
@@ -104,7 +107,7 @@ describe("dashboard shell and Home source contracts", () => {
       assert.ok(darkProductRule.includes(token), token);
     }
     assert.doesNotMatch(darkProductRule, /#f2ece0|#fbf8f0|#fffdf8|#fffefb/);
-    assert.match(shellStyles, /\.spine,[\s\S]*?background: #302719;[\s\S]*?color: #fffaf0;/);
+    assert.match(shellStyles, /\.spine,[\s\S]*?background:[\s\S]*?#302719;[\s\S]*?color: #fffaf0;/);
   });
 
   it("owns adaptive shell geometry and semantic customization surfaces", () => {
@@ -122,10 +125,23 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(shellStyles, /min-height:\s*100dvh/);
     assert.match(shellStyles, /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/);
     assert.match(shellStyles, /@media \(max-width: 1023px\)[\s\S]*\.main,[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/);
-    assert.match(homeStyles, /min-height:\s*calc\(100dvh - 70px\)/);
+    assert.match(homeStyles, /min-height:\s*calc\(100dvh - 38px\)/);
     assert.match(homeStyles, /@media \(max-width: 1023px\)[\s\S]*\.home\s*\{[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/);
-    assert.match(shellStyles, /@media \(min-width: 1024px\)[\s\S]*height:\s*70px;[\s\S]*max-height:\s*70px;/);
-    assert.match(shellStyles, /@media \(min-width: 1024px\)[\s\S]*text-overflow:\s*ellipsis;[\s\S]*white-space:\s*nowrap;/);
+    assert.match(shellStyles, /\.slugBand\s*\{[\s\S]*height:\s*38px;[\s\S]*max-height:\s*38px;/);
+    assert.match(shellStyles, /\.studioName\s*\{[\s\S]*text-overflow:\s*ellipsis;/);
+  });
+
+  it("renders Home as a continuous source-owned register with primary operational ledgers", () => {
+    assert.match(homeSource, /className=\{styles\.registerBand\}/);
+    assert.match(homeSource, /<footer className=\{styles\.widgetFooting\}>/);
+    assert.match(homeSource, /model\.provenanceLabel/);
+    assert.match(homeSource, /catalog\.windowCopy/);
+    assert.match(homeSource, /<footer className=\{styles\.registerFooting\}>/);
+    assert.match(homeStyles, /\.grid\s*\{[\s\S]*gap:\s*1px;[\s\S]*background:\s*var\(--product-rule-soft\);/);
+    assert.match(homeStyles, /data-widget-id="needs_attention"/);
+    assert.match(homeStyles, /data-widget-id="classes_today"/);
+    assert.match(homeStyles, /@media print/);
+    assert.match(shellStyles, /@media print/);
   });
 
   it("owns authoritative studio identity in the split store and purges layouts at session cleanup", () => {

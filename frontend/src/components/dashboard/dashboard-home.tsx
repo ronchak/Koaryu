@@ -388,8 +388,8 @@ function HomeWidget({
     >
       <header className={styles.widgetBand}>
         <div className={styles.bandTitle}>
+          <span className={styles.registerKind}>{catalog.category}</span>
           <span>{catalog.title}</span>
-          <span className={styles.window}>{catalog.windowCopy}</span>
         </div>
         {isCustomizing && !catalog.fixed ? (
           <button
@@ -444,12 +444,20 @@ function HomeWidget({
       <div className={styles.widgetBody}>
         <MaterialState model={model} />
         <WidgetContent maxRows={maxRows} model={model} size={item.size} />
+      </div>
+
+      <footer className={styles.widgetFooting}>
+        <div className={styles.provenance}>
+          <span>{model.provenanceLabel}</span>
+          <span aria-hidden="true">·</span>
+          <span>{catalog.windowCopy}</span>
+        </div>
         {model.id !== "quick_actions" ? (
           <Link className={styles.sourceLink} href={catalog.sourceRoute}>
             {sourceActionLabel(model.id)}{hiddenRows > 0 ? ` · ${hiddenRows} more` : ""}
           </Link>
-        ) : null}
-      </div>
+        ) : <span className={styles.footingStatus}>Route actions</span>}
+      </footer>
     </article>
   );
 }
@@ -914,7 +922,7 @@ export function DashboardHome({
     >
       <section className={styles.homeHeading} aria-labelledby="dashboard-home-heading">
         <div>
-          <h1 id="dashboard-home-heading">My studio</h1>
+          <h1 id="dashboard-home-heading">Dashboard</h1>
           <p>{studioDescription}</p>
         </div>
         <div className={styles.homeActions}>
@@ -978,6 +986,13 @@ export function DashboardHome({
           className={`${styles.canvas} ${isCustomizing ? styles.customizing : ""}`}
           aria-label="Customizable home panels"
         >
+          <header className={styles.registerBand}>
+            <div>
+              <span>Daily register</span>
+              <strong>Operating workbench</strong>
+            </div>
+            <p>Source-owned records · role-safe view</p>
+          </header>
           <div className={styles.grid} data-layout-resolved="true">
             {layout.items.map((item, index) => (
               <HomeWidget
@@ -1002,6 +1017,10 @@ export function DashboardHome({
               />
             ))}
           </div>
+          <footer className={styles.registerFooting}>
+            <span><strong>{layout.items.length}</strong> active panels</span>
+            <span>Arrangement saved per user, studio, and role</span>
+          </footer>
         </section>
       )}
 
