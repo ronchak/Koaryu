@@ -1,11 +1,11 @@
-import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
+import { RecordsLoading } from "@/components/records/records-loading";
 
 export default function Loading() {
   return (
-    <DashboardLoadingSkeleton
+    <RecordsLoading
       title="Students"
       description="Loading roster, filters, and student actions."
-      variant="table"
+      variant="roster"
     />
   );
 }

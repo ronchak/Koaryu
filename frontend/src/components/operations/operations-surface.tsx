@@ -93,16 +93,33 @@ export function OperationsLoading({
   page: Extract<OperationsPage, "schedule" | "billing" | "reports" | "settings">;
   title: string;
 }) {
+  const labels = {
+    schedule: ["Navigation", "Studio time", "Seven-day canvas"],
+    billing: ["Six books", "Current register", "Money rows"],
+    reports: ["Report scope", "Operational totals", "Export register"],
+    settings: ["Administration", "Studio controls", "People and programs"],
+  }[page];
+
   return (
     <OperationsSurface page={page} allowInternalOverflow={page === "schedule"}>
-      <div className={styles.loading} aria-busy="true" aria-live="polite">
-        <div>
+      <div className={styles.loading} aria-busy="true" aria-live="polite" data-loading-family={page}>
+        <div className={styles.loadingIntro}>
           <p className={styles.eyebrow}>Preparing working sheet</p>
           <h1>{title}</h1>
           <p>{description}</p>
         </div>
-        <div className={styles.loadingRules} aria-hidden="true">
-          {Array.from({ length: 7 }, (_, index) => <span key={index} />)}
+        <div className={styles.loadingWorkbench} aria-hidden="true">
+          <div className={styles.loadingIndex}>
+            {labels.map((label, index) => (
+              <span key={label}>
+                <i>{String(index + 1).padStart(2, "0")}</i>
+                {label}
+              </span>
+            ))}
+          </div>
+          <div className={styles.loadingRules}>
+            {Array.from({ length: page === "schedule" ? 8 : 6 }, (_, index) => <span key={index} />)}
+          </div>
         </div>
       </div>
     </OperationsSurface>

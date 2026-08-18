@@ -10,6 +10,7 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import type { BeltGroup } from "@/lib/belt-tracker-page-model";
 import type { BeltRank, EligibilityEntry } from "@/types";
 import { Award } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 type BeltTrackerDialogsProps = {
   addBeltModalOpen: boolean;
@@ -206,7 +207,7 @@ function PromotionConfirmModal({
 
   return (
     <ModalFrame
-      rootClassName="p-4"
+      rootClassName={`p-4 ${styles.beltDialogRoot}`}
       panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-sm p-6"
       ariaLabelledBy="confirm-promotion-title"
       onBackdropClick={onClose}

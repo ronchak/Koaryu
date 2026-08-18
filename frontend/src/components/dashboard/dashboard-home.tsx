@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -49,6 +50,7 @@ type DashboardHomeProps = {
   currentStudioId: string | null;
   currentUserId: string;
   datasetLoadError: string | null;
+  identityReady: boolean;
   isPreviewMode: boolean;
   retryDashboardDatasets: () => void;
   studioDescription: string;
@@ -109,6 +111,22 @@ function stateLabel(state: DashboardWidgetViewModel["state"]): string {
 
 function isMaterialState(state: DashboardWidgetViewModel["state"]): boolean {
   return state === "loading" || state === "error" || state === "partial" || state === "unavailable";
+}
+
+function readSettleDuration(node: HTMLElement): number {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return 0;
+  }
+  const value = window.getComputedStyle(node).getPropertyValue("--product-motion-settle-duration").trim();
+  if (value.endsWith("ms")) {
+    const duration = Number.parseFloat(value);
+    return Number.isFinite(duration) ? duration : 200;
+  }
+  if (value.endsWith("s")) {
+    const duration = Number.parseFloat(value) * 1000;
+    return Number.isFinite(duration) ? duration : 200;
+  }
+  return 200;
 }
 
 function sourceActionLabel(widgetId: DashboardWidgetId): string {
@@ -288,6 +306,19 @@ function WidgetContent({
   model: DashboardWidgetViewModel;
   size: DashboardWidgetSize;
 }) {
+  if (model.state === "loading" || model.state === "error" || model.state === "unavailable") {
+    return (
+      <div className={styles.stateBody}>
+        <p className={styles.detail}>{model.detail}</p>
+        <span className={styles.stateRule} aria-hidden="true" />
+        <span className={styles.stateRule} aria-hidden="true" />
+        <span className={styles.stateRule} aria-hidden="true" />
+      </div>
+    );
+  }
+  if (model.state === "partial" && model.rows.length === 0) {
+    return <p className={styles.detail}>{model.detail}</p>;
+  }
   if (model.id === "classes_today") return <AgendaContent maxRows={maxRows} model={model} />;
   if (model.id === "student_pulse") return <RatioRing model={model} />;
   if (model.id === "attendance") return <AttendanceContent model={model} />;
@@ -428,6 +459,7 @@ export function DashboardHome({
   currentStudioId,
   currentUserId,
   datasetLoadError,
+  identityReady,
   isPreviewMode,
   retryDashboardDatasets,
   studioDescription,
@@ -437,15 +469,23 @@ export function DashboardHome({
     () => layoutIdentity(currentUserId, currentStudioId, currentRole),
     [currentRole, currentStudioId, currentUserId]
   );
+  const identityScope = identity
+    ? `${identity.userId}\u0000${identity.studioId}\u0000${identity.role}`
+    : null;
   const [layout, setLayout] = useState<DashboardLayout>(() => buildDefaultDashboardLayout(currentRole));
+  const [resolvedLayoutScope, setResolvedLayoutScope] = useState<string | null>(null);
+  const layoutResolved = identityReady && identityScope !== null && resolvedLayoutScope === identityScope;
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [activeDragWidgetId, setActiveDragWidgetId] = useState<DashboardWidgetId | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const layoutRef = useRef(layout);
+  const homeRef = useRef<HTMLDivElement>(null);
   const snapshotRef = useRef<DashboardLayout | null>(null);
   const panelRefs = useRef(new Map<DashboardWidgetId, HTMLElement>());
+  const pendingPanelRectsRef = useRef<Map<DashboardWidgetId, DOMRect> | null>(null);
+  const panelAnimationsRef = useRef(new Map<DashboardWidgetId, Animation>());
   const dragRef = useRef<DragSession | null>(null);
   const addPanelsTriggerRef = useRef<HTMLButtonElement>(null);
   const customizeTriggerRef = useRef<HTMLButtonElement>(null);
@@ -455,20 +495,84 @@ export function DashboardHome({
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
-      if (!active) {
+      if (!active || !identityReady || !identity) {
         return;
       }
-      const nextLayout = identity
-        ? readDashboardLayout(getBrowserDashboardLayoutStorage(), identity).layout
-        : buildDefaultDashboardLayout(currentRole);
+      const nextLayout = readDashboardLayout(getBrowserDashboardLayoutStorage(), identity).layout;
       layoutRef.current = nextLayout;
       setLayout(nextLayout);
       setPersistenceError(null);
+      setResolvedLayoutScope(identityScope);
+      setIsCustomizing(false);
+      setIsLibraryOpen(false);
+      setActiveDragWidgetId(null);
+      snapshotRef.current = null;
+      const dragSession = dragRef.current;
+      if (dragSession?.timer) {
+        clearTimeout(dragSession.timer);
+      }
+      dragRef.current = null;
     });
     return () => {
       active = false;
     };
-  }, [currentRole, identity]);
+  }, [identity, identityReady, identityScope]);
+
+  const capturePanelPositions = useCallback(() => {
+    if (!layoutResolved) {
+      return;
+    }
+    pendingPanelRectsRef.current = new Map(
+      Array.from(panelRefs.current, ([widgetId, node]) => [widgetId, node.getBoundingClientRect()])
+    );
+  }, [layoutResolved]);
+
+  useLayoutEffect(() => {
+    const previousRects = pendingPanelRectsRef.current;
+    pendingPanelRectsRef.current = null;
+    const home = homeRef.current;
+    if (!layoutResolved || !home || !previousRects) {
+      return;
+    }
+
+    const duration = readSettleDuration(home);
+    for (const [widgetId, node] of panelRefs.current) {
+      const previousRect = previousRects.get(widgetId);
+      if (!previousRect) {
+        continue;
+      }
+      const nextRect = node.getBoundingClientRect();
+      const translateX = previousRect.left - nextRect.left;
+      const translateY = previousRect.top - nextRect.top;
+      if (Math.abs(translateX) < 1 && Math.abs(translateY) < 1) {
+        continue;
+      }
+      panelAnimationsRef.current.get(widgetId)?.cancel();
+      if (duration === 0) {
+        continue;
+      }
+      const animation = node.animate([
+        { opacity: 0.92, transform: `translate(${translateX}px, ${translateY}px)` },
+        { opacity: 1, transform: "translate(0, 0)" },
+      ], {
+        duration,
+        easing: "cubic-bezier(.16, 1, .3, 1)",
+      });
+      panelAnimationsRef.current.set(widgetId, animation);
+      void animation.finished.catch(() => undefined).finally(() => {
+        if (panelAnimationsRef.current.get(widgetId) === animation) {
+          panelAnimationsRef.current.delete(widgetId);
+        }
+      });
+    }
+  }, [layout.items, layoutResolved]);
+
+  useEffect(() => () => {
+    for (const animation of panelAnimationsRef.current.values()) {
+      animation.cancel();
+    }
+    panelAnimationsRef.current.clear();
+  }, []);
 
   const saveLayout = useCallback((next: DashboardLayout) => {
     if (identity) {
@@ -505,8 +609,11 @@ export function DashboardHome({
   }, []);
 
   const openLibrary = useCallback(() => {
+    if (!layoutResolved) {
+      return;
+    }
     setIsLibraryOpen(true);
-  }, []);
+  }, [layoutResolved]);
 
   const closeLibrary = useCallback(() => {
     setIsLibraryOpen(false);
@@ -532,10 +639,11 @@ export function DashboardHome({
     if (nextItems.every((item, index) => item === currentLayout.items[index])) {
       return;
     }
+    capturePanelPositions();
     saveLayout({ ...currentLayout, items: nextItems });
     announcePosition(widgetId, nextItems);
     focusWidget(widgetId);
-  }, [announcePosition, focusWidget, saveLayout]);
+  }, [announcePosition, capturePanelPositions, focusWidget, saveLayout]);
 
   const resizeWidget = useCallback((widgetId: DashboardWidgetId) => {
     const catalog = DASHBOARD_WIDGET_BY_ID.get(widgetId);
@@ -553,10 +661,11 @@ export function DashboardHome({
       ...currentLayout,
       items: currentLayout.items.map((item) => item.widget_id === widgetId ? { ...item, size: nextSize } : item),
     };
+    capturePanelPositions();
     saveLayout(next);
     setAnnouncement(`${catalog.title} resized to ${DASHBOARD_WIDGET_SIZE_LABELS[nextSize]}.`);
     focusWidget(widgetId);
-  }, [focusWidget, saveLayout]);
+  }, [capturePanelPositions, focusWidget, saveLayout]);
 
   const removeWidget = useCallback((widgetId: DashboardWidgetId) => {
     const catalog = DASHBOARD_WIDGET_BY_ID.get(widgetId);
@@ -571,6 +680,7 @@ export function DashboardHome({
       items: remainingItems,
       removed_widget_ids: Array.from(new Set([...currentLayout.removed_widget_ids, widgetId])),
     };
+    capturePanelPositions();
     saveLayout(next);
     setAnnouncement(`${catalog.title} removed. It remains available in Add panels.`);
     const focusTarget = remainingItems[Math.min(currentIndex, remainingItems.length - 1)];
@@ -579,7 +689,7 @@ export function DashboardHome({
     } else {
       requestAnimationFrame(() => customizeTriggerRef.current?.focus());
     }
-  }, [focusWidget, saveLayout]);
+  }, [capturePanelPositions, focusWidget, saveLayout]);
 
   const addWidget = useCallback((widgetId: DashboardWidgetId) => {
     const catalog = DASHBOARD_WIDGET_BY_ID.get(widgetId);
@@ -592,13 +702,18 @@ export function DashboardHome({
       items: [...currentLayout.items, { widget_id: widgetId, size: catalog.defaultSize }],
       removed_widget_ids: currentLayout.removed_widget_ids.filter((id) => id !== widgetId),
     };
+    capturePanelPositions();
     saveLayout(next);
     setAnnouncement(`${catalog.title} added at position ${next.items.length}.`);
     setIsLibraryOpen(false);
     focusWidget(widgetId);
-  }, [focusWidget, saveLayout]);
+  }, [capturePanelPositions, focusWidget, saveLayout]);
 
   const enterCustomize = useCallback(() => {
+    if (!layoutResolved) {
+      setAnnouncement("Your role-safe arrangement is still loading.");
+      return;
+    }
     const currentLayout = layoutRef.current;
     snapshotRef.current = {
       ...currentLayout,
@@ -607,7 +722,7 @@ export function DashboardHome({
     };
     setIsCustomizing(true);
     setAnnouncement("Customize mode started. Use the visible move, resize, and remove controls.");
-  }, []);
+  }, [layoutResolved]);
 
   const finishCustomize = useCallback(() => {
     clearDragSession();
@@ -622,6 +737,7 @@ export function DashboardHome({
     clearDragSession();
     const snapshot = snapshotRef.current;
     if (snapshot) {
+      capturePanelPositions();
       saveLayout(snapshot);
     }
     snapshotRef.current = null;
@@ -629,7 +745,7 @@ export function DashboardHome({
     setIsLibraryOpen(false);
     setAnnouncement("Changes canceled. The previous arrangement was restored.");
     requestAnimationFrame(() => customizeTriggerRef.current?.focus());
-  }, [clearDragSession, saveLayout]);
+  }, [capturePanelPositions, clearDragSession, saveLayout]);
 
   useEffect(() => {
     if (!isCustomizing) {
@@ -673,10 +789,11 @@ export function DashboardHome({
       ...buildDefaultDashboardLayout(currentRole),
       client_id: layoutRef.current.client_id,
     };
+    capturePanelPositions();
     saveLayout(next);
     setAnnouncement("Dashboard reset to the role-safe default arrangement.");
     focusWidget("needs_attention");
-  }, [currentRole, focusWidget, saveLayout]);
+  }, [capturePanelPositions, currentRole, focusWidget, saveLayout]);
 
   const reorderTowardTarget = useCallback((widgetId: DashboardWidgetId, targetId: DashboardWidgetId) => {
     const currentLayout = layoutRef.current;
@@ -685,9 +802,10 @@ export function DashboardHome({
     if (nextItems.every((item, index) => item === currentLayout.items[index])) {
       return;
     }
+    capturePanelPositions();
     saveLayout({ ...currentLayout, items: nextItems });
     announcePosition(widgetId, nextItems);
-  }, [announcePosition, saveLayout]);
+  }, [announcePosition, capturePanelPositions, saveLayout]);
 
   const startDrag = useCallback((widgetId: DashboardWidgetId, pointerId: number) => {
     if (!isCustomizing) {
@@ -786,9 +904,13 @@ export function DashboardHome({
 
   return (
     <div
+      ref={homeRef}
       className={styles.home}
       data-koaryu-dashboard-home="true"
+      data-koaryu-dashboard-ready={layoutResolved ? "true" : "false"}
+      data-layout-resolved={layoutResolved ? "true" : "false"}
       data-dashboard-provenance={isPreviewMode ? "preview" : "live"}
+      aria-busy={!layoutResolved}
     >
       <section className={styles.homeHeading} aria-labelledby="dashboard-home-heading">
         <div>
@@ -797,7 +919,7 @@ export function DashboardHome({
           <p>{studioDescription}</p>
         </div>
         <div className={styles.homeActions}>
-          {isCustomizing ? (
+          {isCustomizing && layoutResolved ? (
             <>
               <button ref={addPanelsTriggerRef} type="button" onClick={openLibrary} aria-expanded={isLibraryOpen} aria-haspopup="dialog">
                 <Plus aria-hidden="true" size={17} /> Add panels
@@ -809,7 +931,15 @@ export function DashboardHome({
               <button type="button" className={styles.primaryAction} onClick={finishCustomize}>Done</button>
             </>
           ) : (
-            <button ref={customizeTriggerRef} type="button" className={styles.primaryAction} onClick={enterCustomize}>
+            <button
+              ref={customizeTriggerRef}
+              type="button"
+              className={styles.furnitureAction}
+              onClick={enterCustomize}
+              disabled={!layoutResolved}
+              aria-describedby={!layoutResolved ? "dashboard-layout-status" : undefined}
+              title={!layoutResolved ? "Available after this studio arrangement loads" : "Arrange Home panels"}
+            >
               <Settings2 aria-hidden="true" size={17} /> Customize
             </button>
           )}
@@ -836,37 +966,47 @@ export function DashboardHome({
         <p className={styles.persistenceNotice} role="status">{persistenceError}</p>
       ) : null}
 
-      <section
-        className={`${styles.canvas} ${isCustomizing ? styles.customizing : ""}`}
-        aria-label="Customizable home panels"
-      >
-        <div className={styles.grid}>
-          {layout.items.map((item, index) => (
-            <HomeWidget
-              key={item.widget_id}
-              index={index}
-              item={item}
-              isCustomizing={isCustomizing}
-              isPickedUp={activeDragWidgetId === item.widget_id}
-              model={viewModels[item.widget_id]}
-              onMove={moveWidget}
-              onPointerCancel={onPointerCancel}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onRemove={removeWidget}
-              onResize={resizeWidget}
-              panelRef={(node) => {
-                if (node) panelRefs.current.set(item.widget_id, node);
-                else panelRefs.current.delete(item.widget_id);
-              }}
-              total={layout.items.length}
-            />
-          ))}
-        </div>
-      </section>
+      {!layoutResolved ? (
+        <section className={styles.layoutLoading} id="dashboard-layout-status" role="status" aria-live="polite">
+          <span className={styles.layoutLoadingMark} aria-hidden="true" />
+          <div>
+            <strong>Arranging this studio’s Home</strong>
+            <p>Loading the saved panel geometry for your current role.</p>
+          </div>
+        </section>
+      ) : (
+        <section
+          className={`${styles.canvas} ${isCustomizing ? styles.customizing : ""}`}
+          aria-label="Customizable home panels"
+        >
+          <div className={styles.grid} data-layout-resolved="true">
+            {layout.items.map((item, index) => (
+              <HomeWidget
+                key={item.widget_id}
+                index={index}
+                item={item}
+                isCustomizing={isCustomizing}
+                isPickedUp={activeDragWidgetId === item.widget_id}
+                model={viewModels[item.widget_id]}
+                onMove={moveWidget}
+                onPointerCancel={onPointerCancel}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onRemove={removeWidget}
+                onResize={resizeWidget}
+                panelRef={(node) => {
+                  if (node) panelRefs.current.set(item.widget_id, node);
+                  else panelRefs.current.delete(item.widget_id);
+                }}
+                total={layout.items.length}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
-      {isLibraryOpen ? (
+      {isLibraryOpen && layoutResolved ? (
         <aside ref={libraryRef} className={styles.library} role="dialog" aria-modal="true" aria-labelledby="widget-library-heading">
           <header>
             <div>

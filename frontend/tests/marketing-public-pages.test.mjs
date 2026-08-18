@@ -83,7 +83,7 @@ describe("conventional marketing page composition", () => {
       `${source}\n${css}`,
       /(?:bg-bg|bg-surface|text-text|border-border|text-accent)|var\(--(?:bg|surface|border|text-[\w-]+|accent)\b/
     );
-    assert.doesNotMatch(css, /gradient|backdrop|glass|#[fF]{6}|#[0]{6}|animation\s*:/);
+    assert.doesNotMatch(css, /gradient|backdrop|glass|#[fF]{6}|#[0]{6}/);
   });
 
   it("keeps normal document flow, visible focus, target sizing, and canonical breakpoints", () => {
@@ -111,10 +111,67 @@ describe("conventional marketing page composition", () => {
     }
   });
 
-  it("keeps document surfaces below the fibre veil and the sticky header above it", () => {
+  it("keeps the opaque header in normal document flow above the fibre veil", () => {
     assert.match(css, /\.main,\s*\n\.footer\s*\{[^}]*z-index:\s*0/s);
-    assert.match(css, /\.header\s*\{[^}]*position:\s*sticky;[^}]*z-index:\s*30/s);
+    assert.match(
+      css,
+      /\.header\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*10;[^}]*background:\s*var\(--koaryu-paper\)/s
+    );
+    assert.doesNotMatch(css, /\.header\s*\{[^}]*(?:position:\s*(?:sticky|fixed)|top:\s*0)/s);
     assert.doesNotMatch(css, /\.(?:main|footer)[^{]*\{[^}]*z-index:\s*(?:2[0-9]|[3-9][0-9])/s);
     assert.match(css, /overflow-x:\s*clip/);
+  });
+
+  it("renders explicit index and detail family classes without a faux index plane", () => {
+    assert.match(
+      source,
+      /basePath === "\/features" \? styles\.featureIndex : styles\.useCaseIndex/
+    );
+    assert.match(source, /pageHref\.startsWith\("\/features\/"\)[\s\S]*styles\.featureDetail/);
+    assert.match(source, /pageHref\.startsWith\("\/use-cases\/"\)[\s\S]*styles\.useCaseDetail/);
+    assert.match(source, /return styles\.studioTypeDetail/);
+    assert.match(source, /className=\{`\$\{styles\.indexSection\} \$\{indexFamilyClass\}`\}/);
+    assert.match(source, /className=\{`\$\{styles\.proofBand\} \$\{familyClass\}`\}/);
+    assert.match(source, /className=\{`\$\{styles\.detailSection\} \$\{familyClass\}`\}/);
+    assert.doesNotMatch(css, /\.indexSection::before/);
+    assert.match(css, /\.featureIndex \.indexHeading\s*\{[^}]*max-width:\s*34ch/s);
+    assert.match(css, /\.useCaseIndex\s*\{[^}]*grid-template-columns:\s*1fr/s);
+    assert.match(css, /\.useCaseIndex \.ledger li::before\s*\{[^}]*background:\s*var\(--koaryu-rule-soft\)/s);
+    assert.match(css, /\.featureDetail\.proofBand/s);
+    assert.match(css, /\.useCaseDetail\.detailSection/s);
+    assert.match(css, /\.studioTypeDetail\.detailSection/s);
+  });
+
+  it("uses a restrained ruled related band and semantic, reduced-motion-safe movement", () => {
+    assert.match(
+      css,
+      /\.relatedSection\s*\{[^}]*position:\s*relative;[^}]*padding:\s*clamp\(56px, 5vw, 72px\) 0 clamp\(64px, 8vw, 96px\);[^}]*background:\s*transparent/s
+    );
+    assert.match(
+      css,
+      /\.relatedSection::before\s*\{[^}]*top:\s*0;[^}]*width:\s*100vw;[^}]*height:\s*1px;[^}]*background:\s*var\(--koaryu-rule\)/s
+    );
+    assert.match(
+      css,
+      /\.detailSection\s*\{[^}]*padding:\s*clamp\(72px, 9vw, 112px\) 0 clamp\(48px, 4vw, 64px\)/s
+    );
+    assert.match(css, /\.detailHeading\s*\{[^}]*position:\s*sticky;[^}]*top:\s*32px/s);
+    assert.match(css, /\.relatedList\s*\{[^}]*display:\s*block/s);
+    assert.match(css, /\.relatedLink\s*\{[^}]*min-height:\s*88px/s);
+    assert.match(css, /@keyframes publicSettle/);
+    assert.match(css, /@keyframes publicOpen/);
+    assert.match(
+      css,
+      /\.heroSupport,\s*\n\.exploreHeroSupport,\s*\n\.ledger,\s*\n\.proofBand dl\s*\{[^}]*animation:\s*publicSettle 360ms/s
+    );
+    assert.match(css, /\.mobileNavigation\[open\] \.mobileMenu,\s*\n\.detailSection:target \.detailArticles\s*\{[^}]*animation:\s*publicOpen/s);
+    assert.match(css, /\.ledgerLink:hover \.ledgerAction,[^}]*transform:\s*translateX\(3px\)/s);
+
+    const reducedMotion = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    assert.match(reducedMotion, /transition:\s*none !important/);
+    assert.match(reducedMotion, /animation:\s*none !important/);
+    assert.match(reducedMotion, /animation-delay:\s*0s !important/);
+    assert.match(reducedMotion, /transform:\s*none !important/);
+    assert.match(reducedMotion, /\.heroSupport,\s*\n\s*\.exploreHeroSupport/s);
   });
 });

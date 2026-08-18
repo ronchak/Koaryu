@@ -99,11 +99,6 @@ export function BeltTrackerShell({
                   onChange={onSelectProgram}
                   disabled={dirty || isSwitchingLadder}
                 />
-                {dirty && (
-                  <p className="mt-1 text-[11px] text-warning">
-                    Save or discard changes before switching programs.
-                  </p>
-                )}
               </div>
             ) : (
               <span className="text-xs text-muted">
@@ -112,6 +107,12 @@ export function BeltTrackerShell({
             )}
           </div>
         </div>
+
+        {dirty ? (
+          <p className={styles.beltProgramLockNotice}>
+            Save or discard changes before switching programs.
+          </p>
+        ) : null}
 
         {actionMessage ? (
           <div className="px-8 pt-4">

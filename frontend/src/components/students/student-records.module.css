@@ -1,9 +1,9 @@
 .rosterPrintRoot,
 .folioRoot,
 .importPage {
-  --bg: var(--product-sheet);
-  --surface: var(--product-sheet);
-  --surface-raised: var(--product-paper);
+  --bg: var(--product-ground);
+  --surface: var(--product-paper);
+  --surface-raised: var(--product-card-stock);
   --border: var(--product-rule-soft);
   --text-primary: var(--product-ink);
   --text-secondary: var(--product-soft-ink);
@@ -13,9 +13,58 @@
   --success: #386b56;
   --warning: #80561c;
   --danger: var(--product-vermilion);
+  min-width: 0;
+  background: var(--product-ground);
+  color: var(--product-ink);
+  font-size: 0.8125rem;
 }
 
-.rosterPrintRoot,
+.rosterPrintRoot > :global(header),
+.folioRoot > :global(header),
+.importPage > :global(header) {
+  background: var(--product-paper);
+}
+
+.rosterPrintRoot :global(.text-xs),
+.folioRoot :global(.text-xs),
+.importPage :global(.text-xs) {
+  font-size: 0.8125rem;
+}
+
+.rosterPrintRoot :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea),
+.folioRoot :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea),
+.importPage :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+  min-height: 44px;
+  padding: 0.625rem 0.75rem;
+  border-color: var(--product-rule);
+  background: var(--product-card-stock);
+}
+
+.rosterPrintRoot textarea,
+.folioRoot textarea,
+.importPage textarea { min-height: 5.5rem; }
+
+.rosterPrintRoot :is(input, select, textarea):disabled,
+.folioRoot :is(input, select, textarea):disabled,
+.importPage :is(input, select, textarea):disabled,
+.rosterPrintRoot :is(input, textarea):read-only,
+.folioRoot :is(input, textarea):read-only,
+.importPage :is(input, textarea):read-only {
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--product-paper) 72%, var(--product-ground));
+  color: var(--product-soft-ink);
+  opacity: 0.72;
+}
+
+.rosterPrintRoot :global(.koaryu-modal-panel),
+.folioRoot :global(.koaryu-modal-panel) {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  background: var(--product-lifted) !important;
+  box-shadow: var(--product-shadow-lifted);
+  animation: student-dialog-open var(--product-motion-open-duration) var(--product-motion-ease) both;
+}
+
 .rosterWorkspace { min-width: 0; }
 
 .rosterPrintRoot :is(a, button, input, select, textarea, [tabindex]):focus-visible,
@@ -27,17 +76,17 @@
 
 .rosterDecision {
   display: grid;
-  grid-template-columns: minmax(9rem, 0.32fr) minmax(15rem, 0.72fr) minmax(16rem, 1fr);
-  gap: clamp(1rem, 3vw, 3rem);
-  align-items: end;
-  margin: clamp(1rem, 2.4vw, 2rem) clamp(1rem, 2.4vw, 2rem) 0;
-  padding: 0 0 1.25rem;
+  grid-template-columns: minmax(8rem, 0.26fr) minmax(15rem, 0.7fr) minmax(16rem, 1fr);
+  gap: clamp(1rem, 2vw, 2rem);
+  align-items: center;
+  margin: 0.75rem clamp(1rem, 2.4vw, 2rem) 0;
+  padding: 0.35rem 0 0.75rem;
   border-bottom: 2px solid var(--text-primary);
 }
 
 .rosterDecision > p {
   color: var(--accent);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
   font-weight: 750;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -45,7 +94,7 @@
 
 .rosterDecision h2 {
   color: var(--text-primary);
-  font-size: clamp(1.35rem, 2.6vw, 2.25rem);
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
   font-weight: 680;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -54,38 +103,52 @@
 .rosterDecision span {
   max-width: 58ch;
   color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.5;
+  font-size: 0.8125rem;
+  line-height: 1.45;
 }
 
 .rosterToolbar {
   position: sticky;
-  top: 0;
-  z-index: 8;
-  margin-top: 1rem;
-  background: color-mix(in srgb, var(--bg) 94%, var(--surface));
+  top: 70px;
+  z-index: 18;
+  min-height: 60px;
+  margin-top: 0.75rem;
+  padding-block: 0.5rem !important;
+  border-top: 1px solid var(--product-rule-soft);
+  background: color-mix(in srgb, var(--product-paper) 96%, transparent);
+  box-shadow: 0 6px 14px rgb(48 39 25 / 5%);
 }
 
-.selectionBand { box-shadow: inset 3px 0 0 var(--accent); }
+.selectionBand {
+  border-radius: 0 !important;
+  background: var(--product-card-stock) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .rosterViewport { min-width: 0; padding: 0 clamp(1rem, 2.4vw, 2rem); }
 
 .rosterTable {
   width: 100%;
   border-collapse: collapse;
   border-top: 2px solid var(--text-primary);
-  font-size: 0.8rem;
+  background: var(--product-paper);
+  font-size: 0.8125rem;
 }
 
 .rosterTable thead {
   position: sticky;
-  top: 4.75rem;
-  z-index: 5;
-  background: var(--surface-raised);
+  top: 132px;
+  z-index: 12;
+  background: var(--product-card-stock);
 }
 
 .rosterTable th,
 .rosterTable td { vertical-align: middle; }
-.rosterTable tbody tr { box-shadow: inset 3px 0 0 transparent; }
+.rosterTable tbody tr {
+  box-shadow: inset 3px 0 0 transparent;
+  transition:
+    background-color var(--product-motion-change-duration) var(--product-motion-ease),
+    box-shadow var(--product-motion-change-duration) var(--product-motion-ease);
+}
 .rosterTable tbody tr[data-state="paused"] { box-shadow: inset 3px 0 0 var(--warning); }
 .rosterTable tbody tr[data-state="inactive"],
 .rosterTable tbody tr[data-state="canceled"] { box-shadow: inset 3px 0 0 var(--muted); }
@@ -93,21 +156,20 @@
 .rosterTable tbody tr:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
 .mobileSelectAll { display: none; }
 
-.folioRoot { min-width: 0; }
 .folioIntro {
   display: grid;
-  grid-template-columns: minmax(9rem, 0.28fr) minmax(14rem, 0.72fr) minmax(16rem, 1fr);
-  gap: clamp(1rem, 3vw, 3rem);
-  align-items: end;
-  margin: clamp(1rem, 2.4vw, 2rem) clamp(1rem, 2.4vw, 2rem) 0;
-  padding-bottom: 1.25rem;
+  grid-template-columns: minmax(8rem, 0.26fr) minmax(15rem, 0.7fr) minmax(16rem, 1fr);
+  gap: clamp(1rem, 2vw, 2rem);
+  align-items: center;
+  margin: 0.75rem clamp(1rem, 2.4vw, 2rem) 0;
+  padding: 0.35rem 0 0.75rem;
   border-bottom: 2px solid var(--text-primary);
 }
-.folioIntro > p { color: var(--accent); font-size: 0.66rem; font-weight: 750; letter-spacing: 0.16em; text-transform: uppercase; }
-.folioIntro h2 { color: var(--text-primary); font-size: clamp(1.35rem, 2.6vw, 2.25rem); font-weight: 680; letter-spacing: -0.04em; line-height: 1; }
-.folioIntro span { max-width: 58ch; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.5; }
+.folioIntro > p { color: var(--accent); font-size: 0.75rem; font-weight: 750; letter-spacing: 0.16em; text-transform: uppercase; }
+.folioIntro h2 { color: var(--text-primary); font-size: clamp(1.25rem, 2vw, 1.75rem); font-weight: 680; letter-spacing: -0.04em; line-height: 1; }
+.folioIntro span { max-width: 58ch; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.45; }
 .folioGrid { align-items: start; max-width: 76rem; }
-.identityRail { position: sticky; top: 1rem; }
+.identityRail { position: sticky; top: 86px; }
 .folioLeaves { min-width: 0; }
 .folioSection {
   overflow: hidden;
@@ -115,7 +177,7 @@
   border-top: 2px solid var(--text-primary);
   border-bottom: 1px solid var(--border);
   border-radius: 0;
-  background: var(--surface);
+  background: var(--product-paper);
 }
 .folioSection + .folioSection { margin-top: 1.15rem; }
 .historyEntry { position: relative; padding-left: 1.25rem; border-left: 2px solid var(--border); }
@@ -131,27 +193,49 @@
   content: "";
 }
 
-.importPage { min-width: 0; }
 .importWorkspace { min-width: 0; padding: clamp(1rem, 2.8vw, 2rem); }
 .importSheet { display: grid; max-width: 72rem; grid-template-columns: minmax(10rem, 0.28fr) minmax(0, 1fr); gap: clamp(1.25rem, 4vw, 3.5rem); margin: 0 auto; }
-.importIndex { align-self: start; position: sticky; top: 1rem; border-top: 2px solid var(--text-primary); }
+.importIndex { align-self: start; position: sticky; top: 86px; border-top: 2px solid var(--text-primary); }
 .importIndex h2 { margin: 1rem 0 0.45rem; color: var(--text-primary); font-size: 1.35rem; letter-spacing: -0.03em; }
-.importIndex > p { color: var(--text-secondary); font-size: 0.75rem; line-height: 1.5; }
+.importIndex > p { color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.5; }
 .importStages { margin-top: 1.25rem; border-bottom: 1px solid var(--border); }
-.importStage { display: grid; grid-template-columns: 1.5rem 1fr; gap: 0.6rem; padding: 0.75rem 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.75rem; }
+.importStage { display: grid; grid-template-columns: 1.5rem 1fr; gap: 0.6rem; padding: 0.75rem 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8125rem; }
 .importStage strong { font-family: var(--font-mono); font-weight: 550; }
 .importStage[data-state="active"] { color: var(--text-primary); font-weight: 700; box-shadow: inset 3px 0 0 var(--accent); padding-left: 0.7rem; }
 .importStage[data-state="complete"] { color: var(--success); }
 .importBody { min-width: 0; border-top: 2px solid var(--text-primary); padding-top: 1rem; }
-.worksheetSection { border-radius: 0 !important; border-inline: 0 !important; background: var(--surface) !important; }
-.mappingTable { overflow: hidden; border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); background: var(--surface); }
+.worksheetSection { border-radius: 0 !important; border-inline: 0 !important; background: var(--product-paper) !important; }
+.mappingTable { overflow: hidden; border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); background: var(--product-paper); }
 .mappingHeader,
 .mappingRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(12rem, 1fr); }
-.mappingHeader { border-bottom: 1px solid var(--border); background: var(--surface-raised); }
+.mappingHeader { border-bottom: 1px solid var(--border); background: var(--product-card-stock); }
 .mappingRow { border-bottom: 1px solid var(--border); }
 .mappingRow:last-child { border-bottom: 0; }
 .previewStats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); }
 .previewStat { border-block: 0 !important; border-radius: 0 !important; }
+
+.rosterWorkspace,
+.folioGrid,
+.importSheet {
+  animation: student-workspace-settle var(--product-motion-settle-duration) var(--product-motion-ease) both;
+}
+
+@keyframes student-workspace-settle {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes student-dialog-open {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 1023px) {
+  .rosterToolbar { position: static; }
+  .rosterTable thead { position: static; }
+  .identityRail,
+  .importIndex { position: static; }
+}
 
 @media (max-width: 820px) {
   .rosterDecision { grid-template-columns: 1fr; gap: 0.6rem; }
@@ -164,13 +248,13 @@
   .rosterTable td { display: block; width: 100%; }
   .rosterTable thead { display: none; }
   .rosterTable tbody { display: grid; gap: 0.75rem; }
-  .rosterTable tbody tr { padding: 0.65rem 0.85rem; border: 1px solid var(--border); background: var(--surface); }
+  .rosterTable tbody tr { padding: 0.65rem 0.85rem; border: 1px solid var(--border); background: var(--product-paper); }
   .rosterTable tbody th,
   .rosterTable tbody td { display: grid; grid-template-columns: minmax(6.5rem, 0.38fr) minmax(0, 1fr); gap: 0.75rem; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border); text-align: left; overflow-wrap: anywhere; }
   .rosterTable tbody td:last-child { border-bottom: 0; }
   .rosterTable tbody th::before,
-  .rosterTable tbody td::before { content: attr(data-label); color: var(--muted); font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-  .mobileSelectAll { display: flex; min-height: 2.75rem; align-items: center; gap: 0.6rem; padding: 0.75rem 0; color: var(--text-secondary); font-size: 0.75rem; }
+  .rosterTable tbody td::before { content: attr(data-label); color: var(--muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .mobileSelectAll { display: flex; min-height: 2.75rem; align-items: center; gap: 0.6rem; padding: 0.75rem 0; color: var(--text-secondary); font-size: 0.8125rem; }
   .identityRail { position: static; }
   .folioIntro { grid-template-columns: 1fr; gap: 0.6rem; }
   .importSheet { grid-template-columns: 1fr; }
@@ -178,7 +262,7 @@
   .importStages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .importStage { display: block; min-width: 0; padding: 0.65rem 0.35rem; text-align: center; }
   .importStage strong { display: block; margin-bottom: 0.2rem; }
-  .importStage span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .importStage span { display: block; line-height: 1.25; overflow-wrap: anywhere; white-space: normal; }
   .mappingHeader { display: none; }
   .mappingRow { grid-template-columns: 1fr; }
   .mappingRow > div:first-child { border-right: 0; border-bottom: 1px solid var(--border); }
@@ -190,13 +274,13 @@
   .rosterTable tbody td { grid-template-columns: minmax(5.4rem, 0.36fr) minmax(0, 1fr); }
   .folioIntro { margin-inline: 0.85rem; }
   .importWorkspace { padding: 0.85rem; }
-  .importStage { font-size: 0.65rem; }
+  .importStage { font-size: 0.75rem; }
   .previewStats { grid-template-columns: 1fr; }
 }
 
 @media print {
   :global([data-koaryu-dashboard-shell="true"]),
-  :global([data-koaryu-dashboard-shell="true"] > main),
+  :global(#main-content),
   .rosterPrintRoot,
   .folioRoot { background: #fff !important; color: #000 !important; }
   :global([data-koaryu-dashboard-shell="true"] > aside),
@@ -205,11 +289,12 @@
   .rosterToolbar,
   .selectionBand,
   .mobileSelectAll { display: none !important; }
-  :global([data-koaryu-dashboard-shell="true"] > main) {
+  :global(#main-content) {
     width: 100% !important;
     min-height: 0 !important;
     margin-left: 0 !important;
     overflow: visible !important;
+    transition: none !important;
   }
   .rosterPrintRoot > header,
   .folioRoot > header,
@@ -246,5 +331,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rosterWorkspace *, .folioRoot *, .importWorkspace * { transition: none !important; }
+  .rosterWorkspace,
+  .folioGrid,
+  .importSheet,
+  .rosterPrintRoot :global(.koaryu-modal-panel),
+  .folioRoot :global(.koaryu-modal-panel),
+  .rosterWorkspace *,
+  .folioRoot *,
+  .importWorkspace * {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }

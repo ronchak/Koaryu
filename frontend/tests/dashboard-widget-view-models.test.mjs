@@ -29,8 +29,11 @@ function baseInput(overrides = {}) {
         students_missing_contact_name: 0,
       },
     },
-    isInitialDashboardLoading: false,
+    dashboardSummaryLoaded: true,
     datasetLoadError: null,
+    allDatasetEvidenceReady: true,
+    canSeeBilling: true,
+    canSeeLeads: true,
     hasDashboardSummary: true,
     hasPartialStudentSample: false,
     rosterSummaryPending: false,
@@ -40,7 +43,7 @@ function baseInput(overrides = {}) {
     leadsLoadError: null,
     scheduleStatus: "ready",
     scheduleLoadError: null,
-    eligibilityPending: false,
+    eligibilityReady: true,
     eligibilityLoadError: null,
     today: "2026-08-17",
     students: [{
@@ -105,16 +108,75 @@ describe("dashboard widget view models", () => {
     assert.equal(preview.student_pulse.provenanceLabel, "Preview fixture");
   });
 
-  it("represents loading, error, and empty states", () => {
-    const loading = buildDashboardWidgetViewModels(baseInput({ isInitialDashboardLoading: true }));
-    assert.ok(Object.values(loading).every((model) => model.state === "loading"));
+  it("keeps static actions ready while each unsettled source stays truthful", () => {
+    const loading = buildDashboardWidgetViewModels(baseInput({
+      dashboardSummary: null,
+      dashboardSummaryLoaded: false,
+      hasDashboardSummary: false,
+      allDatasetEvidenceReady: false,
+      studentsLoaded: false,
+      leadsLoaded: false,
+      scheduleStatus: "loading",
+      eligibilityReady: false,
+      students: [],
+      leads: [],
+      sessions: [],
+      eligibility: [],
+      recentStudentRows: [],
+    }));
+    assert.equal(loading.quick_actions.state, "ready");
+    assert.deepEqual(loading.quick_actions.actions.map((action) => action.href), [
+      "/students",
+      "/students/import",
+      "/leads",
+      "/schedule",
+    ]);
+    for (const id of [
+      "needs_attention",
+      "classes_today",
+      "student_pulse",
+      "attendance",
+      "lead_follow_ups",
+      "promotions_due",
+      "billing_exceptions",
+      "setup_progress",
+      "recent_students",
+      "emergency_contacts",
+    ]) {
+      assert.equal(loading[id].state, "loading", id);
+      assert.equal(loading[id].metric, undefined, id);
+    }
+    assert.equal(loading.revenue_due.state, "unavailable");
+    assert.equal(loading.saved_report.state, "unavailable");
+  });
+
+  it("uses exact summary attendance while the schedule source is still pending", () => {
+    const summaryReady = buildDashboardWidgetViewModels(baseInput({
+      scheduleStatus: "loading",
+      scheduleLoadError: null,
+    }));
+
+    assert.equal(summaryReady.attendance.state, "ready");
+    assert.equal(summaryReady.attendance.metric, "50%");
+    assert.deepEqual(summaryReady.attendance.visual, {
+      kind: "ratio",
+      value: 8,
+      max: 16,
+      label: "seats filled",
+    });
+  });
+
+  it("represents source errors and settled empty states without placeholder numbers", () => {
 
     const error = buildDashboardWidgetViewModels(baseInput({
+      dashboardSummary: null,
       datasetLoadError: "Roster failed",
+      hasDashboardSummary: false,
       studentsLoadError: "Roster failed",
     }));
-    assert.equal(error.needs_attention.state, "partial");
+    assert.equal(error.needs_attention.state, "error");
     assert.equal(error.student_pulse.state, "error");
+    assert.equal(error.student_pulse.metric, undefined);
     assert.equal(error.recent_students.state, "error");
 
     const empty = buildDashboardWidgetViewModels(baseInput({
@@ -168,14 +230,78 @@ describe("dashboard widget view models", () => {
       },
     }));
     assert.equal(partial.student_pulse.state, "partial");
-    assert.equal(partial.student_pulse.metric, "—");
+    assert.equal(partial.student_pulse.metric, undefined);
     assert.equal(partial.student_pulse.visual, undefined);
     assert.equal(partial.recent_students.state, "partial");
     assert.deepEqual(partial.recent_students.rows, []);
     assert.equal(partial.emergency_contacts.state, "unavailable");
-    assert.equal(partial.emergency_contacts.metric, "—");
+    assert.equal(partial.emergency_contacts.metric, undefined);
     assert.equal(partial.revenue_due.state, "unavailable");
-    assert.equal(partial.revenue_due.metric, "—");
+    assert.equal(partial.revenue_due.metric, undefined);
+  });
+
+  it("uses an exact summary ahead of roster settlement but never promotes a sampled roster", () => {
+    const exact = buildDashboardWidgetViewModels(baseInput({
+      studentsLoaded: false,
+      studentsLoadError: "Roster request failed",
+      students: [],
+      recentStudentRows: [{ id: "summary", displayName: "Summary Student", status: "active", startedOn: null }],
+    }));
+    assert.equal(exact.student_pulse.state, "ready");
+    assert.equal(exact.recent_students.state, "ready");
+    assert.equal(exact.recent_students.rows[0].label, "Summary Student");
+
+    const sampled = buildDashboardWidgetViewModels(baseInput({
+      dashboardSummary: null,
+      dashboardSummaryLoaded: true,
+      hasDashboardSummary: false,
+      hasPartialStudentSample: true,
+      studentsLoaded: true,
+      students: [{ id: "sample", status: "active", guardians: [] }],
+      recentStudentRows: [],
+    }));
+    assert.equal(sampled.student_pulse.state, "partial");
+    assert.equal(sampled.recent_students.state, "partial");
+  });
+
+  it("labels a known attention subset partial while another applicable source is pending", () => {
+    const models = buildDashboardWidgetViewModels(baseInput({
+      dashboardSummary: null,
+      dashboardSummaryLoaded: false,
+      hasDashboardSummary: false,
+      leads: [{
+        id: "lead-due",
+        first_name: "Mina",
+        last_name: "Park",
+        stage: "new",
+        follow_up_date: "2026-08-17",
+      }],
+      composition: {
+        ...baseInput().composition,
+        displayedBillingSummary: { paymentAttentionCount: null, hasPlans: null, paymentsReady: null },
+        displayedLeadStats: { activeLeads: 1, enrolledLeads: 0, dueTodayLeads: 1 },
+      },
+    }));
+    assert.equal(models.needs_attention.state, "partial");
+    assert.equal(models.needs_attention.metric, undefined);
+    assert.equal(models.needs_attention.rows[0].label, "1 lead follow-up due");
+    assert.equal(models.billing_exceptions.state, "loading");
+    assert.equal(models.classes_today.state, "loading");
+    assert.equal(models.emergency_contacts.state, "loading");
+  });
+
+  it("withholds setup facts until the whole existing evidence set is ready", () => {
+    const loading = buildDashboardWidgetViewModels(baseInput({ allDatasetEvidenceReady: false }));
+    assert.equal(loading.setup_progress.state, "loading");
+    assert.equal(loading.setup_progress.metric, undefined);
+    assert.deepEqual(loading.setup_progress.rows, []);
+
+    const error = buildDashboardWidgetViewModels(baseInput({
+      allDatasetEvidenceReady: false,
+      datasetLoadError: "Programs: request failed",
+    }));
+    assert.equal(error.setup_progress.state, "error");
+    assert.equal(error.setup_progress.metric, undefined);
   });
 
   it("marks absent billing summary facts unavailable instead of inventing amounts", () => {
@@ -186,7 +312,7 @@ describe("dashboard widget view models", () => {
       },
     }));
     assert.equal(models.billing_exceptions.state, "unavailable");
-    assert.equal(models.billing_exceptions.metric, "—");
+    assert.equal(models.billing_exceptions.metric, undefined);
     assert.match(models.revenue_due.detail, /not present/i);
   });
 
@@ -237,7 +363,7 @@ describe("dashboard widget view models", () => {
     assert.equal(legacy.classes_today.state, "unavailable");
     assert.deepEqual(legacy.classes_today.rows, []);
     assert.equal(legacy.emergency_contacts.state, "unavailable");
-    assert.equal(legacy.emergency_contacts.metric, "—");
+    assert.equal(legacy.emergency_contacts.metric, undefined);
 
     const malformed = readDashboardWidgetSummaryEnrichments({
       emergency_contacts: {

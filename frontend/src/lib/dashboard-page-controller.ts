@@ -31,6 +31,7 @@ import {
 } from "@/lib/page-dataset-readiness";
 import { buildStudentInactivityRows } from "@/lib/student-insights";
 import { buildDashboardWidgetViewModels } from "@/lib/dashboard-widget-view-models";
+import { normalizeDashboardWidgetRole } from "@/lib/dashboard-widget-catalog";
 import type {
   BeltsStoreContextValue,
   ConfigStoreContextValue,
@@ -119,6 +120,23 @@ export function useDashboardPageController({
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
+  const normalizedRole = normalizeDashboardWidgetRole(currentRole);
+  const isDashboardIdentityReady = Boolean(
+    currentUserId.trim()
+    && currentStudioId?.trim()
+    && normalizedRole
+  );
+  const summaryReadiness = dashboardSummaryDataset({
+    hasSummary: hasDashboardSummary,
+    isPreviewMode,
+    loaded: dashboardSummaryLoaded,
+  });
+  const beltEligibilityReadiness = eligibilityDataset({
+    currentLadderId,
+    error: eligibilityLoadError,
+    loadedLadderId: eligibilityLadderId,
+    pendingLadderId: eligibilityPendingLadderId,
+  });
   const datasetReadiness = resolvePageDatasetReadiness([
     loadedDataset({ error: studentsLoadError, label: "Student roster", loaded: studentsLoaded }),
     loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
@@ -128,19 +146,10 @@ export function useDashboardPageController({
       label: "Schedule",
       status: scheduleStatus,
     },
-    dashboardSummaryDataset({
-      hasSummary: hasDashboardSummary,
-      isPreviewMode,
-      loaded: dashboardSummaryLoaded,
-    }),
-    eligibilityDataset({
-      currentLadderId,
-      error: eligibilityLoadError,
-      loadedLadderId: eligibilityLadderId,
-      pendingLadderId: eligibilityPendingLadderId,
-    }),
+    summaryReadiness,
+    beltEligibilityReadiness,
   ]);
-  const isInitialDashboardLoading = datasetReadiness.status === "loading";
+  const isInitialDashboardLoading = !isDashboardIdentityReady;
   const hasPartialStudentSample = !isPreviewMode && studentsMayBePartial;
   const rosterSummaryPending = hasPartialStudentSample && !summary;
   const shouldShowLocalStudentDetails = !hasPartialStudentSample;
@@ -302,18 +311,20 @@ export function useDashboardPageController({
   const widgetViewModels = useMemo(() => buildDashboardWidgetViewModels({
     isPreviewMode,
     dashboardSummary: summary,
-    isInitialDashboardLoading,
+    dashboardSummaryLoaded,
     datasetLoadError: datasetReadiness.error,
+    allDatasetEvidenceReady: datasetReadiness.status === "ready",
+    canSeeBilling,
+    canSeeLeads: normalizedRole === "admin" || normalizedRole === "front_desk",
     hasDashboardSummary,
     hasPartialStudentSample,
-    rosterSummaryPending,
     studentsLoaded,
     studentsLoadError,
     leadsLoaded,
     leadsLoadError,
     scheduleStatus,
     scheduleLoadError,
-    eligibilityPending: Boolean(eligibilityPendingLadderId),
+    eligibilityReady: beltEligibilityReadiness.status === "ready",
     eligibilityLoadError,
     today,
     students,
@@ -325,19 +336,18 @@ export function useDashboardPageController({
   }), [
     dashboardComposition,
     summary,
+    dashboardSummaryLoaded,
     datasetReadiness.error,
+    datasetReadiness.status,
     eligibility,
     eligibilityLoadError,
-    eligibilityPendingLadderId,
     hasDashboardSummary,
     hasPartialStudentSample,
-    isInitialDashboardLoading,
     isPreviewMode,
     leads,
     leadsLoadError,
     leadsLoaded,
     recentStudentRows,
-    rosterSummaryPending,
     scheduleLoadError,
     scheduleStatus,
     sessions,
@@ -345,6 +355,9 @@ export function useDashboardPageController({
     studentsLoadError,
     studentsLoaded,
     today,
+    canSeeBilling,
+    normalizedRole,
+    beltEligibilityReadiness.status,
   ]);
   const programBuckets = useMemo(
     () => buildDashboardProgramBuckets(programs, programById, students, leads, sessions, today),
@@ -364,6 +377,7 @@ export function useDashboardPageController({
       datasetLoadError: datasetReadiness.error,
       hasDashboardSummary,
       hasPartialStudentSample,
+      isDashboardIdentityReady,
       isInitialDashboardLoading,
       kpiBreakdowns,
       lookback30,

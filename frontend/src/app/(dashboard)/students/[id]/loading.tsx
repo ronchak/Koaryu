@@ -3,9 +3,9 @@ import { RecordsLoading } from "@/components/records/records-loading";
 export default function Loading() {
   return (
     <RecordsLoading
-      title="Belt Tracker"
-      description="Loading belt ladders, eligibility, and promotion context."
-      variant="belt"
+      title="Student record"
+      description="Loading identity, training, guardian, and promotion history."
+      variant="folio"
     />
   );
 }

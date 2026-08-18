@@ -3,14 +3,18 @@
 import { Header } from "@/components/header";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
 import { LeadDetailModal } from "@/components/leads/lead-detail-modal";
-import { LeadPipelineBoard } from "@/components/leads/lead-pipeline-board";
+import {
+  LeadLedgerLoadError,
+  LeadLedgerLoading,
+  LeadPipelineBoard,
+} from "@/components/leads/lead-pipeline-board";
 import { LostLeadsSection } from "@/components/leads/lost-leads-section";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useLeadsPageController } from "@/lib/leads-page-controller";
 import { todayDateString } from "@/lib/leads-page-model";
 import { useConfigStore, useLeadStore, useProgramStore, useStudioStore } from "@/lib/store";
-import { AlertTriangle, Clock, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import styles from "@/components/leads/leads-ledger.module.css";
 
 export default function LeadsPage() {
@@ -95,22 +99,12 @@ export default function LeadsPage() {
 
       <div className="flex-1 flex flex-col overflow-x-hidden">
         {leadsLoadError ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center" role="alert">
-            <AlertTriangle aria-hidden="true" className="h-7 w-7 text-danger" />
-            <p className="max-w-md text-sm text-text-secondary">{leadsLoadError}</p>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void refreshLeads().catch(() => undefined)}
-            >
-              Retry lead roster
-            </Button>
-          </div>
+          <LeadLedgerLoadError
+            error={leadsLoadError}
+            onRetry={() => void refreshLeads().catch(() => undefined)}
+          />
         ) : !leadsLoaded ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center" role="status">
-            <Clock aria-hidden="true" className="h-7 w-7 animate-pulse text-muted motion-reduce:animate-none" />
-            <p className="text-sm text-text-secondary">Loading follow-up obligations…</p>
-          </div>
+          <LeadLedgerLoading />
         ) : (
           <LeadPipelineBoard
             canConvertLeads={controller.canConvertLeads}

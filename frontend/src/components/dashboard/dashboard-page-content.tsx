@@ -11,13 +11,13 @@ export function DashboardPageContent({
   currentStudioId,
   currentUserId,
   datasetLoadError,
-  isInitialDashboardLoading,
+  isDashboardIdentityReady,
   isPreviewMode,
   retryDashboardDatasets,
   studioDescription,
   widgetViewModels,
 }: DashboardPageContentProps) {
-  if (isInitialDashboardLoading) {
+  if (!isDashboardIdentityReady) {
     return (
       <div className="flex-1 bg-[#fbf8f0] p-6 text-[#302719] sm:p-8" aria-busy="true">
         <div className="max-w-6xl">
@@ -34,6 +34,7 @@ export function DashboardPageContent({
       currentStudioId={currentStudioId}
       currentUserId={currentUserId}
       datasetLoadError={datasetLoadError}
+      identityReady={isDashboardIdentityReady}
       isPreviewMode={isPreviewMode}
       retryDashboardDatasets={retryDashboardDatasets}
       studioDescription={studioDescription}

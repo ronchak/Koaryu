@@ -74,6 +74,39 @@ describe("records workspace composition contracts", () => {
     assert.match(detail, /: PIPELINE_STAGES;/);
   });
 
+  it("keeps records loading and failure announcements truthful and singular", async () => {
+    const leads = await source("../src/components/leads/lead-pipeline-board.tsx");
+    const loading = await source("../src/components/records/records-loading.tsx");
+    const leadErrorState = leads.slice(
+      leads.indexOf("export function LeadLedgerLoadError"),
+      leads.indexOf("export function LeadPipelineBoard"),
+    );
+
+    assert.match(leads, /function LeadLedgerErrorIntro/);
+    assert.match(leads, /The follow-up queue could not be loaded/);
+    assert.match(leadErrorState, /<LeadLedgerErrorIntro \/>/);
+    assert.doesNotMatch(leadErrorState, /LeadLedgerIntroLoading|Loading the accountable queue/);
+    assert.match(leadErrorState, /Retry lead roster/);
+    assert.equal((loading.match(/role="status"/g) ?? []).length, 1);
+    assert.equal((loading.match(/aria-live="polite"/g) ?? []).length, 1);
+    assert.match(loading, /<div className=\{styles\.root\}>[\s\S]*<Header title=\{title\} description=\{description\} \/>[\s\S]*<p className="sr-only" role="status" aria-live="polite">\{description\}<\/p>/);
+  });
+
+  it("keeps the dirty Belt program warning outside fixed-height sticky controls", async () => {
+    const shell = await source("../src/components/belt-tracker/belt-tracker-shell.tsx");
+    const styles = await source("../src/components/belt-tracker/belt-tracker.module.css");
+    const controlsStart = shell.indexOf("styles.beltControls");
+    const noticeStart = shell.indexOf("styles.beltProgramLockNotice");
+
+    assert.ok(controlsStart >= 0 && noticeStart > controlsStart);
+    assert.doesNotMatch(shell.slice(controlsStart, noticeStart), /Save or discard changes before switching programs/);
+    assert.equal((shell.match(/Save or discard changes before switching programs/g) ?? []).length, 1);
+    const noticeRule = styles.match(/\.beltProgramLockNotice \{[\s\S]*?\}/)?.[0] ?? "";
+    assert.match(noticeRule, /padding: 0\.625rem/);
+    assert.doesNotMatch(noticeRule, /position:\s*sticky|position:\s*fixed/);
+    assert.match(styles, /\.eligibilityTable thead \{ position: sticky; top: 158px/);
+  });
+
   it("keeps the two-column folio, print shell reset, product tokens, and local focus treatment", async () => {
     const detail = await source("../src/components/students/student-detail-page-content.tsx");
     const studentStyles = await source("../src/components/students/student-records.module.css");
@@ -83,12 +116,47 @@ describe("records workspace composition contracts", () => {
     assert.match(detail, /lg:col-span-2/);
     assert.doesNotMatch(detail, /lg:col-span-3/);
     assert.match(studentStyles, /mobileSpine/);
-    assert.match(studentStyles, /> main\)[\s\S]*width: 100% !important;[\s\S]*min-height: 0 !important;[\s\S]*margin-left: 0 !important;/);
+    assert.match(studentStyles, /:global\(#main-content\)[\s\S]*width: 100% !important;[\s\S]*min-height: 0 !important;[\s\S]*margin-left: 0 !important;[\s\S]*transition: none !important;/);
     assert.doesNotMatch(leadStyles, /--background/);
     assert.match(leadStyles, /var\(--bg\)/);
     for (const styles of [studentStyles, beltStyles, leadStyles]) {
       assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--accent\)/);
       assert.match(styles, /outline-offset: 2px/);
+    }
+  });
+
+  it("uses shell materials, shell-aware sticky geometry, and route-shaped records loading", async () => {
+    const studentStyles = await source("../src/components/students/student-records.module.css");
+    const beltStyles = await source("../src/components/belt-tracker/belt-tracker.module.css");
+    const leadStyles = await source("../src/components/leads/leads-ledger.module.css");
+    const studentLoading = await source("../src/app/(dashboard)/students/loading.tsx");
+    const importLoading = await source("../src/app/(dashboard)/students/import/loading.tsx");
+    const detailLoading = await source("../src/app/(dashboard)/students/[id]/loading.tsx");
+    const beltLoading = await source("../src/app/(dashboard)/belt-tracker/loading.tsx");
+    const loading = await source("../src/components/records/records-loading.tsx");
+
+    for (const styles of [studentStyles, beltStyles, leadStyles]) {
+      assert.match(styles, /--bg: var\(--product-ground\)/);
+      assert.match(styles, /--surface: var\(--product-paper\)/);
+      assert.match(styles, /--surface-raised: var\(--product-card-stock\)/);
+      assert.match(styles, /@media \(max-width: 1023px\)/);
+    }
+    assert.match(studentStyles, /\.rosterToolbar[\s\S]*top: 70px/);
+    assert.match(studentStyles, /\.rosterTable thead[\s\S]*top: 132px/);
+    assert.match(beltStyles, /\.beltControls[\s\S]*top: 70px/);
+    assert.match(beltStyles, /\.eligibilityTable thead[\s\S]*top: 158px/);
+    assert.match(studentStyles, /:global\(#main-content\)[\s\S]*margin-left: 0 !important/);
+    assert.match(studentStyles, /\.importStage span \{[^}]*white-space: normal/);
+    assert.match(leadStyles, /\.ledger thead \{ position: sticky; top: 70px/);
+    assert.match(leadStyles, /\.totals dt \{[^}]*font-size: 0\.75rem/);
+    assert.doesNotMatch(leadStyles, /font-size: 0\.58rem/);
+
+    for (const routeLoading of [studentLoading, importLoading, detailLoading, beltLoading]) {
+      assert.match(routeLoading, /RecordsLoading/);
+      assert.doesNotMatch(routeLoading, /DashboardLoadingSkeleton/);
+    }
+    for (const variant of ["roster", "folio", "import", "belt"]) {
+      assert.match(loading, new RegExp(`variant === "${variant}"`));
     }
   });
 });

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { resolvePresetBeltName } from "@/lib/belt-tracker-page-model";
 import { Save, X } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 const BELT_COLOR_PRESETS = [
   { label: "White", hex: "#FFFFFF" },
@@ -114,7 +115,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
 
   return (
     <ModalFrame
-      rootClassName="p-4"
+      rootClassName={`p-4 ${styles.beltDialogRoot}`}
       panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-sm p-6 overflow-y-auto max-h-[90vh]"
       ariaLabelledBy="rank-form-title"
       onBackdropClick={onClose}

@@ -11,7 +11,7 @@ import {
   getStageLabel,
 } from "@/lib/leads-page-model";
 import type { Lead, LeadStage, Program, StaffMember } from "@/types";
-import { ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
 import styles from "./leads-ledger.module.css";
 
 interface LeadPipelineBoardProps {
@@ -26,6 +26,80 @@ interface LeadPipelineBoardProps {
   onKeyboardMoveLead: (lead: Lead, direction: -1 | 1) => void | Promise<void>;
   onSelectLead: (leadId: string) => void;
   onStageSelection: (lead: Lead, nextStage: LeadStage) => void | Promise<void>;
+}
+
+const LEDGER_LOADING_ROWS = 6;
+
+function LeadLedgerIntroLoading() {
+  return (
+    <div className={styles.intro}>
+      <div>
+        <p className={styles.eyebrow}>Obligation ledger</p>
+        <h2 id="lead-ledger-state-title">Who needs a follow-up next?</h2>
+        <p>Loading the accountable queue and its current owners.</p>
+      </div>
+      <dl className={styles.totals} aria-hidden="true">
+        <div><dt>Overdue</dt><dd>—</dd></div>
+        <div><dt>Due today</dt><dd>—</dd></div>
+        <div><dt>Unassigned</dt><dd>—</dd></div>
+      </dl>
+    </div>
+  );
+}
+
+function LeadLedgerErrorIntro() {
+  return (
+    <div className={styles.intro}>
+      <div>
+        <p className={styles.eyebrow}>Obligation ledger</p>
+        <h2 id="lead-ledger-state-title">The follow-up queue could not be loaded.</h2>
+        <p>Review the error below, then retry to restore the accountable queue and its current owners.</p>
+      </div>
+      <dl className={styles.totals} aria-hidden="true">
+        <div><dt>Overdue</dt><dd>—</dd></div>
+        <div><dt>Due today</dt><dd>—</dd></div>
+        <div><dt>Unassigned</dt><dd>—</dd></div>
+      </dl>
+    </div>
+  );
+}
+
+export function LeadLedgerLoading() {
+  return (
+    <section className={styles.workspace} aria-labelledby="lead-ledger-state-title" role="status">
+      <LeadLedgerIntroLoading />
+      <p className="sr-only">Loading follow-up obligations…</p>
+      <div className={styles.stateFrame} aria-hidden="true">
+        <div className={styles.stateHeader}>
+          {Array.from({ length: 6 }).map((_, index) => <span key={index} className={styles.stateBar} />)}
+        </div>
+        {Array.from({ length: LEDGER_LOADING_ROWS }).map((_, row) => (
+          <div key={row} className={styles.stateRow}>
+            {Array.from({ length: 6 }).map((__, column) => <span key={column} className={styles.stateBar} />)}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function LeadLedgerLoadError({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <section className={styles.workspace} aria-labelledby="lead-ledger-state-title">
+      <LeadLedgerErrorIntro />
+      <div className={styles.stateFrame} role="alert">
+        <div className={`${styles.stateMessage} p-6 sm:p-8`}>
+          <AlertTriangle aria-hidden="true" className="h-6 w-6 shrink-0 text-danger" />
+          <div>
+            <p className="max-w-xl text-sm text-text-secondary">{error}</p>
+            <Button variant="secondary" size="sm" className="mt-3" onClick={onRetry}>
+              Retry lead roster
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function LeadPipelineBoard({
@@ -101,7 +175,12 @@ export function LeadPipelineBoard({
                 : lead.follow_up_date === today ? "today" : "quiet";
 
               return (
-                <tr key={lead.id} data-obligation={tone} aria-busy={isPending || undefined}>
+                <tr
+                  key={lead.id}
+                  data-obligation={tone}
+                  data-follow-up-state={tone === "today" ? "due-today" : tone}
+                  aria-busy={isPending || undefined}
+                >
                   <td data-label="Obligation" className={styles.obligation}>
                     <span>{obligation}</span>
                     {lead.follow_up_date ? <small>{formatDate(lead.follow_up_date, true)}</small> : null}
