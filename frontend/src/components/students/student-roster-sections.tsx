@@ -228,6 +228,7 @@ export function StudentRosterTable({
             type="checkbox"
             checked={allSelected}
             onChange={toggleSelectAll}
+            className={styles.checkboxControl}
           />
           {allSelected ? "Deselect all visible students" : "Select all visible students"}
         </label>
@@ -236,14 +237,18 @@ export function StudentRosterTable({
       <thead>
         <tr className="border-b border-border">
           {canManageRoster ? (
-            <th className="w-10 px-4 py-3">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleSelectAll}
-                aria-label={allSelected ? "Deselect all visible students" : "Select all visible students"}
-                className="accent-[var(--accent)] cursor-pointer"
-              />
+            <th className="w-14 p-0">
+              <label className={styles.checkboxTarget}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className={styles.checkboxControl}
+                />
+                <span className="sr-only">
+                  {allSelected ? "Deselect all visible students" : "Select all visible students"}
+                </span>
+              </label>
             </th>
           ) : null}
           <th
@@ -327,20 +332,23 @@ export function StudentRosterTable({
               {canManageRoster ? (
                 <td
                   data-label="Select"
-                  className="px-4 py-3"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleSelect(student.id);
-                  }}
+                  className="p-0"
                 >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
+                  <label
+                    className={styles.checkboxTarget}
                     onClick={stopStudentSelectionPropagation}
-                    onChange={() => toggleSelect(student.id)}
-                    aria-label={isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
-                    className="accent-[var(--accent)] cursor-pointer"
-                  />
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onClick={stopStudentSelectionPropagation}
+                      onChange={() => toggleSelect(student.id)}
+                      className={styles.checkboxControl}
+                    />
+                    <span className="sr-only">
+                      {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
+                    </span>
+                  </label>
                 </td>
               ) : null}
               <th scope="row" data-label="Student" className="px-4 py-3">

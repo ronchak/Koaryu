@@ -131,6 +131,10 @@
 .rosterTable tbody tr[data-state="trialing"] { box-shadow: inset 3px 0 0 var(--accent); }
 .rosterTable tbody tr[data-focused="true"] { background: var(--product-card-stock); box-shadow: inset 3px 0 0 var(--accent); }
 .rosterTable tbody tr:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+.checkboxTarget { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; cursor: pointer; }
+.checkboxTarget:has(.checkboxControl:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.checkboxControl { width: 13px; height: 13px; accent-color: var(--accent); cursor: pointer; }
+.checkboxControl:focus-visible { outline: none !important; }
 .mobileSelectAll { display: none; }
 
 .studentReadingRail {
@@ -341,6 +345,7 @@
   .rosterTable tr { display: table-row; break-inside: avoid; }
   .rosterTable th,
   .rosterTable td { display: table-cell; width: auto; padding: 5pt; border-color: #777; }
+  .checkboxTarget { min-width: 0; min-height: 0; }
   .rosterTable [data-column="contact"],
   .rosterTable [data-column="tags"] { display: table-cell !important; }
   .rosterTable th::before,

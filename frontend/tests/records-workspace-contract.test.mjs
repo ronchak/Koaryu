@@ -13,6 +13,10 @@ describe("records workspace composition contracts", () => {
     assert.match(roster, /<table className=\{styles\.rosterTable\}>/);
     assert.match(roster, /data-label="Student"/);
     assert.match(roster, /data-state=\{student\.status\}/);
+    assert.equal((roster.match(/className=\{styles\.checkboxTarget\}/g) ?? []).length, 2);
+    assert.match(roster, /onClick=\{stopStudentSelectionPropagation\}[\s\S]*className=\{styles\.checkboxControl\}/);
+    assert.match(styles, /\.checkboxTarget \{[^}]*min-width: 44px;[^}]*min-height: 44px;/);
+    assert.match(styles, /\.checkboxControl \{ width: 13px; height: 13px;/);
     assert.match(roster, /<aside className=\{styles\.studentReadingRail\}/);
     assert.match(roster, /Open full record/);
     assert.match(page, /focusedStudentId/);
@@ -178,6 +182,10 @@ describe("records workspace composition contracts", () => {
     assert.match(leadStyles, /\.stageRail \{/);
     assert.match(leadStyles, /\.ageBand \{/);
     assert.match(leadStyles, /\.totals dt \{[^}]*font-size: 0\.75rem/);
+    const leadPrint = leadStyles.slice(leadStyles.indexOf("@media print"));
+    assert.doesNotMatch(leadPrint, /\.pageRoot > header,\s/);
+    assert.match(leadPrint, /\.pageRoot > header button,/);
+    assert.match(leadPrint, /\.pageRoot > header \{ display: flex !important;/);
     assert.doesNotMatch(leadStyles, /font-size: 0\.58rem/);
 
     for (const routeLoading of [studentLoading, importLoading, detailLoading, beltLoading]) {

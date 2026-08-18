@@ -277,10 +277,11 @@
   :global([data-koaryu-dashboard-shell="true"] > aside),
   :global([data-koaryu-dashboard-shell="true"] > [class*="mobileSpine"]) { display: none !important; }
   :global(#main-content) { width: 100% !important; min-height: 0 !important; margin-left: 0 !important; overflow: visible !important; transition: none !important; }
-  .pageRoot > header,
+  .pageRoot > header button,
   .stageMoves,
   .inspectorClose,
   .pageRoot :global([role="dialog"]) { display: none !important; }
+  .pageRoot > header { display: flex !important; padding: 0 0 1rem; background: #fff !important; }
   .leadWorkbench,
   .leadWorkbench[data-inspector-open="true"] { display: block; padding: 0; }
   .workspace { padding: 0; }
