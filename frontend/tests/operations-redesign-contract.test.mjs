@@ -157,6 +157,8 @@ describe("operations behavior proof", () => {
     for (const marker of ["createProgram", "updateProgram", "archiveProgram", "restoreProgram", "is_system", "usage"]) {
       assert.match(programs, new RegExp(marker));
     }
+    assert.match(programs, /COLOR_SWATCHES\.map[\s\S]*className=\{`relative flex h-11 w-11 shrink-0/);
+    assert.doesNotMatch(programs, /className=\{`relative flex h-8 w-8/);
     for (const marker of ["inviteEmail", "inviteFullName", "inviteLegalFirstName", "inviteLegalLastName", 'useState<StaffRoleName>("instructor")', "matchesStaffDeletionConfirmation", "archiveStaff", "unarchiveStaff", "scheduleStaffDeletion", "showArchived"]) {
       assert.match(staff, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
