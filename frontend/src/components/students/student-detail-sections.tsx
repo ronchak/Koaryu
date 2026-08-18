@@ -51,7 +51,7 @@ function FolioLeaf({
 }) {
   return (
     <section className={`${styles.folioSection} p-5`}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">{eyebrow}</p>
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">{eyebrow}</p>
       <h3 className="mb-4 mt-1 text-sm font-semibold text-text-primary">{title}</h3>
       {children}
     </section>

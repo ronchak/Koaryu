@@ -82,6 +82,28 @@ describe("dashboard shell and Home source contracts", () => {
     }
     assert.match(routeTransitionSource, /styles\.routeTravel/);
     assert.doesNotMatch(routeTransitionSource, /koaryu-route-enter/);
+    const routeTravelRule = shellStyles.match(/\.routeTravel\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    assert.match(routeTravelRule, /animation:[^;]*\bbackwards;/);
+    assert.doesNotMatch(routeTravelRule, /\b(?:both|forwards)\b/);
+    const darkProductRule = shellStyles.match(/:global\(\[data-theme="dark"\]\) \.shellRoot\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    for (const token of [
+      "--product-ground",
+      "--product-paper",
+      "--product-card-stock",
+      "--product-lifted",
+      "--product-ink",
+      "--product-soft-ink",
+      "--product-rule",
+      "--product-rule-soft",
+      "--product-cobalt",
+      "--product-vermilion",
+      "--product-shadow-card",
+      "--product-shadow-lifted",
+    ]) {
+      assert.ok(darkProductRule.includes(token), token);
+    }
+    assert.doesNotMatch(darkProductRule, /#f2ece0|#fbf8f0|#fffdf8|#fffefb/);
+    assert.match(shellStyles, /\.spine,[\s\S]*?background: #302719;[\s\S]*?color: #fffaf0;/);
   });
 
   it("owns authoritative studio identity in the split store and purges layouts at session cleanup", () => {

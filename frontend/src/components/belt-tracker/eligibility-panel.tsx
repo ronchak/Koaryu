@@ -92,31 +92,39 @@ export function EligibilityPanel({
       )}
 
       {isEligibilityLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Clock className="w-8 h-8 text-muted mb-3 animate-pulse" />
-          <p className="text-sm text-text-secondary">
+        <div className={styles.eligibilitySkeleton} role="status">
+          <p className="sr-only">
             Loading eligibility for {selectedProgramName || "this program"}...
           </p>
+          {Array.from({ length: 7 }).map((_, row) => (
+            <div key={row} className={styles.eligibilitySkeletonRow} aria-hidden="true">
+              {Array.from({ length: 6 }).map((__, column) => (
+                <span key={column} className={styles.eligibilitySkeletonBar} />
+              ))}
+            </div>
+          ))}
         </div>
       ) : eligibilityGroups.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Award className="w-8 h-8 text-muted mb-3" />
-          <p className="text-sm text-text-secondary">
-            {selectedProgramName
-              ? `No active students are ready in ${selectedProgramName} yet.`
-              : "No active students to evaluate."}
-          </p>
-          <div className="mt-4 flex items-center gap-3">
-            {canConfigureBelts ? (
-              <Button variant="secondary" size="sm" onClick={onConfigureRanks}>
-                <Settings className="w-3.5 h-3.5" />
-                Configure ranks
+        <div className={styles.panelState}>
+          <div className={styles.panelStateInner}>
+            <Award className="mx-auto mb-3 h-8 w-8 text-muted" />
+            <p className="text-sm text-text-secondary">
+              {selectedProgramName
+                ? `No active students are ready in ${selectedProgramName} yet.`
+                : "No active students to evaluate."}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+              {canConfigureBelts ? (
+                <Button variant="secondary" size="sm" onClick={onConfigureRanks}>
+                  <Settings className="w-3.5 h-3.5" />
+                  Configure ranks
+                </Button>
+              ) : null}
+              <Button variant="primary" size="sm" onClick={onViewStudents}>
+                <Users className="w-3.5 h-3.5" />
+                View students
               </Button>
-            ) : null}
-            <Button variant="primary" size="sm" onClick={onViewStudents}>
-              <Users className="w-3.5 h-3.5" />
-              View students
-            </Button>
+            </div>
           </div>
         </div>
       ) : (

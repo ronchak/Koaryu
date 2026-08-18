@@ -100,7 +100,7 @@ export function BeltTrackerShell({
                   disabled={dirty || isSwitchingLadder}
                 />
                 {dirty && (
-                  <p className="mt-1 text-[11px] text-warning">
+                  <p className="mt-1 text-xs text-warning">
                     Save or discard changes before switching programs.
                   </p>
                 )}

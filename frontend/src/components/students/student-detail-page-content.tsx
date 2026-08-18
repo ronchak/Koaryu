@@ -1,6 +1,7 @@
 "use client";
 
 import { Header } from "@/components/header";
+import { RecordsLoading } from "@/components/records/records-loading";
 import { StudentDetailSections } from "@/components/students/student-detail-sections";
 import { StudentDetailSidebar } from "@/components/students/student-detail-sidebar";
 import { StudentForm } from "@/components/students/student-form";
@@ -45,12 +46,11 @@ export function StudentDetailPageContent({
 }: StudentDetailPageContentProps) {
   if (isLoadingStudent) {
     return (
-      <>
-        <Header title="Loading student" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-        </div>
-      </>
+      <RecordsLoading
+        title="Loading student"
+        description="Loading identity, training, guardian, and promotion history."
+        variant="folio"
+      />
     );
   }
 

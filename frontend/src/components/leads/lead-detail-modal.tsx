@@ -303,7 +303,7 @@ export function LeadDetailModal({
         <section className="border-y border-border py-4" aria-labelledby="lead-activity-title">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Activity</p>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Activity</p>
               <h3 id="lead-activity-title" className="mt-1 text-sm font-semibold text-text-primary">Recorded follow-up trail</h3>
             </div>
             {activityStatus === "loading" ? (

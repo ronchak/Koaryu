@@ -23,6 +23,22 @@
   color: var(--product-ink);
 }
 
+:global([data-theme="dark"]) .shellRoot {
+  --product-ground: #14110d;
+  --product-paper: #1d1914;
+  --product-card-stock: #252019;
+  --product-lifted: #2d271f;
+  --product-sheet: var(--product-paper);
+  --product-ink: #f5eddf;
+  --product-soft-ink: #c2b6a3;
+  --product-rule: #71634f;
+  --product-rule-soft: #463d31;
+  --product-cobalt: #82a9d5;
+  --product-vermilion: #df816c;
+  --product-shadow-card: 5px 7px 0 rgb(0 0 0 / 20%), 0 12px 28px rgb(0 0 0 / 24%);
+  --product-shadow-lifted: 10px 14px 0 rgb(0 0 0 / 24%), 0 28px 60px rgb(0 0 0 / 42%);
+}
+
 .skipLink {
   position: fixed;
   left: 1rem;
@@ -49,7 +65,7 @@
 }
 
 .routeTravel {
-  animation: product-route-travel var(--product-motion-travel-duration) var(--product-motion-ease) both;
+  animation: product-route-travel var(--product-motion-travel-duration) var(--product-motion-ease) backwards;
 }
 
 @keyframes product-route-travel {
@@ -126,8 +142,8 @@
   --surface-raised: #4a4034;
   --text-primary: #fffaf0;
   --text-secondary: #e2d8c5;
-  background: var(--product-ink);
-  color: var(--product-paper);
+  background: #302719;
+  color: #fffaf0;
 }
 
 .spine {
@@ -211,8 +227,8 @@
 
 .navLink[aria-current="page"] {
   border-left-color: var(--product-vermilion);
-  background: var(--product-paper);
-  color: var(--product-ink);
+  background: #fffaf0;
+  color: #302719;
 }
 
 .navIndex {

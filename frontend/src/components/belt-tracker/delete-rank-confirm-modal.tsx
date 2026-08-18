@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { Trash2 } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 export function DeleteRankConfirmModal({ name, onConfirm, onCancel }: {
   name: string;
@@ -11,7 +12,7 @@ export function DeleteRankConfirmModal({ name, onConfirm, onCancel }: {
 }) {
   return (
     <ModalFrame
-      rootClassName="p-4"
+      rootClassName={`p-4 ${styles.beltDialogRoot}`}
       panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-xs p-6"
       ariaLabelledBy="delete-rank-title"
       ariaDescribedBy="delete-rank-description"
