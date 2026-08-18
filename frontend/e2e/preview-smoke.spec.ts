@@ -38,7 +38,7 @@ for (const viewport of [
     }
 
     const studentsLink = page
-      .getByRole("link", { name: "Students", exact: true })
+      .getByRole("link", { name: "02 Students", exact: true })
       .filter({ visible: true });
     await expect(studentsLink).toHaveCount(1);
     await Promise.all([

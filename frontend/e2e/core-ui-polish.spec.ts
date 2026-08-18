@@ -95,6 +95,7 @@ coreUiTest("prepopulates standard belt names and exposes working drag handles", 
   const beltHandles = page.locator("[data-belt-drag-handle]");
   expect(await beltHandles.count()).toBeGreaterThan(1);
   await expect(beltHandles.first()).toHaveAttribute("draggable", "true");
+  await beltHandles.first().evaluate((element) => element.scrollIntoView({ block: "center" }));
   const firstHandleId = await beltHandles.first().getAttribute("data-belt-drag-handle");
   await beltHandles.first().dragTo(beltHandles.nth(1));
   await expect.poll(async () => beltHandles.first().getAttribute("data-belt-drag-handle")).not.toBe(firstHandleId);
