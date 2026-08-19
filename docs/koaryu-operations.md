@@ -67,7 +67,13 @@ The owner is the current incident and provider-alert recipient; email is preferr
 - The hosted restore drill recovered database/Auth structure and validated counts, but an authenticated tenant-safe application read from the restored target remains unproven.
 - The encryption key remains in macOS Keychain. Copying the recovery key to a physically controlled flash drive is an outstanding human-only step; do not put it in the repository, cloud notes, or release evidence.
 
-Use [Staging and Recovery Runbook](staging-recovery-runbook.md) for backup and restore procedure and [Release Ledger](release-ledger.md) for the exact application rollback contract. An application rollback redeploys the named prior application SHA. A released additive migration is corrected forward; do not rewrite migration history or restore over production as an ordinary rollback.
+Use [Staging and Recovery Runbook](staging-recovery-runbook.md) for backup and
+restore procedure, [Off-site Encrypted Backup Recovery](offsite-backup-recovery.md)
+for the trust boundary, retention, key custody, automation, and approval packet,
+and [Release Ledger](release-ledger.md) for the exact application rollback
+contract. An application rollback redeploys the named prior application SHA. A
+released additive migration is corrected forward; do not rewrite migration
+history or restore over production as an ordinary rollback.
 
 ## Explicit deferrals
 
