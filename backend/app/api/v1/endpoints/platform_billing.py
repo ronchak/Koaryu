@@ -1,6 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header
+from starlette.concurrency import run_in_threadpool
 from supabase import Client
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -17,8 +18,18 @@ from app.services.studio_scope import resolve_billing_admin_staff_role_for_user
 router = APIRouter(prefix="/platform-billing", tags=["platform-billing"])
 
 
-def _admin_studio_id(supabase: Client, user_id: str, requested_studio_id: Optional[str]) -> str:
-    return resolve_billing_admin_staff_role_for_user(supabase, user_id, requested_studio_id)["studio_id"]
+async def _admin_studio_id(
+    supabase: Client,
+    user_id: str,
+    requested_studio_id: Optional[str],
+) -> str:
+    membership = await run_in_threadpool(
+        resolve_billing_admin_staff_role_for_user,
+        supabase,
+        user_id,
+        requested_studio_id,
+    )
+    return membership["studio_id"]
 
 
 @router.get("/status", response_model=PlatformBillingStatusResponse)
@@ -27,7 +38,7 @@ async def get_platform_billing_status(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = await _admin_studio_id(supabase, user_id, requested_studio_id)
     return await PlatformBillingService(supabase).get_status(studio_id)
 
 
@@ -37,7 +48,7 @@ async def get_email_usage(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = await _admin_studio_id(supabase, user_id, requested_studio_id)
     return await PlatformBillingService(supabase).get_email_usage(studio_id)
 
 
@@ -49,7 +60,7 @@ async def create_checkout(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = await _admin_studio_id(supabase, user_id, requested_studio_id)
     return await PlatformBillingService(supabase).create_checkout_link(
         studio_id,
         user_id,
@@ -66,5 +77,5 @@ async def create_portal(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: Client = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
+    studio_id = await _admin_studio_id(supabase, user_id, requested_studio_id)
     return await PlatformBillingService(supabase).create_portal_link(studio_id, user_id, data.return_url)
