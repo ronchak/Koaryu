@@ -36,7 +36,7 @@ describe("staff invite UI contract", () => {
 describe("staff legal-name roster UI contract", () => {
   it("keeps legal read/edit UI capability-gated and renders missing names neutrally", () => {
     assert.match(staffSource, /staffProfilesAvailable \? \(/);
-    assert.match(staffSource, /<p className=\"text-\[11px\] uppercase tracking-normal text-muted\">Legal name<\/p>/);
+    assert.match(staffSource, /<span className=\"text-xs text-muted\"> · Legal: \{legalName\}<\/span>/);
     assert.match(staffSource, /: \"Not provided\"/);
     assert.match(staffSource, /staffProfilesAvailable && isLegalNameEditing/);
     assert.match(staffSource, /staffProfilesAvailable && member\.status === "active" && hasUserId && !isLegalNameEditing/);
