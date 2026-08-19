@@ -60,15 +60,15 @@ const themeScript = `
 (() => {
   try {
     const stored = window.localStorage.getItem("koaryu-theme");
-    const preference = stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+    const preference = stored === "dark" || stored === "light" || stored === "system" ? stored : "light";
     const resolved = preference === "system"
       ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
       : preference;
     document.documentElement.dataset.theme = resolved;
     document.documentElement.style.colorScheme = resolved;
   } catch {
-    document.documentElement.dataset.theme = "dark";
-    document.documentElement.style.colorScheme = "dark";
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.colorScheme = "light";
   }
 })();
 `;
@@ -82,7 +82,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-koaryu-data-plane={process.env.NEXT_PUBLIC_PREVIEW_MODE === "true" ? "disposable-preview" : "live"}
-      data-theme="dark"
+      data-theme="light"
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full`}
     >

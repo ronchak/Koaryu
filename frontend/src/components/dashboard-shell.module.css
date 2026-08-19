@@ -129,6 +129,15 @@
   margin-left: 72px;
 }
 
+.shellRoot[data-navigation-placement="top"] .main {
+  min-height: calc(100dvh - 64px);
+  margin-left: 0;
+}
+
+.shellRoot[data-navigation-placement="top"] .slugBand {
+  top: 64px;
+}
+
 .slugBand {
   position: sticky;
   top: 0;
@@ -203,6 +212,7 @@
 }
 
 .spine,
+.commandBar,
 .mobileSpine {
   --bg: var(--product-sunk);
   --surface: var(--product-paper);
@@ -217,6 +227,59 @@
   --accent-contrast: var(--product-paper);
   background: var(--product-sunk);
   color: var(--product-ink);
+}
+
+.commandBar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  min-width: 0;
+  min-height: 64px;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--product-rule-soft);
+}
+
+.commandBrand {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 10px;
+  color: inherit;
+}
+
+.commandNav {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.commandList {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0;
+  overflow-x: auto;
+  padding: 0;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.commandList > li {
+  flex: 0 0 auto;
+}
+
+.commandList .navLink {
+  min-width: max-content;
+  grid-template-columns: auto auto;
+  padding-inline: 0.7rem;
+}
+
+.commandAccount {
+  flex: 0 0 auto;
 }
 
 .spine {
@@ -287,6 +350,7 @@
 .spineToggle:focus-visible,
 .navLink:focus-visible,
 .brandLink:focus-visible,
+.commandBrand:focus-visible,
 .mobileBrand:focus-visible {
   outline: 2px solid var(--product-focus);
   outline-offset: 2px;
@@ -416,12 +480,17 @@
     display: none;
   }
 
+  .commandBar {
+    display: none;
+  }
+
   .mobileSpine {
     display: block;
     flex: 0 0 auto;
   }
 
   .main,
+  .shellRoot[data-navigation-placement="top"] .main,
   .shellRoot[data-spine-collapsed="true"] .main {
     display: flex;
     min-height: 0;
@@ -485,6 +554,7 @@
   }
 
   .spine,
+  .commandBar,
   .mobileSpine,
   .slugBand,
   .skipLink {
@@ -492,6 +562,7 @@
   }
 
   .main,
+  .shellRoot[data-navigation-placement="top"] .main,
   .shellRoot[data-spine-collapsed="true"] .main,
   .shellRoot {
     min-height: auto;
@@ -512,6 +583,7 @@
 
   .main,
   .spine,
+  .commandBar,
   .spineToggle,
   .navLink,
   .skipLink,
