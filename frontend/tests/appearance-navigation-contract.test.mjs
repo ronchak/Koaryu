@@ -60,6 +60,8 @@ describe("authenticated navigation placement contracts", () => {
     assert.equal(navigationSource.match(/<NavigationLinks pathname=\{pathname\} \/>/g)?.length, 3);
     assert.match(navigationSource, /prefetch=\{item\.prefetch\}/);
     assert.match(navigationSource, /pathname === href \|\| pathname\.startsWith\(`\$\{href\}\//);
+    assert.equal(NAV_ITEMS.find(({ href }) => href === "/belt-tracker")?.icon, "MartialArtsBelt");
+    assert.match(navigationSource, /import \{ MartialArtsBelt \} from "@\/components\/icons\/martial-arts-belt"/);
     assert.deepEqual(
       NAV_ITEMS.map(({ href, prefetch }) => [href, prefetch]),
       [

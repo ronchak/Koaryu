@@ -355,7 +355,7 @@ export function BillingOverviewTab({
               />
             </div>
             <p className="mt-2 text-xs text-muted">
-              {billingPlatform?.email_usage.sent || 0} of {billingPlatform?.email_usage.included || 500} emails used this month. Overage is $0.002 per email. SMS is not included in v1.
+              {billingPlatform?.email_usage.sent || 0} of {billingPlatform?.email_usage.included || 500} emails used this month. Overage is $0.002 per email.
             </p>
           </div>
           <div className="text-right">

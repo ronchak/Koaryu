@@ -138,7 +138,7 @@ describe("records workspace composition contracts", () => {
     assert.match(loading, /<div className=\{styles\.root\}>[\s\S]*<Header title=\{title\} description=\{description\} \/>[\s\S]*<p className="sr-only" role="status" aria-live="polite">\{description\}<\/p>/);
   });
 
-  it("keeps the dirty Belt program warning outside fixed-height sticky controls", async () => {
+  it("keeps Belt notices and content separated from fixed-height sticky controls", async () => {
     const shell = await source("../src/components/belt-tracker/belt-tracker-shell.tsx");
     const styles = await source("../src/components/belt-tracker/belt-tracker.module.css");
     const controlsStart = shell.indexOf("styles.beltControls");
@@ -150,10 +150,29 @@ describe("records workspace composition contracts", () => {
     const noticeRule = styles.match(/\.beltProgramLockNotice \{[\s\S]*?\}/)?.[0] ?? "";
     assert.match(noticeRule, /padding: 0\.625rem/);
     assert.doesNotMatch(noticeRule, /position:\s*sticky|position:\s*fixed/);
-    assert.match(styles, /\.eligibilityTable thead th \{ position: sticky; top: 158px/);
+    assert.match(styles, /\.eligibilityWorkspace \{ display: flex; flex-direction: column; gap: 1rem; padding: 1rem/);
+    assert.match(styles, /\.eligibilityTableFrame \{[^}]*overflow-x: auto/);
+    assert.match(styles, /\.eligibilityTable thead th \{ position: static/);
     const eligibilityTableRule = styles.match(/\.eligibilityTable \{[\s\S]*?\}/)?.[0] ?? "";
     assert.doesNotMatch(eligibilityTableRule, /overflow:\s*(?:hidden|auto)/);
     assert.match(eligibilityTableRule, /clip-path: inset\(0 round 14px\)/);
+  });
+
+  it("keeps Belt tabs, progress, and light-rank treatments semantically honest", async () => {
+    const shell = await source("../src/components/belt-tracker/belt-tracker-shell.tsx");
+    const eligibility = await source("../src/components/belt-tracker/eligibility-panel.tsx");
+    const rankPlan = await source("../src/components/belt-tracker/rank-plan-panel.tsx");
+    const visuals = await source("../src/components/belt-tracker/rank-visuals.tsx");
+
+    assert.match(shell, /role="tablist"/);
+    assert.match(shell, /role="tab"/);
+    assert.match(shell, /aria-selected=\{tab === item\.id\}/);
+    assert.match(shell, /event\.key !== "ArrowLeft" && event\.key !== "ArrowRight"/);
+    assert.match(eligibility, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-eligibility"/);
+    assert.match(rankPlan, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-ladder"/);
+    assert.match(visuals, /if \(required <= 0\)[\s\S]*Not required/);
+    assert.match(visuals, /role="progressbar"[\s\S]*aria-valuetext=\{`\$\{current\} of \$\{required\}`\}/);
+    assert.match(visuals, /function prefersDarkText/);
   });
 
   it("keeps the two-column folio, print shell reset, product tokens, and local focus treatment", async () => {
@@ -192,8 +211,9 @@ describe("records workspace composition contracts", () => {
     }
     assert.match(studentStyles, /\.rosterToolbar[\s\S]*top: 70px/);
     assert.match(studentStyles, /\.rosterTable thead th[\s\S]*top: 132px/);
-    assert.match(beltStyles, /\.beltControls[\s\S]*top: 70px/);
-    assert.match(beltStyles, /\.eligibilityTable thead th[\s\S]*top: 158px/);
+    assert.match(beltStyles, /\.beltControls[\s\S]*top: 56px/);
+    assert.match(beltStyles, /\[data-navigation-placement="top"\][\s\S]*\.beltControls \{ top: 120px/);
+    assert.match(beltStyles, /\.eligibilityTable thead th \{ position: static/);
     assert.match(studentStyles, /:global\(#main-content\)[\s\S]*margin-left: 0 !important/);
     assert.match(studentStyles, /\.importStage span \{[^}]*white-space: normal/);
     assert.match(leadStyles, /\.inspector \{[\s\S]*position: sticky/);

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Award,
   BarChart3,
   Calendar,
   CreditCard,
@@ -17,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AccountMenu } from "@/components/account-menu";
+import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import type { NavigationPlacement } from "@/components/theme-provider";
 import { Logo } from "./logo";
 import { NAV_ITEMS } from "@/lib/constants";
@@ -39,11 +39,11 @@ function isActiveRoute(pathname: string, href: string): boolean {
 }
 
 const NAV_ICONS: Record<string, LucideIcon> = {
-  Award,
   BarChart3,
   Calendar,
   CreditCard,
   LayoutDashboard,
+  MartialArtsBelt,
   Settings,
   UserPlus,
   Users,

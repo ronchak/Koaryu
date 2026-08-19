@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import Link from "next/link";
+import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import { ProgressBar, RankBadge } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
@@ -9,7 +10,6 @@ import { isEligibilityEntryReady, type EligibilityGroup } from "@/lib/belt-track
 import type { BeltRank, EligibilityEntry } from "@/types";
 import {
   AlertTriangle,
-  Award,
   Check,
   ChevronDown,
   ChevronRight,
@@ -80,23 +80,28 @@ export function EligibilityPanel({
   );
 
   return (
-    <div className={`flex-1 min-w-0 ${styles.eligibilityWorkspace}`}>
+    <div
+      id="belt-panel-eligibility"
+      role="tabpanel"
+      aria-labelledby="belt-tab-eligibility"
+      className={`flex-1 min-w-0 ${styles.eligibilityWorkspace}`}
+    >
       {ladderError && (
-        <div className="mx-8 mt-6">
+        <div>
           <DismissibleNotice tone="danger" onDismiss={onDismissLadderError}>
             {ladderError}
           </DismissibleNotice>
         </div>
       )}
       {programsLoadError && !isProgramsLoadErrorDismissed && (
-        <div className="mx-8 mt-6">
+        <div>
           <DismissibleNotice tone="danger" onDismiss={onDismissProgramsLoadError}>
             {programsLoadError}
           </DismissibleNotice>
         </div>
       )}
       {eligibilityLoadError && !isEligibilityLoading && !isEligibilityLoadErrorDismissed && (
-        <div className="mx-8 mt-6">
+        <div>
           <DismissibleNotice tone="danger" onDismiss={onDismissEligibilityLoadError}>
             {eligibilityLoadError}
           </DismissibleNotice>
@@ -119,10 +124,13 @@ export function EligibilityPanel({
       ) : eligibilityGroups.length === 0 ? (
         <div className={styles.panelState}>
           <div className={styles.panelStateInner}>
-            <Award className="mx-auto mb-3 h-8 w-8 text-muted" />
+            <span className={styles.panelStateIcon} aria-hidden="true">
+              <MartialArtsBelt />
+            </span>
+            <h2 className={styles.panelStateTitle}>No students to evaluate</h2>
             <p className="text-sm text-text-secondary">
               {selectedProgramName
-                ? `No active students are ready in ${selectedProgramName} yet.`
+                ? `There are no active students to evaluate in ${selectedProgramName} yet.`
                 : "No active students to evaluate."}
             </p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
@@ -146,20 +154,21 @@ export function EligibilityPanel({
             <div data-readiness="approval"><span>Approval</span><strong>{decisionCounts.approval}</strong></div>
             <div data-readiness="progress"><span>Progress</span><strong>{decisionCounts.progress}</strong></div>
           </div>
-          <table className={styles.eligibilityTable}>
-            <caption className="sr-only">Promotion readiness grouped by current rank</caption>
-          <thead>
-            <tr className="border-b border-border">
-              <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">Student</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Current Rank</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Next Rank</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">Classes</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">Time at Rank</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Status</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
+          <div className={styles.eligibilityTableFrame}>
+            <table className={styles.eligibilityTable}>
+              <caption className="sr-only">Promotion readiness grouped by current rank</caption>
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">Student</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Current Rank</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Next Rank</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">Classes</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">Time at Rank</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Status</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
             {eligibilityGroups.map((group) => {
               const isCollapsed = collapsedGroups.has(group.key);
 
@@ -252,6 +261,7 @@ export function EligibilityPanel({
                         </td>
                         <td data-label="Classes" className="px-4 py-3">
                           <ProgressBar
+                            label="Class requirement progress"
                             current={entry.classes_since_promo}
                             required={entry.classes_required}
                             met={entry.classes_met}
@@ -259,6 +269,7 @@ export function EligibilityPanel({
                         </td>
                         <td data-label="Time at rank" className="px-4 py-3">
                           <ProgressBar
+                            label="Time requirement progress"
                             current={entry.days_at_rank}
                             required={entry.days_required}
                             met={entry.time_met}
@@ -319,8 +330,9 @@ export function EligibilityPanel({
                 </Fragment>
               );
             })}
-          </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>
