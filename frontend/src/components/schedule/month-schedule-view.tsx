@@ -207,6 +207,10 @@ export function MonthScheduleView({
               return (
                 <div
                   key={day.dateKey}
+                  data-month-schedule-day={day.dateKey}
+                  data-month-day-scope={day.inCurrentMonth ? "in-month" : "out-of-month"}
+                  data-month-day-today={isToday ? "true" : "false"}
+                  data-month-day-selected={isSelected ? "true" : "false"}
                   className={`group relative flex min-h-[132px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors even:border-r-0 hover:bg-surface-raised/50 xl:min-h-[156px] xl:even:border-r xl:[&:nth-child(7n)]:border-r-0 ${
                     day.inCurrentMonth ? "bg-surface" : "bg-bg text-text-secondary"
                   } ${isSelected ? "ring-1 ring-inset ring-accent" : ""} ${

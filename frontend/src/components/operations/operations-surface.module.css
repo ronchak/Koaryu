@@ -372,6 +372,44 @@
   .loading[data-loading-family="reports"] .loadingRules {
     grid-template-columns: 1fr;
   }
+
+  .surface[data-operations-page="settings"] :global([data-program-form="true"]) {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-input]) {
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-color-field="true"]) {
+    min-width: 0;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-color-actions="true"]) {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(6, 44px);
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-swatch]) {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-submit="true"]) {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -449,6 +487,33 @@
     break-inside: avoid;
     border-radius: 0 !important;
     background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+
+  .surface :global([data-month-schedule-view]) {
+    max-width: 100% !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+
+  .surface :global([data-month-schedule-view] [data-month-schedule-day]) {
+    overflow: visible !important;
+    border-color: #777 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    transition: none !important;
+  }
+
+  .surface :global([data-month-schedule-view] [data-month-schedule-day] *) {
+    border-color: #777 !important;
+    border-radius: 0 !important;
+    background-color: transparent !important;
     color: #000 !important;
     box-shadow: none !important;
   }

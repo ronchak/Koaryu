@@ -146,12 +146,16 @@ export function ProgramsSection() {
       </div>
 
       {canManage ? (
-        <form onSubmit={handleSubmit} className="mb-4 grid gap-3 border-b border-border pb-4 md:grid-cols-[1fr_1fr_auto]">
-          <Input label="Program name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Brazilian Jiu-Jitsu Core" />
-          <Input label="Description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional notes" />
-          <div className="flex flex-col gap-1.5">
+        <form
+          onSubmit={handleSubmit}
+          className="mb-4 grid min-w-0 gap-3 border-b border-border pb-4 md:grid-cols-[1fr_1fr_auto]"
+          data-program-form="true"
+        >
+          <Input data-program-input="name" label="Program name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Brazilian Jiu-Jitsu Core" />
+          <Input data-program-input="description" label="Description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional notes" />
+          <div className="flex min-w-0 flex-col gap-1.5" data-program-color-field="true">
             <span className="text-sm text-text-secondary font-medium">Color</span>
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2" data-program-color-actions="true">
               {COLOR_SWATCHES.map((swatch) => (
                 <button
                   key={swatch}
@@ -159,6 +163,7 @@ export function ProgramsSection() {
                   onClick={() => setColor(swatch)}
                   aria-label={`Use ${swatch}`}
                   aria-pressed={color === swatch}
+                  data-program-swatch={swatch}
                   title={color === swatch ? `${swatch} selected` : `Use ${swatch}`}
                   className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border transition-[border-color,box-shadow] ${
                     color === swatch
@@ -174,7 +179,7 @@ export function ProgramsSection() {
                   ) : null}
                 </button>
               ))}
-              <Button type="submit" size="sm" variant="primary" isLoading={isSaving}>
+              <Button type="submit" size="sm" variant="primary" isLoading={isSaving} data-program-submit="true">
                 {editingProgram ? <Save className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                 {editingProgram ? "Save" : "Create"}
               </Button>

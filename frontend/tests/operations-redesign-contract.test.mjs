@@ -395,6 +395,260 @@ describe("operations behavior proof", () => {
     }
   });
 
+  it("contains Program controls at 390px and flattens Month print in both themes", async () => {
+    const programs = source("src/components/settings/programs-section.tsx");
+    const month = source("src/components/schedule/month-schedule-view.tsx");
+    const css = source("src/components/operations/operations-surface.module.css");
+    const browserCss = css.replaceAll(":global(", ":is(");
+    assert.match(programs, /data-program-form="true"/);
+    assert.equal((programs.match(/data-program-input=/g) || []).length, 2);
+    assert.match(programs, /data-program-color-actions="true"/);
+    assert.match(programs, /data-program-swatch=\{swatch\}/);
+    assert.match(programs, /data-program-submit="true"/);
+    assert.match(programs, /onSubmit=\{handleSubmit\}/);
+    assert.match(programs, /onClick=\{\(\) => setColor\(swatch\)\}/);
+    assert.match(css, /grid-template-columns: repeat\(6, 44px\)/);
+    assert.match(css, /\[data-program-submit="true"\][\s\S]*?grid-column: 1 \/ -1;[\s\S]*?width: 100%;/);
+    assert.match(css, /\[data-month-schedule-view\][\s\S]*?overflow: visible !important;[\s\S]*?border-radius: 0 !important;[\s\S]*?background: #fff !important;[\s\S]*?box-shadow: none !important;/);
+    assert.match(month, /data-month-schedule-day=\{day\.dateKey\}/);
+    assert.match(month, /data-month-day-scope=\{day\.inCurrentMonth \? "in-month" : "out-of-month"\}/);
+    assert.match(month, /data-month-day-today=\{isToday \? "true" : "false"\}/);
+    assert.match(month, /data-month-day-selected=\{isSelected \? "true" : "false"\}/);
+    assert.match(month, /data-month-day-selected=[\s\S]{0,500}?transition-colors/);
+    assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\][\s\S]*?border-color: #777 !important;[\s\S]*?background: #fff !important;[\s\S]*?box-shadow: none !important;/);
+    assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\][\s\S]*?transition: none !important;/);
+    assert.match(css, /\[data-month-schedule-view\] \[data-month-schedule-day\] \*[\s\S]*?background-color: transparent !important;[\s\S]*?color: #000 !important;/);
+
+    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      for (const actionLabel of ["Create", "Save"]) {
+        const swatches = ["#38BDF8", "#F59E0B", "#EF4444", "#22C55E", "#A855F7", "#94A3B8"]
+          .map((swatch, index) =>
+            '<button type="button" data-program-swatch="' + swatch + '" aria-label="Use ' + swatch +
+            '" aria-pressed="' + (index === 0 ? "true" : "false") +
+            '" onclick="this.dataset.clicked = \'true\'" style="background:' + swatch + '"></button>'
+          )
+          .join("");
+        await page.setContent(
+          '<style>html, body { width: 100%; margin: 0; } ' + browserCss + '</style>' +
+          '<main class="surface" data-operations-page="settings" style="box-sizing:border-box;width:390px;padding:32px">' +
+            '<form data-program-form="true" onsubmit="event.preventDefault(); this.dataset.submitted = \'true\'">' +
+              '<div><label>Program name<input data-program-input="name"></label></div>' +
+              '<div><label>Description<input data-program-input="description"></label></div>' +
+              '<div data-program-color-field="true"><span>Color</span>' +
+                '<div data-program-color-actions="true">' + swatches +
+                  '<button type="submit" data-program-submit="true"><span data-program-action-label>' + actionLabel + '</span></button>' +
+                '</div>' +
+              '</div>' +
+            '</form>' +
+          '</main>'
+        );
+        await page.emulateMedia({ media: "screen" });
+        await page.locator('[data-program-input="name"]').fill("Adult Karate");
+        await page.locator('[data-program-input="description"]').fill("Evening program");
+        for (const swatch of await page.locator("[data-program-swatch]").all()) await swatch.click();
+        await page.locator('[data-program-submit="true"]').click();
+
+        const geometry = await page.evaluate(() => {
+          const form = document.querySelector('[data-program-form="true"]');
+          const formRect = form.getBoundingClientRect();
+          const inputs = [...form.querySelectorAll("[data-program-input]")];
+          const swatches = [...form.querySelectorAll("[data-program-swatch]")];
+          const action = form.querySelector('[data-program-submit="true"]');
+          const actionLabelElement = action.querySelector("[data-program-action-label]");
+          const controls = [...inputs, ...swatches, action];
+          const contained = controls.every((control) => {
+            const rect = control.getBoundingClientRect();
+            return (
+              rect.left >= formRect.left &&
+              rect.right <= formRect.right &&
+              rect.top >= formRect.top &&
+              rect.bottom <= formRect.bottom &&
+              rect.width >= 44 &&
+              rect.height >= 44
+            );
+          });
+          const actionRect = action.getBoundingClientRect();
+          const labelRect = actionLabelElement.getBoundingClientRect();
+          return {
+            actionLabel: actionLabelElement.textContent,
+            actionLabelContained: (
+              labelRect.left >= actionRect.left &&
+              labelRect.right <= actionRect.right &&
+              labelRect.top >= actionRect.top &&
+              labelRect.bottom <= actionRect.bottom
+            ),
+            actionSubmitted: form.dataset.submitted,
+            allSwatchesClicked: swatches.every((swatch) => swatch.dataset.clicked === "true"),
+            contained,
+            documentClientWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            inputCount: inputs.length,
+            swatchCount: swatches.length,
+          };
+        });
+        assert.equal(geometry.actionLabel, actionLabel);
+        assert.equal(geometry.actionLabelContained, true);
+        assert.equal(geometry.actionSubmitted, "true");
+        assert.equal(geometry.allSwatchesClicked, true);
+        assert.equal(geometry.contained, true);
+        assert.equal(geometry.inputCount, 2);
+        assert.equal(geometry.swatchCount, 6);
+        assert.equal(geometry.documentScrollWidth, geometry.documentClientWidth);
+      }
+
+      await page.setViewportSize({ width: 816, height: 1056 });
+      for (const theme of ["light", "dark"]) {
+        await page.emulateMedia({ media: "screen" });
+        const paper = theme === "light" ? "rgb(250, 250, 250)" : "rgb(30, 30, 30)";
+        const ground = theme === "light" ? "rgb(238, 238, 238)" : "rgb(18, 18, 18)";
+        const todaySurface = theme === "light" ? "rgb(235, 243, 255)" : "rgb(38, 46, 60)";
+        const screenText = theme === "light" ? "rgb(17, 17, 17)" : "rgb(238, 238, 238)";
+        const monthCells = [
+          { scope: "in-month", today: "false", selected: "false", label: "In month", background: paper, shadow: "none" },
+          { scope: "out-of-month", today: "false", selected: "false", label: "Out of month", background: ground, shadow: "none" },
+          { scope: "in-month", today: "true", selected: "false", label: "Today", background: todaySurface, shadow: "none" },
+          { scope: "in-month", today: "false", selected: "true", label: "Selected", background: paper, shadow: "inset 0 0 0 1px rgb(45, 92, 160)" },
+        ].map((cell, index) =>
+          '<div data-month-schedule-day="2026-08-' + (index + 1) + '" data-month-day-scope="' + cell.scope +
+            '" data-month-day-today="' + cell.today + '" data-month-day-selected="' + cell.selected +
+            '" style="box-sizing:border-box;min-width:0;border:1px solid rgb(120,120,120);background:' +
+            cell.background + ';color:' + screenText + ';box-shadow:' + cell.shadow +
+            ';overflow:hidden;padding:12px;transition-property:color,background-color,border-color;' +
+            'transition-duration:150ms;transition-timing-function:ease">' +
+            '<span data-month-day-copy style="display:block;overflow-wrap:anywhere">' +
+              cell.label + ' calendar cell with retained printable text and borders.' +
+            '</span>' +
+          '</div>'
+        ).join("");
+        await page.setContent(
+          '<style>html, body { width: 100%; margin: 0; } ' + browserCss + '</style>' +
+          '<div data-theme="' + theme + '" data-koaryu-dashboard-shell="true" ' +
+            'style="--product-paper:' + paper + ';--product-shadow-card:0 8px 24px rgba(0,0,0,.24);' +
+            '--product-ground:' + paper + ';--product-ink:' + (theme === "light" ? "#111" : "#eee") + '">' +
+            '<main class="surface" data-operations-page="schedule">' +
+              '<div data-month-schedule-view="true" style="box-sizing:border-box;width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden">' +
+                monthCells +
+              '</div>' +
+            '</main>' +
+          '</div>'
+        );
+        const screenMaterial = await page.locator("[data-month-schedule-view]").evaluate((month) => {
+          const style = getComputedStyle(month);
+          return {
+            background: style.backgroundColor,
+            borderRadius: style.borderRadius,
+            boxShadow: style.boxShadow,
+            cells: [...month.querySelectorAll("[data-month-schedule-day]")].map((cell) => {
+              const cellStyle = getComputedStyle(cell);
+              return {
+                background: cellStyle.backgroundColor,
+                boxShadow: cellStyle.boxShadow,
+                overflow: cellStyle.overflow,
+                scope: cell.dataset.monthDayScope,
+                selected: cell.dataset.monthDaySelected,
+                today: cell.dataset.monthDayToday,
+                transitionDuration: cellStyle.transitionDuration,
+                transitionProperty: cellStyle.transitionProperty,
+              };
+            }),
+          };
+        });
+        assert.equal(screenMaterial.background, paper);
+        assert.equal(screenMaterial.borderRadius, "14px");
+        assert.notEqual(screenMaterial.boxShadow, "none");
+        assert.deepEqual(screenMaterial.cells.map((cell) => cell.scope), ["in-month", "out-of-month", "in-month", "in-month"]);
+        assert.deepEqual(screenMaterial.cells.map((cell) => cell.today), ["false", "false", "true", "false"]);
+        assert.deepEqual(screenMaterial.cells.map((cell) => cell.selected), ["false", "false", "false", "true"]);
+        assert.notEqual(screenMaterial.cells[0].background, screenMaterial.cells[1].background);
+        assert.notEqual(screenMaterial.cells[0].background, screenMaterial.cells[2].background);
+        assert.equal(screenMaterial.cells[3].boxShadow === "none", false);
+        assert.equal(screenMaterial.cells.every((cell) => cell.overflow === "hidden"), true);
+        assert.equal(screenMaterial.cells.every((cell) => cell.transitionProperty.includes("background-color")), true);
+        assert.equal(screenMaterial.cells.every((cell) => cell.transitionDuration === "0.15s"), true);
+
+        await page.emulateMedia({ media: "print" });
+        const printMaterial = await page.locator("[data-month-schedule-view]").evaluate((month) => {
+          const style = getComputedStyle(month);
+          const monthRect = month.getBoundingClientRect();
+          const cells = [...month.querySelectorAll("[data-month-schedule-day]")].map((cell) => {
+            const cellStyle = getComputedStyle(cell);
+            const cellRect = cell.getBoundingClientRect();
+            const copy = cell.querySelector("[data-month-day-copy]");
+            const copyStyle = getComputedStyle(copy);
+            const copyRect = copy.getBoundingClientRect();
+            return {
+              background: cellStyle.backgroundColor,
+              borderColor: cellStyle.borderTopColor,
+              borderStyle: cellStyle.borderTopStyle,
+              borderWidth: cellStyle.borderTopWidth,
+              boxShadow: cellStyle.boxShadow,
+              color: cellStyle.color,
+              contentContained: (
+                copyRect.left >= cellRect.left &&
+                copyRect.right <= cellRect.right &&
+                copyRect.top >= cellRect.top &&
+                copyRect.bottom <= cellRect.bottom &&
+                cell.scrollWidth <= cell.clientWidth &&
+                cell.scrollHeight <= cell.clientHeight
+              ),
+              copyColor: copyStyle.color,
+              insideMonth: cellRect.left >= monthRect.left && cellRect.right <= monthRect.right,
+              overflow: cellStyle.overflow,
+              radius: cellStyle.borderRadius,
+              scope: cell.dataset.monthDayScope,
+              selected: cell.dataset.monthDaySelected,
+              today: cell.dataset.monthDayToday,
+              transitionDuration: cellStyle.transitionDuration,
+              transitionProperty: cellStyle.transitionProperty,
+            };
+          });
+          return {
+            background: style.backgroundColor,
+            borderRadius: style.borderRadius,
+            boxShadow: style.boxShadow,
+            color: style.color,
+            cells,
+            documentClientWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            monthLeft: monthRect.left,
+            monthRight: monthRect.right,
+            overflow: style.overflow,
+          };
+        });
+        assert.equal(printMaterial.background, "rgb(255, 255, 255)");
+        assert.equal(printMaterial.borderRadius, "0px");
+        assert.equal(printMaterial.boxShadow, "none");
+        assert.equal(printMaterial.color, "rgb(0, 0, 0)");
+        assert.equal(printMaterial.overflow, "visible");
+        assert.equal(printMaterial.cells.length, 4);
+        for (const cell of printMaterial.cells) {
+          assert.equal(cell.background, "rgb(255, 255, 255)");
+          assert.equal(cell.borderColor, "rgb(119, 119, 119)");
+          assert.equal(cell.borderStyle, "solid");
+          assert.equal(cell.borderWidth, "1px");
+          assert.equal(cell.boxShadow, "none");
+          assert.equal(cell.color, "rgb(0, 0, 0)");
+          assert.equal(cell.copyColor, "rgb(0, 0, 0)");
+          assert.equal(cell.contentContained, true);
+          assert.equal(cell.insideMonth, true);
+          assert.equal(cell.overflow, "visible");
+          assert.equal(cell.radius, "0px");
+          assert.equal(cell.transitionDuration, "0s");
+          assert.equal(cell.transitionProperty, "none");
+        }
+        assert.ok(printMaterial.monthLeft >= 0);
+        assert.ok(printMaterial.monthRight <= printMaterial.documentClientWidth);
+        assert.equal(printMaterial.documentClientWidth, 816);
+        assert.equal(printMaterial.documentScrollWidth, 816);
+        assert.equal(printMaterial.documentScrollWidth, printMaterial.documentClientWidth);
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("keeps Month responsive while Week remains the sole horizontal schedule canvas", () => {
     const month = source("src/components/schedule/month-schedule-view.tsx");
     const schedule = source("src/components/schedule/schedule-page-section.tsx");
