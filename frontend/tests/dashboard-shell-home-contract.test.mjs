@@ -38,15 +38,38 @@ describe("dashboard shell and Home source contracts", () => {
     const readIndex = homeSource.indexOf("readDashboardLayout(");
     assert.ok(effectIndex >= 0 && readIndex > effectIndex);
     assert.doesNotMatch(homeSource.slice(0, effectIndex), /localStorage|readDashboardLayout\(/);
-    for (const label of ["Add panels", "Customize", "Cancel", "Done", "Reset", "Earlier", "Later", "Resize", "Remove"]) {
+    for (const label of ["Add panels", "Customize", "Cancel", "Done", "Reset", "Resize", "Remove"]) {
       assert.ok(homeSource.includes(label), label);
     }
+    assert.doesNotMatch(homeSource, /Earlier|Later|\bArrow(?:Up|Down)\s*,/);
     assert.match(homeSource, /aria-live="polite"/);
     assert.match(homeSource, /event\.key === "Escape"/);
     assert.match(homeSource, /500/);
     assert.match(homeSource, /elementFromPoint/);
     assert.match(homeSource, /window\.scrollBy/);
     assert.match(homeSource, /onPointerCancel=\{onPointerCancel\}/);
+    assert.match(homeSource, /moveDashboardLayoutItem\(/);
+    assert.match(homeSource, /updateLayoutInMemory\(\{ \.\.\.layoutRef\.current, items: nextItems \}\)/);
+    assert.match(homeSource, /saveLayout\(layoutRef\.current\)/);
+    assert.match(homeSource, /keyboardMoveRef\.current/);
+    assert.match(homeSource, /event\.key\.startsWith\("Arrow"\)/);
+    assert.match(homeSource, /aria-pressed=\{isPickedUp\}/);
+    assert.match(homeSource, /aria-label=\{isPickedUp[\s\S]*move picked up[\s\S]*Press Space or Enter to pick up/);
+    assert.match(homeSource, /aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Space Enter Escape"/);
+    assert.match(homeSource, /keyboardMoveRef\.current\?\.widgetId \?\? dragRef\.current\?\.widgetId/);
+    assert.match(homeSource, /is already picked up\. Drop or cancel it before starting another move/);
+    const pointerMoveSource = homeSource.slice(
+      homeSource.indexOf("const onPointerMove"),
+      homeSource.indexOf("const onPointerUp")
+    );
+    assert.match(pointerMoveSource, /updateLayoutInMemory/);
+    assert.doesNotMatch(pointerMoveSource, /saveLayout/);
+    const pointerUpSource = homeSource.slice(
+      homeSource.indexOf("const onPointerUp"),
+      homeSource.indexOf("const onPointerCancel")
+    );
+    assert.equal(pointerUpSource.match(/saveLayout\(layoutRef\.current\)/g)?.length, 1);
+    assert.match(homeSource, /updateLayoutInMemory\(cloneLayout\(session\.beforeLayout\)\)/);
     assert.match(homeSource, /clearDragSession\(\);[\s\S]*snapshotRef\.current = null/);
     assert.match(homeSource, /viewModels\[entry\.id\]\?\.state !== "unavailable"/);
     assert.match(homeSource, /This browser could not save your arrangement/);
@@ -135,7 +158,7 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(shellStyles, /\.studioName\s*\{[\s\S]*text-overflow:\s*ellipsis;/);
   });
 
-  it("renders Home as one truthful sequence with compact marginal leaves", () => {
+  it("renders Home as one truthful spatial sequence with responsive reflow", () => {
     assert.match(homeSource, /className=\{styles\.sequence\}/);
     assert.equal(homeSource.match(/className=\{styles\.sequence\}/g)?.length, 1);
     assert.match(homeSource, /layout\.items\.map\(renderWidget\)/);
@@ -147,11 +170,16 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /className=\{styles\.sourceLink\}/);
     assert.doesNotMatch(homeSource, /Daily register|Operating workbench|Arrangement saved per user|catalog\.provenanceCopy|catalog\.windowCopy/);
     assert.doesNotMatch(homeSource, /<p>\{studioDescription\}<\/p>/);
-    assert.match(homeStyles, /\.sequence\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?gap:\s*20px;/);
-    assert.match(homeStyles, /\.widget\[data-size="1x1"\]\s*\{[\s\S]*?width:\s*min\(100%, 18rem\);[\s\S]*?margin-left:\s*auto;/);
+    assert.match(homeStyles, /\.sequence\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(4,/);
+    assert.match(homeStyles, /grid-column:\s*var\(--dashboard-column\) \/ span var\(--dashboard-column-span\)/);
+    assert.match(homeStyles, /@media \(max-width: 1023px\)[\s\S]*?grid-template-columns:\s*repeat\(2,/);
+    assert.match(homeStyles, /@media \(max-width: 640px\)[\s\S]*?\.sequence\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
+    assert.match(homeStyles, /\.dragHandle\s*\{[\s\S]*?touch-action:\s*none;/);
+    assert.doesNotMatch(homeStyles, /\.pickedUp \.dragHandle/);
+    assert.doesNotMatch(homeStyles, /data-size="4x[12]"/);
     assert.match(homeStyles, /\.widget\s*\{[\s\S]*?border-radius:\s*14px;[\s\S]*?box-shadow:\s*var\(--product-shadow-card\);/);
     assert.match(homeStyles, /@media \(max-width: 820px\)[\s\S]*?\.widget,[\s\S]*?width:\s*100%;[\s\S]*?margin-inline:\s*0;[\s\S]*?flex-direction:\s*column;/);
-    assert.match(homeStyles, /@media \(max-width: 820px\)[\s\S]*?\.widget:not\(\[data-size="1x1"\]\) :is\(\.agenda, \.queue\)[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
+    assert.match(homeStyles, /@media \(max-width: 820px\)[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
     assert.match(homeStyles, /data-widget-id="needs_attention"/);
     assert.match(homeStyles, /data-widget-id="classes_today"/);
     assert.match(homeStyles, /@media print/);

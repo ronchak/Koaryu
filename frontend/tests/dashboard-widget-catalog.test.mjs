@@ -27,8 +27,23 @@ describe("dashboard widget catalog", () => {
         "Emergency Contacts",
       ]
     );
+    const expectedAllowedSizes = {
+      needs_attention: ["2x2"],
+      classes_today: ["2x1", "1x2", "2x2"],
+      student_pulse: ["1x1", "2x1"],
+      attendance: ["1x1", "2x1"],
+      lead_follow_ups: ["1x1", "2x1", "1x2", "2x2"],
+      promotions_due: ["1x1", "2x1", "1x2", "2x2"],
+      billing_exceptions: ["1x1", "2x1", "1x2"],
+      revenue_due: ["1x1", "2x1"],
+      setup_progress: ["1x1", "2x1"],
+      recent_students: ["2x1", "1x2", "2x2"],
+      saved_report: ["2x1", "2x2"],
+      quick_actions: ["1x1", "2x1", "1x2"],
+      emergency_contacts: ["2x1", "1x2", "2x2"],
+    };
     for (const entry of DASHBOARD_WIDGET_CATALOG) {
-      assert.ok(entry.allowedSizes.length === 1 || entry.allowedSizes.length === 2, entry.id);
+      assert.deepEqual(entry.allowedSizes, expectedAllowedSizes[entry.id], entry.id);
       assert.ok(entry.allowedSizes.includes(entry.defaultSize), entry.id);
       assert.ok(entry.sourceRoute.startsWith("/"), entry.id);
       assert.ok(entry.provenanceCopy && entry.windowCopy, entry.id);
@@ -41,6 +56,7 @@ describe("dashboard widget catalog", () => {
       ]);
       for (const size of entry.allowedSizes) assert.ok(DASHBOARD_WIDGET_SIZES.includes(size));
     }
+    assert.deepEqual(DASHBOARD_WIDGET_SIZES, ["1x1", "2x1", "1x2", "2x2"]);
   });
 
   it("keeps Needs Attention fixed and fails billing entitlement closed", () => {
@@ -51,7 +67,7 @@ describe("dashboard widget catalog", () => {
     assert.deepEqual(attention.allowedSizes, ["2x2"]);
     assert.equal(attention.defaultSize, "2x2");
     const classes = DASHBOARD_WIDGET_CATALOG[1];
-    assert.deepEqual(classes.allowedSizes, ["2x1", "2x2"]);
+    assert.deepEqual(classes.allowedSizes, ["2x1", "1x2", "2x2"]);
     assert.equal(classes.defaultSize, "2x2");
 
     for (const role of ["instructor", null, "unknown"]) {

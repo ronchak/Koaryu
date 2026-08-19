@@ -11,11 +11,16 @@ import {
 } from "./dashboard-widget-catalog.ts";
 
 export const DASHBOARD_LAYOUT_NAMESPACE = "koaryu:dashboard-layout:v1:";
-export const DASHBOARD_LAYOUT_VERSION = 1;
+export const DASHBOARD_LAYOUT_VERSION = 2;
+export const DASHBOARD_LAYOUT_COLUMNS = 4;
+// Every catalog panel still fits when all 13 use their largest 2x2 footprint: two per row band.
+export const DASHBOARD_LAYOUT_MAX_ROWS = Math.ceil(DASHBOARD_WIDGET_CATALOG.length / 2) * 2;
 
 export type DashboardLayoutItem = {
   widget_id: DashboardWidgetId;
   size: DashboardWidgetSize;
+  column: number;
+  row: number;
 };
 
 export type DashboardLayout = {
@@ -43,6 +48,183 @@ export interface DashboardLayoutStorage {
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
   key(index: number): string | null;
+}
+
+type Footprint = { columns: number; rows: number };
+type CandidateItem = Omit<DashboardLayoutItem, "column" | "row"> & {
+  column?: number;
+  row?: number;
+};
+
+const LEGACY_SIZE_MAP: Readonly<Record<string, DashboardWidgetSize>> = {
+  "4x1": "2x1",
+  "4x2": "2x2",
+};
+
+export function getDashboardWidgetFootprint(size: DashboardWidgetSize): Footprint {
+  if (size === "1x1") return { columns: 1, rows: 1 };
+  if (size === "2x1") return { columns: 2, rows: 1 };
+  if (size === "1x2") return { columns: 1, rows: 2 };
+  return { columns: 2, rows: 2 };
+}
+
+function isGridCoordinate(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
+function isDashboardRow(value: unknown, size: DashboardWidgetSize): value is number {
+  return isGridCoordinate(value)
+    && Number(value) + getDashboardWidgetFootprint(size).rows <= DASHBOARD_LAYOUT_MAX_ROWS;
+}
+
+function cellsFor(item: DashboardLayoutItem): string[] {
+  const footprint = getDashboardWidgetFootprint(item.size);
+  const cells: string[] = [];
+  for (let row = item.row; row < item.row + footprint.rows; row += 1) {
+    for (let column = item.column; column < item.column + footprint.columns; column += 1) {
+      cells.push(`${column}:${row}`);
+    }
+  }
+  return cells;
+}
+
+function canPlace(
+  item: Pick<DashboardLayoutItem, "size">,
+  column: number,
+  row: number,
+  occupied: ReadonlySet<string>,
+  columns: number
+): boolean {
+  const footprint = getDashboardWidgetFootprint(item.size);
+  if (column < 0 || row < 0 || column + footprint.columns > columns) return false;
+  for (let checkRow = row; checkRow < row + footprint.rows; checkRow += 1) {
+    for (let checkColumn = column; checkColumn < column + footprint.columns; checkColumn += 1) {
+      if (occupied.has(`${checkColumn}:${checkRow}`)) return false;
+    }
+  }
+  return true;
+}
+
+function firstFit(
+  item: Pick<DashboardLayoutItem, "size">,
+  occupied: ReadonlySet<string>,
+  columns: number,
+  startAt = 0
+): { column: number; row: number } {
+  const footprint = getDashboardWidgetFootprint(item.size);
+  for (let index = Math.max(0, startAt); ; index += 1) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    if (column + footprint.columns <= columns && canPlace(item, column, row, occupied, columns)) {
+      return { column, row };
+    }
+  }
+}
+
+export function packDashboardLayoutItems(
+  items: readonly CandidateItem[],
+  columns = DASHBOARD_LAYOUT_COLUMNS,
+  preservePreferredPositions = true
+): DashboardLayoutItem[] {
+  const safeColumns = Math.max(2, Math.floor(columns));
+  const occupied = new Set<string>();
+  const packed: DashboardLayoutItem[] = [];
+  for (const candidate of items) {
+    const preferredColumn = preservePreferredPositions && isGridCoordinate(candidate.column)
+      ? candidate.column
+      : -1;
+    const preferredRow = preservePreferredPositions && isGridCoordinate(candidate.row)
+      ? candidate.row
+      : -1;
+    const position = canPlace(candidate, preferredColumn, preferredRow, occupied, safeColumns)
+      ? { column: preferredColumn, row: preferredRow }
+      : firstFit(candidate, occupied, safeColumns);
+    const item: DashboardLayoutItem = { ...candidate, ...position };
+    packed.push(item);
+    for (const cell of cellsFor(item)) occupied.add(cell);
+  }
+  return packed;
+}
+
+function sortSpatially(items: readonly DashboardLayoutItem[]): DashboardLayoutItem[] {
+  return items.map((item) => ({ ...item })).sort((left, right) => (
+    left.row - right.row
+    || left.column - right.column
+    || left.widget_id.localeCompare(right.widget_id)
+  ));
+}
+
+function reflowPrioritizing(
+  items: readonly DashboardLayoutItem[],
+  priorityId: DashboardWidgetId,
+  preferred: { column: number; row: number; size?: DashboardWidgetSize }
+): DashboardLayoutItem[] {
+  const fixed = items.find((item) => DASHBOARD_WIDGET_BY_ID.get(item.widget_id)?.fixed);
+  const priority = items.find((item) => item.widget_id === priorityId);
+  if (!priority || DASHBOARD_WIDGET_BY_ID.get(priorityId)?.fixed) {
+    return items.map((item) => ({ ...item }));
+  }
+  const nextPriority = {
+    ...priority,
+    size: preferred.size ?? priority.size,
+    column: Math.max(0, Math.floor(preferred.column)),
+    row: Math.max(0, Math.floor(preferred.row)),
+  };
+  const footprint = getDashboardWidgetFootprint(nextPriority.size);
+  nextPriority.column = Math.min(nextPriority.column, DASHBOARD_LAYOUT_COLUMNS - footprint.columns);
+  nextPriority.row = Math.min(nextPriority.row, DASHBOARD_LAYOUT_MAX_ROWS - footprint.rows);
+
+  const occupied = new Set<string>();
+  const placed: DashboardLayoutItem[] = [];
+  if (fixed) {
+    const fixedItem = { ...fixed, column: 0, row: 0 };
+    placed.push(fixedItem);
+    for (const cell of cellsFor(fixedItem)) occupied.add(cell);
+  }
+  const priorityPosition = canPlace(nextPriority, nextPriority.column, nextPriority.row, occupied, DASHBOARD_LAYOUT_COLUMNS)
+    ? { column: nextPriority.column, row: nextPriority.row }
+    : firstFit(
+      nextPriority,
+      occupied,
+      DASHBOARD_LAYOUT_COLUMNS,
+      nextPriority.row * DASHBOARD_LAYOUT_COLUMNS + nextPriority.column
+    );
+  const moved = { ...nextPriority, ...priorityPosition };
+  placed.push(moved);
+  for (const cell of cellsFor(moved)) occupied.add(cell);
+
+  for (const item of items) {
+    if (item.widget_id === priorityId || item.widget_id === fixed?.widget_id) continue;
+    const position = canPlace(item, item.column, item.row, occupied, DASHBOARD_LAYOUT_COLUMNS)
+      ? { column: item.column, row: item.row }
+      : firstFit(item, occupied, DASHBOARD_LAYOUT_COLUMNS);
+    const reflowed = { ...item, ...position };
+    placed.push(reflowed);
+    for (const cell of cellsFor(reflowed)) occupied.add(cell);
+  }
+  return sortSpatially(placed);
+}
+
+export function moveDashboardLayoutItem(
+  items: readonly DashboardLayoutItem[],
+  widgetId: DashboardWidgetId,
+  column: number,
+  row: number
+): DashboardLayoutItem[] {
+  return reflowPrioritizing(items, widgetId, { column, row });
+}
+
+export function resizeDashboardLayoutItem(
+  items: readonly DashboardLayoutItem[],
+  widgetId: DashboardWidgetId,
+  size: DashboardWidgetSize
+): DashboardLayoutItem[] {
+  const item = items.find((candidate) => candidate.widget_id === widgetId);
+  const catalog = DASHBOARD_WIDGET_BY_ID.get(widgetId);
+  if (!item || !catalog || !catalog.allowedSizes.includes(size)) {
+    return items.map((candidate) => ({ ...candidate }));
+  }
+  return reflowPrioritizing(items, widgetId, { column: item.column, row: item.row, size });
 }
 
 function safeIdentityPart(value: unknown): string | null {
@@ -75,12 +257,13 @@ export function buildDashboardLayoutKey(
 
 function defaultItems(role: unknown): DashboardLayoutItem[] {
   const normalizedRole = normalizeDashboardWidgetRole(role);
-  return DASHBOARD_WIDGET_CATALOG
+  const candidates = DASHBOARD_WIDGET_CATALOG
     .filter((entry) => entry.fixed || (
       normalizedRole !== null && entry.defaultRoles.includes(normalizedRole)
     ))
     .filter((entry) => isDashboardWidgetEntitled(entry, role))
     .map((entry) => ({ widget_id: entry.id, size: entry.defaultSize }));
+  return packDashboardLayoutItems(candidates, DASHBOARD_LAYOUT_COLUMNS, false);
 }
 
 export function buildDefaultDashboardLayout(role: unknown): DashboardLayout {
@@ -120,14 +303,18 @@ function parseRemovedIds(value: unknown, role: unknown): DashboardWidgetId[] {
 
 export function reconcileDashboardLayout(value: unknown, role: unknown): DashboardLayout {
   const fallback = buildDefaultDashboardLayout(role);
-  if (!isObject(value) || value.version !== DASHBOARD_LAYOUT_VERSION || !Array.isArray(value.items)) {
+  if (
+    !isObject(value)
+    || (value.version !== 1 && value.version !== DASHBOARD_LAYOUT_VERSION)
+    || !Array.isArray(value.items)
+  ) {
     return fallback;
   }
 
   const removedWidgetIds = parseRemovedIds(value.removed_widget_ids, role);
   const removed = new Set(removedWidgetIds);
   const seen = new Set<DashboardWidgetId>();
-  const items: DashboardLayoutItem[] = [];
+  const candidates: CandidateItem[] = [];
 
   for (const candidate of value.items) {
     if (!isObject(candidate) || typeof candidate.widget_id !== "string") {
@@ -141,24 +328,34 @@ export function reconcileDashboardLayout(value: unknown, role: unknown): Dashboa
 
     seen.add(entry.id);
     removed.delete(entry.id);
-    items.push({
+    const mappedSize = typeof candidate.size === "string" && LEGACY_SIZE_MAP[candidate.size]
+      ? LEGACY_SIZE_MAP[candidate.size]
+      : candidate.size;
+    const size = isDashboardWidgetSize(mappedSize) && entry.allowedSizes.includes(mappedSize)
+      ? mappedSize
+      : entry.defaultSize;
+    candidates.push({
       widget_id: entry.id,
-      size: isDashboardWidgetSize(candidate.size) && entry.allowedSizes.includes(candidate.size)
-        ? candidate.size
-        : entry.defaultSize,
+      size,
+      column: value.version === DASHBOARD_LAYOUT_VERSION && isGridCoordinate(candidate.column)
+        ? candidate.column
+        : undefined,
+      row: value.version === DASHBOARD_LAYOUT_VERSION && isDashboardRow(candidate.row, size)
+        ? candidate.row
+        : undefined,
     });
   }
 
   const fixedEntry = DASHBOARD_WIDGET_CATALOG.find((entry) => entry.fixed);
   if (fixedEntry) {
-    const fixedIndex = items.findIndex((item) => item.widget_id === fixedEntry.id);
+    const fixedIndex = candidates.findIndex((item) => item.widget_id === fixedEntry.id);
     if (fixedIndex >= 0) {
-      const [fixedItem] = items.splice(fixedIndex, 1);
+      const [fixedItem] = candidates.splice(fixedIndex, 1);
       if (fixedItem) {
-        items.unshift(fixedItem);
+        candidates.unshift({ ...fixedItem, size: fixedEntry.defaultSize, column: 0, row: 0 });
       }
     } else {
-      items.unshift({ widget_id: fixedEntry.id, size: fixedEntry.defaultSize });
+      candidates.unshift({ widget_id: fixedEntry.id, size: fixedEntry.defaultSize, column: 0, row: 0 });
       seen.add(fixedEntry.id);
     }
   }
@@ -175,9 +372,11 @@ export function reconcileDashboardLayout(value: unknown, role: unknown): Dashboa
       && !removed.has(entry.id)
     ) {
       seen.add(entry.id);
-      items.push({ widget_id: entry.id, size: entry.defaultSize });
+      candidates.push({ widget_id: entry.id, size: entry.defaultSize });
     }
   }
+
+  const items = sortSpatially(packDashboardLayoutItems(candidates));
 
   return {
     version: DASHBOARD_LAYOUT_VERSION,
@@ -212,7 +411,11 @@ export function readDashboardLayout(
       return { layout: fallback, source: "default" };
     }
     const parsed = JSON.parse(raw) as unknown;
-    if (!isObject(parsed) || parsed.version !== DASHBOARD_LAYOUT_VERSION || !Array.isArray(parsed.items)) {
+    if (
+      !isObject(parsed)
+      || (parsed.version !== 1 && parsed.version !== DASHBOARD_LAYOUT_VERSION)
+      || !Array.isArray(parsed.items)
+    ) {
       return { layout: fallback, source: "default" };
     }
     return { layout: reconcileDashboardLayout(parsed, identity.role), source: "stored" };
