@@ -12,6 +12,9 @@ directly and verifies it before running:
 
 - repository workflow, environment-example, and support-privacy controls;
 - frontend tests, lint, production build, and high-severity runtime audit;
+- a required Chromium smoke against a production build in controlled preview
+  mode, with one worker, no retries, bounded runtime, and preview-only failure
+  artifacts;
 - backend dependency consistency, hash-lock drift, vulnerability audit, tests,
   and generated API contract verification;
 - a fresh local migration replay, database lint, and the broad Supabase contract
@@ -32,6 +35,14 @@ Run the static workflow guard locally with:
 ```bash
 npm run check:release-workflow
 ```
+
+The browser job has no path or job condition. It builds from placeholder
+environment values with preview mode forced on, starts that exact production
+output, and runs only the two tests tagged `@required-browser-smoke`. The
+aggregate job names `browser-smoke` as a dependency and requires its result to
+be `success`, so cancellation, failure, or future accidental skipping fails the
+named gate closed. The full suite inventory and exclusions are recorded in
+`docs/audit-notes/browser-ci-gate.md`.
 
 ## Provider Promotion Controls
 

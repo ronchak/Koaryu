@@ -6,31 +6,35 @@ const previewTest = previewE2eEnabled ? test : test.skip;
 
 async function openKidsSession(page: Page) {
   await page.goto(`${FRONTEND_URL}/schedule`);
-  await page.getByRole("button", { name: "Open Kids BJJ Fundamentals at 4:00 PM" }).click();
+  await page.getByRole("button", { name: /4:00 PM Kids BJJ Fundamentals/ }).click();
   await expect(page.getByTestId("attendance-summary")).toHaveAttribute("aria-busy", "false");
 }
 
-previewTest("updates present and unmarked counters immediately after an attendance toggle", async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.removeItem("koaryu:attendance");
-  });
-  await openKidsSession(page);
+previewTest(
+  "updates present and unmarked counters immediately after an attendance toggle",
+  { tag: "@required-browser-smoke" },
+  async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.removeItem("koaryu:attendance");
+    });
+    await openKidsSession(page);
 
-  const presentCount = page.getByTestId("attendance-present-count");
-  const absentCount = page.getByTestId("attendance-absent-count");
-  const unmarkedCount = page.getByTestId("attendance-unmarked-count");
-  const initialPresent = Number(await presentCount.textContent());
-  const initialAbsent = Number(await absentCount.textContent());
-  const initialUnmarked = Number(await unmarkedCount.textContent());
+    const presentCount = page.getByTestId("attendance-present-count");
+    const absentCount = page.getByTestId("attendance-absent-count");
+    const unmarkedCount = page.getByTestId("attendance-unmarked-count");
+    const initialPresent = Number(await presentCount.textContent());
+    const initialAbsent = Number(await absentCount.textContent());
+    const initialUnmarked = Number(await unmarkedCount.textContent());
 
-  expect(initialUnmarked).toBeGreaterThan(0);
+    expect(initialUnmarked).toBeGreaterThan(0);
 
-  await page.getByRole("button").filter({ hasText: "Check in" }).first().click();
+    await page.getByRole("button").filter({ hasText: "Check in" }).first().click();
 
-  await expect(presentCount).toHaveText(String(initialPresent + 1));
-  await expect(absentCount).toHaveText(String(initialAbsent));
-  await expect(unmarkedCount).toHaveText(String(initialUnmarked - 1));
-});
+    await expect(presentCount).toHaveText(String(initialPresent + 1));
+    await expect(absentCount).toHaveText(String(initialAbsent));
+    await expect(unmarkedCount).toHaveText(String(initialUnmarked - 1));
+  },
+);
 
 previewTest("serializes two same-tick attendance toggles from the latest committed state", async ({ page }) => {
   await page.addInitScript(() => {
@@ -113,7 +117,7 @@ previewTest("clearing attendance removes all duplicate rows and stays cleared af
 
   await page.getByRole("button", { name: "Close session details" }).click();
   const busyOnReopen = await page
-    .getByRole("button", { name: "Open Kids BJJ Fundamentals at 4:00 PM" })
+    .getByRole("button", { name: /4:00 PM Kids BJJ Fundamentals/ })
     .evaluate((button) => {
       if (!(button instanceof HTMLButtonElement)) {
         throw new Error("Expected a session button");
