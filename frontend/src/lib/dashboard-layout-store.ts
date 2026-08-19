@@ -146,6 +146,43 @@ export function packDashboardLayoutItems(
   return packed;
 }
 
+export function projectDashboardFrameTargetToStoredCell(
+  items: readonly DashboardLayoutItem[],
+  widgetId: DashboardWidgetId,
+  frameColumns: number,
+  column: number,
+  row: number
+): { column: number; row: number } {
+  if (frameColumns === DASHBOARD_LAYOUT_COLUMNS) {
+    return { column, row };
+  }
+  const safeColumns = Math.max(2, Math.floor(frameColumns));
+  const frameItems = packDashboardLayoutItems(items, safeColumns, false);
+  const target = frameItems.find((item) => {
+    if (item.widget_id === widgetId) return false;
+    const footprint = getDashboardWidgetFootprint(item.size);
+    return column >= item.column
+      && column < item.column + footprint.columns
+      && row >= item.row
+      && row < item.row + footprint.rows;
+  });
+  const orderedCandidates = frameItems
+    .filter((item) => item.widget_id !== widgetId)
+    .sort((left, right) => (
+      left.row - right.row
+      || left.column - right.column
+      || left.widget_id.localeCompare(right.widget_id)
+    ));
+  const targetIndex = row * safeColumns + column;
+  const nearest = target ?? orderedCandidates.find((item) => (
+    item.row * safeColumns + item.column >= targetIndex
+  )) ?? orderedCandidates.at(-1);
+  const stored = nearest
+    ? items.find((item) => item.widget_id === nearest.widget_id)
+    : items.find((item) => item.widget_id === widgetId);
+  return stored ? { column: stored.column, row: stored.row } : { column, row };
+}
+
 function sortSpatially(items: readonly DashboardLayoutItem[]): DashboardLayoutItem[] {
   return items.map((item) => ({ ...item })).sort((left, right) => (
     left.row - right.row

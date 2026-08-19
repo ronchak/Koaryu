@@ -10,6 +10,7 @@ import {
   getDashboardWidgetFootprint,
   moveDashboardLayoutItem,
   packDashboardLayoutItems,
+  projectDashboardFrameTargetToStoredCell,
   purgeDashboardLayoutNamespace,
   readDashboardLayout,
   reconcileDashboardLayout,
@@ -185,6 +186,29 @@ describe("dashboard layout storage", () => {
     const wide = resizeDashboardLayoutItem(tall, "lead_follow_ups", "2x1");
     assert.equal(wide.find((item) => item.widget_id === "lead_follow_ups")?.size, "2x1");
     assertCollisionFree(wide);
+  });
+
+  it("projects two-column visual targets back into stored four-column cells", () => {
+    const stored = buildDefaultDashboardLayout("admin").items;
+    const tablet = packDashboardLayoutItems(stored, 2, false);
+    const attendance = tablet.find((item) => item.widget_id === "attendance");
+    assert.ok(attendance);
+    const projected = projectDashboardFrameTargetToStoredCell(
+      stored,
+      "student_pulse",
+      2,
+      attendance.column,
+      attendance.row
+    );
+    const storedAttendance = stored.find((item) => item.widget_id === "attendance");
+    assert.deepEqual(projected, {
+      column: storedAttendance.column,
+      row: storedAttendance.row,
+    });
+    assert.deepEqual(
+      projectDashboardFrameTargetToStoredCell(stored, "student_pulse", 4, 3, 5),
+      { column: 3, row: 5 }
+    );
   });
 
   it("reads malformed and unavailable storage as a safe default", () => {

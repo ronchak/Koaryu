@@ -122,11 +122,32 @@ export function clampDashboardResizePreview(
   width: number,
   height: number,
   allowedSizes: readonly DashboardWidgetSize[],
-  metrics: Pick<DashboardGridMetrics, "columnGap" | "columnWidth" | "rowGap" | "rowHeight">
+  metrics: Pick<DashboardGridMetrics, "columnGap" | "columnWidth" | "rowGap" | "rowHeight">,
+  currentSize: DashboardWidgetSize
 ): { height: number; width: number } {
-  const dimensions = allowedSizes.map((size) => dashboardSizePixels(size, metrics));
+  const current = dashboardSizePixels(currentSize, metrics);
+  const desiredX = (width - current.width) / Math.max(1, metrics.columnWidth);
+  const desiredY = (height - current.height) / Math.max(1, metrics.rowHeight);
+  let best = { distance: Number.POSITIVE_INFINITY, progress: 0, target: current };
+
+  for (const size of allowedSizes) {
+    if (size === currentSize) continue;
+    const target = dashboardSizePixels(size, metrics);
+    const vectorX = (target.width - current.width) / Math.max(1, metrics.columnWidth);
+    const vectorY = (target.height - current.height) / Math.max(1, metrics.rowHeight);
+    const lengthSquared = vectorX * vectorX + vectorY * vectorY;
+    if (lengthSquared === 0) continue;
+    const progress = clamp((desiredX * vectorX + desiredY * vectorY) / lengthSquared, 0, 1);
+    const projectedX = vectorX * progress;
+    const projectedY = vectorY * progress;
+    const distance = Math.hypot(desiredX - projectedX, desiredY - projectedY);
+    if (distance < best.distance) {
+      best = { distance, progress, target };
+    }
+  }
+
   return {
-    width: clamp(width, Math.min(...dimensions.map((value) => value.width)), Math.max(...dimensions.map((value) => value.width))),
-    height: clamp(height, Math.min(...dimensions.map((value) => value.height)), Math.max(...dimensions.map((value) => value.height))),
+    width: current.width + (best.target.width - current.width) * best.progress,
+    height: current.height + (best.target.height - current.height) * best.progress,
   };
 }

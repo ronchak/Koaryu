@@ -29,12 +29,14 @@ import {
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
 import {
   buildDefaultDashboardLayout,
+  DASHBOARD_LAYOUT_COLUMNS,
   DASHBOARD_LAYOUT_MAX_ROWS,
   getAddableDashboardWidgets,
   getBrowserDashboardLayoutStorage,
   getDashboardWidgetFootprint,
   moveDashboardLayoutItem,
   packDashboardLayoutItems,
+  projectDashboardFrameTargetToStoredCell,
   readDashboardLayout,
   resizeDashboardLayoutItem,
   writeDashboardLayout,
@@ -48,6 +50,10 @@ import {
   resolveDashboardPointerTarget,
   type DashboardGridMetrics,
 } from "@/lib/dashboard-widget-geometry";
+import {
+  getDashboardWidgetComposition,
+  type DashboardWidgetDensity,
+} from "@/lib/dashboard-widget-composition";
 import {
   DASHBOARD_WIDGET_BY_ID,
   normalizeDashboardWidgetRole,
@@ -100,6 +106,7 @@ type ResizeSession = {
   gridMetrics: DashboardGridMetrics;
   pointerId: number;
   previewRect: { height: number; left: number; top: number; width: number };
+  startSize: DashboardWidgetSize;
   startX: number;
   startY: number;
   widgetId: DashboardWidgetId;
@@ -158,6 +165,20 @@ function stateLabel(state: DashboardWidgetViewModel["state"]): string {
 
 function isMaterialState(state: DashboardWidgetViewModel["state"]): boolean {
   return state === "loading" || state === "error" || state === "partial" || state === "unavailable";
+}
+
+const LIFT_STYLE_PROPERTIES = [
+  "--dashboard-lift-translate-x",
+  "--dashboard-lift-translate-y",
+  "--dashboard-lift-width",
+  "--dashboard-lift-height",
+] as const;
+
+function releaseLiftStyles(node: HTMLElement | null | undefined) {
+  if (!node) return;
+  for (const property of LIFT_STYLE_PROPERTIES) {
+    node.style.removeProperty(property);
+  }
 }
 
 function readSettleDuration(node: HTMLElement): number {
@@ -232,11 +253,7 @@ function MaterialState({ model }: { model: DashboardWidgetViewModel }) {
   if (!isMaterialState(model.state)) {
     return null;
   }
-  return (
-    <div className={styles.stateLine}>
-      <span className={styles.stateStamp}>{stateLabel(model.state)}</span>
-    </div>
-  );
+  return <span className={styles.stateStamp}>{stateLabel(model.state)}</span>;
 }
 
 function RatioRing({ model }: { model: DashboardWidgetViewModel }) {
@@ -266,7 +283,7 @@ function AgendaContent({
   model: DashboardWidgetViewModel;
 }) {
   return (
-    <>
+    <div className={styles.agendaContent}>
       <div className={styles.agendaSummary}>
         <strong>{model.metric}</strong>
         <span>sessions today</span>
@@ -284,7 +301,7 @@ function AgendaContent({
           })}
         </ol>
       ) : <p className={styles.detail}>{model.detail}</p>}
-    </>
+    </div>
   );
 }
 
@@ -296,19 +313,21 @@ function QueueContent({
   model: DashboardWidgetViewModel;
 }) {
   return (
-    <>
+    <div className={styles.queueLayout}>
       {model.metric ? <strong className={styles.queueCount}>{model.metric}</strong> : null}
       {model.rows.length > 0 ? (
         <ul className={styles.queue}>
           {model.rows.slice(0, maxRows).map((row, rowIndex) => (
             <li key={`${row.label}-${rowIndex}`}>
-              {row.href ? <Link href={row.href}>{row.label}</Link> : <strong>{row.label}</strong>}
+              {row.href ? (
+                <Link href={row.href}><span className={styles.rowLabel}>{row.label}</span></Link>
+              ) : <strong className={styles.rowLabel}>{row.label}</strong>}
               {row.meta ? <small>{row.meta}</small> : null}
             </li>
           ))}
         </ul>
       ) : <p className={styles.detail}>{model.detail}</p>}
-    </>
+    </div>
   );
 }
 
@@ -327,16 +346,16 @@ function AttendanceContent({ model }: { model: DashboardWidgetViewModel }) {
 }
 
 function SetupContent({
+  density,
   model,
-  size,
 }: {
+  density: DashboardWidgetDensity;
   model: DashboardWidgetViewModel;
-  size: DashboardWidgetSize;
 }) {
   return (
     <>
       <RatioRing model={model} />
-      {model.rows.length > 0 && size !== "1x1" ? (
+      {model.rows.length > 0 && (density === "tall" || density === "full") ? (
         <ul className={styles.setupSteps}>
           {model.rows.slice(0, 2).map((row) => (
             <li key={row.label}>{row.href ? <Link href={row.href}>{row.label}</Link> : row.label}</li>
@@ -349,10 +368,16 @@ function SetupContent({
 
 const QUICK_ACTION_ICONS = [UserPlus, Upload, Users, CalendarCheck] as const;
 
-function QuickActionsContent({ model }: { model: DashboardWidgetViewModel }) {
+function QuickActionsContent({
+  actionCapacity,
+  model,
+}: {
+  actionCapacity: number;
+  model: DashboardWidgetViewModel;
+}) {
   return (
     <div className={styles.quickActions}>
-      {model.actions.map((action, index) => {
+      {model.actions.slice(0, actionCapacity).map((action, index) => {
         const Icon = QUICK_ACTION_ICONS[index] ?? Plus;
         return <Link href={action.href} key={action.href}><Icon aria-hidden="true" size={18} /><span>{action.label}</span></Link>;
       })}
@@ -360,38 +385,26 @@ function QuickActionsContent({ model }: { model: DashboardWidgetViewModel }) {
   );
 }
 
-function visibleRowLimit(model: DashboardWidgetViewModel, size: DashboardWidgetSize): number {
-  if (size === "2x2" || size === "1x2") {
-    return 5;
-  }
-  if (
-    model.id === "classes_today"
-    || model.id === "needs_attention"
-    || model.id === "lead_follow_ups"
-    || model.id === "promotions_due"
-    || model.id === "recent_students"
-  ) {
-    return 1;
-  }
-  return 5;
-}
-
 function WidgetContent({
+  actionCapacity,
+  density,
   maxRows,
   model,
-  size,
+  stateRuleCapacity,
 }: {
+  actionCapacity: number;
+  density: DashboardWidgetDensity;
   maxRows: number;
   model: DashboardWidgetViewModel;
-  size: DashboardWidgetSize;
+  stateRuleCapacity: number;
 }) {
   if (model.state === "loading" || model.state === "error" || model.state === "unavailable") {
     return (
       <div className={styles.stateBody}>
         <p className={styles.detail}>{model.detail}</p>
-        <span className={styles.stateRule} aria-hidden="true" />
-        <span className={styles.stateRule} aria-hidden="true" />
-        <span className={styles.stateRule} aria-hidden="true" />
+        {Array.from({ length: stateRuleCapacity }, (_, index) => (
+          <span className={styles.stateRule} aria-hidden="true" key={index} />
+        ))}
       </div>
     );
   }
@@ -401,8 +414,10 @@ function WidgetContent({
   if (model.id === "classes_today") return <AgendaContent maxRows={maxRows} model={model} />;
   if (model.id === "student_pulse") return <RatioRing model={model} />;
   if (model.id === "attendance") return <AttendanceContent model={model} />;
-  if (model.id === "setup_progress") return <SetupContent model={model} size={size} />;
-  if (model.id === "quick_actions") return <QuickActionsContent model={model} />;
+  if (model.id === "setup_progress") return <SetupContent density={density} model={model} />;
+  if (model.id === "quick_actions") {
+    return <QuickActionsContent actionCapacity={actionCapacity} model={model} />;
+  }
   if (["needs_attention", "lead_follow_ups", "promotions_due", "recent_students"].includes(model.id)) {
     return <QueueContent maxRows={maxRows} model={model} />;
   }
@@ -467,10 +482,12 @@ function HomeWidget({
   if (!catalog) {
     return null;
   }
-  const maxRows = visibleRowLimit(model, item.size);
+  const composition = getDashboardWidgetComposition(item.size);
+  const maxRows = composition.rowCapacity;
   const hiddenRows = Math.max(
     0,
-    model.rows.length + (model.overflowCount ?? 0) - maxRows
+    (model.id === "quick_actions" ? model.actions.length - composition.actionCapacity : model.rows.length - maxRows)
+      + (model.overflowCount ?? 0)
   );
   const footprint = getDashboardWidgetFootprint(item.size);
   const widgetStyle = {
@@ -496,6 +513,7 @@ function HomeWidget({
       className={`${styles.widget} ${catalog.fixed ? styles.attentionWidget : ""} ${isPickedUp ? styles.pickedUp : ""} ${liftedPreview ? styles.lifted : ""}`}
       data-interaction={liftedPreview?.mode}
       data-selected={isSelected ? "true" : "false"}
+      data-density={composition.density}
       data-widget-id={item.widget_id}
       data-size={item.size}
       data-state={model.state}
@@ -511,40 +529,38 @@ function HomeWidget({
       <header className={styles.widgetBand}>
         <div className={styles.bandTitle}>
           <span>{catalog.title}</span>
+          <MaterialState model={model} />
         </div>
         {isCustomizing && !catalog.fixed ? (
-          <button
-            ref={moveHandleRef}
-            type="button"
-            className={styles.dragHandle}
-            aria-label={isPickedUp
-              ? `${catalog.title} move picked up. Use arrow keys to move, Space or Enter to drop, or Escape to cancel.`
-              : `Move ${catalog.title}. Press Space or Enter to pick up.`}
-            aria-pressed={isPickedUp}
-            aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Space Enter Escape"
-            onKeyDown={(event) => onMoveKeyDown(event, item.widget_id)}
-          >
-            <GripVertical aria-hidden="true" size={18} />
-            <span className={styles.controlLabel}>Move</span>
-          </button>
+          <div className={styles.editControls} aria-label={`${catalog.title} layout controls`}>
+            {catalog.removable ? (
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => onRemove(item.widget_id)}
+                aria-label={`Remove ${catalog.title}`}
+                title="Remove"
+              >
+                <Minus aria-hidden="true" size={17} /><span className={styles.controlLabel}>Remove</span>
+              </button>
+            ) : null}
+            <button
+              ref={moveHandleRef}
+              type="button"
+              className={styles.dragHandle}
+              aria-label={isPickedUp
+                ? `${catalog.title} move picked up. Use arrow keys to move, Space or Enter to drop, or Escape to cancel.`
+                : `Move ${catalog.title}. Press Space or Enter to pick up.`}
+              aria-pressed={isPickedUp}
+              aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Space Enter Escape"
+              onKeyDown={(event) => onMoveKeyDown(event, item.widget_id)}
+            >
+              <GripVertical aria-hidden="true" size={18} />
+              <span className={styles.controlLabel}>Move</span>
+            </button>
+          </div>
         ) : isCustomizing && catalog.fixed ? <span className={styles.fixedLabel}>Fixed</span> : null}
       </header>
-
-      {isCustomizing && !catalog.fixed ? (
-        <div className={styles.editControls} aria-label={`${catalog.title} layout controls`}>
-          {catalog.removable ? (
-            <button
-              type="button"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => onRemove(item.widget_id)}
-              aria-label={`Remove ${catalog.title}`}
-              title="Remove"
-            >
-              <Minus aria-hidden="true" size={17} /><span className={styles.controlLabel}>Remove</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
 
       {isCustomizing && !catalog.fixed && catalog.allowedSizes.length > 1 ? (
         <button
@@ -566,8 +582,13 @@ function HomeWidget({
       ) : null}
 
       <div className={styles.widgetBody}>
-        <MaterialState model={model} />
-        <WidgetContent maxRows={maxRows} model={model} size={item.size} />
+        <WidgetContent
+          actionCapacity={composition.actionCapacity}
+          density={composition.density}
+          maxRows={maxRows}
+          model={model}
+          stateRuleCapacity={composition.stateRuleCapacity}
+        />
       </div>
 
       <footer className={styles.widgetFooting}>
@@ -619,6 +640,7 @@ export function DashboardHome({
   const panelAnimationsRef = useRef(new Map<DashboardWidgetId, Animation>());
   const dragRef = useRef<DragSession | null>(null);
   const resizeRef = useRef<ResizeSession | null>(null);
+  const touchMoveBlockerRef = useRef<((event: TouchEvent) => void) | null>(null);
   const keyboardMoveRef = useRef<KeyboardMoveSession | null>(null);
   const addPanelsTriggerRef = useRef<HTMLButtonElement>(null);
   const customizeTriggerRef = useRef<HTMLButtonElement>(null);
@@ -652,6 +674,12 @@ export function DashboardHome({
       }
       if (dragSession?.autoScrollFrame) {
         cancelAnimationFrame(dragSession.autoScrollFrame);
+      }
+      releaseLiftStyles(dragSession ? panelRefs.current.get(dragSession.widgetId) : null);
+      releaseLiftStyles(resizeRef.current ? panelRefs.current.get(resizeRef.current.widgetId) : null);
+      if (touchMoveBlockerRef.current) {
+        document.removeEventListener("touchmove", touchMoveBlockerRef.current);
+        touchMoveBlockerRef.current = null;
       }
       dragRef.current = null;
       resizeRef.current = null;
@@ -701,13 +729,14 @@ export function DashboardHome({
       if (duration === 0) {
         continue;
       }
-      const animation = node.animate([
-        {
-          transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(${scaleX}, ${scaleY})`,
-          transformOrigin: "top left",
-        },
-        { transform: "translate3d(0, 0, 0) scale(1)", transformOrigin: "top left" },
-      ], {
+      const changesSize = Math.abs(scaleX - 1) >= 0.01 || Math.abs(scaleY - 1) >= 0.01;
+      const keyframes = changesSize
+        ? [{ opacity: 0.78, zIndex: "3" }, { opacity: 1, zIndex: "3" }]
+        : [
+            { transform: `translate3d(${translateX}px, ${translateY}px, 0)`, zIndex: "3" },
+            { transform: "translate3d(0, 0, 0)", zIndex: "3" },
+          ];
+      const animation = node.animate(keyframes, {
         duration: Math.round(duration * 1.35),
         easing: "cubic-bezier(.16, 1, .3, 1)",
       });
@@ -756,12 +785,19 @@ export function DashboardHome({
     if (session?.autoScrollFrame) {
       cancelAnimationFrame(session.autoScrollFrame);
     }
+    releaseLiftStyles(session ? panelRefs.current.get(session.widgetId) : null);
+    if (touchMoveBlockerRef.current) {
+      document.removeEventListener("touchmove", touchMoveBlockerRef.current);
+      touchMoveBlockerRef.current = null;
+    }
     dragRef.current = null;
     setActiveDragWidgetId(null);
     setLiftedPreview((current) => current?.mode === "move" ? null : current);
   }, []);
 
   const clearResizeSession = useCallback(() => {
+    const session = resizeRef.current;
+    releaseLiftStyles(session ? panelRefs.current.get(session.widgetId) : null);
     resizeRef.current = null;
     setLiftedPreview((current) => current?.mode === "resize" ? null : current);
   }, []);
@@ -776,6 +812,12 @@ export function DashboardHome({
     }
     if (session?.autoScrollFrame) {
       cancelAnimationFrame(session.autoScrollFrame);
+    }
+    releaseLiftStyles(session ? panelRefs.current.get(session.widgetId) : null);
+    releaseLiftStyles(resizeRef.current ? panelRefs.current.get(resizeRef.current.widgetId) : null);
+    if (touchMoveBlockerRef.current) {
+      document.removeEventListener("touchmove", touchMoveBlockerRef.current);
+      touchMoveBlockerRef.current = null;
     }
     dragRef.current = null;
     resizeRef.current = null;
@@ -1075,10 +1117,19 @@ export function DashboardHome({
     if (!session || session.pointerId !== pointerId || session.widgetId !== widgetId) {
       return;
     }
+    const node = panelRefs.current.get(widgetId);
+    releaseLiftStyles(node);
     session.active = true;
     if (session.timer) {
       clearTimeout(session.timer);
       session.timer = null;
+    }
+    if (session.pointerType === "touch" && !touchMoveBlockerRef.current) {
+      const blockActiveTouchMove = (event: TouchEvent) => {
+        if (dragRef.current?.active) event.preventDefault();
+      };
+      touchMoveBlockerRef.current = blockActiveTouchMove;
+      document.addEventListener("touchmove", blockActiveTouchMove, { passive: false });
     }
     setActiveDragWidgetId(widgetId);
     setLiftedPreview({
@@ -1098,11 +1149,18 @@ export function DashboardHome({
     session.pendingColumn = column;
     session.pendingRow = row;
     session.reflowTimer = null;
+    const storedTarget = projectDashboardFrameTargetToStoredCell(
+      layoutRef.current.items,
+      session.widgetId,
+      session.gridMetrics?.columns ?? DASHBOARD_LAYOUT_COLUMNS,
+      column,
+      row
+    );
     const nextItems = moveDashboardLayoutItem(
       layoutRef.current.items,
       session.widgetId,
-      column,
-      row,
+      storedTarget.column,
+      storedTarget.row,
       session.beforeLayout.items.map((item) => item.widget_id)
     );
     capturePanelPositions();
@@ -1208,6 +1266,19 @@ export function DashboardHome({
     const itemRect = event.currentTarget.getBoundingClientRect();
     const sequence = sequenceRef.current;
     if (!item || !sequence) return;
+    const gridMetrics = readGridMetrics(sequence, itemRect, item.size);
+    const frameItems = gridMetrics && gridMetrics.columns !== DASHBOARD_LAYOUT_COLUMNS
+      ? packDashboardLayoutItems(layoutRef.current.items, gridMetrics.columns, false)
+      : layoutRef.current.items;
+    if (gridMetrics) {
+      gridMetrics.maxRows = Math.max(
+        DASHBOARD_LAYOUT_MAX_ROWS,
+        ...frameItems.map((candidate) => (
+          candidate.row + getDashboardWidgetFootprint(candidate.size).rows
+        ))
+      );
+    }
+    const frameItem = frameItems.find((candidate) => candidate.widget_id === widgetId) ?? item;
     const session: DragSession = {
       active: false,
       autoScrollFrame: null,
@@ -1215,15 +1286,15 @@ export function DashboardHome({
       beforeLayout: cloneLayout(layoutRef.current),
       grabOffsetX: event.clientX - itemRect.left,
       grabOffsetY: event.clientY - itemRect.top,
-      gridMetrics: readGridMetrics(sequence, itemRect, item.size),
+      gridMetrics,
       lastClientX: event.clientX,
       lastClientY: event.clientY,
-      lastColumn: item.column,
-      lastRow: item.row,
+      lastColumn: frameItem?.column ?? item.column,
+      lastRow: frameItem?.row ?? item.row,
       pointerId: event.pointerId,
       pointerType: event.pointerType,
-      pendingColumn: item.column,
-      pendingRow: item.row,
+      pendingColumn: frameItem?.column ?? item.column,
+      pendingRow: frameItem?.row ?? item.row,
       previewRect: { height: itemRect.height, left: itemRect.left, top: itemRect.top, width: itemRect.width },
       reflowTimer: null,
       startX: event.clientX,
@@ -1353,6 +1424,7 @@ export function DashboardHome({
     const sequence = sequenceRef.current;
     if (!item || !catalog || !node || !sequence || catalog.allowedSizes.length < 2) return;
     const itemRect = node.getBoundingClientRect();
+    releaseLiftStyles(node);
     const gridMetrics = readGridMetrics(sequence, itemRect, item.size);
     if (!gridMetrics) {
       resizeWidget(widgetId);
@@ -1365,6 +1437,7 @@ export function DashboardHome({
       gridMetrics,
       pointerId: event.pointerId,
       previewRect: { height: itemRect.height, left: itemRect.left, top: itemRect.top, width: itemRect.width },
+      startSize: item.size,
       startX: event.clientX,
       startY: event.clientY,
       widgetId,
@@ -1400,7 +1473,8 @@ export function DashboardHome({
       session.previewRect.width + event.clientX - session.startX,
       session.previewRect.height + event.clientY - session.startY,
       catalog.allowedSizes,
-      session.gridMetrics
+      session.gridMetrics,
+      session.startSize
     );
     node.style.setProperty("--dashboard-lift-width", `${preview.width}px`);
     node.style.setProperty("--dashboard-lift-height", `${preview.height}px`);
@@ -1465,6 +1539,7 @@ export function DashboardHome({
           <div
             className={styles.widgetPlaceholder}
             data-widget-placeholder={item.widget_id}
+            data-density={getDashboardWidgetComposition(item.size).density}
             style={placeholderStyle}
             aria-hidden="true"
           />

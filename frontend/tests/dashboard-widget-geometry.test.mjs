@@ -75,10 +75,19 @@ describe("dashboard widget interaction geometry", () => {
     }), "1x1");
   });
 
-  it("clamps the continuous resize preview to the supported envelope", () => {
-    assert.deepEqual(clampDashboardResizePreview(500, 40, ["1x1", "2x2"], metrics), {
-      width: 212,
+  it("keeps continuous resize previews on paths between supported footprints", () => {
+    assert.deepEqual(clampDashboardResizePreview(156, 160, ["1x1", "2x1"], metrics, "1x1"), {
+      width: 156,
       height: 160,
     });
+    const diagonal = clampDashboardResizePreview(
+      500,
+      500,
+      ["1x1", "2x1", "1x2"],
+      metrics,
+      "1x1"
+    );
+    assert.ok(diagonal.width === 212 || diagonal.height === 332);
+    assert.ok(diagonal.width !== 212 || diagonal.height !== 332);
   });
 });
