@@ -28,7 +28,7 @@ export function crmLinkPrefetch(href?: string): false | undefined {
 export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
   { label: "Students", href: "/students", icon: "Users" },
-  { label: "Belt Tracker", href: "/belt-tracker", icon: "Award", prefetch: false },
+  { label: "Belt Tracker", href: "/belt-tracker", icon: "MartialArtsBelt", prefetch: false },
   { label: "Leads", href: "/leads", icon: "UserPlus" },
   { label: "Schedule", href: "/schedule", icon: "Calendar" },
   { label: "Billing", href: "/billing", icon: "CreditCard", prefetch: false },

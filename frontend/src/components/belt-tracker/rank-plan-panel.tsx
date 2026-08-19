@@ -1,6 +1,7 @@
 "use client";
 
 import type { DragEvent, FormEvent } from "react";
+import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import { BeltVisual } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
@@ -14,7 +15,6 @@ import {
   Pencil,
   Plus,
   Save,
-  Tag,
   Trash2,
 } from "lucide-react";
 import styles from "./belt-tracker.module.css";
@@ -113,9 +113,14 @@ export function RankPlanPanel({
   tipCount,
 }: RankPlanPanelProps) {
   return (
-    <div className={`flex-1 overflow-y-auto ${styles.rankPlanWorkspace}`}>
+    <div
+      id="belt-panel-ladder"
+      role="tabpanel"
+      aria-labelledby="belt-tab-ladder"
+      className={`flex-1 overflow-y-auto ${styles.rankPlanWorkspace}`}
+    >
       <div className={styles.rankPlan}>
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+        <div className={styles.rankPlanHeader}>
           <div>
             <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
             <p className="text-xs text-muted mt-0.5">
@@ -181,9 +186,11 @@ export function RankPlanPanel({
                 <Save aria-hidden="true" className="w-3.5 h-3.5" />{isSaving ? "Saving..." : "Save ranks"}
               </Button>
             )}
-            <Button variant="secondary" size="sm" disabled={!currentProgramReady} onClick={onAddBelt}>
-              <Plus aria-hidden="true" className="w-3.5 h-3.5" />Add belt
-            </Button>
+            {groups.length > 0 ? (
+              <Button variant="secondary" size="sm" disabled={!currentProgramReady} onClick={onAddBelt}>
+                <Plus aria-hidden="true" className="w-3.5 h-3.5" />Add belt
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -191,7 +198,6 @@ export function RankPlanPanel({
           <DismissibleNotice
             tone="danger"
             onDismiss={onDismissLadderError}
-            className="mb-4"
           >
             {ladderError}
           </DismissibleNotice>
@@ -200,7 +206,6 @@ export function RankPlanPanel({
           <DismissibleNotice
             tone="danger"
             onDismiss={onDismissProgramsLoadError}
-            className="mb-4"
           >
             {programsLoadError}
           </DismissibleNotice>
@@ -210,16 +215,17 @@ export function RankPlanPanel({
           <DismissibleNotice
             tone="danger"
             onDismiss={onDismissSaveError}
-            className="mb-4"
           >
             {saveError}
           </DismissibleNotice>
         )}
 
-        <p className="text-xs text-muted mb-4 flex items-center gap-1.5">
-          <GripVertical aria-hidden="true" className="w-3 h-3" />
-          Drag belts to reorder. Drag {subRankTerm.toLowerCase()}s within a belt to reorder them.
-        </p>
+        {groups.length > 0 ? (
+          <p className={styles.rankPlanHint}>
+            <GripVertical aria-hidden="true" className="w-3 h-3" />
+            Drag to reorder, or use the arrow controls for precise moves.
+          </p>
+        ) : null}
 
         <div className={styles.rankRail}>
           {groups.map((group, groupIndex) => {
@@ -433,25 +439,30 @@ export function RankPlanPanel({
           })}
 
           {groups.length === 0 && (
-            <div className="flex flex-col items-center justify-center rounded-[14px] bg-surface py-10 text-center text-muted shadow-[var(--product-shadow-card)]">
-              <Tag aria-hidden="true" className="w-6 h-6 mb-2" />
-              <p className="text-sm">
-                {hasCurrentLadder
-                  ? "No belts yet. Add your first belt to get started."
-                  : hasSelectedProgram
-                    ? "This program is still preparing its rank plan. Refresh programs and try again."
-                    : "Create a program in Settings before tracking belts."}
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="mt-4"
-                disabled={!currentProgramReady}
-                onClick={onAddBelt}
-              >
-                <Plus aria-hidden="true" className="w-3.5 h-3.5" />
-                Add belt
-              </Button>
+            <div className={styles.panelState}>
+              <div className={styles.panelStateInner}>
+                <span className={styles.panelStateIcon} aria-hidden="true">
+                  <MartialArtsBelt />
+                </span>
+                <h2 className={styles.panelStateTitle}>Build this program&apos;s rank plan</h2>
+                <p className="text-sm text-text-secondary">
+                  {hasCurrentLadder
+                    ? "No belts yet. Add your first belt to get started."
+                    : hasSelectedProgram
+                      ? "This program is still preparing its rank plan. Refresh programs and try again."
+                      : "Create a program in Settings before tracking belts."}
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-4"
+                  disabled={!currentProgramReady}
+                  onClick={onAddBelt}
+                >
+                  <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+                  Add belt
+                </Button>
+              </div>
             </div>
           )}
         </div>

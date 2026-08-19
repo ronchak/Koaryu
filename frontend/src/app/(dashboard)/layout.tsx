@@ -8,7 +8,7 @@ import { DashboardSlugBand } from "@/components/dashboard-shell";
 import { Sidebar } from "@/components/sidebar";
 import { useTheme } from "@/components/theme-provider";
 import { LegalNameBlockingScreen } from "@/components/account/legal-name-blocking-screen";
-import { StoreProvider, useConfigStore, useStudioStore } from "@/lib/store";
+import { StoreProvider, useStudioStore } from "@/lib/store";
 import { shouldBlockForLegalName } from "@/lib/legal-name-model";
 import { useState } from "react";
 import styles from "@/components/dashboard-shell.module.css";
@@ -20,7 +20,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
   const { navigationPlacement } = useTheme();
-  const { isPreviewMode } = useConfigStore();
   const {
     currentRole,
     legalFirstName,
@@ -99,7 +98,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             className={styles.main}
           >
             <DashboardSlugBand
-              isPreviewMode={isPreviewMode}
               role={currentRole}
               studioName={studioName}
             />

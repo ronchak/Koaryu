@@ -1,12 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { Header } from "@/components/header";
 import { ProgramPicker } from "@/components/programs/program-picker";
-import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import type { Program } from "@/types";
-import { Award, Settings } from "lucide-react";
 import styles from "./belt-tracker.module.css";
 
 export type BeltTrackerTab = "eligibility" | "ladder";
@@ -45,40 +43,52 @@ export function BeltTrackerShell({
   selectedProgramId,
   tab,
 }: BeltTrackerShellProps) {
+  const visibleTabs = TABS.filter((item) => item.id !== "ladder" || canConfigureBelts);
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: BeltTrackerTab) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+    event.preventDefault();
+    const currentIndex = visibleTabs.findIndex((item) => item.id === currentTab);
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length;
+    const nextTab = visibleTabs[nextIndex];
+    if (!nextTab) return;
+
+    onTabChange(nextTab.id);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`belt-tab-${nextTab.id}`)?.focus();
+    });
+  }
+
   return (
     <div className={`flex min-h-full flex-col ${styles.beltPage}`}>
-      <Header title="Belt Tracker">
-        {tab === "eligibility" && canConfigureBelts ? (
-          <Button variant="secondary" size="sm" onClick={() => onTabChange("ladder")}>
-            <Settings className="w-3.5 h-3.5" />
-            Configure ranks
-          </Button>
-        ) : tab === "ladder" ? (
-          <Button variant="secondary" size="sm" onClick={() => onTabChange("eligibility")}>
-            <Award className="w-3.5 h-3.5" />
-            View eligibility
-          </Button>
-        ) : null}
-      </Header>
+      <Header title="Belt Tracker" />
 
       <div className="flex-1 flex flex-col">
-        <div className={`mx-4 flex items-center gap-2 px-2 py-2 sm:mx-6 lg:mx-8 ${styles.beltControls}`}>
-          {TABS.filter((item) => item.id !== "ladder" || canConfigureBelts).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className={`min-h-11 rounded-[10px] px-3 text-sm cursor-pointer transition-colors ${
-                tab === item.id
-                  ? "bg-surface-raised text-text-primary font-medium"
-                  : "text-text-secondary hover:bg-surface-raised/60 hover:text-text-primary"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-          <div className="ml-auto flex min-w-0 items-center gap-3">
+        <div className={`mx-4 sm:mx-6 lg:mx-8 ${styles.beltControls}`}>
+          <div className={styles.beltTabs} role="tablist" aria-label="Belt tracker view">
+            {visibleTabs.map((item) => (
+              <button
+                key={item.id}
+                id={`belt-tab-${item.id}`}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.id}
+                aria-controls={`belt-panel-${item.id}`}
+                tabIndex={tab === item.id ? 0 : -1}
+                onClick={() => onTabChange(item.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, item.id)}
+                className={styles.beltTab}
+                data-active={tab === item.id ? "true" : "false"}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className={styles.beltProgramControl}>
             {beltPrograms.length > 0 ? (
-              <div className="w-full min-w-0 sm:w-64">
+              <div className={styles.beltProgramPicker}>
                 <ProgramPicker
                   programs={beltPrograms}
                   value={selectedProgramId ?? ""}
@@ -101,7 +111,7 @@ export function BeltTrackerShell({
         ) : null}
 
         {actionMessage ? (
-          <div className="px-8 pt-4">
+          <div className={styles.beltActionNotice}>
             <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
               {actionMessage}
             </DismissibleNotice>

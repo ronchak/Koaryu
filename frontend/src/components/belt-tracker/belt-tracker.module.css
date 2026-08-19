@@ -70,17 +70,65 @@
 
 .beltControls {
   position: sticky;
-  top: 70px;
+  top: 56px;
   z-index: 18;
+  display: flex;
   min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin-top: 0.75rem;
-  padding-block: 0.5rem !important;
+  padding: 0.5rem;
   border: 0 !important;
   border-radius: 14px;
   background: color-mix(in srgb, var(--product-paper) 90%, transparent);
   box-shadow: var(--product-shadow-card);
   backdrop-filter: blur(16px);
 }
+
+:global([data-navigation-placement="top"]) .beltControls { top: 120px; }
+
+.beltTabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--product-sunk) 72%, transparent);
+}
+
+.beltTab {
+  padding-inline: 0.85rem;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  transition: background-color var(--product-motion-change-duration) var(--product-motion-ease), color var(--product-motion-change-duration) var(--product-motion-ease), box-shadow var(--product-motion-change-duration) var(--product-motion-ease);
+}
+
+.beltTab:hover { color: var(--text-primary); }
+
+.beltTab[data-active="true"] {
+  background: var(--product-card-stock);
+  color: var(--text-primary);
+  font-weight: 650;
+  box-shadow: 0 1px 4px rgb(54 40 20 / 10%);
+}
+
+.beltProgramControl {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.beltProgramPicker { width: min(22rem, 100%); }
+.beltProgramPicker > div { flex-direction: row; align-items: center; gap: 0.75rem; }
+.beltProgramPicker label { flex: 0 0 auto; font-size: 0.75rem; }
+.beltProgramPicker select { min-width: 12rem; }
+
+.beltActionNotice { padding: 1rem clamp(1rem, 2.4vw, 2rem) 0; }
+
 .beltProgramLockNotice {
   margin: 0;
   padding: 0.625rem clamp(1rem, 2.4vw, 2rem);
@@ -90,16 +138,17 @@
   font-size: 0.8125rem;
   line-height: 1.4;
 }
-.eligibilityWorkspace { padding: 0 clamp(1rem, 2.4vw, 2rem) 2rem; }
-.decisionRegister { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
+.eligibilityWorkspace { display: flex; flex-direction: column; gap: 1rem; padding: 1rem clamp(1rem, 2.4vw, 2rem) 2rem; }
+.decisionRegister { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; padding: 0.5rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
 .decisionRegister > div { display: flex; min-height: 3rem; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 10px; background: var(--product-sunk); }
 .decisionRegister > div[data-readiness="ready"] { background: color-mix(in srgb, var(--product-paper) 88%, var(--success) 12%); }
 .decisionRegister > div[data-readiness="approval"] { background: color-mix(in srgb, var(--product-paper) 88%, var(--warning) 12%); }
 .decisionRegister span { color: var(--text-secondary); font-size: 0.75rem; font-weight: 600; letter-spacing: 0; }
 .decisionRegister strong { color: var(--text-primary); font-family: var(--font-mono); font-size: 1.15rem; font-weight: 550; }
-.eligibilityTable { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 0.75rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); clip-path: inset(0 round 14px); font-size: 0.8125rem; }
+.eligibilityTableFrame { min-width: 0; overflow-x: auto; border-radius: 14px; }
+.eligibilityTable { width: 100%; min-width: 68rem; border-collapse: separate; border-spacing: 0; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); clip-path: inset(0 round 14px); font-size: 0.8125rem; }
 .eligibilityTable thead { position: static; background: var(--product-card-stock); }
-.eligibilityTable thead th { position: sticky; top: 158px; z-index: 12; background: var(--product-card-stock); }
+.eligibilityTable thead th { position: static; background: var(--product-card-stock); }
 .eligibilityTable tbody th,
 .eligibilityTable tbody td { border-bottom: 1px solid var(--border); }
 .eligibilityTable tbody tr[data-readiness] > th,
@@ -110,8 +159,10 @@
 .eligibilityTable tbody tr[data-readiness="approval"] { background: color-mix(in srgb, var(--product-paper) 95%, var(--warning) 5%); }
 .rankGroupHeader { border-bottom: 1px solid var(--border); background: var(--product-card-stock); }
 
-.rankPlanWorkspace { padding: clamp(1rem, 2.4vw, 2rem); }
-.rankPlan { max-width: 58rem; }
+.rankPlanWorkspace { padding: 1rem clamp(1rem, 2.4vw, 2rem) 2rem; }
+.rankPlan { display: flex; max-width: 64rem; flex-direction: column; gap: 1rem; }
+.rankPlanHeader { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
+.rankPlanHint { display: flex; align-items: center; gap: 0.4rem; margin: 0; color: var(--muted); font-size: 0.8125rem; }
 .rankRail { position: relative; display: grid; gap: 0.75rem; }
 .rankGroup { position: relative; margin: 0; overflow: hidden; border: 0 !important; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
 .rankGroup[data-drop-target="true"] { outline: 2px solid var(--product-focus); outline-offset: 2px; background: color-mix(in srgb, var(--product-paper) 94%, var(--product-focus) 6%); }
@@ -142,6 +193,20 @@
 }
 
 .panelStateInner { max-width: 32rem; padding: 1rem; }
+
+.panelStateIcon {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 0.85rem;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--product-sunk);
+  color: var(--product-soft-ink);
+}
+
+.panelStateIcon svg { width: 1.5rem; height: 1.5rem; }
+.panelStateTitle { margin: 0 0 0.35rem; color: var(--text-primary); font-size: 1rem; font-weight: 650; }
 
 .eligibilitySkeleton {
   display: grid;
@@ -185,11 +250,9 @@
   .eligibilityTable thead th { position: static; }
 }
 
-@media (max-width: 820px) {
-  .beltControls { position: static; align-items: stretch; flex-direction: column; }
-  .beltControls > div:last-child { width: 100%; margin-left: 0; }
-  .eligibilityWorkspace { padding: 0 0.85rem 1rem; }
-  .decisionRegister { margin-top: 0.75rem; }
+@media (max-width: 1100px) {
+  .eligibilityWorkspace { padding-inline: 0.85rem; }
+  .eligibilityTableFrame { overflow: visible; }
   .eligibilityTable,
   .eligibilityTable tbody,
   .eligibilityTable tr,
@@ -198,7 +261,7 @@
   .eligibilityTable thead { display: none; }
   .eligibilityTable tbody { display: grid; gap: 0.75rem; }
   .eligibilityTable .rankGroupHeader { padding: 0; border: 0; box-shadow: none; }
-  .eligibilityTable { overflow: visible; border-radius: 14px; background: transparent; box-shadow: none; }
+  .eligibilityTable { min-width: 0; overflow: visible; border-radius: 14px; background: transparent; box-shadow: none; clip-path: none; }
   .eligibilityTable .rankGroupHeader td { padding: 0.75rem; border-radius: 10px; background: var(--product-card-stock); }
   .eligibilityTable tr[data-readiness] { overflow: hidden; padding: 0.65rem 0.85rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
   .eligibilityTable tr[data-readiness] th,
@@ -209,6 +272,24 @@
   .rankPlanWorkspace { padding: 0.85rem; }
   .eligibilitySkeletonRow { grid-template-columns: 1fr 1fr; }
   .eligibilitySkeletonRow > :nth-child(n + 5) { display: none; }
+}
+
+@media (max-width: 820px) {
+  .rankHeader,
+  .tipRow { flex-wrap: wrap; }
+  .rankHeader > .rankActions { margin-left: auto; }
+  .tipRow > .rankActions { width: 100%; justify-content: flex-end; padding-left: 3.1rem; }
+}
+
+@media (max-width: 720px) {
+  .beltControls { align-items: stretch; flex-direction: column; }
+  .beltTabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
+  .beltProgramControl,
+  .beltProgramPicker { width: 100%; }
+  .beltProgramPicker > div { align-items: stretch; flex-direction: column; gap: 0.4rem; }
+  .beltProgramPicker select { min-width: 0; }
+  .decisionRegister { grid-template-columns: 1fr; }
+  .rankPlanHeader { align-items: stretch; flex-direction: column; }
 }
 
 @media print {
