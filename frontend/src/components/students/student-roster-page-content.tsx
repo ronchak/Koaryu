@@ -177,9 +177,7 @@ export function StudentRosterPageContent({
   visibleTotal,
 }: StudentRosterPageContentProps) {
   const [focusedStudentId, setFocusedStudentId] = useState<string | null>(null);
-  const focusedRow = filtered.find((row) => row.student.id === focusedStudentId)
-    ?? filtered[0]
-    ?? null;
+  const focusedRow = filtered.find((row) => row.student.id === focusedStudentId) ?? null;
 
   return (
     <div className={`flex min-h-full flex-col ${styles.rosterPrintRoot}`}>
@@ -293,13 +291,15 @@ export function StudentRosterPageContent({
                   toggleSelectAll={onToggleSelectAll}
                 />
               </div>
-              {focusedRow ? (
+              <div className={styles.rosterRailSlot}>
                 <StudentRosterReadingRail
-                  inactivity={inactivityByStudentId.get(focusedRow.student.id) ?? null}
+                  inactivity={focusedRow
+                    ? inactivityByStudentId.get(focusedRow.student.id) ?? null
+                    : null}
                   onOpenStudent={onOpenStudent}
                   row={focusedRow}
                 />
-              ) : null}
+              </div>
             </div>
           )}
         </div>

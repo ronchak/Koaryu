@@ -128,52 +128,54 @@ export function StudentRosterToolbar({
   statusFilter: StudentRosterStatusFilter | "";
 }) {
   return (
-    <div className={`mx-4 flex flex-col items-stretch gap-3 px-4 py-2 sm:mx-6 lg:mx-8 lg:flex-row lg:items-center ${styles.rosterToolbar}`}>
-      <div className="relative w-full flex-1 lg:max-w-xs">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+    <div className={`mx-4 px-4 py-2 sm:mx-6 lg:mx-8 ${styles.rosterToolbar}`}>
+      <div className={styles.rosterSearchField}>
+        <Search aria-hidden="true" className={styles.rosterSearchIcon} />
         <input
           type="text"
           aria-label="Search students"
           placeholder="Search students..."
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          className="min-h-11 w-full pl-9 pr-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+          className={styles.rosterSearchInput}
         />
       </div>
 
-      <select
-        aria-label="Filter by status"
-        value={statusFilter}
-        onChange={(event) => onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")}
-        className="min-h-11 w-full rounded-[14px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
-      >
-        {STATUS_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <div className={styles.rosterFilterGroup}>
+        <select
+          aria-label="Filter by status"
+          value={statusFilter}
+          onChange={(event) => onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")}
+          className={styles.rosterFilterSelect}
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
 
-      <select
-        aria-label="Filter by program"
-        value={programFilter}
-        onChange={(event) => onProgramFilterChange(event.target.value)}
-        className="min-h-11 w-full rounded-[14px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
-      >
-        <option value="">All programs</option>
-        {programs.filter((program) => !program.archived_at).map((program) => (
-          <option key={program.id} value={program.id}>
-            {program.name}
-          </option>
-        ))}
-      </select>
+        <select
+          aria-label="Filter by program"
+          value={programFilter}
+          onChange={(event) => onProgramFilterChange(event.target.value)}
+          className={styles.rosterFilterSelect}
+        >
+          <option value="">All programs</option>
+          {programs.filter((program) => !program.archived_at).map((program) => (
+            <option key={program.id} value={program.id}>
+              {program.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {isRosterRefreshing ? (
-        <span className="text-xs text-muted">Updating roster…</span>
+        <span className={styles.rosterRefreshState}>Updating roster…</span>
       ) : null}
 
       {canManageRoster && selectedCount > 0 ? (
-        <div className={`flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface-raised px-3 py-2 lg:ml-auto ${styles.selectionBand}`}>
+        <div className={`flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface-raised px-3 py-2 ${styles.selectionBand}`}>
           <span className="text-xs text-text-secondary">
             {selectedCount} selected
           </span>
