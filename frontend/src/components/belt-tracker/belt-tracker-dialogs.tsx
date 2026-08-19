@@ -208,14 +208,14 @@ function PromotionConfirmModal({
   return (
     <ModalFrame
       rootClassName={`p-4 ${styles.beltDialogRoot}`}
-      panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-sm p-6"
+      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="confirm-promotion-title"
       onBackdropClick={onClose}
     >
       <h2 id="confirm-promotion-title" className="text-base font-semibold text-text-primary mb-4">
         Confirm Promotion
       </h2>
-      <div className="bg-surface border border-border rounded-[6px] p-4 mb-4">
+      <div className="bg-surface border border-border rounded-[14px] p-4 mb-4">
         <p className="text-sm text-text-primary font-medium">{promoteEntry.student_name}</p>
         <div className="flex items-center gap-2 mt-2">
           {promoteEntry.current_rank_name && promoteEntry.current_rank_color && (
@@ -245,7 +245,7 @@ function PromotionConfirmModal({
           value={promotionNotes}
           onChange={(event) => onNotesChange(event.target.value)}
           placeholder="e.g. Excellent guard work"
-          className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
+          className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
         />
       </div>
       {promotionError && (

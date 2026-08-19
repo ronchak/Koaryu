@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useState } from "react";
 import { Header } from "@/components/header";
 import {
   StudentRosterBulkActionPanels,
@@ -14,6 +15,7 @@ import {
   StudentRosterFooter,
   StudentRosterLoadError,
   StudentRosterLoading,
+  StudentRosterReadingRail,
   StudentRosterTable,
 } from "@/components/students/student-roster-sections";
 import { Button } from "@/components/ui/button";
@@ -174,6 +176,11 @@ export function StudentRosterPageContent({
   usesDerivedRosterFilters,
   visibleTotal,
 }: StudentRosterPageContentProps) {
+  const [focusedStudentId, setFocusedStudentId] = useState<string | null>(null);
+  const focusedRow = filtered.find((row) => row.student.id === focusedStudentId)
+    ?? filtered[0]
+    ?? null;
+
   return (
     <div className={`flex min-h-full flex-col ${styles.rosterPrintRoot}`}>
       <Header
@@ -199,11 +206,6 @@ export function StudentRosterPageContent({
       </Header>
 
       <div className={`flex-1 flex flex-col ${styles.rosterWorkspace}`}>
-        <section className={styles.rosterDecision} aria-labelledby="roster-decision-title">
-          <p>Operational ledger</p>
-          <h2 id="roster-decision-title">Which student record needs attention?</h2>
-          <span>Compare lifecycle, program, contact, tags, and inactivity in one ruled roster instead of opening card after card.</span>
-        </section>
         <StudentRosterNotices
           actionMessage={actionMessage}
           fullRosterRequested={fullRosterRequested}
@@ -271,21 +273,34 @@ export function StudentRosterPageContent({
               onImportCsv={onImportCsv}
             />
           ) : (
-            <StudentRosterTable
-              allSelected={allSelected}
-              canManageRoster={canManageRoster}
-              filtered={filtered}
-              handleSort={onSort}
-              inactivityByStudentId={inactivityByStudentId}
-              inactivityThreshold={inactivityThreshold}
-              onOpenStudent={onOpenStudent}
-              programs={programs}
-              selectedIds={selectedIds}
-              sortDir={sortDir}
-              sortKey={sortKey}
-              toggleSelect={onToggleSelect}
-              toggleSelectAll={onToggleSelectAll}
-            />
+            <div className={styles.rosterWorkbench}>
+              <div className={styles.rosterLedger}>
+                <StudentRosterTable
+                  allSelected={allSelected}
+                  canManageRoster={canManageRoster}
+                  filtered={filtered}
+                  focusedStudentId={focusedRow?.student.id ?? null}
+                  handleSort={onSort}
+                  inactivityByStudentId={inactivityByStudentId}
+                  inactivityThreshold={inactivityThreshold}
+                  onFocusStudent={setFocusedStudentId}
+                  onOpenStudent={onOpenStudent}
+                  programs={programs}
+                  selectedIds={selectedIds}
+                  sortDir={sortDir}
+                  sortKey={sortKey}
+                  toggleSelect={onToggleSelect}
+                  toggleSelectAll={onToggleSelectAll}
+                />
+              </div>
+              {focusedRow ? (
+                <StudentRosterReadingRail
+                  inactivity={inactivityByStudentId.get(focusedRow.student.id) ?? null}
+                  onOpenStudent={onOpenStudent}
+                  row={focusedRow}
+                />
+              ) : null}
+            </div>
           )}
         </div>
 

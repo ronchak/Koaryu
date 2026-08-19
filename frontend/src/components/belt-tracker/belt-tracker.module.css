@@ -6,11 +6,11 @@
   --border: var(--product-rule-soft);
   --text-primary: var(--product-ink);
   --text-secondary: var(--product-soft-ink);
-  --muted: var(--product-soft-ink);
-  --accent: var(--product-cobalt);
+  --muted: var(--product-meta);
+  --accent: var(--product-wood);
   --accent-contrast: var(--product-paper);
-  --success: #386b56;
-  --warning: #80561c;
+  --success: var(--product-affirm);
+  --warning: var(--product-straw);
   --danger: var(--product-vermilion);
   color: var(--product-ink);
   font-size: 0.8125rem;
@@ -30,6 +30,7 @@
   min-height: 44px;
   padding: 0.625rem 0.75rem;
   border-color: var(--product-rule);
+  border-radius: 10px;
   background: var(--product-card-stock);
 }
 
@@ -49,6 +50,8 @@
 .beltDialogRoot :global(.koaryu-modal-panel) {
   max-height: calc(100dvh - 2rem);
   overflow-y: auto;
+  border: 0 !important;
+  border-radius: 18px !important;
   background: var(--product-lifted) !important;
   box-shadow: var(--product-shadow-lifted);
   animation: belt-dialog-open var(--product-motion-open-duration) var(--product-motion-ease) both;
@@ -56,32 +59,27 @@
 
 .beltPage :is(a, button, input, select, textarea, [tabindex]):focus-visible,
 .beltDialogRoot :is(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent) !important;
+  outline: 2px solid var(--product-focus) !important;
   outline-offset: 2px;
 }
+.beltPage button,
+.beltDialogRoot button { min-width: 45px; min-height: 45px; border-radius: 10px; }
+.beltPage label:has(input:is([type="checkbox"], [type="radio"])),
+.beltDialogRoot label:has(input:is([type="checkbox"], [type="radio"])) { display: flex; min-width: 45px; min-height: 45px; }
+.eligibilityTable a { min-height: 45px; align-items: center; }
 
-.beltIntro {
-  display: grid;
-  grid-template-columns: minmax(8rem, 0.26fr) minmax(15rem, 0.7fr) minmax(16rem, 1fr);
-  gap: clamp(1rem, 2vw, 2rem);
-  align-items: center;
-  margin: 0.75rem clamp(1rem, 2.4vw, 2rem) 0;
-  padding: 0.35rem 0 0.75rem;
-  border-bottom: 2px solid var(--text-primary);
-}
-.beltIntro > p { color: var(--accent); font-size: 0.75rem; font-weight: 750; letter-spacing: 0.16em; text-transform: uppercase; }
-.beltIntro h2 { color: var(--text-primary); font-size: clamp(1.25rem, 2vw, 1.75rem); font-weight: 680; letter-spacing: -0.04em; line-height: 1; }
-.beltIntro span { max-width: 58ch; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.45; }
 .beltControls {
   position: sticky;
   top: 70px;
   z-index: 18;
-  min-height: 60px;
+  min-height: 56px;
   margin-top: 0.75rem;
   padding-block: 0.5rem !important;
-  border-top: 1px solid var(--product-rule-soft);
-  background: color-mix(in srgb, var(--product-paper) 96%, transparent);
-  box-shadow: 0 6px 14px rgb(48 39 25 / 5%);
+  border: 0 !important;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--product-paper) 90%, transparent);
+  box-shadow: var(--product-shadow-card);
+  backdrop-filter: blur(16px);
 }
 .beltProgramLockNotice {
   margin: 0;
@@ -93,23 +91,40 @@
   line-height: 1.4;
 }
 .eligibilityWorkspace { padding: 0 clamp(1rem, 2.4vw, 2rem) 2rem; }
-.eligibilityTable { width: 100%; border-collapse: collapse; border-top: 2px solid var(--text-primary); background: var(--product-paper); font-size: 0.8125rem; }
-.eligibilityTable thead { position: sticky; top: 158px; z-index: 12; background: var(--product-card-stock); }
-.eligibilityTable tbody tr[data-readiness] { box-shadow: inset 3px 0 0 var(--border); }
-.eligibilityTable tbody tr[data-readiness="ready"] { box-shadow: inset 3px 0 0 var(--success); }
-.eligibilityTable tbody tr[data-readiness="approval"] { box-shadow: inset 3px 0 0 var(--warning); }
+.decisionRegister { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
+.decisionRegister > div { display: flex; min-height: 3rem; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 10px; background: var(--product-sunk); }
+.decisionRegister > div[data-readiness="ready"] { background: color-mix(in srgb, var(--product-paper) 88%, var(--success) 12%); }
+.decisionRegister > div[data-readiness="approval"] { background: color-mix(in srgb, var(--product-paper) 88%, var(--warning) 12%); }
+.decisionRegister span { color: var(--text-secondary); font-size: 0.75rem; font-weight: 600; letter-spacing: 0; }
+.decisionRegister strong { color: var(--text-primary); font-family: var(--font-mono); font-size: 1.15rem; font-weight: 550; }
+.eligibilityTable { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 0.75rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); clip-path: inset(0 round 14px); font-size: 0.8125rem; }
+.eligibilityTable thead { position: static; background: var(--product-card-stock); }
+.eligibilityTable thead th { position: sticky; top: 158px; z-index: 12; background: var(--product-card-stock); }
+.eligibilityTable tbody th,
+.eligibilityTable tbody td { border-bottom: 1px solid var(--border); }
+.eligibilityTable tbody tr[data-readiness] > th,
+.eligibilityTable tbody tr[data-readiness] > td { padding-block: 5px !important; }
+.eligibilityTable tbody tr:last-child > * { border-bottom: 0; }
+.eligibilityTable td[data-label="Actions"] > div { flex-wrap: nowrap; }
+.eligibilityTable tbody tr[data-readiness="ready"] { background: color-mix(in srgb, var(--product-paper) 96%, var(--success) 4%); }
+.eligibilityTable tbody tr[data-readiness="approval"] { background: color-mix(in srgb, var(--product-paper) 95%, var(--warning) 5%); }
 .rankGroupHeader { border-bottom: 1px solid var(--border); background: var(--product-card-stock); }
 
 .rankPlanWorkspace { padding: clamp(1rem, 2.4vw, 2rem); }
 .rankPlan { max-width: 58rem; }
-.rankRail { position: relative; display: grid; gap: 0; border-top: 2px solid var(--text-primary); }
-.rankRail::before { position: absolute; top: 0; bottom: 0; left: 2.8rem; width: 1px; background: var(--border); content: ""; }
-.rankGroup { position: relative; margin: 0; border-width: 0 0 1px; border-radius: 0; background: var(--product-paper); }
-.rankOrdinal { display: grid; width: 1.9rem; height: 1.9rem; flex: none; place-items: center; border: 1px solid var(--border); background: var(--product-card-stock); color: var(--muted); font-family: monospace; font-size: 0.75rem; }
+.rankRail { position: relative; display: grid; gap: 0.75rem; }
+.rankGroup { position: relative; margin: 0; overflow: hidden; border: 0 !important; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
+.rankGroup[data-drop-target="true"] { outline: 2px solid var(--product-focus); outline-offset: 2px; background: color-mix(in srgb, var(--product-paper) 94%, var(--product-focus) 6%); }
+.rankCollapseButton { display: grid; width: 2.75rem; height: 2.75rem; flex: none; place-items: center; color: var(--muted); cursor: pointer; transition: color var(--product-motion-change-duration) var(--product-motion-ease), background-color var(--product-motion-change-duration) var(--product-motion-ease); }
+.rankCollapseButton:hover { background: var(--product-card-stock); color: var(--text-secondary); }
 .rankIdentity { display: flex; min-width: 0; flex: 1; align-items: center; gap: 0.75rem; }
 .rankActions button { min-width: 2.75rem; min-height: 2.75rem; }
 .tipIdentity { display: flex; min-width: 0; flex: 1; align-items: center; gap: 0.65rem; }
 .tipRequirements { white-space: nowrap; }
+.rankHeader,
+.tipRow { min-height: 56px; padding-block: 5px !important; }
+.rankPlan [data-belt-drag-handle],
+.rankPlan [data-tip-drag-handle] { width: 45px; height: 45px; border-radius: 10px; }
 
 .eligibilityWorkspace,
 .rankPlanWorkspace {
@@ -120,20 +135,21 @@
   display: grid;
   min-height: 18rem;
   place-items: center;
-  border-top: 2px solid var(--text-primary);
-  border-bottom: 1px solid var(--border);
+  border-radius: 14px;
   background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
   text-align: center;
 }
 
-.panelStateInner { max-width: 32rem; padding: 2rem; }
+.panelStateInner { max-width: 32rem; padding: 1rem; }
 
 .eligibilitySkeleton {
   display: grid;
   gap: 1px;
-  border-top: 2px solid var(--text-primary);
-  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  border-radius: 14px;
   background: var(--border);
+  box-shadow: var(--product-shadow-card);
 }
 
 .eligibilitySkeletonRow {
@@ -147,11 +163,11 @@
 }
 
 .eligibilitySkeletonRow:first-child { background: var(--product-card-stock); }
-.eligibilitySkeletonBar { height: 0.75rem; background: var(--product-card-stock); animation: belt-state-change var(--product-motion-change-duration) var(--product-motion-ease) both; }
+.eligibilitySkeletonBar { height: 0.75rem; border-radius: 6px; background: var(--product-card-stock); animation: belt-state-change var(--product-motion-change-duration) var(--product-motion-ease) both; }
 
 @keyframes belt-workspace-settle {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.92; }
+  to { opacity: 1; }
 }
 
 @keyframes belt-dialog-open {
@@ -166,14 +182,14 @@
 
 @media (max-width: 1023px) {
   .beltControls { position: static; }
-  .eligibilityTable thead { position: static; }
+  .eligibilityTable thead th { position: static; }
 }
 
 @media (max-width: 820px) {
-  .beltIntro { grid-template-columns: 1fr; gap: 0.6rem; }
   .beltControls { position: static; align-items: stretch; flex-direction: column; }
   .beltControls > div:last-child { width: 100%; margin-left: 0; }
   .eligibilityWorkspace { padding: 0 0.85rem 1rem; }
+  .decisionRegister { margin-top: 0.75rem; }
   .eligibilityTable,
   .eligibilityTable tbody,
   .eligibilityTable tr,
@@ -182,25 +198,48 @@
   .eligibilityTable thead { display: none; }
   .eligibilityTable tbody { display: grid; gap: 0.75rem; }
   .eligibilityTable .rankGroupHeader { padding: 0; border: 0; box-shadow: none; }
-  .eligibilityTable .rankGroupHeader td { padding: 0.75rem; border: 1px solid var(--border); }
-  .eligibilityTable tr[data-readiness] { padding: 0.65rem 0.85rem; border: 1px solid var(--border); background: var(--product-paper); }
+  .eligibilityTable { overflow: visible; border-radius: 14px; background: transparent; box-shadow: none; }
+  .eligibilityTable .rankGroupHeader td { padding: 0.75rem; border-radius: 10px; background: var(--product-card-stock); }
+  .eligibilityTable tr[data-readiness] { overflow: hidden; padding: 0.65rem 0.85rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
   .eligibilityTable tr[data-readiness] th,
   .eligibilityTable tr[data-readiness] td { display: grid; grid-template-columns: minmax(6.4rem, 0.38fr) minmax(0, 1fr); gap: 0.75rem; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
   .eligibilityTable tr[data-readiness] td:last-child { border-bottom: 0; }
   .eligibilityTable tr[data-readiness] th::before,
-  .eligibilityTable tr[data-readiness] td::before { content: attr(data-label); color: var(--muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .eligibilityTable tr[data-readiness] td::before { content: attr(data-label); color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0; }
   .rankPlanWorkspace { padding: 0.85rem; }
   .eligibilitySkeletonRow { grid-template-columns: 1fr 1fr; }
   .eligibilitySkeletonRow > :nth-child(n + 5) { display: none; }
 }
 
+@media print {
+  :global([data-koaryu-dashboard-shell="true"]),
+  :global(#main-content),
+  .beltPage { background: #fff !important; color: #000 !important; }
+  :global([data-koaryu-dashboard-shell="true"] > aside),
+  :global([data-koaryu-dashboard-shell="true"] > [class*="mobileSpine"]) { display: none !important; }
+  :global(#main-content) { width: 100% !important; min-height: 0 !important; margin-left: 0 !important; overflow: visible !important; transition: none !important; }
+  .beltPage > header,
+  .beltControls,
+  .beltProgramLockNotice,
+  .rankActions,
+  .rankCollapseButton,
+  .beltPage :global([role="dialog"]) { display: none !important; }
+  .eligibilityWorkspace,
+  .rankPlanWorkspace { padding: 0; }
+  .eligibilityTable thead th { position: static; }
+  .eligibilityTable tr,
+  .rankGroup { break-inside: avoid; }
+  .decisionRegister,
+  .eligibilityTable,
+  .rankGroup,
+  .panelState { border-radius: initial; box-shadow: none; }
+}
+
 @media (max-width: 420px) {
-  .beltIntro { margin-inline: 0.85rem; }
   .eligibilityTable tr[data-readiness] th,
   .eligibilityTable tr[data-readiness] td { grid-template-columns: minmax(5.4rem, 0.36fr) minmax(0, 1fr); }
-  .rankRail::before { display: none; }
-  .rankHeader { display: grid; grid-template-columns: 2rem 2.75rem 2.75rem minmax(0, 1fr); gap: 0.35rem; padding-inline: 0.5rem; }
-  .rankIdentity { grid-column: 4; align-items: flex-start; flex-direction: column; gap: 0.3rem; }
+  .rankHeader { display: grid; grid-template-columns: 2.75rem 2.75rem minmax(0, 1fr); gap: 0.35rem; padding-inline: 0.5rem; }
+  .rankIdentity { grid-column: 3; align-items: flex-start; flex-direction: column; gap: 0.3rem; }
   .rankActions { width: 100%; justify-content: flex-end; }
   .rankHeader > .rankActions { grid-column: 1 / -1; }
   .tipRow { display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: center; }

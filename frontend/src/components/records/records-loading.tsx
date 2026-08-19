@@ -114,7 +114,7 @@ function BeltLoading() {
         </div>
         <div className={styles.rankRail}>
           {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className={styles.rankStop}><span>{String(index + 1).padStart(2, "0")}</span><SkeletonBar short /></div>
+            <div key={index} className={styles.rankStop}><SkeletonBar short /></div>
           ))}
         </div>
       </div>

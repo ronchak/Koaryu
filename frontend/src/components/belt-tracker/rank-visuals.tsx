@@ -33,7 +33,7 @@ export function RankBadge({ name, color, isTip, tipColor }: {
   if (isTip && tipColor) {
     return (
       <span
-        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-xs font-medium ${textColor} ${border}`}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[10px] text-xs font-medium ${textColor} ${border}`}
         style={{ backgroundColor: bg }}
       >
         <span
@@ -48,7 +48,7 @@ export function RankBadge({ name, color, isTip, tipColor }: {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] text-xs font-medium ${textColor} ${border}`}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[10px] text-xs font-medium ${textColor} ${border}`}
       style={{ backgroundColor: bg }}
     >
       <span className="w-2 h-2 rounded-full border border-white/30" style={{ backgroundColor: color }} />
@@ -62,7 +62,7 @@ export function BeltVisual({ rank, size = "md" }: { rank: BeltRank; size?: "sm" 
   const dims = size === "sm" ? "w-7 h-3" : "w-10 h-4";
   return (
     <div
-      className={`relative ${dims} rounded-[2px] overflow-hidden flex-shrink-0`}
+      className={`relative ${dims} rounded-[6px] overflow-hidden flex-shrink-0`}
       style={{
         backgroundColor: rank.color_hex,
         border: isWhite ? "1px solid var(--border)" : "none",

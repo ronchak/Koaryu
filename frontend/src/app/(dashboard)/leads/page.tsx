@@ -2,7 +2,7 @@
 
 import { Header } from "@/components/header";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
-import { LeadDetailModal } from "@/components/leads/lead-detail-modal";
+import { LeadDetailInspector } from "@/components/leads/lead-detail-modal";
 import {
   LeadLedgerLoadError,
   LeadLedgerLoading,
@@ -98,28 +98,61 @@ export default function LeadsPage() {
       )}
 
       <div className="flex-1 flex flex-col overflow-x-hidden">
-        {leadsLoadError ? (
-          <LeadLedgerLoadError
-            error={leadsLoadError}
-            onRetry={() => void refreshLeads().catch(() => undefined)}
-          />
-        ) : !leadsLoaded ? (
-          <LeadLedgerLoading />
-        ) : (
-          <LeadPipelineBoard
-            canConvertLeads={controller.canConvertLeads}
-            canManageLeads={controller.canManageLeads}
-            leads={controller.model.obligationLedgerLeads}
-            pendingLeadId={controller.pendingLeadId}
-            programById={programById}
-            staffById={staffById}
-            today={today}
-            onAddLead={controller.openAddLeadModal}
-            onKeyboardMoveLead={controller.handleKeyboardMoveLead}
-            onSelectLead={controller.selectLead}
-            onStageSelection={controller.handleStageSelection}
-          />
-        )}
+        <div className={styles.leadWorkbench} data-inspector-open={Boolean(selectedLead)}>
+          {leadsLoadError ? (
+            <LeadLedgerLoadError
+              error={leadsLoadError}
+              onRetry={() => void refreshLeads().catch(() => undefined)}
+            />
+          ) : !leadsLoaded ? (
+            <LeadLedgerLoading />
+          ) : (
+            <LeadPipelineBoard
+              canConvertLeads={controller.canConvertLeads}
+              canManageLeads={controller.canManageLeads}
+              leads={controller.model.obligationLedgerLeads}
+              pendingLeadId={controller.pendingLeadId}
+              programById={programById}
+              selectedLeadId={selectedLead?.id ?? null}
+              staffById={staffById}
+              today={today}
+              onAddLead={controller.openAddLeadModal}
+              onKeyboardMoveLead={controller.handleKeyboardMoveLead}
+              onSelectLead={controller.selectLead}
+            />
+          )}
+
+          {selectedLead && (
+            <LeadDetailInspector
+              key={selectedLead.id}
+              activities={controller.selectedLeadActivities}
+              activityError={controller.selectedLeadActivityError}
+              activityStatus={controller.selectedLeadActivityStatus}
+              activeStaff={activeStaff}
+              currentAssignedStaff={currentAssignedStaff}
+              canConvertLeads={controller.canConvertLeads}
+              canManageLeads={controller.canManageLeads}
+              followUpValue={controller.getFollowUpInputValue(selectedLead)}
+              lead={selectedLead}
+              leadActionError={controller.leadActionError}
+              leadActionMessage={controller.actionMessage}
+              pendingLeadId={controller.pendingLeadId}
+              programById={programById}
+              today={today}
+              onAssignStaff={controller.handleAssignedStaff}
+              onClose={controller.clearSelectedLead}
+              onConvertLead={controller.handleConvertLead}
+              onDismissError={controller.dismissLeadActionError}
+              onDismissMessage={controller.dismissActionMessage}
+              onFollowUpValueChange={controller.setFollowUpInputValue}
+              onMarkContacted={controller.handleMarkContacted}
+              onMarkLost={controller.handleMarkLost}
+              onRetryActivities={controller.retrySelectedLeadActivities}
+              onRescheduleLead={controller.handleRescheduleLead}
+              onStageSelection={controller.handleStageSelection}
+            />
+          )}
+        </div>
 
         {controller.showLost && (
           <LostLeadsSection
@@ -129,37 +162,6 @@ export default function LeadsPage() {
           />
         )}
       </div>
-
-      {selectedLead && (
-        <LeadDetailModal
-          key={selectedLead.id}
-          activities={controller.selectedLeadActivities}
-          activityError={controller.selectedLeadActivityError}
-          activityStatus={controller.selectedLeadActivityStatus}
-          activeStaff={activeStaff}
-          currentAssignedStaff={currentAssignedStaff}
-          canConvertLeads={controller.canConvertLeads}
-          canManageLeads={controller.canManageLeads}
-          followUpValue={controller.getFollowUpInputValue(selectedLead)}
-          lead={selectedLead}
-          leadActionError={controller.leadActionError}
-          leadActionMessage={controller.actionMessage}
-          pendingLeadId={controller.pendingLeadId}
-          programById={programById}
-          today={today}
-          onAssignStaff={controller.handleAssignedStaff}
-          onClose={controller.clearSelectedLead}
-          onConvertLead={controller.handleConvertLead}
-          onDismissError={controller.dismissLeadActionError}
-          onDismissMessage={controller.dismissActionMessage}
-          onFollowUpValueChange={controller.setFollowUpInputValue}
-          onMarkContacted={controller.handleMarkContacted}
-          onMarkLost={controller.handleMarkLost}
-          onRetryActivities={controller.retrySelectedLeadActivities}
-          onRescheduleLead={controller.handleRescheduleLead}
-          onStageSelection={controller.handleStageSelection}
-        />
-      )}
 
       {controller.canManageLeads && controller.showAddLead && (
         <AddLeadModal

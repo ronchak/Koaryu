@@ -2,8 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Award,
+  BarChart3,
+  Calendar,
+  CreditCard,
+  LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  UserPlus,
+  Users,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { AccountMenu } from "@/components/account-menu";
+import type { NavigationPlacement } from "@/components/theme-provider";
 import { Logo } from "./logo";
 import { NAV_ITEMS } from "@/lib/constants";
 import styles from "./dashboard-shell.module.css";
@@ -15,6 +29,7 @@ interface SidebarProps {
   role?: string | null;
   onSignOut?: () => void;
   isSigningOut?: boolean;
+  placement?: NavigationPlacement;
   isCollapsed?: boolean;
   onToggleCollapsed?: () => void;
 }
@@ -23,21 +38,33 @@ function isActiveRoute(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+const NAV_ICONS: Record<string, LucideIcon> = {
+  Award,
+  BarChart3,
+  Calendar,
+  CreditCard,
+  LayoutDashboard,
+  Settings,
+  UserPlus,
+  Users,
+  Zap,
+};
+
 function NavigationLinks({ pathname }: { pathname: string }) {
-  return NAV_ITEMS.map((item, index) => {
+  return NAV_ITEMS.map((item) => {
     const isActive = isActiveRoute(pathname, item.href);
+    const Icon = NAV_ICONS[item.icon] ?? LayoutDashboard;
     return (
       <li key={item.href}>
         <Link
           href={item.href}
           prefetch={item.prefetch}
           aria-current={isActive ? "page" : undefined}
-          aria-label={`${String(index + 1).padStart(2, "0")} ${item.label}`}
+          aria-label={item.label}
+          title={item.label}
           className={styles.navLink}
         >
-          <span className={styles.navIndex} aria-hidden="true">
-            {String(index + 1).padStart(2, "0")}
-          </span>
+          <Icon className={styles.navIcon} aria-hidden="true" size={17} strokeWidth={1.8} />
           <span className={styles.navLabel}>{item.label}</span>
         </Link>
       </li>
@@ -52,6 +79,7 @@ export function Sidebar({
   role,
   onSignOut,
   isSigningOut = false,
+  placement = "side",
   isCollapsed = false,
   onToggleCollapsed,
 }: SidebarProps) {
@@ -79,61 +107,86 @@ export function Sidebar({
           />
         </div>
         <nav aria-label="Product navigation">
-          <ol className={styles.mobileNav}>
+          <ul className={styles.mobileNav}>
             <NavigationLinks pathname={pathname} />
-          </ol>
+          </ul>
         </nav>
       </div>
 
-      <aside className={styles.spine} data-collapsed={isCollapsed ? "true" : "false"}>
-        <div className={styles.brandBand}>
-          <Link href="/" aria-label="Go to Koaryu homepage" className={styles.brandLink}>
-            <Logo size="md" showText={!isCollapsed} />
+      {placement === "top" ? (
+        <header className={styles.commandBar}>
+          <Link href="/" aria-label="Go to Koaryu homepage" className={styles.commandBrand}>
+            <Logo size="sm" />
           </Link>
-          {onToggleCollapsed ? (
-            <button
-              type="button"
-              onClick={onToggleCollapsed}
-              aria-label={toggleLabel}
-              aria-expanded={!isCollapsed}
-              title={toggleLabel}
-              className={styles.spineToggle}
-            >
-              <ToggleIcon aria-hidden="true" size={18} />
-            </button>
-          ) : null}
-        </div>
-        <nav className={styles.spineNav} aria-label="Product navigation">
-          <ol className={styles.spineList}>
-            {isCollapsed && onToggleCollapsed ? (
-              <li>
-                <button
-                  type="button"
-                  onClick={onToggleCollapsed}
-                  aria-label={toggleLabel}
-                  aria-expanded={false}
-                  title={toggleLabel}
-                  className={styles.spineToggle}
-                >
-                  <ToggleIcon aria-hidden="true" size={18} />
-                </button>
-              </li>
+          <nav className={styles.commandNav} aria-label="Product navigation">
+            <ul className={styles.commandList}>
+              <NavigationLinks pathname={pathname} />
+            </ul>
+          </nav>
+          <div className={styles.commandAccount}>
+            <AccountMenu
+              userEmail={userEmail}
+              userName={displayName}
+              studioName={studioName}
+              role={role}
+              onSignOut={onSignOut}
+              isSigningOut={isSigningOut}
+              compact
+              collapsed
+            />
+          </div>
+        </header>
+      ) : (
+        <aside className={styles.spine} data-collapsed={isCollapsed ? "true" : "false"}>
+          <div className={styles.brandBand}>
+            <Link href="/" aria-label="Go to Koaryu homepage" className={styles.brandLink}>
+              <Logo size="md" showText={!isCollapsed} />
+            </Link>
+            {onToggleCollapsed ? (
+              <button
+                type="button"
+                onClick={onToggleCollapsed}
+                aria-label={toggleLabel}
+                aria-expanded={!isCollapsed}
+                title={toggleLabel}
+                className={styles.spineToggle}
+              >
+                <ToggleIcon aria-hidden="true" size={18} />
+              </button>
             ) : null}
-            <NavigationLinks pathname={pathname} />
-          </ol>
-        </nav>
-        <div className={styles.accountBand}>
-          <AccountMenu
-            userEmail={userEmail}
-            userName={displayName}
-            studioName={studioName}
-            role={role}
-            onSignOut={onSignOut}
-            isSigningOut={isSigningOut}
-            collapsed={isCollapsed}
-          />
-        </div>
-      </aside>
+          </div>
+          <nav className={styles.spineNav} aria-label="Product navigation">
+            <ul className={styles.spineList}>
+              {isCollapsed && onToggleCollapsed ? (
+                <li>
+                  <button
+                    type="button"
+                    onClick={onToggleCollapsed}
+                    aria-label={toggleLabel}
+                    aria-expanded={false}
+                    title={toggleLabel}
+                    className={styles.spineToggle}
+                  >
+                    <ToggleIcon aria-hidden="true" size={18} />
+                  </button>
+                </li>
+              ) : null}
+              <NavigationLinks pathname={pathname} />
+            </ul>
+          </nav>
+          <div className={styles.accountBand}>
+            <AccountMenu
+              userEmail={userEmail}
+              userName={displayName}
+              studioName={studioName}
+              role={role}
+              onSignOut={onSignOut}
+              isSigningOut={isSigningOut}
+              collapsed={isCollapsed}
+            />
+          </div>
+        </aside>
+      )}
     </>
   );
 }

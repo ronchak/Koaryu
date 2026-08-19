@@ -5,7 +5,6 @@ export default function Loading() {
     <OperationsLoading
       page="reports"
       title="Reports"
-      description="Loading studio reporting panels and export controls."
     />
   );
 }

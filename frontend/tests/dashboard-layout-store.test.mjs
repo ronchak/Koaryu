@@ -3,12 +3,17 @@ import { describe, it } from "node:test";
 
 import {
   DASHBOARD_LAYOUT_NAMESPACE,
+  DASHBOARD_LAYOUT_MAX_ROWS,
   DASHBOARD_LAYOUT_VERSION,
   buildDashboardLayoutKey,
   buildDefaultDashboardLayout,
+  getDashboardWidgetFootprint,
+  moveDashboardLayoutItem,
+  packDashboardLayoutItems,
   purgeDashboardLayoutNamespace,
   readDashboardLayout,
   reconcileDashboardLayout,
+  resizeDashboardLayoutItem,
   writeDashboardLayout,
 } from "../src/lib/dashboard-layout-store.ts";
 
@@ -23,6 +28,22 @@ class MemoryStorage {
 
 const adminIdentity = { userId: "user/1", studioId: "studio:1", role: "admin" };
 
+function assertCollisionFree(items, columns = 4) {
+  const occupied = new Set();
+  for (const item of items) {
+    const footprint = getDashboardWidgetFootprint(item.size);
+    assert.ok(item.column >= 0 && item.column + footprint.columns <= columns, item.widget_id);
+    assert.ok(item.row >= 0, item.widget_id);
+    for (let row = item.row; row < item.row + footprint.rows; row += 1) {
+      for (let column = item.column; column < item.column + footprint.columns; column += 1) {
+        const cell = `${column}:${row}`;
+        assert.ok(!occupied.has(cell), `${item.widget_id} overlaps at ${cell}`);
+        occupied.add(cell);
+      }
+    }
+  }
+}
+
 describe("dashboard layout storage", () => {
   it("builds isolated, guarded keys for user, studio, and role", () => {
     const key = buildDashboardLayoutKey(adminIdentity.userId, adminIdentity.studioId, adminIdentity.role);
@@ -34,9 +55,9 @@ describe("dashboard layout storage", () => {
     assert.equal(buildDashboardLayoutKey("user", "studio", "unknown"), null);
   });
 
-  it("reconciles unknown, duplicate, fixed, sizes, defaults, removals, and version fallback", () => {
+  it("migrates v1 order, metadata, removals, and legacy sizes into collision-free v2 geometry", () => {
     const reconciled = reconcileDashboardLayout({
-      version: DASHBOARD_LAYOUT_VERSION,
+      version: 1,
       updated_at: "saved",
       client_id: "client-a",
       items: [
@@ -44,19 +65,23 @@ describe("dashboard layout storage", () => {
         { widget_id: "student_pulse", size: "1x1" },
         { widget_id: "unknown", size: "1x1" },
         { widget_id: "billing_exceptions", size: "2x1" },
+        { widget_id: "quick_actions", size: "4x1" },
+        { widget_id: "recent_students", size: "4x2" },
       ],
       removed_widget_ids: ["classes_today"],
     }, "admin");
 
     assert.equal(reconciled.items[0].widget_id, "needs_attention");
     assert.equal(reconciled.items[0].size, "2x2");
-    assert.deepEqual(reconciled.items.find((item) => item.widget_id === "student_pulse"), {
-      widget_id: "student_pulse",
-      size: "1x1",
-    });
+    assert.equal(reconciled.version, DASHBOARD_LAYOUT_VERSION);
+    assert.equal(reconciled.updated_at, "saved");
+    assert.equal(reconciled.client_id, "client-a");
+    assert.equal(reconciled.items.find((item) => item.widget_id === "student_pulse")?.size, "1x1");
     assert.equal(reconciled.items.filter((item) => item.widget_id === "student_pulse").length, 1);
     assert.ok(!reconciled.items.some((item) => item.widget_id === "classes_today"));
-    assert.ok(reconciled.items.some((item) => item.widget_id === "quick_actions"));
+    assert.equal(reconciled.items.find((item) => item.widget_id === "quick_actions")?.size, "2x1");
+    assert.equal(reconciled.items.find((item) => item.widget_id === "recent_students")?.size, "2x2");
+    assertCollisionFree(reconciled.items);
 
     assert.deepEqual(
       reconcileDashboardLayout({ version: 999, items: [] }, "admin"),
@@ -79,6 +104,82 @@ describe("dashboard layout storage", () => {
       assert.ok(!ids.includes("billing_exceptions"));
       assert.ok(!ids.includes("revenue_due"));
     }
+  });
+
+  it("repairs overlapping and out-of-bounds v2 coordinates without privilege gain", () => {
+    const reconciled = reconcileDashboardLayout({
+      version: DASHBOARD_LAYOUT_VERSION,
+      items: [
+        { widget_id: "needs_attention", size: "1x1", column: 3, row: 9 },
+        { widget_id: "classes_today", size: "2x2", column: 0, row: 0 },
+        { widget_id: "student_pulse", size: "1x1", column: 99, row: -1 },
+        { widget_id: "billing_exceptions", size: "2x1", column: 2, row: 0 },
+        { widget_id: "billing_exceptions", size: "1x1", column: 1, row: 1 },
+        { widget_id: "unknown", size: "1x1", column: 0, row: 0 },
+      ],
+    }, "instructor");
+    assert.deepEqual(reconciled.items[0], {
+      widget_id: "needs_attention",
+      size: "2x2",
+      column: 0,
+      row: 0,
+    });
+    assert.ok(!reconciled.items.some((item) => item.widget_id === "billing_exceptions"));
+    assertCollisionFree(reconciled.items);
+  });
+
+  it("repacks unreasonable stored rows and clamps direct moves to the finite catalog grid", () => {
+    const reconciled = reconcileDashboardLayout({
+      version: DASHBOARD_LAYOUT_VERSION,
+      items: [
+        { widget_id: "needs_attention", size: "2x2", column: 0, row: 0 },
+        { widget_id: "student_pulse", size: "1x1", column: 3, row: 256 },
+      ],
+    }, "admin");
+    const repaired = reconciled.items.find((item) => item.widget_id === "student_pulse");
+    assert.ok(repaired.row < DASHBOARD_LAYOUT_MAX_ROWS);
+    assertCollisionFree(reconciled.items);
+
+    const moved = moveDashboardLayoutItem(reconciled.items, "student_pulse", 3, 256);
+    const clamped = moved.find((item) => item.widget_id === "student_pulse");
+    assert.equal(clamped.row, DASHBOARD_LAYOUT_MAX_ROWS - 1);
+    assertCollisionFree(moved);
+  });
+
+  it("packs defaults deterministically and exposes every footprint", () => {
+    assert.deepEqual(getDashboardWidgetFootprint("1x1"), { columns: 1, rows: 1 });
+    assert.deepEqual(getDashboardWidgetFootprint("2x1"), { columns: 2, rows: 1 });
+    assert.deepEqual(getDashboardWidgetFootprint("1x2"), { columns: 1, rows: 2 });
+    assert.deepEqual(getDashboardWidgetFootprint("2x2"), { columns: 2, rows: 2 });
+    const first = buildDefaultDashboardLayout("admin");
+    const second = buildDefaultDashboardLayout("admin");
+    assert.deepEqual(first, second);
+    assert.deepEqual(first.items.slice(0, 2), [
+      { widget_id: "needs_attention", size: "2x2", column: 0, row: 0 },
+      { widget_id: "classes_today", size: "2x2", column: 2, row: 0 },
+    ]);
+    assertCollisionFree(first.items);
+  });
+
+  it("moves into occupied space and resizes through 1x2 with deterministic reflow", () => {
+    const initial = packDashboardLayoutItems([
+      { widget_id: "needs_attention", size: "2x2" },
+      { widget_id: "classes_today", size: "2x1" },
+      { widget_id: "lead_follow_ups", size: "1x1" },
+      { widget_id: "quick_actions", size: "1x1" },
+    ], 4, false);
+    const moved = moveDashboardLayoutItem(initial, "lead_follow_ups", 2, 0);
+    assert.equal(moved.find((item) => item.widget_id === "lead_follow_ups")?.column, 2);
+    assert.equal(moved.find((item) => item.widget_id === "lead_follow_ups")?.row, 0);
+    assert.notDeepEqual(moved.find((item) => item.widget_id === "classes_today"), initial[1]);
+    assertCollisionFree(moved);
+
+    const tall = resizeDashboardLayoutItem(moved, "lead_follow_ups", "1x2");
+    assert.equal(tall.find((item) => item.widget_id === "lead_follow_ups")?.size, "1x2");
+    assertCollisionFree(tall);
+    const wide = resizeDashboardLayoutItem(tall, "lead_follow_ups", "2x1");
+    assert.equal(wide.find((item) => item.widget_id === "lead_follow_ups")?.size, "2x1");
+    assertCollisionFree(wide);
   });
 
   it("reads malformed and unavailable storage as a safe default", () => {

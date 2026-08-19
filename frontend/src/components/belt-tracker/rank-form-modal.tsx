@@ -56,7 +56,7 @@ function ColorPicker({ label, value, onChange, onPresetSelect }: {
               onChange(c.hex);
               onPresetSelect?.(c);
             }}
-            className="w-7 h-7 rounded-[4px] transition-transform hover:scale-110 flex-shrink-0"
+            className="h-11 w-11 flex-shrink-0 rounded-[10px] transition-colors"
             style={{
               backgroundColor: c.hex,
               border: value === c.hex ? "2px solid var(--accent)" : "1px solid var(--border)",
@@ -67,7 +67,7 @@ function ColorPicker({ label, value, onChange, onPresetSelect }: {
         ))}
       </div>
       <div className="flex items-center gap-2">
-        <div className="w-6 h-6 rounded-[3px] border border-border flex-shrink-0" style={{ backgroundColor: value }} />
+        <div className="w-6 h-6 rounded-[8px] border border-border flex-shrink-0" style={{ backgroundColor: value }} />
         <input
           id={inputId}
           type="text"
@@ -80,7 +80,7 @@ function ColorPicker({ label, value, onChange, onPresetSelect }: {
           }}
           maxLength={7}
           placeholder="#FFFFFF"
-          className="flex-1 px-2 py-1 text-xs bg-surface-raised border border-border rounded-[4px] text-text-primary font-mono focus:border-accent focus:outline-none"
+          className="flex-1 px-2 py-1 text-xs bg-surface-raised border border-border rounded-[10px] text-text-primary font-mono focus:border-accent focus:outline-none"
         />
       </div>
     </div>
@@ -116,7 +116,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
   return (
     <ModalFrame
       rootClassName={`p-4 ${styles.beltDialogRoot}`}
-      panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-sm p-6 overflow-y-auto max-h-[90vh]"
+      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 overflow-y-auto max-h-[90vh] shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="rank-form-title"
       onBackdropClick={onClose}
     >
@@ -140,7 +140,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
             }}
             placeholder={form.is_tip ? `e.g. 1 ${subRankTerm}, 2 ${subRankTerm}s` : "e.g. Blue Belt"}
             required
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
         </div>
 
@@ -153,7 +153,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
                   key={String(val)}
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, is_tip: val }))}
-                  className={`flex-1 py-1.5 text-xs rounded-[6px] border transition-colors cursor-pointer ${
+                  className={`flex-1 py-1.5 text-xs rounded-[14px] border transition-colors cursor-pointer ${
                     form.is_tip === val
                       ? "border-accent text-accent bg-accent/10 font-medium"
                       : "border-border text-text-secondary hover:border-text-secondary"
@@ -200,7 +200,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
           />
         )}
 
-        <div className="flex items-center gap-3 p-3 bg-surface-raised rounded-[6px] border border-border">
+        <div className="flex items-center gap-3 p-3 bg-surface-raised rounded-[14px] border border-border">
           <BeltVisual
             rank={{
               ...form,
@@ -229,7 +229,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
               min={0}
               value={form.min_classes}
               onChange={(e) => setForm((f) => ({ ...f, min_classes: Number(e.target.value) }))}
-              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
           <div>
@@ -240,7 +240,7 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
               min={0}
               value={form.min_months}
               onChange={(e) => setForm((f) => ({ ...f, min_months: Number(e.target.value) }))}
-              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
         </div>

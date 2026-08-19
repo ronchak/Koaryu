@@ -8,20 +8,20 @@
 }
 
 .root[data-state="open"] {
-  animation: menuOpen var(--motion-medium) var(--ease-emphasized) both;
+  animation: menuOpen var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
 }
 
 .root[data-state="closed"] {
-  animation: menuClose var(--motion-slow) var(--ease-standard) both;
+  animation: menuClose var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
   pointer-events: none;
 }
 
 .submenuPanel {
-  animation: submenuOpen var(--motion-medium) var(--ease-emphasized) both;
+  animation: submenuOpen var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
 }
 
 .submenuContent {
-  animation: submenuContentOpen var(--motion-medium) var(--ease-emphasized) both;
+  animation: submenuContentOpen var(--product-motion-open-duration, 180ms) var(--product-motion-ease, ease-out) both;
 }
 
 @keyframes menuOpen {
@@ -73,5 +73,11 @@
   .submenuPanel,
   .submenuContent {
     animation: none !important;
+  }
+
+  .root[data-state="closed"] {
+    display: none;
+    visibility: hidden;
+    opacity: 0;
   }
 }

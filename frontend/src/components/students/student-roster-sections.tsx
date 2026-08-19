@@ -31,10 +31,10 @@ export function StudentRosterLoading() {
     <div className="grid gap-px bg-border">
       {Array.from({ length: 7 }).map((_, index) => (
         <div key={index} className="grid gap-3 bg-surface px-4 py-4 sm:grid-cols-[2fr_1fr_1fr_1fr]">
-          <div className="h-4 w-44 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-24 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-28 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-20 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-44 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-24 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-28 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-20 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
         </div>
       ))}
     </div>
@@ -45,22 +45,22 @@ export function StudentFormLoading() {
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="w-full max-w-[560px] rounded-[6px] border border-border bg-surface shadow-2xl"
+      panelClassName="w-full max-w-[560px] rounded-[18px] bg-surface shadow-[var(--product-shadow-lifted)]"
       ariaLabel="Loading student form"
     >
       <div className="border-b border-border px-6 py-4">
-        <div className="h-4 w-28 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-4 w-28 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
       </div>
       <div className="border-b border-border px-6 py-3">
-        <div className="h-3 w-52 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-3 w-52 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
       </div>
       <div className="space-y-4 px-6 py-5">
         <div className="grid grid-cols-2 gap-3">
-          <div className="h-10 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-10 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-10 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-10 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
         </div>
-        <div className="h-10 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-        <div className="h-24 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-10 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-24 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
       </div>
     </ModalFrame>
   );
@@ -191,10 +191,12 @@ export function StudentRosterTable({
   allSelected,
   canManageRoster,
   filtered,
+  focusedStudentId,
   handleSort,
   inactivityByStudentId,
   inactivityThreshold,
   onOpenStudent,
+  onFocusStudent,
   programs,
   selectedIds,
   sortDir,
@@ -205,10 +207,12 @@ export function StudentRosterTable({
   allSelected: boolean;
   canManageRoster: boolean;
   filtered: StudentRosterRow[];
+  focusedStudentId: string | null;
   handleSort: (key: SortKey) => void;
   inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
   onOpenStudent: (studentId: string) => void;
+  onFocusStudent: (studentId: string) => void;
   programs: Program[];
   selectedIds: Set<string>;
   sortDir: SortDir;
@@ -224,6 +228,7 @@ export function StudentRosterTable({
             type="checkbox"
             checked={allSelected}
             onChange={toggleSelectAll}
+            className={styles.checkboxControl}
           />
           {allSelected ? "Deselect all visible students" : "Select all visible students"}
         </label>
@@ -232,17 +237,22 @@ export function StudentRosterTable({
       <thead>
         <tr className="border-b border-border">
           {canManageRoster ? (
-            <th className="w-10 px-4 py-3">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleSelectAll}
-                aria-label={allSelected ? "Deselect all visible students" : "Select all visible students"}
-                className="accent-[var(--accent)] cursor-pointer"
-              />
+            <th data-column="select" className="w-14 p-0">
+              <label className={styles.checkboxTarget}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className={styles.checkboxControl}
+                />
+                <span className="sr-only">
+                  {allSelected ? "Deselect all visible students" : "Select all visible students"}
+                </span>
+              </label>
             </th>
           ) : null}
           <th
+            data-column="name"
             aria-sort={getSortState("name", sortKey, sortDir)}
             className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
           >
@@ -257,6 +267,7 @@ export function StudentRosterTable({
             </button>
           </th>
           <th
+            data-column="status"
             aria-sort={getSortState("status", sortKey, sortDir)}
             className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
           >
@@ -270,16 +281,17 @@ export function StudentRosterTable({
               <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
             </button>
           </th>
-          <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+          <th data-column="programs" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
             Programs
           </th>
-          <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+          <th data-column="contact" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
             Contact
           </th>
-          <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+          <th data-column="tags" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
             Tags
           </th>
           <th
+            data-column="member-since"
             aria-sort={getSortState("membership_start_date", sortKey, sortDir)}
             className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
           >
@@ -294,7 +306,7 @@ export function StudentRosterTable({
             </button>
           </th>
           {inactivityThreshold && (
-            <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+            <th data-column="inactive" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
               Days inactive
             </th>
           )}
@@ -309,6 +321,9 @@ export function StudentRosterTable({
             <tr
               key={student.id}
               data-state={student.status}
+              data-focused={focusedStudentId === student.id || undefined}
+              onFocusCapture={() => onFocusStudent(student.id)}
+              onPointerEnter={() => onFocusStudent(student.id)}
               onClick={() => onOpenStudent(student.id)}
               className={`
                 border-b border-border cursor-pointer
@@ -320,20 +335,23 @@ export function StudentRosterTable({
               {canManageRoster ? (
                 <td
                   data-label="Select"
-                  className="px-4 py-3"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleSelect(student.id);
-                  }}
+                  className="p-0"
                 >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
+                  <label
+                    className={styles.checkboxTarget}
                     onClick={stopStudentSelectionPropagation}
-                    onChange={() => toggleSelect(student.id)}
-                    aria-label={isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
-                    className="accent-[var(--accent)] cursor-pointer"
-                  />
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onClick={stopStudentSelectionPropagation}
+                      onChange={() => toggleSelect(student.id)}
+                      className={styles.checkboxControl}
+                    />
+                    <span className="sr-only">
+                      {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
+                    </span>
+                  </label>
                 </td>
               ) : null}
               <th scope="row" data-label="Student" className="px-4 py-3">
@@ -370,15 +388,15 @@ export function StudentRosterTable({
                   )}
                 </div>
               </td>
-              <td data-label="Contact" className="px-4 py-3 text-text-secondary font-mono text-xs">
+              <td data-column="contact" data-label="Contact" className="px-4 py-3 text-text-secondary font-mono text-xs">
                 {row.contact}
               </td>
-              <td data-label="Tags" className="px-4 py-3">
+              <td data-column="tags" data-label="Tags" className="px-4 py-3">
                 <div className="flex flex-wrap gap-1">
                   {row.visibleTags.map((tag) => (
                     <span
                       key={tag}
-                      className="px-1.5 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+                      className="px-1.5 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
                     >
                       {tag}
                     </span>
@@ -404,6 +422,88 @@ export function StudentRosterTable({
       </tbody>
       </table>
     </>
+  );
+}
+
+export function StudentRosterReadingRail({
+  inactivity,
+  onOpenStudent,
+  row,
+}: {
+  inactivity: string | null;
+  onOpenStudent: (studentId: string) => void;
+  row: StudentRosterRow;
+}) {
+  const { student } = row;
+  const studentName = getStudentName(row);
+  const guardian = student.is_minor ? student.guardians[0] : null;
+
+  return (
+    <aside className={styles.studentReadingRail} aria-labelledby="student-reading-title">
+      <div className={styles.readingRailHeading}>
+        <StatusBadge status={student.status} />
+      </div>
+      <div className={styles.readingIdentity}>
+        <StudentAvatar student={student} />
+        <div>
+          <h2 id="student-reading-title">{studentName}</h2>
+          {student.is_minor ? <p>Minor student</p> : null}
+        </div>
+      </div>
+
+      <dl className={styles.readingFacts}>
+        <div>
+          <dt>Programs</dt>
+          <dd>
+            {row.programs.length > 0
+              ? row.programs.map((program) => program.name).join(", ")
+              : "No active program"}
+          </dd>
+        </div>
+        <div>
+          <dt>Contact</dt>
+          <dd>{row.contact}</dd>
+        </div>
+        <div>
+          <dt>Member since</dt>
+          <dd>{formatDate(student.membership_start_date || student.created_at)}</dd>
+        </div>
+        {inactivity ? (
+          <div>
+            <dt>Inactive</dt>
+            <dd>{inactivity}</dd>
+          </div>
+        ) : null}
+        {guardian ? (
+          <div>
+            <dt>Guardian</dt>
+            <dd>{`${guardian.first_name} ${guardian.last_name}`.trim()}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      {student.tags.length > 0 ? (
+        <div className={styles.readingTags} aria-label="Student tags">
+          {student.tags.map((tag) => <span key={tag}>{tag}</span>)}
+        </div>
+      ) : null}
+
+      {student.notes ? (
+        <div className={styles.readingNote}>
+          <p>Notes</p>
+          <span>{student.notes}</span>
+        </div>
+      ) : null}
+
+      <Button
+        variant="primary"
+        size="sm"
+        className={styles.openRecordButton}
+        onClick={() => onOpenStudent(student.id)}
+      >
+        Open full record
+      </Button>
+    </aside>
   );
 }
 

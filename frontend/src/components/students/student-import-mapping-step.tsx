@@ -96,6 +96,7 @@ export function StudentImportMappingStep({
         <span className="text-xs text-muted font-mono">{rowCount} rows</span>
         <button
           type="button"
+          aria-label="Choose a different CSV file"
           disabled={isLoading}
           onClick={onReset}
           className="ml-auto text-muted hover:text-text-secondary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
@@ -177,7 +178,7 @@ export function StudentImportMappingStep({
                   {sampleValues.length > 0 ? sampleValues.map((value, index) => (
                     <span
                       key={`${header}-${index}`}
-                      className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+                      className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
                     >
                       {value}
                     </span>
@@ -195,7 +196,7 @@ export function StudentImportMappingStep({
                   value={selectedField}
                   disabled={isLoading}
                   onChange={(event) => onMappingChange(header, event.target.value)}
-                  className="w-full px-2 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full px-2 py-1.5 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {KOARYU_FIELDS.map((field) => (
                     <option key={field.value} value={field.value}>

@@ -19,7 +19,7 @@ export default function SettingsPage() {
 
   return (
     <OperationsSurface page="settings">
-      <Header title="Settings" description="Studio configuration and preferences." />
+      <Header title="Settings" />
       {canAccessSettings(currentRole) ? <AdminSettingsContent /> : <SettingsAccessNotice />}
     </OperationsSurface>
   );
@@ -31,7 +31,7 @@ function SettingsAccessNotice() {
       <div className="max-w-3xl">
         <section
           aria-labelledby="settings-access-title"
-          className="rounded-[6px] border border-accent/20 bg-accent/10 p-5"
+          className="rounded-[14px] bg-accent/10 p-4"
         >
           <h2 id="settings-access-title" className="text-sm font-medium text-text-primary">
             Admin access required
@@ -240,17 +240,18 @@ function AdminSettingsContent() {
       <OperationsIndex
         label="Settings section index"
         items={[
-          { href: "#studio", label: "Studio" },
-          { href: "#programs", label: "Programs" },
-          { href: "#staff-roles", label: "Staff & roles" },
-          { href: "#data-controls", label: "Data controls" },
+          { href: "#studio", label: "Studio", meta: "Admin-owned identity" },
+          { href: "#programs", label: "Programs", meta: "Curriculum structure" },
+          { href: "#staff-roles", label: "Staff & roles", meta: "Access ownership" },
+          { href: "#data-controls", label: "Data controls", meta: "Restricted workspace actions" },
         ]}
       />
-      <div className="flex-1 p-4 sm:p-8">
-        <div className="max-w-3xl space-y-6">
+      <div className="flex-1 p-4 sm:p-8" data-settings-folio="admin-ownership">
+        <div className="max-w-5xl space-y-8">
           {/* Studio info */}
-          <section id="studio" className="scroll-mt-8 border-y border-border bg-surface p-5">
-            <h3 className="text-sm font-medium text-text-primary mb-4">Studio Information</h3>
+          <section id="studio" className="scroll-mt-8 bg-surface p-4" data-settings-owner="studio-admin">
+            <p className="mb-1 text-xs font-medium text-muted">Owned by studio admin · Workspace identity</p>
+            <h2 className="mb-4 text-base font-semibold text-text-primary">Studio information</h2>
             <div className="space-y-4">
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="settings-studio-name" className="text-xs text-text-secondary font-medium">Studio Name</label>
@@ -264,7 +265,7 @@ function AdminSettingsContent() {
                     setNameDraft(e.target.value);
                   }}
                   placeholder="My Studio"
-                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                  className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-muted"
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -278,14 +279,21 @@ function AdminSettingsContent() {
             </div>
           </section>
 
-          <div id="programs" className="scroll-mt-8"><ProgramsSection /></div>
+          <section id="programs" className="scroll-mt-8" data-settings-owner="program-admin">
+            <p className="px-4 pt-4 text-xs font-medium text-muted">Owned by studio admin · Curriculum structure</p>
+            <ProgramsSection />
+          </section>
 
-          <div id="staff-roles" className="scroll-mt-8"><StaffRolesSection /></div>
+          <section id="staff-roles" className="scroll-mt-8" data-settings-owner="access-admin">
+            <p className="px-4 pt-4 text-xs font-medium text-muted">Owned by studio admin · Staff access</p>
+            <StaffRolesSection />
+          </section>
 
           {/* Data section */}
           {canManageStudioData ? (
-          <section id="data-controls" className="scroll-mt-8 border-y border-danger/25 bg-danger/5 p-5">
-            <h3 className="text-sm font-medium text-text-primary mb-1">Studio Data</h3>
+          <section id="data-controls" className="scroll-mt-8 bg-danger/5 p-4" data-settings-owner="restricted-admin">
+            <p className="mb-1 text-xs font-medium text-danger">Restricted admin ownership · Destructive workspace actions</p>
+            <h2 className="mb-1 text-base font-semibold text-text-primary">Studio data</h2>
             <p className="text-xs text-text-secondary mb-4">
               Replace or clear this studio&apos;s working records when preparing a demo or resetting a workspace.
             </p>
@@ -353,8 +361,9 @@ function AdminSettingsContent() {
             </div>
           </section>
           ) : (
-            <section id="data-controls" className="scroll-mt-8 border-y border-border bg-surface p-5">
-              <h3 className="text-sm font-medium text-text-primary">Data controls</h3>
+            <section id="data-controls" className="scroll-mt-8 bg-surface p-4" data-settings-owner="restricted-admin">
+              <p className="mb-1 text-xs font-medium text-muted">Restricted admin ownership</p>
+              <h2 className="text-base font-semibold text-text-primary">Data controls</h2>
               <p className="mt-2 text-sm text-text-secondary">
                 Reset and clear actions are unavailable unless this workspace is explicitly allowlisted for demo tooling.
               </p>
@@ -368,10 +377,10 @@ function AdminSettingsContent() {
           ariaLabelledBy="studio-data-confirm-title"
           ariaDescribedBy="studio-data-confirm-description"
           onBackdropClick={() => setConfirmAction(null)}
-          panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+          panelClassName="w-[min(92vw,28rem)] rounded-[18px] bg-surface p-4"
         >
           <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
               <AlertTriangle className="h-4 w-4" />
             </span>
             <div className="min-w-0">

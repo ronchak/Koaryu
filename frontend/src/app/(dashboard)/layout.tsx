@@ -6,6 +6,7 @@ import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { DashboardRouteTransition } from "@/components/dashboard-route-transition";
 import { DashboardSlugBand } from "@/components/dashboard-shell";
 import { Sidebar } from "@/components/sidebar";
+import { useTheme } from "@/components/theme-provider";
 import { LegalNameBlockingScreen } from "@/components/account/legal-name-blocking-screen";
 import { StoreProvider, useConfigStore, useStudioStore } from "@/lib/store";
 import { shouldBlockForLegalName } from "@/lib/legal-name-model";
@@ -18,6 +19,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const { navigationPlacement } = useTheme();
   const { isPreviewMode } = useConfigStore();
   const {
     currentRole,
@@ -58,7 +60,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     <div
       className={styles.shellRoot}
       data-koaryu-dashboard-shell="true"
-      data-spine-collapsed={isSidebarCollapsed ? "true" : "false"}
+      data-navigation-placement={navigationPlacement}
+      data-spine-collapsed={navigationPlacement === "side" && isSidebarCollapsed ? "true" : "false"}
     >
       <a href="#main-content" className={styles.skipLink}>Skip to main content</a>
       {signOutError && (
@@ -86,6 +89,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             role={currentRole}
             onSignOut={handleSignOut}
             isSigningOut={isSigningOut}
+            placement={navigationPlacement}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
           />

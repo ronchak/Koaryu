@@ -19,7 +19,7 @@ export function StudentRankBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] text-xs font-medium ${
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[10px] text-xs font-medium ${
         isWhite ? "text-text-primary border border-border" : "text-white"
       }`}
       style={{ backgroundColor: isWhite ? "transparent" : background }}

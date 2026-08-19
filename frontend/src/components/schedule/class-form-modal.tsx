@@ -96,7 +96,7 @@ function SelectField({
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         onChange={(event) => onChange(event.target.value)}
-        className={`w-full px-3 py-2 text-sm bg-surface-raised border rounded-[6px] text-text-primary focus:border-accent focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+        className={`w-full rounded-[10px] border bg-surface-raised px-3 py-2 text-sm text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
           error ? "border-danger" : "border-border"
         }`}
       >
@@ -220,13 +220,13 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="w-full max-w-[560px] bg-surface border border-border rounded-[8px] shadow-2xl"
+      panelClassName="w-full max-w-[560px] rounded-[18px] bg-surface"
       ariaLabel={title}
       onBackdropClick={() => {
         if (!isLoading) onClose();
       }}
     >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between border-b border-border px-4 py-4">
           <div>
             <h2 className="text-base font-semibold text-text-primary">{title}</h2>
             <p className="text-xs text-muted mt-1">
@@ -240,14 +240,14 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
               if (!isLoading) onClose();
             }}
             disabled={isLoading}
-            className="text-muted hover:text-text-primary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="cursor-pointer rounded-[10px] text-muted transition-colors hover:bg-surface-raised hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="px-6 py-5 space-y-5 max-h-[80vh] overflow-y-auto">
+          <div className="max-h-[80vh] space-y-5 overflow-y-auto p-4">
             {(error || submitError) && (
               <DismissibleNotice
                 tone="danger"
@@ -264,7 +264,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
               {allowRecurring ? <button
                 type="button"
                 onClick={() => handleModeChange("weekly")}
-                className={`text-left rounded-[8px] border px-4 py-3 transition-colors cursor-pointer ${
+                className={`cursor-pointer rounded-[10px] border px-4 py-3 text-left transition-colors ${
                   form.mode === "weekly"
                     ? "border-accent bg-accent/10"
                     : "border-border bg-surface-raised hover:border-accent/40"
@@ -281,7 +281,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
               <button
                 type="button"
                 onClick={() => handleModeChange("single")}
-                className={`text-left rounded-[8px] border px-4 py-3 transition-colors cursor-pointer ${
+                className={`cursor-pointer rounded-[10px] border px-4 py-3 text-left transition-colors ${
                   form.mode === "single"
                     ? "border-accent bg-accent/10"
                     : "border-border bg-surface-raised hover:border-accent/40"
@@ -295,8 +295,8 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
               </button>
             </div>
 
-            <div className="rounded-[8px] border border-border bg-surface-raised/40 px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+            <div className="rounded-[10px] bg-surface-raised/40 px-4 py-3">
+              <p className="text-xs font-medium text-text-secondary">
                 {form.mode === "weekly" ? "Weekly class template" : "One-off scheduled session"}
               </p>
               <p className="mt-1 text-sm text-text-primary">
@@ -399,7 +399,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
               />
             </div>
 
-            <div className="rounded-[8px] border border-border bg-bg px-4 py-3">
+            <div className="rounded-[10px] bg-bg px-4 py-3">
               <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
                 <Clock className="w-4 h-4 text-text-secondary" />
                 {formatTimeLabel(form.startTime)} to {formatTimeLabel(form.endTime)}
@@ -417,7 +417,7 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 px-6 py-4 border-t border-border">
+          <div className="flex justify-end gap-2 border-t border-border px-4 py-4">
             <Button type="button" variant="ghost" size="sm" disabled={isLoading} onClick={onClose}>
               Cancel
             </Button>

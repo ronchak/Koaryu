@@ -1,7 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { formatDashboardRole, resolveDashboardRouteSlug } from "@/lib/dashboard-shell-route";
+import { formatDashboardRole } from "@/lib/dashboard-shell-route";
 import styles from "./dashboard-shell.module.css";
 
 export function DashboardSlugBand({
@@ -13,22 +12,17 @@ export function DashboardSlugBand({
   role: string | null;
   studioName: string;
 }) {
-  const pathname = usePathname();
-  const routeSlug = resolveDashboardRouteSlug(pathname);
-
   return (
     <header className={styles.slugBand} aria-label="Current workspace scope">
-      <div className={styles.slugCopy}>
-        <p className={styles.slugTitle}>{routeSlug}</p>
-        <p className={styles.slugMeta}>
-          <span>{studioName || "Studio scope"}</span>
-          <span aria-hidden="true">·</span>
-          <span>{formatDashboardRole(role)}</span>
-          <span aria-hidden="true">·</span>
-          <span>{isPreviewMode ? "Preview fixture" : "Authenticated studio"}</span>
-        </p>
-      </div>
-      <span className={styles.scopeStamp}>{isPreviewMode ? "Preview" : "Live scope"}</span>
+      <p className={styles.slugMeta}>
+        <span className={styles.studioName}>{studioName || "Studio workspace"}</span>
+        <span className={styles.scopeSeparator} aria-hidden="true" />
+        <span>{formatDashboardRole(role)}</span>
+      </p>
+      <span className={styles.scopeStamp} data-preview={isPreviewMode ? "true" : "false"}>
+        <span className={styles.scopeDot} aria-hidden="true" />
+        {isPreviewMode ? "Preview data" : "Live data"}
+      </span>
     </header>
   );
 }

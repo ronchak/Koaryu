@@ -67,6 +67,18 @@ export function EligibilityPanel({
   previousRankByCurrentRankId,
   selectedProgramName,
 }: EligibilityPanelProps) {
+  const decisionCounts = eligibilityGroups.reduce(
+    (counts, group) => {
+      group.entries.forEach((entry) => {
+        if (!isEligibilityEntryReady(entry)) counts.progress += 1;
+        else if (entry.needs_approval) counts.approval += 1;
+        else counts.ready += 1;
+      });
+      return counts;
+    },
+    { approval: 0, progress: 0, ready: 0 }
+  );
+
   return (
     <div className={`flex-1 min-w-0 ${styles.eligibilityWorkspace}`}>
       {ladderError && (
@@ -128,7 +140,14 @@ export function EligibilityPanel({
           </div>
         </div>
       ) : (
-        <table className={styles.eligibilityTable}>
+        <>
+          <div className={styles.decisionRegister} aria-label="Promotion decision summary">
+            <div data-readiness="ready"><span>Ready</span><strong>{decisionCounts.ready}</strong></div>
+            <div data-readiness="approval"><span>Approval</span><strong>{decisionCounts.approval}</strong></div>
+            <div data-readiness="progress"><span>Progress</span><strong>{decisionCounts.progress}</strong></div>
+          </div>
+          <table className={styles.eligibilityTable}>
+            <caption className="sr-only">Promotion readiness grouped by current rank</caption>
           <thead>
             <tr className="border-b border-border">
               <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">Student</th>
@@ -167,7 +186,7 @@ export function EligibilityPanel({
                               />
                             )
                             : (
-                              <span className="inline-flex items-center rounded-[4px] border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
+                              <span className="inline-flex items-center rounded-[10px] border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
                                 {group.label}
                               </span>
                             )}
@@ -202,7 +221,7 @@ export function EligibilityPanel({
                         <th scope="row" data-label="Student" className="px-6 py-3 text-left">
                           <Link
                             href={`/students/${entry.student_id}`}
-                            className="inline-flex rounded-[4px] font-medium text-text-primary transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                            className="inline-flex rounded-[10px] font-medium text-text-primary transition-colors hover:text-accent"
                           >
                             {entry.student_name}
                           </Link>
@@ -301,7 +320,8 @@ export function EligibilityPanel({
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </>
       )}
     </div>
   );

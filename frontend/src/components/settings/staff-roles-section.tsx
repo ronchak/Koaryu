@@ -63,17 +63,17 @@ function roleBadgeVariant(role: StaffRoleName) {
 
 function StaffSkeletonRows() {
   return (
-    <div className="divide-y divide-border border border-border rounded-[6px] overflow-hidden">
+    <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
       {Array.from({ length: 3 }).map((_, index) => (
         <div key={index} className="grid grid-cols-[1fr_140px_100px_120px_180px] gap-3 p-3">
           <div className="space-y-2">
-            <div className="h-3 w-36 bg-surface-raised rounded" />
-            <div className="h-3 w-48 bg-surface-raised rounded" />
+            <div className="h-3 w-36 rounded-[6px] bg-surface-raised" />
+            <div className="h-3 w-48 rounded-[6px] bg-surface-raised" />
           </div>
-          <div className="h-7 bg-surface-raised rounded" />
-          <div className="h-5 w-16 bg-surface-raised rounded" />
-          <div className="h-3 w-20 bg-surface-raised rounded" />
-          <div className="h-7 bg-surface-raised rounded" />
+          <div className="h-7 rounded-[6px] bg-surface-raised" />
+          <div className="h-5 w-16 rounded-[6px] bg-surface-raised" />
+          <div className="h-3 w-20 rounded-[6px] bg-surface-raised" />
+          <div className="h-7 rounded-[6px] bg-surface-raised" />
         </div>
       ))}
     </div>
@@ -98,17 +98,13 @@ function StaffIdentity({
   return (
     <div className="min-w-0">
       {staffProfilesAvailable ? (
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="min-w-0">
-              <p className="text-[11px] uppercase tracking-normal text-muted">Display name</p>
-              <p className="text-sm font-medium text-text-primary truncate">{displayName}</p>
+        <div className="space-y-0.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 text-sm text-text-primary">
+              <span className="font-medium">{displayName}</span>
+              <span className="text-xs text-muted"> · Legal: {legalName}</span>
             </div>
             {member.user_id === currentUserId && <Badge variant="accent">You</Badge>}
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-normal text-muted">Legal name</p>
-            <p className="text-xs text-text-secondary truncate">{legalName}</p>
           </div>
         </div>
       ) : (
@@ -188,8 +184,8 @@ function StaffRow({
   return (
     <div
       data-staff-status={member.status}
-      className={`grid gap-3 p-3 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center ${
-        isArchived ? "border-l-4 border-warning bg-warning/[0.06]" : ""
+      className={`grid gap-3 p-3 md:min-h-14 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center md:px-3 md:py-1 ${
+        isArchived ? "bg-warning/[0.06]" : ""
       }`}
     >
       <div className="min-w-0">
@@ -244,13 +240,13 @@ function StaffRow({
       </div>
 
       <div>
-        <p className="text-[11px] uppercase tracking-normal text-muted md:hidden mb-1">Role</p>
+        <p className="mb-1 text-xs text-muted md:hidden">Role</p>
         {canManageStaff && !isArchived ? (
           <select
             value={member.role}
             disabled={isRolePending || isLastActiveAdmin}
             onChange={(event) => onRoleChange(member, event.target.value as StaffRoleName)}
-            className="w-full px-2 py-1.5 text-xs bg-surface-raised border border-border rounded-[6px] text-text-primary disabled:opacity-50"
+            className="w-full rounded-[10px] border border-border bg-surface-raised px-2 py-1.5 text-xs text-text-primary disabled:opacity-50"
           >
             {ROLE_OPTIONS.map((role) => (
               <option key={role} value={role}>
@@ -264,14 +260,14 @@ function StaffRow({
       </div>
 
       <div>
-        <p className="text-[11px] uppercase tracking-normal text-muted md:hidden mb-1">Status</p>
+        <p className="mb-1 text-xs text-muted md:hidden">Status</p>
         <Badge variant={member.status === "active" ? "success" : "warning"}>
           {member.status === "active" ? "Active" : member.status === "pending" ? "Pending" : "Archived"}
         </Badge>
       </div>
 
       <div>
-        <p className="text-[11px] uppercase tracking-normal text-muted md:hidden mb-1">{dateLabel}</p>
+        <p className="mb-1 text-xs text-muted md:hidden">{dateLabel}</p>
         <p className="text-xs text-text-secondary">{formatDate(rowDate)}</p>
       </div>
 
@@ -717,12 +713,12 @@ export function StaffRolesSection() {
 
   if (!canManageStaff) {
     return (
-      <section className="bg-surface border border-border rounded-[6px] p-5">
+      <section className="bg-surface p-4">
         <div className="flex items-center gap-2 mb-3">
           <Users className="w-4 h-4 text-accent" />
           <h3 className="text-sm font-medium text-text-primary">Staff & Roles</h3>
         </div>
-        <div className="bg-surface-raised border border-border rounded-[6px] p-4">
+        <div className="rounded-[10px] bg-surface-raised p-4">
           <p className="text-xs text-muted mb-2">Your role</p>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -740,7 +736,7 @@ export function StaffRolesSection() {
 
   return (
     <>
-    <section className="bg-surface border border-border rounded-[6px] p-5">
+    <section className="bg-surface p-4">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -753,7 +749,7 @@ export function StaffRolesSection() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
-          <label className="flex items-center gap-2 text-xs text-text-secondary">
+          <label className="flex min-h-11 items-center gap-2 text-xs text-text-secondary">
             <input
               type="checkbox"
               checked={showArchived}
@@ -823,7 +819,7 @@ export function StaffRolesSection() {
             value={inviteRole}
             onChange={(event) => setInviteRole(event.target.value as StaffRoleName)}
             disabled={inviteInFlight}
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary disabled:opacity-50"
+            className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary disabled:opacity-50"
           >
             {ROLE_OPTIONS.map((role) => (
               <option key={role} value={role}>
@@ -873,14 +869,14 @@ export function StaffRolesSection() {
       {!staffLoaded ? (
         <StaffSkeletonRows />
       ) : visibleStaffMembers.length === 0 ? (
-        <div className="border border-border rounded-[6px] p-4 text-sm text-text-secondary">
+        <div className="rounded-[10px] bg-surface-raised/30 p-4 text-sm text-text-secondary">
           {staffMembers.length > 0 && !showArchived
             ? "No active staff members. Turn on Show archived to view preserved archived rows."
             : "No staff invited yet."}
         </div>
       ) : (
-        <div className="divide-y divide-border border border-border rounded-[6px] overflow-hidden">
-          <div className="hidden md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] gap-3 px-3 py-2 text-[11px] uppercase tracking-normal text-muted bg-surface-raised">
+        <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/20">
+          <div className="hidden min-h-11 gap-3 bg-surface-raised px-3 py-2 text-xs text-muted md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center">
             <span>Staff</span>
             <span>Role</span>
             <span>Status</span>
@@ -925,10 +921,10 @@ export function StaffRolesSection() {
         ariaLabelledBy="staff-remove-title"
         ariaDescribedBy="staff-remove-description"
         onBackdropClick={() => setRemoveTarget(null)}
-        panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+        panelClassName="w-[min(92vw,28rem)] rounded-[18px] bg-surface p-4"
       >
         <div className="flex items-start gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
             <AlertTriangle className="h-4 w-4" />
           </span>
           <div className="min-w-0">
@@ -967,10 +963,10 @@ export function StaffRolesSection() {
             setArchiveTarget(null);
           }
         }}
-        panelClassName="w-[min(92vw,30rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+        panelClassName="w-[min(92vw,30rem)] rounded-[18px] bg-surface p-4"
       >
         <div className="flex items-start gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-warning/10 text-warning">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-warning/10 text-warning">
             <Archive className="h-4 w-4" />
           </span>
           <div className="min-w-0">
@@ -1011,11 +1007,11 @@ export function StaffRolesSection() {
         ariaLabelledBy="staff-delete-title"
         ariaDescribedBy="staff-delete-description"
         onBackdropClick={closeDeletionModal}
-        panelClassName="w-[min(92vw,32rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+        panelClassName="w-[min(92vw,32rem)] rounded-[18px] bg-surface p-4"
       >
         <form onSubmit={runScheduleDeletion}>
           <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
               <AlertTriangle className="h-4 w-4" />
             </span>
             <div className="min-w-0">
@@ -1028,8 +1024,8 @@ export function StaffRolesSection() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-[6px] border border-warning/25 bg-warning/5 p-3">
-            <p className="text-[11px] uppercase tracking-normal text-muted">Displayed identity</p>
+          <div className="mt-4 rounded-[10px] bg-warning/5 p-3">
+            <p className="text-xs text-muted">Displayed identity</p>
             <p className="mt-1 break-words text-sm font-medium text-text-primary">{deletionIdentity}</p>
             <p className="mt-2 text-xs leading-5 text-text-secondary">
               Type this identity exactly to confirm. Whitespace at the edges and repeated whitespace are normalized; capitalization remains case-sensitive.

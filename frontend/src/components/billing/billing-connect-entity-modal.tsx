@@ -24,7 +24,7 @@ function ConnectEntityModal({
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="w-full max-w-md rounded-[6px] border border-border bg-bg p-5 shadow-2xl"
+      panelClassName="w-full max-w-md rounded-[18px] bg-bg p-4"
       ariaLabelledBy="connect-entity-title"
       onBackdropClick={onCancel}
     >
@@ -39,7 +39,7 @@ function ConnectEntityModal({
         ] as const).map(([value, label, description]) => (
           <label
             key={value}
-            className={`cursor-pointer rounded-[6px] border px-3 py-3 transition-colors ${
+            className={`min-h-11 cursor-pointer rounded-[10px] border px-3 py-3 transition-colors ${
               connectEntityType === value
                 ? "border-accent bg-accent/10"
                 : "border-border bg-surface hover:bg-surface-hover"

@@ -94,7 +94,7 @@ export function StudentImportPageContent({
   if (!canManageRoster) {
     return (
       <div className={`flex min-h-full flex-col ${styles.importPage}`}>
-        <Header title="Import Students" description="Bulk roster imports are limited by staff role.">
+        <Header title="Import Students">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="w-3.5 h-3.5" />
             Back
@@ -109,7 +109,7 @@ export function StudentImportPageContent({
 
   return (
     <div className={`flex min-h-full flex-col ${styles.importPage}`}>
-      <Header title="Import Students" description="Import students from a .csv exported from your spreadsheet.">
+      <Header title="Import Students">
         <Button
           variant="ghost"
           size="sm"
@@ -124,9 +124,7 @@ export function StudentImportPageContent({
       <div className={`flex-1 ${styles.importWorkspace}`}>
         <div className={styles.importSheet}>
           <aside className={styles.importIndex} aria-label="Import worksheet progress">
-            <h2>One auditable worksheet.</h2>
-            <p>Source, mapping, policy choices, row blockers, and the landing result stay in one sequence.</p>
-            <dl className="mt-4 border-y border-border py-3 text-xs">
+            <dl className="text-xs">
               <div className="flex justify-between gap-3"><dt className="text-muted">Source</dt><dd className="truncate text-text-primary">{fileName || "Awaiting CSV"}</dd></div>
               <div className="mt-2 flex justify-between gap-3"><dt className="text-muted">Rows</dt><dd className="font-mono text-text-primary">{rowCount || "—"}</dd></div>
             </dl>

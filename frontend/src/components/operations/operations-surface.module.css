@@ -11,8 +11,8 @@
   font-size: 0.8125rem;
 }
 
-/* The authenticated shell owns this vocabulary. Operational pages only bridge
-   the existing application aliases so their established utilities consume it. */
+/* The authenticated shell owns the palette. Operations only maps its task
+   surfaces onto that vocabulary so Preview and Live keep one material model. */
 :global([data-koaryu-dashboard-shell="true"]) .surface {
   --bg: var(--product-ground);
   --surface: var(--product-paper);
@@ -22,8 +22,8 @@
   --text-primary: var(--product-ink);
   --text-secondary: var(--product-soft-ink);
   --muted: var(--product-soft-ink);
-  --accent: var(--product-cobalt);
-  --accent-hover: var(--product-cobalt);
+  --accent: var(--product-wood);
+  --accent-hover: var(--product-wood-deep);
   --accent-contrast: var(--product-paper);
   --danger: var(--product-vermilion);
   --operations-cobalt: var(--product-cobalt);
@@ -34,8 +34,8 @@
 }
 
 .surface > :global(header) {
-  border-bottom-color: var(--product-rule, var(--border));
-  background: var(--product-paper, var(--surface));
+  border-bottom-color: var(--product-rule-soft, var(--border));
+  background: color-mix(in srgb, var(--product-ground) 88%, transparent);
 }
 
 .surface :global(.bg-surface) {
@@ -54,9 +54,11 @@
 }
 
 .surface :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+  min-width: 44px;
   min-height: 44px;
   padding: 0.625rem 0.75rem;
-  border-color: var(--product-rule, var(--border));
+  border-color: var(--product-rule-soft, var(--border));
+  border-radius: 10px;
   background: var(--product-card-stock, var(--surface-raised));
 }
 
@@ -65,11 +67,17 @@
 }
 
 .surface :global(button:not([data-time-canvas-block])) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.surface :is(label:has(input[type="checkbox"]), label:has(input[type="radio"])) {
+  min-width: 44px;
   min-height: 44px;
 }
 
 .surface :is(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent) !important;
+  outline: 2px solid var(--product-cobalt, var(--operations-cobalt)) !important;
   outline-offset: 3px;
 }
 
@@ -81,15 +89,13 @@
   scroll-margin: 5rem;
 }
 
-.surface :global(section) {
-  box-shadow: none;
-}
-
 .surface :global(.koaryu-modal-panel) {
   max-height: calc(100dvh - 2rem);
   overflow-y: auto;
+  border: 0 !important;
+  border-radius: 18px !important;
   background: var(--product-lifted, var(--surface)) !important;
-  box-shadow: var(--product-shadow-lifted, 0 24px 60px rgb(0 0 0 / 22%));
+  box-shadow: var(--product-shadow-lifted, 0 24px 60px rgb(0 0 0 / 22%)) !important;
 }
 
 .internalOverflow {
@@ -97,63 +103,148 @@
 }
 
 .index {
-  border-block: 1px solid var(--product-rule, var(--border));
+  margin: 16px 16px 0;
+  border-radius: 14px;
   background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card);
 }
 
 .indexLabel,
 .eyebrow {
   margin: 0;
-  padding: 0.75rem 1rem;
+  padding: 12px 16px;
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 750;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-weight: 650;
+  letter-spacing: 0.01em;
 }
 
-.index ol {
+.index ul {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   margin: 0;
-  padding: 0;
+  padding: 0 8px 8px;
   list-style: none;
-  border-top: 1px solid var(--border);
 }
 
-.index li + li {
-  border-left: 1px solid var(--border);
+.index li {
+  min-width: 0;
 }
 
 .index a {
-  min-height: 3.5rem;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.3rem 0.65rem;
-  padding: 0.65rem 0.85rem;
+  min-width: 44px;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
   color: var(--text-primary);
   text-decoration: none;
+  transition: color 120ms ease, background-color 120ms ease;
 }
 
 .index a:hover {
   background: var(--product-card-stock, var(--surface-raised));
 }
 
-.index a > span {
-  color: var(--accent);
-  font: 650 0.75rem/1 var(--font-mono);
-}
-
 .index strong {
   font-size: 0.8125rem;
-  font-weight: 680;
+  font-weight: 650;
 }
 
 .index small {
-  grid-column: 2;
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+}
+
+/* Schedule: calendar geometry stays literal. Sheets and controls carry the
+   material treatment; belt/program color remains data inside class blocks. */
+.surface[data-operations-page="schedule"] :global([data-schedule-register="visible-range"]),
+.surface[data-operations-page="schedule"] :global([data-schedule-time-canvas]),
+.surface[data-operations-page="schedule"] :global([data-month-schedule-view]) {
+  border: 0 !important;
+  border-radius: 14px;
+  background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
+}
+
+.surface[data-operations-page="schedule"] :global([data-schedule-day-sheet="true"]) {
+  border-radius: 10px;
+  background: var(--product-paper);
+}
+
+.surface[data-operations-page="schedule"] :global([data-time-canvas-block="session"] > span) {
+  border-radius: 8px;
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--program-color) 46%, transparent);
+}
+
+/* Billing: all six functional views stay intact while the active tab, money
+   summary, and content sheets become one quiet sequence. */
+.surface[data-operations-page="billing"] :global([data-billing-ledger="six-views"]),
+.surface[data-operations-page="billing"] :global([data-billing-setup-register="true"]),
+.surface[data-operations-page="billing"] :global([data-billing-money-band="exceptions-first"]) {
+  border: 0 !important;
+  border-radius: 14px;
+  background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
+}
+
+.surface[data-operations-page="billing"] :global([data-ledger-tone="exception"]) {
+  background: var(--product-alert-surface);
+}
+
+/* Automations remain an honest read-only catalog. */
+.surface[data-operations-page="automations"] :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-sheet="true"]) {
+  border: 0 !important;
+  border-radius: 14px;
+  background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
+}
+
+.surface[data-operations-page="automations"] :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-inset="true"]) {
+  border: 1px solid var(--product-rule);
+  border-radius: 10px;
+  background: var(--product-card-stock);
+}
+
+.surface[data-operations-page="automations"] :global([data-automation-live-target="true"]:focus-visible) {
+  outline-color: var(--product-focus) !important;
+}
+
+/* Reports use a centered reading column. Each analytical leaf is distinct,
+   while tables keep inset separators and the appendix keeps all 29 exports. */
+.surface[data-operations-page="reports"] :global([data-reports-reading-document="true"]) {
+  background: transparent;
+}
+
+.surface[data-operations-page="reports"] :global([data-report-method-sheet="true"]),
+.surface[data-operations-page="reports"] :global([data-report-figure-band="comparisons"]),
+.surface[data-operations-page="reports"] :global([data-report-section="reading-block"]),
+.surface[data-operations-page="reports"] :global([data-report-appendix="data-exports"]) {
+  border: 0 !important;
+  border-radius: 14px;
+  background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
+}
+
+.surface[data-operations-page="reports"] :global([data-report-figure-band="comparisons"] > figure) {
+  border-radius: 10px;
+}
+
+/* Settings keeps each owner and anchor, grouped as compact administrative
+   sheets with destructive actions quiet until confirmation. */
+.surface[data-operations-page="settings"] :global([data-settings-folio="admin-ownership"]) {
+  background: transparent;
+}
+
+.surface[data-operations-page="settings"] :global([data-settings-owner]) {
+  border: 0 !important;
+  border-radius: 14px;
+  background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
 }
 
 .focusedPage {
@@ -168,9 +259,9 @@
   width: min(100%, 42rem);
   margin: auto;
   padding: clamp(1.25rem, 4vw, 2.5rem);
-  border-block: 2px solid var(--product-rule, var(--border));
+  border-radius: 18px;
   background: var(--product-paper, var(--surface));
-  box-shadow: var(--product-shadow-card, none);
+  box-shadow: var(--product-shadow-card);
 }
 
 .focusedSheet .eyebrow {
@@ -188,7 +279,6 @@
 .loadingIntro {
   align-self: start;
   padding-block: clamp(0.75rem, 3vw, 2rem);
-  border-top: 2px solid var(--product-rule, var(--border));
 }
 
 .loading h1 {
@@ -212,79 +302,51 @@
 
 .loadingWorkbench {
   align-self: start;
-  border: 1px solid var(--border);
+  padding: 8px;
+  border-radius: 14px;
   background: var(--product-paper, var(--surface));
-  box-shadow: var(--product-shadow-card, none);
+  box-shadow: var(--product-shadow-card);
 }
 
 .loadingIndex {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 2px solid var(--product-rule, var(--border));
+  gap: 8px;
 }
 
 .loadingIndex span {
-  min-height: 3.5rem;
+  min-height: 44px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.7rem;
-  border-right: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--product-card-stock, var(--surface-raised));
   color: var(--text-secondary);
   font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.loadingIndex span:last-child {
-  border-right: 0;
-}
-
-.loadingIndex i {
-  color: var(--accent);
-  font: 650 0.75rem/1 var(--font-mono);
-  font-style: normal;
+  font-weight: 650;
 }
 
 .loadingRules {
-  position: relative;
-  overflow: hidden;
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .loadingRules span {
   display: block;
-  height: 4rem;
-  border-bottom: 1px solid var(--border);
-  border-left: 3px solid var(--product-rule-soft, var(--border));
-  background: transparent;
+  height: 44px;
+  border-radius: 8px;
+  background: var(--product-card-stock, var(--surface-raised));
+  opacity: 0.72;
   animation: operations-settle var(--product-motion-settle-duration, 220ms) var(--product-motion-ease, ease-out) both;
-}
-
-.loadingRules span:last-child {
-  border-bottom: 0;
 }
 
 .loading[data-loading-family="schedule"] .loadingWorkbench {
   min-width: 42rem;
 }
 
-.loading[data-loading-family="schedule"] .loadingRules {
-  border-inline: 4.5rem solid var(--product-card-stock, var(--surface-raised));
-}
-
-.loading[data-loading-family="billing"] .loadingRules span:nth-child(odd),
-.loading[data-loading-family="settings"] .loadingRules span:nth-child(odd) {
-  background-color: var(--product-card-stock, var(--surface-raised));
-}
-
 .loading[data-loading-family="reports"] .loadingRules {
-  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.loading[data-loading-family="reports"] .loadingRules span {
-  height: 7rem;
-  border-right: 1px solid var(--border);
 }
 
 @keyframes operations-settle {
@@ -299,20 +361,12 @@
 }
 
 @media (max-width: 640px) {
-  .index ol {
+  .index {
+    margin-inline: 12px;
+  }
+
+  .index ul {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .index li + li {
-    border-left: 0;
-  }
-
-  .index li:nth-child(even) {
-    border-left: 1px solid var(--border);
-  }
-
-  .index li:nth-child(n + 3) {
-    border-top: 1px solid var(--border);
   }
 
   .loading {
@@ -324,22 +378,47 @@
     min-width: 0;
   }
 
-  .loadingIndex {
-    grid-template-columns: 1fr;
-  }
-
-  .loadingIndex span {
-    min-height: 2.75rem;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .loadingIndex span:last-child {
-    border-bottom: 0;
-  }
-
+  .loadingIndex,
   .loading[data-loading-family="reports"] .loadingRules {
     grid-template-columns: 1fr;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-form="true"]) {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-input]) {
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-color-field="true"]) {
+    min-width: 0;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-color-actions="true"]) {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(6, 44px);
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-swatch]) {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .surface[data-operations-page="settings"] :global([data-program-submit="true"]) {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 
@@ -349,7 +428,7 @@
   .surface *::after {
     animation: none !important;
     scroll-behavior: auto !important;
-    transition: none !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -376,9 +455,18 @@
     inset: auto !important;
     display: flex !important;
     break-after: avoid;
-    border-bottom: 1px solid #555 !important;
+    border: 0 !important;
     background: #fff !important;
     color: #000 !important;
+  }
+
+  .surface[data-operations-page="schedule"] > :global(header),
+  .surface[data-operations-page="schedule"] :global([data-schedule-program-filter]) {
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    transition: none !important;
   }
 
   :global(#main-content) {
@@ -394,7 +482,7 @@
     --surface: #fff;
     --surface-raised: #fff;
     --surface-hover: #fff;
-    --border: #555;
+    --border: #777;
     --text-primary: #000;
     --text-secondary: #222;
     --muted: #444;
@@ -406,9 +494,45 @@
 
   .surface :global(section),
   .surface :global(table),
-  .surface :global(tr) {
+  .surface :global(tr),
+  .surface :global([data-report-method-sheet]),
+  .surface :global([data-report-figure-band]),
+  .surface :global([data-report-section]),
+  .surface :global([data-report-appendix]),
+  .surface :global([data-settings-owner]),
+  .surface :global([data-billing-money-band]),
+  .surface :global([data-billing-setup-register]),
+  .surface :global([data-schedule-time-canvas]) {
     break-inside: avoid;
+    border-radius: 0 !important;
     background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+
+  .surface :global([data-month-schedule-view]) {
+    max-width: 100% !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+
+  .surface :global([data-month-schedule-view] [data-month-schedule-day]) {
+    overflow: visible !important;
+    border-color: #777 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    transition: none !important;
+  }
+
+  .surface :global([data-month-schedule-view] [data-month-schedule-day] *) {
+    border-color: #777 !important;
+    border-radius: 0 !important;
+    background-color: transparent !important;
     color: #000 !important;
     box-shadow: none !important;
   }

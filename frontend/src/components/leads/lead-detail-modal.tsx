@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LEAD_SOURCE_ICONS } from "@/components/leads/lead-source-icons";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
-import { ModalFrame } from "@/components/ui/modal-frame";
 import {
   LOST_REASON_LABELS,
   PIPELINE_STAGES,
@@ -19,8 +18,9 @@ import {
 } from "@/lib/leads-page-model";
 import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffMember } from "@/types";
 import { Clock, Mail, Phone, X } from "lucide-react";
+import styles from "./leads-ledger.module.css";
 
-interface LeadDetailModalProps {
+interface LeadDetailInspectorProps {
   activities: LeadActivity[];
   activityError: string | null;
   activityStatus: "idle" | "loading" | "ready" | "error";
@@ -48,7 +48,7 @@ interface LeadDetailModalProps {
   onStageSelection: (lead: Lead, nextStage: LeadStage) => void | Promise<void>;
 }
 
-export function LeadDetailModal({
+export function LeadDetailInspector({
   activities,
   activityError,
   activityStatus,
@@ -74,7 +74,8 @@ export function LeadDetailModal({
   onRetryActivities,
   onRescheduleLead,
   onStageSelection,
-}: LeadDetailModalProps) {
+}: LeadDetailInspectorProps) {
+  const inspectorRef = useRef<HTMLElement>(null);
   const isPending = pendingLeadId === lead.id;
   const nextStage = getNextStage(lead.stage);
   const [lostReason, setLostReason] = useState<LostReason>(lead.lost_reason ?? "other");
@@ -84,29 +85,48 @@ export function LeadDetailModal({
   const assigneeChoices = currentAssignedStaff && currentAssignedStaff.status !== "active"
     ? [currentAssignedStaff, ...activeStaff.filter((member) => member.id !== currentAssignedStaff.id)]
     : activeStaff;
+  const handleClose = () => {
+    onClose();
+    window.requestAnimationFrame(() => {
+      const opener = document.querySelector<HTMLElement>(`[data-lead-id="${CSS.escape(lead.id)}"]`);
+      opener?.focus();
+    });
+  };
+
+  useEffect(() => {
+    inspectorRef.current?.focus();
+  }, [lead.id]);
 
   return (
-    <ModalFrame
-      rootClassName="p-4"
-      panelClassName="max-h-[80vh] w-full max-w-md overflow-y-auto border border-border bg-bg"
-      ariaLabelledBy="lead-detail-title"
-      onBackdropClick={onClose}
+    <aside
+      ref={inspectorRef}
+      className={styles.inspector}
+      aria-labelledby="lead-detail-title"
+      aria-busy={isPending || undefined}
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        handleClose();
+      }}
     >
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+      <div className={styles.inspectorHeader}>
+        <p>Selected lead</p>
         <h2 id="lead-detail-title" className="text-base font-semibold text-text-primary">
           {fullName(lead)}
         </h2>
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           disabled={isPending}
           aria-label="Close lead details"
-          className="text-muted hover:text-text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          className={styles.inspectorClose}
         >
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="p-5 space-y-4">
+      <div className={styles.inspectorBody}>
         {leadActionError && (
           <DismissibleNotice tone="danger" onDismiss={onDismissError}>
             {leadActionError}
@@ -303,7 +323,7 @@ export function LeadDetailModal({
         <section className="border-y border-border py-4" aria-labelledby="lead-activity-title">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Activity</p>
+              <p className="text-xs font-semibold text-muted">Activity</p>
               <h3 id="lead-activity-title" className="mt-1 text-sm font-semibold text-text-primary">Recorded follow-up trail</h3>
             </div>
             {activityStatus === "loading" ? (
@@ -320,7 +340,7 @@ export function LeadDetailModal({
           ) : (
             <ol className="mt-3 space-y-3">
               {activities.map((activity) => (
-                <li key={activity.id} className="border-l-2 border-border pl-3">
+                <li key={activity.id} className="border-l border-border pl-3">
                   <p className="text-sm text-text-primary">{activity.description || activity.activity_type.replace(/_/g, " ")}</p>
                   <p className="mt-1 text-xs text-muted">
                     {new Date(activity.created_at).toLocaleString("en-US", {
@@ -361,7 +381,7 @@ export function LeadDetailModal({
             </Button>
           )}
           {lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
-            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 border-l-2 border-danger/40 pl-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 rounded-[10px] bg-danger/5 p-3">
               <label className="min-w-40 flex-1 text-xs text-muted" htmlFor="lead-lost-reason">
                 Lost reason
                 <select
@@ -389,6 +409,6 @@ export function LeadDetailModal({
           </div>
         ) : null}
       </div>
-    </ModalFrame>
+    </aside>
   );
 }

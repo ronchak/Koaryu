@@ -103,7 +103,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 function ExportStatBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="border border-border bg-surface-raised px-2 py-1 text-xs text-text-secondary">
+    <span className="rounded-full bg-surface-raised px-2 py-1 text-xs text-text-secondary">
       {children}
     </span>
   );
@@ -147,26 +147,22 @@ function ExportGroupRegister({
   onDownload: (report: ExportReport) => void;
 }) {
   const headerClassName = group.emphasis
-    ? "relative flex w-full items-start justify-between gap-4 py-4 pl-4 pr-1 text-left before:absolute before:left-0 before:top-4 before:bottom-4 before:w-[2px] before:bg-accent"
-    : "flex w-full items-start justify-between gap-4 py-4 text-left";
+    ? "flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] bg-accent/10 px-3 py-2 text-left"
+    : "flex min-h-14 w-full items-center justify-between gap-4 px-3 py-2 text-left";
 
   return (
     <section data-export-group={group.title}>
       <div className={headerClassName}>
-        <span className="flex min-w-0 items-start gap-3">
-          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-text-primary">
-              {group.title}
-            </span>
-            <span className="mt-1 block text-xs text-text-secondary">
-              {group.reports.length} CSV export{group.reports.length === 1 ? "" : "s"}
-            </span>
+        <span className="flex min-w-0 items-center gap-3">
+          <FileText className="h-4 w-4 shrink-0 text-text-secondary" />
+          <span className="truncate text-sm font-semibold text-text-primary">{group.title}</span>
+          <span className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">
+            {group.reports.length} CSV
           </span>
         </span>
       </div>
 
-          <div className="divide-y divide-border border-t border-border pb-2">
+          <div className="divide-y divide-border pb-2">
             {group.reports.map((report) => {
               const isExporting = exportingReportId === report.id;
               const minimumRole = getReportExportMinimumRole(report.id);
@@ -176,23 +172,30 @@ function ExportGroupRegister({
               return (
                 <div
                   key={report.id}
-                  className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex min-h-14 items-center justify-between gap-2 px-3 py-1"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-text-primary">{report.title}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="min-w-0 break-words text-sm font-medium text-text-primary sm:truncate" title={report.title}>
+                        {report.title}
+                      </p>
+                      <span
+                        aria-label={`Minimum role: ${minimumRole === "front_desk" ? "Front desk" : "Admin"}${!isAuthorized ? ". Your role cannot download this report." : ""}`}
+                        className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs font-medium text-muted"
+                      >
+                        {minimumRole === "front_desk" ? "Front desk" : "Admin"}
+                        {!isAuthorized ? " · Unavailable" : ""}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-text-secondary" title={report.description}>
                       {report.description}
-                    </p>
-                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-widest text-muted">
-                      Minimum role: {minimumRole === "front_desk" ? "Front desk" : "Admin"}
-                      {!isAuthorized ? " · Your role cannot download this report" : ""}
                     </p>
                   </div>
                   <Button
                     type="button"
                     size="sm"
                     variant="secondary"
-                    className="w-full shrink-0 sm:w-[118px]"
+                    className="w-[84px] shrink-0 sm:w-[118px]"
                     isLoading={isExporting}
                     disabled={isDisabled}
                     onClick={() => onDownload(report)}
@@ -258,7 +261,7 @@ export function ReportsDataExportsPanel({
   }
 
   return (
-    <section className="bg-surface border border-border p-5">
+    <section className="bg-surface p-4" data-report-appendix="data-exports">
       <ExportPanelHeader
         title="Data Exports"
         subtitle="Separate CSV downloads for the core records owned by this studio."
@@ -269,18 +272,18 @@ export function ReportsDataExportsPanel({
       </ExportPanelHeader>
 
       {exportMessage ? (
-        <div className="mb-4 border border-success/20 bg-success/10 px-4 py-3 text-sm text-success">
+        <div className="mb-4 rounded-[10px] bg-success/10 px-4 py-3 text-sm text-success">
           {exportMessage}
         </div>
       ) : null}
 
       {exportError ? (
-        <div className="mb-4 border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <div className="mb-4 rounded-[10px] bg-danger/10 px-4 py-3 text-sm text-danger">
           {exportError}
         </div>
       ) : null}
 
-      <div className="divide-y divide-border border-y border-border">
+      <div className="divide-y divide-border">
         {EXPORT_GROUPS.map((group) => (
           <ExportGroupRegister
             key={group.title}

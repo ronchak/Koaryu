@@ -50,8 +50,8 @@ function FolioLeaf({
   children: React.ReactNode;
 }) {
   return (
-    <section className={`${styles.folioSection} p-5`}>
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">{eyebrow}</p>
+    <section className={`${styles.folioSection} p-4`}>
+      <p className="text-xs font-semibold text-muted">{eyebrow}</p>
       <h3 className="mb-4 mt-1 text-sm font-semibold text-text-primary">{title}</h3>
       {children}
     </section>

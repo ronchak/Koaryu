@@ -12,18 +12,18 @@ export function MetricCard({
   sub: string;
 }) {
   return (
-    <div className="bg-surface p-5">
+    <figure className="bg-surface p-4" data-report-figure="headline">
       <div className="flex items-center gap-3 mb-3">
-        <div className="flex h-8 w-8 items-center justify-center border-r border-border text-accent">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-raised text-accent">
           <Icon className="h-4 w-4" />
         </div>
-        <span className="text-[11px] font-medium uppercase tracking-widest text-text-secondary">
+        <span className="text-xs font-medium text-text-secondary">
           {label}
         </span>
       </div>
-      <p className="text-3xl font-bold text-text-primary font-mono leading-none">{value}</p>
+      <p className="text-3xl font-semibold tabular-nums text-text-primary leading-none">{value}</p>
       <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>
-    </div>
+    </figure>
   );
 }
 
@@ -35,7 +35,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`bg-surface border border-border p-5 ${className}`}>
+    <section className={`bg-surface p-4 ${className}`} data-report-section="reading-block">
       {children}
     </section>
   );
@@ -67,7 +67,7 @@ export function PanelHeader({
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="border border-border bg-surface-raised/40 px-4 py-5 text-sm text-text-secondary">
+    <div className="rounded-[10px] bg-surface-raised/40 px-4 py-4 text-sm text-text-secondary">
       {message}
     </div>
   );
@@ -75,7 +75,7 @@ export function EmptyState({ message }: { message: string }) {
 
 export function StatBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="border border-border bg-surface-raised px-2 py-1 text-xs text-text-secondary">
+    <span className="rounded-full bg-surface-raised px-2 py-1 text-xs text-text-secondary">
       {children}
     </span>
   );

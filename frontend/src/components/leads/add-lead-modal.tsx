@@ -44,7 +44,7 @@ export function AddLeadModal({
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="max-h-[85vh] w-full max-w-md overflow-y-auto border border-border bg-bg p-5 sm:p-6"
+      panelClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[18px] bg-bg p-4 shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="add-lead-title"
       onBackdropClick={closeIfIdle}
     >
@@ -128,7 +128,7 @@ export function AddLeadModal({
             name="email"
             type="email"
             disabled={isAddingLead}
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -179,7 +179,7 @@ export function AddLeadModal({
             type="date"
             defaultValue={today}
             disabled={isAddingLead}
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -216,7 +216,7 @@ export function AddLeadModal({
             name="guardian_name"
             placeholder="Guardian name"
             disabled={isAddingLead}
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input

@@ -61,10 +61,10 @@ export function BillingReportsTab({
         Refund event dates are unavailable here, so this is not cash movement or true period-net revenue.
       </p>
 
-      <section className="border border-border bg-surface rounded-[6px] p-5">
+      <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader icon={Download} title="Billing exports are read-only" description="New CSV exports are currently unavailable. Existing job history remains visible for operational context." />
         {exportJobs.length ? (
-          <div className="mt-4 divide-y divide-border border border-border rounded-[6px]">
+          <div className="mt-4 divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
             {exportJobs.map((job) => (
               <div key={job.id} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
                 <div>
@@ -80,7 +80,7 @@ export function BillingReportsTab({
         )}
       </section>
 
-      <section className="border border-border bg-surface rounded-[6px] p-5">
+      <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader icon={Banknote} title="Record external payment" description="Track cash, check, Zelle, Venmo, or outside-processor payments without charging a Koaryu platform fee." />
         <form onSubmit={onRecordExternalPayment} className="grid gap-3 md:grid-cols-[1fr_0.6fr_0.7fr_1fr_auto] md:items-end">
           <div className="flex flex-col gap-1.5">
@@ -90,7 +90,7 @@ export function BillingReportsTab({
               value={externalPayerId}
               onChange={(event) => onExternalPayerChange(event.target.value)}
               disabled={!canManageRoutineBilling || billingPayers.length === 0}
-              className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+              className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
             >
               <option value="">Choose payer</option>
               {billingPayers.map((payer) => (
@@ -108,7 +108,7 @@ export function BillingReportsTab({
         </form>
       </section>
 
-      <section className="border-y border-border bg-surface">
+      <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
         <div className="hidden grid-cols-[1fr_auto_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted sm:grid">
           <span>Payment</span>
           <span>Amount</span>
@@ -117,14 +117,14 @@ export function BillingReportsTab({
         {billingPayments.length === 0 ? (
           <p className="p-4 text-sm text-muted">No payments recorded yet.</p>
         ) : billingPayments.map((payment) => (
-          <div key={payment.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-4 text-sm last:border-b-0 sm:grid-cols-[1fr_auto_auto] sm:gap-4">
+          <div key={payment.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 sm:min-h-14 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-4 sm:py-1.5">
             <div>
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted sm:hidden">Payment</p>
+              <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment</p>
               <p className="font-medium text-text-primary">{payment.external_method || payment.payment_method_type || "Payment"}</p>
               <p className="text-xs text-muted">{payment.note || formatDate(payment.processed_at)}</p>
             </div>
-            <div><p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted sm:hidden">Amount</p><p className="font-medium text-text-primary">{formatMoney(payment.amount_cents, payment.currency)}</p></div>
-            <div><p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted sm:hidden">Status</p><StatusPill status={payment.status} /></div>
+            <div><p className="mb-1 text-xs font-medium text-muted sm:hidden">Amount</p><p className="font-medium text-text-primary">{formatMoney(payment.amount_cents, payment.currency)}</p></div>
+            <div><p className="mb-1 text-xs font-medium text-muted sm:hidden">Status</p><StatusPill status={payment.status} /></div>
           </div>
         ))}
       </section>

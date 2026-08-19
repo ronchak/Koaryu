@@ -10,7 +10,7 @@ import {
   getProgramLabel,
   getStageLabel,
 } from "@/lib/leads-page-model";
-import type { Lead, LeadStage, Program, StaffMember } from "@/types";
+import type { Lead, Program, StaffMember } from "@/types";
 import { AlertTriangle, ChevronLeft, ChevronRight, UserPlus } from "lucide-react";
 import styles from "./leads-ledger.module.css";
 
@@ -20,24 +20,59 @@ interface LeadPipelineBoardProps {
   leads: Lead[];
   pendingLeadId: string | null;
   programById: Map<string, Program>;
+  selectedLeadId: string | null;
   staffById: Map<string, StaffMember>;
   today: string;
   onAddLead: () => void;
   onKeyboardMoveLead: (lead: Lead, direction: -1 | 1) => void | Promise<void>;
   onSelectLead: (leadId: string) => void;
-  onStageSelection: (lead: Lead, nextStage: LeadStage) => void | Promise<void>;
 }
 
 const LEDGER_LOADING_ROWS = 6;
 
+type LeadAgeBandId = "overdue-8" | "overdue-3" | "overdue-1" | "today" | "upcoming" | "unscheduled";
+
+const LEAD_AGE_BANDS: { id: LeadAgeBandId; label: string }[] = [
+  { id: "overdue-8", label: "8+ days overdue" },
+  { id: "overdue-3", label: "3–7 days overdue" },
+  { id: "overdue-1", label: "1–2 days overdue" },
+  { id: "today", label: "Due today" },
+  { id: "upcoming", label: "Upcoming" },
+  { id: "unscheduled", label: "Unscheduled / completed" },
+];
+
+function dayDifference(date: string, today: string) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.round(
+    (new Date(`${today}T00:00:00`).getTime() - new Date(`${date}T00:00:00`).getTime()) / dayMs
+  );
+}
+
+function getLeadAgeBand(lead: Lead, today: string): LeadAgeBandId {
+  if (!lead.follow_up_date || lead.stage === "enrolled") return "unscheduled";
+  const daysOverdue = dayDifference(lead.follow_up_date, today);
+  if (daysOverdue >= 8) return "overdue-8";
+  if (daysOverdue >= 3) return "overdue-3";
+  if (daysOverdue >= 1) return "overdue-1";
+  if (daysOverdue === 0) return "today";
+  return "upcoming";
+}
+
+function getLeadNextAction(lead: Lead) {
+  if (lead.stage === "enrolled") return "Enrollment complete";
+  if (!lead.follow_up_date) return "Schedule the next contact";
+  switch (lead.stage) {
+    case "inquiry": return "Make first contact";
+    case "trial_scheduled": return "Confirm trial attendance";
+    case "trial_completed": return "Review trial and next step";
+    case "offer_sent": return "Follow up on the offer";
+    case "closed_lost": return "Review closed record";
+  }
+}
+
 function LeadLedgerIntroLoading() {
   return (
     <div className={styles.intro}>
-      <div>
-        <p className={styles.eyebrow}>Obligation ledger</p>
-        <h2 id="lead-ledger-state-title">Who needs a follow-up next?</h2>
-        <p>Loading the accountable queue and its current owners.</p>
-      </div>
       <dl className={styles.totals} aria-hidden="true">
         <div><dt>Overdue</dt><dd>—</dd></div>
         <div><dt>Due today</dt><dd>—</dd></div>
@@ -51,9 +86,8 @@ function LeadLedgerErrorIntro() {
   return (
     <div className={styles.intro}>
       <div>
-        <p className={styles.eyebrow}>Obligation ledger</p>
         <h2 id="lead-ledger-state-title">The follow-up queue could not be loaded.</h2>
-        <p>Review the error below, then retry to restore the accountable queue and its current owners.</p>
+        <p>Review the error below, then retry.</p>
       </div>
       <dl className={styles.totals} aria-hidden="true">
         <div><dt>Overdue</dt><dd>—</dd></div>
@@ -66,7 +100,7 @@ function LeadLedgerErrorIntro() {
 
 export function LeadLedgerLoading() {
   return (
-    <section className={styles.workspace} aria-labelledby="lead-ledger-state-title" role="status">
+    <section className={styles.workspace} aria-label="Loading lead follow-up obligations" role="status">
       <LeadLedgerIntroLoading />
       <p className="sr-only">Loading follow-up obligations…</p>
       <div className={styles.stateFrame} aria-hidden="true">
@@ -88,7 +122,7 @@ export function LeadLedgerLoadError({ error, onRetry }: { error: string; onRetry
     <section className={styles.workspace} aria-labelledby="lead-ledger-state-title">
       <LeadLedgerErrorIntro />
       <div className={styles.stateFrame} role="alert">
-        <div className={`${styles.stateMessage} p-6 sm:p-8`}>
+        <div className={`${styles.stateMessage} p-4`}>
           <AlertTriangle aria-hidden="true" className="h-6 w-6 shrink-0 text-danger" />
           <div>
             <p className="max-w-xl text-sm text-text-secondary">{error}</p>
@@ -108,23 +142,28 @@ export function LeadPipelineBoard({
   leads,
   pendingLeadId,
   programById,
+  selectedLeadId,
   staffById,
   today,
   onAddLead,
   onKeyboardMoveLead,
   onSelectLead,
-  onStageSelection,
 }: LeadPipelineBoardProps) {
   const overdue = leads.filter((lead) => lead.follow_up_date && lead.follow_up_date < today).length;
   const dueToday = leads.filter((lead) => lead.follow_up_date === today).length;
   const unassigned = leads.filter((lead) => !lead.assigned_staff_id).length;
+  const leadsByBand = new Map(
+    LEAD_AGE_BANDS.map((band) => [
+      band.id,
+      leads.filter((lead) => getLeadAgeBand(lead, today) === band.id),
+    ])
+  );
 
   if (leads.length === 0) {
     return (
       <section className={styles.empty} aria-labelledby="lead-ledger-title">
-        <p className={styles.eyebrow}>Obligation ledger</p>
         <h2 id="lead-ledger-title">No open lead obligations.</h2>
-        <p>The old stage columns are gone. New inquiries will appear here in follow-up order.</p>
+        <p>New inquiries will appear here in follow-up order.</p>
         {canManageLeads ? (
           <Button variant="primary" size="sm" onClick={onAddLead}>
             <UserPlus aria-hidden="true" className="h-3.5 w-3.5" />
@@ -136,13 +175,8 @@ export function LeadPipelineBoard({
   }
 
   return (
-    <section className={styles.workspace} aria-labelledby="lead-ledger-title">
+    <section className={styles.workspace} aria-label="Open lead obligations">
       <div className={styles.intro}>
-        <div>
-          <p className={styles.eyebrow}>Obligation ledger</p>
-          <h2 id="lead-ledger-title">Who needs a follow-up next?</h2>
-          <p>Ordered by the promise due, replacing stage columns with one accountable queue.</p>
-        </div>
         <dl className={styles.totals}>
           <div><dt>Overdue</dt><dd>{overdue}</dd></div>
           <div><dt>Due today</dt><dd>{dueToday}</dd></div>
@@ -150,62 +184,63 @@ export function LeadPipelineBoard({
         </dl>
       </div>
 
-      <div className={styles.tableFrame}>
-        <table className={styles.ledger}>
-          <thead>
-            <tr>
-              <th scope="col">Obligation</th>
-              <th scope="col">Lead</th>
-              <th scope="col">Stage</th>
-              <th scope="col">Program / source</th>
-              <th scope="col">Owner</th>
-              <th scope="col"><span className="sr-only">Open record</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {leads.map((lead) => {
-              const stageIndex = PIPELINE_STAGES.findIndex((stage) => stage.id === lead.stage);
-              const owner = lead.assigned_staff_id ? staffById.get(lead.assigned_staff_id) : null;
-              const isPending = pendingLeadId === lead.id;
-              const obligation = lead.follow_up_date
-                ? getFollowUpStatusLabel(lead.follow_up_date, today)
-                : lead.stage === "enrolled" ? "Completed" : "Not scheduled";
-              const tone = lead.follow_up_date && lead.follow_up_date < today
-                ? "overdue"
-                : lead.follow_up_date === today ? "today" : "quiet";
+      <ol className={styles.stageRail} aria-label="Lead stages">
+        {PIPELINE_STAGES.map((stage) => {
+          const count = leads.filter((lead) => lead.stage === stage.id).length;
+          return (
+            <li key={stage.id}>
+              <strong>{stage.label}</strong>
+              <b>{count}</b>
+            </li>
+          );
+        })}
+      </ol>
 
-              return (
-                <tr
-                  key={lead.id}
-                  data-obligation={tone}
-                  data-follow-up-state={tone === "today" ? "due-today" : tone}
-                  aria-busy={isPending || undefined}
-                >
-                  <td data-label="Obligation" className={styles.obligation}>
-                    <span>{obligation}</span>
-                    {lead.follow_up_date ? <small>{formatDate(lead.follow_up_date, true)}</small> : null}
-                  </td>
-                  <th scope="row" data-label="Lead">
-                    <button type="button" onClick={() => onSelectLead(lead.id)} className={styles.nameButton}>
-                      {fullName(lead)}
-                    </button>
-                    <small>{lead.email || lead.phone || "No contact details"}</small>
-                  </th>
-                  <td data-label="Stage" className={styles.stageCell}>
-                    {canManageLeads ? (
-                      <>
-                        <select
-                          aria-label={`Stage for ${fullName(lead)}`}
-                          value={lead.stage}
-                          disabled={isPending}
-                          onChange={(event) => void onStageSelection(lead, event.target.value as LeadStage)}
-                        >
-                          {PIPELINE_STAGES.map((stage) => (
-                            <option key={stage.id} value={stage.id} disabled={stage.id === "enrolled" && !canConvertLeads}>
-                              {stage.label}
-                            </option>
-                          ))}
-                        </select>
+      <div className={styles.ageQueue} aria-label="Lead next-action queue">
+        {LEAD_AGE_BANDS.map((band) => {
+          const bandLeads = leadsByBand.get(band.id) ?? [];
+          if (bandLeads.length === 0) return null;
+          return (
+            <section key={band.id} className={styles.ageBand} data-age-band={band.id}>
+              <header>
+                <h2>{band.label}</h2>
+                <span>{bandLeads.length}</span>
+              </header>
+              <ol>
+                {bandLeads.map((lead) => {
+                  const stageIndex = PIPELINE_STAGES.findIndex((stage) => stage.id === lead.stage);
+                  const owner = lead.assigned_staff_id ? staffById.get(lead.assigned_staff_id) : null;
+                  const isPending = pendingLeadId === lead.id;
+                  const isSelected = selectedLeadId === lead.id;
+                  return (
+                    <li
+                      key={lead.id}
+                      data-selected={isSelected || undefined}
+                      data-follow-up-state={band.id}
+                      aria-busy={isPending || undefined}
+                    >
+                      <button
+                        type="button"
+                        data-lead-id={lead.id}
+                        className={styles.queueLead}
+                        disabled={isPending}
+                        aria-pressed={isSelected}
+                        onClick={() => onSelectLead(lead.id)}
+                      >
+                        <strong>{fullName(lead)}</strong>
+                        <span>{getStageLabel(lead.stage)} · {getProgramLabel(lead, lead.program_id ? programById.get(lead.program_id) : null)}</span>
+                      </button>
+                      <div className={styles.queueAction}>
+                        <strong>{getLeadNextAction(lead)}</strong>
+                        <span>
+                          {lead.follow_up_date ? `${getFollowUpStatusLabel(lead.follow_up_date, today)} · ${formatDate(lead.follow_up_date, true)}` : "No follow-up date"}
+                        </span>
+                      </div>
+                      <div className={styles.queueContext}>
+                        <span>{owner?.full_name || owner?.email || "Unassigned"}</span>
+                        <small>{SOURCE_LABELS[lead.source]}{lead.is_minor ? " · Minor" : ""}</small>
+                      </div>
+                      {canManageLeads ? (
                         <div className={styles.stageMoves} aria-label={`Move ${fullName(lead)} one stage`}>
                           <button
                             type="button"
@@ -220,26 +255,14 @@ export function LeadPipelineBoard({
                             onClick={() => void onKeyboardMoveLead(lead, 1)}
                           ><ChevronRight aria-hidden="true" /></button>
                         </div>
-                      </>
-                    ) : <span className={styles.readOnlyStage}>{getStageLabel(lead.stage)}</span>}
-                  </td>
-                  <td data-label="Program / source">
-                    <span>{getProgramLabel(lead, lead.program_id ? programById.get(lead.program_id) : null)}</span>
-                    <small>{SOURCE_LABELS[lead.source]}{lead.is_minor ? " · Minor" : ""}</small>
-                  </td>
-                  <td data-label="Owner">
-                    <span>{owner?.full_name || owner?.email || "Unassigned"}</span>
-                  </td>
-                  <td data-label="Record">
-                    <Button variant="ghost" size="sm" disabled={isPending} onClick={() => onSelectLead(lead.id)}>
-                      Open
-                    </Button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          );
+        })}
       </div>
     </section>
   );
