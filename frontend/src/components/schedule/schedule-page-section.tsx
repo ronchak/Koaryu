@@ -462,6 +462,7 @@ export function SchedulePageSection({
           value={programFilter}
           onChange={(event) => onProgramFilterChange(event.target.value)}
           aria-label="Filter schedule by program"
+          data-schedule-program-filter={programFilter ? "selected" : "all"}
           className="min-h-11 w-full border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:w-auto"
         >
           <option value="">All programs</option>

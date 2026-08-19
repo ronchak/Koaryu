@@ -450,6 +450,15 @@
     color: #000 !important;
   }
 
+  .surface[data-operations-page="schedule"] > :global(header),
+  .surface[data-operations-page="schedule"] :global([data-schedule-program-filter]) {
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    transition: none !important;
+  }
+
   :global(#main-content) {
     width: 100% !important;
     min-height: 0 !important;

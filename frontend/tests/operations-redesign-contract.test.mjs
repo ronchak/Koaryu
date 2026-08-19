@@ -395,6 +395,133 @@ describe("operations behavior proof", () => {
     }
   });
 
+  it("prints Schedule Header and selected Program context natively on the first frame", async () => {
+    const schedule = source("src/components/schedule/schedule-page-section.tsx");
+    const header = source("src/components/header.tsx");
+    const globals = source("src/app/globals.css");
+    const css = source("src/components/operations/operations-surface.module.css");
+    const headerTransitionCss = globals.match(/\.koaryu-surface-transition\s*\{[\s\S]*?\}/)?.[0];
+    const selectTransitionCss = globals.match(/input,\s*textarea,\s*select\s*\{[\s\S]*?\}/)?.[0];
+    const browserCss = css.replaceAll(":global(", ":is(");
+    assert.ok(headerTransitionCss, "shared Header transition CSS must be extractable");
+    assert.ok(selectTransitionCss, "production select transition CSS must be extractable");
+    assert.match(header, /<header className="koaryu-surface-transition/);
+    assert.match(schedule, /data-schedule-program-filter=\{programFilter \? "selected" : "all"\}/);
+    assert.match(schedule, /value=\{programFilter\}/);
+    assert.match(schedule, /onChange=\{\(event\) => onProgramFilterChange\(event\.target\.value\)\}/);
+    assert.match(css, /\.surface\[data-operations-page="schedule"\] > :global\(header\),[\s\S]*?\[data-schedule-program-filter\][\s\S]*?border-radius: 0 !important;[\s\S]*?background: #fff !important;[\s\S]*?color: #000 !important;[\s\S]*?box-shadow: none !important;[\s\S]*?transition: none !important;/);
+
+    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 816, height: 1056 } });
+      for (const theme of ["light", "dark"]) {
+        await page.emulateMedia({ media: "screen" });
+        const ground = theme === "light" ? "rgb(246, 241, 234)" : "rgb(35, 32, 30)";
+        const raised = theme === "light" ? "rgb(255, 252, 247)" : "rgb(52, 48, 45)";
+        const screenText = theme === "light" ? "rgb(24, 22, 20)" : "rgb(244, 240, 236)";
+        await page.setContent(
+          '<style>html, body { width: 100%; margin: 0; } ' + selectTransitionCss + headerTransitionCss + browserCss + '</style>' +
+          '<div data-theme="' + theme + '" data-koaryu-dashboard-shell="true" style="' +
+            '--motion-fast:120ms;--motion-medium:240ms;--ease-standard:ease;' +
+            '--product-ground:' + ground + ';--product-paper:' + raised + ';--product-card-stock:' + raised + ';' +
+            '--product-rule-soft:rgb(140,140,140);--product-ink:' + screenText + ';--product-soft-ink:' + screenText + '">' +
+            '<main class="surface" data-operations-page="schedule">' +
+              '<header class="koaryu-surface-transition" style="box-sizing:border-box;background:' + ground +
+                ';color:' + screenText + ';width:100%;padding:16px"><h1 style="margin:0">Schedule</h1></header>' +
+              '<div style="padding:16px">' +
+                '<select aria-label="Filter schedule by program" data-schedule-program-filter="selected" ' +
+                  'style="box-sizing:border-box;background:' + raised + ';color:' + screenText + ';box-shadow:none">' +
+                  '<option value="">All programs</option>' +
+                  '<option value="program-1" selected>Adult Karate</option>' +
+                '</select>' +
+              '</div>' +
+            '</main>' +
+          '</div>'
+        );
+
+        const screenChrome = await page.evaluate(() => {
+          const headerElement = document.querySelector("header");
+          const filter = document.querySelector("[data-schedule-program-filter]");
+          const headerStyle = getComputedStyle(headerElement);
+          const filterStyle = getComputedStyle(filter);
+          return {
+            filter: {
+              background: filterStyle.backgroundColor,
+              radius: filterStyle.borderRadius,
+              selectedLabel: filter.selectedOptions[0]?.textContent,
+              transitionDuration: filterStyle.transitionDuration,
+              transitionProperty: filterStyle.transitionProperty,
+              value: filter.value,
+            },
+            header: {
+              background: headerStyle.backgroundColor,
+              transitionDuration: headerStyle.transitionDuration,
+              transitionProperty: headerStyle.transitionProperty,
+            },
+          };
+        });
+        assert.equal(screenChrome.header.background, ground);
+        assert.equal(screenChrome.header.transitionProperty.includes("background-color"), true);
+        assert.notEqual(screenChrome.header.transitionDuration, "0s");
+        assert.equal(screenChrome.filter.background, raised);
+        assert.equal(screenChrome.filter.radius, "10px");
+        assert.equal(screenChrome.filter.transitionProperty.includes("background-color"), true);
+        assert.notEqual(screenChrome.filter.transitionDuration, "0s");
+        assert.equal(screenChrome.filter.value, "program-1");
+        assert.equal(screenChrome.filter.selectedLabel, "Adult Karate");
+
+        await page.emulateMedia({ media: "print" });
+        const printChrome = await page.evaluate(() => {
+          const headerElement = document.querySelector("header");
+          const filter = document.querySelector("[data-schedule-program-filter]");
+          const headerStyle = getComputedStyle(headerElement);
+          const filterStyle = getComputedStyle(filter);
+          const headerRect = headerElement.getBoundingClientRect();
+          const filterRect = filter.getBoundingClientRect();
+          return {
+            documentClientWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            filter: {
+              background: filterStyle.backgroundColor,
+              boxShadow: filterStyle.boxShadow,
+              color: filterStyle.color,
+              contained: filterRect.left >= 0 && filterRect.right <= document.documentElement.clientWidth,
+              radius: filterStyle.borderRadius,
+              selectedLabel: filter.selectedOptions[0]?.textContent,
+              transitionDuration: filterStyle.transitionDuration,
+              transitionProperty: filterStyle.transitionProperty,
+              value: filter.value,
+            },
+            header: {
+              background: headerStyle.backgroundColor,
+              boxShadow: headerStyle.boxShadow,
+              color: headerStyle.color,
+              contained: headerRect.left >= 0 && headerRect.right <= document.documentElement.clientWidth,
+              radius: headerStyle.borderRadius,
+              transitionDuration: headerStyle.transitionDuration,
+              transitionProperty: headerStyle.transitionProperty,
+            },
+          };
+        });
+        for (const element of [printChrome.header, printChrome.filter]) {
+          assert.equal(element.background, "rgb(255, 255, 255)");
+          assert.equal(element.boxShadow, "none");
+          assert.equal(element.color, "rgb(0, 0, 0)");
+          assert.equal(element.contained, true);
+          assert.equal(element.radius, "0px");
+          assert.equal(element.transitionDuration, "0s");
+          assert.equal(element.transitionProperty, "none");
+        }
+        assert.equal(printChrome.filter.value, "program-1");
+        assert.equal(printChrome.filter.selectedLabel, "Adult Karate");
+        assert.equal(printChrome.documentClientWidth, 816);
+        assert.equal(printChrome.documentScrollWidth, 816);
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("contains Program controls at 390px and flattens Month print in both themes", async () => {
     const programs = source("src/components/settings/programs-section.tsx");
     const month = source("src/components/schedule/month-schedule-view.tsx");
