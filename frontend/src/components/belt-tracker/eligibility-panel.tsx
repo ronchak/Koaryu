@@ -186,7 +186,7 @@ export function EligibilityPanel({
                               />
                             )
                             : (
-                              <span className="inline-flex items-center rounded-[4px] border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
+                              <span className="inline-flex items-center rounded-[10px] border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
                                 {group.label}
                               </span>
                             )}
@@ -221,7 +221,7 @@ export function EligibilityPanel({
                         <th scope="row" data-label="Student" className="px-6 py-3 text-left">
                           <Link
                             href={`/students/${entry.student_id}`}
-                            className="inline-flex rounded-[4px] font-medium text-text-primary transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                            className="inline-flex rounded-[10px] font-medium text-text-primary transition-colors hover:text-accent"
                           >
                             {entry.student_name}
                           </Link>

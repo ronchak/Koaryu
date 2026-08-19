@@ -17,6 +17,9 @@ describe("records workspace composition contracts", () => {
     assert.match(roster, /onClick=\{stopStudentSelectionPropagation\}[\s\S]*className=\{styles\.checkboxControl\}/);
     assert.match(styles, /\.checkboxTarget \{[^}]*min-width: 44px;[^}]*min-height: 44px;/);
     assert.match(styles, /\.checkboxControl \{ width: 13px; height: 13px;/);
+    const rosterTableRule = styles.match(/\.rosterTable \{[\s\S]*?\}/)?.[0] ?? "";
+    assert.doesNotMatch(rosterTableRule, /overflow:\s*(?:hidden|auto)/);
+    assert.match(rosterTableRule, /clip-path: inset\(0 round 14px\)/);
     assert.match(roster, /<aside className=\{styles\.studentReadingRail\}/);
     assert.match(roster, /Open full record/);
     assert.match(page, /focusedStudentId/);
@@ -33,9 +36,14 @@ describe("records workspace composition contracts", () => {
     assert.doesNotMatch(detail, /onEditPromotion|onDeletePromotion|deletePromotion|editPromotion/);
   });
 
-  it("presents import as one worksheet while retaining all four controller stages", async () => {
+  it("keeps import source context and all four controller stages without metaphor copy", async () => {
     const page = await source("../src/components/students/student-import-page-content.tsx");
-    assert.match(page, /One auditable worksheet/);
+    assert.match(page, /aria-label="Import worksheet progress"/);
+    assert.match(page, />Source<\/dt>/);
+    assert.match(page, />Rows<\/dt>/);
+    assert.doesNotMatch(page, /One auditable worksheet/);
+    const mapping = await source("../src/components/students/student-import-mapping-step.tsx");
+    assert.match(mapping, /aria-label="Choose a different CSV file"/);
     for (const stage of ["upload", "map", "preview", "done"]) {
       assert.match(page, new RegExp(`stage === "${stage}"`));
     }
@@ -65,6 +73,8 @@ describe("records workspace composition contracts", () => {
     assert.match(leadPage, /leads=\{controller\.model\.obligationLedgerLeads\}/);
     assert.doesNotMatch(leads, /bandLeads\.sort/);
     assert.doesNotMatch(leads, /draggable|onDragStart|Drop to move/);
+    assert.doesNotMatch(leads, /note:|band\.note|padStart\(2/);
+    assert.doesNotMatch(belt, /styles\.rankOrdinal/);
   });
 
   it("surfaces lead assignment, loss reason, and ephemeral activity without exposing deletion", async () => {
@@ -134,7 +144,10 @@ describe("records workspace composition contracts", () => {
     const noticeRule = styles.match(/\.beltProgramLockNotice \{[\s\S]*?\}/)?.[0] ?? "";
     assert.match(noticeRule, /padding: 0\.625rem/);
     assert.doesNotMatch(noticeRule, /position:\s*sticky|position:\s*fixed/);
-    assert.match(styles, /\.eligibilityTable thead \{ position: sticky; top: 158px/);
+    assert.match(styles, /\.eligibilityTable thead th \{ position: sticky; top: 158px/);
+    const eligibilityTableRule = styles.match(/\.eligibilityTable \{[\s\S]*?\}/)?.[0] ?? "";
+    assert.doesNotMatch(eligibilityTableRule, /overflow:\s*(?:hidden|auto)/);
+    assert.match(eligibilityTableRule, /clip-path: inset\(0 round 14px\)/);
   });
 
   it("keeps the two-column folio, print shell reset, product tokens, and local focus treatment", async () => {
@@ -150,7 +163,7 @@ describe("records workspace composition contracts", () => {
     assert.doesNotMatch(leadStyles, /--background/);
     assert.match(leadStyles, /var\(--bg\)/);
     for (const styles of [studentStyles, beltStyles, leadStyles]) {
-      assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--accent\)/);
+      assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--product-focus\)/);
       assert.match(styles, /outline-offset: 2px/);
     }
   });
@@ -172,13 +185,13 @@ describe("records workspace composition contracts", () => {
       assert.match(styles, /@media \(max-width: 1023px\)/);
     }
     assert.match(studentStyles, /\.rosterToolbar[\s\S]*top: 70px/);
-    assert.match(studentStyles, /\.rosterTable thead[\s\S]*top: 132px/);
+    assert.match(studentStyles, /\.rosterTable thead th[\s\S]*top: 132px/);
     assert.match(beltStyles, /\.beltControls[\s\S]*top: 70px/);
-    assert.match(beltStyles, /\.eligibilityTable thead[\s\S]*top: 158px/);
+    assert.match(beltStyles, /\.eligibilityTable thead th[\s\S]*top: 158px/);
     assert.match(studentStyles, /:global\(#main-content\)[\s\S]*margin-left: 0 !important/);
     assert.match(studentStyles, /\.importStage span \{[^}]*white-space: normal/);
     assert.match(leadStyles, /\.inspector \{[\s\S]*position: sticky/);
-    assert.match(leadStyles, /\.inspector:focus \{ outline: 2px solid var\(--accent\); outline-offset: 2px; \}/);
+    assert.match(leadStyles, /\.inspector:focus \{ outline: 2px solid var\(--product-focus\); outline-offset: 2px; \}/);
     assert.match(leadStyles, /\.stageRail \{/);
     assert.match(leadStyles, /\.ageBand \{/);
     assert.match(leadStyles, /\.totals dt \{[^}]*font-size: 0\.75rem/);
@@ -205,11 +218,18 @@ describe("records workspace composition contracts", () => {
     ]);
 
     for (const styles of stylesheets) {
-      assert.match(styles, /button \{ min-height: 44px; \}/);
-      assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--accent\)/);
+      assert.match(styles, /button(?:,| \{)[\s\S]*min-width: 45px;[^}]*min-height: 45px/);
+      assert.match(styles, /label:has\(input:is\(\[type="checkbox"\], \[type="radio"\]\)\)[\s\S]*display: flex;[^}]*min-width: 45px;[^}]*min-height: 45px/);
+      assert.match(styles, /:focus-visible[\s\S]*outline: 2px solid var\(--product-focus\)/);
       assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
       assert.match(styles, /@media print/);
       assert.doesNotMatch(styles, /--product-shadow-resting/);
+      assert.doesNotMatch(styles, /(?:border-top|border-bottom): 2px|box-shadow:\s*inset|text-transform:\s*uppercase|linear-gradient/);
+      assert.doesNotMatch(styles, /border-radius:\s*(?:0|[1-5]px|7px)/);
     }
+    assert.match(stylesheets[1], /tr\[data-readiness\][\s\S]*padding-block: 5px !important/);
+    assert.match(stylesheets[1], /\.eligibilityTable td\[data-label="Actions"\] > div \{ flex-wrap: nowrap; \}/);
+    assert.match(stylesheets[1], /\.rankHeader,[\s\S]*\.tipRow \{ min-height: 56px; padding-block: 5px !important; \}/);
+    assert.match(stylesheets[2], /\.ageBand > ol > li \{[^}]*padding: 5px 0\.75rem/);
   });
 });

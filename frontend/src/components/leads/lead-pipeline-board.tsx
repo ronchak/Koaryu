@@ -32,13 +32,13 @@ const LEDGER_LOADING_ROWS = 6;
 
 type LeadAgeBandId = "overdue-8" | "overdue-3" | "overdue-1" | "today" | "upcoming" | "unscheduled";
 
-const LEAD_AGE_BANDS: { id: LeadAgeBandId; label: string; note: string }[] = [
-  { id: "overdue-8", label: "8+ days overdue", note: "Recover or close the oldest obligations first." },
-  { id: "overdue-3", label: "3–7 days overdue", note: "Resolve this week’s missed follow-ups." },
-  { id: "overdue-1", label: "1–2 days overdue", note: "Clear recent misses before they age." },
-  { id: "today", label: "Due today", note: "Complete today’s promised contact." },
-  { id: "upcoming", label: "Upcoming", note: "Prepared follow-ups with time remaining." },
-  { id: "unscheduled", label: "Unscheduled / completed", note: "Schedule the next move or confirm completion." },
+const LEAD_AGE_BANDS: { id: LeadAgeBandId; label: string }[] = [
+  { id: "overdue-8", label: "8+ days overdue" },
+  { id: "overdue-3", label: "3–7 days overdue" },
+  { id: "overdue-1", label: "1–2 days overdue" },
+  { id: "today", label: "Due today" },
+  { id: "upcoming", label: "Upcoming" },
+  { id: "unscheduled", label: "Unscheduled / completed" },
 ];
 
 function dayDifference(date: string, today: string) {
@@ -73,9 +73,6 @@ function getLeadNextAction(lead: Lead) {
 function LeadLedgerIntroLoading() {
   return (
     <div className={styles.intro}>
-      <div>
-        <p>Loading the accountable queue and its current owners.</p>
-      </div>
       <dl className={styles.totals} aria-hidden="true">
         <div><dt>Overdue</dt><dd>—</dd></div>
         <div><dt>Due today</dt><dd>—</dd></div>
@@ -90,7 +87,7 @@ function LeadLedgerErrorIntro() {
     <div className={styles.intro}>
       <div>
         <h2 id="lead-ledger-state-title">The follow-up queue could not be loaded.</h2>
-        <p>Review the error below, then retry to restore the accountable queue and its current owners.</p>
+        <p>Review the error below, then retry.</p>
       </div>
       <dl className={styles.totals} aria-hidden="true">
         <div><dt>Overdue</dt><dd>—</dd></div>
@@ -125,7 +122,7 @@ export function LeadLedgerLoadError({ error, onRetry }: { error: string; onRetry
     <section className={styles.workspace} aria-labelledby="lead-ledger-state-title">
       <LeadLedgerErrorIntro />
       <div className={styles.stateFrame} role="alert">
-        <div className={`${styles.stateMessage} p-6 sm:p-8`}>
+        <div className={`${styles.stateMessage} p-4`}>
           <AlertTriangle aria-hidden="true" className="h-6 w-6 shrink-0 text-danger" />
           <div>
             <p className="max-w-xl text-sm text-text-secondary">{error}</p>
@@ -188,11 +185,10 @@ export function LeadPipelineBoard({
       </div>
 
       <ol className={styles.stageRail} aria-label="Lead stages">
-        {PIPELINE_STAGES.map((stage, index) => {
+        {PIPELINE_STAGES.map((stage) => {
           const count = leads.filter((lead) => lead.stage === stage.id).length;
           return (
             <li key={stage.id}>
-              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
               <strong>{stage.label}</strong>
               <b>{count}</b>
             </li>
@@ -207,10 +203,7 @@ export function LeadPipelineBoard({
           return (
             <section key={band.id} className={styles.ageBand} data-age-band={band.id}>
               <header>
-                <div>
-                  <h2>{band.label}</h2>
-                  <p>{band.note}</p>
-                </div>
+                <h2>{band.label}</h2>
                 <span>{bandLeads.length}</span>
               </header>
               <ol>

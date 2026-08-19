@@ -323,7 +323,7 @@ export function LeadDetailInspector({
         <section className="border-y border-border py-4" aria-labelledby="lead-activity-title">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Activity</p>
+              <p className="text-xs font-semibold text-muted">Activity</p>
               <h3 id="lead-activity-title" className="mt-1 text-sm font-semibold text-text-primary">Recorded follow-up trail</h3>
             </div>
             {activityStatus === "loading" ? (
@@ -340,7 +340,7 @@ export function LeadDetailInspector({
           ) : (
             <ol className="mt-3 space-y-3">
               {activities.map((activity) => (
-                <li key={activity.id} className="border-l-2 border-border pl-3">
+                <li key={activity.id} className="border-l border-border pl-3">
                   <p className="text-sm text-text-primary">{activity.description || activity.activity_type.replace(/_/g, " ")}</p>
                   <p className="mt-1 text-xs text-muted">
                     {new Date(activity.created_at).toLocaleString("en-US", {
@@ -381,7 +381,7 @@ export function LeadDetailInspector({
             </Button>
           )}
           {lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
-            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 border-l-2 border-danger/40 pl-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 rounded-[10px] bg-danger/5 p-3">
               <label className="min-w-40 flex-1 text-xs text-muted" htmlFor="lead-lost-reason">
                 Lost reason
                 <select

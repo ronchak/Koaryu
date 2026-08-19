@@ -51,12 +51,12 @@ export function StudentForm(props: StudentFormProps) {
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="w-full max-w-[560px] bg-surface border border-border rounded-[6px] shadow-2xl"
+      panelClassName="w-full max-w-[560px] bg-surface rounded-[18px] shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="student-form-title"
       onBackdropClick={onClose}
     >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-border">
           <h2 id="student-form-title" className="text-base font-semibold text-text-primary">
             {isEdit ? "Edit student" : "Add student"}
           </h2>
@@ -71,15 +71,15 @@ export function StudentForm(props: StudentFormProps) {
         </div>
 
         {/* Tab nav */}
-        <div className="flex border-b border-border">
+        <div className="flex gap-1 border-b border-border p-1">
           {studentFormTabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-5 py-2.5 text-sm cursor-pointer transition-[border-color,color,background-color] duration-150 border-b-2 -mb-px ${
+              className={`min-h-11 rounded-[10px] px-4 py-2.5 text-sm cursor-pointer transition-[color,background-color] duration-150 ${
                 tab === t.id
-                  ? "text-text-primary border-accent"
-                  : "text-muted border-transparent hover:text-text-secondary"
+                  ? "bg-surface-raised text-text-primary"
+                  : "text-muted hover:bg-surface-raised/60 hover:text-text-secondary"
               }`}
             >
               {t.label}
@@ -88,7 +88,7 @@ export function StudentForm(props: StudentFormProps) {
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          <div className="px-4 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
             {/* ---- Basic Info Tab ---- */}
             {tab === "info" && (
               <>
@@ -131,8 +131,8 @@ export function StudentForm(props: StudentFormProps) {
                   ) : null}
                 </div>
                 {canManageLifecycle ? (
-                  <div className="rounded-[6px] border border-border bg-surface-raised/50 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-text-secondary mb-3">
+                  <div className="rounded-[14px] border border-border bg-surface-raised/50 p-4">
+                  <p className="text-xs font-medium text-text-secondary mb-3">
                     Hold / Vacation
                   </p>
                   <div className="grid grid-cols-2 gap-3">
@@ -161,7 +161,7 @@ export function StudentForm(props: StudentFormProps) {
                     id={statusSelectId}
                     value={fields.status}
                     onChange={(e) => setField("status", e.target.value as typeof fields.status)}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none"
                   >
                     <option value="active">Active</option>
                     <option value="trialing">Trialing</option>
@@ -196,7 +196,7 @@ export function StudentForm(props: StudentFormProps) {
                     onChange={(e) => setField("notes", e.target.value)}
                     placeholder="Any additional notes about this student..."
                     rows={3}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
+                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
                   />
                 </div>
               </>
@@ -248,7 +248,7 @@ export function StudentForm(props: StudentFormProps) {
                   />
                 </div>
                 <div className="pt-2">
-                  <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">
+                  <p className="text-xs font-medium text-text-secondary mb-3">
                     Emergency Contact
                   </p>
                   <div className="grid grid-cols-2 gap-3">
@@ -281,7 +281,7 @@ export function StudentForm(props: StudentFormProps) {
             {/* ---- Guardian Tab ---- */}
             {tab === "guardian" && (
               <>
-                <div className="p-3 bg-surface-raised rounded-[6px] border border-border mb-4">
+                <div className="p-3 bg-surface-raised rounded-[14px] border border-border mb-4">
                   <p className="text-xs text-text-secondary">
                     {isEdit
                       ? "Guardian details are shown for reference during this edit. Student profile fields save from here."
@@ -334,7 +334,7 @@ export function StudentForm(props: StudentFormProps) {
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 border-t border-border flex items-center justify-between">
+          <div className="px-4 py-4 border-t border-border flex items-center justify-between">
             {error && <p className="text-xs text-danger">{error}</p>}
             <div className={`flex gap-2 ${error ? "" : "ml-auto"}`}>
               <Button type="button" variant="ghost" size="sm" onClick={onClose}>

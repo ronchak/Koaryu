@@ -13,7 +13,7 @@ export function DeleteRankConfirmModal({ name, onConfirm, onCancel }: {
   return (
     <ModalFrame
       rootClassName={`p-4 ${styles.beltDialogRoot}`}
-      panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-xs p-6"
+      panelClassName="bg-bg rounded-[18px] w-full max-w-xs p-4 shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="delete-rank-title"
       ariaDescribedBy="delete-rank-description"
       onBackdropClick={onCancel}

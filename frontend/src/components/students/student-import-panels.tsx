@@ -65,9 +65,9 @@ export function StudentImportUploadStep({
         role="button"
         tabIndex={0}
         aria-label="Select CSV file to import"
-        className={`border-2 border-dashed rounded-[6px] p-12 text-center cursor-pointer transition-[background-color,border-color,color] duration-150 ${
+        className={`border border-dashed rounded-[14px] p-4 text-center cursor-pointer transition-[background-color,border-color,color] duration-150 ${
           dragOver ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
-        } focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background`}
+        }`}
         onDrop={(event) => {
           event.preventDefault();
           onDragOverChange(false);
@@ -97,7 +97,7 @@ export function StudentImportUploadStep({
         />
       </div>
 
-      <div className="mt-6 bg-surface border border-border rounded-[6px] p-4">
+      <div className="mt-6 bg-surface border border-border rounded-[14px] p-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <p className="text-xs font-medium text-text-secondary">Minimum name info</p>
           <a
@@ -109,14 +109,14 @@ export function StudentImportUploadStep({
           </a>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded-[4px]">
+          <span className="px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded-[10px]">
             Full Name *
           </span>
           <span className="text-xs text-muted">or</span>
           {["First Name", "Last Name"].map((column) => (
             <span
               key={column}
-              className="px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded-[4px]"
+              className="px-2 py-0.5 text-xs bg-accent/10 text-accent border border-accent/20 rounded-[10px]"
             >
               {column} *
             </span>
@@ -124,7 +124,7 @@ export function StudentImportUploadStep({
           {["Email", "Phone", "Date of Birth", "Status", "Program", "Current Belt"].map((column) => (
             <span
               key={column}
-              className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+              className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
             >
               {column}
             </span>
@@ -206,7 +206,7 @@ export function StudentImportDonePanel({
         </p>
       ) : null}
       {importResult.non_critical_errors?.length ? (
-        <div className="mt-4 mx-auto max-w-2xl rounded-[6px] border border-warning/30 bg-warning/10 px-4 py-3 text-left">
+        <div className="mt-4 mx-auto max-w-2xl rounded-[14px] border border-warning/30 bg-warning/10 px-4 py-3 text-left">
           <p className="text-sm font-medium text-warning">
             Saved with {importResult.non_critical_errors.length === 1 ? "one follow-up" : `${importResult.non_critical_errors.length} follow-ups`}
           </p>

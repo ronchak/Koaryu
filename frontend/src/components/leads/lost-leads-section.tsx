@@ -22,7 +22,7 @@ export function LostLeadsSection({
   return (
     <div className="border-t border-border px-4 py-4 sm:px-6 lg:px-8">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-medium text-text-secondary uppercase tracking-wide">
+        <h3 className="text-xs font-medium text-text-secondary">
           Closed Lost
         </h3>
         <button
@@ -41,7 +41,7 @@ export function LostLeadsSection({
             key={lead.id}
             aria-label={`${fullName(lead)} lost lead card`}
             onClick={() => onSelectLead(lead.id)}
-            className="min-w-0 border border-border bg-surface p-3 text-left opacity-60 transition-opacity cursor-pointer hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background"
+            className="min-w-0 rounded-[10px] bg-surface p-3 text-left opacity-60 transition-opacity cursor-pointer hover:opacity-100"
           >
             <p className="break-words text-sm font-medium text-text-primary">
               {fullName(lead)}

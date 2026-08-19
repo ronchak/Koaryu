@@ -62,15 +62,15 @@ export function BeltTrackerShell({
       </Header>
 
       <div className="flex-1 flex flex-col">
-        <div className={`flex items-center gap-4 px-4 py-3 sm:px-6 lg:px-8 border-b border-border ${styles.beltControls}`}>
+        <div className={`mx-4 flex items-center gap-2 px-2 py-2 sm:mx-6 lg:mx-8 ${styles.beltControls}`}>
           {TABS.filter((item) => item.id !== "ladder" || canConfigureBelts).map((item) => (
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
-              className={`text-sm pb-2 border-b-2 cursor-pointer transition-colors ${
+              className={`min-h-11 rounded-[10px] px-3 text-sm cursor-pointer transition-colors ${
                 tab === item.id
-                  ? "text-text-primary border-accent font-medium"
-                  : "text-text-secondary border-transparent hover:text-text-primary"
+                  ? "bg-surface-raised text-text-primary font-medium"
+                  : "text-text-secondary hover:bg-surface-raised/60 hover:text-text-primary"
               }`}
             >
               {item.label}

@@ -133,7 +133,7 @@ export function RankPlanPanel({
                     onChange={(event) => onTermDraftChange(event.target.value)}
                     autoFocus
                     aria-label="Sub-rank term"
-                    className="px-1.5 py-0.5 text-xs bg-surface-raised border border-accent rounded-[4px] text-text-primary focus:outline-none w-20"
+                    className="px-1.5 py-0.5 text-xs bg-surface-raised border border-accent rounded-[10px] text-text-primary focus:outline-none w-20"
                   />
                   <button type="submit" className="text-xs text-accent hover:text-accent/80 cursor-pointer font-medium">
                     Save
@@ -231,6 +231,7 @@ export function RankPlanPanel({
               <div
                 key={group.belt.id}
                 data-progression-stratum={groupIndex + 1}
+                data-drop-target={isDropTarget || undefined}
                 className={`${styles.rankGroup} border transition-[background-color,border-color,opacity] ${
                   isDropTarget
                     ? "border-accent bg-accent/5"
@@ -242,7 +243,6 @@ export function RankPlanPanel({
                   onDrop={() => onBeltDrop(groupIndex)}
                   className={`flex items-center gap-3 px-4 py-3 cursor-default select-none ${styles.rankHeader}`}
                 >
-                  <span className={styles.rankOrdinal} aria-hidden="true">{String(groupIndex + 1).padStart(2, "0")}</span>
                   <span
                     draggable
                     data-belt-drag-handle={group.belt.id}
@@ -250,7 +250,7 @@ export function RankPlanPanel({
                     title={`Drag ${group.belt.name} to reorder`}
                     onDragStart={(event) => onBeltDragStart(groupIndex, event)}
                     onDragEnd={onBeltDragEnd}
-                    className="flex h-7 w-6 flex-shrink-0 cursor-grab items-center justify-center rounded-[4px] text-muted transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
+                    className="flex h-7 w-6 flex-shrink-0 cursor-grab items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
                   >
                     <GripVertical aria-hidden="true" className="h-4 w-4" />
                   </span>
@@ -296,7 +296,7 @@ export function RankPlanPanel({
                       disabled={groupIndex === 0}
                       aria-label={`Move ${group.belt.name} up`}
                       title="Move belt up"
-                      className="p-1.5 rounded-[4px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                      className="p-1.5 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       <ChevronUp aria-hidden="true" className="w-3 h-3" />
                     </button>
@@ -306,7 +306,7 @@ export function RankPlanPanel({
                       disabled={groupIndex === groups.length - 1}
                       aria-label={`Move ${group.belt.name} down`}
                       title="Move belt down"
-                      className="p-1.5 rounded-[4px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                      className="p-1.5 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       <ChevronDown aria-hidden="true" className="w-3 h-3" />
                     </button>
@@ -314,7 +314,7 @@ export function RankPlanPanel({
                       type="button"
                       onClick={() => onEditRank(group.belt.id)}
                       aria-label={`Edit ${group.belt.name}`}
-                      className="p-1.5 rounded-[4px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer"
+                      className="p-1.5 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer"
                       title="Edit belt"
                     >
                       <Pencil aria-hidden="true" className="w-3 h-3" />
@@ -323,7 +323,7 @@ export function RankPlanPanel({
                       type="button"
                       onClick={() => onDeleteRank(group.belt.id)}
                       aria-label={`Delete ${group.belt.name}`}
-                      className="p-1.5 rounded-[4px] text-muted hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-[10px] text-muted hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
                       title="Delete belt"
                     >
                       <Trash2 aria-hidden="true" className="w-3 h-3" />
@@ -332,7 +332,7 @@ export function RankPlanPanel({
                 </div>
 
                 {!isCollapsed && (
-                  <div id={`rank-group-${group.belt.id}-tips`} className="ml-10 mr-4 mb-3 border-l-2 border-border pl-4">
+                  <div id={`rank-group-${group.belt.id}-tips`} className="mx-4 mb-3 border-l border-border pl-4">
                     {group.tips.length === 0 && (
                       <p className="text-xs text-muted italic py-1 mb-1">
                         No {subRankTerm.toLowerCase()}s configured.
@@ -349,7 +349,7 @@ export function RankPlanPanel({
                           key={tip.id}
                           onDragOver={(event) => onTipDragOver(groupIndex, tipIndex, event)}
                           onDrop={() => onTipDrop(groupIndex, tipIndex)}
-                          className={`flex items-center gap-2.5 py-2 px-2 rounded-[4px] mb-0.5 transition-[background-color,color,opacity] select-none ${styles.tipRow} ${
+                          className={`flex items-center gap-2.5 py-2 px-2 rounded-[10px] mb-0.5 transition-[background-color,color,opacity] select-none ${styles.tipRow} ${
                             isTipDragging ? "opacity-30" : "opacity-100"
                           } ${isTipOver ? "bg-accent/10" : "hover:bg-surface-raised/60"}`}
                         >
@@ -360,7 +360,7 @@ export function RankPlanPanel({
                             title={`Drag ${tip.name} to reorder`}
                             onDragStart={(event) => onTipDragStart(groupIndex, tipIndex, event)}
                             onDragEnd={onTipDragEnd}
-                            className="flex h-6 w-5 flex-shrink-0 cursor-grab items-center justify-center rounded-[4px] text-muted/60 transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
+                            className="flex h-6 w-5 flex-shrink-0 cursor-grab items-center justify-center rounded-[10px] text-muted/60 transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
                           >
                             <GripVertical aria-hidden="true" className="h-3 w-3" />
                           </span>
@@ -383,7 +383,7 @@ export function RankPlanPanel({
                               disabled={tipIndex === 0}
                               aria-label={`Move ${tip.name} up`}
                               title={`Move ${subRankTerm.toLowerCase()} up`}
-                              className="p-1 rounded-[4px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                              className="p-1 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
                             >
                               <ChevronUp aria-hidden="true" className="w-2.5 h-2.5" />
                             </button>
@@ -393,7 +393,7 @@ export function RankPlanPanel({
                               disabled={tipIndex === group.tips.length - 1}
                               aria-label={`Move ${tip.name} down`}
                               title={`Move ${subRankTerm.toLowerCase()} down`}
-                              className="p-1 rounded-[4px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                              className="p-1 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
                             >
                               <ChevronDown aria-hidden="true" className="w-2.5 h-2.5" />
                             </button>
@@ -401,7 +401,7 @@ export function RankPlanPanel({
                               type="button"
                               onClick={() => onEditRank(tip.id)}
                               aria-label={`Edit ${tip.name}`}
-                              className="p-1 rounded-[4px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer"
+                              className="p-1 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer"
                             >
                               <Pencil aria-hidden="true" className="w-2.5 h-2.5" />
                             </button>
@@ -409,7 +409,7 @@ export function RankPlanPanel({
                               type="button"
                               onClick={() => onDeleteRank(tip.id)}
                               aria-label={`Delete ${tip.name}`}
-                              className="p-1 rounded-[4px] text-muted hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+                              className="p-1 rounded-[10px] text-muted hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
                             >
                               <Trash2 aria-hidden="true" className="w-2.5 h-2.5" />
                             </button>
@@ -421,7 +421,7 @@ export function RankPlanPanel({
                     <button
                       type="button"
                       onClick={() => onAddTip(groupIndex)}
-                      className="flex items-center gap-1.5 text-xs text-muted hover:text-accent transition-colors cursor-pointer mt-1 py-1 px-2 rounded-[4px] hover:bg-surface-raised/60"
+                      className="flex items-center gap-1.5 text-xs text-muted hover:text-accent transition-colors cursor-pointer mt-1 py-1 px-2 rounded-[10px] hover:bg-surface-raised/60"
                     >
                       <Plus aria-hidden="true" className="w-3 h-3" />
                       Add {subRankTerm.toLowerCase()}
@@ -433,7 +433,7 @@ export function RankPlanPanel({
           })}
 
           {groups.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-10 text-center text-muted border border-dashed border-border rounded-[6px]">
+            <div className="flex flex-col items-center justify-center rounded-[14px] bg-surface py-10 text-center text-muted shadow-[var(--product-shadow-card)]">
               <Tag aria-hidden="true" className="w-6 h-6 mb-2" />
               <p className="text-sm">
                 {hasCurrentLadder

@@ -266,7 +266,7 @@ function StudentImportSetupIssues({ validationResult }: { validationResult: CsvI
     >
       <div className="space-y-4">
         {validationResult.setup_issues.map((issue) => (
-          <div key={`${issue.code}-${issue.message}`} className="border border-border rounded-[6px] p-3">
+          <div key={`${issue.code}-${issue.message}`} className="border border-border rounded-[14px] p-3">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-sm font-medium text-text-primary">{issue.message}</p>
               <Badge variant={issue.severity === "error" ? "danger" : "warning"}>
@@ -278,7 +278,7 @@ function StudentImportSetupIssues({ validationResult }: { validationResult: CsvI
                 {issue.values.map((value) => (
                   <span
                     key={`${issue.code}-${value}`}
-                    className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+                    className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
                   >
                     {value}
                   </span>
@@ -303,7 +303,7 @@ function StudentImportWarnings({ validationResult }: { validationResult: CsvImpo
     >
       <div className="space-y-3">
         {validationResult.warnings.map((warning) => (
-          <div key={`${warning.code}-${warning.message}`} className="border border-border rounded-[6px] p-3">
+          <div key={`${warning.code}-${warning.message}`} className="border border-border rounded-[14px] p-3">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-sm font-medium text-text-primary">{warning.message}</p>
               <Badge variant="warning">{warning.row_numbers.length} row(s)</Badge>
@@ -313,7 +313,7 @@ function StudentImportWarnings({ validationResult }: { validationResult: CsvImpo
                 {warning.values.map((value) => (
                   <span
                     key={`${warning.code}-${value}`}
-                    className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+                    className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
                   >
                     {value}
                   </span>
@@ -354,7 +354,7 @@ function StudentImportIssueGroupsCard({
     >
       <div className="space-y-3">
         {groups.map((group) => (
-          <div key={group.key} className="border border-border rounded-[6px] p-3">
+          <div key={group.key} className="border border-border rounded-[14px] p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className={`text-sm ${messageClassName}`}>{group.issue.message}</p>

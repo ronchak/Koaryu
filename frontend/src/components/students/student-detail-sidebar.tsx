@@ -82,7 +82,7 @@ export function StudentDetailSidebar({
 
   return (
     <aside className={`col-span-1 min-w-0 space-y-4 ${styles.identityRail}`} aria-label="Student identity and current context">
-      <div className="border-x-0 border-y-2 border-[color:var(--text-primary)] bg-surface p-5 text-center">
+      <div className="rounded-[14px] bg-surface p-4 text-center shadow-[var(--product-shadow-card)]">
         <StudentAvatar
           student={student}
           size="lg"
@@ -246,7 +246,7 @@ export function StudentDetailSidebar({
             {student.tags.map((tag) => (
               <span
                 key={tag}
-                className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+                className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
               >
                 {tag}
               </span>

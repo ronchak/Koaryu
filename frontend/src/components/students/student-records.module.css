@@ -7,11 +7,11 @@
   --border: var(--product-rule-soft);
   --text-primary: var(--product-ink);
   --text-secondary: var(--product-soft-ink);
-  --muted: var(--product-soft-ink);
-  --accent: var(--product-cobalt);
+  --muted: var(--product-meta);
+  --accent: var(--product-wood);
   --accent-contrast: var(--product-paper);
-  --success: #386b56;
-  --warning: #80561c;
+  --success: var(--product-affirm);
+  --warning: var(--product-straw);
   --danger: var(--product-vermilion);
   min-width: 0;
   background: var(--product-ground);
@@ -37,6 +37,7 @@
   min-height: 44px;
   padding: 0.625rem 0.75rem;
   border-color: var(--product-rule);
+  border-radius: 10px;
   background: var(--product-card-stock);
 }
 
@@ -60,6 +61,8 @@
 .folioRoot :global(.koaryu-modal-panel) {
   max-height: calc(100dvh - 2rem);
   overflow-y: auto;
+  border: 0 !important;
+  border-radius: 18px !important;
   background: var(--product-lifted) !important;
   box-shadow: var(--product-shadow-lifted);
   animation: student-dialog-open var(--product-motion-open-duration) var(--product-motion-ease) both;
@@ -70,33 +73,40 @@
 .rosterPrintRoot :is(a, button, input, select, textarea, [tabindex]):focus-visible,
 .folioRoot :is(a, button, input, select, textarea, [tabindex]):focus-visible,
 .importPage :is(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent) !important;
+  outline: 2px solid var(--product-focus) !important;
   outline-offset: 2px;
 }
-.rosterPrintRoot button { min-height: 44px; }
+.rosterPrintRoot button,
+.folioRoot button,
+.importPage button { min-width: 45px; min-height: 45px; border-radius: 10px; }
+.rosterPrintRoot label:has(input:is([type="checkbox"], [type="radio"])),
+.folioRoot label:has(input:is([type="checkbox"], [type="radio"])),
+.importPage label:has(input:is([type="checkbox"], [type="radio"])) { display: flex; min-width: 45px; min-height: 45px; }
 
 .rosterToolbar {
   position: sticky;
   top: 70px;
   z-index: 18;
-  min-height: 60px;
+  min-height: 56px;
   margin-top: 0.75rem;
   padding-block: 0.5rem !important;
-  border-top: 1px solid var(--product-rule-soft);
-  background: color-mix(in srgb, var(--product-paper) 96%, transparent);
-  box-shadow: 0 6px 14px rgb(48 39 25 / 5%);
+  border: 0 !important;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--product-paper) 90%, transparent);
+  box-shadow: var(--product-shadow-card);
+  backdrop-filter: blur(16px);
 }
 
 .selectionBand {
-  border-radius: 0 !important;
-  background: var(--product-card-stock) !important;
-  box-shadow: inset 3px 0 0 var(--accent);
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: var(--product-sunk) !important;
 }
 .rosterViewport { min-width: 0; padding: 0 clamp(1rem, 2.4vw, 2rem); }
 .rosterWorkbench {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(15.5rem, 19rem);
+  grid-template-columns: minmax(0, 1fr) minmax(18.5rem, 20rem);
   gap: clamp(1rem, 2vw, 1.5rem);
   align-items: start;
 }
@@ -104,35 +114,52 @@
 
 .rosterTable {
   width: 100%;
-  border-collapse: collapse;
-  border-top: 2px solid var(--text-primary);
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  border-radius: 14px;
+  clip-path: inset(0 round 14px);
   background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
   font-size: 0.8125rem;
 }
 
 .rosterTable thead {
-  position: sticky;
-  top: 132px;
-  z-index: 12;
+  position: static;
   background: var(--product-card-stock);
 }
+.rosterTable thead th { position: sticky; top: 132px; z-index: 12; background: var(--product-card-stock); }
 
 .rosterTable th,
-.rosterTable td { vertical-align: middle; }
+.rosterTable td { padding-block: 0 !important; vertical-align: middle; }
+.rosterTable thead [data-column="select"] { width: 44px; }
+.rosterTable thead [data-column="name"] { width: 16%; }
+.rosterTable thead [data-column="status"] { width: 12%; }
+.rosterTable thead [data-column="programs"] { width: 18%; }
+.rosterTable [data-column="contact"] { width: 21%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rosterTable [data-column="tags"] { width: 13%; }
+.rosterTable thead [data-column="member-since"] { width: 10%; }
+.rosterTable thead [data-column="inactive"] { width: 9%; }
+.rosterTable tbody th[data-label="Student"] p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rosterTable tbody td[data-label="Programs"] > div,
+.rosterTable tbody td[data-label="Tags"] > div { flex-wrap: nowrap; overflow: hidden; }
+.rosterTable tbody td[data-label="Programs"] span { max-width: 100%; overflow: hidden; border-radius: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.rosterTable tbody td[data-label="Programs"] span > span { border-radius: 6px; }
+.rosterTable tbody td[data-label="Tags"] span { flex: 0 0 auto; white-space: nowrap; }
 .rosterTable tbody tr {
-  box-shadow: inset 3px 0 0 transparent;
-  transition:
-    background-color var(--product-motion-change-duration) var(--product-motion-ease),
-    box-shadow var(--product-motion-change-duration) var(--product-motion-ease);
+  transition: background-color var(--product-motion-change-duration) var(--product-motion-ease);
 }
-.rosterTable tbody tr[data-state="paused"] { box-shadow: inset 3px 0 0 var(--warning); }
+.rosterTable tbody th,
+.rosterTable tbody td { border-bottom: 1px solid var(--product-rule-soft); }
+.rosterTable tbody tr:last-child > * { border-bottom: 0; }
+.rosterTable tbody tr[data-state="paused"] { background: color-mix(in srgb, var(--product-paper) 94%, var(--warning) 6%); }
 .rosterTable tbody tr[data-state="inactive"],
-.rosterTable tbody tr[data-state="canceled"] { box-shadow: inset 3px 0 0 var(--muted); }
-.rosterTable tbody tr[data-state="trialing"] { box-shadow: inset 3px 0 0 var(--accent); }
-.rosterTable tbody tr[data-focused="true"] { background: var(--product-card-stock); box-shadow: inset 3px 0 0 var(--accent); }
-.rosterTable tbody tr:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
-.checkboxTarget { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; cursor: pointer; }
-.checkboxTarget:has(.checkboxControl:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rosterTable tbody tr[data-state="canceled"] { color: var(--muted); }
+.rosterTable tbody tr[data-state="trialing"] { background: color-mix(in srgb, var(--product-paper) 95%, var(--product-focus) 5%); }
+.rosterTable tbody tr[data-focused="true"] { background: var(--product-card-stock); }
+.rosterTable tbody tr:focus-within { outline: 2px solid var(--product-focus); outline-offset: -3px; }
+.checkboxTarget { display: flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; cursor: pointer; }
+.checkboxTarget:has(.checkboxControl:focus-visible) { outline: 2px solid var(--product-focus); outline-offset: 2px; border-radius: 10px; }
 .checkboxControl { width: 13px; height: 13px; accent-color: var(--accent); cursor: pointer; }
 .checkboxControl:focus-visible { outline: none !important; }
 .mobileSelectAll { display: none; }
@@ -141,11 +168,9 @@
   position: sticky;
   top: 132px;
   min-width: 0;
-  border-top: 2px solid var(--text-primary);
-  border-bottom: 1px solid var(--border);
-  background:
-    repeating-linear-gradient(to bottom, transparent 0, transparent 2.45rem, var(--border) 2.5rem),
-    var(--product-paper);
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--product-paper);
   box-shadow: var(--product-shadow-card);
 }
 .readingRailHeading,
@@ -153,79 +178,63 @@
 .readingFacts,
 .readingTags,
 .readingNote { padding-inline: 1rem; }
-.readingRailHeading { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; gap: 0.75rem; border-bottom: 1px solid var(--border); }
-.readingRailHeading > p { color: var(--muted); font-size: 0.75rem; font-weight: 750; letter-spacing: 0.12em; text-transform: uppercase; }
+.readingRailHeading { display: flex; min-height: 2.75rem; align-items: center; justify-content: flex-end; gap: 0.75rem; border-bottom: 1px solid var(--border); }
 .readingIdentity { display: flex; align-items: center; gap: 0.75rem; padding-block: 1rem; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--product-paper) 90%, transparent); }
-.readingIdentity h2 { color: var(--text-primary); font-size: 1.2rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; }
+.readingIdentity h2 { color: var(--text-primary); font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.15; }
 .readingIdentity p { margin-top: 0.2rem; color: var(--muted); font-size: 0.75rem; }
 .readingFacts { background: color-mix(in srgb, var(--product-paper) 90%, transparent); }
 .readingFacts div { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.75rem; padding-block: 0.72rem; border-bottom: 1px solid var(--border); }
-.readingFacts dt { color: var(--muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.readingFacts dt { color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0; }
 .readingFacts dd { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); font-size: 0.8125rem; }
 .readingTags { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-block: 0.75rem; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--product-paper) 90%, transparent); }
-.readingTags span { border: 1px solid var(--border); padding: 0.2rem 0.4rem; color: var(--text-secondary); font-size: 0.75rem; }
+.readingTags span { padding: 0.25rem 0.5rem; border-radius: 999px; background: var(--product-sunk); color: var(--text-secondary); font-size: 0.75rem; }
 .readingNote { padding-block: 0.85rem; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--product-paper) 90%, transparent); }
-.readingNote p { color: var(--muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.readingNote p { color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0; }
 .readingNote span { display: -webkit-box; margin-top: 0.4rem; overflow: hidden; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 .openRecordButton { width: calc(100% - 2rem); min-height: 44px; margin: 1rem; }
 
-.folioIntro {
-  display: grid;
-  grid-template-columns: minmax(8rem, 0.26fr) minmax(15rem, 0.7fr) minmax(16rem, 1fr);
-  gap: clamp(1rem, 2vw, 2rem);
-  align-items: center;
-  margin: 0.75rem clamp(1rem, 2.4vw, 2rem) 0;
-  padding: 0.35rem 0 0.75rem;
-  border-bottom: 2px solid var(--text-primary);
-}
-.folioIntro > p { color: var(--accent); font-size: 0.75rem; font-weight: 750; letter-spacing: 0.16em; text-transform: uppercase; }
-.folioIntro h2 { color: var(--text-primary); font-size: clamp(1.25rem, 2vw, 1.75rem); font-weight: 680; letter-spacing: -0.04em; line-height: 1; }
-.folioIntro span { max-width: 58ch; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.45; }
 .folioGrid { align-items: start; max-width: 76rem; }
 .identityRail { position: sticky; top: 86px; }
 .folioLeaves { min-width: 0; }
 .folioSection {
   overflow: hidden;
   border: 0;
-  border-top: 2px solid var(--text-primary);
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: 14px;
   background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
 }
 .folioSection + .folioSection { margin-top: 1.15rem; }
-.historyEntry { position: relative; padding-left: 1.25rem; border-left: 2px solid var(--border); }
+.historyEntry { position: relative; padding-left: 1.25rem; border-left: 1px solid var(--border); }
 .historyEntry::before {
   position: absolute;
   top: 1rem;
   left: -0.31rem;
   width: 0.52rem;
   height: 0.52rem;
-  border: 2px solid var(--surface);
+  border: 1px solid var(--surface);
   border-radius: 50%;
   background: var(--accent);
   content: "";
 }
 
 .importWorkspace { min-width: 0; padding: clamp(1rem, 2.8vw, 2rem); }
-.importSheet { display: grid; max-width: 72rem; grid-template-columns: minmax(10rem, 0.28fr) minmax(0, 1fr); gap: clamp(1.25rem, 4vw, 3.5rem); margin: 0 auto; }
-.importIndex { align-self: start; position: sticky; top: 86px; border-top: 2px solid var(--text-primary); }
-.importIndex h2 { margin: 1rem 0 0.45rem; color: var(--text-primary); font-size: 1.35rem; letter-spacing: -0.03em; }
-.importIndex > p { color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.5; }
-.importStages { margin-top: 1.25rem; border-bottom: 1px solid var(--border); }
-.importStage { display: grid; grid-template-columns: 1.5rem 1fr; gap: 0.6rem; padding: 0.75rem 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8125rem; }
-.importStage strong { font-family: var(--font-mono); font-weight: 550; }
-.importStage[data-state="active"] { color: var(--text-primary); font-weight: 700; box-shadow: inset 3px 0 0 var(--accent); padding-left: 0.7rem; }
+.importSheet { display: grid; max-width: 72rem; grid-template-columns: minmax(12rem, 0.28fr) minmax(0, 1fr); gap: 1.25rem; margin: 0 auto; }
+.importIndex { align-self: start; position: sticky; top: 86px; padding: 1rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
+.importStages { display: grid; gap: 0.5rem; margin-top: 1rem; }
+.importStage { display: grid; min-height: 44px; grid-template-columns: 1.5rem 1fr; gap: 0.6rem; align-items: center; padding: 0.5rem 0.65rem; border-radius: 10px; color: var(--muted); font-size: 0.8125rem; }
+.importStage strong { font-variant-numeric: tabular-nums; font-weight: 500; }
+.importStage[data-state="active"] { background: var(--product-sunk); color: var(--text-primary); font-weight: 650; }
 .importStage[data-state="complete"] { color: var(--success); }
-.importBody { min-width: 0; border-top: 2px solid var(--text-primary); padding-top: 1rem; }
-.worksheetSection { border-radius: 0 !important; border-inline: 0 !important; background: var(--product-paper) !important; }
-.mappingTable { overflow: hidden; border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); background: var(--product-paper); }
+.importBody { min-width: 0; }
+.worksheetSection { border: 0 !important; border-radius: 14px !important; background: var(--product-paper) !important; box-shadow: var(--product-shadow-card); }
+.mappingTable { overflow: hidden; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
 .mappingHeader,
 .mappingRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(12rem, 1fr); }
 .mappingHeader { border-bottom: 1px solid var(--border); background: var(--product-card-stock); }
 .mappingRow { border-bottom: 1px solid var(--border); }
 .mappingRow:last-child { border-bottom: 0; }
-.previewStats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); }
-.previewStat { border-block: 0 !important; border-radius: 0 !important; }
+.previewStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.previewStat { border: 0 !important; border-radius: 10px !important; background: var(--product-sunk) !important; }
 
 .rosterWorkspace,
 .folioGrid,
@@ -234,8 +243,8 @@
 }
 
 @keyframes student-workspace-settle {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.92; }
+  to { opacity: 1; }
 }
 
 @keyframes student-dialog-open {
@@ -245,10 +254,10 @@
 
 @media (max-width: 1023px) {
   .rosterToolbar { position: static; }
-  .rosterTable thead { position: static; }
+  .rosterTable thead th { position: static; }
   .identityRail,
   .importIndex { position: static; }
-  .rosterWorkbench { grid-template-columns: minmax(0, 1fr) minmax(14rem, 16rem); }
+  .rosterWorkbench { grid-template-columns: minmax(0, 1fr) minmax(18rem, 20rem); }
   .studentReadingRail { position: static; }
 }
 
@@ -271,19 +280,19 @@
   .rosterTable td { display: block; width: 100%; }
   .rosterTable thead { display: none; }
   .rosterTable tbody { display: grid; gap: 0.75rem; }
-  .rosterTable tbody tr { padding: 0.65rem 0.85rem; border: 1px solid var(--border); background: var(--product-paper); }
+  .rosterTable { overflow: visible; border-radius: 14px; background: transparent; box-shadow: none; }
+  .rosterTable tbody tr { overflow: hidden; padding: 0.65rem 0.85rem; border-radius: 14px; background: var(--product-paper); box-shadow: var(--product-shadow-card); }
   .rosterTable tbody th,
-  .rosterTable tbody td { display: grid; grid-template-columns: minmax(6.5rem, 0.38fr) minmax(0, 1fr); gap: 0.75rem; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border); text-align: left; overflow-wrap: anywhere; }
+  .rosterTable tbody td { display: grid; grid-template-columns: minmax(6.5rem, 0.38fr) minmax(0, 1fr); gap: 0.75rem; align-items: center; padding: 0.3125rem 0 !important; border-bottom: 1px solid var(--border); text-align: left; overflow-wrap: anywhere; }
   .rosterTable tbody td:last-child { border-bottom: 0; }
   .rosterTable tbody th::before,
-  .rosterTable tbody td::before { content: attr(data-label); color: var(--muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rosterTable tbody td::before { content: attr(data-label); color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0; }
   .mobileSelectAll { display: flex; min-height: 2.75rem; align-items: center; gap: 0.6rem; padding: 0.75rem 0; color: var(--text-secondary); font-size: 0.8125rem; }
   .identityRail { position: static; }
-  .folioIntro { grid-template-columns: 1fr; gap: 0.6rem; }
   .importSheet { grid-template-columns: 1fr; }
   .importIndex { position: static; }
   .importStages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .importStage { display: block; min-width: 0; padding: 0.65rem 0.35rem; text-align: center; }
+  .importStage { display: block; min-width: 0; min-height: 44px; padding: 0.65rem 0.35rem; text-align: center; }
   .importStage strong { display: block; margin-bottom: 0.2rem; }
   .importStage span { display: block; line-height: 1.25; overflow-wrap: anywhere; white-space: normal; }
   .mappingHeader { display: none; }
@@ -294,7 +303,6 @@
 @media (max-width: 420px) {
   .rosterTable tbody th,
   .rosterTable tbody td { grid-template-columns: minmax(5.4rem, 0.36fr) minmax(0, 1fr); }
-  .folioIntro { margin-inline: 0.85rem; }
   .importWorkspace { padding: 0.85rem; }
   .importStage { font-size: 0.75rem; }
   .previewStats { grid-template-columns: 1fr; }
@@ -341,6 +349,7 @@
   .rosterViewport { padding: 0; }
   .rosterTable { display: table; color: #000; font-size: 9pt; }
   .rosterTable thead { display: table-header-group; position: static; background: #fff; }
+  .rosterTable thead th { position: static; }
   .rosterTable tbody { display: table-row-group; }
   .rosterTable tr { display: table-row; break-inside: avoid; }
   .rosterTable th,
@@ -352,7 +361,12 @@
   .rosterTable td::before { display: none; }
   .identityRail { position: static; }
   .folioSection { break-inside: avoid; background: #fff; color: #000; }
-  .folioIntro { margin: 0 0 1rem; }
+  .rosterTable,
+  .studentReadingRail,
+  .folioSection,
+  .importIndex,
+  .worksheetSection,
+  .mappingTable { border-radius: initial; box-shadow: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

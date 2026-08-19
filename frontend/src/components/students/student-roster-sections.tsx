@@ -31,10 +31,10 @@ export function StudentRosterLoading() {
     <div className="grid gap-px bg-border">
       {Array.from({ length: 7 }).map((_, index) => (
         <div key={index} className="grid gap-3 bg-surface px-4 py-4 sm:grid-cols-[2fr_1fr_1fr_1fr]">
-          <div className="h-4 w-44 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-24 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-28 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-20 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-44 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-24 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-28 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-4 w-20 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
         </div>
       ))}
     </div>
@@ -45,22 +45,22 @@ export function StudentFormLoading() {
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="w-full max-w-[560px] rounded-[6px] border border-border bg-surface shadow-2xl"
+      panelClassName="w-full max-w-[560px] rounded-[18px] bg-surface shadow-[var(--product-shadow-lifted)]"
       ariaLabel="Loading student form"
     >
       <div className="border-b border-border px-6 py-4">
-        <div className="h-4 w-28 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-4 w-28 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
       </div>
       <div className="border-b border-border px-6 py-3">
-        <div className="h-3 w-52 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-3 w-52 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
       </div>
       <div className="space-y-4 px-6 py-5">
         <div className="grid grid-cols-2 gap-3">
-          <div className="h-10 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-10 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-10 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+          <div className="h-10 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
         </div>
-        <div className="h-10 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
-        <div className="h-24 animate-pulse rounded-[4px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-10 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
+        <div className="h-24 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
       </div>
     </ModalFrame>
   );
@@ -237,7 +237,7 @@ export function StudentRosterTable({
       <thead>
         <tr className="border-b border-border">
           {canManageRoster ? (
-            <th className="w-14 p-0">
+            <th data-column="select" className="w-14 p-0">
               <label className={styles.checkboxTarget}>
                 <input
                   type="checkbox"
@@ -252,6 +252,7 @@ export function StudentRosterTable({
             </th>
           ) : null}
           <th
+            data-column="name"
             aria-sort={getSortState("name", sortKey, sortDir)}
             className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
           >
@@ -266,6 +267,7 @@ export function StudentRosterTable({
             </button>
           </th>
           <th
+            data-column="status"
             aria-sort={getSortState("status", sortKey, sortDir)}
             className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
           >
@@ -279,7 +281,7 @@ export function StudentRosterTable({
               <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
             </button>
           </th>
-          <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+          <th data-column="programs" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
             Programs
           </th>
           <th data-column="contact" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
@@ -289,6 +291,7 @@ export function StudentRosterTable({
             Tags
           </th>
           <th
+            data-column="member-since"
             aria-sort={getSortState("membership_start_date", sortKey, sortDir)}
             className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
           >
@@ -303,7 +306,7 @@ export function StudentRosterTable({
             </button>
           </th>
           {inactivityThreshold && (
-            <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+            <th data-column="inactive" className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
               Days inactive
             </th>
           )}
@@ -393,7 +396,7 @@ export function StudentRosterTable({
                   {row.visibleTags.map((tag) => (
                     <span
                       key={tag}
-                      className="px-1.5 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+                      className="px-1.5 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
                     >
                       {tag}
                     </span>
@@ -438,14 +441,13 @@ export function StudentRosterReadingRail({
   return (
     <aside className={styles.studentReadingRail} aria-labelledby="student-reading-title">
       <div className={styles.readingRailHeading}>
-        <p>Roster record</p>
         <StatusBadge status={student.status} />
       </div>
       <div className={styles.readingIdentity}>
         <StudentAvatar student={student} />
         <div>
           <h2 id="student-reading-title">{studentName}</h2>
-          <p>{student.is_minor ? "Minor student" : "Student record"}</p>
+          {student.is_minor ? <p>Minor student</p> : null}
         </div>
       </div>
 
@@ -488,7 +490,7 @@ export function StudentRosterReadingRail({
 
       {student.notes ? (
         <div className={styles.readingNote}>
-          <p>Record note</p>
+          <p>Notes</p>
           <span>{student.notes}</span>
         </div>
       ) : null}
