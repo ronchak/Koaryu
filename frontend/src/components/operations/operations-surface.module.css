@@ -196,12 +196,22 @@
   background: var(--product-alert-surface);
 }
 
-/* Automations remain an honest read-only trigger/action list. */
-.surface[data-operations-page="automations"] :global([data-automation-worksheet="trigger-action-status"]) section {
+/* Automations remain an honest read-only catalog. */
+.surface[data-operations-page="automations"] :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-sheet="true"]) {
   border: 0 !important;
   border-radius: 14px;
   background: var(--product-paper);
   box-shadow: var(--product-shadow-card);
+}
+
+.surface[data-operations-page="automations"] :global([data-automation-catalog="live-queues-and-proposals"] [data-automation-inset="true"]) {
+  border: 1px solid var(--product-rule);
+  border-radius: 10px;
+  background: var(--product-card-stock);
+}
+
+.surface[data-operations-page="automations"] :global([data-automation-live-target="true"]:focus-visible) {
+  outline-color: var(--product-focus) !important;
 }
 
 /* Reports use a centered reading column. Each analytical leaf is distinct,

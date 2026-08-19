@@ -6,18 +6,18 @@ import { Button } from "@/components/ui/button";
 import { crmLinkPrefetch } from "@/lib/constants";
 
 const LIVE_QUEUES = [
-  { title: "Lead follow-ups", trigger: "A lead reaches a due or overdue next step", action: "Review the call, trial, or follow-up obligation in Leads", status: "Manual queue live", href: "/leads" },
-  { title: "Students going quiet", trigger: "A student crosses the inactivity threshold", action: "Review the student from today’s Dashboard work", status: "Manual queue live", href: "/dashboard" },
-  { title: "Ready to promote", trigger: "Rank requirements and approvals indicate readiness", action: "Review the promotion decision in Belt Tracker", status: "Decision queue live", href: "/belt-tracker" },
-  { title: "Tuition needs attention", trigger: "A payment fails or an invoice remains past due", action: "Work the family or invoice in Billing", status: "Manual queue live", href: "/billing" },
+  { title: "Lead follow-ups", description: "Call, trial, and next-step obligations already live in Leads.", href: "/leads" },
+  { title: "Students going quiet", description: "Dashboard surfaces students crossing inactivity thresholds.", href: "/dashboard" },
+  { title: "Ready to promote", description: "Belt Tracker applies the current rank and approval requirements.", href: "/belt-tracker" },
+  { title: "Tuition needs attention", description: "Billing holds failed payments, past-due families, and open invoices.", href: "/billing" },
 ] as const;
 
 const FUTURE_WORKFLOWS = [
-  { title: "Trial reminders", trigger: "Trial class approaches or passes", action: "Reminder before class and a follow-up afterward", status: "Proposal only" },
-  { title: "Missed-class nudges", trigger: "Configurable attendance gap is reached", action: "Family email about the missed training cadence", status: "Proposal only" },
-  { title: "Payment recovery", trigger: "Provider reports a failed payment", action: "Recovery notice that stops after provider recovery", status: "Proposal only" },
-  { title: "Promotion congratulations", trigger: "An approved promotion is recorded", action: "Studio-approved congratulations note", status: "Proposal only" },
-  { title: "Belt test announcements", trigger: "A testing cycle is approved", action: "Notice to eligible students and families", status: "Proposal only" },
+  ["Trial reminders", "Reminder before a trial class and a follow-up afterward."],
+  ["Missed-class nudges", "Family email after a configurable attendance gap."],
+  ["Payment recovery", "Failed-payment notice that stops after provider recovery."],
+  ["Promotion congratulations", "Studio-approved note after a promotion is recorded."],
+  ["Belt test announcements", "Notice to eligible students and families before a testing cycle."],
 ] as const;
 
 export default function AutomationsPage() {
@@ -32,10 +32,14 @@ export default function AutomationsPage() {
         </Button>
       </Header>
 
-      <div className="flex-1 px-4 py-5 sm:px-8 lg:py-7" data-automations-readonly="true" data-automation-worksheet="trigger-action-status">
-        <div className="mx-auto max-w-6xl space-y-8">
-          <section className="overflow-hidden bg-surface">
-            <div className="grid gap-4 p-4 sm:grid-cols-[minmax(12rem,0.36fr)_1fr] sm:gap-8">
+      <div
+        className="min-w-0 flex-1 overflow-x-hidden px-4 py-5 sm:px-8 lg:py-7"
+        data-automations-readonly="true"
+        data-automation-catalog="live-queues-and-proposals"
+      >
+        <div className="mx-auto max-w-5xl space-y-3">
+          <section className="min-w-0 overflow-hidden" data-automation-sheet="true">
+            <div className="grid min-w-0 gap-4 px-5 py-6 sm:grid-cols-[minmax(12rem,0.36fr)_minmax(0,1fr)] sm:gap-8">
               <div>
                 <p className="text-xs font-medium text-accent">Current status</p>
                 <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">No automation builder is live.</h2>
@@ -46,49 +50,47 @@ export default function AutomationsPage() {
             </div>
           </section>
 
-          <section aria-labelledby="live-queues-title">
-            <div className="mb-3 flex items-end justify-between gap-4">
+          <section aria-labelledby="live-queues-title" className="min-w-0 p-4" data-automation-sheet="true">
+            <div className="mb-3 flex min-w-0 items-end justify-between gap-4">
               <div>
                 <p className="text-xs font-medium text-muted">Available now</p>
                 <h2 id="live-queues-title" className="mt-1 text-base font-semibold text-text-primary">Four live queue destinations</h2>
               </div>
-              <span className="text-xs text-muted">Manual work only</span>
+              <span className="shrink-0 text-xs font-semibold text-muted">04</span>
             </div>
-            <div className="hidden grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] bg-surface-raised px-4 py-2 text-xs font-medium text-muted md:grid">
-              <span>Rule</span><span>Trigger</span><span>Action</span><span>Status</span>
-            </div>
-            <ul className="overflow-hidden bg-surface">
+            <ol className="min-w-0 overflow-hidden" data-automation-inset="true" data-automation-live-list="four-destinations">
               {LIVE_QUEUES.map((queue) => (
                 <li key={queue.href} className="border-b border-border last:border-b-0">
-                  <Link href={queue.href} prefetch={crmLinkPrefetch(queue.href)} className="grid min-h-14 gap-2 px-4 py-3 hover:bg-surface-raised md:grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] md:items-center md:py-2">
-                    <strong className="text-sm font-semibold text-text-primary">{queue.title}</strong>
-                    <span className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Trigger</small>{queue.trigger}</span>
-                    <span className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Action</small>{queue.action} <span aria-hidden="true" className="text-accent">→</span></span>
-                    <span className="w-fit rounded-full bg-accent/10 px-2 py-1 text-xs font-semibold text-text-primary">{queue.status}</span>
+                  <Link
+                    href={queue.href}
+                    prefetch={crmLinkPrefetch(queue.href)}
+                    className="grid min-h-20 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] px-3 py-4 hover:bg-surface-hover"
+                    data-automation-live-target="true"
+                  >
+                    <span className="min-w-0">
+                      <strong className="block break-words text-sm font-semibold text-text-primary">{queue.title}</strong>
+                      <span className="mt-1 block break-words text-sm leading-5 text-text-secondary">{queue.description}</span>
+                    </span>
+                    <span aria-hidden="true" className="text-accent">→</span>
                   </Link>
                 </li>
               ))}
-            </ul>
+            </ol>
           </section>
 
-          <section aria-labelledby="future-workflows-title">
-            <div className="mb-3 flex items-end justify-between gap-4">
+          <section aria-labelledby="future-workflows-title" className="min-w-0 p-4" data-automation-sheet="true">
+            <div className="mb-3 flex min-w-0 items-end justify-between gap-4">
               <div>
                 <p className="text-xs font-medium text-muted">Future catalog</p>
                 <h2 id="future-workflows-title" className="mt-1 text-base font-semibold text-text-primary">Five proposed workflows</h2>
               </div>
-              <span className="text-xs text-muted">Read only · five concepts</span>
+              <span className="shrink-0 text-xs font-semibold text-muted">Read only · 05</span>
             </div>
-            <div className="hidden grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] bg-surface-raised px-4 py-2 text-xs font-medium text-muted md:grid">
-              <span>Recipe</span><span>Trigger</span><span>Action</span><span>Status</span>
-            </div>
-            <dl className="overflow-hidden bg-surface">
-              {FUTURE_WORKFLOWS.map((workflow) => (
-                <div key={workflow.title} className="grid min-h-14 gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] md:items-center md:gap-4 md:py-2">
-                  <dt className="text-sm font-semibold text-text-primary">{workflow.title}</dt>
-                  <dd className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Trigger</small>{workflow.trigger}</dd>
-                  <dd className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Action</small>{workflow.action}</dd>
-                  <dd className="w-fit rounded-full bg-surface-raised px-2 py-1 text-xs font-semibold text-muted">{workflow.status}</dd>
+            <dl className="min-w-0 overflow-hidden" data-automation-future-list="five-proposals" data-automation-inset="true">
+              {FUTURE_WORKFLOWS.map(([title, description]) => (
+                <div key={title} className="grid min-w-0 gap-1 border-b border-border px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(12rem,0.36fr)_minmax(0,1fr)] sm:gap-4">
+                  <dt className="break-words text-sm font-semibold text-text-primary">{title}</dt>
+                  <dd className="break-words text-sm leading-5 text-text-secondary">{description}</dd>
                 </div>
               ))}
             </dl>

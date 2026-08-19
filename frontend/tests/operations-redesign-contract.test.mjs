@@ -826,19 +826,51 @@ describe("operations behavior proof", () => {
     assert.match(negativeCopy, /New CSV exports are currently unavailable/);
   });
 
-  it("keeps automations read-only and settings indexed behind the Admin boundary", () => {
+  it("keeps Automations a read-only catalog with exact live destinations and proposals", () => {
     const automations = source("src/app/(dashboard)/automations/page.tsx");
+    const css = source("src/components/operations/operations-surface.module.css");
+    const automationCss = css.slice(css.indexOf("/* Automations"), css.indexOf("/* Reports"));
+    const futureSection = automations.slice(
+      automations.indexOf('<section aria-labelledby="future-workflows-title"'),
+      automations.indexOf("</section>", automations.indexOf('<section aria-labelledby="future-workflows-title"')) + "</section>".length,
+    );
+
+    assert.match(
+      automations,
+      /title: "Lead follow-ups", description: "Call, trial, and next-step obligations already live in Leads\.", href: "\/leads"[\s\S]*title: "Students going quiet", description: "Dashboard surfaces students crossing inactivity thresholds\.", href: "\/dashboard"[\s\S]*title: "Ready to promote", description: "Belt Tracker applies the current rank and approval requirements\.", href: "\/belt-tracker"[\s\S]*title: "Tuition needs attention", description: "Billing holds failed payments, past-due families, and open invoices\.", href: "\/billing"/,
+    );
+    assert.equal((automations.match(/href: "\/(?:leads|dashboard|belt-tracker|billing)"/g) || []).length, 4);
+    assert.match(
+      automations,
+      /\["Trial reminders", "Reminder before a trial class and a follow-up afterward\."\][\s\S]*\["Missed-class nudges", "Family email after a configurable attendance gap\."\][\s\S]*\["Payment recovery", "Failed-payment notice that stops after provider recovery\."\][\s\S]*\["Promotion congratulations", "Studio-approved note after a promotion is recorded\."\][\s\S]*\["Belt test announcements", "Notice to eligible students and families before a testing cycle\."\]/,
+    );
+    assert.equal((automations.match(/^  \["(?:Trial reminders|Missed-class nudges|Payment recovery|Promotion congratulations|Belt test announcements)"/gm) || []).length, 5);
+    assert.doesNotMatch(automations, /<form|<input|<select|<textarea|onChange=|type="checkbox"|role="switch"|\bfetch\s*\(|\bapi\.|\baxios\b|process\.env|isPreviewMode|useEffect|useState/);
+    assert.match(automations, /data-automations-readonly="true"/);
+    assert.match(automations, /data-automation-catalog="live-queues-and-proposals"/);
+    assert.match(automations, /<Header title="Automations">/);
+    assert.doesNotMatch(automations, /<h1/);
+    assert.match(automations, /Open today&apos;s work/);
+    assert.match(automations, /No automation builder is live\./);
+    assert.match(automations, /There are no message toggles, schedules, forms, or hidden sends on this page\./);
+    assert.match(automations, /<h2 id="live-queues-title"[^>]*>Four live queue destinations<\/h2>/);
+    assert.match(automations, /<h2 id="future-workflows-title"[^>]*>Five proposed workflows<\/h2>/);
+    assert.match(automations, /<ol[^>]*data-automation-live-list="four-destinations"[\s\S]*LIVE_QUEUES\.map[\s\S]*<Link[\s\S]*prefetch=\{crmLinkPrefetch\(queue\.href\)\}[\s\S]*data-automation-live-target="true"/);
+    assert.match(automations, /className="grid min-h-20 min-w-0 grid-cols-\[minmax\(0,1fr\)_auto\][^"]*"/);
+    assert.match(automations, /overflow-x-hidden[\s\S]*sm:grid-cols-\[minmax\(12rem,0\.36fr\)_minmax\(0,1fr\)\][\s\S]*break-words/);
+    assert.match(automations, /<dl[^>]*data-automation-future-list="five-proposals"[\s\S]*FUTURE_WORKFLOWS\.map/);
+    assert.doesNotMatch(futureSection, /<Link|<Button|<button|<form|<input|<select|<textarea|onClick=|onChange=/);
+    assert.doesNotMatch(automations, /data-automation-worksheet|>Trigger<|>Action<|>Status</);
+    assert.match(automationCss, /\.surface\[data-operations-page="automations"\][\s\S]*data-automation-catalog="live-queues-and-proposals"[\s\S]*border-radius: 14px;[\s\S]*background: var\(--product-paper\);[\s\S]*box-shadow: var\(--product-shadow-card\);/);
+    assert.match(automationCss, /data-automation-inset="true"[\s\S]*border: 1px solid var\(--product-rule\);[\s\S]*border-radius: 10px;[\s\S]*background: var\(--product-card-stock\);/);
+    assert.match(automationCss, /data-automation-live-target="true"[^\n]*:focus-visible[\s\S]*outline-color: var\(--product-focus\) !important;/);
+    assert.doesNotMatch(automationCss, /#[0-9a-f]{3,8}|gradient|--operations-cobalt/);
+  });
+
+  it("keeps settings indexed behind the Admin boundary", () => {
     const settings = source("src/app/(dashboard)/settings/page.tsx");
     const programs = source("src/components/settings/programs-section.tsx");
     const staff = source("src/components/settings/staff-roles-section.tsx");
-    assert.equal((automations.match(/href: "\/(?:leads|dashboard|belt-tracker|billing)"/g) || []).length, 4);
-    assert.equal((automations.match(/status: "Proposal only"/g) || []).length, 5);
-    assert.doesNotMatch(automations, /<form|<input|<select|onChange=|\bapi\./);
-    assert.match(automations, /data-automations-readonly="true"/);
-    assert.match(automations, /data-automation-worksheet="trigger-action-status"/);
-    assert.match(automations, /<Header title="Automations">/);
-    assert.doesNotMatch(automations, /A read-only catalog of live manual queues/);
-    for (const label of ["Trigger", "Action", "Status"]) assert.match(automations, new RegExp(`>${label}<`));
     assert.match(settings, /canAccessSettings\(currentRole\) \? <AdminSettingsContent \/> : <SettingsAccessNotice \/>/);
     assert.match(settings, /<Header title="Settings" \/>/);
     assert.doesNotMatch(settings, /Studio configuration and preferences/);
