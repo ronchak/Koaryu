@@ -44,11 +44,16 @@ describe("dashboard shell and Home source contracts", () => {
     assert.doesNotMatch(homeSource, /Earlier|Later|\bArrow(?:Up|Down)\s*,/);
     assert.match(homeSource, /aria-live="polite"/);
     assert.match(homeSource, /event\.key === "Escape"/);
-    assert.match(homeSource, /500/);
-    assert.match(homeSource, /elementFromPoint/);
+    assert.match(homeSource, /280/);
+    assert.doesNotMatch(homeSource, /elementFromPoint/);
+    assert.match(homeSource, /resolveDashboardPointerTarget/);
+    assert.match(homeSource, /grabOffsetX/);
+    assert.match(homeSource, /widgetPlaceholder/);
+    assert.match(homeSource, /setLiftedPreview/);
     assert.match(homeSource, /window\.scrollBy/);
+    assert.match(homeSource, /requestAnimationFrame\(tick\)/);
     assert.match(homeSource, /onPointerCancel=\{onPointerCancel\}/);
-    assert.match(homeSource, /onLostPointerCapture=\{onPointerCancel\}/);
+    assert.match(homeSource, /onLostPointerCapture=\{onLostPointerCapture\}/);
     assert.match(homeSource, /moveDashboardLayoutItem\(/);
     assert.match(homeSource, /updateLayoutInMemory\(\{ \.\.\.layoutRef\.current, items: nextItems \}\)/);
     assert.match(homeSource, /saveLayout\(layoutRef\.current\)/);
@@ -63,13 +68,29 @@ describe("dashboard shell and Home source contracts", () => {
       homeSource.indexOf("const onPointerMove"),
       homeSource.indexOf("const onPointerUp")
     );
-    assert.match(pointerMoveSource, /updateLayoutInMemory/);
+    assert.match(pointerMoveSource, /movePointerDrag/);
     assert.doesNotMatch(pointerMoveSource, /saveLayout/);
+    const movePointerSource = homeSource.slice(
+      homeSource.indexOf("const movePointerDrag"),
+      homeSource.indexOf("const finishPointerDrag")
+    );
+    assert.match(movePointerSource, /reflowDragAtPointer/);
+    const dragCommitSource = homeSource.slice(
+      homeSource.indexOf("const commitDragTarget"),
+      homeSource.indexOf("const reflowDragAtPointer")
+    );
+    assert.match(dragCommitSource, /updateLayoutInMemory/);
+    assert.match(dragCommitSource, /session\.beforeLayout\.items\.map/);
     const pointerUpSource = homeSource.slice(
       homeSource.indexOf("const onPointerUp"),
       homeSource.indexOf("const onPointerCancel")
     );
-    assert.equal(pointerUpSource.match(/saveLayout\(layoutRef\.current\)/g)?.length, 1);
+    assert.match(pointerUpSource, /finishPointerDrag/);
+    const finishPointerSource = homeSource.slice(
+      homeSource.indexOf("const finishPointerDrag"),
+      homeSource.indexOf("const onPointerMove")
+    );
+    assert.equal(finishPointerSource.match(/saveLayout\(layoutRef\.current\)/g)?.length, 1);
     const pointerCancelSource = homeSource.slice(
       homeSource.indexOf("const onPointerCancel"),
       homeSource.indexOf("const addableWidgets")
@@ -82,6 +103,9 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /This browser could not save your arrangement/);
     assert.match(homeSource, /isCustomizing && !catalog\.fixed/);
     assert.match(homeSource, /activeDragWidgetId === item\.widget_id/);
+    assert.match(homeSource, /chooseDashboardResizeSize/);
+    assert.match(homeSource, /clampDashboardResizePreview/);
+    assert.match(homeSource, /onResizePointerDown/);
     assert.match(homeSource, /role="dialog" aria-modal="true"/);
     assert.match(homeSource, /ref=\{libraryHeadingRef\} tabIndex=\{-1\}/);
     assert.match(homeSource, /libraryHeadingRef\.current\?\.focus\(\)/);
