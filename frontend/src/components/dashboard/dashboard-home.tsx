@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -16,10 +17,10 @@ import {
   CalendarCheck,
   GripVertical,
   Maximize2,
+  Minus,
   Plus,
   RotateCcw,
   Settings2,
-  Trash2,
   Upload,
   UserPlus,
   Users,
@@ -28,6 +29,7 @@ import {
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
 import {
   buildDefaultDashboardLayout,
+  DASHBOARD_LAYOUT_MAX_ROWS,
   getAddableDashboardWidgets,
   getBrowserDashboardLayoutStorage,
   getDashboardWidgetFootprint,
@@ -40,6 +42,12 @@ import {
   type DashboardLayoutIdentity,
   type DashboardLayoutItem,
 } from "@/lib/dashboard-layout-store";
+import {
+  chooseDashboardResizeSize,
+  clampDashboardResizePreview,
+  resolveDashboardPointerTarget,
+  type DashboardGridMetrics,
+} from "@/lib/dashboard-widget-geometry";
 import {
   DASHBOARD_WIDGET_BY_ID,
   normalizeDashboardWidgetRole,
@@ -63,14 +71,49 @@ type DashboardHomeProps = {
 
 type DragSession = {
   active: boolean;
+  autoScrollFrame: number | null;
+  autoScrollVelocity: number;
   beforeLayout: DashboardLayout;
+  grabOffsetX: number;
+  grabOffsetY: number;
+  gridMetrics: DashboardGridMetrics | null;
+  lastClientX: number;
+  lastClientY: number;
   lastColumn: number;
   lastRow: number;
   pointerId: number;
+  pointerType: string;
+  pendingColumn: number;
+  pendingRow: number;
+  previewRect: { height: number; left: number; top: number; width: number };
+  reflowTimer: ReturnType<typeof setTimeout> | null;
   startX: number;
   startY: number;
   timer: ReturnType<typeof setTimeout> | null;
   widgetId: DashboardWidgetId;
+};
+
+type ResizeSession = {
+  active: boolean;
+  beforeLayout: DashboardLayout;
+  currentSize: DashboardWidgetSize;
+  gridMetrics: DashboardGridMetrics;
+  pointerId: number;
+  previewRect: { height: number; left: number; top: number; width: number };
+  startX: number;
+  startY: number;
+  widgetId: DashboardWidgetId;
+};
+
+type LiftedPreview = {
+  grabX: number;
+  grabY: number;
+  height: number;
+  left: number;
+  mode: "move" | "resize";
+  top: number;
+  widgetId: DashboardWidgetId;
+  width: number;
 };
 
 type KeyboardMoveSession = {
@@ -131,6 +174,39 @@ function readSettleDuration(node: HTMLElement): number {
     return Number.isFinite(duration) ? duration : 200;
   }
   return 200;
+}
+
+function readGridMetrics(
+  sequence: HTMLElement,
+  itemRect: DOMRect,
+  size: DashboardWidgetSize
+): DashboardGridMetrics | null {
+  const style = window.getComputedStyle(sequence);
+  if (style.display !== "grid") {
+    return null;
+  }
+  const columnTracks = style.gridTemplateColumns
+    .split(/\s+/)
+    .map((value) => Number.parseFloat(value))
+    .filter(Number.isFinite);
+  if (columnTracks.length === 0) {
+    return null;
+  }
+  const footprint = getDashboardWidgetFootprint(size);
+  const sequenceRect = sequence.getBoundingClientRect();
+  const columnGap = Number.parseFloat(style.columnGap) || 0;
+  const rowGap = Number.parseFloat(style.rowGap) || 0;
+  const rowHeight = (itemRect.height - rowGap * (footprint.rows - 1)) / footprint.rows;
+  return {
+    columnGap,
+    columnWidth: columnTracks[0] ?? itemRect.width,
+    columns: columnTracks.length,
+    maxRows: DASHBOARD_LAYOUT_MAX_ROWS,
+    rowGap,
+    rowHeight: Math.max(1, rowHeight),
+    sequenceLeft: sequenceRect.left,
+    sequenceTop: sequenceRect.top,
+  };
 }
 
 function sourceActionLabel(widgetId: DashboardWidgetId): string {
@@ -343,6 +419,8 @@ function HomeWidget({
   item,
   isCustomizing,
   isPickedUp,
+  isSelected,
+  liftedPreview,
   model,
   moveHandleRef,
   onMoveKeyDown,
@@ -353,6 +431,10 @@ function HomeWidget({
   onPointerUp,
   onRemove,
   onResize,
+  onResizePointerCancel,
+  onResizePointerDown,
+  onResizePointerMove,
+  onResizePointerUp,
   panelRef,
   tabletItem,
   total,
@@ -361,16 +443,22 @@ function HomeWidget({
   item: DashboardLayoutItem;
   isCustomizing: boolean;
   isPickedUp: boolean;
+  isSelected: boolean;
+  liftedPreview: LiftedPreview | null;
   model: DashboardWidgetViewModel;
   moveHandleRef: (node: HTMLButtonElement | null) => void;
   onMoveKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>, widgetId: DashboardWidgetId) => void;
-  onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, widgetId: DashboardWidgetId) => void;
-  onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-  onLostPointerCapture: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-  onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-  onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>, widgetId: DashboardWidgetId) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
   onRemove: (widgetId: DashboardWidgetId) => void;
   onResize: (widgetId: DashboardWidgetId) => void;
+  onResizePointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onResizePointerDown: (event: ReactPointerEvent<HTMLButtonElement>, widgetId: DashboardWidgetId) => void;
+  onResizePointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onResizePointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   panelRef: (node: HTMLElement | null) => void;
   tabletItem: DashboardLayoutItem;
   total: number;
@@ -392,18 +480,33 @@ function HomeWidget({
     "--dashboard-row-span": footprint.rows,
     "--dashboard-tablet-column": tabletItem.column + 1,
     "--dashboard-tablet-row": tabletItem.row + 1,
+    ...(liftedPreview ? {
+      "--dashboard-lift-height": `${liftedPreview.height}px`,
+      "--dashboard-lift-left": `${liftedPreview.left}px`,
+      "--dashboard-lift-top": `${liftedPreview.top}px`,
+      "--dashboard-lift-width": `${liftedPreview.width}px`,
+      "--dashboard-lift-grab-x": `${liftedPreview.grabX}px`,
+      "--dashboard-lift-grab-y": `${liftedPreview.grabY}px`,
+    } : {}),
   } as CSSProperties;
 
   return (
     <article
       ref={panelRef}
-      className={`${styles.widget} ${catalog.fixed ? styles.attentionWidget : ""} ${isPickedUp ? styles.pickedUp : ""}`}
+      className={`${styles.widget} ${catalog.fixed ? styles.attentionWidget : ""} ${isPickedUp ? styles.pickedUp : ""} ${liftedPreview ? styles.lifted : ""}`}
+      data-interaction={liftedPreview?.mode}
+      data-selected={isSelected ? "true" : "false"}
       data-widget-id={item.widget_id}
       data-size={item.size}
       data-state={model.state}
       style={widgetStyle}
       tabIndex={-1}
       aria-label={`${catalog.title}, row ${item.row + 1}, column ${item.column + 1}, ${DASHBOARD_WIDGET_SIZE_LABELS[item.size]}, position ${index + 1} of ${total}`}
+      onPointerDown={(event) => onPointerDown(event, item.widget_id)}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onLostPointerCapture}
     >
       <header className={styles.widgetBand}>
         <div className={styles.bandTitle}>
@@ -420,11 +523,6 @@ function HomeWidget({
             aria-pressed={isPickedUp}
             aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Space Enter Escape"
             onKeyDown={(event) => onMoveKeyDown(event, item.widget_id)}
-            onPointerDown={(event) => onPointerDown(event, item.widget_id)}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerCancel}
-            onLostPointerCapture={onLostPointerCapture}
           >
             <GripVertical aria-hidden="true" size={18} />
             <span className={styles.controlLabel}>Move</span>
@@ -434,17 +532,37 @@ function HomeWidget({
 
       {isCustomizing && !catalog.fixed ? (
         <div className={styles.editControls} aria-label={`${catalog.title} layout controls`}>
-          {catalog.allowedSizes.length > 1 ? (
-            <button type="button" onClick={() => onResize(item.widget_id)} aria-label={`Resize ${catalog.title}`} title="Resize">
-              <Maximize2 aria-hidden="true" size={17} /><span className={styles.controlLabel}>Resize</span>
-            </button>
-          ) : null}
           {catalog.removable ? (
-            <button type="button" onClick={() => onRemove(item.widget_id)} aria-label={`Remove ${catalog.title}`} title="Remove">
-              <Trash2 aria-hidden="true" size={17} /><span className={styles.controlLabel}>Remove</span>
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => onRemove(item.widget_id)}
+              aria-label={`Remove ${catalog.title}`}
+              title="Remove"
+            >
+              <Minus aria-hidden="true" size={17} /><span className={styles.controlLabel}>Remove</span>
             </button>
           ) : null}
         </div>
+      ) : null}
+
+      {isCustomizing && !catalog.fixed && catalog.allowedSizes.length > 1 ? (
+        <button
+          type="button"
+          className={styles.resizeHandle}
+          onPointerDown={(event) => onResizePointerDown(event, item.widget_id)}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={onResizePointerUp}
+          onPointerCancel={onResizePointerCancel}
+          onLostPointerCapture={onResizePointerCancel}
+          onClick={(event) => {
+            if (event.detail === 0) onResize(item.widget_id);
+          }}
+          aria-label={`Resize ${catalog.title}. Drag to resize or press Enter to use the next size.`}
+          title="Drag to resize"
+        >
+          <Maximize2 aria-hidden="true" size={17} /><span className={styles.controlLabel}>Resize</span>
+        </button>
       ) : null}
 
       <div className={styles.widgetBody}>
@@ -487,6 +605,8 @@ export function DashboardHome({
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [activeDragWidgetId, setActiveDragWidgetId] = useState<DashboardWidgetId | null>(null);
+  const [selectedWidgetId, setSelectedWidgetId] = useState<DashboardWidgetId | null>(null);
+  const [liftedPreview, setLiftedPreview] = useState<LiftedPreview | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const layoutRef = useRef(layout);
@@ -498,6 +618,7 @@ export function DashboardHome({
   const pendingPanelRectsRef = useRef<Map<DashboardWidgetId, DOMRect> | null>(null);
   const panelAnimationsRef = useRef(new Map<DashboardWidgetId, Animation>());
   const dragRef = useRef<DragSession | null>(null);
+  const resizeRef = useRef<ResizeSession | null>(null);
   const keyboardMoveRef = useRef<KeyboardMoveSession | null>(null);
   const addPanelsTriggerRef = useRef<HTMLButtonElement>(null);
   const customizeTriggerRef = useRef<HTMLButtonElement>(null);
@@ -518,13 +639,22 @@ export function DashboardHome({
       setIsCustomizing(false);
       setIsLibraryOpen(false);
       setActiveDragWidgetId(null);
+      setSelectedWidgetId(null);
+      setLiftedPreview(null);
       keyboardMoveRef.current = null;
       snapshotRef.current = null;
       const dragSession = dragRef.current;
       if (dragSession?.timer) {
         clearTimeout(dragSession.timer);
       }
+      if (dragSession?.reflowTimer) {
+        clearTimeout(dragSession.reflowTimer);
+      }
+      if (dragSession?.autoScrollFrame) {
+        cancelAnimationFrame(dragSession.autoScrollFrame);
+      }
       dragRef.current = null;
+      resizeRef.current = null;
     });
     return () => {
       active = false;
@@ -551,24 +681,34 @@ export function DashboardHome({
     const duration = readSettleDuration(home);
     for (const [widgetId, node] of panelRefs.current) {
       const previousRect = previousRects.get(widgetId);
-      if (!previousRect) {
-        continue;
-      }
-      const nextRect = node.getBoundingClientRect();
-      const translateX = previousRect.left - nextRect.left;
-      const translateY = previousRect.top - nextRect.top;
-      if (Math.abs(translateX) < 1 && Math.abs(translateY) < 1) {
+      if (!previousRect || liftedPreview?.widgetId === widgetId) {
         continue;
       }
       panelAnimationsRef.current.get(widgetId)?.cancel();
+      const nextRect = node.getBoundingClientRect();
+      const translateX = previousRect.left - nextRect.left;
+      const translateY = previousRect.top - nextRect.top;
+      const scaleX = nextRect.width > 0 ? previousRect.width / nextRect.width : 1;
+      const scaleY = nextRect.height > 0 ? previousRect.height / nextRect.height : 1;
+      if (
+        Math.abs(translateX) < 1
+        && Math.abs(translateY) < 1
+        && Math.abs(scaleX - 1) < 0.01
+        && Math.abs(scaleY - 1) < 0.01
+      ) {
+        continue;
+      }
       if (duration === 0) {
         continue;
       }
       const animation = node.animate([
-        { opacity: 0.92, transform: `translate(${translateX}px, ${translateY}px)` },
-        { opacity: 1, transform: "translate(0, 0)" },
+        {
+          transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(${scaleX}, ${scaleY})`,
+          transformOrigin: "top left",
+        },
+        { transform: "translate3d(0, 0, 0) scale(1)", transformOrigin: "top left" },
       ], {
-        duration,
+        duration: Math.round(duration * 1.35),
         easing: "cubic-bezier(.16, 1, .3, 1)",
       });
       panelAnimationsRef.current.set(widgetId, animation);
@@ -578,7 +718,7 @@ export function DashboardHome({
         }
       });
     }
-  }, [layout.items, layoutResolved]);
+  }, [layout.items, layoutResolved, liftedPreview]);
 
   useEffect(() => () => {
     for (const animation of panelAnimationsRef.current.values()) {
@@ -610,8 +750,20 @@ export function DashboardHome({
     if (session?.timer) {
       clearTimeout(session.timer);
     }
+    if (session?.reflowTimer) {
+      clearTimeout(session.reflowTimer);
+    }
+    if (session?.autoScrollFrame) {
+      cancelAnimationFrame(session.autoScrollFrame);
+    }
     dragRef.current = null;
     setActiveDragWidgetId(null);
+    setLiftedPreview((current) => current?.mode === "move" ? null : current);
+  }, []);
+
+  const clearResizeSession = useCallback(() => {
+    resizeRef.current = null;
+    setLiftedPreview((current) => current?.mode === "resize" ? null : current);
   }, []);
 
   useEffect(() => () => {
@@ -619,7 +771,14 @@ export function DashboardHome({
     if (session?.timer) {
       clearTimeout(session.timer);
     }
+    if (session?.reflowTimer) {
+      clearTimeout(session.reflowTimer);
+    }
+    if (session?.autoScrollFrame) {
+      cancelAnimationFrame(session.autoScrollFrame);
+    }
     dragRef.current = null;
+    resizeRef.current = null;
   }, []);
 
   const focusWidget = useCallback((widgetId: DashboardWidgetId) => {
@@ -673,8 +832,7 @@ export function DashboardHome({
     capturePanelPositions();
     saveLayout(next);
     setAnnouncement(`${catalog.title} resized to ${DASHBOARD_WIDGET_SIZE_LABELS[nextSize]}.`);
-    focusWidget(widgetId);
-  }, [capturePanelPositions, focusWidget, saveLayout]);
+  }, [capturePanelPositions, saveLayout]);
 
   const removeWidget = useCallback((widgetId: DashboardWidgetId) => {
     const catalog = DASHBOARD_WIDGET_BY_ID.get(widgetId);
@@ -691,6 +849,7 @@ export function DashboardHome({
     };
     capturePanelPositions();
     saveLayout(next);
+    setSelectedWidgetId((current) => current === widgetId ? null : current);
     setAnnouncement(`${catalog.title} removed. It remains available in Add panels.`);
     const focusTarget = remainingItems[Math.min(currentIndex, remainingItems.length - 1)];
     if (focusTarget) {
@@ -729,25 +888,37 @@ export function DashboardHome({
     }
     const currentLayout = layoutRef.current;
     snapshotRef.current = cloneLayout(currentLayout);
+    setSelectedWidgetId(null);
     setIsCustomizing(true);
-    setAnnouncement("Customize mode started. Drag a move handle, or focus it and press Space or Enter.");
+    setAnnouncement("Customize mode started. Drag a panel to move it, use its corner handle to resize, or use the keyboard move control.");
   }, [layoutResolved]);
 
   const finishCustomize = useCallback(() => {
-    if (dragRef.current?.active || keyboardMoveRef.current) {
+    const pointerSnapshot = dragRef.current?.active
+      ? dragRef.current.beforeLayout
+      : resizeRef.current?.active
+        ? resizeRef.current.beforeLayout
+        : null;
+    if (pointerSnapshot) {
+      capturePanelPositions();
+      saveLayout(pointerSnapshot);
+    } else if (keyboardMoveRef.current) {
       saveLayout(layoutRef.current);
     }
     clearDragSession();
+    clearResizeSession();
     keyboardMoveRef.current = null;
     snapshotRef.current = null;
     setIsCustomizing(false);
+    setSelectedWidgetId(null);
     setIsLibraryOpen(false);
     setAnnouncement("Customize mode finished.");
     requestAnimationFrame(() => customizeTriggerRef.current?.focus());
-  }, [clearDragSession, saveLayout]);
+  }, [capturePanelPositions, clearDragSession, clearResizeSession, saveLayout]);
 
   const cancelCustomize = useCallback(() => {
     clearDragSession();
+    clearResizeSession();
     keyboardMoveRef.current = null;
     const snapshot = snapshotRef.current;
     if (snapshot) {
@@ -756,10 +927,11 @@ export function DashboardHome({
     }
     snapshotRef.current = null;
     setIsCustomizing(false);
+    setSelectedWidgetId(null);
     setIsLibraryOpen(false);
     setAnnouncement("Changes canceled. The previous arrangement was restored.");
     requestAnimationFrame(() => customizeTriggerRef.current?.focus());
-  }, [capturePanelPositions, clearDragSession, saveLayout]);
+  }, [capturePanelPositions, clearDragSession, clearResizeSession, saveLayout]);
 
   const cancelActiveMove = useCallback(() => {
     const pointerSession = dragRef.current;
@@ -775,6 +947,20 @@ export function DashboardHome({
     focusMoveHandle(widgetId);
     return true;
   }, [capturePanelPositions, clearDragSession, focusMoveHandle, updateLayoutInMemory]);
+
+  const cancelActiveResize = useCallback(() => {
+    const session = resizeRef.current;
+    if (!session) return false;
+    if (session.active) {
+      capturePanelPositions();
+      updateLayoutInMemory(cloneLayout(session.beforeLayout));
+    }
+    const widgetId = session.widgetId;
+    clearResizeSession();
+    setAnnouncement(`${DASHBOARD_WIDGET_BY_ID.get(widgetId)?.title ?? "Panel"} resize canceled. Previous size restored.`);
+    focusWidget(widgetId);
+    return true;
+  }, [capturePanelPositions, clearResizeSession, focusWidget, updateLayoutInMemory]);
 
   const onMoveKeyDown = useCallback((
     event: ReactKeyboardEvent<HTMLButtonElement>,
@@ -796,7 +982,7 @@ export function DashboardHome({
         setActiveDragWidgetId(null);
         const item = layoutRef.current.items.find((candidate) => candidate.widget_id === widgetId);
         setAnnouncement(`${title} dropped at row ${(item?.row ?? 0) + 1}, column ${(item?.column ?? 0) + 1}.`);
-      } else if (!session && !dragRef.current) {
+      } else if (!session && !dragRef.current && !resizeRef.current) {
         keyboardMoveRef.current = { beforeLayout: cloneLayout(layoutRef.current), widgetId };
         setActiveDragWidgetId(widgetId);
         setAnnouncement(`${title} picked up. Use arrow keys to move, then Space or Enter to drop.`);
@@ -856,6 +1042,7 @@ export function DashboardHome({
       if (event.key === "Escape") {
         event.preventDefault();
         if (cancelActiveMove()) return;
+        if (cancelActiveResize()) return;
         if (isLibraryOpen) {
           closeLibrary();
           setAnnouncement("Panel library closed.");
@@ -866,7 +1053,7 @@ export function DashboardHome({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cancelActiveMove, cancelCustomize, closeLibrary, isCustomizing, isLibraryOpen]);
+  }, [cancelActiveMove, cancelActiveResize, cancelCustomize, closeLibrary, isCustomizing, isLibraryOpen]);
 
   const resetLayout = useCallback(() => {
     const next = {
@@ -889,56 +1076,190 @@ export function DashboardHome({
       return;
     }
     session.active = true;
+    if (session.timer) {
+      clearTimeout(session.timer);
+      session.timer = null;
+    }
     setActiveDragWidgetId(widgetId);
+    setLiftedPreview({
+      ...session.previewRect,
+      grabX: session.grabOffsetX,
+      grabY: session.grabOffsetY,
+      mode: "move",
+      widgetId,
+    });
     setAnnouncement(`${DASHBOARD_WIDGET_BY_ID.get(widgetId)?.title ?? "Panel"} picked up.`);
   }, [clearDragSession, isCustomizing]);
 
-  const onPointerDown = useCallback((
-    event: ReactPointerEvent<HTMLButtonElement>,
-    widgetId: DashboardWidgetId
-  ) => {
-    if (!isCustomizing || widgetId === "needs_attention") {
+  const commitDragTarget = useCallback((session: DragSession, column: number, row: number) => {
+    if (dragRef.current !== session || !session.active) return;
+    session.lastColumn = column;
+    session.lastRow = row;
+    session.pendingColumn = column;
+    session.pendingRow = row;
+    session.reflowTimer = null;
+    const nextItems = moveDashboardLayoutItem(
+      layoutRef.current.items,
+      session.widgetId,
+      column,
+      row,
+      session.beforeLayout.items.map((item) => item.widget_id)
+    );
+    capturePanelPositions();
+    updateLayoutInMemory({ ...layoutRef.current, items: nextItems });
+  }, [capturePanelPositions, updateLayoutInMemory]);
+
+  const reflowDragAtPointer = useCallback((session: DragSession, clientX: number, clientY: number) => {
+    const node = panelRefs.current.get(session.widgetId);
+    if (node) {
+      node.style.setProperty("--dashboard-lift-translate-x", `${clientX - session.startX}px`);
+      node.style.setProperty("--dashboard-lift-translate-y", `${clientY - session.startY}px`);
+    }
+
+    let target: { column: number; row: number } | null = null;
+    const sequence = sequenceRef.current;
+    if (sequence && session.gridMetrics) {
+      const sequenceRect = sequence.getBoundingClientRect();
+      target = resolveDashboardPointerTarget({
+        ...session.gridMetrics,
+        grabOffsetX: session.grabOffsetX,
+        grabOffsetY: session.grabOffsetY,
+        pointerX: clientX,
+        pointerY: clientY,
+        previousColumn: session.lastColumn,
+        previousRow: session.lastRow,
+        sequenceLeft: sequenceRect.left,
+        sequenceTop: sequenceRect.top,
+        size: layoutRef.current.items.find((item) => item.widget_id === session.widgetId)?.size ?? "1x1",
+      });
+    } else {
+      const previewCenterY = clientY - session.grabOffsetY + session.previewRect.height / 2;
+      const closest = layoutRef.current.items
+        .filter((item) => item.widget_id !== session.widgetId)
+        .map((item) => ({ item, rect: panelRefs.current.get(item.widget_id)?.getBoundingClientRect() }))
+        .filter((candidate): candidate is { item: DashboardLayoutItem; rect: DOMRect } => Boolean(candidate.rect))
+        .sort((left, right) => (
+          Math.abs(previewCenterY - (left.rect.top + left.rect.height / 2))
+          - Math.abs(previewCenterY - (right.rect.top + right.rect.height / 2))
+        ))[0];
+      if (closest) {
+        target = { column: closest.item.column, row: closest.item.row };
+      }
+    }
+
+    if (!target || (target.column === session.lastColumn && target.row === session.lastRow)) {
+      if (session.reflowTimer) clearTimeout(session.reflowTimer);
+      session.reflowTimer = null;
+      session.pendingColumn = session.lastColumn;
+      session.pendingRow = session.lastRow;
       return;
     }
-    const activeMoveId = keyboardMoveRef.current?.widgetId ?? dragRef.current?.widgetId;
+    if (target.column === session.pendingColumn && target.row === session.pendingRow) return;
+    if (session.reflowTimer) clearTimeout(session.reflowTimer);
+    session.pendingColumn = target.column;
+    session.pendingRow = target.row;
+    session.reflowTimer = setTimeout(() => {
+      commitDragTarget(session, session.pendingColumn, session.pendingRow);
+    }, 80);
+  }, [commitDragTarget]);
+
+  const updateDragAutoScroll = useCallback((session: DragSession, clientY: number) => {
+    const edge = 88;
+    const upperDistance = Math.max(0, edge - clientY);
+    const lowerDistance = Math.max(0, clientY - (window.innerHeight - edge));
+    session.autoScrollVelocity = upperDistance > 0
+      ? -Math.min(16, 3 + upperDistance * 0.16)
+      : lowerDistance > 0
+        ? Math.min(16, 3 + lowerDistance * 0.16)
+        : 0;
+    if (session.autoScrollVelocity === 0) {
+      if (session.autoScrollFrame) cancelAnimationFrame(session.autoScrollFrame);
+      session.autoScrollFrame = null;
+      return;
+    }
+    if (session.autoScrollFrame) return;
+    const tick = () => {
+      if (dragRef.current !== session || !session.active || session.autoScrollVelocity === 0) {
+        session.autoScrollFrame = null;
+        return;
+      }
+      window.scrollBy({ top: session.autoScrollVelocity, behavior: "auto" });
+      reflowDragAtPointer(session, session.lastClientX, session.lastClientY);
+      session.autoScrollFrame = requestAnimationFrame(tick);
+    };
+    session.autoScrollFrame = requestAnimationFrame(tick);
+  }, [reflowDragAtPointer]);
+
+  const onPointerDown = useCallback((
+    event: ReactPointerEvent<HTMLElement>,
+    widgetId: DashboardWidgetId
+  ) => {
+    if (!isCustomizing || DASHBOARD_WIDGET_BY_ID.get(widgetId)?.fixed) {
+      return;
+    }
+    setSelectedWidgetId(widgetId);
+    const activeMoveId = keyboardMoveRef.current?.widgetId ?? dragRef.current?.widgetId ?? resizeRef.current?.widgetId;
     if (activeMoveId) {
       const activeTitle = DASHBOARD_WIDGET_BY_ID.get(activeMoveId)?.title ?? "Another panel";
       setAnnouncement(`${activeTitle} is already picked up. Drop or cancel it before starting another move.`);
       return;
     }
+    const item = layoutRef.current.items.find((candidate) => candidate.widget_id === widgetId);
+    const itemRect = event.currentTarget.getBoundingClientRect();
+    const sequence = sequenceRef.current;
+    if (!item || !sequence) return;
     const session: DragSession = {
-      active: event.pointerType !== "touch",
+      active: false,
+      autoScrollFrame: null,
+      autoScrollVelocity: 0,
       beforeLayout: cloneLayout(layoutRef.current),
-      lastColumn: -1,
-      lastRow: -1,
+      grabOffsetX: event.clientX - itemRect.left,
+      grabOffsetY: event.clientY - itemRect.top,
+      gridMetrics: readGridMetrics(sequence, itemRect, item.size),
+      lastClientX: event.clientX,
+      lastClientY: event.clientY,
+      lastColumn: item.column,
+      lastRow: item.row,
       pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      pendingColumn: item.column,
+      pendingRow: item.row,
+      previewRect: { height: itemRect.height, left: itemRect.left, top: itemRect.top, width: itemRect.width },
+      reflowTimer: null,
       startX: event.clientX,
       startY: event.clientY,
       timer: null,
       widgetId,
     };
     dragRef.current = session;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      dragRef.current = null;
+      return;
+    }
     if (event.pointerType === "touch") {
-      session.timer = setTimeout(() => startDrag(widgetId, event.pointerId), 500);
-    } else {
-      startDrag(widgetId, event.pointerId);
+      session.timer = setTimeout(() => startDrag(widgetId, event.pointerId), 280);
     }
   }, [isCustomizing, startDrag]);
 
-  const onPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const movePointerDrag = useCallback((pointerId: number, clientX: number, clientY: number) => {
     if (!isCustomizing) {
       clearDragSession();
       return;
     }
     const session = dragRef.current;
-    if (!session || session.pointerId !== event.pointerId) {
+    if (!session || session.pointerId !== pointerId) {
       return;
     }
-    if (!session.active && Math.hypot(
-      event.clientX - session.startX,
-      event.clientY - session.startY
-    ) > 8) {
+    const distance = Math.hypot(
+      clientX - session.startX,
+      clientY - session.startY
+    );
+    if (!session.active && session.pointerType !== "touch" && distance >= 5) {
+      startDrag(session.widgetId, session.pointerId);
+    }
+    if (!session.active && session.pointerType === "touch" && distance > 8) {
       if (session.timer) clearTimeout(session.timer);
       dragRef.current = null;
       setActiveDragWidgetId(null);
@@ -947,58 +1268,41 @@ export function DashboardHome({
     if (!session.active) {
       return;
     }
-    event.preventDefault();
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-widget-id]");
-    const targetId = target?.dataset.widgetId as DashboardWidgetId | undefined;
-    const targetItem = targetId && targetId !== session.widgetId
-      ? layoutRef.current.items.find((item) => item.widget_id === targetId)
-      : null;
-    const sequence = sequenceRef.current;
-    const sequenceRect = sequence?.getBoundingClientRect();
-    let column = targetItem?.column;
-    let row = targetItem?.row;
-    if (column === undefined && row === undefined && sequence && sequenceRect) {
-      const renderedColumns = window.getComputedStyle(sequence).gridTemplateColumns.split(" ").length;
-      if (renderedColumns >= 4) {
-        column = Math.max(0, Math.min(3, Math.floor(
-          ((event.clientX - sequenceRect.left) / sequenceRect.width) * 4
-        )));
-        const rowHeight = Math.max(1, Number.parseFloat(window.getComputedStyle(sequence).gridAutoRows) || 160);
-        row = Math.max(0, Math.floor((event.clientY - sequenceRect.top) / rowHeight));
-      }
-    }
-    if (column !== undefined && row !== undefined && (
-      column !== session.lastColumn || row !== session.lastRow
-    )) {
-      session.lastColumn = column;
-      session.lastRow = row;
-      const nextItems = moveDashboardLayoutItem(layoutRef.current.items, session.widgetId, column, row);
-      capturePanelPositions();
-      updateLayoutInMemory({ ...layoutRef.current, items: nextItems });
-      announcePosition(session.widgetId, nextItems);
-    }
-    if (event.clientY < 72) {
-      window.scrollBy({ top: -24, behavior: "auto" });
-    } else if (event.clientY > window.innerHeight - 72) {
-      window.scrollBy({ top: 24, behavior: "auto" });
-    }
-  }, [announcePosition, capturePanelPositions, clearDragSession, isCustomizing, updateLayoutInMemory]);
+    session.lastClientX = clientX;
+    session.lastClientY = clientY;
+    reflowDragAtPointer(session, clientX, clientY);
+    updateDragAutoScroll(session, clientY);
+  }, [clearDragSession, isCustomizing, reflowDragAtPointer, startDrag, updateDragAutoScroll]);
 
-  const onPointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const finishPointerDrag = useCallback((pointerId: number) => {
     const session = dragRef.current;
-    if (!session || session.pointerId !== event.pointerId) {
+    if (!session || session.pointerId !== pointerId) {
       return;
     }
     if (isCustomizing && session.active) {
+      if (session.pendingColumn !== session.lastColumn || session.pendingRow !== session.lastRow) {
+        if (session.reflowTimer) clearTimeout(session.reflowTimer);
+        commitDragTarget(session, session.pendingColumn, session.pendingRow);
+      }
+      capturePanelPositions();
       saveLayout(layoutRef.current);
       const item = layoutRef.current.items.find((candidate) => candidate.widget_id === session.widgetId);
       setAnnouncement(`${DASHBOARD_WIDGET_BY_ID.get(session.widgetId)?.title ?? "Panel"} dropped at row ${(item?.row ?? 0) + 1}, column ${(item?.column ?? 0) + 1}.`);
       focusMoveHandle(session.widgetId);
     }
     clearDragSession();
-  }, [clearDragSession, focusMoveHandle, isCustomizing, saveLayout]);
+  }, [capturePanelPositions, clearDragSession, commitDragTarget, focusMoveHandle, isCustomizing, saveLayout]);
 
-  const onPointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const onPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    movePointerDrag(event.pointerId, event.clientX, event.clientY);
+    if (dragRef.current?.active) event.preventDefault();
+  }, [movePointerDrag]);
+
+  const onPointerUp = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    finishPointerDrag(event.pointerId);
+  }, [finishPointerDrag]);
+
+  const onPointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const session = dragRef.current;
     if (!session || session.pointerId !== event.pointerId) {
       return;
@@ -1007,38 +1311,198 @@ export function DashboardHome({
     else clearDragSession();
   }, [cancelActiveMove, clearDragSession]);
 
+  const onLostPointerCapture = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const session = dragRef.current;
+    if (!session || session.pointerId !== event.pointerId || session.active) return;
+    clearDragSession();
+  }, [clearDragSession]);
+
+  useEffect(() => {
+    if (liftedPreview?.mode !== "move") return;
+    const onWindowPointerMove = (event: PointerEvent) => {
+      const session = dragRef.current;
+      if (!session?.active || session.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      movePointerDrag(event.pointerId, event.clientX, event.clientY);
+    };
+    const onWindowPointerUp = (event: PointerEvent) => finishPointerDrag(event.pointerId);
+    const onWindowPointerCancel = (event: PointerEvent) => {
+      const session = dragRef.current;
+      if (session?.pointerId === event.pointerId) cancelActiveMove();
+    };
+    window.addEventListener("pointermove", onWindowPointerMove, { passive: false });
+    window.addEventListener("pointerup", onWindowPointerUp);
+    window.addEventListener("pointercancel", onWindowPointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", onWindowPointerMove);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerCancel);
+    };
+  }, [cancelActiveMove, finishPointerDrag, liftedPreview?.mode, movePointerDrag]);
+
+  const onResizePointerDown = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+    widgetId: DashboardWidgetId
+  ) => {
+    event.stopPropagation();
+    if (!isCustomizing || dragRef.current || resizeRef.current || keyboardMoveRef.current) return;
+    setSelectedWidgetId(widgetId);
+    const item = layoutRef.current.items.find((candidate) => candidate.widget_id === widgetId);
+    const catalog = DASHBOARD_WIDGET_BY_ID.get(widgetId);
+    const node = panelRefs.current.get(widgetId);
+    const sequence = sequenceRef.current;
+    if (!item || !catalog || !node || !sequence || catalog.allowedSizes.length < 2) return;
+    const itemRect = node.getBoundingClientRect();
+    const gridMetrics = readGridMetrics(sequence, itemRect, item.size);
+    if (!gridMetrics) {
+      resizeWidget(widgetId);
+      return;
+    }
+    resizeRef.current = {
+      active: false,
+      beforeLayout: cloneLayout(layoutRef.current),
+      currentSize: item.size,
+      gridMetrics,
+      pointerId: event.pointerId,
+      previewRect: { height: itemRect.height, left: itemRect.left, top: itemRect.top, width: itemRect.width },
+      startX: event.clientX,
+      startY: event.clientY,
+      widgetId,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      resizeRef.current = null;
+    }
+  }, [isCustomizing, resizeWidget]);
+
+  const onResizePointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const session = resizeRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    const distance = Math.hypot(event.clientX - session.startX, event.clientY - session.startY);
+    if (!session.active && distance < 5) return;
+    event.preventDefault();
+    if (!session.active) {
+      session.active = true;
+      setLiftedPreview({
+        ...session.previewRect,
+        grabX: 0,
+        grabY: 0,
+        mode: "resize",
+        widgetId: session.widgetId,
+      });
+    }
+    const catalog = DASHBOARD_WIDGET_BY_ID.get(session.widgetId);
+    const node = panelRefs.current.get(session.widgetId);
+    if (!catalog || !node) return;
+    const preview = clampDashboardResizePreview(
+      session.previewRect.width + event.clientX - session.startX,
+      session.previewRect.height + event.clientY - session.startY,
+      catalog.allowedSizes,
+      session.gridMetrics
+    );
+    node.style.setProperty("--dashboard-lift-width", `${preview.width}px`);
+    node.style.setProperty("--dashboard-lift-height", `${preview.height}px`);
+    const nextSize = chooseDashboardResizeSize({
+      ...session.gridMetrics,
+      allowedSizes: catalog.allowedSizes,
+      currentSize: session.currentSize,
+      height: preview.height,
+      width: preview.width,
+    });
+    if (nextSize === session.currentSize) return;
+    session.currentSize = nextSize;
+    const nextItems = resizeDashboardLayoutItem(layoutRef.current.items, session.widgetId, nextSize);
+    capturePanelPositions();
+    updateLayoutInMemory({ ...layoutRef.current, items: nextItems });
+  }, [capturePanelPositions, updateLayoutInMemory]);
+
+  const onResizePointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const session = resizeRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    if (!session.active) {
+      resizeRef.current = null;
+      resizeWidget(session.widgetId);
+      return;
+    }
+    capturePanelPositions();
+    saveLayout(layoutRef.current);
+    setAnnouncement(`${DASHBOARD_WIDGET_BY_ID.get(session.widgetId)?.title ?? "Panel"} resized to ${DASHBOARD_WIDGET_SIZE_LABELS[session.currentSize]}.`);
+    const widgetId = session.widgetId;
+    clearResizeSession();
+    focusWidget(widgetId);
+  }, [capturePanelPositions, clearResizeSession, focusWidget, resizeWidget, saveLayout]);
+
+  const onResizePointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const session = resizeRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    if (session.active) cancelActiveResize();
+    else clearResizeSession();
+  }, [cancelActiveResize, clearResizeSession]);
+
   const addableWidgets = getAddableDashboardWidgets(currentRole, layout.items)
     .filter((entry) => viewModels[entry.id]?.state !== "unavailable");
   const tabletItems = packDashboardLayoutItems(layout.items, 2, false);
   const tabletItemsById = new Map(tabletItems.map((item) => [item.widget_id, item]));
-  const renderWidget = (item: DashboardLayoutItem, index: number) => (
-    <HomeWidget
-      key={item.widget_id}
-      index={index}
-      item={item}
-      isCustomizing={isCustomizing}
-      isPickedUp={activeDragWidgetId === item.widget_id}
-      model={viewModels[item.widget_id]}
-      moveHandleRef={(node) => {
-        if (node) moveHandleRefs.current.set(item.widget_id, node);
-        else moveHandleRefs.current.delete(item.widget_id);
-      }}
-      onMoveKeyDown={onMoveKeyDown}
-      onLostPointerCapture={onPointerCancel}
-      onPointerCancel={onPointerCancel}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onRemove={removeWidget}
-      onResize={resizeWidget}
-      panelRef={(node) => {
-        if (node) panelRefs.current.set(item.widget_id, node);
-        else panelRefs.current.delete(item.widget_id);
-      }}
-      tabletItem={tabletItemsById.get(item.widget_id) ?? item}
-      total={layout.items.length}
-    />
-  );
+  const renderWidget = (item: DashboardLayoutItem, index: number) => {
+    const tabletItem = tabletItemsById.get(item.widget_id) ?? item;
+    const itemPreview = liftedPreview?.widgetId === item.widget_id ? liftedPreview : null;
+    const footprint = getDashboardWidgetFootprint(item.size);
+    const placeholderStyle = {
+      "--dashboard-column": item.column + 1,
+      "--dashboard-row": item.row + 1,
+      "--dashboard-column-span": footprint.columns,
+      "--dashboard-row-span": footprint.rows,
+      "--dashboard-tablet-column": tabletItem.column + 1,
+      "--dashboard-tablet-row": tabletItem.row + 1,
+    } as CSSProperties;
+    return (
+      <Fragment key={item.widget_id}>
+        {itemPreview ? (
+          <div
+            className={styles.widgetPlaceholder}
+            data-widget-placeholder={item.widget_id}
+            style={placeholderStyle}
+            aria-hidden="true"
+          />
+        ) : null}
+        <HomeWidget
+          index={index}
+          item={item}
+          isCustomizing={isCustomizing}
+          isPickedUp={activeDragWidgetId === item.widget_id}
+          isSelected={selectedWidgetId === item.widget_id}
+          liftedPreview={itemPreview}
+          model={viewModels[item.widget_id]}
+          moveHandleRef={(node) => {
+            if (node) moveHandleRefs.current.set(item.widget_id, node);
+            else moveHandleRefs.current.delete(item.widget_id);
+          }}
+          onMoveKeyDown={onMoveKeyDown}
+          onLostPointerCapture={onLostPointerCapture}
+          onPointerCancel={onPointerCancel}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onRemove={removeWidget}
+          onResize={resizeWidget}
+          onResizePointerCancel={onResizePointerCancel}
+          onResizePointerDown={onResizePointerDown}
+          onResizePointerMove={onResizePointerMove}
+          onResizePointerUp={onResizePointerUp}
+          panelRef={(node) => {
+            if (node) panelRefs.current.set(item.widget_id, node);
+            else panelRefs.current.delete(item.widget_id);
+          }}
+          tabletItem={tabletItem}
+          total={layout.items.length}
+        />
+      </Fragment>
+    );
+  };
 
   return (
     <div

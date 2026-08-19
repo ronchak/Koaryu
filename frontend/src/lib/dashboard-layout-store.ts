@@ -157,7 +157,8 @@ function sortSpatially(items: readonly DashboardLayoutItem[]): DashboardLayoutIt
 function reflowPrioritizing(
   items: readonly DashboardLayoutItem[],
   priorityId: DashboardWidgetId,
-  preferred: { column: number; row: number; size?: DashboardWidgetSize }
+  preferred: { column: number; row: number; size?: DashboardWidgetSize },
+  stableOrder?: readonly DashboardWidgetId[]
 ): DashboardLayoutItem[] {
   const fixed = items.find((item) => DASHBOARD_WIDGET_BY_ID.get(item.widget_id)?.fixed);
   const priority = items.find((item) => item.widget_id === priorityId);
@@ -193,7 +194,14 @@ function reflowPrioritizing(
   placed.push(moved);
   for (const cell of cellsFor(moved)) occupied.add(cell);
 
-  for (const item of items) {
+  const byId = new Map(items.map((item) => [item.widget_id, item]));
+  const orderedItems = stableOrder
+    ? [
+        ...stableOrder.map((widgetId) => byId.get(widgetId)).filter((item): item is DashboardLayoutItem => Boolean(item)),
+        ...items.filter((item) => !stableOrder.includes(item.widget_id)),
+      ]
+    : items;
+  for (const item of orderedItems) {
     if (item.widget_id === priorityId || item.widget_id === fixed?.widget_id) continue;
     const position = canPlace(item, item.column, item.row, occupied, DASHBOARD_LAYOUT_COLUMNS)
       ? { column: item.column, row: item.row }
@@ -209,9 +217,10 @@ export function moveDashboardLayoutItem(
   items: readonly DashboardLayoutItem[],
   widgetId: DashboardWidgetId,
   column: number,
-  row: number
+  row: number,
+  stableOrder?: readonly DashboardWidgetId[]
 ): DashboardLayoutItem[] {
-  return reflowPrioritizing(items, widgetId, { column, row });
+  return reflowPrioritizing(items, widgetId, { column, row }, stableOrder);
 }
 
 export function resizeDashboardLayoutItem(

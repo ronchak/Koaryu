@@ -181,7 +181,7 @@
 .sequence {
   display: grid;
   min-width: 0;
-  grid-auto-rows: minmax(9.5rem, auto);
+  grid-auto-rows: 10rem;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
@@ -201,6 +201,17 @@
   box-shadow: var(--product-shadow-card);
 }
 
+.widgetPlaceholder {
+  min-width: 0;
+  min-height: 0;
+  grid-column: var(--dashboard-column) / span var(--dashboard-column-span);
+  grid-row: var(--dashboard-row) / span var(--dashboard-row-span);
+  border: 1px solid color-mix(in srgb, var(--product-cobalt) 42%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--product-cobalt) 8%, var(--product-paper));
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--product-cobalt) 8%, transparent);
+}
+
 .widget:is([data-size="1x1"], [data-size="1x2"]) {
   display: flex;
   flex-direction: column;
@@ -217,13 +228,47 @@
 .customizing .widget:not(.attentionWidget) {
   outline: 1px solid var(--product-control-rule);
   outline-offset: -1px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.customizing .pickedUp {
+.customizing .pickedUp:not(.lifted) {
   z-index: 5;
   background: var(--product-lifted);
   box-shadow: var(--product-shadow-lifted);
   transform: scale(1.008);
+}
+
+.customizing .widget:not(.attentionWidget) :is(.widgetBody, .widgetFooting) {
+  pointer-events: none;
+}
+
+.lifted {
+  position: fixed;
+  top: var(--dashboard-lift-top);
+  left: var(--dashboard-lift-left);
+  z-index: 50;
+  width: var(--dashboard-lift-width);
+  height: var(--dashboard-lift-height);
+  grid-column: auto;
+  grid-row: auto;
+  cursor: grabbing;
+  opacity: 0.96;
+  outline-color: color-mix(in srgb, var(--product-cobalt) 58%, transparent) !important;
+  background: color-mix(in srgb, var(--product-lifted) 94%, transparent);
+  box-shadow: var(--product-shadow-lifted);
+  transform: translate3d(
+    var(--dashboard-lift-translate-x, 0),
+    var(--dashboard-lift-translate-y, 0),
+    0
+  ) scale(1.012);
+  transform-origin: var(--dashboard-lift-grab-x, 0) var(--dashboard-lift-grab-y, 0);
+  will-change: transform, width, height;
+}
+
+.lifted[data-interaction="resize"] {
+  cursor: nwse-resize;
 }
 
 .widgetBand {
@@ -254,29 +299,38 @@
   border-color: transparent;
   background: var(--product-control-surface);
   color: var(--product-control-ink);
+  opacity: 0;
+  pointer-events: none;
   touch-action: none;
 }
 
+.dragHandle:focus-visible,
+.widget:focus-within .dragHandle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .editControls {
-  position: relative;
-  z-index: 3;
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  z-index: 8;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 16px 8px;
+  gap: 6px;
 }
 
 .editControls button {
   display: inline-grid;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   place-items: center;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--product-control-surface);
+  border: 1px solid var(--product-control-rule);
+  border-radius: 999px;
+  background: var(--product-card-stock);
   color: var(--product-control-ink);
   cursor: pointer;
+  box-shadow: var(--product-shadow-card);
 }
 
 .editControls button:hover {
@@ -287,6 +341,43 @@
 .editControls button:disabled {
   cursor: not-allowed;
   opacity: 0.38;
+}
+
+.resizeHandle {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  z-index: 9;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--product-cobalt) 72%, transparent);
+  border-radius: 13px 4px 13px 13px;
+  background: var(--product-cobalt);
+  color: var(--product-paper);
+  cursor: nwse-resize;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--product-cobalt) 28%, transparent);
+  touch-action: none;
+  transform: scale(0.82);
+  transform-origin: bottom right;
+  transition:
+    opacity var(--product-motion-change-duration) ease-out,
+    transform var(--product-motion-change-duration) var(--product-motion-ease);
+}
+
+.widget[data-selected="true"] .resizeHandle,
+.resizeHandle:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.resizeHandle:hover {
+  filter: brightness(1.06);
 }
 
 .controlLabel {
@@ -758,12 +849,6 @@
   white-space: nowrap;
 }
 
-@media (min-width: 641px) {
-  .customizing .widget .widgetBody {
-    display: none;
-  }
-}
-
 @media (max-width: 1023px) {
   .home {
     min-height: 0;
@@ -779,6 +864,11 @@
     grid-row: var(--dashboard-tablet-row) / span var(--dashboard-row-span);
   }
 
+  .widgetPlaceholder {
+    grid-column: var(--dashboard-tablet-column) / span var(--dashboard-column-span);
+    grid-row: var(--dashboard-tablet-row) / span var(--dashboard-row-span);
+  }
+
 }
 
 @media (max-width: 820px) {
@@ -789,6 +879,13 @@
     min-height: 10rem;
     margin-inline: 0;
     flex-direction: column;
+  }
+
+  .lifted,
+  .lifted[data-size="1x1"] {
+    width: var(--dashboard-lift-width);
+    height: var(--dashboard-lift-height);
+    margin-inline: 0;
   }
 
   .widget:not([data-size="1x1"]) :is(.agenda, .queue) {
@@ -833,6 +930,11 @@
     flex-direction: column;
   }
 
+  .widgetPlaceholder {
+    width: 100%;
+    min-height: 10rem;
+  }
+
   .widget {
     width: 100%;
     max-width: 100%;
@@ -840,14 +942,6 @@
 
   .customizing .widget {
     min-height: 0;
-  }
-
-  .customizing .widgetBody {
-    display: none;
-  }
-
-  .editControls {
-    padding: 4px 14px 10px;
   }
 
   .layoutLoading {
@@ -906,6 +1000,8 @@
   .persistenceNotice,
   .editControls,
   .dragHandle,
+  .resizeHandle,
+  .widgetPlaceholder,
   .library,
   .liveRegion {
     display: none !important;
@@ -942,8 +1038,8 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .sequence[data-layout-resolved="true"] .widget {
-    animation: widget-gather var(--product-motion-gather-duration) var(--product-motion-ease) both;
+  .sequence[data-layout-resolved="true"] .widget:not(.lifted) {
+    animation: widget-gather var(--product-motion-gather-duration) var(--product-motion-ease) backwards;
   }
 
   .sequence[data-layout-resolved="true"] .widget:nth-child(2n) {
@@ -954,22 +1050,38 @@
     animation: widget-change var(--product-motion-change-duration) var(--product-motion-ease) both;
   }
 
-  .widget {
+  .widget:not(.lifted) {
     transition:
       box-shadow var(--product-motion-settle-duration) var(--product-motion-ease),
       transform var(--product-motion-settle-duration) var(--product-motion-ease);
   }
+
+  .lifted {
+    animation: none;
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .widget,
+  .widget:not(.lifted),
   .editControls,
+  .resizeHandle,
   .library,
   .widgetBody,
   .layoutLoadingMark {
     animation: none;
     transition: none;
     transform: none;
+  }
+
+  .lifted {
+    animation: none;
+    transition: none;
+    transform: translate3d(
+      var(--dashboard-lift-translate-x, 0),
+      var(--dashboard-lift-translate-y, 0),
+      0
+    );
   }
 }
 

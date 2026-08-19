@@ -174,6 +174,11 @@ describe("dashboard layout storage", () => {
     assert.notDeepEqual(moved.find((item) => item.widget_id === "classes_today"), initial[1]);
     assertCollisionFree(moved);
 
+    const stableOrder = initial.map((item) => item.widget_id);
+    const stableMoved = moveDashboardLayoutItem(initial, "lead_follow_ups", 2, 0, stableOrder);
+    const stableReturned = moveDashboardLayoutItem(stableMoved, "lead_follow_ups", 2, 1, stableOrder);
+    assert.deepEqual(stableReturned, initial);
+
     const tall = resizeDashboardLayoutItem(moved, "lead_follow_ups", "1x2");
     assert.equal(tall.find((item) => item.widget_id === "lead_follow_ups")?.size, "1x2");
     assertCollisionFree(tall);
