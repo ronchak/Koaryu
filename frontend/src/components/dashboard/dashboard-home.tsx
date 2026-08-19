@@ -157,28 +157,6 @@ function MaterialState({ model }: { model: DashboardWidgetViewModel }) {
   return (
     <div className={styles.stateLine}>
       <span className={styles.stateStamp}>{stateLabel(model.state)}</span>
-      <span>{model.provenanceLabel}</span>
-    </div>
-  );
-}
-
-function RegisterSummaryFact({
-  label,
-  model,
-}: {
-  label: string;
-  model: DashboardWidgetViewModel;
-}) {
-  const state = stateLabel(model.state);
-  const metric = model.metric || state;
-
-  return (
-    <div data-state={model.state}>
-      <dt>{label}</dt>
-      <dd>
-        <strong>{metric}</strong>
-        {model.metric ? <small>{state}</small> : null}
-      </dd>
     </div>
   );
 }
@@ -363,7 +341,6 @@ function HomeWidget({
   item,
   isCustomizing,
   isPickedUp,
-  isPreviewMode,
   model,
   onMove,
   onPointerDown,
@@ -379,7 +356,6 @@ function HomeWidget({
   item: DashboardLayoutItem;
   isCustomizing: boolean;
   isPickedUp: boolean;
-  isPreviewMode: boolean;
   model: DashboardWidgetViewModel;
   onMove: (widgetId: DashboardWidgetId, direction: -1 | 1) => void;
   onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, widgetId: DashboardWidgetId) => void;
@@ -413,7 +389,6 @@ function HomeWidget({
     >
       <header className={styles.widgetBand}>
         <div className={styles.bandTitle}>
-          <span className={styles.registerKind}>{catalog.category}</span>
           <span>{catalog.title}</span>
         </div>
         {isCustomizing && !catalog.fixed ? (
@@ -472,13 +447,7 @@ function HomeWidget({
       </div>
 
       <footer className={styles.widgetFooting}>
-        <div className={styles.provenance}>
-          <span>{catalog.provenanceCopy}</span>
-          <span aria-hidden="true">·</span>
-          <span>{isPreviewMode ? "Preview" : "Live"} · {stateLabel(model.state)}</span>
-          <span aria-hidden="true">·</span>
-          <span>{catalog.windowCopy}</span>
-        </div>
+        <span className={styles.provenance}>{model.provenanceLabel}</span>
         {model.id !== "quick_actions" ? (
           <Link className={styles.sourceLink} href={catalog.sourceRoute}>
             {sourceActionLabel(model.id)}{hiddenRows > 0 ? ` · ${hiddenRows} more` : ""}
@@ -497,7 +466,6 @@ export function DashboardHome({
   identityReady,
   isPreviewMode,
   retryDashboardDatasets,
-  studioDescription,
   viewModels,
 }: DashboardHomeProps) {
   const identity = useMemo(
@@ -936,6 +904,28 @@ export function DashboardHome({
 
   const addableWidgets = getAddableDashboardWidgets(currentRole, layout.items)
     .filter((entry) => viewModels[entry.id]?.state !== "unavailable");
+  const renderWidget = (item: DashboardLayoutItem, index: number) => (
+    <HomeWidget
+      key={item.widget_id}
+      index={index}
+      item={item}
+      isCustomizing={isCustomizing}
+      isPickedUp={activeDragWidgetId === item.widget_id}
+      model={viewModels[item.widget_id]}
+      onMove={moveWidget}
+      onPointerCancel={onPointerCancel}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onRemove={removeWidget}
+      onResize={resizeWidget}
+      panelRef={(node) => {
+        if (node) panelRefs.current.set(item.widget_id, node);
+        else panelRefs.current.delete(item.widget_id);
+      }}
+      total={layout.items.length}
+    />
+  );
 
   return (
     <div
@@ -950,7 +940,6 @@ export function DashboardHome({
       <section className={styles.homeHeading} aria-labelledby="dashboard-home-heading">
         <div>
           <h1 id="dashboard-home-heading">Dashboard</h1>
-          <p>{studioDescription}</p>
         </div>
         <div className={styles.homeActions}>
           {isCustomizing && layoutResolved ? (
@@ -1013,46 +1002,9 @@ export function DashboardHome({
           className={`${styles.canvas} ${isCustomizing ? styles.customizing : ""}`}
           aria-label="Customizable home panels"
         >
-          <header className={styles.registerBand}>
-            <div className={styles.registerHeading}>
-              <span>Daily register</span>
-              <strong>Operating workbench</strong>
-            </div>
-            <dl className={styles.registerSummary} aria-label="Opening operating summary">
-              <RegisterSummaryFact label="Needs attention" model={viewModels.needs_attention} />
-              <RegisterSummaryFact label="Classes today" model={viewModels.classes_today} />
-            </dl>
-            <p>Source-owned records · role-safe view</p>
-          </header>
-          <div className={styles.grid} data-layout-resolved="true">
-            {layout.items.map((item, index) => (
-              <HomeWidget
-                key={item.widget_id}
-                index={index}
-                item={item}
-                isCustomizing={isCustomizing}
-                isPickedUp={activeDragWidgetId === item.widget_id}
-                isPreviewMode={isPreviewMode}
-                model={viewModels[item.widget_id]}
-                onMove={moveWidget}
-                onPointerCancel={onPointerCancel}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onRemove={removeWidget}
-                onResize={resizeWidget}
-                panelRef={(node) => {
-                  if (node) panelRefs.current.set(item.widget_id, node);
-                  else panelRefs.current.delete(item.widget_id);
-                }}
-                total={layout.items.length}
-              />
-            ))}
+          <div className={styles.sequence} data-layout-resolved="true">
+            {layout.items.map(renderWidget)}
           </div>
-          <footer className={styles.registerFooting}>
-            <span><strong>{layout.items.length}</strong> active panels</span>
-            <span>Arrangement saved per user, studio, and role</span>
-          </footer>
         </section>
       )}
 

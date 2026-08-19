@@ -6,7 +6,11 @@ const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const layoutSource = source("../src/app/(dashboard)/layout.tsx");
 const scopeSource = source("../src/components/dashboard-shell.tsx");
 const sidebarSource = source("../src/components/sidebar.tsx");
+const accountMenuSource = source("../src/components/account-menu.tsx");
+const accountMenuStyles = source("../src/components/account-menu.module.css");
 const homeSource = source("../src/components/dashboard/dashboard-home.tsx");
+const overviewSource = source("../src/components/dashboard/dashboard-overview-sections.tsx");
+const viewModelSource = source("../src/lib/dashboard-widget-view-models.ts");
 const contentSource = source("../src/components/dashboard/dashboard-page-content.tsx");
 const controllerSource = source("../src/lib/dashboard-page-controller.ts");
 const shellStyles = source("../src/components/dashboard-shell.module.css");
@@ -107,7 +111,8 @@ describe("dashboard shell and Home source contracts", () => {
       assert.ok(darkProductRule.includes(token), token);
     }
     assert.doesNotMatch(darkProductRule, /#f2ece0|#fbf8f0|#fffdf8|#fffefb/);
-    assert.match(shellStyles, /\.spine,[\s\S]*?background:[\s\S]*?#302719;[\s\S]*?color: #fffaf0;/);
+    assert.match(shellStyles, /\.spine,[\s\S]*?background: var\(--product-sunk\);[\s\S]*?color: var\(--product-ink\);/);
+    assert.doesNotMatch(shellStyles, /#302719|#fffaf0|linear-gradient/);
   });
 
   it("owns adaptive shell geometry and semantic customization surfaces", () => {
@@ -117,7 +122,6 @@ describe("dashboard shell and Home source contracts", () => {
       "--product-control-rule",
       "--product-alert-surface",
       "--product-alert-ink",
-      "--product-alert-rule",
     ]) {
       assert.ok(shellStyles.includes(token), token);
       assert.ok(homeStyles.includes(`var(${token})`), token);
@@ -125,34 +129,83 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(shellStyles, /min-height:\s*100dvh/);
     assert.match(shellStyles, /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/);
     assert.match(shellStyles, /@media \(max-width: 1023px\)[\s\S]*\.main,[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/);
-    assert.match(homeStyles, /min-height:\s*calc\(100dvh - 38px\)/);
+    assert.match(homeStyles, /min-height:\s*calc\(100dvh - 44px\)/);
     assert.match(homeStyles, /@media \(max-width: 1023px\)[\s\S]*\.home\s*\{[\s\S]*min-height:\s*0;[\s\S]*flex:\s*1 0 auto;/);
-    assert.match(shellStyles, /\.slugBand\s*\{[\s\S]*height:\s*38px;[\s\S]*max-height:\s*38px;/);
+    assert.match(shellStyles, /\.slugBand\s*\{[\s\S]*height:\s*44px;[\s\S]*max-height:\s*44px;/);
     assert.match(shellStyles, /\.studioName\s*\{[\s\S]*text-overflow:\s*ellipsis;/);
   });
 
-  it("renders Home as a continuous source-owned register with primary operational ledgers", () => {
-    assert.match(homeSource, /className=\{styles\.registerBand\}/);
-    assert.match(homeSource, /aria-label="Opening operating summary"/);
-    assert.match(homeSource, /label="Needs attention" model=\{viewModels\.needs_attention\}/);
-    assert.match(homeSource, /label="Classes today" model=\{viewModels\.classes_today\}/);
-    assert.match(homeSource, /const metric = model\.metric \|\| state/);
+  it("renders Home as one truthful sequence with compact marginal leaves", () => {
+    assert.match(homeSource, /className=\{styles\.sequence\}/);
+    assert.equal(homeSource.match(/className=\{styles\.sequence\}/g)?.length, 1);
+    assert.match(homeSource, /layout\.items\.map\(renderWidget\)/);
+    assert.equal(homeSource.match(/layout\.items\.map\(renderWidget\)/g)?.length, 1);
+    assert.doesNotMatch(homeSource, /positionedItems|layout\.items\.(?:filter|sort|toSorted|reduce)|primaryItems|compactItems/);
+    assert.match(homeSource, /position \$\{index \+ 1\} of \$\{total\}/);
     assert.match(homeSource, /<footer className=\{styles\.widgetFooting\}>/);
-    assert.match(homeSource, /catalog\.provenanceCopy/);
-    assert.match(homeSource, /isPreviewMode \? "Preview" : "Live"/);
-    assert.match(homeSource, /stateLabel\(model\.state\)/);
-    assert.match(homeSource, /catalog\.windowCopy/);
-    assert.match(homeSource, /<footer className=\{styles\.registerFooting\}>/);
-    assert.match(homeStyles, /\.grid\s*\{[\s\S]*gap:\s*1px;[\s\S]*background:\s*var\(--product-rule-soft\);/);
+    assert.match(homeSource, /model\.provenanceLabel/);
+    assert.match(homeSource, /className=\{styles\.sourceLink\}/);
+    assert.doesNotMatch(homeSource, /Daily register|Operating workbench|Arrangement saved per user|catalog\.provenanceCopy|catalog\.windowCopy/);
+    assert.doesNotMatch(homeSource, /<p>\{studioDescription\}<\/p>/);
+    assert.match(homeStyles, /\.sequence\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?gap:\s*20px;/);
+    assert.match(homeStyles, /\.widget\[data-size="1x1"\]\s*\{[\s\S]*?width:\s*min\(100%, 18rem\);[\s\S]*?margin-left:\s*auto;/);
+    assert.match(homeStyles, /\.widget\s*\{[\s\S]*?border-radius:\s*14px;[\s\S]*?box-shadow:\s*var\(--product-shadow-card\);/);
+    assert.match(homeStyles, /@media \(max-width: 820px\)[\s\S]*?\.widget,[\s\S]*?width:\s*100%;[\s\S]*?margin-inline:\s*0;[\s\S]*?flex-direction:\s*column;/);
+    assert.match(homeStyles, /@media \(max-width: 820px\)[\s\S]*?\.widget:not\(\[data-size="1x1"\]\) :is\(\.agenda, \.queue\)[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
     assert.match(homeStyles, /data-widget-id="needs_attention"/);
     assert.match(homeStyles, /data-widget-id="classes_today"/);
     assert.match(homeStyles, /@media print/);
     assert.match(shellStyles, /@media print/);
   });
 
+  it("preserves source labels verbatim", () => {
+    assert.match(homeSource, /<span>\{action\.label\}<\/span>/);
+    assert.doesNotMatch(homeSource, /sentenceCase/);
+    assert.match(viewModelSource, /\{ label: "Import CSV", href: "\/students\/import" \}/);
+  });
+
+  it("removes rejected ledger costume from the authenticated shell and Home", () => {
+    for (const styles of [shellStyles, homeStyles]) {
+      assert.doesNotMatch(styles, /text-transform:\s*uppercase/);
+      assert.doesNotMatch(styles, /linear-gradient/);
+      assert.doesNotMatch(styles, /border-radius:\s*(?:0|[1-4]px)\b/);
+      assert.doesNotMatch(styles, /box-shadow:\s*(?:inset\s+)?(?:-?\d+px\s+){2}0(?:px)?\b/);
+    }
+    assert.match(shellStyles, /--product-focus:\s*#2f5d8f/);
+    assert.match(shellStyles, /:global\(\[data-theme="dark"\]\) \.shellRoot[\s\S]*--product-focus:\s*#85aedc/);
+    assert.match(homeStyles, /outline:\s*2px solid var\(--product-focus\)/);
+  });
+
   it("puts the 44px target on queue and brand anchors themselves", () => {
     assert.match(homeStyles, /\.queue a\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?flex:\s*1 1 auto;/);
     assert.match(shellStyles, /\.brandLink,[\s\S]*?\.mobileBrand\s*\{[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/);
+    assert.match(accountMenuSource, /flex h-11 w-full cursor-pointer/);
+    assert.match(accountMenuSource, /group flex min-h-11 items-center/);
+    assert.match(accountMenuSource, /group flex h-11 w-full items-center/);
+    assert.doesNotMatch(accountMenuSource, /focus-visible:ring-1|uppercase|hover:-translate/);
+  });
+
+  it("keeps reduced motion hidden states, print aliases, and the two-level elevation ladder honest", () => {
+    const reducedShell = shellStyles.slice(shellStyles.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+    assert.match(reducedShell, /\.skipLink\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?clip-path:\s*inset\(100%\);/);
+    assert.match(reducedShell, /\.skipLink:focus-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?clip-path:\s*inset\(0\);/);
+    assert.match(accountMenuStyles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.root\[data-state="closed"\][\s\S]*?display:\s*none;[\s\S]*?visibility:\s*hidden;[\s\S]*?opacity:\s*0;/);
+    assert.doesNotMatch(accountMenuSource, /rotate-90|style=\{\{ transform:/);
+    assert.doesNotMatch(overviewSource, /group-hover:translate-x/);
+
+    const printShell = shellStyles.slice(shellStyles.indexOf("@media print"));
+    for (const token of ["--product-ground: #fff", "--product-ink: #111", "--product-rule-soft: #ccc", "--text-primary: #111", "--accent: #111"]) {
+      assert.ok(printShell.includes(token), token);
+    }
+    assert.match(printShell, /:global\(\[data-theme="dark"\]\) \.shellRoot/);
+    const printHome = homeStyles.slice(homeStyles.indexOf("@media print"));
+    assert.match(printHome, /\.sequence\s*\{[\s\S]*?display:\s*block;/);
+    assert.doesNotMatch(printHome, /\border\s*:|grid-auto-flow\s*:|column-count\s*:/);
+
+    const spineRule = shellStyles.match(/\.spine\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    const activeNavRule = shellStyles.match(/\.navLink\[aria-current="page"\]\s*\{[\s\S]*?\}/)?.[0] ?? "";
+    assert.doesNotMatch(spineRule, /box-shadow/);
+    assert.doesNotMatch(activeNavRule, /box-shadow/);
   });
 
   it("owns authoritative studio identity in the split store and purges layouts at session cleanup", () => {

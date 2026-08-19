@@ -89,21 +89,21 @@ type RecentStudentRow = {
 
 export function DashboardLoadingPanel() {
   return (
-    <Panel>
+    <div className="overflow-hidden rounded-[14px] bg-surface p-4 shadow-[var(--product-shadow-card)] sm:p-5">
       <PanelHeader
         title="Loading Dashboard"
         subtitle="Preparing the first roster, lead, program, and belt snapshot."
       />
-      <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {["Students", "Leads", "Classes", "Belts"].map((label) => (
-          <div key={label} className="bg-surface px-4 py-4">
-            <div className="h-3 w-20 bg-surface-raised" />
-            <div className="mt-4 h-8 w-14 bg-surface-raised" />
-            <div className="mt-3 h-3 w-28 bg-surface-raised" />
+          <div key={label} className="rounded-[10px] bg-surface-raised px-4 py-4">
+            <div className="h-3 w-20 rounded-[6px] bg-border" />
+            <div className="mt-4 h-8 w-14 rounded-[6px] bg-border" />
+            <div className="mt-3 h-3 w-28 max-w-full rounded-[6px] bg-border" />
           </div>
         ))}
       </div>
-    </Panel>
+    </div>
   );
 }
 
@@ -121,14 +121,12 @@ export function DashboardOwnerBriefPanel({
   return (
     <OverviewPanel className="mb-6">
       <div className="relative overflow-hidden border-b border-border px-4 py-5 sm:px-5">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-accent/70" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,color-mix(in_srgb,var(--surface-raised)_72%,transparent),transparent_62%)]" />
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-[11px] font-medium uppercase tracking-widest text-muted">Owner brief · {todayLabel}</p>
+            <p className="text-[11px] font-medium text-muted">Owner brief · {todayLabel}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <h2 className="text-2xl font-semibold leading-tight text-text-primary">{ownerBrief.greeting}</h2>
-              <span className={`rounded-[4px] border px-2 py-1 text-xs font-medium ${
+              <span className={`rounded-[6px] border px-2 py-1 text-xs font-medium ${
                 ownerBrief.tone === "danger"
                   ? "border-danger/25 bg-danger/10 text-danger"
                   : ownerBrief.tone === "warning"
@@ -145,16 +143,16 @@ export function DashboardOwnerBriefPanel({
               <Link
                 href={ownerBrief.primaryAction.href}
                 prefetch={crmLinkPrefetch(ownerBrief.primaryAction.href)}
-                className="group inline-flex items-center justify-center gap-2 rounded-[6px] border border-accent/30 bg-accent px-3 py-2 text-sm font-medium text-accent-contrast shadow-lg shadow-black/10 transition-[background-color,border-color,box-shadow,transform] duration-[220ms] ease-out hover:-translate-y-0.5 hover:bg-accent-hover hover:shadow-xl hover:shadow-black/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent motion-reduce:transition-none"
+                className="group inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-[10px] border border-accent/30 bg-accent px-3 py-2 text-sm font-medium text-accent-contrast transition-[background-color,border-color] duration-[120ms] ease-out hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-focus)] motion-reduce:transition-none"
               >
                 <span>{ownerBrief.primaryAction.title}</span>
-                <ArrowRight className="h-4 w-4 transition-transform duration-[220ms] ease-out group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                <ArrowRight className="h-4 w-4" />
               </Link>
             ) : null}
             <Link
               href="/reports"
               prefetch={false}
-              className="inline-flex items-center justify-center gap-2 rounded-[6px] border border-border bg-surface/80 px-3 py-2 text-sm font-medium text-text-secondary transition-[background-color,border-color,color,transform] duration-[220ms] ease-out hover:-translate-y-0.5 hover:border-accent/30 hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent motion-reduce:transition-none"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-[10px] border border-border bg-surface/80 px-3 py-2 text-sm font-medium text-text-secondary transition-[background-color,border-color,color] duration-[120ms] ease-out hover:border-accent/30 hover:bg-surface-raised hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-focus)] motion-reduce:transition-none"
             >
               Open reports
             </Link>
@@ -396,7 +394,7 @@ export function DashboardActivityPanels({
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="font-mono text-lg font-semibold text-text-primary">{row.daysInactive}</p>
-                  <p className="text-[10px] uppercase tracking-widest text-muted">days</p>
+                  <p className="text-[10px] text-muted">days</p>
                 </div>
               </Link>
             ))}
@@ -541,7 +539,7 @@ export function DashboardRecentStudentsPanel({
                   </span>
                 </div>
                 <span
-                  className={`px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${
+                  className={`px-2 py-0.5 text-[11px] font-medium ${
                     student.status === "active"
                       ? "bg-success/10 text-success"
                       : student.status === "trialing"
