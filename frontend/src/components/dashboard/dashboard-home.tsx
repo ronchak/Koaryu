@@ -348,6 +348,7 @@ function HomeWidget({
   onMoveKeyDown,
   onPointerDown,
   onPointerCancel,
+  onLostPointerCapture,
   onPointerMove,
   onPointerUp,
   onRemove,
@@ -365,6 +366,7 @@ function HomeWidget({
   onMoveKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>, widgetId: DashboardWidgetId) => void;
   onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, widgetId: DashboardWidgetId) => void;
   onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onLostPointerCapture: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onRemove: (widgetId: DashboardWidgetId) => void;
@@ -422,6 +424,7 @@ function HomeWidget({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
+            onLostPointerCapture={onLostPointerCapture}
           >
             <GripVertical aria-hidden="true" size={18} />
             <span className={styles.controlLabel}>Move</span>
@@ -1021,6 +1024,7 @@ export function DashboardHome({
         else moveHandleRefs.current.delete(item.widget_id);
       }}
       onMoveKeyDown={onMoveKeyDown}
+      onLostPointerCapture={onPointerCancel}
       onPointerCancel={onPointerCancel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

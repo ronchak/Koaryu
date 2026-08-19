@@ -48,6 +48,7 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /elementFromPoint/);
     assert.match(homeSource, /window\.scrollBy/);
     assert.match(homeSource, /onPointerCancel=\{onPointerCancel\}/);
+    assert.match(homeSource, /onLostPointerCapture=\{onPointerCancel\}/);
     assert.match(homeSource, /moveDashboardLayoutItem\(/);
     assert.match(homeSource, /updateLayoutInMemory\(\{ \.\.\.layoutRef\.current, items: nextItems \}\)/);
     assert.match(homeSource, /saveLayout\(layoutRef\.current\)/);
@@ -69,6 +70,12 @@ describe("dashboard shell and Home source contracts", () => {
       homeSource.indexOf("const onPointerCancel")
     );
     assert.equal(pointerUpSource.match(/saveLayout\(layoutRef\.current\)/g)?.length, 1);
+    const pointerCancelSource = homeSource.slice(
+      homeSource.indexOf("const onPointerCancel"),
+      homeSource.indexOf("const addableWidgets")
+    );
+    assert.match(pointerCancelSource, /if \(session\.active\) cancelActiveMove\(\)/);
+    assert.match(pointerCancelSource, /else clearDragSession\(\)/);
     assert.match(homeSource, /updateLayoutInMemory\(cloneLayout\(session\.beforeLayout\)\)/);
     assert.match(homeSource, /clearDragSession\(\);[\s\S]*snapshotRef\.current = null/);
     assert.match(homeSource, /viewModels\[entry\.id\]\?\.state !== "unavailable"/);
