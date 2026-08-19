@@ -313,7 +313,7 @@ export function StudentRosterTable({
         </tr>
       </thead>
       <tbody>
-        {filtered.map((row, idx) => {
+        {filtered.map((row) => {
           const { student } = row;
           const isSelected = selectedIds.has(student.id);
           const studentName = getStudentName(row);
@@ -325,12 +325,8 @@ export function StudentRosterTable({
               onFocusCapture={() => onFocusStudent(student.id)}
               onPointerEnter={() => onFocusStudent(student.id)}
               onClick={() => onOpenStudent(student.id)}
-              className={`
-                border-b border-border cursor-pointer
-                transition-colors duration-100
-                ${isSelected ? "bg-accent/5" : idx % 2 === 0 ? "" : "bg-surface/40"}
-                hover:bg-surface-raised
-              `}
+              className={styles.rosterRow}
+              data-selected={isSelected || undefined}
             >
               {canManageRoster ? (
                 <td
@@ -354,7 +350,7 @@ export function StudentRosterTable({
                   </label>
                 </td>
               ) : null}
-              <th scope="row" data-label="Student" className="px-4 py-3">
+              <th scope="row" data-label="Student" className={styles.studentCell}>
                 <button
                   type="button"
                   onClick={(event) => {
@@ -362,57 +358,51 @@ export function StudentRosterTable({
                     onOpenStudent(student.id);
                   }}
                   aria-label={`Open ${studentName} profile`}
-                  className="flex items-center gap-2.5 text-left cursor-pointer"
+                  className={styles.studentIdentityButton}
                 >
                   <StudentAvatar student={student} />
-                  <div>
-                    <p className="font-medium text-text-primary text-sm">
+                  <div className={styles.studentIdentityCopy}>
+                    <p className={styles.studentName}>
                       {student.preferred_name || student.legal_first_name}{" "}
                       {student.legal_last_name}
                     </p>
-                    {student.is_minor && <p className="text-xs text-muted">Minor</p>}
+                    {student.is_minor && <p className={styles.studentMeta}>Minor</p>}
                   </div>
                 </button>
               </th>
-              <td data-label="Status" className="px-4 py-3">
+              <td data-label="Status" className={styles.statusCell}>
                 <StatusBadge status={student.status} />
               </td>
-              <td data-label="Programs" className="px-4 py-3">
-                <div className="flex flex-wrap gap-1">
+              <td data-label="Programs" className={styles.programCell}>
+                <div className={styles.programSummary}>
                   {row.programs.length > 0 ? (
-                    row.programs.map((program) => (
-                      <ProgramBadge key={program.id} program={program} />
-                    ))
+                    <>
+                      <ProgramBadge program={row.programs[0]} />
+                      {row.programs.length > 1 ? (
+                        <span className={styles.overflowCount}>+{row.programs.length - 1}</span>
+                      ) : null}
+                    </>
                   ) : (
                     <ProgramBadge program={programs.find((program) => program.id === student.program_id)} />
                   )}
                 </div>
               </td>
-              <td data-column="contact" data-label="Contact" className="px-4 py-3 text-text-secondary font-mono text-xs">
+              <td data-column="contact" data-label="Contact" className={styles.contactCell}>
                 {row.contact}
               </td>
-              <td data-column="tags" data-label="Tags" className="px-4 py-3">
-                <div className="flex flex-wrap gap-1">
-                  {row.visibleTags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-1.5 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {row.hiddenTagCount > 0 && (
-                    <span className="text-xs text-muted">
-                      +{row.hiddenTagCount}
-                    </span>
-                  )}
+              <td data-column="tags" data-label="Tags" className={styles.tagsCell}>
+                <div className={styles.tagSummary}>
+                  {row.visibleTags[0] ? <span>{row.visibleTags[0]}</span> : <span aria-hidden="true">—</span>}
+                  {row.visibleTags.length + row.hiddenTagCount > 1 ? (
+                    <span className={styles.overflowCount}>+{row.visibleTags.length + row.hiddenTagCount - 1}</span>
+                  ) : null}
                 </div>
               </td>
-              <td data-label="Member since" className="px-4 py-3 text-text-secondary font-mono text-xs">
+              <td data-label="Member since" className={styles.memberSinceCell}>
                 {formatDate(student.membership_start_date)}
               </td>
               {inactivityThreshold && (
-                <td data-label="Days inactive" className="px-4 py-3 text-text-secondary font-mono text-xs">
+                <td data-label="Days inactive" className={styles.inactiveCell}>
                   {inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`}
                 </td>
               )}
@@ -432,8 +422,25 @@ export function StudentRosterReadingRail({
 }: {
   inactivity: string | null;
   onOpenStudent: (studentId: string) => void;
-  row: StudentRosterRow;
+  row: StudentRosterRow | null;
 }) {
+  if (!row) {
+    return (
+      <aside
+        className={`${styles.studentReadingRail} ${styles.emptyReadingRail}`}
+        aria-label="Student quick view"
+      >
+        <div className={styles.readingRailHeading}>
+          <span>Quick view</span>
+        </div>
+        <div className={styles.readingRailEmptyState}>
+          <User aria-hidden="true" />
+          <p>Hover over or focus a student to see their details here.</p>
+        </div>
+      </aside>
+    );
+  }
+
   const { student } = row;
   const studentName = getStudentName(row);
   const guardian = student.is_minor ? student.guardians[0] : null;
@@ -441,6 +448,7 @@ export function StudentRosterReadingRail({
   return (
     <aside className={styles.studentReadingRail} aria-labelledby="student-reading-title">
       <div className={styles.readingRailHeading}>
+        <span>Quick view</span>
         <StatusBadge status={student.status} />
       </div>
       <div className={styles.readingIdentity}>
