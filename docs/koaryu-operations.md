@@ -9,6 +9,30 @@ This guide is the operating contract for the single-studio Koaryu product. It de
 - An unexpected historical multi-membership fails closed with a non-disclosing remediation message. Do not delete or rewrite either membership. The owner should contact support so the memberships can be reviewed and resolved through a separately approved, record-preserving procedure.
 - Multi-studio selection and active multi-studio operation are not supported in Koaryu.
 
+## Friendly-pilot outreach gate
+
+Outreach for demos may begin before Koaryu Payments is live. Use these boundaries so a
+demo invitation does not become an unsupported production promise:
+
+- Describe the offer as a free, hands-on friendly pilot for one independent studio.
+- Use a prepared sample workspace for a product demo. Do not ask a prospect to import
+  a full real roster merely to see the product.
+- For a trial that needs normal authenticated access, either grant a time-bounded studio
+  comp through the owner tool or use Koaryu Core Checkout only after its controlled live
+  acceptance test is complete. A new studio otherwise starts with an incomplete Core
+  subscription and is redirected to the subscription-required page.
+- Do not promise Koaryu-managed tuition collection, Stripe Connect onboarding, autopay,
+  refunds, or exports. Existing billing visibility and the three routine local/read
+  workflows below are the current Koaryu Payments boundary.
+- Before the first live demo of a release, walk Landing, signup/login, onboarding,
+  Dashboard, Students, Leads, Schedule, Reports, Settings, mobile navigation, and Help
+  using the same account and device class the prospect will see. Any broken route,
+  placeholder, misleading control, or unexplained access denial stops that demo.
+
+A studio may move from demo to daily use with real student data only after the owner has
+completed the first-day checklist, verified support delivery, and accepted the recovery
+posture below. Demo outreach itself does not authorize production data import.
+
 ## Staff permission matrix
 
 The backend is authoritative. Hiding a control in the UI is not an authorization boundary.
@@ -72,7 +96,9 @@ Use [Staging and Recovery Runbook](staging-recovery-runbook.md) for backup and r
 ## Explicit deferrals
 
 - Active multi-studio product support or destructive cleanup of historical memberships.
-- Provider-backed tuition lifecycle changes, including plan/payer synchronization, autopay, pause/resume, cancellation, refunds, voids, exports, and live Stripe activation.
+- Provider-backed tuition lifecycle changes, including plan/payer synchronization,
+  autopay, pause/resume, cancellation, refunds, voids, exports, and live Connect/tuition
+  activation. Koaryu Core Checkout is the separately authorized live exception.
 - Permanent student deletion, dangerous bulk deletion, and exceptional financial controls.
 - Self-service parent portals, new integrations, custom permission builders, or a broad authorization rewrite.
 - New recovery infrastructure, enterprise monitoring, or guarantees beyond the evidence above.

@@ -2,14 +2,34 @@
 
 ## Product disposition
 
-Koaryu billing is **CONTRACT ONLY**. The supported production behavior is limited to:
+Koaryu Core and Koaryu Payments are separate products with separate authority.
+
+**Koaryu Core is live in production.** An authenticated studio Admin can start the
+flat-rate Koaryu subscription through Stripe Checkout and open the Stripe customer
+portal. The first eligible Checkout reservation receives one 30-day trial; accepted
+Checkout and subscription events consume that eligibility so a later subscription
+cannot receive another trial. Production currently uses the live, active `$27 USD`
+monthly price. This path is controlled by `CORE_SELF_CHECKOUT_ENABLED` and does not
+grant any Koaryu Payments or tuition authority.
+
+**Koaryu Payments remains CONTRACT ONLY.** The supported production behavior is
+limited to:
 
 1. Admin and Front Desk viewing billing and reconciliation state.
 2. Admin and Front Desk attaching an **external-only local billing record** to a student.
 3. Admin and Front Desk recording a **payer-level external payment**.
 4. Admin and Front Desk reconciling an existing Stripe-linked invoice through a provider read.
 
-Stripe Connect setup, platform-subscription changes, provider-backed enrollment lifecycle, hosted-invoice mutation, autopay changes, refunds, voids, provider plan or payer synchronization, and exports are currently unsupported. Instructors receive no billing access. Preview-mode actions are demonstrations only and do not change provider state.
+Stripe Connect setup, provider-backed enrollment lifecycle, hosted-invoice mutation,
+autopay changes, refunds, voids, provider plan or payer synchronization, and exports
+are currently unsupported. Instructors receive no billing access. Preview-mode
+actions are demonstrations only and do not change provider state.
+
+The current public Terms page still describes Stripe Connect, autopay, and refunds as
+available Koaryu Payments behavior. That public contract conflicts with this operating
+boundary and must be corrected before Koaryu Payments is marketed or sold. Until then,
+pilot and demo outreach must describe Koaryu Payments as unavailable and must not
+promise tuition collection.
 
 Readiness terms used below:
 
@@ -71,8 +91,8 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | Refresh | Billing data GET set | Admin / Front Desk | Reads local state; Connect status may refresh a local projection from a provider read | Supported read |
 | Tabs and review steps | Client navigation | Admin / Front Desk | None | Supported navigation |
 | Overview metrics and status | Billing list/status GETs | Admin / Front Desk; platform detail Admin | Read and bounded projection repair | Supported read |
-| Koaryu Core checkout | `POST /platform-billing/checkout` | Admin | Stripe customer/session, local pending metadata, audit | Shown only when the exact studio reports the Core mutation capability; live `FAIL-CLOSED` |
-| Customer portal | `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Shown only when the exact studio reports the Core mutation capability and has a Stripe customer; live `FAIL-CLOSED` |
+| Koaryu Core checkout | `POST /platform-billing/checkout` | Admin | Stripe customer/session, local pending metadata, audit | Live when the production-only Core capability is enabled; first eligible checkout receives one 30-day trial |
+| Customer portal | `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Live when the Core capability is enabled and the studio has a Stripe customer |
 | Connect payments | `POST /billing/connect/onboarding-link` | Admin | May create Connect account/link, update local account row, audit | Non-preview control disabled; live `FAIL-CLOSED` |
 | Stripe dashboard | `POST /billing/connect/dashboard-link` | Admin | Creates Stripe login link and audit | Non-preview control disabled; live `FAIL-CLOSED` |
 | Reconnect Stripe | `POST /billing/connect/reset` | Admin | Locally clears the account association and audits | Removed from UI; hidden dangerous action |
@@ -101,8 +121,8 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 | --- | --- | --- | --- |
 | `GET /platform-billing/status` | Admin | Reads and may repair local platform-subscription projection | Admin-only read |
 | `GET /platform-billing/email-usage` | Admin | Local usage read | Admin-only read |
-| `POST /platform-billing/checkout` | Admin | Stripe customer/Checkout Session, pending metadata, audit | Capability-gated; live `FAIL-CLOSED` |
-| `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Capability- and customer-gated; live `FAIL-CLOSED` |
+| `POST /platform-billing/checkout` | Admin | Stripe customer/Checkout Session, pending metadata, audit | Live, production-only, Admin- and capability-gated |
+| `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Live, production-only, Admin-, capability-, and customer-gated |
 | `GET /billing/connect/status` | Admin / Front Desk | Local read; may retrieve Stripe account and refresh projection | Supported read |
 | `POST /billing/connect/onboarding-link` | Admin | Stripe account/link creation, local account projection, audit | Hidden; live `FAIL-CLOSED` |
 | `POST /billing/connect/sync` | Admin | Stripe account read and local projection | Hidden Admin-only reconciliation |
@@ -239,7 +259,9 @@ The domain write and audit insert are not one database transaction. After an amb
 - Hidden endpoint implementations do not make their transitions supported. Some may perform local writes before a blocked live provider call.
 - No generic enrollment `PATCH` is part of the supported lifecycle.
 - No local success may be presented as a completed Stripe operation.
-- Inbound live webhooks for existing objects remain allowed; outbound live Stripe mutation remains closed.
+- Inbound live webhooks for existing objects remain allowed. Koaryu Core Checkout,
+  customer portal, and their exact-object compensation paths are the bounded live
+  exception; Koaryu Payments and tuition mutations remain closed.
 - Events are claimed durably by Stripe event ID. Concurrent handling uses a bounded lease and retry response.
 - Unmapped live Connect events are quarantined and retried rather than projected into an unknown studio.
 - Projection preserves tenant/account identity, terminal states, and event ordering.
@@ -276,7 +298,7 @@ The billing domain meets the current product boundary when:
 - Admin and Front Desk can read billing state;
 - Instructor denial occurs before any billing fetch;
 - external-only and payer-only backend guards run before the billing service;
-- live outbound Stripe mutation remains fail-closed;
+- live Koaryu Payments and tuition mutation remains fail-closed;
 - preview actions are explicitly demo-only;
 - export controls no longer promise a download;
 - focused permission, idempotency, reconciliation, webhook, and live-fail-close tests pass;

@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Last verified against live systems: 2026-08-16.
+Last verified against live systems: 2026-08-19.
 
 ## Quick map
 
@@ -20,6 +20,8 @@ Last verified against live systems: 2026-08-16.
 | Database + Auth | Supabase `mimguepumzsgmcaycdsh` | Supabase `nxgsektqsgrtyfhawxbc` |
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
+| `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
+| `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both are promoted by hand, on purpose —
 see [Deployment triggers](#deployment-triggers).
@@ -123,8 +125,11 @@ a human through `scripts/studio-comp-migration-rollout.mjs`.
   tuition mutations additionally require the exact enabled, unexpired studio
   scope and exact-candidate all-clear reconciliation checkpoint.
 - `CORE_SELF_CHECKOUT_ENABLED` is a separate, narrower production-only switch for
-  Core subscription checkout. `config.py` rejects it outside production, so the
-  checkout flow cannot be exercised on staging.
+  Core subscription checkout and the customer portal. `config.py` rejects it
+  outside production, so the checkout flow cannot be exercised on staging. The
+  2026-08-19 read-only provider check found the live `$27 USD` monthly price active,
+  the exact six-event platform endpoint enabled, and one active customer-portal
+  configuration.
 - The approved mutation boundary is documented in `docs/billing-boundary.md`.
 
 ## Operational alerting
