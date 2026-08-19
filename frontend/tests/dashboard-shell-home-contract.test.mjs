@@ -50,6 +50,8 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /grabOffsetX/);
     assert.match(homeSource, /widgetPlaceholder/);
     assert.match(homeSource, /setLiftedPreview/);
+    assert.match(homeSource, /releaseLiftStyles/);
+    assert.match(homeSource, /projectDashboardFrameTargetToStoredCell/);
     assert.match(homeSource, /window\.scrollBy/);
     assert.match(homeSource, /requestAnimationFrame\(tick\)/);
     assert.match(homeSource, /onPointerCancel=\{onPointerCancel\}/);
@@ -118,7 +120,7 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /disabled=\{!layoutResolved\}/);
     assert.match(homeSource, /identityReady && identity|!identityReady \|\| !identity/);
     assert.match(homeSource, /getBoundingClientRect\(\)/);
-    assert.match(homeSource, /node\.animate\(\[/);
+    assert.match(homeSource, /node\.animate\(keyframes/);
     assert.match(homeSource, /prefers-reduced-motion: reduce/);
   });
 
@@ -206,11 +208,13 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeStyles, /@media \(max-width: 1023px\)[\s\S]*?grid-template-columns:\s*repeat\(2,/);
     assert.match(homeStyles, /@media \(max-width: 640px\)[\s\S]*?\.sequence\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
     assert.match(homeStyles, /\.dragHandle\s*\{[\s\S]*?touch-action:\s*none;/);
+    assert.match(homeStyles, /\.customizing \.widget:not\(\.attentionWidget\)\s*\{[\s\S]*?touch-action:\s*pan-y;/);
     assert.doesNotMatch(homeStyles, /\.pickedUp \.dragHandle/);
     assert.doesNotMatch(homeStyles, /data-size="4x[12]"/);
     assert.match(homeStyles, /\.widget\s*\{[\s\S]*?border-radius:\s*14px;[\s\S]*?box-shadow:\s*var\(--product-shadow-card\);/);
-    assert.match(homeStyles, /@media \(max-width: 820px\)[\s\S]*?\.widget,[\s\S]*?width:\s*100%;[\s\S]*?margin-inline:\s*0;[\s\S]*?flex-direction:\s*column;/);
-    assert.match(homeStyles, /@media \(max-width: 820px\)[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
+    assert.match(homeStyles, /\.widget\s*\{[\s\S]*?grid-template-rows:\s*44px minmax\(0, 1fr\) 44px;/);
+    assert.match(homeStyles, /data-density="tall"/);
+    assert.match(homeStyles, /\.widgetBody\s*\{[\s\S]*?overflow:\s*clip;/);
     assert.match(homeStyles, /data-widget-id="needs_attention"/);
     assert.match(homeStyles, /data-widget-id="classes_today"/);
     assert.match(homeStyles, /@media print/);

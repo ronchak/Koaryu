@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import {
+  DASHBOARD_WIDGET_BY_ID,
+  type DashboardWidgetId,
+  type DashboardWidgetSize,
+} from "../src/lib/dashboard-widget-catalog";
+
 const FRONTEND_URL = process.env.KOARYU_E2E_FRONTEND_URL || "http://localhost:4000";
 const dashboardWidgetEnabled = process.env.KOARYU_DASHBOARD_WIDGET_E2E === "true";
 const frontendTarget = new URL(FRONTEND_URL);
@@ -69,6 +75,7 @@ dashboardWidgetTest("keeps a lifted widget under the pointer and settles into it
   await page.mouse.up();
   await expect(widget).not.toHaveAttribute("data-interaction", "move");
   await expect(page.locator('[data-widget-placeholder="student_pulse"]')).toHaveCount(0);
+  await expect.poll(async () => widget.getAttribute("style")).not.toContain("--dashboard-lift-");
 });
 
 dashboardWidgetTest("previews corner resize continuously and persists a supported footprint", async ({ page }, testInfo) => {
@@ -84,11 +91,22 @@ dashboardWidgetTest("previews corner resize continuously and persists a supporte
   await expect.poll(() => page.evaluate(() => Object.entries(localStorage)
     .filter(([key]) => key.startsWith("koaryu:dashboard-layout:")))).toEqual(storedLayoutBeforeSelection);
   const handle = widget.getByRole("button", { name: /Resize Student Pulse/ });
+  const remove = widget.getByRole("button", { name: /Remove Student Pulse/ });
   const before = await widget.boundingBox();
   const handleBox = await handle.boundingBox();
+  const removeBox = await remove.boundingBox();
   expect(before).not.toBeNull();
   expect(handleBox).not.toBeNull();
-  if (!before || !handleBox) return;
+  expect(removeBox).not.toBeNull();
+  if (!before || !handleBox || !removeBox) return;
+  for (const control of [handleBox, removeBox]) {
+    expect(control.width).toBeGreaterThanOrEqual(44);
+    expect(control.height).toBeGreaterThanOrEqual(44);
+    expect(control.x).toBeGreaterThanOrEqual(before.x);
+    expect(control.y).toBeGreaterThanOrEqual(before.y);
+    expect(control.x + control.width).toBeLessThanOrEqual(before.x + before.width + 1);
+    expect(control.y + control.height).toBeLessThanOrEqual(before.y + before.height + 1);
+  }
 
   const startX = handleBox.x + handleBox.width / 2;
   const startY = handleBox.y + handleBox.height / 2;
@@ -105,6 +123,132 @@ dashboardWidgetTest("previews corner resize continuously and persists a supporte
   await page.mouse.up();
   await expect(widget).toHaveAttribute("data-size", "2x1");
   await expect(widget).not.toHaveAttribute("data-interaction", "resize");
+  await expect.poll(async () => widget.getAttribute("style")).not.toContain("--dashboard-lift-");
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(widget).toHaveAttribute("data-size", "2x1");
+});
+
+dashboardWidgetTest("keeps every resting widget body inside its footprint", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await signInToPreview(page);
+  const overflow = await page.locator("[data-widget-id]").evaluateAll((widgets) => widgets.map((widget) => {
+    const body = widget.querySelector<HTMLElement>('[class*="widgetBody"]');
+    return {
+      bodyClientHeight: body?.clientHeight ?? 0,
+      bodyScrollHeight: body?.scrollHeight ?? 0,
+      id: widget.getAttribute("data-widget-id"),
+      size: widget.getAttribute("data-size"),
+    };
+  }).filter((result) => result.bodyScrollHeight > result.bodyClientHeight + 1));
+  expect(overflow).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("resting-widget-matrix.png"), fullPage: true });
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
+  const bandHeights = await page.locator("[data-widget-id]").evaluateAll((widgets) => widgets.map((widget) => (
+    widget.querySelector("header")?.getBoundingClientRect().height ?? 0
+  )));
+  expect(new Set(bandHeights)).toEqual(new Set([44]));
+  await expect.poll(async () => page.locator('[data-widget-id="student_pulse"]').evaluate((widget) => (
+    getComputedStyle(widget).touchAction
+  ))).toBe("pan-y");
+  await page.screenshot({ path: testInfo.outputPath("customizing-widget-matrix.png"), fullPage: true });
+});
+
+dashboardWidgetTest("fits widget content at every supported footprint", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await signInToPreview(page);
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
+
+  const widgetIds = await page.locator("[data-widget-id]").evaluateAll((widgets) => widgets
+    .map((widget) => widget.getAttribute("data-widget-id"))
+    .filter((id): id is string => Boolean(id)));
+  const overflow: Array<{ id: string; size: string }> = [];
+
+  for (const id of widgetIds) {
+    const catalog = DASHBOARD_WIDGET_BY_ID.get(id as DashboardWidgetId);
+    if (!catalog || catalog.allowedSizes.length < 2) continue;
+    const widget = page.locator(`[data-widget-id="${id}"]`);
+    const handle = widget.getByRole("button", { name: new RegExp(`Resize ${catalog.title}`) });
+    const initialSize = await widget.getAttribute("data-size") as DashboardWidgetSize;
+    let currentIndex = catalog.allowedSizes.indexOf(initialSize);
+
+    for (let step = 0; step < catalog.allowedSizes.length; step += 1) {
+      const nextSize = catalog.allowedSizes[(currentIndex + 1) % catalog.allowedSizes.length];
+      await handle.focus();
+      await page.keyboard.press("Enter");
+      await expect(widget).toHaveAttribute("data-size", nextSize);
+      await page.waitForTimeout(260);
+      const fits = await widget.evaluate((node) => {
+        const body = node.querySelector<HTMLElement>('[class*="widgetBody"]');
+        return Boolean(body && body.scrollHeight <= body.clientHeight + 1 && body.scrollWidth <= body.clientWidth + 1);
+      });
+      if (!fits) overflow.push({ id, size: nextSize });
+      currentIndex = (currentIndex + 1) % catalog.allowedSizes.length;
+    }
+  }
+
+  expect(overflow).toEqual([]);
+
+  for (const id of ["classes_today", "lead_follow_ups", "billing_exceptions", "quick_actions"] as const) {
+    const widget = page.locator(`[data-widget-id="${id}"]`);
+    const catalog = DASHBOARD_WIDGET_BY_ID.get(id);
+    if (!catalog || await widget.count() === 0 || !catalog.allowedSizes.includes("1x2")) continue;
+    const handle = widget.getByRole("button", { name: new RegExp(`Resize ${catalog.title}`) });
+    for (let attempts = 0; attempts < catalog.allowedSizes.length; attempts += 1) {
+      if (await widget.getAttribute("data-size") === "1x2") break;
+      await handle.focus();
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(260);
+    }
+    await expect(widget).toHaveAttribute("data-size", "1x2");
+  }
+  await page.screenshot({ path: testInfo.outputPath("tall-widget-matrix.png"), fullPage: true });
+});
+
+dashboardWidgetTest("maps tablet drops to the visual target and avoids hybrid resize footprints", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 1100 });
+  await signInToPreview(page);
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
+
+  const widget = page.locator('[data-widget-id="student_pulse"]');
+  const target = page.locator('[data-widget-id="attendance"]');
+  const before = await widget.boundingBox();
+  const targetBefore = await target.boundingBox();
+  expect(before).not.toBeNull();
+  expect(targetBefore).not.toBeNull();
+  if (!before || !targetBefore) return;
+  await page.mouse.move(before.x + 60, before.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(targetBefore.x + 60, targetBefore.y + 24, { steps: 8 });
+  await page.waitForTimeout(110);
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const moved = await widget.boundingBox();
+  expect(moved).not.toBeNull();
+  if (moved) {
+    expect(moved.x).toBeLessThan(targetBefore.x + targetBefore.width);
+    expect(moved.x + moved.width).toBeGreaterThan(targetBefore.x);
+    expect(Math.abs(moved.y - targetBefore.y)).toBeLessThan(4);
+  }
+
+  const billing = page.locator('[data-widget-id="billing_exceptions"]');
+  await billing.click({ position: { x: 90, y: 24 } });
+  const billingBefore = await billing.boundingBox();
+  const resize = billing.getByRole("button", { name: /Resize Billing Exceptions/ });
+  const resizeBox = await resize.boundingBox();
+  expect(billingBefore).not.toBeNull();
+  expect(resizeBox).not.toBeNull();
+  if (!billingBefore || !resizeBox) return;
+  const startX = resizeBox.x + resizeBox.width / 2;
+  const startY = resizeBox.y + resizeBox.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + billingBefore.width, startY + billingBefore.height * 2, { steps: 8 });
+  const preview = await billing.boundingBox();
+  expect(preview).not.toBeNull();
+  if (preview) {
+    const expandedWidth = preview.width > billingBefore.width * 1.25;
+    const expandedHeight = preview.height > billingBefore.height * 1.25;
+    expect(expandedWidth && expandedHeight).toBe(false);
+  }
+  await page.mouse.up();
 });
