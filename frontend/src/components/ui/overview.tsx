@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ElementType, ReactNode } from "react";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import { crmLinkPrefetch } from "@/lib/constants";
 
 type Tone = "neutral" | "accent" | "success" | "warning" | "danger" | "info";
@@ -402,34 +403,12 @@ export function SegmentedTabs<T extends string>({
   ariaLabel: string;
 }) {
   return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className="grid gap-1 rounded-[6px] border border-border bg-surface-raised/45 p-1 sm:flex sm:flex-wrap"
-    >
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const selected = activeTab === tab.id;
-
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            aria-pressed={selected}
-            disabled={tab.disabled}
-            onClick={() => onChange(tab.id)}
-            className={`
-              flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-[5px] px-3 py-2 text-sm font-medium
-              transition-[background-color,color,box-shadow] duration-150 ease-out focus:outline-none focus-visible:ring-1 focus-visible:ring-accent
-              disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none
-              ${selected ? "bg-bg text-text-primary shadow-sm" : "text-text-secondary hover:bg-surface hover:text-text-primary"}
-            `}
-          >
-            {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
-            <span className="truncate">{tab.label}</span>
-          </button>
-        );
-      })}
-    </div>
+    <SlidingSegmentedControl
+      activeValue={activeTab}
+      ariaLabel={ariaLabel}
+      className="w-full sm:w-auto"
+      items={tabs}
+      onChange={onChange}
+    />
   );
 }

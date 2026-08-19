@@ -241,6 +241,7 @@
 }
 
 .surface[data-operations-page="settings"] :global([data-settings-owner]) {
+  overflow: hidden;
   border: 0 !important;
   border-radius: 14px;
   background: var(--product-paper);

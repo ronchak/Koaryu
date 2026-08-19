@@ -91,6 +91,7 @@ describe("operations behavior proof", () => {
     assert.match(schedule, /data-schedule-time-canvas="day"/);
     assert.match(schedule, /data-schedule-day-sheet="true"/);
     assert.match(schedule, /data-schedule-register="visible-range"/);
+    assert.match(schedule, /<SlidingSegmentedControl[\s\S]*ariaLabel="Schedule view"[\s\S]*onChange=\{onViewChange\}/);
     assert.match(schedule, /style=\{\{ top, height,[\s\S]{0,200}?data-time-canvas-block="template"/);
     assert.match(schedule, /const targetHeight = Math\.max\(44, height\)/);
     assert.match(schedule, /const targetTop = Math\.max\(0, top - \(targetHeight - height\) \/ 2\)/);
@@ -871,6 +872,7 @@ describe("operations behavior proof", () => {
     const settings = source("src/app/(dashboard)/settings/page.tsx");
     const programs = source("src/components/settings/programs-section.tsx");
     const staff = source("src/components/settings/staff-roles-section.tsx");
+    const operationsStyles = source("src/components/operations/operations-surface.module.css");
     assert.match(settings, /canAccessSettings\(currentRole\) \? <AdminSettingsContent \/> : <SettingsAccessNotice \/>/);
     assert.match(settings, /<Header title="Settings" \/>/);
     assert.doesNotMatch(settings, /Studio configuration and preferences/);
@@ -890,6 +892,7 @@ describe("operations behavior proof", () => {
       assert.match(staff, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
     assert.match(staff, /<label className="flex min-h-11 items-center[\s\S]*aria-label="Show archived staff"/);
+    assert.match(operationsStyles, /data-operations-page="settings"[\s\S]*data-settings-owner[\s\S]*overflow: hidden;[\s\S]*border-radius: 14px/);
   });
 
   it("renders Reports as an exact-heading analytical document with cobalt reserved for its data series", () => {

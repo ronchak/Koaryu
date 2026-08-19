@@ -17,7 +17,6 @@ import {
   CalendarCheck,
   GripVertical,
   Maximize2,
-  Minus,
   Plus,
   RotateCcw,
   Settings2,
@@ -536,12 +535,16 @@ function HomeWidget({
             {catalog.removable ? (
               <button
                 type="button"
+                className={styles.removeButton}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={() => onRemove(item.widget_id)}
                 aria-label={`Remove ${catalog.title}`}
                 title="Remove"
               >
-                <Minus aria-hidden="true" size={17} /><span className={styles.controlLabel}>Remove</span>
+                <span className={styles.removeButtonFace} aria-hidden="true">
+                  <X size={14} strokeWidth={2.2} />
+                </span>
+                <span className={styles.controlLabel}>Remove</span>
               </button>
             ) : null}
             <button

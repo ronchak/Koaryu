@@ -13,6 +13,7 @@ import { Header } from "@/components/header";
 import { MonthScheduleView } from "@/components/schedule/month-schedule-view";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import {
   formatScheduleDateKey,
   getScheduleTimeCanvasBounds,
@@ -437,24 +438,17 @@ export function SchedulePageSection({
           </span>
         </div>
 
-        <div className="grid w-full grid-cols-3 items-center rounded-[10px] bg-surface-raised p-0.5 sm:w-auto" role="group" aria-label="Schedule view">
-          {SCHEDULE_VIEWS.map((nextView) => (
-            <button
-              key={nextView}
-              type="button"
-              onClick={() => onViewChange(nextView)}
-              aria-pressed={view === nextView}
-              aria-label={`Show ${nextView} schedule view`}
-              className={`min-h-11 cursor-pointer rounded-[8px] px-3 py-1 text-xs capitalize transition-colors ${
-                view === nextView
-                  ? "bg-accent text-accent-contrast font-medium"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {nextView}
-            </button>
-          ))}
-        </div>
+        <SlidingSegmentedControl
+          activeValue={view}
+          ariaLabel="Schedule view"
+          className="w-full sm:w-auto sm:min-w-56"
+          items={SCHEDULE_VIEWS.map((nextView) => ({
+            id: nextView,
+            label: nextView[0].toUpperCase() + nextView.slice(1),
+          }))}
+          onChange={onViewChange}
+          size="compact"
+        />
       </div>
 
       <div className="flex flex-col items-stretch gap-3 border-b border-border px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 lg:px-8">
