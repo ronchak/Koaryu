@@ -338,12 +338,42 @@
   padding: 0;
   place-items: center;
   border: 0;
-  border-radius: 999px;
-  background: var(--product-card-stock);
+  border-radius: 10px;
+  background: transparent;
   color: var(--product-control-ink);
   cursor: pointer;
   box-shadow: none;
   pointer-events: auto;
+}
+
+.removeButtonFace {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--product-control-rule);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--product-card-stock) 94%, var(--product-paper));
+  color: var(--product-soft-ink);
+  box-shadow: 0 2px 7px rgb(54 40 20 / 9%);
+  transition:
+    border-color var(--product-motion-change-duration) var(--product-motion-ease),
+    background-color var(--product-motion-change-duration) var(--product-motion-ease),
+    color var(--product-motion-change-duration) var(--product-motion-ease),
+    transform var(--product-motion-change-duration) var(--product-motion-ease);
+}
+
+.removeButton:hover .removeButtonFace {
+  border-color: color-mix(in srgb, var(--product-vermilion) 36%, var(--product-control-rule));
+  background: color-mix(in srgb, var(--product-paper) 92%, var(--product-vermilion) 8%);
+  color: var(--product-vermilion);
+  transform: scale(1.04);
+}
+
+.removeButton:focus-visible .removeButtonFace {
+  outline: 2px solid var(--product-focus);
+  outline-offset: 1px;
 }
 
 .editControls .dragHandle {
@@ -362,8 +392,7 @@
 }
 
 .editControls button:hover {
-  border-color: var(--product-control-rule);
-  background: var(--product-card-stock);
+  background: transparent;
 }
 
 .editControls button:disabled {

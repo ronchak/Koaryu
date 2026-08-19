@@ -118,6 +118,10 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /data-koaryu-dashboard-ready=\{layoutResolved \? "true" : "false"\}/);
     assert.match(homeSource, /aria-busy=\{!layoutResolved\}/);
     assert.match(homeSource, /disabled=\{!layoutResolved\}/);
+    assert.match(homeSource, /className=\{styles\.removeButton\}/);
+    assert.match(homeSource, /styles\.removeButtonFace/);
+    assert.doesNotMatch(homeSource, /<Minus aria-hidden/);
+    assert.match(homeStyles, /\.removeButtonFace \{[\s\S]*width: 30px;[\s\S]*height: 30px;/);
     assert.match(homeSource, /identityReady && identity|!identityReady \|\| !identity/);
     assert.match(homeSource, /getBoundingClientRect\(\)/);
     assert.match(homeSource, /node\.animate\(keyframes/);

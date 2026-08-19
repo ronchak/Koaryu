@@ -1,9 +1,10 @@
 "use client";
 
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Header } from "@/components/header";
 import { ProgramPicker } from "@/components/programs/program-picker";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import type { Program } from "@/types";
 import styles from "./belt-tracker.module.css";
 
@@ -45,47 +46,24 @@ export function BeltTrackerShell({
 }: BeltTrackerShellProps) {
   const visibleTabs = TABS.filter((item) => item.id !== "ladder" || canConfigureBelts);
 
-  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: BeltTrackerTab) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-
-    event.preventDefault();
-    const currentIndex = visibleTabs.findIndex((item) => item.id === currentTab);
-    const direction = event.key === "ArrowRight" ? 1 : -1;
-    const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length;
-    const nextTab = visibleTabs[nextIndex];
-    if (!nextTab) return;
-
-    onTabChange(nextTab.id);
-    window.requestAnimationFrame(() => {
-      document.getElementById(`belt-tab-${nextTab.id}`)?.focus();
-    });
-  }
-
   return (
     <div className={`flex min-h-full flex-col ${styles.beltPage}`}>
       <Header title="Belt Tracker" />
 
       <div className="flex-1 flex flex-col">
         <div className={`mx-4 sm:mx-6 lg:mx-8 ${styles.beltControls}`}>
-          <div className={styles.beltTabs} role="tablist" aria-label="Belt tracker view">
-            {visibleTabs.map((item) => (
-              <button
-                key={item.id}
-                id={`belt-tab-${item.id}`}
-                type="button"
-                role="tab"
-                aria-selected={tab === item.id}
-                aria-controls={`belt-panel-${item.id}`}
-                tabIndex={tab === item.id ? 0 : -1}
-                onClick={() => onTabChange(item.id)}
-                onKeyDown={(event) => handleTabKeyDown(event, item.id)}
-                className={styles.beltTab}
-                data-active={tab === item.id ? "true" : "false"}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+          <SlidingSegmentedControl
+            activeValue={tab}
+            ariaLabel="Belt tracker view"
+            className={styles.beltTabs}
+            idPrefix="belt-tab"
+            items={visibleTabs.map((item) => ({
+              ...item,
+              controls: `belt-panel-${item.id}`,
+            }))}
+            mode="tabs"
+            onChange={onTabChange}
+          />
           <div className={styles.beltProgramControl}>
             {beltPrograms.length > 0 ? (
               <div className={styles.beltProgramPicker}>

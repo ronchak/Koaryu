@@ -160,14 +160,21 @@ describe("records workspace composition contracts", () => {
 
   it("keeps Belt tabs, progress, and light-rank treatments semantically honest", async () => {
     const shell = await source("../src/components/belt-tracker/belt-tracker-shell.tsx");
+    const segmentedControl = await source("../src/components/ui/sliding-segmented-control.tsx");
+    const segmentedStyles = await source("../src/components/ui/sliding-segmented-control.module.css");
     const eligibility = await source("../src/components/belt-tracker/eligibility-panel.tsx");
     const rankPlan = await source("../src/components/belt-tracker/rank-plan-panel.tsx");
     const visuals = await source("../src/components/belt-tracker/rank-visuals.tsx");
 
-    assert.match(shell, /role="tablist"/);
-    assert.match(shell, /role="tab"/);
-    assert.match(shell, /aria-selected=\{tab === item\.id\}/);
-    assert.match(shell, /event\.key !== "ArrowLeft" && event\.key !== "ArrowRight"/);
+    assert.match(shell, /<SlidingSegmentedControl[\s\S]*mode="tabs"/);
+    assert.match(segmentedControl, /role=\{mode === "tabs" \? "tablist" : "group"\}/);
+    assert.match(segmentedControl, /role=\{mode === "tabs" \? "tab" : undefined\}/);
+    assert.match(segmentedControl, /aria-selected=\{mode === "tabs" \? selected : undefined\}/);
+    assert.match(segmentedControl, /event\.key === "ArrowLeft"/);
+    assert.match(segmentedControl, /event\.key === "ArrowRight"/);
+    assert.match(segmentedStyles, /transform: translateX\(calc\(var\(--segment-index\) \* 100%\)\)/);
+    assert.match(segmentedStyles, /transition: transform 240ms var\(--product-motion-ease\)/);
+    assert.match(segmentedStyles, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(eligibility, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-eligibility"/);
     assert.match(rankPlan, /role="tabpanel"[\s\S]*aria-labelledby="belt-tab-ladder"/);
     assert.match(visuals, /if \(required <= 0\)[\s\S]*Not required/);

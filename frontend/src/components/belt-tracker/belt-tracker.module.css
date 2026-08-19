@@ -89,30 +89,8 @@
 :global([data-navigation-placement="top"]) .beltControls { top: 120px; }
 
 .beltTabs {
-  display: inline-flex;
   flex: 0 0 auto;
-  gap: 0.25rem;
-  padding: 0.2rem;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--product-sunk) 72%, transparent);
-}
-
-.beltTab {
-  padding-inline: 0.85rem;
-  border-radius: 10px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.8125rem;
-  transition: background-color var(--product-motion-change-duration) var(--product-motion-ease), color var(--product-motion-change-duration) var(--product-motion-ease), box-shadow var(--product-motion-change-duration) var(--product-motion-ease);
-}
-
-.beltTab:hover { color: var(--text-primary); }
-
-.beltTab[data-active="true"] {
-  background: var(--product-card-stock);
-  color: var(--text-primary);
-  font-weight: 650;
-  box-shadow: 0 1px 4px rgb(54 40 20 / 10%);
+  min-width: 12rem;
 }
 
 .beltProgramControl {
