@@ -27,7 +27,7 @@ export function BillingInvoicesTab({
 
   return (
     <div className="space-y-5">
-      <section className="rounded-[6px] border border-border bg-surface p-5">
+      <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader
           icon={Receipt}
           title="Invoices are read and reconcile only"
@@ -35,12 +35,12 @@ export function BillingInvoicesTab({
         />
       </section>
 
-      <section className="rounded-[6px] border border-border bg-surface p-5">
+      <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader icon={AlertTriangle} title="Failed payment queue" description="Follow up with families without changing the student's training status." />
         {failedPayers.length === 0 ? (
           <p className="text-sm text-muted">No failed payer accounts right now.</p>
         ) : (
-          <div className="divide-y divide-border rounded-[6px] border border-border">
+          <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
             {failedPayers.map((payer) => (
               <div key={payer.id} className="flex flex-col items-start gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0">
@@ -57,7 +57,7 @@ export function BillingInvoicesTab({
         )}
       </section>
 
-      <section className="rounded-[6px] border border-border bg-surface">
+      <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
         <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
           <span>Invoice</span><span>Due</span><span>Amount</span><span>Status</span><span>Actions</span>
         </div>
@@ -66,9 +66,9 @@ export function BillingInvoicesTab({
         ) : billingInvoices.map((invoice) => {
           const canReconcile = canReconcileInvoices && !invoice.external && Boolean(invoice.stripe_invoice_id);
           return (
-            <div key={invoice.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-4 text-sm last:border-b-0 md:grid-cols-[1fr_auto_auto_auto_auto] md:gap-4">
+            <div key={invoice.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 md:min-h-14 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center md:gap-4 md:py-1.5">
               <div className="min-w-0">
-                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Invoice</p>
+                <p className="mb-1 text-xs font-medium text-muted md:hidden">Invoice</p>
                 <p className="font-medium text-text-primary">{invoice.invoice_type.replace(/_/g, " ")}</p>
                 <p className="break-words text-xs text-muted [overflow-wrap:anywhere]">{invoice.external ? "External payment record" : invoice.number || invoice.stripe_invoice_id || "Local invoice"}</p>
                 {invoice.hosted_invoice_url && !isPreviewMode ? (
@@ -78,15 +78,15 @@ export function BillingInvoicesTab({
                 ) : null}
               </div>
               <div>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Due</p>
+                <p className="text-xs font-medium text-muted md:hidden">Due</p>
                 <p className="text-text-secondary">{formatDate(invoice.due_date)}</p>
               </div>
               <div>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Amount</p>
+                <p className="text-xs font-medium text-muted md:hidden">Amount</p>
                 <p className="font-medium text-text-primary">{formatMoney(invoice.amount_due_cents, invoice.currency)}</p>
               </div>
               <div>
-                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Status</p>
+                <p className="mb-1 text-xs font-medium text-muted md:hidden">Status</p>
                 <StatusPill status={invoice.status} />
               </div>
               <div className="flex flex-wrap justify-start gap-2 md:justify-end">

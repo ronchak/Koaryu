@@ -23,10 +23,7 @@ const FUTURE_WORKFLOWS = [
 export default function AutomationsPage() {
   return (
     <OperationsSurface page="automations">
-      <Header
-        title="Automations"
-        description="A read-only catalog of live manual queues and future studio-approved workflows."
-      >
+      <Header title="Automations">
         <Button asChild variant="primary" size="sm" className="min-h-11">
           <Link href="/dashboard" prefetch={crmLinkPrefetch("/dashboard")}>
             <BellRing className="h-3.5 w-3.5" />
@@ -37,10 +34,10 @@ export default function AutomationsPage() {
 
       <div className="flex-1 px-4 py-5 sm:px-8 lg:py-7" data-automations-readonly="true" data-automation-worksheet="trigger-action-status">
         <div className="mx-auto max-w-6xl space-y-8">
-          <section className="border-y-2 border-border bg-surface">
-            <div className="grid gap-4 px-5 py-6 sm:grid-cols-[minmax(12rem,0.36fr)_1fr] sm:gap-8">
+          <section className="overflow-hidden bg-surface">
+            <div className="grid gap-4 p-4 sm:grid-cols-[minmax(12rem,0.36fr)_1fr] sm:gap-8">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-accent">Current status</p>
+                <p className="text-xs font-medium text-accent">Current status</p>
                 <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">No automation builder is live.</h2>
               </div>
               <p className="text-sm leading-6 text-text-secondary">
@@ -52,22 +49,22 @@ export default function AutomationsPage() {
           <section aria-labelledby="live-queues-title">
             <div className="mb-3 flex items-end justify-between gap-4">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Available now</p>
+                <p className="text-xs font-medium text-muted">Available now</p>
                 <h2 id="live-queues-title" className="mt-1 text-base font-semibold text-text-primary">Four live queue destinations</h2>
               </div>
               <span className="text-xs text-muted">Manual work only</span>
             </div>
-            <div className="hidden grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] border-y border-border bg-surface-raised px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted md:grid">
+            <div className="hidden grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] bg-surface-raised px-4 py-2 text-xs font-medium text-muted md:grid">
               <span>Rule</span><span>Trigger</span><span>Action</span><span>Status</span>
             </div>
-            <ul className="border-b border-border bg-surface">
+            <ul className="overflow-hidden bg-surface">
               {LIVE_QUEUES.map((queue) => (
                 <li key={queue.href} className="border-b border-border last:border-b-0">
-                  <Link href={queue.href} prefetch={crmLinkPrefetch(queue.href)} className="grid min-h-20 gap-3 px-4 py-4 hover:bg-surface-raised md:grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] md:items-center">
+                  <Link href={queue.href} prefetch={crmLinkPrefetch(queue.href)} className="grid min-h-14 gap-2 px-4 py-3 hover:bg-surface-raised md:grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] md:items-center md:py-2">
                     <strong className="text-sm font-semibold text-text-primary">{queue.title}</strong>
-                    <span className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-semibold uppercase tracking-wider text-muted md:hidden">Trigger</small>{queue.trigger}</span>
-                    <span className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-semibold uppercase tracking-wider text-muted md:hidden">Action</small>{queue.action} <span aria-hidden="true" className="text-accent">→</span></span>
-                    <span className="border-l-2 border-accent pl-3 text-xs font-semibold text-text-primary">{queue.status}</span>
+                    <span className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Trigger</small>{queue.trigger}</span>
+                    <span className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Action</small>{queue.action} <span aria-hidden="true" className="text-accent">→</span></span>
+                    <span className="w-fit rounded-full bg-accent/10 px-2 py-1 text-xs font-semibold text-text-primary">{queue.status}</span>
                   </Link>
                 </li>
               ))}
@@ -77,21 +74,21 @@ export default function AutomationsPage() {
           <section aria-labelledby="future-workflows-title">
             <div className="mb-3 flex items-end justify-between gap-4">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Future catalog</p>
+                <p className="text-xs font-medium text-muted">Future catalog</p>
                 <h2 id="future-workflows-title" className="mt-1 text-base font-semibold text-text-primary">Five proposed workflows</h2>
               </div>
               <span className="text-xs text-muted">Read only · five concepts</span>
             </div>
-            <div className="hidden grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] border-y border-border bg-surface-raised px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted md:grid">
+            <div className="hidden grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] bg-surface-raised px-4 py-2 text-xs font-medium text-muted md:grid">
               <span>Recipe</span><span>Trigger</span><span>Action</span><span>Status</span>
             </div>
-            <dl className="border-b border-border bg-surface">
+            <dl className="overflow-hidden bg-surface">
               {FUTURE_WORKFLOWS.map((workflow) => (
-                <div key={workflow.title} className="grid gap-2 border-b border-border px-4 py-4 last:border-b-0 md:grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] md:gap-4">
+                <div key={workflow.title} className="grid min-h-14 gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[minmax(10rem,0.8fr)_1fr_1.2fr_minmax(8rem,0.7fr)] md:items-center md:gap-4 md:py-2">
                   <dt className="text-sm font-semibold text-text-primary">{workflow.title}</dt>
-                  <dd className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-semibold uppercase tracking-wider text-muted md:hidden">Trigger</small>{workflow.trigger}</dd>
-                  <dd className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-semibold uppercase tracking-wider text-muted md:hidden">Action</small>{workflow.action}</dd>
-                  <dd className="border-l-2 border-border pl-3 text-xs font-semibold text-muted">{workflow.status}</dd>
+                  <dd className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Trigger</small>{workflow.trigger}</dd>
+                  <dd className="text-sm leading-5 text-text-secondary"><small className="mr-2 font-medium text-muted md:hidden">Action</small>{workflow.action}</dd>
+                  <dd className="w-fit rounded-full bg-surface-raised px-2 py-1 text-xs font-semibold text-muted">{workflow.status}</dd>
                 </div>
               ))}
             </dl>

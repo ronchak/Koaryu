@@ -28,7 +28,7 @@ export function OperationsSurface({
   return (
     <div
       className={`${styles.surface} ${allowInternalOverflow ? styles.internalOverflow : ""}`}
-      data-operations-surface="v1"
+      data-operations-surface="v2"
       data-operations-page={page}
     >
       {children}
@@ -88,14 +88,14 @@ export function OperationsLoading({
   page,
   title,
 }: {
-  description: string;
+  description?: string;
   page: Extract<OperationsPage, "schedule" | "billing" | "reports" | "settings">;
   title: string;
 }) {
   const labels = {
-    schedule: ["Navigation", "Studio time", "Seven-day canvas"],
-    billing: ["Six books", "Current register", "Money rows"],
-    reports: ["Report scope", "Operational totals", "Export register"],
+    schedule: ["Navigation", "Studio time", "Calendar"],
+    billing: ["Billing views", "Current status", "Money rows"],
+    reports: ["Report scope", "Operational totals", "Data exports"],
     settings: ["Administration", "Studio controls", "People and programs"],
   }[page];
 
@@ -103,9 +103,9 @@ export function OperationsLoading({
     <OperationsSurface page={page} allowInternalOverflow={page === "schedule"}>
       <div className={styles.loading} aria-busy="true" aria-live="polite" data-loading-family={page}>
         <div className={styles.loadingIntro}>
-          <p className={styles.eyebrow}>Preparing working sheet</p>
+          <p className={styles.eyebrow}>Loading</p>
           <h1>{title}</h1>
-          <p>{description}</p>
+          {description ? <p>{description}</p> : null}
         </div>
         <div className={styles.loadingWorkbench} aria-hidden="true">
           <div className={styles.loadingIndex}>

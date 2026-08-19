@@ -47,6 +47,10 @@ interface SchedulePageSectionProps {
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SCHEDULE_VIEWS: SchedulePageView[] = ["month", "week", "day"];
 const DATE_RANGE_SEPARATOR = String.fromCharCode(8211);
+const WEEK_CANVAS_MIN_WIDTH = 1040;
+const WEEK_TIME_COLUMN_WIDTH = 72;
+const WEEK_DAY_COUNT = 7;
+const SESSION_LANE_MIN_WIDTH = 48;
 
 type TimeCanvasEntry = {
   id: string;
@@ -56,6 +60,19 @@ type TimeCanvasEntry = {
   session?: ClassSession;
   template?: ClassTemplate;
 };
+
+function isPointWithinTimeCanvasFootprint(
+  footprint: Pick<DOMRect, "bottom" | "left" | "right" | "top">,
+  clientX: number,
+  clientY: number
+) {
+  return (
+    clientY >= footprint.top &&
+    clientY < footprint.bottom &&
+    clientX >= footprint.left &&
+    clientX < footprint.right
+  );
+}
 
 function formatTime(value: string) {
   const [hoursText = "0", minutes = "00"] = value.split(":");
@@ -194,6 +211,20 @@ export function SchedulePageSection({
     [canvasBounds.endMinute, canvasBounds.startMinute]
   );
   const canvasHeight = ((canvasBounds.endMinute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
+  const peakWeekLaneCount = useMemo(
+    () => weekDates.reduce((peak, date) => {
+      const key = formatScheduleDateKey(date);
+      const blocks = layoutScheduleTimeItems(entriesByDate[key] || []);
+      return blocks.reduce((dayPeak, block) => Math.max(dayPeak, block.laneCount), peak);
+    }, 1),
+    [entriesByDate, weekDates]
+  );
+  const weekDayMinWidth = peakWeekLaneCount * SESSION_LANE_MIN_WIDTH;
+  const weekCanvasMinWidth = Math.max(
+    WEEK_CANVAS_MIN_WIDTH,
+    WEEK_TIME_COLUMN_WIDTH + WEEK_DAY_COUNT * weekDayMinWidth
+  );
+  const weekGridTemplateColumns = `${WEEK_TIME_COLUMN_WIDTH}px repeat(${WEEK_DAY_COUNT}, minmax(${weekDayMinWidth}px, 1fr))`;
 
   function renderTimeColumn(date: Date, compact: boolean) {
     const key = formatScheduleDateKey(date);
@@ -214,9 +245,13 @@ export function SchedulePageSection({
         ))}
         {blocks.map((block) => {
           const top = ((block.startMinute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
-          const height = Math.max(28, ((block.endMinute - block.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR);
+          const height = ((block.endMinute - block.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
+          const targetHeight = Math.max(44, height);
+          const targetTop = Math.max(0, top - (targetHeight - height) / 2);
           const laneWidth = 100 / block.laneCount;
           const left = laneWidth * block.lane;
+          const sessionWidth = `max(44px, calc(${laneWidth}% - 4px))`;
+          const sessionLeft = `min(calc(${left}% + 2px), calc(100% - ${sessionWidth} - 2px))`;
           const entry = block.item;
           const session = entry.session;
           const template = entry.template;
@@ -228,9 +263,10 @@ export function SchedulePageSection({
             return (
               <div
                 key={`template-${entry.id}`}
-                className="absolute overflow-hidden border border-dashed border-border bg-surface-raised px-2 py-1 text-left text-[10px] text-muted"
+                className="absolute overflow-hidden rounded-[8px] border border-dashed border-border bg-surface-raised px-2 py-1 text-left text-[10px] text-muted"
                 style={{ top, height, left: `calc(${left}% + 2px)`, width: `calc(${laneWidth}% - 4px)` }}
                 data-time-canvas-block="template"
+                data-time-canvas-visible={`${entry.kind}:${entry.id}`}
               >
                 <strong className="block truncate font-medium">{title}</strong>
                 <span>{formatTime(entry.start_time)} · recurring</span>
@@ -242,24 +278,60 @@ export function SchedulePageSection({
             <button
               key={entry.id}
               type="button"
-              onClick={() => onOpenSession(session)}
+              onClick={(event) => {
+                if (event.detail === 0) {
+                  onOpenSession(session);
+                  return;
+                }
+
+                const canvas = event.currentTarget.parentElement;
+                const visibleElement = document.elementsFromPoint(event.clientX, event.clientY).find(
+                  (element): element is HTMLElement =>
+                    element instanceof HTMLElement &&
+                    Boolean(element.dataset.timeCanvasVisible) &&
+                    Boolean(canvas?.contains(element)) &&
+                    isPointWithinTimeCanvasFootprint(
+                      element.getBoundingClientRect(),
+                      event.clientX,
+                      event.clientY
+                    )
+                );
+                const visibleBlock = visibleElement
+                  ? blocks.find(
+                      (candidate) =>
+                        `${candidate.item.kind}:${candidate.item.id}` === visibleElement.dataset.timeCanvasVisible
+                    )
+                  : undefined;
+                if (visibleBlock) {
+                  if (visibleBlock.item.session) onOpenSession(visibleBlock.item.session);
+                  return;
+                }
+                onOpenSession(session);
+              }}
               aria-label={getSessionButtonLabel(session)}
-              className="absolute overflow-hidden border border-border bg-surface px-2 py-1 text-left shadow-[inset_3px_0_0_var(--program-color)] hover:border-accent"
+              className="absolute min-h-11 min-w-11 text-left"
               style={{
-                top,
-                height,
-                left: `calc(${left}% + 2px)`,
-                width: `calc(${laneWidth}% - 4px)`,
+                top: targetTop,
+                height: targetHeight,
+                left: sessionLeft,
+                width: sessionWidth,
                 "--program-color": program?.color_hex || "var(--operations-cobalt)",
               } as CSSProperties}
               data-time-canvas-block="session"
               data-overlap={block.overlaps ? "true" : "false"}
             >
-              <strong className="block truncate text-[11px] font-semibold text-text-primary">{title}</strong>
-              <span className="block truncate font-mono text-[10px] text-text-secondary">
-                {formatTime(entry.start_time)}–{formatTime(entry.end_time)}
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 overflow-hidden border border-border bg-surface px-2 py-1 hover:border-accent"
+                style={{ height, top: top - targetTop }}
+                data-time-canvas-visible={`${entry.kind}:${entry.id}`}
+              >
+                <strong className="block truncate text-[11px] font-semibold text-text-primary">{title}</strong>
+                <span className="block truncate text-[10px] tabular-nums text-text-secondary">
+                  {formatTime(entry.start_time)}–{formatTime(entry.end_time)}
+                </span>
+                {!compact && program ? <span className="block truncate text-[10px] text-muted">{program.name}</span> : null}
               </span>
-              {!compact && program ? <span className="block truncate text-[10px] text-muted">{program.name}</span> : null}
             </button>
           );
         })}
@@ -296,7 +368,7 @@ export function SchedulePageSection({
 
   return (
     <>
-      <Header title="Schedule" description="Class schedule and attendance.">
+      <Header title="Schedule">
         {canManageSchedule ? (
           <Button
             variant="primary"
@@ -311,24 +383,24 @@ export function SchedulePageSection({
 
       <div className="flex flex-1 flex-col" data-schedule-day-sheet="true">
       <section
-        className="grid border-b border-border bg-surface sm:grid-cols-[1.25fr_0.75fr_0.75fr_1fr]"
-        aria-label="Visible schedule register"
+        className="grid gap-2 bg-surface p-2 sm:grid-cols-[1.25fr_0.75fr_0.75fr_1fr]"
+        aria-label="Visible schedule range"
         data-schedule-register="visible-range"
       >
-        <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r sm:px-6 lg:px-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Working sheet</p>
+        <div className="rounded-[10px] bg-surface-raised px-4 py-3">
+          <p className="text-xs font-medium text-muted">Visible range</p>
           <p className="mt-1 text-sm font-semibold text-text-primary">{getToolbarLabel()}</p>
         </div>
-        <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Scheduled</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-text-primary">{filteredSessions.length}</p>
+        <div className="rounded-[10px] bg-surface-raised px-4 py-3">
+          <p className="text-xs font-medium text-muted">Scheduled</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">{filteredSessions.length}</p>
         </div>
-        <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Recurring slots</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-text-primary">{filteredTemplates.length}</p>
+        <div className="rounded-[10px] bg-surface-raised px-4 py-3">
+          <p className="text-xs font-medium text-muted">Recurring slots</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">{filteredTemplates.length}</p>
         </div>
-        <div className="px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Program scope</p>
+        <div className="rounded-[10px] bg-surface-raised px-4 py-3">
+          <p className="text-xs font-medium text-muted">Program scope</p>
           <p className="mt-1 text-sm text-text-primary">
             {programFilter ? programById.get(programFilter)?.name || "Selected program" : "All programs"}
           </p>
@@ -340,7 +412,7 @@ export function SchedulePageSection({
             type="button"
             onClick={() => onNavigate(-1)}
             aria-label={`Previous ${view}`}
-            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center hover:bg-surface-raised text-text-secondary transition-colors"
+            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-raised"
           >
             <ChevronLeft aria-hidden="true" className="w-4 h-4" />
           </button>
@@ -348,7 +420,7 @@ export function SchedulePageSection({
             type="button"
             onClick={onJumpToToday}
             aria-label="Jump to today"
-            className="min-h-11 cursor-pointer px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
+            className="min-h-11 cursor-pointer rounded-[10px] px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
           >
             Today
           </button>
@@ -356,7 +428,7 @@ export function SchedulePageSection({
             type="button"
             onClick={() => onNavigate(1)}
             aria-label={`Next ${view}`}
-            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center hover:bg-surface-raised text-text-secondary transition-colors"
+            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-raised"
           >
             <ChevronRight aria-hidden="true" className="w-4 h-4" />
           </button>
@@ -365,7 +437,7 @@ export function SchedulePageSection({
           </span>
         </div>
 
-        <div className="grid w-full grid-cols-3 items-center border border-border bg-surface p-0.5 sm:w-auto" role="group" aria-label="Schedule view">
+        <div className="grid w-full grid-cols-3 items-center rounded-[10px] bg-surface-raised p-0.5 sm:w-auto" role="group" aria-label="Schedule view">
           {SCHEDULE_VIEWS.map((nextView) => (
             <button
               key={nextView}
@@ -373,7 +445,7 @@ export function SchedulePageSection({
               onClick={() => onViewChange(nextView)}
               aria-pressed={view === nextView}
               aria-label={`Show ${nextView} schedule view`}
-              className={`min-h-11 cursor-pointer px-3 py-1 text-xs capitalize transition-colors ${
+              className={`min-h-11 cursor-pointer rounded-[8px] px-3 py-1 text-xs capitalize transition-colors ${
                 view === nextView
                   ? "bg-accent text-accent-contrast font-medium"
                   : "text-text-secondary hover:text-text-primary"
@@ -448,37 +520,152 @@ export function SchedulePageSection({
       )}
 
       {view === "week" && (
-        <div className="flex-1 overflow-x-auto overscroll-x-contain" data-schedule-scroll-owner="internal" role="region" tabIndex={0} aria-label="Scrollable weekly time canvas">
-          <div className="min-w-[1040px] border-b border-border bg-surface" data-schedule-time-canvas="week">
-            <div className="grid grid-cols-[4.5rem_repeat(7,minmax(8.5rem,1fr))] border-b border-border">
-              <div className="border-r border-border px-2 py-3 text-[10px] uppercase tracking-widest text-muted">Studio time</div>
-              {weekDates.map((date) => {
-                const key = formatScheduleDateKey(date);
-                const isToday = key === today;
-                return (
-                  <div key={key} className={`relative border-r border-border px-2 py-3 text-center last:border-r-0 ${isToday ? "bg-accent/10" : ""}`}>
-                    <p className="text-[10px] uppercase tracking-widest text-muted">{DAY_NAMES[date.getDay()]}</p>
-                    <p className={`mt-1 font-mono text-base ${isToday ? "font-bold text-accent" : "text-text-primary"}`}>{date.getDate()}</p>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="grid grid-cols-[4.5rem_repeat(7,minmax(8.5rem,1fr))]">
-              <div className="relative border-r border-border" style={{ height: canvasHeight }} aria-hidden="true">
-                {canvasHourMarks.map((minute) => (
-                  <span
-                    key={minute}
-                    className="absolute right-2 -translate-y-1/2 font-mono text-[9px] text-muted"
-                    style={{ top: ((minute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR }}
-                  >
-                    {formatCanvasHour(minute)}
-                  </span>
-                ))}
+        <>
+          <div
+            className="flex-1 overflow-x-auto overscroll-x-contain"
+            data-schedule-screen-week="true"
+            data-schedule-scroll-owner="internal"
+            role="region"
+            tabIndex={0}
+            aria-label="Scrollable weekly time canvas"
+          >
+            <div
+              className="overflow-hidden bg-surface"
+              style={{ minWidth: weekCanvasMinWidth }}
+              data-schedule-time-canvas="week"
+              data-schedule-week-peak-lanes={peakWeekLaneCount}
+            >
+              <div className="grid border-b border-border" style={{ gridTemplateColumns: weekGridTemplateColumns }}>
+                <div className="border-r border-border px-2 py-3 text-xs text-muted">Studio time</div>
+                {weekDates.map((date) => {
+                  const key = formatScheduleDateKey(date);
+                  const isToday = key === today;
+                  return (
+                    <div key={key} className={`relative border-r border-border px-2 py-3 text-center last:border-r-0 ${isToday ? "bg-accent/10" : ""}`}>
+                      <p className="text-xs text-muted">{DAY_NAMES[date.getDay()]}</p>
+                      <p className={`mt-1 text-base tabular-nums ${isToday ? "font-semibold text-accent" : "text-text-primary"}`}>{date.getDate()}</p>
+                    </div>
+                  );
+                })}
               </div>
-              {weekDates.map((date) => <div key={formatScheduleDateKey(date)}>{renderTimeColumn(date, true)}</div>)}
+              <div className="grid" style={{ gridTemplateColumns: weekGridTemplateColumns }}>
+                <div className="relative border-r border-border" style={{ height: canvasHeight }} aria-hidden="true">
+                  {canvasHourMarks.map((minute) => (
+                    <span
+                      key={minute}
+                      className="absolute right-2 -translate-y-1/2 text-[9px] tabular-nums text-muted"
+                      style={{ top: ((minute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR }}
+                    >
+                      {formatCanvasHour(minute)}
+                    </span>
+                  ))}
+                </div>
+                {weekDates.map((date) => <div key={formatScheduleDateKey(date)}>{renderTimeColumn(date, true)}</div>)}
+              </div>
             </div>
           </div>
-        </div>
+
+          <section data-schedule-print-week="true" aria-label="Weekly schedule">
+            {weekDates.map((date) => {
+              const key = formatScheduleDateKey(date);
+              const entries = layoutScheduleTimeItems(entriesByDate[key] || []).map((block) => block.item);
+              return (
+                <section key={key} data-schedule-print-day={key}>
+                  <header data-schedule-print-day-header="true">
+                    <strong>{DAY_NAMES[date.getDay()]} {date.getDate()}</strong>
+                  </header>
+                  {entries.length === 0 ? <p data-schedule-print-empty="true">No sessions scheduled.</p> : null}
+                  {entries.map((entry) => {
+                    const programId = entry.session?.program_id || entry.template?.program_id || null;
+                    const program = programId ? programById.get(programId) : null;
+                    return (
+                      <article key={`${entry.kind}-${entry.id}`} data-schedule-print-entry={entry.kind}>
+                        <span>{formatTime(entry.start_time)}–{formatTime(entry.end_time)}</span>
+                        <strong>{entry.session?.name || entry.template?.name || "Class"}</strong>
+                        {program ? <span>{program.name}</span> : null}
+                        {entry.kind === "template" ? <span>Recurring</span> : null}
+                      </article>
+                    );
+                  })}
+                </section>
+              );
+            })}
+          </section>
+
+          <style>{`
+            [data-schedule-print-week="true"] {
+              display: none;
+            }
+
+            @media print {
+              [data-schedule-screen-week="true"] {
+                display: none !important;
+              }
+
+              [data-schedule-print-week="true"] {
+                box-sizing: border-box;
+                display: grid !important;
+                grid-template-columns: repeat(7, minmax(0, 1fr));
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow: visible !important;
+                border-block: 1px solid #999;
+                background: #fff !important;
+                color: #000 !important;
+              }
+
+              [data-schedule-print-day] {
+                box-sizing: border-box;
+                min-width: 0;
+                padding: 4px;
+                border-right: 1px solid #999;
+                background: #fff !important;
+                color: #000 !important;
+              }
+
+              [data-schedule-print-day]:last-child {
+                border-right: 0;
+              }
+
+              [data-schedule-print-day-header="true"] {
+                display: block;
+                min-height: 22px;
+                padding-bottom: 3px;
+                border-bottom: 1px solid #bbb;
+                font-size: 9px;
+                line-height: 1.2;
+              }
+
+              [data-schedule-print-entry] {
+                box-sizing: border-box;
+                display: block;
+                min-width: 0;
+                margin-top: 4px;
+                padding: 3px;
+                break-inside: avoid;
+                overflow: visible;
+                border: 1px solid #bbb;
+                background: #fff !important;
+                color: #000 !important;
+                font-size: 8px;
+                line-height: 1.25;
+                overflow-wrap: anywhere;
+              }
+
+              [data-schedule-print-entry] > * {
+                display: block;
+                max-width: 100%;
+                white-space: normal;
+              }
+
+              [data-schedule-print-empty="true"] {
+                margin-top: 4px;
+                font-size: 8px;
+                line-height: 1.25;
+              }
+            }
+          `}</style>
+        </>
       )}
 
       {view === "day" && (
@@ -496,7 +683,7 @@ export function SchedulePageSection({
           </div>
 
           {daySessionList.length === 0 ? (
-            <div className="text-center py-16 border border-border bg-surface">
+            <div className="rounded-[14px] bg-surface py-16 text-center shadow-[var(--product-shadow-card)]">
               <Calendar aria-hidden="true" className="w-5 h-5 text-muted mx-auto mb-3" />
               <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>
               {canManageSchedule ? (
@@ -517,7 +704,7 @@ export function SchedulePageSection({
                 {canvasHourMarks.map((minute) => (
                   <span
                     key={minute}
-                    className="absolute right-2 -translate-y-1/2 font-mono text-[9px] text-muted"
+                    className="absolute right-2 -translate-y-1/2 text-[9px] tabular-nums text-muted"
                     style={{ top: ((minute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR }}
                   >
                     {formatCanvasHour(minute)}

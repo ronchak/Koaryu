@@ -73,7 +73,7 @@ export function BillingPageFrame({
 }) {
   return (
     <OperationsSurface page="billing">
-      <Header title="Billing" description="Koaryu Core, family payments, invoices, and revenue reporting.">
+      <Header title="Billing">
         <Button
           variant="ghost"
           size="sm"
@@ -86,7 +86,7 @@ export function BillingPageFrame({
         </Button>
       </Header>
 
-      <div className="flex-1 p-4 sm:p-6" data-billing-ledger="six-books">
+      <div className="flex-1 p-4 sm:p-6" data-billing-ledger="six-views">
         <div className="mx-auto max-w-[1240px] space-y-5">
           {isLiveRestricted ? (
             <BillingAccessLimitedNotice />
@@ -107,13 +107,7 @@ export function BillingPageFrame({
                 showLoading={showLoading}
               />
 
-              <section className="grid border-y border-border bg-surface text-xs sm:grid-cols-3" data-billing-register-context="true">
-                <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r"><strong className="block uppercase tracking-widest text-muted">Scope</strong><span className="mt-1 block text-text-primary">Current studio</span></div>
-                <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r"><strong className="block uppercase tracking-widest text-muted">As of</strong><span className="mt-1 block text-text-primary">Latest loaded billing refresh</span></div>
-                <div className="px-4 py-3"><strong className="block uppercase tracking-widest text-muted">Values</strong><span className="mt-1 block text-text-primary">Exact integer cents, formatted for display</span></div>
-              </section>
-
-              <section className="rounded-[6px] border border-warning/40 bg-warning/5 p-4 text-xs text-text-secondary">
+              <section className="rounded-[14px] bg-warning/5 p-4 text-xs text-text-secondary">
                 {billingBoundaryMessage}
               </section>
 
@@ -130,7 +124,7 @@ export function BillingPageFrame({
 
 export function BillingAccessLimitedNotice() {
   return (
-    <section className="border border-border bg-surface rounded-[6px] p-6">
+    <section className="rounded-[14px] bg-surface p-4">
       <SectionHeader
         icon={ShieldCheck}
         title="Billing access is limited"
@@ -153,10 +147,10 @@ export function BillingSetupNavigation({
 }) {
   return (
     <>
-      <section className="border-y-2 border-border bg-surface" data-billing-setup-register="true">
+      <section className="overflow-hidden bg-surface" data-billing-setup-register="true">
         <div className="grid border-b border-border px-4 py-4 sm:grid-cols-[minmax(12rem,0.35fr)_1fr] sm:gap-8 sm:px-5">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">{completedStepCount} of {steps.length} ready</p>
+            <p className="text-xs font-medium text-muted">{completedStepCount} of {steps.length} ready</p>
             <h2 className="mt-1 text-base font-semibold text-text-primary">Billing review</h2>
           </div>
           <p className="text-xs leading-5 text-text-secondary">
@@ -166,24 +160,21 @@ export function BillingSetupNavigation({
         <SetupStepList steps={steps} />
       </section>
 
-      <nav className="border-y border-border bg-surface" aria-label="Billing books" data-billing-book-index="six-books" data-print-hide="true">
-        <ol className="grid list-none grid-cols-2 p-0 sm:grid-cols-3 xl:grid-cols-6">
+      <nav className="rounded-[14px] bg-surface p-2 shadow-[var(--product-shadow-card)]" aria-label="Billing views" data-billing-book-index="six-views" data-print-hide="true">
+        <ol className="grid list-none grid-cols-2 gap-1 p-0 sm:grid-cols-3 xl:grid-cols-6">
           {BILLING_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
-              <li key={tab.id} className="border-b border-r border-border last:border-r-0 sm:[&:nth-last-child(-n+3)]:border-b-0 xl:border-b-0">
+              <li key={tab.id}>
                 <button
                   type="button"
                   onClick={() => onChangeTab(tab.id)}
                   aria-pressed={isActive}
-                  className={`grid min-h-16 w-full grid-cols-[1fr_auto] items-center gap-x-2 border-t-2 px-3 py-2 text-left ${isActive ? "border-accent bg-accent/10 text-text-primary" : "border-transparent text-text-secondary hover:bg-surface-raised"}`}
+                  className={`grid min-h-14 w-full grid-cols-[1fr_auto] items-center gap-x-2 rounded-[10px] px-3 py-2 text-left ${isActive ? "bg-accent/10 text-text-primary" : "text-text-secondary hover:bg-surface-raised"}`}
                 >
                   <strong className="text-xs font-semibold">{tab.label}</strong>
                   <Icon aria-hidden="true" className="h-3.5 w-3.5 text-muted" />
-                  <span className="col-span-2 mt-1 text-[10px] uppercase tracking-widest text-muted">
-                    {isActive ? "Open book" : "View book"}
-                  </span>
                 </button>
               </li>
             );
@@ -240,7 +231,7 @@ export function BillingFeedbackNotices({
 
 export function BillingPolicyNote() {
   return (
-    <section className="border border-border bg-surface rounded-[6px] p-4">
+    <section className="rounded-[14px] bg-surface p-4">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
         <CheckCircle2 className="h-4 w-4 text-success" />
         <span>No student-count pricing. No staff-count pricing. No feature gates.</span>

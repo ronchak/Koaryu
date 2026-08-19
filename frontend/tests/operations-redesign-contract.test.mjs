@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { chromium } from "@playwright/test";
 
 function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -65,9 +66,13 @@ describe("operations surface route coverage", () => {
     assert.match(css, /data-print-hide/);
     assert.match(css, /--operations-cobalt:\s*var\(--product-cobalt\);/);
     assert.match(css, /--accent:\s*var\(--product-wood\);/);
-    assert.match(css, /outline:\s*2px solid var\(--product-wood-deep, var\(--accent\)\)/);
+    assert.match(css, /outline:\s*2px solid var\(--product-cobalt, var\(--operations-cobalt\)\)/);
     assert.doesNotMatch(operations, /padStart\(2, "0"\)/);
-    assert.match(css, /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\) \{\s*min-height: 44px;/);
+    assert.match(css, /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\) \{\s*min-width: 44px;\s*min-height: 44px;/);
+    assert.match(css, /label:has\(input\[type="checkbox"\]\)[\s\S]*?min-width: 44px;[\s\S]*?min-height: 44px;/);
+    assert.match(css, /border-radius: 14px;/);
+    assert.match(css, /border-radius: 18px/);
+    assert.doesNotMatch(css, /text-transform:\s*uppercase/);
     assert.doesNotMatch(css, /\.surface :global\(button\) \{\s*min-height: 44px;/);
     assert.match(css, /\.surface :global\(button:not\(\[data-time-canvas-block\]\)\),\s*\.surface :global\(\[data-print-hide="true"\]\)/);
     assert.doesNotMatch(css, /\.surface :global\(button\),\s*\.surface :global\(\[data-print-hide="true"\]\)/);
@@ -87,7 +92,20 @@ describe("operations behavior proof", () => {
     assert.match(schedule, /data-schedule-day-sheet="true"/);
     assert.match(schedule, /data-schedule-register="visible-range"/);
     assert.match(schedule, /style=\{\{ top, height,[\s\S]{0,200}?data-time-canvas-block="template"/);
-    assert.match(schedule, /style=\{\{\s*top,\s*height,[\s\S]{0,300}?data-time-canvas-block="session"/);
+    assert.match(schedule, /const targetHeight = Math\.max\(44, height\)/);
+    assert.match(schedule, /const targetTop = Math\.max\(0, top - \(targetHeight - height\) \/ 2\)/);
+    assert.match(schedule, /const sessionWidth = `max\(44px, calc\(\$\{laneWidth\}% - 4px\)\)`/);
+    assert.match(schedule, /const sessionLeft = `min\(calc\(\$\{left\}% \+ 2px\), calc\(100% - \$\{sessionWidth\} - 2px\)\)`/);
+    assert.match(schedule, /top: targetTop,[\s\S]{0,80}?height: targetHeight,[\s\S]{0,300}?data-time-canvas-block="session"/);
+    assert.match(schedule, /style=\{\{ height, top: top - targetTop \}\}/);
+    assert.match(schedule, /event\.detail === 0/);
+    assert.match(schedule, /function isPointWithinTimeCanvasFootprint/);
+    assert.match(schedule, /clientY >= footprint\.top[\s\S]*clientY < footprint\.bottom[\s\S]*clientX >= footprint\.left[\s\S]*clientX < footprint\.right/);
+    assert.equal((schedule.match(/data-time-canvas-visible=/g) || []).length, 2);
+    assert.match(schedule, /document\.elementsFromPoint\(event\.clientX, event\.clientY\)\.find/);
+    assert.match(schedule, /Boolean\(canvas\?\.contains\(element\)\)/);
+    assert.match(schedule, /element\.getBoundingClientRect\(\)/);
+    assert.match(schedule, /if \(visibleBlock\) \{[\s\S]*if \(visibleBlock\.item\.session\) onOpenSession\(visibleBlock\.item\.session\);[\s\S]*return;[\s\S]*\}[\s\S]*onOpenSession\(session\);/);
     assert.match(schedule, /data-overlap=\{block\.overlaps/);
     assert.match(schedule, /data-schedule-scroll-owner="internal"/);
     assert.match(schedule, /role="region"/);
@@ -95,6 +113,286 @@ describe("operations behavior proof", () => {
     assert.match(attendance, /Saving \$\{pendingAttendanceStudentIds\.size\}/);
     assert.match(attendance, /rolled back/);
     assert.match(attendance, /data-attendance-commit-state/);
+  });
+
+  it("routes enlarged session targets by actual session and template footprints", () => {
+    const pixelsPerHour = 72;
+    const canvasWidth = (1040 - 72) / 7;
+    const footprint = (block) => {
+      const blockCanvasWidth = block.canvasWidth || canvasWidth;
+      const laneWidth = blockCanvasWidth / block.laneCount;
+      const calculatedLeft = laneWidth * block.lane + 2;
+      const calculatedWidth = laneWidth - 4;
+      const width = block.kind === "session" ? Math.max(44, calculatedWidth) : calculatedWidth;
+      const localLeft = block.kind === "session"
+        ? Math.min(calculatedLeft, blockCanvasWidth - width - 2)
+        : calculatedLeft;
+      const left = (block.dayOffset || 0) + localLeft;
+      return {
+        left,
+        right: left + width,
+        top: (block.startMinute / 60) * pixelsPerHour,
+        bottom: (block.endMinute / 60) * pixelsPerHour,
+      };
+    };
+    const blockAt = (blocks, x, y) => [...blocks].reverse().find((block) => {
+      const rect = footprint(block);
+      return y >= rect.top && y < rect.bottom && x >= rect.left && x < rect.right;
+    });
+    const resolvedAction = (blocks, x, y, fallbackId) => {
+      const visibleBlock = blockAt(blocks, x, y);
+      if (visibleBlock) return visibleBlock.kind === "session" ? visibleBlock.id : null;
+      return fallbackId;
+    };
+    const concurrentThenSingle = [
+      { id: "left", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 3 },
+      { id: "middle", kind: "session", startMinute: 0, endMinute: 30, lane: 1, laneCount: 3 },
+      { id: "right", kind: "session", startMinute: 0, endMinute: 30, lane: 2, laneCount: 3 },
+      { id: "single", kind: "session", startMinute: 30, endMinute: 60, lane: 0, laneCount: 1 },
+    ];
+    const singleThenConcurrent = [
+      { id: "single", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 1 },
+      { id: "left", kind: "session", startMinute: 30, endMinute: 60, lane: 0, laneCount: 3 },
+      { id: "middle", kind: "session", startMinute: 30, endMinute: 60, lane: 1, laneCount: 3 },
+      { id: "right", kind: "session", startMinute: 30, endMinute: 60, lane: 2, laneCount: 3 },
+    ];
+    const threeLaneEdgeAndTailPoints = [2.5, 45.5, 94.5, 135.5];
+    const singleEdgePoints = [2.5, 45.5, 94.5, 135.5];
+
+    assert.deepEqual(threeLaneEdgeAndTailPoints.map((x) => resolvedAction(concurrentThenSingle, x, 35, "fallback")), ["left", "left", "right", "right"]);
+    assert.equal(resolvedAction(concurrentThenSingle, 137.5, 35, "fallback"), "fallback");
+    assert.deepEqual(singleEdgePoints.map((x) => resolvedAction(concurrentThenSingle, x, 37, "fallback")), ["single", "single", "single", "single"]);
+    assert.equal(resolvedAction(concurrentThenSingle, 137.5, 37, "fallback"), "fallback");
+    assert.deepEqual(singleEdgePoints.map((x) => resolvedAction(singleThenConcurrent, x, 35, "fallback")), ["single", "single", "single", "single"]);
+    assert.deepEqual(threeLaneEdgeAndTailPoints.map((x) => resolvedAction(singleThenConcurrent, x, 37, "fallback")), ["left", "left", "right", "right"]);
+    assert.equal(resolvedAction(singleThenConcurrent, 137.5, 37, "fallback"), "fallback");
+    assert.equal(resolvedAction(singleThenConcurrent, 137.5, 35, "fallback"), "fallback");
+
+    const templateThenSession = [
+      { id: "template", kind: "template", startMinute: 0, endMinute: 15, lane: 0, laneCount: 1 },
+      { id: "session", kind: "session", startMinute: 15, endMinute: 30, lane: 0, laneCount: 1 },
+    ];
+    const sessionThenTemplate = [
+      { id: "session", kind: "session", startMinute: 0, endMinute: 15, lane: 0, laneCount: 1 },
+      { id: "template", kind: "template", startMinute: 15, endMinute: 30, lane: 0, laneCount: 1 },
+    ];
+    assert.equal(resolvedAction(templateThenSession, 40, 17, "session"), null);
+    assert.equal(resolvedAction(templateThenSession, 40, 19, "fallback"), "session");
+    assert.equal(resolvedAction(sessionThenTemplate, 40, 17, "fallback"), "session");
+    assert.equal(resolvedAction(sessionThenTemplate, 40, 19, "session"), null);
+
+    const fourLaneSessions = [
+      { id: "lane-0", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 4 },
+      { id: "lane-1", kind: "session", startMinute: 0, endMinute: 30, lane: 1, laneCount: 4 },
+      { id: "lane-2", kind: "session", startMinute: 0, endMinute: 30, lane: 2, laneCount: 4 },
+      { id: "lane-3", kind: "session", startMinute: 0, endMinute: 30, lane: 3, laneCount: 4 },
+    ];
+    assert.deepEqual(
+      [3, 40, 74, 108, 135].map((x) => resolvedAction(fourLaneSessions, x, 12, "fallback")),
+      ["lane-0", "lane-1", "lane-2", "lane-3", "lane-3"]
+    );
+
+    const sessionUnderTemplate = [
+      { id: "session", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 4 },
+      { id: "template", kind: "template", startMinute: 0, endMinute: 30, lane: 1, laneCount: 4 },
+    ];
+    const templateUnderSession = [
+      { id: "template", kind: "template", startMinute: 0, endMinute: 30, lane: 1, laneCount: 4 },
+      { id: "session", kind: "session", startMinute: 0, endMinute: 30, lane: 0, laneCount: 4 },
+    ];
+    assert.equal(resolvedAction(sessionUnderTemplate, 40, 12, "fallback"), null);
+    assert.equal(resolvedAction(templateUnderSession, 40, 12, "fallback"), "session");
+
+    const firstDay = fourLaneSessions.map((block) => ({ ...block, id: `first-${block.id}`, dayOffset: 0 }));
+    const secondDay = fourLaneSessions.map((block) => ({ ...block, id: `second-${block.id}`, dayOffset: canvasWidth }));
+    const adjacentDays = [...firstDay, ...secondDay];
+    for (const block of adjacentDays) {
+      const rect = footprint(block);
+      assert.ok(rect.right - rect.left >= 44);
+      assert.ok(rect.left >= block.dayOffset + 2);
+      assert.ok(rect.right <= block.dayOffset + canvasWidth - 2);
+    }
+    assert.equal(resolvedAction(adjacentDays, 92.5, 12, "fallback"), "first-lane-3");
+    assert.equal(resolvedAction(adjacentDays, 135.5, 12, "fallback"), "first-lane-3");
+    assert.equal(resolvedAction(adjacentDays, canvasWidth + 2.5, 12, "fallback"), "second-lane-0");
+    assert.equal(resolvedAction(adjacentDays, canvasWidth + 45.5, 12, "fallback"), "second-lane-1");
+    for (const x of [canvasWidth - 1, canvasWidth, canvasWidth + 1]) {
+      assert.equal(resolvedAction(adjacentDays, x, 12, "fallback"), "fallback");
+    }
+    for (let x = 0; x < canvasWidth * 2; x += 0.5) {
+      const owner = blockAt(adjacentDays, x, 12);
+      if (owner) assert.equal(resolvedAction(adjacentDays, x, 12, "fallback"), owner.id);
+    }
+
+    const weekWidthForPeak = (peakLaneCount) => Math.max(1040, 72 + 7 * peakLaneCount * 48);
+    assert.equal(weekWidthForPeak(1), 1040);
+    assert.equal(weekWidthForPeak(2), 1040);
+    assert.equal(weekWidthForPeak(6), 2088);
+
+    const crowdedDayWidth = (weekWidthForPeak(6) - 72) / 7;
+    const crowdedFirstDay = Array.from({ length: 6 }, (_, lane) => ({
+      id: `crowded-first-${lane}`,
+      kind: "session",
+      startMinute: 0,
+      endMinute: 30,
+      lane,
+      laneCount: 6,
+      canvasWidth: crowdedDayWidth,
+      dayOffset: 0,
+    }));
+    const crowdedSecondDay = crowdedFirstDay.map((block) => ({
+      ...block,
+      id: block.id.replace("first", "second"),
+      dayOffset: crowdedDayWidth,
+    }));
+    const crowdedAdjacentDays = [...crowdedFirstDay, ...crowdedSecondDay];
+    const firstDayRects = crowdedFirstDay.map(footprint);
+
+    firstDayRects.forEach((rect, lane) => {
+      assert.equal(rect.right - rect.left, 44);
+      assert.ok(rect.left >= 2);
+      assert.ok(rect.right <= crowdedDayWidth - 2);
+      assert.equal(
+        resolvedAction(crowdedAdjacentDays, (rect.left + rect.right) / 2, 12, "fallback"),
+        `crowded-first-${lane}`
+      );
+      if (lane > 0) assert.ok(firstDayRects[lane - 1].right <= rect.left);
+    });
+
+    const lastFirstRect = firstDayRects.at(-1);
+    const firstSecondRect = footprint(crowdedSecondDay[0]);
+    assert.ok(lastFirstRect.right < crowdedDayWidth);
+    assert.ok(firstSecondRect.left > crowdedDayWidth);
+    for (const x of [crowdedDayWidth - 1, crowdedDayWidth, crowdedDayWidth + 1]) {
+      assert.equal(resolvedAction(crowdedAdjacentDays, x, 12, "fallback"), "fallback");
+    }
+    crowdedSecondDay.forEach((block) => {
+      const rect = footprint(block);
+      assert.equal(
+        resolvedAction(crowdedAdjacentDays, (rect.left + rect.right) / 2, 12, "fallback"),
+        block.id
+      );
+    });
+  });
+
+  it("renders ordinary and crowded Week print geometry without horizontal clipping", async () => {
+    const schedule = source("src/components/schedule/schedule-page-section.tsx");
+    const printStyle = schedule.match(/<style>\{`([\s\S]*?\[data-schedule-print-week[\s\S]*?)`\}<\/style>/)?.[1];
+    assert.ok(printStyle, "component-owned schedule print CSS must be extractable");
+    assert.match(schedule, /data-schedule-screen-week="true"/);
+    assert.match(schedule, /data-schedule-print-week="true"/);
+    assert.match(schedule, /data-schedule-print-day=\{key\}/);
+    assert.match(schedule, /data-schedule-print-entry=\{entry\.kind\}/);
+    assert.match(schedule, /layoutScheduleTimeItems\(entriesByDate\[key\] \|\| \[\]\)\.map\(\(block\) => block\.item\)/);
+
+    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 816, height: 1056 } });
+      const inspectWeek = async ({ entriesPerDay, screenWidth }) => {
+        const days = Array.from({ length: 7 }, (_, day) => {
+          const entries = Array.from({ length: entriesPerDay }, (_, entry) => `
+            <article data-schedule-print-entry="session">
+              <span>${8 + entry}:00 AM–${8 + entry}:30 AM</span>
+              <strong>Session ${day + 1}.${entry + 1} with a deliberately long recoverable title</strong>
+              <span>Adult Karate Program</span>
+            </article>
+          `).join("");
+          return `
+            <section data-schedule-print-day="day-${day + 1}">
+              <header data-schedule-print-day-header="true"><strong>Day ${day + 1}</strong></header>
+              ${entries}
+            </section>
+          `;
+        }).join("");
+
+        await page.setContent(`
+          <style>html, body { width: 100%; margin: 0; } ${printStyle}</style>
+          <div data-schedule-screen-week="true" style="width: 100%; overflow-x: auto;">
+            <div data-schedule-time-canvas="week" style="min-width: ${screenWidth}px; height: 120px;"></div>
+          </div>
+          <section data-schedule-print-week="true">${days}</section>
+        `);
+
+        await page.emulateMedia({ media: "screen" });
+        const screenGeometry = await page.evaluate(() => {
+          const owner = document.querySelector('[data-schedule-screen-week="true"]');
+          const printWeek = document.querySelector('[data-schedule-print-week="true"]');
+          return {
+            ownerDisplay: getComputedStyle(owner).display,
+            ownerClientWidth: owner.clientWidth,
+            ownerScrollWidth: owner.scrollWidth,
+            printDisplay: getComputedStyle(printWeek).display,
+          };
+        });
+
+        await page.emulateMedia({ media: "print" });
+        const printGeometry = await page.evaluate(() => {
+          const owner = document.querySelector('[data-schedule-screen-week="true"]');
+          const grid = document.querySelector('[data-schedule-print-week="true"]');
+          const dayElements = [...grid.querySelectorAll("[data-schedule-print-day]")];
+          const entryElements = [...grid.querySelectorAll("[data-schedule-print-entry]")];
+          const headerElements = [...grid.querySelectorAll("[data-schedule-print-day-header]")];
+          const gridRect = grid.getBoundingClientRect();
+          const dayRects = dayElements.map((day) => day.getBoundingClientRect());
+          const headerRects = headerElements.map((header) => header.getBoundingClientRect());
+          const entriesInsideDays = dayElements.every((day) => {
+            const dayRect = day.getBoundingClientRect();
+            return [...day.querySelectorAll("[data-schedule-print-entry]")].every((entry) => {
+              const entryRect = entry.getBoundingClientRect();
+              return (
+                entryRect.left >= dayRect.left &&
+                entryRect.right <= dayRect.right &&
+                entry.scrollWidth <= entry.clientWidth &&
+                entry.scrollHeight <= entry.clientHeight &&
+                entryRect.height > 0
+              );
+            });
+          });
+          return {
+            ownerDisplay: getComputedStyle(owner).display,
+            gridDisplay: getComputedStyle(grid).display,
+            gridColumnCount: getComputedStyle(grid).gridTemplateColumns.split(" ").length,
+            gridLeft: gridRect.left,
+            gridRight: gridRect.right,
+            viewportWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            dayCount: dayRects.length,
+            entryCount: entryElements.length,
+            dayTopSpread: Math.max(...dayRects.map((rect) => rect.top)) - Math.min(...dayRects.map((rect) => rect.top)),
+            dayWidthSpread: Math.max(...dayRects.map((rect) => rect.width)) - Math.min(...dayRects.map((rect) => rect.width)),
+            headerTopSpread: Math.max(...headerRects.map((rect) => rect.top)) - Math.min(...headerRects.map((rect) => rect.top)),
+            entriesInsideDays,
+          };
+        });
+
+        return { printGeometry, screenGeometry };
+      };
+
+      for (const scenario of [
+        { entriesPerDay: 1, screenWidth: 1040 },
+        { entriesPerDay: 7, screenWidth: 72 + 7 * 7 * 48 },
+      ]) {
+        const { printGeometry, screenGeometry } = await inspectWeek(scenario);
+        assert.notEqual(screenGeometry.ownerDisplay, "none");
+        assert.equal(screenGeometry.printDisplay, "none");
+        assert.equal(screenGeometry.ownerClientWidth, 816);
+        assert.equal(screenGeometry.ownerScrollWidth, scenario.screenWidth);
+        assert.equal(printGeometry.ownerDisplay, "none");
+        assert.equal(printGeometry.gridDisplay, "grid");
+        assert.equal(printGeometry.gridColumnCount, 7);
+        assert.equal(printGeometry.dayCount, 7);
+        assert.equal(printGeometry.entryCount, 7 * scenario.entriesPerDay);
+        assert.equal(printGeometry.dayTopSpread, 0);
+        assert.ok(printGeometry.dayWidthSpread <= 1);
+        assert.equal(printGeometry.headerTopSpread, 0);
+        assert.ok(printGeometry.gridLeft >= 0);
+        assert.ok(printGeometry.gridRight <= printGeometry.viewportWidth);
+        assert.equal(printGeometry.documentScrollWidth, printGeometry.viewportWidth);
+        assert.equal(printGeometry.entriesInsideDays, true);
+      }
+    } finally {
+      await browser.close();
+    }
   });
 
   it("keeps Month responsive while Week remains the sole horizontal schedule canvas", () => {
@@ -107,10 +405,17 @@ describe("operations behavior proof", () => {
     assert.match(month, /MONTH_DAY_NAMES\[day\.date\.getDay\(\)\]/);
     assert.match(schedule, /overflow-x-auto overscroll-x-contain/);
     assert.match(schedule, /data-schedule-scroll-owner="internal"/);
-    assert.match(schedule, /min-w-\[1040px\]/);
+    assert.match(schedule, /const WEEK_CANVAS_MIN_WIDTH = 1040/);
+    assert.match(schedule, /const SESSION_LANE_MIN_WIDTH = 48/);
+    assert.match(schedule, /const weekDayMinWidth = peakWeekLaneCount \* SESSION_LANE_MIN_WIDTH/);
+    assert.match(schedule, /const weekCanvasMinWidth = Math\.max\([\s\S]*WEEK_CANVAS_MIN_WIDTH,[\s\S]*WEEK_TIME_COLUMN_WIDTH \+ WEEK_DAY_COUNT \* weekDayMinWidth/);
+    assert.match(schedule, /style=\{\{ minWidth: weekCanvasMinWidth \}\}/);
+    assert.equal((schedule.match(/style=\{\{ gridTemplateColumns: weekGridTemplateColumns \}\}/g) || []).length, 2);
+    assert.match(schedule, /data-schedule-week-peak-lanes=\{peakWeekLaneCount\}/);
+    assert.match(schedule, /grid grid-cols-\[4\.5rem_minmax\(0,1fr\)\]/);
   });
 
-  it("keeps six billing books, negative capabilities, and the connected Admin reset gate", () => {
+  it("keeps six billing views, negative capabilities, and the connected Admin reset gate", () => {
     const chrome = source("src/components/billing/billing-page-chrome.tsx");
     const sections = source("src/components/billing/billing-page-sections.tsx");
     const controller = source("src/lib/billing-page-controller.ts");
@@ -123,8 +428,11 @@ describe("operations behavior proof", () => {
     for (const label of ["Setup", "Tuition Plans", "Families", "Student Billing", "Invoices", "Advanced"]) {
       assert.match(chrome, new RegExp(`label: "${label}"`));
     }
-    assert.match(chrome, /data-billing-money-band|data-billing-register-context/);
+    assert.match(chrome, /data-billing-ledger="six-views"/);
+    assert.match(chrome, /data-billing-book-index="six-views"/);
+    assert.doesNotMatch(chrome, /data-billing-register-context|Open book|View book/);
     assert.match(chrome, /data-billing-setup-register="true"/);
+    assert.match(chrome, /<Header title="Billing">/);
     assert.doesNotMatch(chrome, /String\(index \+ 1\)\.padStart/);
     assert.match(sections, /data-billing-money-band="exceptions-first"/);
     assert.match(sections, /label: "Needs attention"[\s\S]*label: "Open receivables"[\s\S]*label: "Collected this UTC month"/);
@@ -147,8 +455,12 @@ describe("operations behavior proof", () => {
     assert.doesNotMatch(automations, /<form|<input|<select|onChange=|\bapi\./);
     assert.match(automations, /data-automations-readonly="true"/);
     assert.match(automations, /data-automation-worksheet="trigger-action-status"/);
+    assert.match(automations, /<Header title="Automations">/);
+    assert.doesNotMatch(automations, /A read-only catalog of live manual queues/);
     for (const label of ["Trigger", "Action", "Status"]) assert.match(automations, new RegExp(`>${label}<`));
     assert.match(settings, /canAccessSettings\(currentRole\) \? <AdminSettingsContent \/> : <SettingsAccessNotice \/>/);
+    assert.match(settings, /<Header title="Settings" \/>/);
+    assert.doesNotMatch(settings, /Studio configuration and preferences/);
     assert.match(settings, /data-settings-folio="admin-ownership"/);
     assert.equal((settings.match(/data-settings-owner=/g) || []).length, 5);
     for (const id of ["studio", "programs", "staff-roles", "data-controls"]) {
@@ -159,6 +471,8 @@ describe("operations behavior proof", () => {
     }
     assert.match(programs, /COLOR_SWATCHES\.map[\s\S]*className=\{`relative flex h-11 w-11 shrink-0/);
     assert.doesNotMatch(programs, /className=\{`relative flex h-8 w-8/);
+    assert.match(programs, /break-words md:truncate" title=\{program\.description\}/);
+    assert.match(programs, /break-words md:truncate" title=\{usageLabel\(program\)\}/);
     for (const marker of ["inviteEmail", "inviteFullName", "inviteLegalFirstName", "inviteLegalLastName", 'useState<StaffRoleName>("instructor")', "matchesStaffDeletionConfirmation", "archiveStaff", "unarchiveStaff", "scheduleStaffDeletion", "showArchived"]) {
       assert.match(staff, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
@@ -167,13 +481,33 @@ describe("operations behavior proof", () => {
 
   it("renders Reports as an exact-heading analytical document with cobalt reserved for its data series", () => {
     const reports = source("src/app/(dashboard)/reports/page.tsx");
+    const reportsLoading = source("src/app/(dashboard)/reports/loading.tsx");
     const sections = source("src/components/reports/reports-page-sections.tsx");
-    assert.match(reports, /<Header title="Reports"/);
+    assert.match(reports, /<Header title="Reports" \/>/);
+    assert.doesNotMatch(reports, /Studio performance, operating comparisons|Loading studio reporting panels/);
+    assert.doesNotMatch(reportsLoading, /Loading studio reporting panels/);
     assert.match(reports, /data-reports-reading-document="true"/);
     assert.match(reports, /data-report-figure-band="comparisons"/);
     assert.match(reports, /bg-\[var\(--operations-cobalt\)\]/);
     assert.match(sections, /<figure[\s\S]*data-report-figure="headline"/);
     assert.match(sections, /data-report-section="reading-block"/);
+    const exports = source("src/components/reports/reports-data-exports-panel.tsx");
+    assert.match(exports, /break-words[^"\n]*sm:truncate" title=\{report\.title\}/);
+  });
+
+  it("keeps all five Operations route Headers description-free", () => {
+    const routeHeaders = [
+      ["Schedule", source("src/components/schedule/schedule-page-section.tsx")],
+      ["Billing", source("src/components/billing/billing-page-chrome.tsx")],
+      ["Automations", source("src/app/(dashboard)/automations/page.tsx")],
+      ["Reports", source("src/app/(dashboard)/reports/page.tsx")],
+      ["Settings", source("src/app/(dashboard)/settings/page.tsx")],
+    ];
+
+    for (const [title, routeSource] of routeHeaders) {
+      assert.match(routeSource, new RegExp(`<Header title="${title}"(?:>| \\/>)`));
+      assert.doesNotMatch(routeSource, new RegExp(`<Header[^>]*title="${title}"[^>]*description=`));
+    }
   });
 
   it("adds the typed deletion gate and complete support context/inbox states without new APIs", () => {

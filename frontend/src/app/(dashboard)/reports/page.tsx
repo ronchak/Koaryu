@@ -112,7 +112,6 @@ export default function ReportsPage() {
       <OperationsLoading
         page="reports"
         title="Reports"
-        description="Loading studio reporting panels and export controls."
       />
     );
   }
@@ -135,23 +134,23 @@ export default function ReportsPage() {
 
   return (
     <OperationsSurface page="reports">
-      <Header title="Reports" description="Studio performance, operating comparisons, and controlled data exports." />
+      <Header title="Reports" />
       <article className="flex-1 p-4 sm:p-8" data-reports-reading-document="true">
         <div className="mx-auto max-w-6xl space-y-8">
 
-          <section className="border-y-2 border-border bg-surface" aria-label="Report scope and method" data-report-method-sheet="true">
+          <section className="overflow-hidden bg-surface" aria-label="Report scope and method" data-report-method-sheet="true">
             <div className="grid sm:grid-cols-3">
               <div className="border-b border-border px-4 py-4 sm:border-b-0 sm:border-r">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Lead scope</p>
+                <p className="text-xs font-medium text-muted">Lead scope</p>
                 <p className="mt-2 text-sm text-text-primary">Current loaded pipeline snapshot</p>
               </div>
               <div className="border-b border-border px-4 py-4 sm:border-b-0 sm:border-r">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Attendance window</p>
-                <p className="mt-2 font-mono text-sm text-text-primary">{formatReportDate(lookbackStart)} – {formatReportDate(today)}</p>
+                <p className="text-xs font-medium text-muted">Attendance window</p>
+                <p className="mt-2 text-sm tabular-nums text-text-primary">{formatReportDate(lookbackStart)} – {formatReportDate(today)}</p>
               </div>
               <div className="px-4 py-4">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">As of</p>
-                <p className="mt-2 font-mono text-sm text-text-primary">{formatReportDate(today)}</p>
+                <p className="text-xs font-medium text-muted">As of</p>
+                <p className="mt-2 text-sm tabular-nums text-text-primary">{formatReportDate(today)}</p>
               </div>
             </div>
             <p className="border-t border-border px-4 py-3 text-xs leading-5 text-text-secondary">
@@ -160,7 +159,7 @@ export default function ReportsPage() {
           </section>
 
           {/* ── Headline comparison figures ── */}
-          <section className="grid border-y-2 border-border bg-border gap-px md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1.2fr_0.8fr]" aria-label="Headline report figures" data-report-figure-band="comparisons">
+          <section className="grid gap-2 bg-surface p-2 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1.2fr_0.8fr]" aria-label="Headline report figures" data-report-figure-band="comparisons">
             <MetricCard
               icon={BarChart3}
               label="Leads Captured"
@@ -210,9 +209,9 @@ export default function ReportsPage() {
                   <div key={row.stage}>
                     <div className="flex items-center justify-between text-sm mb-2">
                       <span className="text-text-primary font-medium">{row.label}</span>
-                      <span className="font-mono text-text-secondary">{row.count}</span>
+                      <span className="tabular-nums text-text-secondary">{row.count}</span>
                     </div>
-                    <div className="h-1.5 bg-surface-raised overflow-hidden">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-raised">
                       <div
                         className="h-full bg-[var(--operations-cobalt)] transition-[width] duration-150"
                         style={{ width: `${Math.max(row.share * 100, row.count > 0 ? 10 : 0)}%` }}
@@ -242,7 +241,7 @@ export default function ReportsPage() {
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-base font-mono font-semibold text-text-primary">{row.total}</p>
+                      <p className="text-base font-semibold tabular-nums text-text-primary">{row.total}</p>
                       <p className="text-[11px] text-muted mt-0.5">
                         {formatReportPercent(row.conversionRate)} conv.
                       </p>
@@ -279,7 +278,7 @@ export default function ReportsPage() {
                           {row.active} active · {row.enrolled} enrolled
                         </p>
                       </div>
-                      <p className="text-base font-mono font-semibold text-text-primary shrink-0">
+                      <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">
                         {row.total}
                       </p>
                     </div>
@@ -312,7 +311,7 @@ export default function ReportsPage() {
                           {row.sessions} sessions · {row.capacity > 0 ? `${formatReportPercent(row.attendance / row.capacity)} utilization` : "No capacity tracked"}
                         </p>
                       </div>
-                      <p className="text-base font-mono font-semibold text-text-primary shrink-0">
+                      <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">
                         {row.attendance}
                       </p>
                     </div>
@@ -343,7 +342,7 @@ export default function ReportsPage() {
               <>
                 <table className="hidden min-w-full text-sm sm:table print:table">
                   <thead>
-                    <tr className="border-y border-border text-left text-[11px] uppercase tracking-widest text-muted">
+                    <tr className="border-y border-border text-left text-xs text-muted">
                       <th className="py-3 pl-5 pr-4 font-medium">Class</th>
                       <th className="py-3 pr-4 font-medium">Date</th>
                       <th className="py-3 pr-4 font-medium">Attendance</th>
@@ -363,13 +362,13 @@ export default function ReportsPage() {
                         <td className="py-3.5 pr-4 text-text-secondary">
                           {formatReportDate(session.date)}
                         </td>
-                        <td className="py-3.5 pr-4 font-mono text-text-primary">
+                        <td className="py-3.5 pr-4 tabular-nums text-text-primary">
                           {session.attendees}
                         </td>
-                        <td className="py-3.5 pr-4 font-mono text-text-secondary">
+                        <td className="py-3.5 pr-4 tabular-nums text-text-secondary">
                           {session.capacity ?? "—"}
                         </td>
-                        <td className="py-3.5 pr-5 font-mono text-text-secondary">
+                        <td className="py-3.5 pr-5 tabular-nums text-text-secondary">
                           {formatReportPercent(session.utilization)}
                         </td>
                       </tr>
@@ -379,11 +378,11 @@ export default function ReportsPage() {
                 <div className="divide-y divide-border border-y border-border sm:hidden print:hidden">
                   {visibleSessionRows.map((session) => (
                     <dl key={session.id} className="grid grid-cols-2 gap-x-3 gap-y-2 py-4 text-sm">
-                      <div className="col-span-2"><dt className="text-[10px] uppercase tracking-widest text-muted">Class</dt><dd className="mt-1 font-medium text-text-primary">{session.name}</dd></div>
-                      <div><dt className="text-[10px] uppercase tracking-widest text-muted">Date</dt><dd className="mt-1 text-text-secondary">{formatReportDate(session.date)}</dd></div>
-                      <div><dt className="text-[10px] uppercase tracking-widest text-muted">Attendance</dt><dd className="mt-1 font-mono text-text-primary">{session.attendees}</dd></div>
-                      <div><dt className="text-[10px] uppercase tracking-widest text-muted">Capacity</dt><dd className="mt-1 font-mono text-text-secondary">{session.capacity ?? "—"}</dd></div>
-                      <div><dt className="text-[10px] uppercase tracking-widest text-muted">Utilization</dt><dd className="mt-1 font-mono text-text-secondary">{formatReportPercent(session.utilization)}</dd></div>
+                      <div className="col-span-2"><dt className="text-xs text-muted">Class</dt><dd className="mt-1 font-medium text-text-primary">{session.name}</dd></div>
+                      <div><dt className="text-xs text-muted">Date</dt><dd className="mt-1 text-text-secondary">{formatReportDate(session.date)}</dd></div>
+                      <div><dt className="text-xs text-muted">Attendance</dt><dd className="mt-1 tabular-nums text-text-primary">{session.attendees}</dd></div>
+                      <div><dt className="text-xs text-muted">Capacity</dt><dd className="mt-1 tabular-nums text-text-secondary">{session.capacity ?? "—"}</dd></div>
+                      <div><dt className="text-xs text-muted">Utilization</dt><dd className="mt-1 tabular-nums text-text-secondary">{formatReportPercent(session.utilization)}</dd></div>
                     </dl>
                   ))}
                 </div>

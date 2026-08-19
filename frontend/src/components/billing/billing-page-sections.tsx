@@ -43,7 +43,7 @@ type OpenBillingLink = (
 
 export function StatusPill({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[11px] font-medium ${statusTone(status)}`}>
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${statusTone(status)}`}>
       {status.replace(/_/g, " ")}
     </span>
   );
@@ -51,7 +51,7 @@ export function StatusPill({ status }: { status: string }) {
 
 export function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="border border-border bg-surface rounded-[6px] p-4">
+    <div className="rounded-[14px] border border-border bg-surface p-4">
       <p className="text-xs text-muted">{label}</p>
       <p className="mt-1 text-xl font-semibold text-text-primary">{value}</p>
       {hint ? <p className="mt-1 text-xs text-text-secondary">{hint}</p> : null}
@@ -73,7 +73,7 @@ export function SectionHeader({ icon: Icon, title, description }: { icon: Lucide
 
 export function ProgramChip({ program }: { program: BillingPlan["programs"][number] }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-[4px] border border-border px-2 py-0.5 text-xs text-text-secondary">
+    <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-text-secondary">
       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: program.program_color_hex || "#94A3B8" }} />
       {program.program_name || "Program"}
     </span>
@@ -159,12 +159,12 @@ export function BillingOverviewTab({
 
   return (
     <div className="space-y-5">
-      <section className="border-y-2 border-border bg-surface" aria-label="Billing exceptions and receivables" data-billing-money-band="exceptions-first">
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
+      <section className="overflow-hidden bg-surface" aria-label="Billing exceptions and receivables" data-billing-money-band="exceptions-first">
+        <div className="grid gap-2 p-2 sm:grid-cols-2 xl:grid-cols-4">
           {moneyBand.map((metric) => (
-            <div key={metric.label} data-ledger-tone={metric.tone} className="border-b border-r border-border px-4 py-5 first:border-l-[3px] first:border-l-danger last:border-r-0 sm:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">{metric.label}</p>
-              <p className="mt-2 font-mono text-2xl font-semibold text-text-primary">{metric.value}</p>
+            <div key={metric.label} data-ledger-tone={metric.tone} className="rounded-[10px] bg-surface-raised/50 p-4">
+              <p className="text-xs font-medium text-muted">{metric.label}</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-text-primary">{metric.value}</p>
               <p className="mt-1 text-xs leading-5 text-text-secondary">{metric.helper}</p>
             </div>
           ))}
@@ -175,7 +175,7 @@ export function BillingOverviewTab({
       </section>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <section className="border border-border bg-surface rounded-[6px] p-5">
+        <section className="rounded-[14px] border border-border bg-surface p-4">
           <SectionHeader icon={CreditCard} title="Koaryu Core" description="One flat software subscription: no student caps, no staff caps, no feature gates." />
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
             <div>
@@ -240,7 +240,7 @@ export function BillingOverviewTab({
           </div>
         </section>
 
-        <section className="border border-border bg-surface rounded-[6px] p-5">
+        <section className="rounded-[14px] border border-border bg-surface p-4">
           <SectionHeader icon={Banknote} title="Koaryu Payments" description="Optional Stripe Connect add-on. Koaryu collects 0.5% only on successful processed transactions." />
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
             <div>
@@ -273,7 +273,7 @@ export function BillingOverviewTab({
             </div>
           </div>
           {billingConnect?.stripe_connected_account_id ? (
-            <div className="mt-4 rounded-[6px] border border-border bg-surface-raised/60 p-3">
+            <div className="mt-4 rounded-[10px] bg-surface-raised/60 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="text-xs font-medium text-text-secondary">Stripe onboarding checklist</p>
                 <span className="text-[11px] text-muted">
@@ -282,7 +282,7 @@ export function BillingOverviewTab({
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {connectRequirementItems.map((item) => (
-                  <div key={item.id} className="flex items-start gap-2 rounded-[6px] border border-border bg-bg/40 px-2.5 py-2">
+                  <div key={item.id} className="flex items-start gap-2 rounded-[10px] bg-bg/40 px-2.5 py-2">
                     {item.complete ? (
                       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-success" />
                     ) : (
@@ -344,7 +344,7 @@ export function BillingOverviewTab({
         </section>
       </div>
 
-      <section className="border border-border bg-surface rounded-[6px] p-5">
+      <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader icon={Mail} title="Message usage" description="Automation is included for every studio. Only email volume above the included monthly allowance is metered." />
         <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
@@ -369,7 +369,7 @@ export function BillingOverviewTab({
           role="alertdialog"
           ariaLabelledBy="connect-reset-title"
           ariaDescribedBy="connect-reset-description"
-          panelClassName="w-[min(92vw,30rem)] border-y-2 border-danger bg-surface p-5"
+          panelClassName="w-[min(92vw,30rem)] rounded-[18px] bg-surface p-4"
           onBackdropClick={() => setShowConnectResetConfirm(false)}
         >
           <h2 id="connect-reset-title" className="text-base font-semibold text-text-primary">Reset Stripe connection?</h2>
