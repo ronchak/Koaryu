@@ -210,9 +210,22 @@ function validatePerformanceEvidence(evidence, manifest, expectedSha) {
 }
 
 function currentGitSha() {
+  const status = execFileSync(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    { cwd: ROOT_DIR, encoding: "utf8" },
+  );
+  assertCleanGitWorktree(status);
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: ROOT_DIR, encoding: "utf8" }).trim();
   if (!SHA_PATTERN.test(sha)) throw new Error("git rev-parse HEAD did not return a full lowercase SHA.");
   return sha;
+}
+
+function assertCleanGitWorktree(status) {
+  if (typeof status !== "string") throw new Error("git status output must be text.");
+  if (status.trim()) {
+    throw new Error("performance evidence requires a clean Git worktree at the expected SHA.");
+  }
 }
 
 function performancePythonPath() {
@@ -269,7 +282,7 @@ export function runPerformanceRegression({ expectedSha, manifest = loadBudgetMan
   return validatePerformanceEvidence(evidence, manifest, sha);
 }
 
-export { loadBudgetManifest, validatePerformanceEvidence };
+export { assertCleanGitWorktree, loadBudgetManifest, validatePerformanceEvidence };
 
 function parseArgs(argv) {
   if (argv.length === 0) return {};

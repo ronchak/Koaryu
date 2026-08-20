@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  assertCleanGitWorktree,
   loadBudgetManifest,
   validatePerformanceEvidence,
 } from "./check-performance-regression.mjs";
@@ -47,6 +48,18 @@ function mutateProfileEvidence(mutator) {
 }
 
 describe("deterministic performance evidence validator", () => {
+  it("rejects tracked or untracked worktree changes before exact-SHA evidence", () => {
+    assert.doesNotThrow(() => assertCleanGitWorktree(""));
+    assert.throws(
+      () => assertCleanGitWorktree(" M backend/app/main.py\n"),
+      /requires a clean Git worktree/,
+    );
+    assert.throws(
+      () => assertCleanGitWorktree("?? untracked-fixture.py\n"),
+      /requires a clean Git worktree/,
+    );
+  });
+
   it("accepts a complete aggregate-only evidence set", () => {
     assert.equal(validatePerformanceEvidence(validEvidence(), manifest, SHA).privacy, manifest.privacy);
   });

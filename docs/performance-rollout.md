@@ -64,7 +64,8 @@ The runner uses `backend/venv/bin/python` when that interpreter exists. Set
 `KOARYU_PERFORMANCE_PYTHON` to an explicit compatible interpreter only when a
 worktree lacks that venv, for example a shared local checkout. Do not use the
 override to point the gate at a hosted service. The command fails when the
-checked-out SHA differs from `--expected-sha`, a profile or route is missing,
+worktree has tracked or untracked changes, the checked-out SHA differs from
+`--expected-sha`, a profile or route is missing,
 the manifest/fixture/privacy bindings differ, a metric is non-finite or over
 budget, or any privacy-bearing field appears in the aggregate evidence.
 
@@ -99,8 +100,8 @@ ready: students, programs, leads, schedule, dashboard summary, and
 selected-ladder belt eligibility. Preview semantics remain owned by the same
 resolver. Treat the latter as the true-data readiness measure. The optional
 network-idle wait happens afterward and is excluded from both metrics.
-Separately, evidence validation requires successful `/dashboard/bootstrap` and
-`/dashboard/summary` responses, resource timings, and at least one allowlisted
+Separately, evidence validation requires HTTP 200 responses from
+`/dashboard/bootstrap` and `/dashboard/summary`, resource timings, and at least one allowlisted
 finite, nonnegative `Server-Timing` duration for each response; those two
 responses alone do not prove the full true-data marker.
 
@@ -124,8 +125,8 @@ dashboard's explicit true-data marker, which requires layout resolution plus
 the controller's complete required-dataset aggregate: students, programs,
 leads, schedule, dashboard summary, and selected-ladder belt eligibility.
 Preview semantics remain owned by the same resolver. Separately, evidence
-validation requires successful 2xx `/dashboard/bootstrap` and
-`/dashboard/summary` responses, resource timings, and allowlisted
+validation requires HTTP 200 responses from `/dashboard/bootstrap` and
+`/dashboard/summary`, resource timings, and allowlisted
 `Server-Timing`; those two responses alone do not prove the full data marker.
 It emits only aggregate timing labels. It does not emit URLs, query strings,
 response bodies, tenant/user identifiers, credentials, or storage state. Keep

@@ -90,7 +90,7 @@ describe("privacy-safe performance evidence", () => {
         },
         {
           resource: "dashboard-summary",
-          status: 204,
+          status: 200,
           server_timing: [{ name: "koaryu_summary_total", duration_ms: 2.5 }],
         },
       ],
@@ -125,7 +125,16 @@ describe("privacy-safe performance evidence", () => {
           entry.resource === "dashboard-summary" ? { ...entry, status: 500 } : entry
         )),
       }),
-      /successful responses/,
+      /HTTP 200 responses/,
+    );
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        server_timing: evidence.server_timing.map((entry) => (
+          entry.resource === "dashboard-summary" ? { ...entry, status: 204 } : entry
+        )),
+      }),
+      /HTTP 200 responses/,
     );
     assert.throws(
       () => validateCapturedEvidence({

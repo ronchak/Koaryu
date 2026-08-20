@@ -83,8 +83,8 @@ export function validateCapturedEvidence(evidence) {
   const responseResources = new Set();
   const serverTimingResources = new Set();
   for (const entry of evidence.server_timing) {
-    if (!REQUIRED_RESOURCES.has(entry.resource) || entry.status < 200 || entry.status >= 300) {
-      throw new Error("dashboard bootstrap and summary must return successful responses.");
+    if (!REQUIRED_RESOURCES.has(entry.resource) || entry.status !== 200) {
+      throw new Error("dashboard bootstrap and summary must return HTTP 200 responses.");
     }
     responseResources.add(entry.resource);
     if (
