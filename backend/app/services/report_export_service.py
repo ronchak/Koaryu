@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from supabase import Client
 
 from app.services.report_export_catalog import CsvReport, build_report_catalog
+from app.services.report_export_budget import ReportExportBudget, ReportExportBudgetSnapshot
 from app.services.report_export_data import ReportExportDataFetcher
 from app.services.report_intelligence import (
     build_belt_momentum_testing_pipeline,
@@ -61,6 +62,8 @@ class ReportExportService:
     def __init__(self, supabase: Client, *, today: Optional[date] = None):
         self.supabase = supabase
         self.today = today or date.today()
+        self.budget = ReportExportBudget()
+        self._active_report: Optional[CsvReport] = None
 
     def list_reports(self) -> list[CsvReport]:
         return list(REPORTS.values())
@@ -75,14 +78,23 @@ class ReportExportService:
         return report
 
     def _report_data(self) -> ReportExportDataFetcher:
-        return ReportExportDataFetcher(self.supabase)
+        return ReportExportDataFetcher(self.supabase, budget=self.budget)
+
+    @property
+    def budget_snapshot(self) -> ReportExportBudgetSnapshot:
+        return self.budget.snapshot()
 
     async def build_csv(self, report_id: str, studio_id: str) -> tuple[str, str]:
         report = self.get_report(report_id)
         return await self.build_csv_for_report(report, studio_id)
 
     async def build_csv_for_report(self, report: CsvReport, studio_id: str) -> tuple[str, str]:
-        rows = report.custom_builder(self, studio_id) if report.custom_builder else self._fetch_table_rows(report, studio_id)
+        previous_report = self._active_report
+        self._active_report = report
+        try:
+            rows = report.custom_builder(self, studio_id) if report.custom_builder else self._fetch_table_rows(report, studio_id)
+        finally:
+            self._active_report = previous_report
         csv_text = self._write_csv(report.columns, rows)
         return csv_text, report.filename
 
@@ -120,7 +132,9 @@ class ReportExportService:
         return build_data_hygiene_readiness(self._fetch_intelligence_dataset(studio_id), self.today)
 
     def _fetch_intelligence_dataset(self, studio_id: str) -> dict[str, list[dict[str, Any]]]:
-        return self._report_data().fetch_intelligence_dataset(studio_id)
+        if self._active_report is None:
+            raise RuntimeError("Intelligence report context is required")
+        return self._report_data().fetch_intelligence_dataset(self._active_report, studio_id)
 
     def _fetch_table_rows(self, report: CsvReport, studio_id: str) -> list[dict[str, Any]]:
         return self._report_data().fetch_table_rows(report, studio_id)
@@ -240,23 +254,19 @@ class ReportExportService:
 
     def _build_staff_rows(self, studio_id: str) -> list[dict[str, Any]]:
         service = StaffService(self.supabase)
-        result = service._list_staff_role_rows(studio_id)
-        role_rows = [
-            row for row in (result.data or []) if row.get("studio_id") == studio_id
-        ]
-        user_ids = list(
-            dict.fromkeys(
-                row["user_id"]
-                for row in role_rows
-                if isinstance(row.get("user_id"), str) and row["user_id"].strip()
-            )
-        )
-        profile_map = (
-            service._get_staff_profiles_for_user_ids(user_ids) if user_ids else {}
-        )
+        dataset = self._report_data().fetch_staff_dataset(studio_id)
+        role_rows = dataset["staff_roles"]
+        profile_map = {
+            row.get("user_id"): row
+            for row in dataset["staff_profiles"]
+            if row.get("user_id")
+        }
+        auth_users = dataset["auth_users"]
         return [
             service._hydrate_staff_member(
-                row, profile=profile_map.get(row.get("user_id"))
+                row,
+                user=auth_users.get(row.get("user_id")),
+                profile=profile_map.get(row.get("user_id")),
             ).model_dump()
             for row in role_rows
         ]
