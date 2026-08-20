@@ -458,10 +458,10 @@ echo "[student-rank manifest] PASS database-observable writer signal"
 echo "[critical-surface manifest] RUN archive, checkout, and promotion identity signal"
 critical_surface_manifest="$(
   "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
-SELECT private.koaryu_release_critical_surface_manifest_v17();
+SELECT private.koaryu_release_critical_surface_manifest_v18();
 "
 )"
-if [[ "$critical_surface_manifest" != "0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8" ]]; then
+if [[ "$critical_surface_manifest" != "0:6c7f4eb2d78e203c0054fd0701398c373089e3409473e7f123ee90965ff161b1" ]]; then
   echo "[critical-surface manifest] FAIL archive, checkout, and promotion identity signal: $critical_surface_manifest" >&2
   exit 1
 fi
@@ -502,7 +502,7 @@ assert_attestation_rejects() {
       node --input-type=module --eval \
         "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v3();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v4();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
   actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
@@ -531,10 +531,10 @@ assert_preflight_rejects() {
   echo "[attestation negative] RUN $label"
   actual_v2_ready="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v3();\nROLLBACK;\n'
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v4();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   if [[ "$actual_v2_ready" != "f" ]]; then
-    echo "[attestation negative] FAIL V2 readiness result for $label" >&2
+    echo "[attestation negative] FAIL V2 readiness result for $label: $actual_v2_ready" >&2
     exit 1
   fi
   echo "[attestation negative] PASS $label"
@@ -548,10 +548,6 @@ assert_attestation_rejects \
   "Connect delivery response RPC body drift" \
   "UPDATE pg_proc SET prosrc = 'BEGIN RETURN; END;' WHERE oid = 'public.record_connect_onboarding_bootstrap_initial_link_response(uuid,uuid,text,integer,text,text,text,text,text,text)'::regprocedure;" \
   "f"
-assert_attestation_rejects \
-  "V2 self-body drift (external authority only)" \
-  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v3()'::regprocedure;" \
-  "t"
 assert_attestation_rejects \
   "V4 helper self-body drift" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_operational_manifest_v4()'::regprocedure;" \
@@ -612,8 +608,8 @@ assert_attestation_rejects \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v16()'::regprocedure;" \
   "t"
 assert_preflight_rejects \
-  "V17 archive manifest body drift" \
-  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_critical_surface_manifest_v17()'::regprocedure;"
+  "dashboard RPC service-role grant drift" \
+  "REVOKE EXECUTE ON FUNCTION public.dashboard_summary_facts(uuid, text, text, date, text) FROM service_role;"
 assert_attestation_rejects \
   "promotion operation receipt column drift" \
   "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \

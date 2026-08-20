@@ -504,20 +504,20 @@ END $$;
 
 DO $$
 DECLARE
-    v_v3 RECORD;
+    v_v4 RECORD;
     v_v2 RECORD;
 BEGIN
     UPDATE supabase_migrations.schema_migrations
     SET version = '20260814170001'
     WHERE version = '20260814170000';
 
-    SELECT * INTO v_v3 FROM public.koaryu_release_schema_preflight_v3();
+    SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     SELECT * INTO v_v2 FROM public.koaryu_release_schema_preflight_v2();
-    IF v_v3.ready IS TRUE
-       OR NOT ('migration_history_sequence_v18' = ANY(v_v3.security_failures))
+    IF v_v4.ready IS TRUE
+       OR NOT ('migration_history_sequence_v19' = ANY(v_v4.security_failures))
        OR v_v2.ready IS TRUE THEN
-        RAISE EXCEPTION 'Readiness accepted substituted migration history: v3=%, v2=%',
-            row_to_json(v_v3), row_to_json(v_v2);
+        RAISE EXCEPTION 'Readiness accepted substituted migration history: v4=%, v2=%',
+            row_to_json(v_v4), row_to_json(v_v2);
     END IF;
 
     UPDATE supabase_migrations.schema_migrations

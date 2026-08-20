@@ -1124,7 +1124,7 @@ BEGIN
         RAISE EXCEPTION 'Live-billing authorization audit evidence is incomplete.';
     END IF;
 
-    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v3();
+    SELECT * INTO v_preflight FROM public.koaryu_release_schema_preflight_v4();
     IF private.koaryu_release_starting_belt_manifest_v9()
        <> '0:9c1c8ea5e7ab6ce0d34d5654d17b056faba89234f0f2b945ff147c0462711be9' THEN
         RAISE EXCEPTION 'Starting-belt V9 manifest mismatch; got %',
@@ -1135,19 +1135,14 @@ BEGIN
         RAISE EXCEPTION 'Student-rank writer V13 manifest mismatch; got %',
             private.koaryu_release_student_rank_writer_manifest_v13();
     END IF;
-    IF private.koaryu_release_critical_surface_manifest_v16()
-       <> '0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239' THEN
-        RAISE EXCEPTION 'Critical-surface V16 manifest mismatch; got %',
-            private.koaryu_release_critical_surface_manifest_v16();
-    END IF;
-    IF private.koaryu_release_critical_surface_manifest_v17()
-       <> '0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8' THEN
-        RAISE EXCEPTION 'Critical-surface V17 archive manifest mismatch; got %',
-            private.koaryu_release_critical_surface_manifest_v17();
+    IF private.koaryu_release_critical_surface_manifest_v18()
+       <> '0:6c7f4eb2d78e203c0054fd0701398c373089e3409473e7f123ee90965ff161b1' THEN
+        RAISE EXCEPTION 'Critical-surface V18 archive manifest mismatch; got %',
+            private.koaryu_release_critical_surface_manifest_v18();
     END IF;
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 111
-       OR v_preflight.migration_head <> '20260816012723'
+       OR v_preflight.migration_count <> 112
+       OR v_preflight.migration_head <> '20260820012533'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
@@ -1157,10 +1152,11 @@ BEGIN
            '20260801131844', '20260814043325', '20260814103046',
            '20260814105424', '20260814114500', '20260814152000',
            '20260814170000', '20260814183000', '20260814200000',
-           '20260814213000', '20260815220402', '20260816012723'
+           '20260814213000', '20260815220402', '20260816012723',
+           '20260820012533'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v18' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v19' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 
