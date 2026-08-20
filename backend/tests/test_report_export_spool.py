@@ -11,12 +11,12 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.endpoints.reports import export_report_csv
-from app.core.deps import run_supabase_operation
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 from app.services.report_export_budget import ReportExportBudget
 from app.services.report_export_catalog_types import CsvReport
 from app.services.report_export_service import (
     EXPORT_SPOOL_MAX_MEMORY_BYTES,
+    EXPORT_STREAM_CHUNK_BYTES,
     ReportExportService,
 )
 from tests.fakes.supabase import TableBackedSupabase
@@ -49,6 +49,20 @@ def _build(service: ReportExportService, report: CsvReport):
     return asyncio.run(service.build_csv_artifact_for_report(report, "studio-1"))
 
 
+async def _consume_artifact(artifact):
+    chunks = []
+    for chunk in artifact.stream():
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _consume_response(response):
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def test_exact_fetched_and_output_boundary_preserves_quoted_newline_bytes():
     rows = [
         {
@@ -65,9 +79,11 @@ def test_exact_fetched_and_output_boundary_preserves_quoted_newline_bytes():
 
     assert artifact.emitted_data_rows == 50_000
     assert artifact.budget.fetched_rows == 50_000
-    assert artifact.body.startswith(b"id,studio_id,note\r\n")
-    assert b'"line1\nline2"' in artifact.body
-    assert artifact.body.endswith(b"\r\n")
+    assert not artifact.spool_closed
+    body = asyncio.run(_consume_artifact(artifact))
+    assert body.startswith(b"id,studio_id,note\r\n")
+    assert b'"line1\nline2"' in body
+    assert body.endswith(b"\r\n")
     assert artifact.spool_closed
 
     too_many = rows + [{"id": "row-over", "studio_id": "studio-1", "note": "over"}]
@@ -126,8 +142,12 @@ def test_spool_rolls_over_and_closes_on_success_and_output_row_failure():
     assert artifact.output_bytes > EXPORT_SPOOL_MAX_MEMORY_BYTES
     assert artifact.spool_threshold_bytes == EXPORT_SPOOL_MAX_MEMORY_BYTES
     assert artifact.spool_rolled
-    assert artifact.spool_closed
+    assert not artifact.spool_closed
     assert len(tracker.instances) == 1
+    assert not tracker.instances[0].closed
+    chunks = list(artifact.stream())
+    assert all(0 < len(chunk) <= EXPORT_STREAM_CHUNK_BYTES for chunk in chunks)
+    assert b"".join(chunks).startswith(b"id,note\r\n")
     assert tracker.instances[0].closed
 
     failing_report = _report(
@@ -177,7 +197,7 @@ def test_spool_closes_on_generation_byte_and_elapsed_failures():
         ),
         byte_report,
     )
-    assert exact_byte_artifact.body == expected
+    assert asyncio.run(_consume_artifact(exact_byte_artifact)) == expected
     assert exact_byte_artifact.output_bytes == len(expected)
 
     byte_tracker = _SpoolTracker(real_factory)
@@ -234,6 +254,39 @@ def test_spool_closes_on_generation_byte_and_elapsed_failures():
         exact_elapsed_report,
     )
     assert exact_elapsed_artifact.budget.elapsed_seconds == 15.0
+    exact_elapsed_artifact.close()
+
+
+def test_stream_is_bounded_exact_and_explicit_close_does_not_materialize_body():
+    expected = (
+        b"id,note\r\n"
+        + b"1,"
+        + (b"x" * (EXPORT_STREAM_CHUNK_BYTES + 17))
+        + b"\r\n"
+    )
+    artifact = _build(
+        ReportExportService(TableBackedSupabase({})),
+        _report(builder=lambda _service, _studio_id: [
+            {"id": "1", "note": "x" * (EXPORT_STREAM_CHUNK_BYTES + 17)},
+        ]),
+    )
+    assert not hasattr(artifact, "body")
+    iterator = artifact.stream()
+    first = next(iterator)
+    assert 0 < len(first) <= EXPORT_STREAM_CHUNK_BYTES
+    iterator.close()
+    assert artifact.spool_closed
+
+    artifact = _build(
+        ReportExportService(TableBackedSupabase({})),
+        _report(builder=lambda _service, _studio_id: [
+            {"id": "1", "note": "x" * (EXPORT_STREAM_CHUNK_BYTES + 17)},
+        ]),
+    )
+    chunks = list(artifact.stream())
+    assert all(0 < len(chunk) <= EXPORT_STREAM_CHUNK_BYTES for chunk in chunks)
+    assert b"".join(chunks) == expected
+    assert artifact.spool_closed
 
 
 def test_audit_row_count_uses_emitted_rows_and_audit_failure_returns_no_response():
@@ -256,7 +309,8 @@ def test_audit_row_count_uses_emitted_rows_and_audit_failure_returns_no_response
             supabase=supabase,
         ))
 
-    assert response.body.count(b"\n") > 2
+    body = asyncio.run(_consume_response(response))
+    assert body.count(b"\n") > 2
     assert supabase.tables["audit_logs"][0]["metadata"]["row_count"] == 1
 
     failing_supabase = TableBackedSupabase({
@@ -264,7 +318,15 @@ def test_audit_row_count_uses_emitted_rows_and_audit_failure_returns_no_response
         "audit_logs": [],
     })
     failing_supabase.table_failures["audit_logs"] = RuntimeError("audit failed")
+    real_factory = __import__(
+        "app.services.report_export_service", fromlist=["tempfile"]
+    ).tempfile.SpooledTemporaryFile
+    failure_tracker = _SpoolTracker(real_factory)
     with (
+        patch(
+            "app.services.report_export_service.tempfile.SpooledTemporaryFile",
+            failure_tracker,
+        ),
         patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "admin"},
@@ -278,6 +340,270 @@ def test_audit_row_count_uses_emitted_rows_and_audit_failure_returns_no_response
             supabase=failing_supabase,
         ))
     assert failing_supabase.tables["audit_logs"] == []
+    assert failure_tracker.instances[0].closed
+
+
+def test_response_construction_failure_closes_claimed_spool():
+    supabase = TableBackedSupabase({
+        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+        "audit_logs": [],
+    })
+    real_factory = __import__(
+        "app.services.report_export_service", fromlist=["tempfile"]
+    ).tempfile.SpooledTemporaryFile
+    tracker = _SpoolTracker(real_factory)
+    with (
+        patch(
+            "app.services.report_export_service.tempfile.SpooledTemporaryFile",
+            tracker,
+        ),
+        patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ),
+        patch(
+            "app.api.v1.endpoints.reports._ReportExportStreamingResponse",
+            side_effect=RuntimeError("response construction failed"),
+        ),
+        pytest.raises(RuntimeError, match="response construction failed"),
+    ):
+        asyncio.run(export_report_csv(
+            "students",
+            user_id="user-1",
+            requested_studio_id="studio-1",
+            supabase=supabase,
+        ))
+    assert tracker.instances[0].closed
+
+
+def test_streaming_read_runs_off_event_loop_and_preserves_heartbeat():
+    real_factory = __import__(
+        "app.services.report_export_service", fromlist=["tempfile"]
+    ).tempfile.SpooledTemporaryFile
+    read_started = threading.Event()
+    release_read = threading.Event()
+
+    class BlockingSpool(real_factory):
+        def read(self, *args, **kwargs):
+            read_started.set()
+            release_read.wait(2)
+            return super().read(*args, **kwargs)
+
+    supabase = TableBackedSupabase({
+        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+        "audit_logs": [],
+    })
+    with (
+        patch(
+            "app.services.report_export_service.tempfile.SpooledTemporaryFile",
+            BlockingSpool,
+        ),
+        patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ),
+    ):
+        response = asyncio.run(export_report_csv(
+            "students",
+            user_id="user-1",
+            requested_studio_id="studio-1",
+            supabase=supabase,
+        ))
+
+        async def consume():
+            return await _consume_response(response)
+
+        async def scenario():
+            task = asyncio.create_task(consume())
+            for _ in range(100):
+                if read_started.is_set():
+                    break
+                await asyncio.sleep(0)
+            assert read_started.is_set()
+            heartbeat_ticks = 0
+            for _ in range(20):
+                heartbeat_ticks += 1
+                await asyncio.sleep(0)
+            release_read.set()
+            body = await task
+            return heartbeat_ticks, body
+
+        heartbeat_ticks, body = asyncio.run(scenario())
+
+    assert heartbeat_ticks
+    assert body.startswith(b"id,studio_id,legal_first_name")
+    assert b"student-1,studio-1" in body
+
+
+def test_audit_completes_before_first_spool_read():
+    real_factory = __import__(
+        "app.services.report_export_service", fromlist=["tempfile"]
+    ).tempfile.SpooledTemporaryFile
+    read_started = threading.Event()
+
+    class ReadTrackingSpool(real_factory):
+        def read(self, *args, **kwargs):
+            read_started.set()
+            return super().read(*args, **kwargs)
+
+    supabase = TableBackedSupabase({
+        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+        "audit_logs": [],
+    })
+    with (
+        patch(
+            "app.services.report_export_service.tempfile.SpooledTemporaryFile",
+            ReadTrackingSpool,
+        ),
+        patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ),
+    ):
+        response = asyncio.run(export_report_csv(
+            "students",
+            user_id="user-1",
+            requested_studio_id="studio-1",
+            supabase=supabase,
+        ))
+        assert supabase.tables["audit_logs"]
+        assert not read_started.is_set()
+        body = asyncio.run(_consume_response(response))
+
+    assert read_started.is_set()
+    assert b"student-1,studio-1" in body
+
+
+def test_injected_spool_read_exception_closes_spool():
+    real_factory = __import__(
+        "app.services.report_export_service", fromlist=["tempfile"]
+    ).tempfile.SpooledTemporaryFile
+    tracker = _SpoolTracker(real_factory)
+
+    class FailingReadSpool(real_factory):
+        def read(self, *args, **kwargs):
+            raise OSError("injected spool read failure")
+
+    supabase = TableBackedSupabase({
+        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+        "audit_logs": [],
+    })
+    with (
+        patch(
+            "app.services.report_export_service.tempfile.SpooledTemporaryFile",
+            lambda *args, **kwargs: tracker.instances.append(
+                FailingReadSpool(*args, **kwargs)
+            ) or tracker.instances[-1],
+        ),
+        patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ),
+    ):
+        response = asyncio.run(export_report_csv(
+            "students",
+            user_id="user-1",
+            requested_studio_id="studio-1",
+            supabase=supabase,
+        ))
+        with pytest.raises(OSError, match="injected spool read failure"):
+            asyncio.run(_consume_response(response))
+
+    assert tracker.instances[0].closed
+
+
+def test_asgi_send_error_closes_spool_owner():
+    real_factory = __import__(
+        "app.services.report_export_service", fromlist=["tempfile"]
+    ).tempfile.SpooledTemporaryFile
+    tracker = _SpoolTracker(real_factory)
+    supabase = TableBackedSupabase({
+        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+        "audit_logs": [],
+    })
+    with (
+        patch(
+            "app.services.report_export_service.tempfile.SpooledTemporaryFile",
+            tracker,
+        ),
+        patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ),
+    ):
+        response = asyncio.run(export_report_csv(
+            "students",
+            user_id="user-1",
+            requested_studio_id="studio-1",
+            supabase=supabase,
+        ))
+
+        async def send(message):
+            if message["type"] == "http.response.body":
+                raise RuntimeError("injected ASGI send failure")
+
+        async def invoke():
+            await response(
+                {"type": "http", "asgi": {"spec_version": "2.4"}},
+                lambda: None,
+                send,
+            )
+
+        with pytest.raises(RuntimeError, match="injected ASGI send failure"):
+            asyncio.run(invoke())
+
+    assert tracker.instances[0].closed
+
+
+def test_asgi_cancellation_closes_spool_owner():
+    real_factory = __import__(
+        "app.services.report_export_service", fromlist=["tempfile"]
+    ).tempfile.SpooledTemporaryFile
+    tracker = _SpoolTracker(real_factory)
+    send_started = threading.Event()
+    supabase = TableBackedSupabase({
+        "students": [{"id": "student-1", "studio_id": "studio-1"}],
+        "audit_logs": [],
+    })
+    with (
+        patch(
+            "app.services.report_export_service.tempfile.SpooledTemporaryFile",
+            tracker,
+        ),
+        patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "admin"},
+        ),
+    ):
+        response = asyncio.run(export_report_csv(
+            "students",
+            user_id="user-1",
+            requested_studio_id="studio-1",
+            supabase=supabase,
+        ))
+
+        async def send(message):
+            send_started.set()
+            await asyncio.Event().wait()
+
+        async def invoke_and_cancel():
+            task = asyncio.create_task(response(
+                {"type": "http", "asgi": {"spec_version": "2.4"}},
+                lambda: None,
+                send,
+            ))
+            for _ in range(100):
+                if send_started.is_set():
+                    break
+                await asyncio.sleep(0)
+            assert send_started.is_set()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        asyncio.run(invoke_and_cancel())
+
+    assert tracker.instances[0].closed
 
 
 def test_real_bulk_runtime_keeps_report_client_thread_affine_after_cancellation():
@@ -337,21 +663,18 @@ def test_real_bulk_runtime_keeps_report_client_thread_affine_after_cancellation(
         )
         heartbeat_ticks = 0
 
-        async def operation(client):
-            return await export_report_csv(
-                "students",
-                user_id="user-1",
-                requested_studio_id="studio-1",
-                supabase=client,
-            )
-
         try:
             with patch(
                 "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
                 return_value={"studio_id": "studio-1", "role": "admin"},
             ):
                 task = asyncio.create_task(
-                    run_supabase_operation(runtime, operation, lane="bulk")
+                    export_report_csv(
+                        "students",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=runtime,
+                    )
                 )
                 client = await asyncio.to_thread(
                     lambda: (
@@ -440,7 +763,8 @@ def test_deterministic_performance_fixture_records_source_output_and_spool_metri
     assert artifact.budget.fetched_rows == scale
     assert artifact.budget.provider_calls == (scale // 1_000) + 1
     assert artifact.budget.emitted_rows == scale
-    assert artifact.output_bytes == len(artifact.body)
+    body = asyncio.run(_consume_artifact(artifact))
+    assert artifact.output_bytes == len(body)
     assert artifact.output_bytes <= 20 * 1024 * 1024
     assert artifact.spool_rolled is (artifact.output_bytes > artifact.spool_threshold_bytes)
     assert artifact.spool_closed

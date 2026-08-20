@@ -1,6 +1,7 @@
 import csv
 import json
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import date
 from io import StringIO
@@ -36,20 +37,99 @@ REPORT_EXPORT_ROLE_RANK = {
     "admin": 20,
 }
 EXPORT_SPOOL_MAX_MEMORY_BYTES = 1 * 1024 * 1024
+EXPORT_STREAM_CHUNK_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
 class ReportExportArtifact:
-    """A fully generated report whose backing spool is already closed."""
+    """A fully generated report whose backing spool is ready for delivery."""
 
-    body: bytes
+    spool: Any
     filename: str
     emitted_data_rows: int
     output_bytes: int
     budget: ReportExportBudgetSnapshot
     spool_threshold_bytes: int
     spool_rolled: bool
-    spool_closed: bool
+
+    @property
+    def spool_closed(self) -> bool:
+        return bool(self.spool.closed)
+
+    def close(self) -> None:
+        self.spool.close()
+
+    def stream(self) -> "_ReportExportSpoolIterator":
+        return _ReportExportSpoolIterator(self.spool)
+
+
+class ReportExportArtifactLease:
+    """Transfer or abandon an artifact across the provider worker boundary."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._artifact: Optional[ReportExportArtifact] = None
+        self._abandoned = False
+
+    def offer(self, artifact: ReportExportArtifact) -> bool:
+        with self._lock:
+            if self._abandoned:
+                should_close = True
+            else:
+                self._artifact = artifact
+                should_close = False
+        if should_close:
+            artifact.close()
+            return False
+        return True
+
+    def claim(self, artifact: ReportExportArtifact) -> Optional[ReportExportArtifact]:
+        with self._lock:
+            if self._artifact is artifact:
+                self._artifact = None
+                return artifact
+        return None
+
+    def abandon(self) -> None:
+        with self._lock:
+            self._abandoned = True
+            artifact = self._artifact
+            self._artifact = None
+        if artifact is not None:
+            artifact.close()
+
+
+class _ReportExportSpoolIterator:
+    """Sync iterator for Starlette's bounded threadpool response adapter."""
+
+    def __init__(self, spool: Any) -> None:
+        self._spool = spool
+        self._started = False
+        self._closed = False
+
+    def __iter__(self) -> "_ReportExportSpoolIterator":
+        return self
+
+    def __next__(self) -> bytes:
+        if self._closed:
+            raise StopIteration
+        try:
+            if not self._started:
+                self._spool.seek(0)
+                self._started = True
+            chunk = self._spool.read(EXPORT_STREAM_CHUNK_BYTES)
+            if not chunk:
+                self.close()
+                raise StopIteration
+            return chunk
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._spool.close()
 
 
 class _Utf8SpoolWriter:
@@ -156,7 +236,7 @@ class ReportExportService:
             _return_artifact=True,
         )
         if not isinstance(artifact, ReportExportArtifact):
-            raise TypeError("report export did not produce a bytes artifact")
+            raise TypeError("report export did not produce a spool artifact")
         return artifact
 
     async def build_csv_for_report(
@@ -169,7 +249,14 @@ class ReportExportService:
         artifact = await self._build_csv_artifact_for_report(report, studio_id)
         if _return_artifact:
             return artifact
-        return artifact.body.decode("utf-8"), artifact.filename
+        try:
+            artifact.spool.seek(0)
+            body = artifact.spool.read(EXPORT_MAX_OUTPUT_BYTES)
+            if len(body) != artifact.output_bytes:
+                raise OSError("report export spool byte count changed during read")
+            return body.decode("utf-8"), artifact.filename
+        finally:
+            artifact.close()
 
     async def _build_csv_artifact_for_report(
         self,
@@ -214,26 +301,20 @@ class ReportExportService:
                 self.budget.check_elapsed()
 
             self.budget.check_elapsed()
-            output_bytes = self.budget.snapshot().output_bytes
-            spool.seek(0)
-            body = spool.read(EXPORT_MAX_OUTPUT_BYTES)
-            if len(body) != output_bytes:
-                raise OSError("report export spool byte count changed during read")
+            snapshot = self.budget.snapshot()
             spool_rolled = bool(getattr(spool, "_rolled", False))
-        finally:
-            spool_rolled = bool(getattr(spool, "_rolled", False))
+        except BaseException:
             spool.close()
+            raise
 
-        snapshot = self.budget.snapshot()
         return ReportExportArtifact(
-            body=body,
+            spool=spool,
             filename=report.filename,
             emitted_data_rows=snapshot.emitted_rows,
             output_bytes=snapshot.output_bytes,
             budget=snapshot,
             spool_threshold_bytes=EXPORT_SPOOL_MAX_MEMORY_BYTES,
             spool_rolled=spool_rolled,
-            spool_closed=spool.closed,
         )
 
     def _build_owner_kpi_summary_rows(self, studio_id: str) -> list[dict[str, Any]]:

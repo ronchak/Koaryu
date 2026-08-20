@@ -16,6 +16,13 @@ from app.services.report_export_service import ReportExportService, require_repo
 from tests.fakes.supabase import TableBackedSupabase
 
 
+async def consume_streaming_response(response):
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def student_row(index: int, *, studio_id: str = "studio-1") -> dict:
     return {
         "id": f"s-{index:04d}",
@@ -427,7 +434,9 @@ class ReportExportServiceTest(unittest.TestCase):
                 supabase=supabase,
             ))
 
-        self.assertIn(b"s-0001", response.body)
+        body = asyncio.run(consume_streaming_response(response))
+        self.assertIn(b"s-0001", body)
+        self.assertEqual(response.headers["Content-Length"], str(len(body)))
         self.assertEqual(response.headers["Cache-Control"], "no-store, private")
         self.assertEqual(response.headers["Vary"], "Authorization, X-Studio-Id, Cookie")
         audit = supabase.tables["audit_logs"][0]
