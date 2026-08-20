@@ -13,6 +13,7 @@ import {
 } from "@/lib/store-student-pages";
 import { buildStudentPagePath } from "@/lib/student-roster-query";
 import {
+  hasStudentRosterSearchChanged,
   normalizeStudentListSearch,
   shouldScheduleStudentRosterSearch,
   type StudentListQuery,
@@ -191,6 +192,7 @@ export function useStudentsPageController({
   const [pagedPreviousCursor, setPagedPreviousCursor] = useState<string | null>(null);
   const inactivityScheduleRequestSeqRef = useRef(0);
   const normalizedSearch = normalizeStudentListSearch(search);
+  const lastInputNormalizedSearchRef = useRef(normalizedSearch);
   const debouncedSearch = useDebouncedValue(
     normalizedSearch,
     STUDENTS_SEARCH_DEBOUNCE_MS,
@@ -921,6 +923,7 @@ export function useStudentsPageController({
         setTagInput("");
       },
       onClearFilters: () => {
+        lastInputNormalizedSearchRef.current = "";
         setSearch("");
         setStatusFilter("");
         setProgramFilter("");
@@ -957,8 +960,13 @@ export function useStudentsPageController({
         });
       },
       onSearchChange: (value: string) => {
+        const previousNormalizedSearch = lastInputNormalizedSearchRef.current;
+        const nextNormalizedSearch = normalizeStudentListSearch(value);
+        lastInputNormalizedSearchRef.current = nextNormalizedSearch;
         setSearch(value);
-        resetRosterPaging();
+        if (hasStudentRosterSearchChanged(previousNormalizedSearch, nextNormalizedSearch)) {
+          resetRosterPaging();
+        }
       },
       onSort: handleSort,
       onStatusFilterChange: (value: StudentRosterStatusFilter | "") => {

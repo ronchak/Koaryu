@@ -40,6 +40,13 @@ export function shouldScheduleStudentRosterSearch(
   return normalizeStudentListSearch(rawSearch) === normalizeStudentListSearch(settledSearch);
 }
 
+export function hasStudentRosterSearchChanged(
+  previousSearch: string | null | undefined,
+  nextSearch: string | null | undefined,
+) {
+  return normalizeStudentListSearch(previousSearch) !== normalizeStudentListSearch(nextSearch);
+}
+
 function previewStudentListName(student: Student) {
   return `${student.legal_last_name}, ${student.preferred_name || student.legal_first_name}`.toLowerCase();
 }
