@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from threading import Barrier, Event, Lock
@@ -11,8 +12,11 @@ from fastapi import HTTPException
 from app.services import platform_billing_service, studio_scope
 from app.services.platform_billing_service import (
     ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS,
+    AccessRepairInFlight,
     PlatformBillingService,
 )
+from app.core.deps import run_supabase_operation
+from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 
 
 def _always_pending(_service, _row):
@@ -29,6 +33,14 @@ def _provider_repair(service, row, *, strict_repairs=False):
 
 
 SINGLE_REPAIR_STEP = ((_always_pending, _provider_repair),)
+
+
+def _retry_after_in_flight(operation):
+    while True:
+        try:
+            return operation()
+        except AccessRepairInFlight as pending:
+            pending.completion.result(timeout=5)
 
 
 class ThreadSafeAccessRepairService(PlatformBillingService):
@@ -131,7 +143,12 @@ class SingleFlightTest(TestCase):
 
         def call():
             start.wait(5)
-            return service.get_access_status_row("studio_1", strict_repairs=True)
+            return _retry_after_in_flight(
+                lambda: service.get_access_status_row(
+                    "studio_1",
+                    strict_repairs=True,
+                )
+            )
 
         with patch.object(platform_billing_service, "StripeService", BlockingStripe):
             executor = ThreadPoolExecutor(max_workers=8)
@@ -164,9 +181,11 @@ class SingleFlightTest(TestCase):
 
         def call():
             start.wait(5)
-            return studio_scope.get_platform_subscription_access(
-                service.supabase,
-                "studio_1",
+            return _retry_after_in_flight(
+                lambda: studio_scope.get_platform_subscription_access(
+                    service.supabase,
+                    "studio_1",
+                )
             )
 
         # The service only uses its own row harness, so this sentinel is never
@@ -304,7 +323,12 @@ class SingleFlightTest(TestCase):
 
         def call():
             start.wait(5)
-            return service.get_access_status_row("studio_1", strict_repairs=True)
+            return _retry_after_in_flight(
+                lambda: service.get_access_status_row(
+                    "studio_1",
+                    strict_repairs=True,
+                )
+            )
 
         executor = ThreadPoolExecutor(max_workers=8)
         with patch.object(platform_billing_service, "ACCESS_REPAIR_STEPS", ((_always_pending, repair),)):
@@ -331,3 +355,64 @@ class SingleFlightTest(TestCase):
     def _clear_window(self, studio_id):
         with platform_billing_service._access_repair_metadata_lock:
             platform_billing_service._access_repair_retry_after.pop(studio_id, None)
+
+    def test_runtime_followers_yield_interactive_capacity_while_leader_is_blocked(self):
+        BlockingStripe.reset()
+        service = ThreadSafeAccessRepairService([self._row()])
+        config = SupabaseLaneConfig(
+            max_workers=4,
+            max_queue=0,
+            queue_wait_timeout=0.05,
+            operation_wait_timeout=2.0,
+        )
+        runtime = SupabaseProviderRuntime(
+            config,
+            config,
+            client_factory=object,
+            client_closer=lambda _client: None,
+            thread_name_prefix="repair-yield-test",
+        )
+
+        async def exercise():
+            def repair(_client):
+                return service.get_access_status_row(
+                    "studio_1",
+                    strict_repairs=True,
+                )
+
+            leader = asyncio.create_task(run_supabase_operation(runtime, repair))
+            self.assertTrue(await asyncio.to_thread(BlockingStripe.started.wait, 1))
+            followers = [
+                asyncio.create_task(run_supabase_operation(runtime, repair))
+                for _ in range(3)
+            ]
+
+            for _ in range(100):
+                snapshot = runtime.interactive_snapshot()
+                if snapshot.submitted >= 4 and snapshot.completed >= 3:
+                    break
+                await asyncio.sleep(0.005)
+            snapshot = runtime.interactive_snapshot()
+            self.assertEqual(snapshot.admitted, 1)
+            self.assertEqual(snapshot.completed, 3)
+
+            # This would saturate if the three followers still occupied the
+            # other three interactive workers while waiting for the leader.
+            self.assertEqual(
+                await run_supabase_operation(runtime, lambda _client: "unrelated"),
+                "unrelated",
+            )
+
+            BlockingStripe.release.set()
+            return await asyncio.gather(leader, *followers)
+
+        try:
+            with patch.object(platform_billing_service, "StripeService", BlockingStripe):
+                results = asyncio.run(exercise())
+        finally:
+            BlockingStripe.release.set()
+            runtime.shutdown()
+
+        self.assertEqual(results, [self._row()] * 4)
+        self.assertEqual(BlockingStripe.calls, 1)
+        self.assertEqual(runtime.interactive_snapshot().admitted, 0)

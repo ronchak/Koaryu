@@ -91,6 +91,10 @@ class ProviderLane(Generic[ResourceT]):
         self._cancelled = 0
         self._failed = 0
 
+    @property
+    def operation_wait_timeout(self) -> float:
+        return self._operation_wait_timeout
+
     def snapshot(self) -> ProviderLaneSnapshot:
         """Return a consistent immutable snapshot for later metrics wiring."""
         with self._state_lock:

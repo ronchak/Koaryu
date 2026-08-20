@@ -169,6 +169,24 @@ class StudentService:
     ) -> StudentResponse:
         return await self._student_photo_actions().upload(student_id, studio_id, actor_id, file)
 
+    def upload_validated_student_photo(
+        self,
+        student_id: str,
+        studio_id: str,
+        actor_id: str,
+        content: bytes,
+        content_type: str,
+        extension: str,
+    ) -> StudentResponse:
+        return self._student_photo_actions().upload_validated(
+            student_id,
+            studio_id,
+            actor_id,
+            content,
+            content_type,
+            extension,
+        )
+
     async def delete_student_photo(
         self,
         student_id: str,

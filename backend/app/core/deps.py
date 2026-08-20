@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from typing import Any, Awaitable, Callable, Literal, Optional, TypeVar
 
@@ -14,6 +15,7 @@ from app.core.provider_lane import (
     ProviderLaneSaturatedError,
 )
 from app.core.provider_runtime import SupabaseProviderRuntime
+from app.services.platform_billing_service import AccessRepairInFlight
 from app.services.studio_scope import (
     resolve_belt_configuration_admin_staff_role_for_user,
     resolve_lead_conversion_manager_staff_role_for_user,
@@ -76,9 +78,20 @@ async def run_supabase_operation(
 ) -> ResultT:
     """Run provider work on the owned lane or inline for fake-client overrides."""
     if isinstance(provider, SupabaseProviderRuntime):
+        timeout = asyncio.timeout(provider.operation_wait_timeout(lane))
         try:
-            run = provider.run_bulk if lane == "bulk" else provider.run_interactive
-            return await run(operation)
+            async with timeout:
+                run = provider.run_bulk if lane == "bulk" else provider.run_interactive
+                while True:
+                    try:
+                        return await run(operation)
+                    except AccessRepairInFlight as pending:
+                        # Shield the process-wide completion signal from one
+                        # disconnected or timed-out follower. The surrounding
+                        # deadline still bounds this caller's total wait.
+                        await asyncio.shield(
+                            asyncio.wrap_future(pending.completion)
+                        )
         except ProviderLaneSaturatedError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -91,11 +104,23 @@ async def run_supabase_operation(
                 detail=PROVIDER_OPERATION_TIMEOUT_DETAIL,
                 headers={"Retry-After": "1"},
             ) from exc
+        except TimeoutError as exc:
+            if not timeout.expired():
+                raise
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=PROVIDER_OPERATION_TIMEOUT_DETAIL,
+                headers={"Retry-After": "1"},
+            ) from exc
 
-    result = operation(provider)
-    if inspect.isawaitable(result):
-        return await result
-    return result
+    while True:
+        try:
+            result = operation(provider)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        except AccessRepairInFlight as pending:
+            await asyncio.shield(asyncio.wrap_future(pending.completion))
 
 
 async def get_operational_alert_supabase() -> DeadlineBoundSupabaseClient:

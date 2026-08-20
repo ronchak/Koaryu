@@ -36,6 +36,7 @@ from app.services.studio_scope import (
     resolve_billing_routine_write_staff_role_for_user,
 )
 from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES, validate_csv_import_mapping
+from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_service import StudentService
 import json
 
@@ -185,9 +186,18 @@ async def upload_student_photo(
     studio_id: str = Depends(get_current_write_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
-    async def _provider_operation(client):
+    content, content_type, extension = await StudentPhotoStore.read_validated_file(file)
+
+    def _provider_operation(client):
         service = StudentService(client)
-        return await service.upload_student_photo(student_id, studio_id, user_id, file)
+        return service.upload_validated_student_photo(
+            student_id,
+            studio_id,
+            user_id,
+            content,
+            content_type,
+            extension,
+        )
     return await run_supabase_operation(
         supabase,
         _provider_operation,

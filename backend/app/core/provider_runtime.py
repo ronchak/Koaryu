@@ -120,6 +120,14 @@ class SupabaseProviderRuntime(Generic[ResultT]):
     def bulk_snapshot(self) -> ProviderLaneSnapshot:
         return self._bulk_lane.snapshot()
 
+    def operation_wait_timeout(self, lane: str) -> float:
+        """Return the full caller deadline for one request-boundary operation."""
+        if lane == "interactive":
+            return self._interactive_lane.operation_wait_timeout
+        if lane == "bulk":
+            return self._bulk_lane.operation_wait_timeout
+        raise ValueError(f"unknown provider lane: {lane}")
+
     def shutdown(self) -> None:
         """Reject work, drain both lanes, and report every shutdown failure."""
         with self._lifecycle_lock:

@@ -1,5 +1,6 @@
 import ast
 import asyncio
+from concurrent.futures import Future
 import threading
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from app import main
 from app.api.v1.endpoints.billing import _audit_billing_action
 from app.core.deps import run_supabase_operation
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
+from app.services.platform_billing_service import AccessRepairInFlight
 
 
 ROOT = Path(__file__).parents[1]
@@ -152,6 +154,28 @@ def test_runtime_saturation_and_operation_timeout_are_stable_http_errors():
     asyncio.run(exercise())
 
 
+def test_access_repair_follower_wait_uses_total_deadline_without_cancelling_leader_signal():
+    async def exercise():
+        runtime = _runtime(workers=1, queue=0, operation_timeout=0.01)
+        completion: Future[None] = Future()
+        try:
+            with pytest.raises(HTTPException) as timed_out:
+                await run_supabase_operation(
+                    runtime,
+                    lambda _client: (_ for _ in ()).throw(
+                        AccessRepairInFlight(completion)
+                    ),
+                )
+            assert timed_out.value.status_code == 504
+            assert timed_out.value.detail == "Provider operation timed out."
+            assert not completion.cancelled()
+        finally:
+            completion.set_result(None)
+            runtime.shutdown()
+
+    asyncio.run(exercise())
+
+
 def test_background_billing_audit_reacquires_runtime_and_constructs_fresh_service():
     runtime = _runtime()
     constructed = []
@@ -231,6 +255,36 @@ def test_all_request_provider_dependencies_are_wrapped_and_lane_mapping_is_expli
     assert dependency_count == 129
     assert wrapped_count == dependency_count
     assert {name for name, lane in lane_by_function.items() if lane == "bulk"} == EXPECTED_BULK_FUNCTIONS
+
+
+def test_student_photo_body_is_read_before_interactive_provider_admission():
+    path = ENDPOINTS / "students.py"
+    tree = ast.parse(path.read_text())
+    upload = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "upload_student_photo"
+    )
+    provider_operation = next(
+        node
+        for node in upload.body
+        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+        and node.name == "_provider_operation"
+    )
+
+    assert any(
+        isinstance(node, ast.Await)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute)
+        and node.value.func.attr == "read_validated_file"
+        for statement in upload.body[: upload.body.index(provider_operation)]
+        for node in ast.walk(statement)
+    )
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "file"
+        for node in ast.walk(provider_operation)
+    )
 
 
 def test_remaining_application_client_factories_are_isolated_special_cases():

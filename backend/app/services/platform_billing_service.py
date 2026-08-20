@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import socket
+from concurrent.futures import Future
 from datetime import datetime, timezone
-from threading import Event, Lock
+from threading import Lock
 from time import monotonic
 from typing import Any, Optional
 from uuid import uuid4
@@ -124,6 +125,19 @@ class AccessRepairDeferred(Exception):
         self.studio_id = studio_id
 
 
+class AccessRepairInFlight(Exception):
+    """A strict repair follower must yield its provider-lane permit.
+
+    The shared future is only a completion signal. Followers never receive the
+    leader's client, row, result, or exception; after it completes they submit
+    their own operation again and re-read authoritative state.
+    """
+
+    def __init__(self, completion: Future[None]):
+        super().__init__("strict access repair already in flight")
+        self.completion = completion
+
+
 class _AccessRepairWindow:
     """What a suppressed request must replay, and until when.
 
@@ -156,10 +170,10 @@ class _AccessRepairWindow:
 class _AccessRepairFlight:
     """A process-local completion signal for one strict studio repair."""
 
-    __slots__ = ("done",)
+    __slots__ = ("completion",)
 
     def __init__(self) -> None:
-        self.done = Event()
+        self.completion: Future[None] = Future()
 
 
 # Keyed by studio_id. Process-local by design: it is a retry throttle, not a
@@ -214,11 +228,10 @@ class PlatformBillingService:
                         leader = False
 
                 if not leader:
-                    # Waiting is deliberately outside the metadata lock, so a
-                    # slow Stripe repair for one studio cannot block another
-                    # studio's leader or any window bookkeeping.
-                    flight.done.wait()
-                    continue
+                    # Never block an admitted provider worker behind another
+                    # provider worker. The request boundary awaits this signal
+                    # on the event loop, then retries with its own client.
+                    raise AccessRepairInFlight(flight.completion)
 
                 try:
                     return self._get_access_status_row_uncoordinated(
@@ -232,7 +245,10 @@ class PlatformBillingService:
                     with _access_repair_metadata_lock:
                         if _access_repair_flights.get(studio_id) is flight:
                             _access_repair_flights.pop(studio_id, None)
-                        flight.done.set()
+                    # Complete after removing the flight so a resumed follower
+                    # cannot observe the already-complete flight and spin.
+                    if not flight.completion.done():
+                        flight.completion.set_result(None)
 
         return self._get_access_status_row_uncoordinated(
             studio_id,
