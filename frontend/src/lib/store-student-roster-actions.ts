@@ -6,11 +6,16 @@ import {
   buildPreviewStudentListPage,
   type StudentListQuery,
 } from "@/lib/student-list-page";
-import { applyPreviewStudentUpdate, buildPreviewStudent } from "@/lib/student-store-model";
+import {
+  applyPreviewStudentUpdate,
+  buildPreviewStudent,
+  normalizeStudentIds,
+} from "@/lib/student-store-model";
 import {
   isStudentRosterSnapshotCurrent,
   shouldRetryStudentRosterRefresh,
 } from "@/lib/student-roster-reconciliation";
+import { deleteStudentsAction } from "@/lib/student-bulk-archive-action";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import { localId } from "@/lib/store-storage";
 import {
@@ -151,59 +156,28 @@ export function useStoreStudentRosterActions({
   ]);
 
   const deleteStudents = useCallback(async (ids: string[]) => {
-    if (isPreviewMode) {
-      const idSet = new Set(ids);
-      ids.forEach((studentId) => {
-        const photoUrl = previewStudentPhotoUrlsRef.current[studentId];
-        if (photoUrl) {
-          URL.revokeObjectURL(photoUrl);
-          delete previewStudentPhotoUrlsRef.current[studentId];
-        }
-      });
-      const next = studentsRef.current.filter((student) => !idSet.has(student.id));
-      persistStudents(next);
-      onStudentMutation();
-      return;
-    }
-
-    studentMutationEpochRef.current += 1;
-    const liveRequest = beginLiveAuthRequest();
-    try {
-      for (const id of ids) {
-        await api.delete(`/students/${id}`, liveRequest.token);
-      }
-    } catch (error) {
-      if (liveRequest.isCurrent()) {
-        onStudentMutation();
-        try {
-          const mutationEpoch = studentMutationEpochRef.current;
-          const requestSequence = studentRosterRequestSequenceRef.current + 1;
-          studentRosterRequestSequenceRef.current = requestSequence;
-          const nextStudents = await fetchAllStudents(liveRequest.token, { timeoutMs: 30000 });
-          if (isStudentRosterSnapshotCurrent({
-            authCurrent: liveRequest.isCurrent(),
-            currentMutationEpoch: studentMutationEpochRef.current,
-            currentRequestSequence: studentRosterRequestSequenceRef.current,
-            mutationEpochAtStart: mutationEpoch,
-            requestSequence,
-          })) {
-            commitStudents(nextStudents);
-          }
-        } catch (refreshError) {
-          console.error("Failed to refresh students after delete error", refreshError);
-        }
-      }
-      throw error;
-    }
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
-    const idSet = new Set(ids);
-    commitStudents(
-      (current) => current.filter((student) => !idSet.has(student.id)),
-      { mayBePartial: studentsMayBePartial }
-    );
-    onStudentMutation();
+    await deleteStudentsAction({
+      beginLiveAuthRequest,
+      commitStudents,
+      fetchAllStudents,
+      ids,
+      isPreviewMode,
+      isStudentRosterSnapshotCurrent,
+      normalizeStudentIds,
+      onStudentMutation,
+      persistStudents,
+      postArchive: (requestToken, studentIds) => api.post<{ updated: number }>(
+        "/students/bulk/archive",
+        { student_ids: studentIds },
+        requestToken,
+      ),
+      previewStudentPhotoUrlsRef,
+      revokeObjectURL: (url) => URL.revokeObjectURL(url),
+      studentMutationEpochRef,
+      studentRosterRequestSequenceRef,
+      studentsMayBePartial,
+      studentsRef,
+    });
   }, [
     beginLiveAuthRequest,
     commitStudents,

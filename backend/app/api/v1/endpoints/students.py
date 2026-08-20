@@ -27,7 +27,7 @@ from app.schemas.student import (
     CsvImportResult,
     CsvParseResponse,
     BulkTagUpdate,
-    BulkStatusUpdate,
+    BulkStatusUpdate, BulkStudentArchiveRequest,
     StudentListSortDir,
     StudentListSortKey,
     StudentStatus,
@@ -43,6 +43,7 @@ from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES, validate_csv_i
 from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_service import StudentService
 from app.services.student_roster_query import StudentRosterCursorError
+from app.services.dashboard_summary_service import dashboard_summary_fact_cache
 import json
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -427,6 +428,26 @@ async def bulk_update_status(
         service = StudentService(client)
         count = await service.bulk_update_status(data, studio_id, user_id)
         return {"updated": count}
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )
+
+
+@router.post("/bulk/archive", response_model=BulkStudentUpdateResponse, status_code=200)
+async def bulk_archive_students(
+    data: BulkStudentArchiveRequest,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        service = StudentService(client)
+        count = await service.archive_students(data, studio_id, user_id)
+        dashboard_summary_fact_cache.invalidate(studio_id, domain="dashboard")
+        return {"updated": count}
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

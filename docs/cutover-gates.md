@@ -38,9 +38,9 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`
 That manifest string is **not** echoed in the response body. A runbook that tells you to
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
 
-If migration 112 commits and migration 113 does not, stop. No approved
-application is eligible to serve at that V19 head. The prior `709239` application
-requires V16, while the release candidate requires V20. Older V2 consumers from
+If migration 113 commits and migration 114 does not, stop. No approved
+application is eligible to serve at that V20 head. The prior `709239` application
+requires V16, while the release candidate requires V21. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
@@ -48,9 +48,10 @@ Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. From the exact immutable candidate, run a fresh guarded
 inspection that must return `state=staff-identity`, use its state-bound token to
 dry-run the exact remaining migration packet through
-`20260820025759_roster_read_rpc.sql`, and let the human operator run the existing
-production apply gate. Promotion remains blocked until migration 113 produces
-exact V20 readiness and the final raw
+`20260820025759_roster_read_rpc.sql` and
+`20260820060216_atomic_bulk_student_archive.sql`, and let the human operator run the existing
+production apply gate. Promotion remains blocked until migration 114 produces
+exact V21 readiness and the final raw
 catalog/provider fingerprint.
 
 ## Gates that will refuse you

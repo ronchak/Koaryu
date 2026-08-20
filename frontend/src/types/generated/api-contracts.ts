@@ -483,6 +483,10 @@ export interface ApiBulkStatusUpdate {
   status: "active" | "trialing" | "inactive" | "paused" | "canceled";
 }
 
+export interface ApiBulkStudentArchiveRequest {
+  student_ids: string[];
+}
+
 export interface ApiBulkStudentUpdateResponse {
   updated: number;
 }

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing import Literal, Optional, get_args
 from datetime import date
+from uuid import UUID
 
 StudentStatus = Literal["active", "trialing", "inactive", "paused", "canceled"]
 STUDENT_STATUSES = set(get_args(StudentStatus))
@@ -321,6 +322,10 @@ class BulkTagUpdate(BaseModel):
 class BulkStatusUpdate(BaseModel):
     student_ids: list[str] = Field(min_length=1)
     status: StudentStatus
+
+
+class BulkStudentArchiveRequest(BaseModel):
+    student_ids: list[UUID] = Field(min_length=1, max_length=200)
 
 
 class BulkStudentUpdateResponse(BaseModel):

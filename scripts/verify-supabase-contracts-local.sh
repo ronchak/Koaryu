@@ -807,6 +807,17 @@ for verification_file in "${verification_files[@]}"; do
   fi
 done
 
+echo "[concurrency] RUN student bulk archive hard-delete/lock-order serialization"
+if run_interruptible bash \
+  "$ROOT_DIR/scripts/verify-student-bulk-archive-concurrency.sh" \
+  "$PSQL" "$SOCKET_DIR" "$PG_PORT"; then
+  echo "[concurrency] PASS student bulk archive hard-delete/lock-order serialization"
+else
+  status=$?
+  echo "[concurrency] FAIL student bulk archive hard-delete/lock-order serialization (exit $status)" >&2
+  exit "$status"
+fi
+
 echo "[concurrency] RUN operational alert clear/completion serialization"
 if run_interruptible bash \
   "$ROOT_DIR/scripts/verify-operational-alert-clear-complete-race.sh" \

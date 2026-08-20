@@ -114,6 +114,7 @@ export type BulkStudentTagUpdateResponse = ApiContracts.ApiBulkStudentUpdateResp
 
 export type BulkStudentStatusUpdateRequest = ApiContracts.ApiBulkStatusUpdate;
 export type BulkStudentStatusUpdateResponse = ApiContracts.ApiBulkStudentUpdateResponse;
+export type BulkStudentArchiveRequest = ApiContracts.ApiBulkStudentArchiveRequest;
 
 // ---- CSV Import ----
 

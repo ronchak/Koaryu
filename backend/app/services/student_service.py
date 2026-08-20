@@ -6,7 +6,7 @@ from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     GuardianResponse,
     CsvImportOptions, CsvImportResult,
-    BulkTagUpdate, BulkStatusUpdate,
+    BulkTagUpdate, BulkStatusUpdate, BulkStudentArchiveRequest,
     StudentListSortDir, StudentListSortKey, StudentStatus,
     StudentRosterPageResponse,
     StudentProgramMembershipCreate, StudentProgramMembershipResponse, StudentProgramMembershipUpdate,
@@ -287,6 +287,11 @@ class StudentService:
         self, data: BulkStatusUpdate, studio_id: str, actor_id: str
     ) -> int:
         return await self._bulk_actions().update_status(data, studio_id, actor_id)
+
+    async def archive_students(
+        self, data: BulkStudentArchiveRequest, studio_id: str, actor_id: str
+    ) -> int:
+        return await self._bulk_actions().archive_students(data, studio_id, actor_id)
 
     # ---- CSV Import ----
 

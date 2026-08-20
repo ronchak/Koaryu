@@ -39,8 +39,8 @@ Merging `main` does not authorize an automatic production deployment. `frontend/
 
 Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only V4 Supabase preflight and requires the exact final migration count
-113, head `20260820025759`, the exact 29-version pending sequence, manifest version
-`release-db-attestation-v20`, the exact zero-invalid-count V18 archive-critical
+114, head `20260820060216`, the exact 30-version pending sequence, manifest version
+`release-db-attestation-v21`, the exact zero-invalid-count V18 archive-critical
 semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`, and required-object/security proof. That manifest covers
 `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware
 triggers, and every public RLS table's restrictive membership guard. The post-111
