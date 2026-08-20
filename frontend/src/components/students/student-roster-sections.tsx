@@ -517,6 +517,8 @@ export function StudentRosterReadingRail({
 
 export function StudentRosterFooter({
   filteredCount,
+  hasNextPage,
+  hasPreviousPage,
   isPagedLoading,
   onNextPage,
   onPreviousPage,
@@ -529,6 +531,8 @@ export function StudentRosterFooter({
   usesDerivedRosterFilters,
 }: {
   filteredCount: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
   isPagedLoading: boolean;
   onNextPage: () => void;
   onPreviousPage: () => void;
@@ -551,13 +555,13 @@ export function StudentRosterFooter({
           ? `Showing ${filteredCount} of ${studentsCount} students`
           : `Showing ${pageStart}-${pageEnd} of ${pagedTotal} students`}
       </p>
-      {!usesDerivedRosterFilters && totalPages > 1 ? (
+      {!usesDerivedRosterFilters && (totalPages > 1 || hasNextPage || hasPreviousPage) ? (
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
             size="sm"
             onClick={onPreviousPage}
-            disabled={page <= 1 || isPagedLoading}
+            disabled={!hasPreviousPage || isPagedLoading}
           >
             <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
             Previous
@@ -569,7 +573,7 @@ export function StudentRosterFooter({
             variant="secondary"
             size="sm"
             onClick={onNextPage}
-            disabled={page >= totalPages || isPagedLoading}
+            disabled={!hasNextPage || isPagedLoading}
           >
             Next
             <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />

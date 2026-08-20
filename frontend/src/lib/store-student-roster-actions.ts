@@ -23,7 +23,7 @@ import type {
   Program,
   Student,
   StudentCreate,
-  StudentListResponse,
+  StudentRosterPageResponse,
   StudentUpdate,
 } from "@/types";
 
@@ -289,9 +289,19 @@ export function useStoreStudentRosterActions({
   const listStudentsPage = useCallback(async (
     query: StudentListQuery = {},
     options?: { signal?: AbortSignal; timeoutMs?: number | null }
-  ): Promise<StudentListResponse> => {
+  ): Promise<StudentRosterPageResponse> => {
     if (isPreviewMode) {
-      return buildPreviewStudentListPage(studentsRef.current, query);
+      const previewPage = buildPreviewStudentListPage(studentsRef.current, query);
+      return {
+        items: previewPage.items,
+        total: previewPage.total,
+        page_size: previewPage.page_size,
+        page_ordinal: previewPage.page,
+        has_next: false,
+        next_cursor: null,
+        has_previous: false,
+        previous_cursor: null,
+      };
     }
 
     if (!token) {

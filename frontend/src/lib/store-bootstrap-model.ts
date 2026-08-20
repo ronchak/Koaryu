@@ -7,7 +7,7 @@ import type {
   Lead,
   Program,
   Student,
-  StudentListResponse,
+  StudentRosterPageResponse,
   UserProfile,
 } from "@/types";
 
@@ -89,7 +89,7 @@ export function buildLegacyBootstrapResponse({
 }: {
   auth: AuthProfileResponse;
   studio: DashboardBootstrapStudioSummary;
-  studentsPage: StudentListResponse;
+  studentsPage: Pick<StudentRosterPageResponse, "items" | "total" | "page_size">;
   programs: Program[];
   leads: Lead[];
   beltLadders: BeltLadder[];

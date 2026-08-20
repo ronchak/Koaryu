@@ -3,6 +3,7 @@ import type { Student, StudentListQueryContract, StudentListResponse } from "@/t
 export type StudentListSortKey = NonNullable<StudentListQueryContract["sort_by"]>;
 export type StudentListSortDir = NonNullable<StudentListQueryContract["sort_dir"]>;
 export type StudentRosterStatusFilter = NonNullable<StudentListQueryContract["status"]>;
+export type StudentRosterNewStudentWindow = NonNullable<StudentListQueryContract["new_students"]>;
 
 export interface StudentListQuery {
   search?: string;
@@ -12,6 +13,31 @@ export interface StudentListQuery {
   pageSize?: number;
   sortKey?: StudentListSortKey;
   sortDir?: StudentListSortDir;
+  cursor?: string | null;
+  fullRoster?: boolean;
+  inactivityDays?: 14 | 30 | 90;
+  newStudents?: StudentRosterNewStudentWindow;
+  today?: string;
+}
+
+export function normalizeStudentListSearch(search?: string | null) {
+  if (!search) {
+    return "";
+  }
+
+  return search
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/[(),%_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+export function shouldScheduleStudentRosterSearch(
+  rawSearch: string | null | undefined,
+  settledSearch: string | null | undefined,
+) {
+  return normalizeStudentListSearch(rawSearch) === normalizeStudentListSearch(settledSearch);
 }
 
 function previewStudentListName(student: Student) {

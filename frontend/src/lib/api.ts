@@ -20,13 +20,21 @@ function apiUrl(path: string) {
 
 export class ApiError extends Error {
   status: number;
+  readonly detail?: ApiCursorErrorDetail;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, detail?: ApiCursorErrorDetail) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
+
+export type ApiCursorErrorDetail = {
+  code: string;
+  message: string;
+  recover_to: "first" | "nearest_prior";
+};
 
 export function isSubscriptionRequiredError(error: unknown) {
   return error instanceof ApiError && error.status === 402;
@@ -188,25 +196,56 @@ function formatApiErrorDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-async function parseErrorResponse(res: Response): Promise<string> {
+function parseCursorErrorDetail(detail: unknown): ApiCursorErrorDetail | undefined {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+    return undefined;
+  }
+
+  const record = detail as Record<string, unknown>;
+  if (
+    typeof record.code !== "string" ||
+    typeof record.message !== "string" ||
+    !record.code.trim() ||
+    !record.message.trim() ||
+    (record.recover_to !== "first" && record.recover_to !== "nearest_prior")
+  ) {
+    return undefined;
+  }
+
+  return {
+    code: record.code,
+    message: record.message,
+    recover_to: record.recover_to,
+  };
+}
+
+interface ParsedApiErrorResponse {
+  message: string;
+  detail?: ApiCursorErrorDetail;
+}
+
+async function parseErrorResponse(res: Response): Promise<ParsedApiErrorResponse> {
   const fallback = `API error: ${res.status}`;
   const contentType = res.headers.get("content-type") || "";
   const rawText = await res.text();
 
   if (!rawText) {
-    return fallback;
+    return { message: fallback };
   }
 
   if (contentType.includes("application/json")) {
     try {
       const parsed = JSON.parse(rawText) as { detail?: unknown };
-      return formatApiErrorDetail(parsed.detail, fallback);
+      return {
+        message: formatApiErrorDetail(parsed.detail, fallback),
+        detail: parseCursorErrorDetail(parsed.detail),
+      };
     } catch {
-      return rawText.trim() || fallback;
+      return { message: rawText.trim() || fallback };
     }
   }
 
-  return rawText.trim() || fallback;
+  return { message: rawText.trim() || fallback };
 }
 
 async function parseSuccessResponse<T>(res: Response): Promise<T> {
@@ -266,7 +305,8 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   );
 
   if (!res.ok) {
-    throw new ApiError(await parseErrorResponse(res), res.status);
+    const parsedError = await parseErrorResponse(res);
+    throw new ApiError(parsedError.message, res.status, parsedError.detail);
   }
 
   return parseSuccessResponse<T>(res);
@@ -302,7 +342,8 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
   );
 
   if (!res.ok) {
-    throw new ApiError(await parseErrorResponse(res), res.status);
+    const parsedError = await parseErrorResponse(res);
+    throw new ApiError(parsedError.message, res.status, parsedError.detail);
   }
 
   return parseSuccessResponse<T>(res);
@@ -342,7 +383,8 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
   );
 
   if (!res.ok) {
-    throw new ApiError(await parseErrorResponse(res), res.status);
+    const parsedError = await parseErrorResponse(res);
+    throw new ApiError(parsedError.message, res.status, parsedError.detail);
   }
 
   const contentDisposition = res.headers.get("content-disposition") || "";

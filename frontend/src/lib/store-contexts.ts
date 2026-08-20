@@ -31,7 +31,7 @@ import type {
   StaffRoleName,
   Student,
   StudentCreate,
-  StudentListResponse,
+  StudentRosterPageResponse,
   StudentStatus,
   StudentUpdate,
 } from "@/types";
@@ -87,7 +87,7 @@ export interface StoreContextValue {
   listStudentsPage: (
     query?: StudentListQuery,
     options?: { signal?: AbortSignal; timeoutMs?: number | null }
-  ) => Promise<StudentListResponse>;
+  ) => Promise<StudentRosterPageResponse>;
 
   programs: Program[];
   programsLoaded: boolean;

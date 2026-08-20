@@ -46,7 +46,9 @@ type StudentRosterPageContentProps = {
   filtered: StudentRosterRow[];
   fullRosterRequested: boolean;
   hasActiveFilters: boolean;
+  hasNextPage: boolean;
   hasNewStudentFilter: boolean;
+  hasPreviousPage: boolean;
   inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
   isAdding: boolean;
@@ -118,7 +120,9 @@ export function StudentRosterPageContent({
   filtered,
   fullRosterRequested,
   hasActiveFilters,
+  hasNextPage,
   hasNewStudentFilter,
+  hasPreviousPage,
   inactivityByStudentId,
   inactivityThreshold,
   isAdding,
@@ -313,6 +317,8 @@ export function StudentRosterPageContent({
           pageEnd={pageEnd}
           pageStart={pageStart}
           pagedTotal={pagedTotal}
+          hasNextPage={hasNextPage}
+          hasPreviousPage={hasPreviousPage}
           studentsCount={studentsCount}
           totalPages={totalPages}
           usesDerivedRosterFilters={usesDerivedRosterFilters}

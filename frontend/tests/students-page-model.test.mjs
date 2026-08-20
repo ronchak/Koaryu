@@ -236,7 +236,7 @@ describe("students page model", () => {
     );
   });
 
-  it("chooses derived roster mode only when client-side filters require full data", () => {
+  it("uses the cursor route for live filters and keeps fallback mode local", () => {
     assert.equal(
       shouldUseDerivedRosterFilters({
         fullRosterRequested: false,
@@ -252,6 +252,16 @@ describe("students page model", () => {
         hasNewStudentFilter: false,
         inactivityThreshold: null,
         pagedRosterEnabled: true,
+      }),
+      false
+    );
+    assert.equal(
+      shouldUseDerivedRosterFilters({
+        fullRosterRequested: false,
+        hasNewStudentFilter: true,
+        inactivityThreshold: 14,
+        pagedRosterEnabled: true,
+        isPreviewMode: true,
       }),
       true
     );
