@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, Generic, TypeVar
 
 
@@ -49,13 +49,26 @@ class ThreadAffineProviderExecutor(Generic[ResourceT]):
         self._closed = False
         self._shutdown_complete = threading.Event()
 
-    async def submit(self, operation: Callable[[ResourceT], ResultT]) -> ResultT:
-        """Run ``operation`` with the resource owned by its worker thread."""
+    @property
+    def max_workers(self) -> int:
+        """The configured worker count, exposed read-only to bounded lanes."""
+        return self._max_workers
+
+    def submit_source(self, operation: Callable[[ResourceT], ResultT]) -> Future[ResultT]:
+        """Submit work and return its source ``concurrent.futures.Future``.
+
+        The returned future is deliberately independent of any asyncio task.
+        Callers that need cancellation or timeout semantics must not cancel it
+        unless they explicitly intend to cancel the underlying provider work.
+        """
         with self._state_lock:
             if self._closed:
                 raise RuntimeError("provider executor is shut down")
-            future = self._executor.submit(self._run_operation, operation)
+            return self._executor.submit(self._run_operation, operation)
 
+    async def submit(self, operation: Callable[[ResourceT], ResultT]) -> ResultT:
+        """Run ``operation`` with the resource owned by its worker thread."""
+        future = self.submit_source(operation)
         return await asyncio.wrap_future(future)
 
     def shutdown(self) -> None:

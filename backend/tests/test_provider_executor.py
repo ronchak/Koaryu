@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from concurrent.futures import Future
 
 import pytest
 
@@ -47,6 +48,21 @@ def test_slow_operation_does_not_block_event_loop_heartbeat():
             executor.shutdown()
 
     asyncio.run(scenario())
+
+
+def test_submit_source_returns_the_underlying_future():
+    executor = ThreadAffineProviderExecutor(
+        object,
+        lambda _resource: None,
+        max_workers=1,
+        thread_name_prefix="provider-source-future",
+    )
+    try:
+        source_future = executor.submit_source(lambda _resource: "done")
+        assert isinstance(source_future, Future)
+        assert source_future.result(timeout=2) == "done"
+    finally:
+        executor.shutdown()
 
 
 def test_resources_are_created_reused_and_closed_on_their_own_threads():
