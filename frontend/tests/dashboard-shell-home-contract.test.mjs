@@ -115,6 +115,8 @@ describe("dashboard shell and Home source contracts", () => {
     assert.match(homeSource, /focusTarget/);
     assert.doesNotMatch(homeSource, /Open source/);
     assert.match(homeSource, /isMaterialState\(model\.state\)/);
+    assert.match(homeSource, /data-koaryu-dashboard-shell-ready=\{layoutResolved \? "true" : "false"\}/);
+    assert.match(homeSource, /data-koaryu-dashboard-data-ready=\{layoutResolved && dataReady \? "true" : "false"\}/);
     assert.match(homeSource, /data-koaryu-dashboard-ready=\{layoutResolved \? "true" : "false"\}/);
     assert.match(homeSource, /aria-busy=\{!layoutResolved\}/);
     assert.match(homeSource, /disabled=\{!layoutResolved\}/);
@@ -130,8 +132,10 @@ describe("dashboard shell and Home source contracts", () => {
 
   it("mounts Home on authoritative identity and owns authenticated material and motion semantics", () => {
     assert.match(controllerSource, /const isDashboardIdentityReady = Boolean\(/);
+    assert.match(controllerSource, /isDashboardDataReady: datasetReadiness\.status === "ready"/);
     assert.match(controllerSource, /normalizeDashboardWidgetRole\(currentRole\)/);
     assert.match(contentSource, /if \(!isDashboardIdentityReady\)/);
+    assert.match(contentSource, /dataReady=\{isDashboardDataReady\}/);
     assert.match(contentSource, /identityReady=\{isDashboardIdentityReady\}/);
     for (const token of [
       "--product-ground",

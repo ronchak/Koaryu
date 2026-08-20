@@ -11,6 +11,7 @@ export function DashboardPageContent({
   currentStudioId,
   currentUserId,
   datasetLoadError,
+  isDashboardDataReady,
   isDashboardIdentityReady,
   isPreviewMode,
   retryDashboardDatasets,
@@ -34,6 +35,7 @@ export function DashboardPageContent({
       currentStudioId={currentStudioId}
       currentUserId={currentUserId}
       datasetLoadError={datasetLoadError}
+      dataReady={isDashboardDataReady}
       identityReady={isDashboardIdentityReady}
       isPreviewMode={isPreviewMode}
       retryDashboardDatasets={retryDashboardDatasets}
