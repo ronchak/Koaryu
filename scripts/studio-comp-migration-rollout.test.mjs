@@ -278,20 +278,20 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("requires the exact V19 operational readiness output", () => {
+  it("requires the exact V20 operational readiness output", () => {
     assert.equal(
       validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS),
       EXPECTED_OPERATIONAL_READINESS,
     );
     for (const value of [null, "", "true|101|20260814043325", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
-      assert.throws(() => validateOperationalReadiness(value), /V19 operational readiness/);
+      assert.throws(() => validateOperationalReadiness(value), /V20 operational readiness/);
     }
   });
 
   it("requires the exact archive-critical semantic manifest output", () => {
     assert.equal(
       EXPECTED_CRITICAL_SURFACE_MANIFEST,
-      "0:6c7f4eb2d78e203c0054fd0701398c373089e3409473e7f123ee90965ff161b1",
+      "0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a",
     );
     assert.equal(
       validateCriticalSurfaceManifest(EXPECTED_CRITICAL_SURFACE_MANIFEST),
@@ -319,12 +319,12 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(WRITER_RETURN_CONTRACT_STATE_SQL, /TABLE\(student_id uuid, guardian_imported boolean\)/);
   });
 
-  it("decodes the pinned CLI single-field CSV contract before exact V19 validation", () => {
+  it("decodes the pinned CLI single-field CSV contract before exact V20 validation", () => {
     const quotedReadiness = singleValueCsv(
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|112\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|113\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -361,10 +361,10 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-112 packet from immutable ancestry and source hashes", () => {
+  it("derives an exact 100-to-113 packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 112);
+    assert.equal(packet.migrationCount, 113);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -383,7 +383,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
     assert.equal(packet.integrationComplete, true);
-    assert.equal(packet.pendingMigrations.length, 12);
+    assert.equal(packet.pendingMigrations.length, 13);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
       ROLLOUT.releasePendingVersions,
@@ -818,21 +818,21 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("independently rejects every non-exact V19 output before post certification", () => {
+  it("independently rejects every non-exact V20 output before post certification", () => {
     const packet = candidatePacket();
     for (const operationalReadiness of [
       null,
       "",
       EXPECTED_OPERATIONAL_READINESS.replace(/^true/, "false"),
       EXPECTED_OPERATIONAL_READINESS.replace(`|${ROLLOUT.finalMigrationCount}|`, "|109|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("|20260820012533|", "|20260814213000|"),
-      EXPECTED_OPERATIONAL_READINESS.replace(",20260820012533|", "|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("|20260820025759|", "|20260814213000|"),
+      EXPECTED_OPERATIONAL_READINESS.replace(",20260820025759|", "|"),
       EXPECTED_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v19", "release-db-attestation-v16"),
+      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v20", "release-db-attestation-v16"),
     ]) {
       assert.throws(
         () => classifyStateSnapshot(postSnapshot(packet, { operationalReadiness }), packet),
-        /V19 operational readiness/,
+        /V20 operational readiness/,
       );
     }
   });
@@ -1335,7 +1335,7 @@ describe("studio-comp migration rollout guard", () => {
         ["operational_readiness", snapshot.operationalReadiness],
         ["writer_return_contract_state", snapshot.writerReturnContractState],
         ["migration_row_count", expected.state === "pre" ? "84" : expected.state === "intermediate" ? "101" : expected.state === "recovery" ? "102" : expected.state === "convergence" ? "103" : expected.state === "attested" ? "104" : expected.state === "column-attested" ? "108" : expected.state === "trial-locked" ? String(ROLLOUT.trialLockedMigrationCount) : expected.state === "staff-identity" ? String(ROLLOUT.staffIdentityMigrationCount) : String(ROLLOUT.finalMigrationCount)],
-        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : expected.state === "attested" ? "20260814114500" : expected.state === "column-attested" ? "20260814200000" : expected.state === "trial-locked" ? "20260814213000" : expected.state === "staff-identity" ? "20260815220402" : "20260820012533"],
+        ["migration_newest_version", expected.state === "pre" ? "20260710123456" : expected.state === "intermediate" ? "20260814043325" : expected.state === "recovery" ? "20260814103046" : expected.state === "convergence" ? "20260814105424" : expected.state === "attested" ? "20260814114500" : expected.state === "column-attested" ? "20260814200000" : expected.state === "trial-locked" ? "20260814213000" : expected.state === "staff-identity" ? "20260815220402" : "20260820025759"],
       ]);
       const headers = [];
       const diagnosis = readRemoteDiagnosis(repositoryRoot, packet, {}, (_root, sql, header) => {
@@ -1632,12 +1632,12 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 112-migration integration", () => {
+  it("refuses to certify post-state before the exact 113-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 112-migration sequence/,
+      /exact final 113-migration sequence/,
     );
   });
 
@@ -1672,6 +1672,7 @@ describe("studio-comp migration rollout guard", () => {
         "20260815220402_staff_identity_name_model.sql",
         "20260816012723_archive_staff_access_and_readiness.sql",
         "20260820012533_dashboard_fact_rpc.sql",
+        "20260820025759_roster_read_rpc.sql",
       ],
     );
     assert.deepEqual(
@@ -1684,6 +1685,7 @@ describe("studio-comp migration rollout guard", () => {
       [
         "20260816012723_archive_staff_access_and_readiness.sql",
         "20260820012533_dashboard_fact_rpc.sql",
+        "20260820025759_roster_read_rpc.sql",
       ],
     );
     assert.deepEqual(
@@ -1785,6 +1787,7 @@ describe("studio-comp migration rollout guard", () => {
       "Would push these migrations:",
       "20260816012723_archive_staff_access_and_readiness.sql",
       "20260820012533_dashboard_fact_rpc.sql",
+      "20260820025759_roster_read_rpc.sql",
     ].join("\n");
     assert.deepEqual(
       assertExactPendingMigrations(exactStaffIdentity, staffIdentityPacket),
@@ -1898,13 +1901,14 @@ describe("studio-comp migration rollout guard", () => {
       [
         "20260816012723_archive_staff_access_and_readiness.sql",
         "20260820012533_dashboard_fact_rpc.sql",
+        "20260820025759_roster_read_rpc.sql",
       ],
     );
     assert.notEqual(staffIdentityPacket.sourceManifestSha256, packet.sourceManifestSha256);
     assert.equal(
       buildProductionConfirmationPhrase(staffIdentityPacket),
       [
-        "APPLY 2 MIGRATIONS FROM",
+        "APPLY 3 MIGRATIONS FROM",
         candidateSha,
         "MANIFEST",
         staffIdentityPacket.sourceManifestSha256,

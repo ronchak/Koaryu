@@ -514,7 +514,7 @@ BEGIN
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     SELECT * INTO v_v2 FROM public.koaryu_release_schema_preflight_v2();
     IF v_v4.ready IS TRUE
-       OR NOT ('migration_history_sequence_v19' = ANY(v_v4.security_failures))
+       OR NOT ('migration_history_sequence_v20' = ANY(v_v4.security_failures))
        OR v_v2.ready IS TRUE THEN
         RAISE EXCEPTION 'Readiness accepted substituted migration history: v4=%, v2=%',
             row_to_json(v_v4), row_to_json(v_v2);
