@@ -20,6 +20,7 @@ async def export_report_csv(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
+        service = ReportExportService(client)
         membership = resolve_staff_role_for_user(
             client,
             user_id,
@@ -27,11 +28,12 @@ async def export_report_csv(
             require_platform_subscription=True,
         )
         studio_id = membership["studio_id"]
-        service = ReportExportService(client)
         report = service.get_report(report_id)
         require_report_export_access(report, membership.get("role") or "")
+        service.budget.check_elapsed()
 
-        csv_text, filename = await service.build_csv_for_report(report, studio_id)
+        artifact = await service.build_csv_artifact_for_report(report, studio_id)
+        service.budget.admit_provider_call()
         client.table("audit_logs").insert({
             "studio_id": studio_id,
             "actor_id": user_id,
@@ -43,15 +45,26 @@ async def export_report_csv(
                 "filename": report.filename,
                 "contains_sensitive_data": report.contains_sensitive_data,
                 "min_role": report.min_role,
-                "row_count": max(0, csv_text.count("\n") - 1),
+                "row_count": artifact.emitted_data_rows,
+                "output_bytes": artifact.output_bytes,
+                "spool_threshold_bytes": artifact.spool_threshold_bytes,
+                "spool_rolled": artifact.spool_rolled,
+                "budget": {
+                    "fetched_rows": artifact.budget.fetched_rows,
+                    "provider_calls_before_audit": artifact.budget.provider_calls,
+                    "emitted_rows": artifact.emitted_data_rows,
+                    "output_bytes": artifact.output_bytes,
+                    "elapsed_seconds": artifact.budget.elapsed_seconds,
+                },
             },
         }).execute()
+        service.budget.check_elapsed()
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        download_name = filename.replace(".csv", f"-{timestamp}.csv")
+        download_name = artifact.filename.replace(".csv", f"-{timestamp}.csv")
 
         return Response(
-            content=csv_text,
+            content=artifact.body,
             media_type="text/csv; charset=utf-8",
             headers={
                 "Content-Disposition": f'attachment; filename="{download_name}"',

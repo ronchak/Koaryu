@@ -1,5 +1,7 @@
 import csv
 import json
+import tempfile
+from dataclasses import dataclass
 from datetime import date
 from io import StringIO
 from typing import Any, Callable, Optional, Union
@@ -8,7 +10,11 @@ from fastapi import HTTPException, status
 from supabase import Client
 
 from app.services.report_export_catalog import CsvReport, build_report_catalog
-from app.services.report_export_budget import ReportExportBudget, ReportExportBudgetSnapshot
+from app.services.report_export_budget import (
+    EXPORT_MAX_OUTPUT_BYTES,
+    ReportExportBudget,
+    ReportExportBudgetSnapshot,
+)
 from app.services.report_export_data import ReportExportDataFetcher
 from app.services.report_intelligence import (
     build_belt_momentum_testing_pipeline,
@@ -29,6 +35,41 @@ REPORT_EXPORT_ROLE_RANK = {
     "front_desk": 10,
     "admin": 20,
 }
+EXPORT_SPOOL_MAX_MEMORY_BYTES = 1 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ReportExportArtifact:
+    """A fully generated report whose backing spool is already closed."""
+
+    body: bytes
+    filename: str
+    emitted_data_rows: int
+    output_bytes: int
+    budget: ReportExportBudgetSnapshot
+    spool_threshold_bytes: int
+    spool_rolled: bool
+    spool_closed: bool
+
+
+class _Utf8SpoolWriter:
+    """The text sink used by DictWriter, with byte and elapsed admission."""
+
+    def __init__(self, spool: Any, budget: ReportExportBudget) -> None:
+        self._spool = spool
+        self._budget = budget
+
+    def write(self, value: str) -> int:
+        self._budget.check_elapsed()
+        encoded = value.encode("utf-8")
+        self._budget.consume_output_bytes(len(encoded))
+        written = self._spool.write(encoded)
+        if written != len(encoded):
+            raise OSError("short write while constructing report export")
+        return len(value)
+
+    def flush(self) -> None:
+        return None
 
 
 def _json_text(value: Any) -> str:
@@ -59,10 +100,16 @@ def require_report_export_access(report: CsvReport, role: str) -> None:
 
 
 class ReportExportService:
-    def __init__(self, supabase: Client, *, today: Optional[date] = None):
+    def __init__(
+        self,
+        supabase: Client,
+        *,
+        today: Optional[date] = None,
+        budget: Optional[ReportExportBudget] = None,
+    ):
         self.supabase = supabase
         self.today = today or date.today()
-        self.budget = ReportExportBudget()
+        self.budget = budget or ReportExportBudget()
         self._active_report: Optional[CsvReport] = None
 
     def list_reports(self) -> list[CsvReport]:
@@ -88,15 +135,106 @@ class ReportExportService:
         report = self.get_report(report_id)
         return await self.build_csv_for_report(report, studio_id)
 
-    async def build_csv_for_report(self, report: CsvReport, studio_id: str) -> tuple[str, str]:
+    async def build_csv_artifact(
+        self,
+        report_id: str,
+        studio_id: str,
+    ) -> ReportExportArtifact:
+        report = self.get_report(report_id)
+        return await self.build_csv_artifact_for_report(report, studio_id)
+
+    async def build_csv_artifact_for_report(
+        self,
+        report: CsvReport,
+        studio_id: str,
+    ) -> ReportExportArtifact:
+        # Keep the legacy method as the compatibility seam used by existing
+        # internal tests. The endpoint selects the artifact return path.
+        artifact = await self.build_csv_for_report(
+            report,
+            studio_id,
+            _return_artifact=True,
+        )
+        if not isinstance(artifact, ReportExportArtifact):
+            raise TypeError("report export did not produce a bytes artifact")
+        return artifact
+
+    async def build_csv_for_report(
+        self,
+        report: CsvReport,
+        studio_id: str,
+        *,
+        _return_artifact: bool = False,
+    ) -> tuple[str, str] | ReportExportArtifact:
+        artifact = await self._build_csv_artifact_for_report(report, studio_id)
+        if _return_artifact:
+            return artifact
+        return artifact.body.decode("utf-8"), artifact.filename
+
+    async def _build_csv_artifact_for_report(
+        self,
+        report: CsvReport,
+        studio_id: str,
+    ) -> ReportExportArtifact:
+        self.budget.check_elapsed()
+        spool = tempfile.SpooledTemporaryFile(
+            max_size=EXPORT_SPOOL_MAX_MEMORY_BYTES,
+            mode="w+b",
+        )
         previous_report = self._active_report
         self._active_report = report
         try:
-            rows = report.custom_builder(self, studio_id) if report.custom_builder else self._fetch_table_rows(report, studio_id)
+            rows = (
+                report.custom_builder(self, studio_id)
+                if report.custom_builder
+                else self._fetch_table_rows(report, studio_id)
+            )
+        except BaseException:
+            spool.close()
+            raise
         finally:
             self._active_report = previous_report
-        csv_text = self._write_csv(report.columns, rows)
-        return csv_text, report.filename
+
+        try:
+            self.budget.check_elapsed()
+            writer = csv.DictWriter(
+                _Utf8SpoolWriter(spool, self.budget),
+                fieldnames=list(report.columns),
+                extrasaction="ignore",
+                lineterminator="\r\n",
+            )
+            writer.writeheader()
+            for row in rows:
+                self.budget.check_output_row()
+                writer.writerow({
+                    column: _csv_value(row.get(column))
+                    for column in report.columns
+                })
+                self.budget.consume_output_row()
+                self.budget.check_elapsed()
+
+            self.budget.check_elapsed()
+            output_bytes = self.budget.snapshot().output_bytes
+            spool.seek(0)
+            body = spool.read(EXPORT_MAX_OUTPUT_BYTES)
+            if len(body) != output_bytes:
+                raise OSError("report export spool byte count changed during read")
+            spool_rolled = bool(getattr(spool, "_rolled", False))
+        finally:
+            spool_rolled = bool(getattr(spool, "_rolled", False))
+            spool.close()
+
+        snapshot = self.budget.snapshot()
+        return ReportExportArtifact(
+            body=body,
+            filename=report.filename,
+            emitted_data_rows=snapshot.emitted_rows,
+            output_bytes=snapshot.output_bytes,
+            budget=snapshot,
+            spool_threshold_bytes=EXPORT_SPOOL_MAX_MEMORY_BYTES,
+            spool_rolled=spool_rolled,
+            spool_closed=spool.closed,
+        )
 
     def _build_owner_kpi_summary_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_owner_kpi_summary(self._fetch_intelligence_dataset(studio_id), self.today)
