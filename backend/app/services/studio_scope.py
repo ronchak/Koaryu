@@ -152,6 +152,7 @@ def resolve_staff_membership_state_for_user(
 def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
     from app.services.platform_billing_service import (
         AccessRepairDeferred,
+        AccessRepairInFlight,
         AccessRepairProviderError,
         PlatformBillingService,
     )
@@ -159,6 +160,11 @@ def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
     try:
         row = PlatformBillingService(supabase).get_access_status_row(studio_id, strict_repairs=True)
         return _platform_subscription_access_from_row(row)
+    except AccessRepairInFlight:
+        # The async request boundary releases the provider-lane permit, awaits
+        # the leader's completion signal, and retries with this request's own
+        # thread-affine client.
+        raise
     except (AccessRepairProviderError, AccessRepairDeferred) as exc:
         # A provider fault must never upgrade a studio, so local state is
         # consulted here only to deny. When the local row already shows the

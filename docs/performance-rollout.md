@@ -38,6 +38,45 @@ Optional bundle check:
 npm --prefix frontend run analyze
 ```
 
+## Deterministic Regression Gate
+
+The canonical local gate measures the real `dashboard-summary` service against
+the synthetic fixture, not a browser or a hosted database. It runs the three
+fixed profiles in `performance/dashboard-summary-budget.json`: `small` (25
+students), `medium` (250 students), and `large` (2,500 students). Each profile
+uses the same fixed request, route, role, and supporting table cardinalities.
+
+The versioned budget manifest is the owner of the profile ceilings and metric
+semantics. Its `dashboard-summary-performance-v1` manifest version and
+`dashboard-summary-fixture-v1` fixture revision must remain bound to emitted
+evidence. The gate emits one aggregate-only JSON object to stdout. It never
+emits fixture rows, names, payloads, tenant identifiers, or other privacy-
+bearing data; the stdout result is run evidence and is ephemeral, not a
+tracked source artifact.
+
+Run it from the repository root with the candidate's full SHA:
+
+```bash
+npm run check:performance-regression -- --expected-sha <full-sha>
+```
+
+The runner uses `backend/venv/bin/python` when that interpreter exists. Set
+`KOARYU_PERFORMANCE_PYTHON` to an explicit compatible interpreter only when a
+worktree lacks that venv, for example a shared local checkout. Do not use the
+override to point the gate at a hosted service. The command fails when the
+worktree has tracked or untracked changes, the checked-out SHA differs from
+`--expected-sha`, a profile or route is missing,
+the manifest/fixture/privacy bindings differ, a metric is non-finite or over
+budget, or any privacy-bearing field appears in the aggregate evidence.
+
+Release CI runs this same gate in a separate, bounded `performance-regression`
+job after establishing Node 22.13.0 and Python 3.11. It checks out and asserts
+the exact pull-request head or push SHA, installs only the pinned backend
+runtime lock needed by the fixture, binds `KOARYU_PERFORMANCE_PYTHON` to the
+Actions interpreter, and passes that exact SHA to the command. The job is a
+fail-closed dependency of `Release candidate gate`; it uses no services,
+browsers, databases, secrets, or hosted targets.
+
 ## Production Smoke
 
 After Render and Vercel deploy the same commit, verify the public release identity before capturing any performance data:
@@ -52,7 +91,19 @@ npm run verify:deployed-release -- \
 
 The verifier performs GET-only probes against pinned Koaryu targets, rejects redirects, and requires the frontend plus both Render readiness paths to report the same full SHA. A mismatch invalidates subsequent performance evidence.
 
-The dashboard-ready measurement is timestamped immediately when the stable readiness marker appears; the optional network-idle wait happens afterward and is not included. Evidence is rejected unless both `/dashboard/bootstrap` and `/dashboard/summary` return successfully and each supplies at least one allowlisted finite, nonnegative `Server-Timing` duration.
+The browser harness records two separate readiness metrics. `dashboard_shell_ready_ms`
+is elapsed time until the dashboard shell/layout marker appears after identity
+and persisted layout resolution; it does not prove that the owner data is present.
+`dashboard_ready_ms` is elapsed time until the true-data marker appears after
+layout resolution and the controller's complete required-dataset aggregate is
+ready: students, programs, leads, schedule, dashboard summary, and
+selected-ladder belt eligibility. Preview semantics remain owned by the same
+resolver. Treat the latter as the true-data readiness measure. The optional
+network-idle wait happens afterward and is excluded from both metrics.
+Separately, evidence validation requires HTTP 200 responses from
+`/dashboard/bootstrap` and `/dashboard/summary`, resource timings, and at least one allowlisted
+finite, nonnegative `Server-Timing` duration for each response; those two
+responses alone do not prove the full true-data marker.
 
 For a privacy-safe authenticated dashboard capture, create a Playwright storage-state file through the existing approved sign-in workflow, then run:
 
@@ -65,7 +116,22 @@ npm run capture:dashboard-performance -- \
   --storage-state /absolute/private/path/storage-state.json
 ```
 
-The harness verifies the exact SHA before Chromium and again after the browser closes, so an alias move during capture invalidates the result. It waits for the dashboard's explicit ready marker (successful bootstrap plus summary state), requires successful 2xx bootstrap and summary responses and resource timings, rejects every non-finite required metric, and fails if any write or unknown-origin request was blocked. It emits only aggregate timing labels; it does not emit URLs, query strings, response bodies, tenant/user identifiers, credentials, or storage state. Keep the storage-state file private and delete it through the approved local secret-handling workflow after capture.
+The harness requires a prior exact-SHA deployed-release verification before
+Chromium starts and a second exact-SHA verification after the browser closes.
+An alias move, frontend/backend SHA mismatch, failed readiness probe, missing
+resource timing, missing allowlisted server timing, non-finite metric, blocked
+write, or unknown-origin request invalidates the capture. It waits for the
+dashboard's explicit true-data marker, which requires layout resolution plus
+the controller's complete required-dataset aggregate: students, programs,
+leads, schedule, dashboard summary, and selected-ladder belt eligibility.
+Preview semantics remain owned by the same resolver. Separately, evidence
+validation requires HTTP 200 responses from `/dashboard/bootstrap` and
+`/dashboard/summary`, resource timings, and allowlisted
+`Server-Timing`; those two responses alone do not prove the full data marker.
+It emits only aggregate timing labels. It does not emit URLs, query strings,
+response bodies, tenant/user identifiers, credentials, or storage state. Keep
+the storage-state file private and delete it through the approved local
+secret-handling workflow after capture.
 
 Then complete the functional smoke:
 

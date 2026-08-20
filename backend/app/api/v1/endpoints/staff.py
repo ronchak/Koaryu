@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Response, status
 from supabase import Client
+from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.schemas.account import AccountDeletionRequestResponse
@@ -41,12 +42,18 @@ async def list_staff(
     include_archived: bool = False,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    return await StaffService(supabase).list_staff(
-        studio_id,
-        include_archived=include_archived,
+    async def _provider_operation(client):
+        studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
+        return await StaffService(client).list_staff(
+            studio_id,
+            include_archived=include_archived,
+        )
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
     )
 
 
@@ -59,10 +66,16 @@ async def invite_staff(
     data: StaffInviteCreate,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    return await StaffService(supabase).invite_staff(data, studio_id, user_id)
+    async def _provider_operation(client):
+        studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
+        return await StaffService(client).invite_staff(data, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.patch(
@@ -74,20 +87,26 @@ async def update_staff_legal_name(
     data: StaffLegalNameUpdate,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    membership = resolve_staff_role_for_user(
+    async def _provider_operation(client):
+        membership = resolve_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=False,
+        )
+        return await StaffService(client).update_staff_legal_name(
+            target_user_id,
+            data,
+            membership["studio_id"],
+            user_id,
+            membership["role"],
+        )
+    return await run_supabase_operation(
         supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=False,
-    )
-    return await StaffService(supabase).update_staff_legal_name(
-        target_user_id,
-        data,
-        membership["studio_id"],
-        user_id,
-        membership["role"],
+        _provider_operation,
+        lane="interactive",
     )
 
 
@@ -97,14 +116,20 @@ async def update_staff_role(
     data: StaffRoleUpdate,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    return await StaffService(supabase).update_staff_role(
-        staff_role_id,
-        data,
-        studio_id,
-        user_id,
+    async def _provider_operation(client):
+        studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
+        return await StaffService(client).update_staff_role(
+            staff_role_id,
+            data,
+            studio_id,
+            user_id,
+        )
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
     )
 
 
@@ -113,10 +138,16 @@ async def archive_staff(
     staff_role_id: str,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    return await StaffService(supabase).archive_staff(staff_role_id, studio_id, user_id)
+    async def _provider_operation(client):
+        studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
+        return await StaffService(client).archive_staff(staff_role_id, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/{staff_role_id}/unarchive", response_model=StaffMemberResponse)
@@ -124,10 +155,16 @@ async def unarchive_staff(
     staff_role_id: str,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    return await StaffService(supabase).unarchive_staff(staff_role_id, studio_id, user_id)
+    async def _provider_operation(client):
+        studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
+        return await StaffService(client).unarchive_staff(staff_role_id, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post(
@@ -139,14 +176,20 @@ async def schedule_staff_deletion(
     data: StaffDeletionRequestCreate,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    return await StaffService(supabase).schedule_staff_deletion(
-        staff_role_id,
-        data,
-        studio_id,
-        user_id,
+    async def _provider_operation(client):
+        studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
+        return await StaffService(client).schedule_staff_deletion(
+            staff_role_id,
+            data,
+            studio_id,
+            user_id,
+        )
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
     )
 
 
@@ -155,8 +198,14 @@ async def remove_staff(
     staff_role_id: str,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _resolve_admin_studio_id(supabase, user_id, requested_studio_id)
-    await StaffService(supabase).remove_staff(staff_role_id, studio_id, user_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    async def _provider_operation(client):
+        studio_id = _resolve_admin_studio_id(client, user_id, requested_studio_id)
+        await StaffService(client).remove_staff(staff_role_id, studio_id, user_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )

@@ -1,6 +1,7 @@
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 
 ACTIVE_STUDENT_STATUSES = {"active", "trialing"}
@@ -71,51 +72,134 @@ def _monthly_equivalent_cents(plan: Optional[dict[str, Any]]) -> int:
     return 0
 
 
-def _attendance_events(data: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    sessions_by_id = {row.get("id"): row for row in data.get("sessions", [])}
-    events: list[dict[str, Any]] = []
-    for record in data.get("attendance", []):
-        if record.get("status") == "absent":
-            continue
-        session = sessions_by_id.get(record.get("session_id")) or {}
-        event_date = _parse_date(session.get("date")) or _parse_date(record.get("checked_in_at"))
-        if not event_date:
-            continue
-        events.append({
-            **record,
-            "event_date": event_date,
-            "session_program_id": session.get("program_id"),
-            "session_instructor_id": session.get("instructor_id"),
-            "session_capacity": session.get("capacity"),
-            "session_name": session.get("name"),
-            "session_status": session.get("status"),
-        })
-    return events
+class AttendanceEventIndex:
+    """Request-local attendance view with one canonical event sequence.
+
+    The event dictionaries are retained only in ``events``. The other indexes
+    contain dates or references to those dictionaries, so attendance metadata
+    is not duplicated for each lookup strategy.
+    """
+
+    def __init__(
+        self,
+        events: list[dict[str, Any]],
+        dates_by_student: dict[str, list[date]],
+        all_dates: list[date],
+        first_by_student: dict[str, date],
+        last_by_student: dict[str, date],
+        events_by_session: dict[str, list[dict[str, Any]]],
+        operation_counter: Optional[dict[str, int]] = None,
+    ) -> None:
+        self.events = events
+        self.dates_by_student = dates_by_student
+        self.all_dates = all_dates
+        self.first_by_student = first_by_student
+        self.last_by_student = last_by_student
+        self.events_by_session = events_by_session
+        self.operation_counter = operation_counter
+
+    def _record_lookup(self) -> None:
+        if self.operation_counter is not None:
+            self.operation_counter["attendance_index_lookups"] = self.operation_counter.get("attendance_index_lookups", 0) + 1
+
+    @classmethod
+    def from_data(
+        cls,
+        data: dict[str, list[dict[str, Any]]],
+        *,
+        operation_counter: Optional[dict[str, int]] = None,
+    ) -> "AttendanceEventIndex":
+        sessions_by_id = {row.get("id"): row for row in data.get("sessions", [])}
+        events: list[dict[str, Any]] = []
+        dates_by_student: dict[str, list[date]] = defaultdict(list)
+        all_dates: list[date] = []
+        first_by_student: dict[str, date] = {}
+        last_by_student: dict[str, date] = {}
+        events_by_session: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for record in data.get("attendance", []):
+            if operation_counter is not None:
+                operation_counter["attendance_rows_examined"] = operation_counter.get("attendance_rows_examined", 0) + 1
+            if record.get("status") == "absent":
+                continue
+            session = sessions_by_id.get(record.get("session_id")) or {}
+            event_date = _parse_date(session.get("date")) or _parse_date(record.get("checked_in_at"))
+            if not event_date:
+                continue
+            event = {
+                **record,
+                "event_date": event_date,
+                "session_program_id": session.get("program_id"),
+                "session_instructor_id": session.get("instructor_id"),
+                "session_capacity": session.get("capacity"),
+                "session_name": session.get("name"),
+                "session_status": session.get("status"),
+            }
+            events.append(event)
+            if operation_counter is not None:
+                operation_counter["event_objects_materialized"] = operation_counter.get("event_objects_materialized", 0) + 1
+            student_id = event.get("student_id")
+            if student_id is not None:
+                dates_by_student[student_id].append(event_date)
+                previous_first = first_by_student.get(student_id)
+                previous_last = last_by_student.get(student_id)
+                if previous_first is None or event_date < previous_first:
+                    first_by_student[student_id] = event_date
+                if previous_last is None or event_date > previous_last:
+                    last_by_student[student_id] = event_date
+            all_dates.append(event_date)
+            session_id = event.get("session_id")
+            events_by_session[session_id].append(event)
+
+        for dates in dates_by_student.values():
+            dates.sort()
+        all_dates.sort()
+        return cls(events, dates_by_student, all_dates, first_by_student, last_by_student, events_by_session, operation_counter)
+
+    def __iter__(self):
+        return iter(self.events)
+
+    def count(
+        self,
+        *,
+        student_id: Optional[str] = None,
+        start: Optional[date] = None,
+        end: Optional[date] = None,
+    ) -> int:
+        self._record_lookup()
+        dates = self.dates_by_student.get(student_id, []) if student_id else self.all_dates
+        lower = bisect_left(dates, start) if start else 0
+        upper = bisect_right(dates, end) if end else len(dates)
+        return max(0, upper - lower)
+
+    def first_visit(self, student_id: str) -> Optional[date]:
+        self._record_lookup()
+        return self.first_by_student.get(student_id)
+
+    def last_visit(self, student_id: str) -> Optional[date]:
+        self._record_lookup()
+        return self.last_by_student.get(student_id)
+
+
+def _attendance_events(
+    data: dict[str, list[dict[str, Any]]],
+    *,
+    operation_counter: Optional[dict[str, int]] = None,
+) -> AttendanceEventIndex:
+    return AttendanceEventIndex.from_data(data, operation_counter=operation_counter)
 
 
 def _count_events(
-    events: Iterable[dict[str, Any]],
+    events: AttendanceEventIndex,
     *,
     student_id: Optional[str] = None,
     start: Optional[date] = None,
     end: Optional[date] = None,
 ) -> int:
-    count = 0
-    for event in events:
-        if student_id and event.get("student_id") != student_id:
-            continue
-        event_date = event["event_date"]
-        if start and event_date < start:
-            continue
-        if end and event_date > end:
-            continue
-        count += 1
-    return count
+    return events.count(student_id=student_id, start=start, end=end)
 
 
-def _last_event_date(events: Iterable[dict[str, Any]], student_id: str) -> Optional[date]:
-    dates = [event["event_date"] for event in events if event.get("student_id") == student_id]
-    return max(dates) if dates else None
+def _last_event_date(events: AttendanceEventIndex, student_id: str) -> Optional[date]:
+    return events.last_visit(student_id)
 
 
 def _active_billing_for_student(
@@ -151,7 +235,7 @@ def _promotion_lookup(data: dict[str, list[dict[str, Any]]]) -> dict[str, dict[s
 
 def _student_risk(
     student: dict[str, Any],
-    events: list[dict[str, Any]],
+    events: AttendanceEventIndex,
     enrollments_by_student: dict[str, list[dict[str, Any]]],
     payers_by_id: dict[str, dict[str, Any]],
     today: date,
@@ -236,11 +320,8 @@ def _latest_by(rows: list[dict[str, Any]], key: str, date_key: str) -> dict[str,
     return latest
 
 
-def _last_first_visit(events: list[dict[str, Any]], student_id: str, *, first: bool) -> Optional[date]:
-    dates = sorted(event["event_date"] for event in events if event.get("student_id") == student_id)
-    if not dates:
-        return None
-    return dates[0] if first else dates[-1]
+def _last_first_visit(events: AttendanceEventIndex, student_id: str, *, first: bool) -> Optional[date]:
+    return events.first_visit(student_id) if first else events.last_visit(student_id)
 
 
 def _onboarding_status(days_since_start: int, visits_to_date: int, visits_first_7: int, visits_first_30: int) -> tuple[str, str]:
@@ -287,7 +368,7 @@ def _family_row(
     household_name: str,
     contact: dict[str, Any],
     students: list[dict[str, Any]],
-    events: list[dict[str, Any]],
+    events: AttendanceEventIndex,
     enrollments_by_student: dict[str, list[dict[str, Any]]],
     payers_by_id: dict[str, dict[str, Any]],
     today: date,

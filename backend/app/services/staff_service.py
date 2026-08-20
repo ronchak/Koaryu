@@ -49,6 +49,7 @@ STAFF_DELETE_CONFIRMATION_MISMATCH_DETAIL = {
 STAFF_OWNER_ARCHIVE_CONFLICT_DETAIL = (
     "Transfer studio ownership before archiving this staff member."
 )
+_AUTH_USER_NOT_PROVIDED = object()
 STAFF_ACTIVE_ADMIN_SURVIVOR_DETAIL = (
     "At least one active admin not scheduled for deletion must remain in the studio."
 )
@@ -829,11 +830,11 @@ class StaffService:
     def _hydrate_staff_member(
         self,
         row: dict,
-        user: Any = None,
+        user: Any = _AUTH_USER_NOT_PROVIDED,
         profile: Optional[dict] = None,
     ) -> StaffMemberResponse:
         user_id = row.get("user_id")
-        if user is None:
+        if user is _AUTH_USER_NOT_PROVIDED:
             user = self._get_auth_user(user_id)
 
         email = (

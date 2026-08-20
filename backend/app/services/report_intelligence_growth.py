@@ -36,12 +36,15 @@ def build_owner_kpi_summary(data: dict[str, list[dict[str, Any]]], today: date) 
     invoices = data.get("invoices", [])
     payments = data.get("payments", [])
 
-    visits_30 = _count_events(events, start=today - timedelta(days=29), end=today)
-    unique_attendees_30 = len({
-        event.get("student_id")
-        for event in events
-        if today - timedelta(days=29) <= event["event_date"] <= today
-    })
+    window_start = today - timedelta(days=29)
+    visits_30 = 0
+    unique_attendees_30: set[str] = set()
+    attendance_by_session: dict[str, int] = defaultdict(int)
+    for event in events:
+        if window_start <= event["event_date"] <= today:
+            visits_30 += 1
+            unique_attendees_30.add(event.get("student_id"))
+            attendance_by_session[event.get("session_id")] += 1
     sessions_30 = [
         row
         for row in sessions
@@ -49,10 +52,6 @@ def build_owner_kpi_summary(data: dict[str, list[dict[str, Any]]], today: date) 
         and (session_date := _parse_date(row.get("date")))
         and today - timedelta(days=29) <= session_date <= today
     ]
-    attendance_by_session: dict[str, int] = defaultdict(int)
-    for event in events:
-        if today - timedelta(days=29) <= event["event_date"] <= today:
-            attendance_by_session[event.get("session_id")] += 1
     capacity_total = sum(int(row.get("capacity") or 0) for row in sessions_30 if row.get("capacity"))
     capacity_attendance = sum(
         attendance_by_session.get(row.get("id"), 0)
@@ -88,7 +87,7 @@ def build_owner_kpi_summary(data: dict[str, list[dict[str, Any]]], today: date) 
         {"metric": "active_students", "value": len(active_students), "context": "Students with active or trialing status and no deleted_at."},
         {"metric": "new_students_30_days", "value": new_students_30, "context": "Students whose membership_start_date or created_at is within 30 days."},
         {"metric": "visits_30_days", "value": visits_30, "context": "Non-absent attendance records tied to sessions in the last 30 days."},
-        {"metric": "unique_attendees_30_days", "value": unique_attendees_30, "context": "Distinct students with at least one non-absent visit in the last 30 days."},
+        {"metric": "unique_attendees_30_days", "value": len(unique_attendees_30), "context": "Distinct students with at least one non-absent visit in the last 30 days."},
         {"metric": "avg_visits_per_active_student_30_days", "value": round(visits_30 / len(active_students), 2) if active_students else 0, "context": "30-day visits divided by active student count."},
         {"metric": "class_utilization_30_days", "value": round(capacity_attendance / capacity_total, 4) if capacity_total else "", "context": "Attendance divided by capacity for non-canceled sessions with capacity."},
         {"metric": "active_pipeline_leads", "value": active_leads, "context": "Leads still before enrolled or closed_lost."},

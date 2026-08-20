@@ -79,3 +79,60 @@ test("release-candidate workflow rejects removed aggregate assertions", () => {
     /aggregate gate must fail closed/,
   );
 });
+
+test("release-candidate workflow rejects a removed or renamed performance job", () => {
+  const weakened = workflow.replace(
+    "  performance-regression:\n",
+    "  performance-check:\n",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /workflow must define the performance-regression job/,
+  );
+});
+
+test("release-candidate workflow rejects a replaced performance gate command", () => {
+  const weakened = workflow.replace(
+    'run: npm run check:performance-regression -- --expected-sha "$EXPECTED_HEAD_SHA"',
+    "run: echo performance gate omitted",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /missing control: run: npm run check:performance-regression/,
+  );
+});
+
+test("release-candidate workflow requires the versioned performance budget manifest", () => {
+  const weakened = workflow.replace(
+    /performance\/dashboard-summary-budget\.json/g,
+    "performance/removed-budget.json",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /missing control: performance\/dashboard-summary-budget\.json/,
+  );
+});
+
+test("release-candidate workflow rejects a missing aggregate performance dependency", () => {
+  const weakened = workflow.replace("      - performance-regression\n", "");
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /depend on every required candidate job exactly once/,
+  );
+});
+
+test("release-candidate workflow rejects a missing aggregate performance assertion", () => {
+  const weakened = workflow.replace(
+    '          test "$PERFORMANCE_REGRESSION_RESULT" = success\n',
+    "          true\n",
+  );
+
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /aggregate gate must fail closed on performance-regression/,
+  );
+});

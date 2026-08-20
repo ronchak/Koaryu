@@ -105,9 +105,7 @@ def build_belt_momentum_testing_pipeline(data: dict[str, list[dict[str, Any]]], 
 def build_schedule_utilization_demand(data: dict[str, list[dict[str, Any]]], today: date) -> list[dict[str, Any]]:
     events = _attendance_events(data)
     programs_by_id = _index_one(data.get("programs", []), "id")
-    attendance_by_session: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for event in events:
-        attendance_by_session[event.get("session_id")].append(event)
+    attendance_by_session = events.events_by_session
     grouped: dict[str, dict[str, Any]] = {}
     for session in data.get("sessions", []):
         session_date = _parse_date(session.get("date"))
@@ -177,9 +175,7 @@ def build_instructor_staff_impact(data: dict[str, list[dict[str, Any]]], today: 
         "sessions_with_capacity": 0,
         "total_capacity": 0,
     })
-    attendance_by_session: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for event in events:
-        attendance_by_session[event.get("session_id")].append(event)
+    attendance_by_session = events.events_by_session
     for session in data.get("sessions", []):
         session_date = _parse_date(session.get("date"))
         if not session_date or session_date < today - timedelta(days=89) or session_date > today or session.get("deleted_at") or session.get("status") == "canceled":

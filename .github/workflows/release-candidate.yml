@@ -191,6 +191,49 @@ jobs:
         if: ${{ always() }}
         run: supabase stop --no-backup
 
+  performance-regression:
+    name: Deterministic performance regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact candidate head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.13.0"
+
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            performance/dashboard-summary-budget.json
+
+      - name: Install performance fixture runtime dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Verify versioned performance gate inputs
+        run: git ls-files --error-unmatch backend/requirements.txt performance/dashboard-summary-budget.json
+
+      - name: Run deterministic dashboard summary gate
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          KOARYU_PERFORMANCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}
+        run: npm run check:performance-regression -- --expected-sha "$EXPECTED_HEAD_SHA"
+
   static-analysis:
     name: Static and secret analysis
     runs-on: ubuntu-latest
@@ -252,6 +295,7 @@ jobs:
       - frontend
       - backend
       - database
+      - performance-regression
       - static-analysis
 
     steps:
@@ -261,10 +305,12 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
           DATABASE_RESULT: ${{ needs.database.result }}
+          PERFORMANCE_REGRESSION_RESULT: ${{ needs.performance-regression.result }}
           STATIC_ANALYSIS_RESULT: ${{ needs.static-analysis.result }}
         run: |
           test "$REPOSITORY_RESULT" = success
           test "$FRONTEND_RESULT" = success
           test "$BACKEND_RESULT" = success
           test "$DATABASE_RESULT" = success
+          test "$PERFORMANCE_REGRESSION_RESULT" = success
           test "$STATIC_ANALYSIS_RESULT" = success

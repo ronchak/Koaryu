@@ -5,6 +5,7 @@ from typing import Any, Literal, Optional
 
 from fastapi import HTTPException, status
 
+from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.studio_live_billing_authorizations import (
     ConnectOnboardingBootstrapContext,
     LIVE_SCOPE_REQUIRED_DETAIL,
@@ -151,7 +152,6 @@ class StripeMutationPolicy:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=LIVE_MUTATIONS_DISABLED_DETAIL,
             )
-        store = self.authorization_store or StudioLiveBillingAuthorizationStore(self._supabase())
         authorization_context = {
             "operation": operation,
             "scope": live_scope,
@@ -163,9 +163,14 @@ class StripeMutationPolicy:
             authorization_context["payload_sha256"] = payload_sha256
         if bootstrap_context is not None:
             authorization_context["bootstrap_context"] = bootstrap_context
-        authorized_studio_id = store.authorize(
-            **authorization_context,
-        )
+        if self.authorization_store is not None:
+            authorized_studio_id = self.authorization_store.authorize(
+                **authorization_context,
+            )
+        else:
+            authorized_studio_id = self._with_isolated_store(
+                lambda store: store.authorize(**authorization_context)
+            )
         return StripeMutationPermit(
             operation=operation,
             mode="live",
@@ -184,28 +189,34 @@ class StripeMutationPolicy:
         ) or not studio_id:
             return False
         try:
-            store = self.authorization_store or StudioLiveBillingAuthorizationStore(self._supabase())
-            account = store._payment_account(studio_id=studio_id, account_id=None)
-            return bool(
-                account
-                and store.authorize(
-                    operation="connected_capability.readiness",
-                    scope="connect_payments",
-                    studio_id=studio_id,
-                    account_id=account.get("stripe_connected_account_id"),
-                    expected_livemode=True,
+            def check(store: StudioLiveBillingAuthorizationStore) -> bool:
+                account = store._payment_account(studio_id=studio_id, account_id=None)
+                return bool(
+                    account
+                    and store.authorize(
+                        operation="connected_capability.readiness",
+                        scope="connect_payments",
+                        studio_id=studio_id,
+                        account_id=account.get("stripe_connected_account_id"),
+                        expected_livemode=True,
+                    )
                 )
-            )
+
+            if self.authorization_store is not None:
+                return check(self.authorization_store)
+            return self._with_isolated_store(check)
         except Exception:
             return False
 
     @staticmethod
-    def _supabase() -> Any:
-        # Delay construction until a live mutation; test mode never needs a
-        # database authorization lookup.
-        from app.db.supabase import get_supabase_client
-
-        return get_supabase_client()
+    def _with_isolated_store(callback):
+        # Live authorization is rare and owns a private client for the
+        # duration of the calling worker operation.
+        client = create_supabase_client()
+        try:
+            return callback(StudioLiveBillingAuthorizationStore(client))
+        finally:
+            close_supabase_client(client)
 
 
 def stripe_mutation_scope(operation: str) -> Optional[LiveBillingScope]:

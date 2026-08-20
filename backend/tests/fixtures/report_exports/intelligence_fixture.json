@@ -1,0 +1,101 @@
+{
+  "students": [
+    {
+      "id": "student-1",
+      "legal_first_name": "Ada",
+      "legal_last_name": "Lovelace",
+      "preferred_name": null,
+      "status": "active",
+      "membership_start_date": "2026-01-01",
+      "program_id": "program-1",
+      "current_belt_rank_id": "rank-1",
+      "is_minor": false,
+      "emergency_contact_name": "Charles Lovelace",
+      "deleted_at": null,
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "student-2",
+      "legal_first_name": "Grace",
+      "legal_last_name": "Hopper",
+      "preferred_name": "Amazing Grace",
+      "status": "active",
+      "membership_start_date": "2026-05-01",
+      "program_id": "program-1",
+      "current_belt_rank_id": "rank-1",
+      "is_minor": true,
+      "emergency_contact_name": null,
+      "deleted_at": null,
+      "created_at": "2026-05-01T00:00:00Z"
+    },
+    {
+      "id": "student-3",
+      "legal_first_name": "Katherine",
+      "legal_last_name": "Johnson",
+      "preferred_name": null,
+      "status": "inactive",
+      "membership_start_date": "2025-01-01",
+      "program_id": null,
+      "current_belt_rank_id": null,
+      "is_minor": false,
+      "emergency_contact_name": null,
+      "deleted_at": null,
+      "created_at": "2025-01-01T00:00:00Z"
+    }
+  ],
+  "programs": [
+    {"id": "program-1", "name": "Adult Jiu-Jitsu"}
+  ],
+  "memberships": [
+    {"id": "membership-1", "student_id": "student-1", "program_id": "program-1", "status": "active", "current_belt_rank_id": "rank-1", "started_at": "2026-01-01"},
+    {"id": "membership-2", "student_id": "student-2", "program_id": "program-1", "status": "active", "current_belt_rank_id": "rank-1", "started_at": "2026-05-01"}
+  ],
+  "guardians": [
+    {"id": "guardian-1", "first_name": "Grace", "last_name": "Hopper", "email": null, "phone": null}
+  ],
+  "student_guardians": [
+    {"id": "student-guardian-1", "student_id": "student-2", "guardian_id": "guardian-1"}
+  ],
+  "leads": [
+    {"id": "lead-1", "source": "website", "stage": "enrolled", "converted_student_id": "student-1", "assigned_staff_id": "staff-1", "created_at": "2026-05-20"},
+    {"id": "lead-2", "source": "referral", "stage": "inquiry", "converted_student_id": null, "assigned_staff_id": "staff-1", "created_at": "2026-05-25", "follow_up_date": null}
+  ],
+  "sessions": [
+    {"id": "session-1", "name": "Adult Jiu-Jitsu", "date": "2026-05-30", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "scheduled", "deleted_at": null},
+    {"id": "session-canceled", "name": "Adult Jiu-Jitsu", "date": "2026-05-29", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "canceled", "deleted_at": null},
+    {"id": "session-old", "name": "Adult Jiu-Jitsu", "date": "2026-03-01", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "scheduled", "deleted_at": null}
+  ],
+  "attendance": [
+    {"id": "attendance-1", "session_id": "session-1", "student_id": "student-1", "status": "present", "checked_in_at": "2026-05-30T18:00:00Z"},
+    {"id": "attendance-canceled", "session_id": "session-canceled", "student_id": "student-2", "status": "present", "checked_in_at": "2026-05-29T18:00:00Z"},
+    {"id": "attendance-missing-session", "session_id": "session-does-not-exist", "student_id": "student-1", "status": "present", "checked_in_at": "2026-05-28T18:00:00Z"}
+  ],
+  "belt_ladders": [
+    {"id": "ladder-1", "program_id": "program-1"}
+  ],
+  "belt_ranks": [
+    {"id": "rank-1", "ladder_id": "ladder-1", "name": "White", "display_order": 1, "min_classes": 0, "min_months": 0, "requires_approval": false},
+    {"id": "rank-2", "ladder_id": "ladder-1", "name": "Blue", "display_order": 2, "min_classes": 3, "min_months": 2, "requires_approval": true}
+  ],
+  "promotions": [
+    {"student_program_membership_id": "membership-1", "student_id": "student-1", "program_id": "program-1", "promoted_at": "2026-04-01"},
+    {"student_program_membership_id": "membership-2", "student_id": "student-2", "program_id": "program-1", "promoted_at": "2026-05-01"}
+  ],
+  "billing_payers": [
+    {"id": "payer-1", "display_name": "Hopper Family", "email": null, "phone": null, "billing_status": "past_due", "balance_cents": 12000}
+  ],
+  "billing_plans": [
+    {"id": "plan-1", "amount_cents": 10000, "billing_interval": "monthly"}
+  ],
+  "billing_enrollments": [
+    {"id": "enrollment-1", "student_id": "student-1", "payer_id": "payer-1", "billing_plan_id": "plan-1", "status": "active", "billing_status": "past_due", "next_bill_on": null, "created_at": "2026-01-01"},
+    {"id": "enrollment-2", "student_id": "student-2", "payer_id": "payer-1", "billing_plan_id": "plan-1", "status": "active", "billing_status": "past_due", "next_bill_on": "2026-06-15", "created_at": "2026-05-01"}
+  ],
+  "invoices": [
+    {"id": "invoice-1", "student_id": "student-1", "payer_id": "payer-1", "status": "open", "amount_due_cents": 15000, "amount_paid_cents": 5000}
+  ],
+  "payments": [
+    {"id": "payment-failed", "invoice_id": "invoice-1", "payer_id": "payer-1", "status": "failed", "amount_cents": 3000, "created_at": "2026-05-20"},
+    {"id": "payment-success", "invoice_id": "invoice-1", "payer_id": "payer-1", "status": "succeeded", "amount_cents": 5000, "created_at": "2026-05-10"}
+  ]
+}

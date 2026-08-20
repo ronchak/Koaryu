@@ -8,6 +8,7 @@ Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted
 - If a command cannot run locally, record the blocker and avoid substituting a weaker check as proof.
 - Run `git diff --check` before publishing any PR.
 - Run `npm run check:release-workflow` for workflow, merge-control, or release-process changes.
+- Run `npm run check:performance-regression -- --expected-sha <full-sha>` for the deterministic dashboard-summary performance gate. Set `KOARYU_PERFORMANCE_PYTHON` only when the worktree does not contain `backend/venv`.
 - Every release-candidate PR must receive the unfiltered, exact-head `Release candidate gate`; targeted local checks do not replace it.
 - Run API-contract checks whenever backend response schemas, endpoints, or generated frontend types might change.
 - Use `supabase migration up --local` for migrations not yet applied locally. If a changed migration may already be recorded in local history, first confirm the database is disposable and run `supabase db reset --local` so checks exercise the current file contents rather than a stale applied definition.
@@ -18,6 +19,7 @@ Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted
 | Changed Area | Minimum Check | Add When Relevant |
 | --- | --- | --- |
 | Root scripts or repo commands | `git diff --check` and the script's syntax check when available | Exercise the script against a disposable/local target |
+| Performance manifest, fixture, runner, or release workflow | `npm run check:performance-regression -- --expected-sha <full-sha>` plus `node --test scripts/check-release-candidate-workflow.test.mjs scripts/check-performance-regression.test.mjs` | `npm run check:release-workflow`; hosted capture requires prior and post exact-SHA deployed-release verification |
 | `frontend/src/app/**` route/page | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run build` for routing, auth, middleware, proxy, or env-sensitive changes |
 | `frontend/src/components/**` UI | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run test` when changing state models or shared behavior |
 | `frontend/src/lib/**` helper/store | `cd frontend && npm run lint -- <paths>` plus `cd frontend && npm run test` or a focused Node test | Add/update `frontend/tests/*.test.mjs` for non-trivial data shaping |

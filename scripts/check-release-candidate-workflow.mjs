@@ -9,6 +9,7 @@ const requiredSnippets = [
   "Frontend tests, lint, build, and audit",
   "Backend tests, contracts, and audit",
   "Supabase migration and contract suite",
+  "Deterministic performance regression gate",
   "Static and secret analysis",
   "Release candidate gate",
   "scripts/verify-supabase-contracts.sh",
@@ -29,6 +30,23 @@ const requiredSnippets = [
   "npm run audit:support-privacy",
   "node --test scripts/verify-deployed-release.test.mjs",
 ];
+
+const candidateJobs = [
+  { job: "repository-controls", variable: "REPOSITORY" },
+  { job: "frontend", variable: "FRONTEND" },
+  { job: "backend", variable: "BACKEND" },
+  { job: "database", variable: "DATABASE" },
+  { job: "performance-regression", variable: "PERFORMANCE_REGRESSION" },
+  { job: "static-analysis", variable: "STATIC_ANALYSIS" },
+];
+
+function jobBlock(source, jobName) {
+  const start = source.indexOf(`  ${jobName}:`);
+  if (start === -1) return null;
+  const remainder = source.slice(start + 2);
+  const nextJobOffset = remainder.search(/^  [a-z0-9][a-z0-9-]*:/m);
+  return source.slice(start, nextJobOffset === -1 ? source.length : start + 2 + nextJobOffset);
+}
 
 export function validateReleaseCandidateWorkflow(source) {
   const errors = [];
@@ -53,8 +71,8 @@ export function validateReleaseCandidateWorkflow(source) {
   const exactCheckoutCount = source.match(
     /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/g,
   )?.length ?? 0;
-  if (exactCheckoutCount < 5) {
-    errors.push("Every job must check out the exact pull-request head SHA.");
+  if (exactCheckoutCount !== candidateJobs.length) {
+    errors.push("Every candidate job must check out the exact pull-request head SHA exactly once.");
   }
 
   const repositoryControlsStart = source.indexOf("  repository-controls:");
@@ -72,14 +90,7 @@ export function validateReleaseCandidateWorkflow(source) {
 
   const aggregateBlock = source.slice(source.indexOf("  release-candidate:"));
   const needsMatch = aggregateBlock.match(/\n    needs:\n((?:      - [^\n]+\n)+)/);
-  const requiredJobs = [
-    { job: "repository-controls", variable: "REPOSITORY" },
-    { job: "frontend", variable: "FRONTEND" },
-    { job: "backend", variable: "BACKEND" },
-    { job: "database", variable: "DATABASE" },
-    { job: "static-analysis", variable: "STATIC_ANALYSIS" },
-  ];
-  const requiredNeeds = requiredJobs.map(({ job }) => job);
+  const requiredNeeds = candidateJobs.map(({ job }) => job);
   const actualNeeds = needsMatch
     ? needsMatch[1].match(/- ([^\n]+)/g)?.map((line) => line.slice(2)).sort() ?? []
     : [];
@@ -87,11 +98,40 @@ export function validateReleaseCandidateWorkflow(source) {
     errors.push("The aggregate gate must depend on every required candidate job exactly once.");
   }
 
-  for (const { job, variable } of requiredJobs) {
+  for (const { job, variable } of candidateJobs) {
     const envLine = `${variable}_RESULT: \${{ needs.${job}.result }}`;
     const assertion = `test "$${variable}_RESULT" = success`;
     if (!aggregateBlock.includes(envLine) || !aggregateBlock.includes(assertion)) {
       errors.push(`The aggregate gate must fail closed on ${job}.`);
+    }
+  }
+
+  const performanceBlock = jobBlock(source, "performance-regression");
+  if (!performanceBlock) {
+    errors.push("The workflow must define the performance-regression job.");
+  } else {
+    const requiredPerformanceControls = [
+      "name: Deterministic performance regression gate",
+      "timeout-minutes: 10",
+      "uses: actions/checkout@v7",
+      "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+      'EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
+      'run: test \"$(git rev-parse HEAD)\" = \"$EXPECTED_HEAD_SHA\"',
+      "uses: actions/setup-node@v6",
+      'node-version: "22.13.0"',
+      "id: setup-python",
+      "uses: actions/setup-python@v6",
+      'python-version: "3.11"',
+      "backend/requirements.txt",
+      "performance/dashboard-summary-budget.json",
+      "git ls-files --error-unmatch backend/requirements.txt performance/dashboard-summary-budget.json",
+      "KOARYU_PERFORMANCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}",
+      'run: npm run check:performance-regression -- --expected-sha "$EXPECTED_HEAD_SHA"',
+    ];
+    for (const snippet of requiredPerformanceControls) {
+      if (!performanceBlock.includes(snippet)) {
+        errors.push(`The performance-regression job is missing control: ${snippet}`);
+      }
     }
   }
 

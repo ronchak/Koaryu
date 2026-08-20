@@ -67,6 +67,7 @@ type DashboardHomeProps = {
   currentStudioId: string | null;
   currentUserId: string;
   datasetLoadError: string | null;
+  dataReady: boolean;
   identityReady: boolean;
   isPreviewMode: boolean;
   retryDashboardDatasets: () => void;
@@ -611,6 +612,7 @@ export function DashboardHome({
   currentStudioId,
   currentUserId,
   datasetLoadError,
+  dataReady,
   identityReady,
   isPreviewMode,
   retryDashboardDatasets,
@@ -1587,6 +1589,8 @@ export function DashboardHome({
       ref={homeRef}
       className={styles.home}
       data-koaryu-dashboard-home="true"
+      data-koaryu-dashboard-shell-ready={layoutResolved ? "true" : "false"}
+      data-koaryu-dashboard-data-ready={layoutResolved && dataReady ? "true" : "false"}
       data-koaryu-dashboard-ready={layoutResolved ? "true" : "false"}
       data-layout-resolved={layoutResolved ? "true" : "false"}
       data-dashboard-provenance={isPreviewMode ? "preview" : "live"}

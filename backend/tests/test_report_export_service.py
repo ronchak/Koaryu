@@ -16,6 +16,13 @@ from app.services.report_export_service import ReportExportService, require_repo
 from tests.fakes.supabase import TableBackedSupabase
 
 
+async def consume_streaming_response(response):
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def student_row(index: int, *, studio_id: str = "studio-1") -> dict:
     return {
         "id": f"s-{index:04d}",
@@ -88,6 +95,12 @@ class StaffExportAuthAdmin:
         self.supabase.auth_get_calls.append(user_id)
         return SimpleNamespace(user=self.supabase.auth_users.get(user_id))
 
+    def list_users(self, *, page: int, per_page: int):
+        self.supabase.auth_list_calls.append((page, per_page))
+        users = list(self.supabase.auth_users.values())
+        start = (page - 1) * per_page
+        return users[start:start + per_page]
+
 
 class StaffExportSupabase(TableBackedSupabase):
     def __init__(
@@ -99,6 +112,7 @@ class StaffExportSupabase(TableBackedSupabase):
         super().__init__(tables)
         self.auth_users = auth_users or {}
         self.auth_get_calls: list[str] = []
+        self.auth_list_calls: list[tuple[int, int]] = []
         self.auth = SimpleNamespace(admin=StaffExportAuthAdmin(self))
 
 
@@ -231,7 +245,8 @@ class ReportExportServiceTest(unittest.TestCase):
             profile_queries[0]["filters"],
             (("in", "user_id", {"user-1", "user-2"}),),
         )
-        self.assertEqual(supabase.auth_get_calls, ["user-1", "user-2"])
+        self.assertEqual(supabase.auth_get_calls, [])
+        self.assertEqual(supabase.auth_list_calls, [(1, 1000)])
 
     def test_staff_roles_export_leaves_missing_profiles_blank(self):
         supabase = StaffExportSupabase(
@@ -377,6 +392,7 @@ class ReportExportServiceTest(unittest.TestCase):
             "student_guardians": relationships,
         })
         service = ReportExportService(supabase)
+        service._active_report = service.get_report("family_account_health")
 
         dataset = service._fetch_intelligence_dataset("studio-1")
 
@@ -418,7 +434,9 @@ class ReportExportServiceTest(unittest.TestCase):
                 supabase=supabase,
             ))
 
-        self.assertIn(b"s-0001", response.body)
+        body = asyncio.run(consume_streaming_response(response))
+        self.assertIn(b"s-0001", body)
+        self.assertEqual(response.headers["Content-Length"], str(len(body)))
         self.assertEqual(response.headers["Cache-Control"], "no-store, private")
         self.assertEqual(response.headers["Vary"], "Authorization, X-Studio-Id, Cookie")
         audit = supabase.tables["audit_logs"][0]

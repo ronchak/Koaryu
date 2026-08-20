@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.db.supabase import get_supabase_client
+from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
@@ -39,6 +39,10 @@ EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260816012723",
 ]
 
+# Kept as a patchable factory symbol for existing readiness tests. It is an
+# isolated factory alias, not the removed process-global accessor.
+get_supabase_client = create_supabase_client
+
 
 class ReleaseSchemaNotReadyError(RuntimeError):
     pass
@@ -59,9 +63,14 @@ def validate_release_schema_preflight(row: Any) -> None:
 
 
 def assert_hosted_release_schema_ready() -> None:
-    result = execute_required_rpc(
-        get_supabase_client(),
-        "koaryu_release_schema_preflight_v3",
-        {},
-    )
-    validate_release_schema_preflight(first_rpc_row(result))
+    client = get_supabase_client()
+    try:
+        result = execute_required_rpc(
+            client,
+            "koaryu_release_schema_preflight_v3",
+            {},
+        )
+        validate_release_schema_preflight(first_rpc_row(result))
+    finally:
+        if hasattr(getattr(client, "auth", None), "close"):
+            close_supabase_client(client)

@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from supabase import Client
+from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -65,31 +66,36 @@ async def reset_demo_studio(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     destructive_action: Optional[str] = Header(default=None, alias="X-Koaryu-Destructive-Action"),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
     ensure_demo_tools_enabled()
     ensure_destructive_action_confirmed(destructive_action, DEMO_RESET_DESTRUCTIVE_ACTION)
-
     if not requested_studio_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Choose an active studio before resetting demo data.",
         )
 
-    membership = resolve_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
-    )
-    if membership.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only studio admins can reset demo data.",
+    async def _provider_operation(client):
+        membership = resolve_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
         )
-    ensure_demo_studio_target(membership["studio_id"])
+        if membership.get("role") != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only studio admins can reset demo data.",
+            )
+        ensure_demo_studio_target(membership["studio_id"])
 
-    return await DemoService(supabase).reset_demo_studio(membership["studio_id"], user_id)
+        return await DemoService(client).reset_demo_studio(membership["studio_id"], user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )
 
 
 @router.delete("/data", response_model=StudioDataClearResponse)
@@ -97,28 +103,33 @@ async def clear_studio_data(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     destructive_action: Optional[str] = Header(default=None, alias="X-Koaryu-Destructive-Action"),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
     ensure_demo_tools_enabled()
     ensure_destructive_action_confirmed(destructive_action, CLEAR_STUDIO_DATA_DESTRUCTIVE_ACTION)
-
     if not requested_studio_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Choose an active studio before clearing studio data.",
         )
 
-    membership = resolve_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
-    )
-    if membership.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only studio admins can clear studio data.",
+    async def _provider_operation(client):
+        membership = resolve_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
         )
-    ensure_demo_studio_target(membership["studio_id"])
+        if membership.get("role") != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only studio admins can clear studio data.",
+            )
+        ensure_demo_studio_target(membership["studio_id"])
 
-    return await DemoService(supabase).clear_studio_data(membership["studio_id"])
+        return await DemoService(client).clear_studio_data(membership["studio_id"])
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )

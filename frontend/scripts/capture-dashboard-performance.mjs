@@ -83,8 +83,8 @@ export function validateCapturedEvidence(evidence) {
   const responseResources = new Set();
   const serverTimingResources = new Set();
   for (const entry of evidence.server_timing) {
-    if (!REQUIRED_RESOURCES.has(entry.resource) || entry.status < 200 || entry.status >= 300) {
-      throw new Error("dashboard bootstrap and summary must return successful responses.");
+    if (!REQUIRED_RESOURCES.has(entry.resource) || entry.status !== 200) {
+      throw new Error("dashboard bootstrap and summary must return HTTP 200 responses.");
     }
     responseResources.add(entry.resource);
     if (
@@ -119,6 +119,7 @@ export function validateCapturedEvidence(evidence) {
   }
   const metrics = [
     evidence.dashboard_ready_ms,
+    evidence.dashboard_shell_ready_ms,
     evidence.navigation.dom_content_loaded_ms,
     evidence.navigation.load_event_ms,
     evidence.web_vitals.first_contentful_paint_ms,
@@ -144,13 +145,18 @@ export async function verifyPostCaptureRelease(options, initialVerification, ver
 }
 
 export async function measureDashboardReady(page, startedAt, now = Date.now) {
-  await page.locator('[data-koaryu-dashboard-ready="true"]').waitFor({
+  await page.locator('[data-koaryu-dashboard-shell-ready="true"]').waitFor({
+    state: "attached",
+    timeout: 20_000,
+  });
+  const dashboardShellReadyMs = now() - startedAt;
+  await page.locator('[data-koaryu-dashboard-data-ready="true"]').waitFor({
     state: "attached",
     timeout: 20_000,
   });
   const dashboardReadyMs = now() - startedAt;
   await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-  return dashboardReadyMs;
+  return { dashboardReadyMs, dashboardShellReadyMs };
 }
 
 function parseArgs(argv) {
@@ -228,7 +234,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-    const dashboardReadyMs = await measureDashboardReady(page, startedAt);
+    const { dashboardReadyMs, dashboardShellReadyMs } = await measureDashboardReady(page, startedAt);
     if (new URL(page.url()).pathname !== "/dashboard") {
       throw new Error("authenticated storage state did not reach /dashboard.");
     }
@@ -270,6 +276,7 @@ export async function captureDashboardPerformance(options, dependencies = {}) {
       exact_sha_verified: verification.expected_sha,
       privacy: "allowlisted-aggregate-timings-only",
       dashboard_ready_ms: roundRequired(dashboardReadyMs, "dashboard_ready_ms"),
+      dashboard_shell_ready_ms: roundRequired(dashboardShellReadyMs, "dashboard_shell_ready_ms"),
       blocked_requests: blocked,
       navigation: {
         dom_content_loaded_ms: roundRequired(

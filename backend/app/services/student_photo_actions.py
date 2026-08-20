@@ -40,8 +40,26 @@ class StudentPhotoActions:
         actor_id: str,
         file: UploadFile,
     ) -> StudentResponse:
-        student = self._fetch_student_row_for_studio(student_id, studio_id)
         content, content_type, extension = await self.photo_store.read_validated_file(file)
+        return self.upload_validated(
+            student_id,
+            studio_id,
+            actor_id,
+            content,
+            content_type,
+            extension,
+        )
+
+    def upload_validated(
+        self,
+        student_id: str,
+        studio_id: str,
+        actor_id: str,
+        content: bytes,
+        content_type: str,
+        extension: str,
+    ) -> StudentResponse:
+        student = self._fetch_student_row_for_studio(student_id, studio_id)
         photo_path = self.photo_store.path_for(student, extension)
         previous_photo_path = student.get("photo_path")
 

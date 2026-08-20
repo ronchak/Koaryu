@@ -12,13 +12,19 @@ import {
 } from "../scripts/capture-dashboard-performance.mjs";
 
 const homeSource = readFileSync(new URL("../src/components/dashboard/dashboard-home.tsx", import.meta.url), "utf8");
+const controllerSource = readFileSync(new URL("../src/lib/dashboard-page-controller.ts", import.meta.url), "utf8");
+const captureSource = readFileSync(new URL("../scripts/capture-dashboard-performance.mjs", import.meta.url), "utf8");
 
 describe("privacy-safe performance evidence", () => {
-  it("marks identity-scoped geometry readiness instead of all-data settlement", () => {
+  it("separates identity-scoped shell readiness from aggregate data readiness", () => {
+    assert.match(homeSource, /data-koaryu-dashboard-shell-ready=\{layoutResolved \? "true" : "false"\}/);
+    assert.match(homeSource, /data-koaryu-dashboard-data-ready=\{layoutResolved && dataReady \? "true" : "false"\}/);
     assert.match(homeSource, /data-koaryu-dashboard-ready=\{layoutResolved \? "true" : "false"\}/);
     assert.match(homeSource, /const layoutResolved = identityReady && identityScope !== null && resolvedLayoutScope === identityScope/);
     assert.match(homeSource, /readDashboardLayout\([\s\S]*setResolvedLayoutScope\(identityScope\)/);
-    assert.doesNotMatch(homeSource, /data-koaryu-dashboard-ready=\{[^}]*dataset/i);
+    assert.match(controllerSource, /isDashboardDataReady: datasetReadiness\.status === "ready"/);
+    assert.match(captureSource, /data-koaryu-dashboard-data-ready="true"/);
+    assert.doesNotMatch(captureSource, /data-koaryu-dashboard-ready="true"/);
   });
 
   it("verifies the exact SHA before launching a browser", async () => {
@@ -63,6 +69,7 @@ describe("privacy-safe performance evidence", () => {
 
   it("requires a ready dashboard, both successful resources, finite metrics, and zero blocks", () => {
     const evidence = {
+      dashboard_shell_ready_ms: 8,
       dashboard_ready_ms: 10,
       blocked_requests: { write_methods: 0, unknown_origins: 0 },
       navigation: { dom_content_loaded_ms: 4, load_event_ms: 8 },
@@ -83,7 +90,7 @@ describe("privacy-safe performance evidence", () => {
         },
         {
           resource: "dashboard-summary",
-          status: 204,
+          status: 200,
           server_timing: [{ name: "koaryu_summary_total", duration_ms: 2.5 }],
         },
       ],
@@ -118,7 +125,16 @@ describe("privacy-safe performance evidence", () => {
           entry.resource === "dashboard-summary" ? { ...entry, status: 500 } : entry
         )),
       }),
-      /successful responses/,
+      /HTTP 200 responses/,
+    );
+    assert.throws(
+      () => validateCapturedEvidence({
+        ...evidence,
+        server_timing: evidence.server_timing.map((entry) => (
+          entry.resource === "dashboard-summary" ? { ...entry, status: 204 } : entry
+        )),
+      }),
+      /HTTP 200 responses/,
     );
     assert.throws(
       () => validateCapturedEvidence({
@@ -142,22 +158,29 @@ describe("privacy-safe performance evidence", () => {
     );
   });
 
-  it("timestamps readiness before the optional network-idle wait", async () => {
+  it("timestamps shell readiness, then data readiness, before the optional network-idle wait", async () => {
     const events = [];
     const page = {
-      locator: () => ({
-        waitFor: async () => { events.push("ready"); },
+      locator: (selector) => ({
+        waitFor: async () => { events.push(`ready:${selector}`); },
       }),
       waitForLoadState: async () => { events.push("networkidle"); },
     };
+    const timestamps = [125, 150];
 
-    const readyMs = await measureDashboardReady(page, 100, () => {
+    const readiness = await measureDashboardReady(page, 100, () => {
       events.push("timestamp");
-      return 125;
+      return timestamps.shift();
     });
 
-    assert.equal(readyMs, 25);
-    assert.deepEqual(events, ["ready", "timestamp", "networkidle"]);
+    assert.deepEqual(readiness, { dashboardReadyMs: 50, dashboardShellReadyMs: 25 });
+    assert.deepEqual(events, [
+      'ready:[data-koaryu-dashboard-shell-ready="true"]',
+      "timestamp",
+      'ready:[data-koaryu-dashboard-data-ready="true"]',
+      "timestamp",
+      "networkidle",
+    ]);
   });
 
   it("rejects an alias race when the post-capture release identity changes", async () => {
