@@ -2,7 +2,6 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Response
-from supabase import Client
 from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
@@ -14,8 +13,6 @@ from app.services.dashboard_summary_service import (
     PRIVATE_VARY,
     DashboardSummaryService,
 )
-from app.services.auth_service import AuthService
-from app.services.studio_scope import ensure_platform_subscription_access
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -62,23 +59,22 @@ async def get_dashboard_summary(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
-    async def _provider_operation(client):
-        """Build the summary synchronously on the owning provider worker."""
-        total_started = time.perf_counter()
-        auth = AuthService(client)._get_user_profile_sync(user_id, requested_studio_id)
-        service = DashboardSummaryService(client)
-        if not auth.studio_id:
-            payload, timings = service._build_summary_sync(auth, {})
-        else:
-            ensure_platform_subscription_access(client, auth.studio_id)
-            studio_row = service._fetch_studio_summary(auth.studio_id)
-            payload, timings = service._build_summary_sync(auth, studio_row)
-            timings["route_total"] = (time.perf_counter() - total_started) * 1000
-        return payload, timings
-    payload, timings = await run_supabase_operation(
+    total_started = time.perf_counter()
+    context_started = time.perf_counter()
+    context = await run_supabase_operation(
         supabase,
-        _provider_operation,
+        lambda client: DashboardSummaryService(client).resolve_fact_context_sync(
+            user_id,
+            requested_studio_id,
+        ),
         lane="interactive",
+    )
+    timings = {"context": (time.perf_counter() - context_started) * 1000}
+    payload, timings = await DashboardSummaryService.get_dashboard_summary_from_fact_context(
+        supabase,
+        context,
+        timings=timings,
+        total_started=total_started,
     )
     server_timing = DashboardSummaryService.server_timing_value(timings)
     _set_private_dashboard_headers(response, server_timing)
