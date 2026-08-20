@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import socket
 from datetime import datetime, timezone
+from threading import Event, Lock
 from time import monotonic
 from typing import Any, Optional
 from uuid import uuid4
@@ -152,6 +153,15 @@ class _AccessRepairWindow:
         self.row_fingerprint = row_fingerprint
 
 
+class _AccessRepairFlight:
+    """A process-local completion signal for one strict studio repair."""
+
+    __slots__ = ("done",)
+
+    def __init__(self) -> None:
+        self.done = Event()
+
+
 # Keyed by studio_id. Process-local by design: it is a retry throttle, not a
 # cache of entitlement. Losing it on restart is harmless.
 #
@@ -161,22 +171,13 @@ class _AccessRepairWindow:
 # replays as that row. Access-neutrality is then structural rather than argued,
 # and holds for every row shape in both directions.
 #
-# CONCURRENCY — read this before moving the authorization path off the event
-# loop. Checking the window and recording it are not atomic. That is safe today
-# only because no `await` separates them: every caller of this path reaches it
-# through a synchronous call inside an async dependency, so requests for one
-# studio serialise on the event-loop thread and the first records its window
-# before the second checks it.
-#
-# The invariant is the absence of an await boundary, not the word "synchronous".
-# A plain `def` path operation or dependency puts this code in FastAPI's
-# threadpool today, with no other refactor required, and a burst of requests for
-# one studio would then all call Stripe. Anything that introduces such a
-# boundary — the threadpool move in #61 above all — must first make
-# check-and-record atomic or single-flight, or accept and document a bounded
-# herd of one burst per window. Running uvicorn with --workers > 1 is a separate
-# and milder matter: the throttle simply becomes per-worker.
+# Coordination is process-local and therefore only collapses calls handled by
+# this Uvicorn process. It is not a cross-process or cross-worker lock. The
+# metadata lock protects the two process-local maps briefly; provider,
+# Supabase, row, and clock-dependent work always happens outside it.
 _access_repair_retry_after: dict[str, _AccessRepairWindow] = {}
+_access_repair_flights: dict[str, _AccessRepairFlight] = {}
+_access_repair_metadata_lock = Lock()
 
 
 class PlatformBillingService:
@@ -201,45 +202,86 @@ class PlatformBillingService:
         )
 
     def get_access_status_row(self, studio_id: str, *, strict_repairs: bool = False) -> dict[str, Any]:
+        if strict_repairs:
+            while True:
+                with _access_repair_metadata_lock:
+                    flight = _access_repair_flights.get(studio_id)
+                    if flight is None:
+                        flight = _AccessRepairFlight()
+                        _access_repair_flights[studio_id] = flight
+                        leader = True
+                    else:
+                        leader = False
+
+                if not leader:
+                    # Waiting is deliberately outside the metadata lock, so a
+                    # slow Stripe repair for one studio cannot block another
+                    # studio's leader or any window bookkeeping.
+                    flight.done.wait()
+                    continue
+
+                try:
+                    return self._get_access_status_row_uncoordinated(
+                        studio_id,
+                        strict_repairs=True,
+                    )
+                finally:
+                    # Identity checking prevents an old leader from deleting a
+                    # replacement flight if this cleanup ever races with a
+                    # future change to the coordination loop.
+                    with _access_repair_metadata_lock:
+                        if _access_repair_flights.get(studio_id) is flight:
+                            _access_repair_flights.pop(studio_id, None)
+                        flight.done.set()
+
+        return self._get_access_status_row_uncoordinated(
+            studio_id,
+            strict_repairs=False,
+        )
+
+    def _get_access_status_row_uncoordinated(
+        self,
+        studio_id: str,
+        *,
+        strict_repairs: bool,
+    ) -> dict[str, Any]:
         row = self._ensure_subscription_row(studio_id)
         # strict_repairs marks the authorization path. Only that path is
         # throttled; explicit billing reads still reconcile on every call.
-        if strict_repairs:
-            window = self._active_access_repair_window(studio_id)
-            if window is not None and window.row_fingerprint != self._row_fingerprint(row):
-                # The row is not the one the outcome was recorded for — webhook
-                # projection or an Admin refresh rewrote it. The recorded
-                # outcome says nothing about this row, so the window is void and
-                # the new state is resolved on its own merits.
-                #
-                # Logged because a fingerprint that flapped on an *unchanged*
-                # row would void every window and silently restore the
-                # unthrottled retry this whole path exists to prevent, while
-                # looking exactly like the pre-throttle behaviour. Volume is the
-                # signal: this should be rare, so a steady stream means the
-                # fingerprint is not round-tripping.
-                #
-                # No studio_id: the only other logger call in this module
-                # deliberately emits a random reference rather than identifiers,
-                # and a rate is all the signal needs to be.
-                logger.debug("Access repair window voided by a changed subscription row")
-                _access_repair_retry_after.pop(studio_id, None)
-                window = None
-            if window is not None:
-                if not self._access_repair_pending(row):
-                    # Defensive. Pending-ness is a pure function of the
-                    # fingerprinted fields plus a clock term that only ever
-                    # moves deny-ward, so an unchanged fingerprint should not be
-                    # able to stop being pending. Kept because the cost is one
-                    # comparison and the failure it guards against is silent.
-                    _access_repair_retry_after.pop(studio_id, None)
-                    return row
-                if window.replay_fault:
-                    raise AccessRepairDeferred(studio_id)
-                # The repair succeeded against a reachable Stripe and left the
-                # row unrepaired. This is provably that same row, so returning
-                # it reproduces exactly what the repair itself returned.
+        window = self._active_access_repair_window(studio_id) if strict_repairs else None
+        if strict_repairs and window is not None and window.row_fingerprint != self._row_fingerprint(row):
+            # The row is not the one the outcome was recorded for — webhook
+            # projection or an Admin refresh rewrote it. The recorded outcome
+            # says nothing about this row, so the window is void and the new
+            # state is resolved on its own merits.
+            #
+            # Logged because a fingerprint that flapped on an *unchanged* row
+            # would void every window and silently restore the unthrottled retry
+            # this whole path exists to prevent, while looking exactly like the
+            # pre-throttle behaviour. Volume is the signal: this should be rare,
+            # so a steady stream means the fingerprint is not round-tripping.
+            #
+            # No studio_id: the only other logger call in this module
+            # deliberately emits a random reference rather than identifiers,
+            # and a rate is all the signal needs to be.
+            logger.debug("Access repair window voided by a changed subscription row")
+            self._discard_access_repair_window(studio_id, window)
+            window = None
+        if window is not None:
+            if not self._access_repair_pending(row):
+                # Defensive. Pending-ness is a pure function of the
+                # fingerprinted fields plus a clock term that only ever moves
+                # deny-ward, so an unchanged fingerprint should not be able to
+                # stop being pending. Kept because the cost is one comparison
+                # and the failure it guards against is silent.
+                self._discard_access_repair_window(studio_id, window)
                 return row
+            if window.replay_fault:
+                raise AccessRepairDeferred(studio_id)
+            # The repair succeeded against a reachable Stripe and left the row
+            # unrepaired. This is provably that same row, so returning it
+            # reproduces exactly what the repair itself returned.
+            return row
         try:
             for _guard, repair in ACCESS_REPAIR_STEPS:
                 row = repair(self, row, strict_repairs=strict_repairs)
@@ -318,18 +360,30 @@ class PlatformBillingService:
 
     @staticmethod
     def _active_access_repair_window(studio_id: str) -> Optional[_AccessRepairWindow]:
-        window = _access_repair_retry_after.get(studio_id)
-        if window is None:
-            return None
-        if monotonic() >= window.retry_after:
-            _access_repair_retry_after.pop(studio_id, None)
-            return None
-        return window
+        while True:
+            with _access_repair_metadata_lock:
+                window = _access_repair_retry_after.get(studio_id)
+            if window is None:
+                return None
+            if monotonic() < window.retry_after:
+                return window
+            with _access_repair_metadata_lock:
+                if _access_repair_retry_after.get(studio_id) is window:
+                    _access_repair_retry_after.pop(studio_id, None)
+
+    @staticmethod
+    def _discard_access_repair_window(
+        studio_id: str,
+        expected: Optional[_AccessRepairWindow] = None,
+    ) -> None:
+        with _access_repair_metadata_lock:
+            if expected is None or _access_repair_retry_after.get(studio_id) is expected:
+                _access_repair_retry_after.pop(studio_id, None)
 
     def _note_access_repair_outcome(self, studio_id: str, row: dict[str, Any]) -> None:
         """Open a short recheck window when a successful repair left the row unrepaired."""
         if not self._access_repair_pending(row):
-            _access_repair_retry_after.pop(studio_id, None)
+            self._discard_access_repair_window(studio_id)
             return
         self._open_access_repair_window(
             studio_id,
@@ -351,14 +405,23 @@ class PlatformBillingService:
         # The map only holds studios that stayed unrepaired, so it is bounded by
         # tenant count, but prune expired entries so a long-lived process cannot
         # retain studios that have since been fixed.
-        for key, window in list(_access_repair_retry_after.items()):
-            if now >= window.retry_after:
-                _access_repair_retry_after.pop(key, None)
-        _access_repair_retry_after[studio_id] = _AccessRepairWindow(
+        with _access_repair_metadata_lock:
+            snapshot = list(_access_repair_retry_after.items())
+        expired = [
+            (key, window)
+            for key, window in snapshot
+            if now >= window.retry_after
+        ]
+        new_window = _AccessRepairWindow(
             now + seconds,
             replay_fault=replay_fault,
             row_fingerprint=cls._row_fingerprint(row),
         )
+        with _access_repair_metadata_lock:
+            for key, window in expired:
+                if _access_repair_retry_after.get(key) is window:
+                    _access_repair_retry_after.pop(key, None)
+            _access_repair_retry_after[studio_id] = new_window
 
     def _access_repair_pending(self, row: dict[str, Any]) -> bool:
         return any(guard(self, row) for guard, _repair in ACCESS_REPAIR_STEPS)
