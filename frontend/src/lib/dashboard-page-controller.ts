@@ -375,6 +375,7 @@ export function useDashboardPageController({
       currentUserId,
       dashboardComposition,
       datasetLoadError: datasetReadiness.error,
+      isDashboardDataReady: datasetReadiness.status === "ready",
       hasDashboardSummary,
       hasPartialStudentSample,
       isDashboardIdentityReady,
