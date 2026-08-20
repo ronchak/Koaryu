@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header
 from supabase import Client
+from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.schemas.billing import (
@@ -25,20 +26,32 @@ def _admin_studio_id(supabase: Client, user_id: str, requested_studio_id: Option
 async def get_platform_billing_status(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
-    return await PlatformBillingService(supabase).get_status(studio_id)
+    async def _provider_operation(client):
+        studio_id = _admin_studio_id(client, user_id, requested_studio_id)
+        return await PlatformBillingService(client).get_status(studio_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.get("/email-usage", response_model=EmailUsageResponse)
 async def get_email_usage(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
-    return await PlatformBillingService(supabase).get_email_usage(studio_id)
+    async def _provider_operation(client):
+        studio_id = _admin_studio_id(client, user_id, requested_studio_id)
+        return await PlatformBillingService(client).get_email_usage(studio_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/checkout", response_model=BillingLinkResponse)
@@ -47,15 +60,21 @@ async def create_checkout(
     request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
-    return await PlatformBillingService(supabase).create_checkout_link(
-        studio_id,
-        user_id,
-        data.success_url,
-        data.cancel_url,
-        request_idempotency_key,
+    async def _provider_operation(client):
+        studio_id = _admin_studio_id(client, user_id, requested_studio_id)
+        return await PlatformBillingService(client).create_checkout_link(
+            studio_id,
+            user_id,
+            data.success_url,
+            data.cancel_url,
+            request_idempotency_key,
+        )
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
     )
 
 
@@ -64,7 +83,13 @@ async def create_portal(
     data: PlatformPortalRequest,
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    studio_id = _admin_studio_id(supabase, user_id, requested_studio_id)
-    return await PlatformBillingService(supabase).create_portal_link(studio_id, user_id, data.return_url)
+    async def _provider_operation(client):
+        studio_id = _admin_studio_id(client, user_id, requested_studio_id)
+        return await PlatformBillingService(client).create_portal_link(studio_id, user_id, data.return_url)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )

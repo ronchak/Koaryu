@@ -6,7 +6,7 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from supabase import Client
 
-from app.db.supabase import create_supabase_client
+from app.db.supabase import close_supabase_client, create_supabase_client
 from app.schemas.belt import BeltLadderResponse, BeltRankResponse
 from app.schemas.dashboard_bootstrap import (
     DashboardBootstrapResponse,
@@ -81,8 +81,13 @@ class DashboardBootstrapService:
 
     @staticmethod
     def _fetch_with_isolated_client(method_name: str, studio_id: str):
-        service = DashboardBootstrapService(create_supabase_client())
-        return getattr(service, method_name)(studio_id)
+        client = create_supabase_client()
+        try:
+            service = DashboardBootstrapService(client)
+            return getattr(service, method_name)(studio_id)
+        finally:
+            if hasattr(getattr(client, "auth", None), "close"):
+                close_supabase_client(client)
 
     @staticmethod
     def _timed_fetch_with_isolated_client(label: str, method_name: str, studio_id: str):
@@ -125,9 +130,14 @@ class DashboardBootstrapService:
         self,
         user_id: str,
         requested_studio_id: Optional[str] = None,
+        *,
+        provider_owned: bool = False,
     ) -> tuple[DashboardBootstrapResponse, dict[str, float]]:
         total_started = time.perf_counter()
-        auth = await AuthService(self.supabase).get_user_profile(user_id, requested_studio_id)
+        if provider_owned:
+            auth = AuthService(self.supabase)._get_user_profile_sync(user_id, requested_studio_id)
+        else:
+            auth = await AuthService(self.supabase).get_user_profile(user_id, requested_studio_id)
 
         if not auth.studio_id:
             timings = {"total": (time.perf_counter() - total_started) * 1000}

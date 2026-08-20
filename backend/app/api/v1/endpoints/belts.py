@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from supabase import Client
+from app.core.deps import ProviderDependency, run_supabase_operation
 from app.core.deps import (
     get_belt_configuration_admin_studio_id,
     get_current_studio_id,
@@ -23,17 +24,29 @@ router = APIRouter(prefix="/belts", tags=["belts"])
 async def list_ranks(
     ladder_id: Optional[str] = Query(None),
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).list_ranks(studio_id, ladder_id)
+    async def _provider_operation(client):
+        return await BeltService(client).list_ranks(studio_id, ladder_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.get("/ladders", response_model=list[BeltLadderResponse])
 async def list_ladders(
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).list_ladders(studio_id)
+    async def _provider_operation(client):
+        return await BeltService(client).list_ladders(studio_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/ladders", response_model=BeltLadderResponse, status_code=201)
@@ -41,9 +54,15 @@ async def create_ladder(
     data: BeltLadderCreate,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_belt_configuration_admin_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).create_ladder(data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await BeltService(client).create_ladder(data, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.patch("/ladders/{ladder_id}", response_model=BeltLadderResponse)
@@ -52,9 +71,15 @@ async def update_ladder(
     data: BeltLadderUpdate,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_belt_configuration_admin_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).update_ladder(ladder_id, data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await BeltService(client).update_ladder(ladder_id, data, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/ladders/{ladder_id}/sync", response_model=BeltLadderResponse)
@@ -63,9 +88,15 @@ async def sync_ladder(
     data: BeltLadderSyncRequest,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_belt_configuration_admin_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).sync_ladder(ladder_id, data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await BeltService(client).sync_ladder(ladder_id, data, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/ladders/{ladder_id}/ranks", response_model=BeltRankResponse, status_code=201)
@@ -73,9 +104,15 @@ async def create_rank(
     ladder_id: str,
     data: BeltRankCreate,
     studio_id: str = Depends(get_belt_configuration_admin_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).create_rank(ladder_id, data, studio_id)
+    async def _provider_operation(client):
+        return await BeltService(client).create_rank(ladder_id, data, studio_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.patch("/ranks/{rank_id}", response_model=BeltRankResponse)
@@ -83,27 +120,45 @@ async def update_rank(
     rank_id: str,
     data: BeltRankUpdate,
     studio_id: str = Depends(get_belt_configuration_admin_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).update_rank(rank_id, data, studio_id)
+    async def _provider_operation(client):
+        return await BeltService(client).update_rank(rank_id, data, studio_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.delete("/ranks/{rank_id}", status_code=204)
 async def delete_rank(
     rank_id: str,
     studio_id: str = Depends(get_belt_configuration_admin_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    await BeltService(supabase).delete_rank(rank_id, studio_id)
+    async def _provider_operation(client):
+        await BeltService(client).delete_rank(rank_id, studio_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.get("/eligibility", response_model=list[EligibilityEntry])
 async def get_eligibility(
     ladder_id: Optional[str] = Query(None),
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).get_eligibility(studio_id, ladder_id)
+    async def _provider_operation(client):
+        return await BeltService(client).get_eligibility(studio_id, ladder_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.get("/promotions", response_model=list[PromotionResponse])
@@ -111,9 +166,15 @@ async def list_promotions(
     student_id: Optional[str] = Query(None),
     include_names: bool = Query(True),
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).list_promotions(studio_id, student_id, include_names)
+    async def _provider_operation(client):
+        return await BeltService(client).list_promotions(studio_id, student_id, include_names)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/promote", response_model=PromotionResponse, status_code=201)
@@ -121,9 +182,15 @@ async def promote_student(
     data: PromoteStudent,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_promotion_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).promote_student(data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await BeltService(client).promote_student(data, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/demote", response_model=PromotionResponse, status_code=201)
@@ -131,6 +198,12 @@ async def demote_student(
     data: DemoteStudent,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_promotion_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await BeltService(supabase).demote_student(data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await BeltService(client).demote_student(data, studio_id, user_id)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )

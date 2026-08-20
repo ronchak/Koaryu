@@ -8,7 +8,11 @@ import jwt
 from jwt import ExpiredSignatureError, InvalidTokenError as JWTError, PyJWK
 
 from app.core.config import get_settings
-from app.db.supabase import get_supabase_client
+from app.db.supabase import close_supabase_client, create_supabase_client
+
+# Kept as a patchable module symbol for legacy lookup tests. It is an alias to
+# the isolated factory, never a process-global client accessor.
+get_supabase_client = create_supabase_client
 
 
 SUPABASE_AUTH_AUDIENCE = "authenticated"
@@ -267,7 +271,14 @@ def get_user_id_from_token(token: str) -> str:
         if _is_production_environment(settings):
             raise _invalid_auth_token_exception()
         try:
-            response = get_supabase_client().auth.get_user(token)
+            client = get_supabase_client()
+            try:
+                response = client.auth.get_user(token)
+            finally:
+                # Test doubles may expose only auth.get_user; real SDK
+                # clients always expose the pinned transport closer.
+                if hasattr(getattr(client, "auth", None), "close"):
+                    close_supabase_client(client)
             if not response or not response.user:
                 raise ValueError("Token is invalid or user not found")
             return response.user.id
