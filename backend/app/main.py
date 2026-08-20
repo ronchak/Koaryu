@@ -1,7 +1,11 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
+from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 from app.core.request_body_limits import RequestBodyLimitMiddleware
 from app.api.v1.endpoints.health import health_live, health_ready
 from app.api.v1.router import router as v1_router
@@ -20,12 +24,43 @@ elif frontend_origin.startswith("http://127.0.0.1:"):
         frontend_origin.replace("http://127.0.0.1:", "http://localhost:")
     )
 
+
+INTERACTIVE_PROVIDER_CONFIG = SupabaseLaneConfig(
+    max_workers=4,
+    max_queue=16,
+    queue_wait_timeout=0.25,
+    operation_wait_timeout=30.0,
+)
+BULK_PROVIDER_CONFIG = SupabaseLaneConfig(
+    max_workers=1,
+    max_queue=2,
+    queue_wait_timeout=0.25,
+    operation_wait_timeout=120.0,
+)
+
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    runtime = SupabaseProviderRuntime(
+        INTERACTIVE_PROVIDER_CONFIG,
+        BULK_PROVIDER_CONFIG,
+    )
+    application.state.supabase_provider_runtime = runtime
+    try:
+        yield
+    finally:
+        # ThreadPoolExecutor.shutdown waits for provider work and cleanup;
+        # keep that blocking lifecycle operation off the ASGI event loop.
+        await asyncio.to_thread(runtime.shutdown)
+
+
 app = FastAPI(
     title="Koaryu API",
     description="Backend API for Koaryu — Martial Arts Studio OS",
     version="1.0.0",
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    lifespan=_lifespan,
 )
 
 register_error_handlers(app, cors_allowed_origins=allowed_origins)

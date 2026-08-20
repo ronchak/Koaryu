@@ -8,7 +8,6 @@ from app.core.config import get_settings
 
 _client: Optional[Client] = None
 
-
 class SupabaseClientCleanupError(RuntimeError):
     """Raised after every initialized synchronous client transport was closed."""
 
@@ -108,6 +107,14 @@ def create_supabase_client() -> Client:
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
 
+def get_supabase_client() -> Client:
+    """Legacy owner-run CLI accessor; request paths use the runtime instead."""
+    global _client
+    if _client is None:
+        _client = create_supabase_client()
+    return _client
+
+
 def create_operational_alert_supabase_client(
     *,
     postgrest_client_timeout: float,
@@ -121,14 +128,3 @@ def create_operational_alert_supabase_client(
         settings.SUPABASE_SERVICE_ROLE_KEY,
         postgrest_client_timeout=postgrest_client_timeout,
     )
-
-
-def get_supabase_client() -> Client:
-    """
-    Get the Supabase admin client (service role).
-    Uses a singleton pattern to avoid recreating the client.
-    """
-    global _client
-    if _client is None:
-        _client = create_supabase_client()
-    return _client

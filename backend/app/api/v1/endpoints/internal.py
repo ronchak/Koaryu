@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from starlette.concurrency import run_in_threadpool
 from supabase import Client
+from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.config import (
     KOARYU_PRODUCTION_SUPABASE_URL,
@@ -121,33 +122,43 @@ def _run_operational_alert_evaluation(
 async def process_due_account_deletions(
     response: Response,
     internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
     settings = get_settings()
     _verify_secret(internal_secret, settings.ACCOUNT_DELETION_WORKER_SECRET, "Account deletion worker")
-    result = await AccountService(supabase).process_due_deletions()
-    if settings.OPERATIONAL_ALERTS_ENABLED:
-        try:
-            alert_environment = _verify_operational_alert_target(
-                settings.ENVIRONMENT,
-                settings.SUPABASE_URL,
+
+    async def _provider_operation(client):
+        result = await AccountService(client).process_due_deletions()
+        heartbeat_sequence = None
+        if settings.OPERATIONAL_ALERTS_ENABLED:
+            try:
+                alert_environment = _verify_operational_alert_target(
+                    settings.ENVIRONMENT,
+                    settings.SUPABASE_URL,
+                )
+                heartbeat_sequence = OperationalAlertService(client).record_heartbeat(
+                    environment=alert_environment,
+                    worker_id="deletion-worker",
+                    commit_sha=os.environ.get("RENDER_GIT_COMMIT"),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Operational alert deletion-worker heartbeat failed",
+                    extra={"exception_type": type(exc).__name__},
+                )
+        if result.failed > 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.model_dump(mode="json"),
             )
-            heartbeat_sequence = OperationalAlertService(supabase).record_heartbeat(
-                environment=alert_environment,
-                worker_id="deletion-worker",
-                commit_sha=os.environ.get("RENDER_GIT_COMMIT"),
-            )
-            response.headers["X-Koaryu-Heartbeat-Sequence"] = str(heartbeat_sequence)
-        except Exception as exc:
-            logger.warning(
-                "Operational alert deletion-worker heartbeat failed",
-                extra={"exception_type": type(exc).__name__},
-            )
-    if result.failed > 0:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.model_dump(mode="json"),
-        )
+        return result, heartbeat_sequence
+    result, heartbeat_sequence = await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )
+    if heartbeat_sequence is not None:
+        response.headers["X-Koaryu-Heartbeat-Sequence"] = str(heartbeat_sequence)
     return result
 
 
@@ -205,7 +216,7 @@ async def evaluate_operational_alerts(
 async def acknowledge_operational_alert(
     episode_id: UUID,
     internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
     settings = get_settings()
     if not settings.OPERATIONAL_ALERTS_ENABLED:
@@ -242,15 +253,22 @@ async def acknowledge_operational_alert(
         actor_role, actor_ref = "backup", "backup-owner"
     if actor_role is None or actor_ref is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal secret.")
-    result = OperationalAlertService(supabase).acknowledge(
-        environment=environment,
-        episode_id=episode_id,
-        actor_role=actor_role,
-        actor_ref=actor_ref,
+
+    async def _provider_operation(client):
+        result = OperationalAlertService(client).acknowledge(
+            environment=environment,
+            episode_id=episode_id,
+            actor_role=actor_role,
+            actor_ref=actor_ref,
+        )
+        if result is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert episode not found.")
+        return result
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
     )
-    if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert episode not found.")
-    return result
 
 
 @router.get("/support/tickets", response_model=list[SupportTicketResponse])
@@ -260,7 +278,7 @@ async def list_support_triage_tickets(
     topic: Optional[list[SupportTicketTopic]] = Query(None),
     limit: int = Query(50, ge=1, le=100),
     internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
     settings = get_settings()
     _verify_secret(internal_secret, settings.SUPPORT_TRIAGE_SECRET, "Support triage")
@@ -270,7 +288,14 @@ async def list_support_triage_tickets(
         topics=topic or [],
         limit=limit,
     )
-    return await SupportService(supabase).list_triage_tickets(filters)
+
+    async def _provider_operation(client):
+        return await SupportService(client).list_triage_tickets(filters)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.patch("/support/tickets/{ticket_id}", response_model=SupportTicketResponse)
@@ -278,8 +303,15 @@ async def update_support_triage_ticket(
     ticket_id: UUID,
     data: SupportTicketTriageUpdate,
     internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
     settings = get_settings()
     _verify_secret(internal_secret, settings.SUPPORT_TRIAGE_SECRET, "Support triage")
-    return await SupportService(supabase).triage_ticket(str(ticket_id), data)
+
+    async def _provider_operation(client):
+        return await SupportService(client).triage_ticket(str(ticket_id), data)
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
