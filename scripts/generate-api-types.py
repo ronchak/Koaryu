@@ -36,6 +36,7 @@ EXTRA_PYDANTIC_SCHEMA_MODELS = (
     ("app.schemas.student", "CsvImportOptions"),
     ("app.schemas.student", "CsvImportRequest"),
     ("app.schemas.student", "StudentListQueryContract"),
+    ("app.schemas.student", "StudentListResponse"),
     ("app.schemas.schedule", "ClassSessionDeleteScope"),
 )
 

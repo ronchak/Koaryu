@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header, status
+from datetime import date
+
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header, status as http_status
 from typing import Optional
 from supabase import Client
 from app.core.deps import ProviderDependency, run_supabase_operation
@@ -18,12 +20,14 @@ from app.schemas.billing import (
 )
 from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
+    StudentRosterPageResponse,
+    StudentRosterCursorErrorResponse,
     BulkStudentUpdateResponse,
     CsvImportRequest,
     CsvImportResult,
     CsvParseResponse,
     BulkTagUpdate,
-    BulkStatusUpdate,
+    BulkStatusUpdate, BulkStudentArchiveRequest,
     StudentListSortDir,
     StudentListSortKey,
     StudentStatus,
@@ -38,6 +42,8 @@ from app.services.studio_scope import (
 from app.services.student_import_csv import CSV_IMPORT_MAX_BYTES, validate_csv_import_mapping
 from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_service import StudentService
+from app.services.student_roster_query import StudentRosterCursorError
+from app.services.dashboard_summary_service import dashboard_summary_fact_cache
 import json
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -88,7 +94,11 @@ async def read_csv_import_upload(file: UploadFile) -> bytes:
     return content
 
 
-@router.get("", response_model=StudentListResponse)
+@router.get(
+    "",
+    response_model=StudentRosterPageResponse,
+    responses={http_status.HTTP_409_CONFLICT: {"model": StudentRosterCursorErrorResponse}},
+)
 async def list_students(
     search: Optional[str] = Query(None),
     status: Optional[StudentStatus] = Query(None),
@@ -97,26 +107,54 @@ async def list_students(
     sort_dir: StudentListSortDir = Query("asc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    cursor: Optional[str] = Query(None),
+    full_roster: bool = Query(False),
+    inactivity_days: Optional[int] = Query(None),
+    new_students: Optional[str] = Query(None),
+    today: Optional[date] = Query(None),
     studio_id: str = Depends(get_current_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
+    if page != 1 and not cursor:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail={
+                "code": "cursor_required",
+                "message": "Roster navigation requires a cursor from the current query.",
+                "recover_to": "first",
+            },
+        )
+
     async def _provider_operation(client):
         service = StudentService(client)
-        return await service.list_students(
-            studio_id,
-            search,
-            status,
-            program_id,
-            page,
-            page_size,
-            sort_by,
-            sort_dir,
-        )
-    return await run_supabase_operation(
-        supabase,
-        _provider_operation,
-        lane="interactive",
-    )
+        try:
+            return service.list_roster_page(
+                studio_id,
+                full_roster=full_roster,
+                search=search,
+                status_filter=status,
+                program_id=program_id,
+                inactivity_days=inactivity_days,
+                new_student_window=new_students,
+                today=today,
+                cursor=cursor,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+            )
+        except StudentRosterCursorError as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail={
+                    "code": exc.code,
+                    "message": exc.message,
+                    "recover_to": exc.recover_to,
+                },
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
 
 
 @router.post("", response_model=StudentResponse, status_code=201)
@@ -164,7 +202,7 @@ async def update_student(
         data.model_fields_set & INSTRUCTOR_RESTRICTED_STUDENT_UPDATE_FIELDS
     ):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="Instructors can update ordinary student profile information only.",
         )
 
@@ -349,7 +387,7 @@ async def add_student_billing_enrollment(
         )["studio_id"]
         if data.collection_mode != "external":
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                status_code=http_status.HTTP_409_CONFLICT,
                 detail="Billing attachments currently support external collection only.",
             )
         payload = StudentBillingEnrollmentCreate(student_id=student_id, **data.model_dump())
@@ -390,6 +428,26 @@ async def bulk_update_status(
         service = StudentService(client)
         count = await service.bulk_update_status(data, studio_id, user_id)
         return {"updated": count}
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )
+
+
+@router.post("/bulk/archive", response_model=BulkStudentUpdateResponse, status_code=200)
+async def bulk_archive_students(
+    data: BulkStudentArchiveRequest,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        service = StudentService(client)
+        count = await service.archive_students(data, studio_id, user_id)
+        dashboard_summary_fact_cache.invalidate(studio_id, domain="dashboard")
+        return {"updated": count}
+
     return await run_supabase_operation(
         supabase,
         _provider_operation,

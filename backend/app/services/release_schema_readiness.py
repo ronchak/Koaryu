@@ -6,9 +6,9 @@ from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
-EXPECTED_RELEASE_MIGRATION_COUNT = 111
-EXPECTED_RELEASE_MIGRATION_HEAD = "20260816012723"
-EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v18"
+EXPECTED_RELEASE_MIGRATION_COUNT = 114
+EXPECTED_RELEASE_MIGRATION_HEAD = "20260820060216"
+EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v21"
 EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260727100000",
     "20260727110000",
@@ -37,6 +37,9 @@ EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260814213000",
     "20260815220402",
     "20260816012723",
+    "20260820012533",
+    "20260820025759",
+    "20260820060216",
 ]
 
 # Kept as a patchable factory symbol for existing readiness tests. It is an
@@ -67,7 +70,7 @@ def assert_hosted_release_schema_ready() -> None:
     try:
         result = execute_required_rpc(
             client,
-            "koaryu_release_schema_preflight_v3",
+            "koaryu_release_schema_preflight_v4",
             {},
         )
         validate_release_schema_preflight(first_rpc_row(result))

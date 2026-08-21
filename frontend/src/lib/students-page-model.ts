@@ -1,5 +1,10 @@
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
-import type { Program, Student, StudentListQueryContract } from "@/types";
+import type {
+  Program,
+  Student,
+  StudentListQueryContract,
+  StudentRosterRowResponse,
+} from "@/types";
 
 export type SortKey = NonNullable<StudentListQueryContract["sort_by"]>;
 export type SortDir = NonNullable<StudentListQueryContract["sort_dir"]>;
@@ -45,6 +50,7 @@ interface StudentRosterModeInput {
   hasNewStudentFilter: boolean;
   inactivityThreshold: number | null;
   pagedRosterEnabled: boolean;
+  isPreviewMode?: boolean;
 }
 
 interface StudentRosterLoadStateInput {
@@ -132,8 +138,14 @@ export function buildStudentQueryFilterState({
   newStudentsParam,
   today,
 }: StudentQueryFilterInput) {
-  const inactivityThreshold = Number(inactiveDaysParam || "") || null;
-  const newStudentDays = Number(newStudentsParam || "") || null;
+  const parsedInactivityDays = Number(inactiveDaysParam || "");
+  const parsedNewStudentDays = Number(newStudentsParam || "");
+  const inactivityThreshold = [14, 30, 90].includes(parsedInactivityDays)
+    ? parsedInactivityDays
+    : null;
+  const newStudentDays = [14, 30, 90].includes(parsedNewStudentDays)
+    ? parsedNewStudentDays
+    : null;
   const isNewStudentYtd = newStudentsParam === "ytd";
   const hasNewStudentFilter = Boolean(newStudentDays || isNewStudentYtd);
 
@@ -152,12 +164,30 @@ export function buildStudentQueryFilterState({
 }
 
 export function shouldUseDerivedRosterFilters({
-  fullRosterRequested,
-  hasNewStudentFilter,
-  inactivityThreshold,
   pagedRosterEnabled,
+  isPreviewMode = false,
 }: StudentRosterModeInput) {
-  return !pagedRosterEnabled || Boolean(inactivityThreshold || hasNewStudentFilter || fullRosterRequested);
+  // The flag is the rollout fallback.  Once the cursor consumer is enabled,
+  // all live roster filters stay server-owned, including the deep-link modes.
+  return isPreviewMode || !pagedRosterEnabled;
+}
+
+export function buildServerInactivityByStudentId(
+  students: Array<Pick<Student, "id"> & Partial<Pick<StudentRosterRowResponse, "inactivity_days">>>,
+  inactivityThreshold: number | null,
+) {
+  if (!inactivityThreshold) {
+    return new Map<string, string>();
+  }
+
+  return new Map(
+    students.map((student) => [
+      student.id,
+      typeof student.inactivity_days === "number"
+        ? String(student.inactivity_days)
+        : `${inactivityThreshold}+`,
+    ])
+  );
 }
 
 export function buildStudentRosterLoadState({

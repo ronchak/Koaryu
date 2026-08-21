@@ -1,9 +1,9 @@
 # Studio-Comp Migration Rollout
 
-Status: **staging last verified at exact migration 111/head 20260816012723; fresh candidate-bound re-read required; production human apply locked**
+Status: **candidate extends the release to migration 114/head 20260820060216; fresh candidate-bound staging re-read required; production human apply locked**
 
 This packet reconciles the production 100-migration V7 baseline and the last
-verified staging 111-state with the immutable 111-migration release candidate.
+verified staging state with the immutable 114-migration release candidate.
 It is specialized to this rollout, not a generic migration or history-repair
 framework.
 
@@ -24,13 +24,13 @@ Therefore:
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
 - the release authority is the operator-side raw-catalog verifier plus its
-  repository-pinned SHA-256 manifests; the database V18 readiness signal, backed
+  repository-pinned SHA-256 manifests; the database V20 readiness signal, backed
   by the V7 semantic/ACL manifest, V9 starting-belt invariant manifest, V11
   student-rank writer body/ACL manifest, V12 writer return-contract manifest,
   V13 retained-membership rank manifest, V14 critical RPC/trigger/FK manifest,
   the V15 checkout-binding/promotion-column manifest, the V16 critical-surface
   manifest, and the V17 archive/RLS/last-admin critical-surface manifest,
-  exposed through the candidate V3 RPC is an
+  exposed through the candidate V4 RPC is an
   operational drift/readiness signal, not proof
   against a malicious database administrator;
 - the mutable parsed `statements` array is not treated as file identity.
@@ -48,10 +48,11 @@ The fixed production pre-state is:
 
 The authorized release migrations are `20260814043325`, `20260814103046`,
 `20260814105424`, `20260814114500`, `20260814152000`, `20260814170000`,
-`20260814183000`, `20260814200000`, `20260814213000`, `20260815220402`, and
-`20260816012723`.
-The only certifiable post-state is migration count 111 at the latter head. Its
-V18 readiness signal retains the complete migration-85-through-111 sequence:
+`20260814183000`, `20260814200000`, `20260814213000`, `20260815220402`,
+`20260816012723`, `20260820012533`, `20260820025759`, and
+`20260820060216`.
+The only certifiable post-state is migration count 114 at the latter head. Its
+V21 readiness signal retains the complete migration-85-through-114 sequence:
 
 ```text
 20260727100000
@@ -81,6 +82,9 @@ V18 readiness signal retains the complete migration-85-through-111 sequence:
 20260814213000
 20260815220402
 20260816012723
+20260820012533
+20260820025759
+20260820060216
 ```
 
 Exact migration count 110 at head `20260815220402` is the accepted

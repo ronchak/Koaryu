@@ -1060,7 +1060,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
           const studentsPromise = loadIndependentDataset({
             context: studioPromise,
-            fallback: { items: [], total: 0, page: 1, page_size: 200 },
+            fallback: {
+              items: [],
+              total: 0,
+              page_size: 200,
+              page_ordinal: 1,
+              has_next: false,
+              next_cursor: null,
+              has_previous: false,
+              previous_cursor: null,
+            },
             load: fetchStudentPage(
               sessionToken,
               { page: 1, pageSize: 200, sortKey: "name", sortDir: "asc" },

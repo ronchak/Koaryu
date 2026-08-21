@@ -483,6 +483,10 @@ export interface ApiBulkStatusUpdate {
   status: "active" | "trialing" | "inactive" | "paused" | "canceled";
 }
 
+export interface ApiBulkStudentArchiveRequest {
+  student_ids: string[];
+}
+
 export interface ApiBulkStudentUpdateResponse {
   updated: number;
 }
@@ -1301,6 +1305,11 @@ export interface ApiStudentListQueryContract {
   page_size?: number;
   sort_by?: "name" | "status" | "membership_start_date" | "created_at";
   sort_dir?: "asc" | "desc";
+  cursor?: string | null;
+  full_roster?: boolean;
+  inactivity_days?: number | null;
+  new_students?: "14" | "30" | "90" | "ytd" | null;
+  today?: string | null;
 }
 
 export interface ApiStudentListResponse {
@@ -1374,6 +1383,61 @@ export interface ApiStudentResponse {
   program_memberships: ApiStudentProgramMembershipResponse[];
   created_at: string;
   updated_at: string;
+}
+
+export interface ApiStudentRosterCursorErrorResponse {
+  code: string;
+  message: string;
+  recover_to: "first" | "nearest_prior";
+}
+
+export interface ApiStudentRosterPageResponse {
+  items: ApiStudentRosterRowResponse[];
+  total: number;
+  page_size: number;
+  page_ordinal: number;
+  has_next: boolean;
+  next_cursor?: string | null;
+  has_previous: boolean;
+  previous_cursor?: string | null;
+}
+
+export interface ApiStudentRosterRowResponse {
+  id: string;
+  studio_id: string;
+  legal_first_name: string;
+  legal_last_name: string;
+  preferred_name?: string | null;
+  date_of_birth?: string | null;
+  is_minor?: boolean | null;
+  hold_start_date?: string | null;
+  hold_end_date?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address_line1?: string | null;
+  address_city?: string | null;
+  address_state?: string | null;
+  address_zip?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relation?: string | null;
+  status: "active" | "trialing" | "inactive" | "paused" | "canceled";
+  membership_start_date?: string | null;
+  program_id?: string | null;
+  current_belt_rank_id?: string | null;
+  photo_path?: string | null;
+  photo_url?: string | null;
+  photo_updated_at?: string | null;
+  notes?: string | null;
+  tags: string[];
+  guardians: ApiGuardianResponse[];
+  program_memberships: ApiStudentProgramMembershipResponse[];
+  created_at: string;
+  updated_at: string;
+  guardian_email?: string | null;
+  last_attendance_date?: string | null;
+  inactivity_days?: number | null;
+  reference_date?: string | null;
 }
 
 export interface ApiStudentUpdate {

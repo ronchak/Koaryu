@@ -89,7 +89,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v3", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v4", {})])
 
 
 if __name__ == "__main__":

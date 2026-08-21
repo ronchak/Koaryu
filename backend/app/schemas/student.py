@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing import Literal, Optional, get_args
 from datetime import date
+from uuid import UUID
 
 StudentStatus = Literal["active", "trialing", "inactive", "paused", "canceled"]
 STUDENT_STATUSES = set(get_args(StudentStatus))
@@ -157,6 +158,37 @@ class StudentListResponse(BaseModel):
     page_size: int
 
 
+class StudentRosterRowResponse(StudentResponse):
+    """Complete row projection for the interactive roster and quick view.
+
+    The roster RPC supplies these derived values in the same response.  They
+    are nullable when the source fact is not applicable or unavailable; the
+    adapter must not manufacture a zero for missing attendance data.
+    """
+
+    guardian_email: Optional[str] = None
+    last_attendance_date: Optional[str] = None
+    inactivity_days: Optional[int] = None
+    reference_date: Optional[str] = None
+
+
+class StudentRosterPageResponse(BaseModel):
+    items: list[StudentRosterRowResponse]
+    total: int
+    page_size: int
+    page_ordinal: int
+    has_next: bool
+    next_cursor: Optional[str] = None
+    has_previous: bool
+    previous_cursor: Optional[str] = None
+
+
+class StudentRosterCursorErrorResponse(BaseModel):
+    code: str
+    message: str
+    recover_to: Literal["first", "nearest_prior"]
+
+
 class StudentListQueryContract(BaseModel):
     search: Optional[str] = None
     status: Optional[StudentStatus] = None
@@ -165,6 +197,11 @@ class StudentListQueryContract(BaseModel):
     page_size: int = Field(default=50, ge=1, le=200)
     sort_by: StudentListSortKey = "name"
     sort_dir: StudentListSortDir = "asc"
+    cursor: Optional[str] = None
+    full_roster: bool = False
+    inactivity_days: Optional[int] = None
+    new_students: Optional[Literal["14", "30", "90", "ytd"]] = None
+    today: Optional[date] = None
 
 
 # ---- CSV Import ----
@@ -285,6 +322,10 @@ class BulkTagUpdate(BaseModel):
 class BulkStatusUpdate(BaseModel):
     student_ids: list[str] = Field(min_length=1)
     status: StudentStatus
+
+
+class BulkStudentArchiveRequest(BaseModel):
+    student_ids: list[UUID] = Field(min_length=1, max_length=200)
 
 
 class BulkStudentUpdateResponse(BaseModel):

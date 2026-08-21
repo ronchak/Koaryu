@@ -38,10 +38,10 @@ npm run check:release-workflow
 Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'` and routes provider health to `/health/ready`.
 
 Database promotion precedes application promotion. Hosted readiness calls the
-service-role-only V3 Supabase preflight and requires the exact final migration count
-111, head `20260816012723`, the exact 27-version pending sequence, manifest version
-`release-db-attestation-v18`, the exact zero-invalid-count V17 archive-critical
-semantic manifest `0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8`, and required-object/security proof. That manifest covers
+service-role-only V4 Supabase preflight and requires the exact final migration count
+114, head `20260820060216`, the exact 30-version pending sequence, manifest version
+`release-db-attestation-v21`, the exact zero-invalid-count V18 archive-critical
+semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`, and required-object/security proof. That manifest covers
 `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware
 triggers, and every public RLS table's restrictive membership guard. The post-111
 V16 compatibility assertion is pinned to

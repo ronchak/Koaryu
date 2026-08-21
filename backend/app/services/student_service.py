@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any, Optional
 from supabase import Client
 from fastapi import UploadFile
@@ -5,8 +6,9 @@ from app.schemas.student import (
     StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
     GuardianResponse,
     CsvImportOptions, CsvImportResult,
-    BulkTagUpdate, BulkStatusUpdate,
+    BulkTagUpdate, BulkStatusUpdate, BulkStudentArchiveRequest,
     StudentListSortDir, StudentListSortKey, StudentStatus,
+    StudentRosterPageResponse,
     StudentProgramMembershipCreate, StudentProgramMembershipResponse, StudentProgramMembershipUpdate,
 )
 from app.services.student_bulk_actions import StudentBulkActions
@@ -23,6 +25,7 @@ from app.services.student_photo_actions import StudentPhotoActions
 from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_program_memberships import StudentProgramMembershipStore
 from app.services.student_response_builder import PHOTO_URL_UNSET, StudentResponseBuilder
+from app.services.student_roster_query import StudentRosterQuery, fetch_student_roster_page
 from app.services.student_write_payload import (
     prepare_student_write_payload,
 )
@@ -147,6 +150,44 @@ class StudentService:
             page_size=page_size,
         )
 
+    def list_roster_page(
+        self,
+        studio_id: str,
+        *,
+        full_roster: bool = False,
+        search: Optional[str] = None,
+        status_filter: Optional[StudentStatus] = None,
+        program_id: Optional[str] = None,
+        inactivity_days: Optional[int] = None,
+        new_student_window: Optional[str] = None,
+        today: Optional[date] = None,
+        cursor: Optional[str] = None,
+        page_size: int = 50,
+        sort_by: StudentListSortKey = "name",
+        sort_dir: StudentListSortDir = "asc",
+    ) -> StudentRosterPageResponse:
+        query = StudentRosterQuery.build(
+            studio_id,
+            full_roster=full_roster,
+            search=search,
+            status=status_filter,
+            program_id=program_id,
+            inactivity_days=inactivity_days,
+            new_student_window=new_student_window,
+            today=today,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            page_size=page_size,
+        )
+        page = fetch_student_roster_page(self.supabase, query, cursor=cursor)
+        photo_urls = self._student_photos().create_signed_urls(
+            [item.photo_path for item in page.items if item.photo_path]
+        )
+        for item in page.items:
+            if item.photo_path:
+                item.photo_url = photo_urls.get(item.photo_path)
+        return page
+
     async def create_student(
         self, data: StudentCreate, studio_id: str, actor_id: str
     ) -> StudentResponse:
@@ -246,6 +287,11 @@ class StudentService:
         self, data: BulkStatusUpdate, studio_id: str, actor_id: str
     ) -> int:
         return await self._bulk_actions().update_status(data, studio_id, actor_id)
+
+    async def archive_students(
+        self, data: BulkStudentArchiveRequest, studio_id: str, actor_id: str
+    ) -> int:
+        return await self._bulk_actions().archive_students(data, studio_id, actor_id)
 
     # ---- CSV Import ----
 

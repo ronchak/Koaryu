@@ -91,6 +91,7 @@ AFFECTED_ROUTE_DEPENDENCIES = {
         ("DELETE", "/students/{student_id}/programs/{membership_id}"),
         ("POST", "/students/bulk/tags"),
         ("POST", "/students/bulk/status"),
+        ("POST", "/students/bulk/archive"),
         ("POST", "/students/import/execute"),
         ("POST", "/schedule/templates"),
         ("PATCH", "/schedule/templates/{template_id}"),

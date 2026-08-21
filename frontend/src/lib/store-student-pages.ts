@@ -1,46 +1,78 @@
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { StudentListQuery } from "@/lib/student-list-page";
+import { buildStudentPagePath } from "@/lib/student-roster-query";
 import type {
   Student,
-  StudentListResponse,
+  StudentRosterPageResponse,
 } from "@/types";
+
+export { buildStudentPagePath } from "@/lib/student-roster-query";
 
 export interface StudentPageRequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number | null;
 }
 
-export function buildStudentPagePath(query: StudentListQuery = {}): string {
-  const params = new URLSearchParams();
-  params.set("page", String(Math.max(1, query.page || 1)));
-  params.set("page_size", String(Math.min(200, Math.max(1, query.pageSize || 50))));
-  params.set("sort_by", query.sortKey || "name");
-  params.set("sort_dir", query.sortDir || "asc");
+export type StudentRosterCursorRecovery = "first" | "nearest_prior";
 
-  const search = query.search?.trim();
-  if (search) {
-    params.set("search", search);
+export class StudentRosterCursorError extends Error {
+  readonly code: string;
+  readonly recoverTo: StudentRosterCursorRecovery;
+
+  constructor(code: string, message: string, recoverTo: StudentRosterCursorRecovery) {
+    super(message);
+    this.name = "StudentRosterCursorError";
+    this.code = code;
+    this.recoverTo = recoverTo;
   }
-  if (query.status) {
-    params.set("status", query.status);
-  }
-  if (query.programId) {
-    params.set("program_id", query.programId);
+}
+
+export function decodeStudentRosterCursorError(error: unknown): StudentRosterCursorError | null {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return null;
   }
 
-  return `/students?${params.toString()}`;
+  try {
+    const detail = error.detail ?? JSON.parse(error.message) as unknown;
+    if (!detail || typeof detail !== "object") {
+      return null;
+    }
+
+    const record = detail as Record<string, unknown>;
+    if (
+      typeof record.code !== "string" ||
+      typeof record.message !== "string" ||
+      !record.code.trim() ||
+      !record.message.trim() ||
+      (record.recover_to !== "first" && record.recover_to !== "nearest_prior")
+    ) {
+      return null;
+    }
+
+    return new StudentRosterCursorError(
+      record.code,
+      record.message,
+      record.recover_to,
+    );
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchStudentPage(
   authToken: string,
   query: StudentListQuery = {},
   options?: StudentPageRequestOptions
-): Promise<StudentListResponse> {
-  return api.get<StudentListResponse>(
-    buildStudentPagePath(query),
-    authToken,
-    options
-  );
+): Promise<StudentRosterPageResponse> {
+  try {
+    return await api.get<StudentRosterPageResponse>(
+      buildStudentPagePath(query),
+      authToken,
+      options
+    );
+  } catch (error) {
+    throw decodeStudentRosterCursorError(error) || error;
+  }
 }
 
 export async function fetchAllStudents(
@@ -48,21 +80,29 @@ export async function fetchAllStudents(
   options?: { timeoutMs?: number | null }
 ): Promise<Student[]> {
   const pageSize = 200;
-  let page = 1;
-  let total = Number.POSITIVE_INFINITY;
+  let cursor: string | null = null;
   const collected: Student[] = [];
+  const seenCursors = new Set<string>();
 
-  while (collected.length < total) {
-    const result = await fetchStudentPage(authToken, { page, pageSize }, options);
+  while (true) {
+    const result = await fetchStudentPage(authToken, {
+      page: 1,
+      pageSize,
+      fullRoster: true,
+      ...(cursor ? { cursor } : {}),
+    }, options);
 
     collected.push(...result.items);
-    total = result.total;
 
-    if (result.items.length < pageSize) {
+    if (!result.has_next) {
       break;
     }
 
-    page += 1;
+    if (!result.next_cursor || seenCursors.has(result.next_cursor)) {
+      throw new Error("Student roster cursor did not make progress.");
+    }
+    seenCursors.add(result.next_cursor);
+    cursor = result.next_cursor;
   }
 
   return collected;

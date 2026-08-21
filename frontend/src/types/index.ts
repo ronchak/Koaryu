@@ -103,6 +103,9 @@ export type GuardianCreate = ApiContracts.ApiGuardianCreate;
 export type StudentProgramMembership = ApiContracts.ApiStudentProgramMembershipResponse;
 export type Student = ApiContracts.ApiStudentResponse;
 export type StudentListResponse = ApiContracts.ApiStudentListResponse;
+export type StudentRosterPageResponse = ApiContracts.ApiStudentRosterPageResponse;
+export type StudentRosterRowResponse = ApiContracts.ApiStudentRosterRowResponse;
+export type StudentRosterCursorErrorResponse = ApiContracts.ApiStudentRosterCursorErrorResponse;
 export type StudentListQueryContract = ApiContracts.ApiStudentListQueryContract;
 export type StudentCreate = ApiContracts.ApiStudentCreate;
 export type StudentUpdate = ApiContracts.ApiStudentUpdate;
@@ -111,6 +114,7 @@ export type BulkStudentTagUpdateResponse = ApiContracts.ApiBulkStudentUpdateResp
 
 export type BulkStudentStatusUpdateRequest = ApiContracts.ApiBulkStatusUpdate;
 export type BulkStudentStatusUpdateResponse = ApiContracts.ApiBulkStudentUpdateResponse;
+export type BulkStudentArchiveRequest = ApiContracts.ApiBulkStudentArchiveRequest;
 
 // ---- CSV Import ----
 
