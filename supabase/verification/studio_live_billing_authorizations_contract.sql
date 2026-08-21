@@ -191,7 +191,7 @@ BEGIN
         (
             v_blank_studio,
             NULL,
-            'not_started',
+            'not_connected',
             false,
             false,
             false,
