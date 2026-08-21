@@ -2,6 +2,16 @@
 
 ## Studio live billing authorization and reconciliation
 
+<!-- payments-operator-v3:start -->
+Schema-v3 reconciliation is the only recordable checkpoint contract. `stripe_reconciliation_report.py` derives the default 29-day provider window, refuses a requested start outside its retention safety boundary, and marks any shorter diagnostic window ineligible. It reads Stripe, Supabase, and the pinned readiness URL only; it never invokes a provider mutation. Offline and staging output remain permanently checkpoint-ineligible.
+
+Continuity is explicit. Rolling evidence names an unexpired prior v3 checkpoint, proves at least 24 hours of overlap, verifies a non-regressing local ingest watermark, and rechecks account-generation and post-watermark event state. A first-v3 bootstrap is allowed only with zero enabled live authorizations and clean durable local history, and it records that inaccessible provider history was **not** claimed complete.
+
+`live_billing_authorizations.py record-checkpoint` accepts only `schema_version=3`, independently re-probes the exact production readiness URL and candidate SHA, hashes the exact report bytes, and targets `record_stripe_live_billing_reconciliation_checkpoint_v3`. Without `--execute` it prints the complete plan and performs no database write. `status` and `drift` show the latest v3 checkpoint while retaining legacy v2 rows only as audit history.
+
+The checkpoint execute path still requires a real Auth actor, `--expect-project`, an interactive TTY, a future expiry no more than 24 hours away, and an explicitly approved production change. Do not execute production collection, checkpoint recording, a studio grant, or a canary as part of repository verification.
+<!-- payments-operator-v3:end -->
+
 `backend/scripts/live_billing_authorizations.py` is the service-role-only status, drift, grant, revoke, account-disposition, and reconciliation-checkpoint tool. Writes are dry-run by default and require exact project plus interactive confirmation. `backend/scripts/stripe_reconciliation_report.py` is a sanitized read-only provider/local reporter. Offline output and the separately labeled staging probe are permanently checkpoint-ineligible; production collection and checkpoint recording each independently pin the exact production `/health/ready` URL and candidate SHA. `scripts/verify-stripe-provider-rehearsal.py` validates exact-candidate test-mode evidence without contacting a provider. See `docs/stripe-live-billing-rollout.md` for the authority split, expiry and candidate binding, the July 20 silence hypotheses, hard six-account/seven-event blockers, secret-rotation gate, and preregistered canary abort/promote criteria.
 
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
