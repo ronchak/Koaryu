@@ -1,0 +1,11 @@
+--- a/supabase/verification/studio_live_billing_authorizations_contract.sql
++++ b/supabase/verification/studio_live_billing_authorizations_contract.sql
+@@ -191,7 +191,7 @@
+         (
+             v_blank_studio,
+             NULL,
+-            'not_started',
++            'not_connected',
+             false,
+             false,
+             false,
