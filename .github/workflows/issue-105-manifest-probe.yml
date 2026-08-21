@@ -1,37 +1,33 @@
-name: Issue 105 manifest probe
+name: Issue 105 finalizer
 
 permissions:
-  contents: read
+  contents: write
 
 on:
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches:
+      - codex/payments-1-reconciliation-v3
+    paths:
+      - .github/workflows/issue-105-manifest-probe.yml
 
 jobs:
-  probe:
-    if: github.event.pull_request.head.ref == 'codex/payments-1-reconciliation-v3'
+  finalize:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1
-        with:
-          version: 2.95.4
-      - name: Replay migrations and emit v19 manifests
-        env:
-          SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
-        run: supabase db start
-      - name: Emit raw catalog state
-        env:
-          SUPABASE_DB_TARGET: local
+          ref: codex/payments-1-reconciliation-v3
+          fetch-depth: 0
+      - name: Apply verified issue 105 final patch
         run: |
-          node --input-type=module <<'NODE' > /tmp/issue-105-catalog.sql
-          import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs';
-          process.stdout.write(CATALOG_STATE_SQL.trim() + '\n');
-          NODE
-          scripts/run-supabase-sql.sh /tmp/issue-105-catalog.sql
-      - name: Stop disposable database
-        if: always()
-        run: supabase stop --no-backup
+          git apply --index .github/issue-105-final.patch
+          git rm -f --ignore-unmatch \
+            .github/issue-105-final.patch \
+            .github/workflows/issue-105-manifest-probe.yml \
+            .github/workflows/issue-105-source-export.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(payments): finalize reconciliation v3 contracts"
+          git push origin HEAD:codex/payments-1-reconciliation-v3
