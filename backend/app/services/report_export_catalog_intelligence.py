@@ -12,6 +12,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
             "Owner KPI summary",
             "owner-kpi-summary.csv",
             ("metric", "value", "context"),
+            source_keys=("students", "leads", "sessions", "attendance", "billing_plans", "billing_enrollments", "invoices", "payments"),
             custom_builder=report_service_cls._build_owner_kpi_summary_rows,
         ),
         "quiet_churn_watchlist": _report(
@@ -37,6 +38,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "risk_score",
                 "risk_flags",
             ),
+            source_keys=("students", "sessions", "attendance", "billing_enrollments", "billing_payers", "promotions"),
             custom_builder=report_service_cls._build_quiet_churn_watchlist_rows,
         ),
         "first_90_days_onboarding": _report(
@@ -61,6 +63,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "onboarding_status",
                 "recommended_action",
             ),
+            source_keys=("students", "leads", "sessions", "attendance"),
             custom_builder=report_service_cls._build_first_90_days_onboarding_rows,
         ),
         "lead_quality_after_enrollment": _report(
@@ -81,6 +84,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "lifetime_payment_cents",
                 "avg_lifetime_payment_per_converted_student_cents",
             ),
+            source_keys=("students", "leads", "sessions", "attendance", "invoices", "payments"),
             custom_builder=report_service_cls._build_lead_quality_after_enrollment_rows,
         ),
         "belt_momentum_testing_pipeline": _report(
@@ -106,6 +110,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "requires_approval",
                 "pipeline_status",
             ),
+            source_keys=("students", "programs", "memberships", "belt_ladders", "belt_ranks", "promotions", "sessions", "attendance"),
             custom_builder=report_service_cls._build_belt_momentum_testing_pipeline_rows,
         ),
         "revenue_leakage": _report(
@@ -125,6 +130,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "detail",
                 "recommended_action",
             ),
+            source_keys=("students", "billing_enrollments", "billing_payers", "invoices", "payments"),
             custom_builder=report_service_cls._build_revenue_leakage_rows,
         ),
         "schedule_utilization_demand": _report(
@@ -149,6 +155,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "utilization_rate",
                 "recommendation",
             ),
+            source_keys=("programs", "sessions", "attendance"),
             custom_builder=report_service_cls._build_schedule_utilization_demand_rows,
         ),
         "family_account_health": _report(
@@ -169,6 +176,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "missing_contact_method",
                 "priority_score",
             ),
+            source_keys=("students", "guardians", "student_guardians", "billing_enrollments", "billing_payers", "sessions", "attendance"),
             custom_builder=report_service_cls._build_family_account_health_rows,
         ),
         "lifecycle_segmentation": _report(
@@ -190,6 +198,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "risk_score",
                 "risk_flags",
             ),
+            source_keys=("students", "billing_enrollments", "billing_payers", "sessions", "attendance"),
             custom_builder=report_service_cls._build_lifecycle_segmentation_rows,
         ),
         "instructor_staff_impact": _report(
@@ -208,6 +217,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "assigned_leads_enrolled_or_converted",
                 "assigned_lead_conversion_rate",
             ),
+            source_keys=("leads", "sessions", "attendance"),
             custom_builder=report_service_cls._build_instructor_staff_impact_rows,
         ),
         "data_hygiene_readiness": _report(
@@ -223,6 +233,7 @@ def build_intelligence_report_catalog(report_service_cls: Any) -> dict[str, CsvR
                 "detail",
                 "recommended_action",
             ),
+            source_keys=("students", "student_guardians", "memberships", "billing_enrollments", "leads", "billing_payers"),
             custom_builder=report_service_cls._build_data_hygiene_readiness_rows,
         ),
     }
