@@ -7,8 +7,13 @@ from app.services.release_schema_readiness import (
     EXPECTED_RELEASE_MIGRATION_HEAD,
     EXPECTED_RELEASE_MANIFEST_VERSION,
     EXPECTED_RELEASE_PENDING_VERSIONS,
+    LEGACY_RELEASE_MANIFEST_VERSION,
+    LEGACY_RELEASE_MIGRATION_COUNT,
+    LEGACY_RELEASE_MIGRATION_HEAD,
+    LEGACY_RELEASE_PENDING_VERSIONS,
     ReleaseSchemaNotReadyError,
     assert_hosted_release_schema_ready,
+    validate_legacy_release_schema_preflight,
     validate_release_schema_preflight,
 )
 
@@ -24,72 +29,103 @@ def exact_preflight_row():
     }
 
 
+def legacy_preflight_row():
+    return {
+        "ready": True,
+        "migration_count": LEGACY_RELEASE_MIGRATION_COUNT,
+        "migration_head": LEGACY_RELEASE_MIGRATION_HEAD,
+        "pending_versions": LEGACY_RELEASE_PENDING_VERSIONS,
+        "security_failures": [],
+        "manifest_version": LEGACY_RELEASE_MANIFEST_VERSION,
+    }
+
+
 class ReleaseSchemaReadinessTest(unittest.TestCase):
     def test_exact_preflight_is_ready(self):
         validate_release_schema_preflight(exact_preflight_row())
+        validate_legacy_release_schema_preflight(legacy_preflight_row())
 
-    def test_every_preflight_mismatch_fails_closed(self):
+    def test_every_v19_preflight_mismatch_fails_closed(self):
         mismatches = [
             None,
             {**exact_preflight_row(), "ready": False},
-            {**exact_preflight_row(), "migration_count": 84},
-            {**exact_preflight_row(), "migration_count": 98},
-            {**exact_preflight_row(), "migration_count": 99},
-            {**exact_preflight_row(), "migration_count": 101},
-            {**exact_preflight_row(), "migration_count": 102},
-            {**exact_preflight_row(), "migration_count": 103},
-            {**exact_preflight_row(), "migration_count": 104},
-            {**exact_preflight_row(), "migration_count": 105},
-            {**exact_preflight_row(), "migration_count": 109},
-            {**exact_preflight_row(), "migration_count": 110},
-            {**exact_preflight_row(), "migration_head": "20260801080000"},
-            {**exact_preflight_row(), "migration_head": "20260801105313"},
-            {**exact_preflight_row(), "migration_head": "20260801112153"},
-            {**exact_preflight_row(), "migration_head": "20260801115044"},
-            {**exact_preflight_row(), "migration_head": "20260801123112"},
-            {**exact_preflight_row(), "migration_head": "20260814043325"},
-            {**exact_preflight_row(), "migration_head": "20260814103046"},
-            {**exact_preflight_row(), "migration_head": "20260814105424"},
-            {**exact_preflight_row(), "migration_head": "20260814114500"},
-            {**exact_preflight_row(), "migration_head": "20260814152000"},
-            {**exact_preflight_row(), "migration_head": "20260814213000"},
-            {**exact_preflight_row(), "migration_head": "20260815220402"},
-            {**exact_preflight_row(), "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1]},
+            {**exact_preflight_row(), "migration_count": 111},
+            {**exact_preflight_row(), "migration_head": "20260816012723"},
+            {
+                **exact_preflight_row(),
+                "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
+            },
             {**exact_preflight_row(), "security_failures": ["table:missing"]},
-            {**exact_preflight_row(), "manifest_version": "stale-manifest"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v3"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v4"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v5"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v6"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v7"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v8"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v9"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v10"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v11"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v12"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v16"},
-            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v17"},
+            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v18"},
         ]
         for row in mismatches:
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):
                 validate_release_schema_preflight(row)
 
-    def test_hosted_check_uses_required_rpc(self):
+    def test_hosted_check_prefers_v4(self):
         response = SimpleNamespace(data=[exact_preflight_row()])
-        rpc_result = SimpleNamespace(execute=lambda: response)
         calls = []
 
-        def rpc(name, params):
-            calls.append((name, params))
-            return rpc_result
+        class Client:
+            def rpc(self, name, params):
+                calls.append((name, params))
+                return SimpleNamespace(execute=lambda: response)
 
-        client = SimpleNamespace(rpc=rpc)
         with patch(
             "app.services.release_schema_readiness.get_supabase_client",
-            return_value=client,
+            return_value=Client(),
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v3", {})])
+
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v4", {})])
+
+    def test_hosted_check_accepts_exact_v18_only_when_v4_is_absent(self):
+        legacy_response = SimpleNamespace(data=[legacy_preflight_row()])
+        calls = []
+
+        class Client:
+            def rpc(self, name, params):
+                calls.append((name, params))
+                if name == "koaryu_release_schema_preflight_v4":
+                    return SimpleNamespace(
+                        execute=lambda: (_ for _ in ()).throw(
+                            RuntimeError("function does not exist")
+                        )
+                    )
+                return SimpleNamespace(execute=lambda: legacy_response)
+
+        with patch(
+            "app.services.release_schema_readiness.get_supabase_client",
+            return_value=Client(),
+        ):
+            assert_hosted_release_schema_ready()
+
+        self.assertEqual(calls, [
+            ("koaryu_release_schema_preflight_v4", {}),
+            ("koaryu_release_schema_preflight_v3", {}),
+        ])
+
+    def test_fallback_still_fails_closed_on_nonexact_v18(self):
+        bad = {**legacy_preflight_row(), "ready": False}
+
+        class Client:
+            def rpc(self, name, _params):
+                if name == "koaryu_release_schema_preflight_v4":
+                    return SimpleNamespace(
+                        execute=lambda: (_ for _ in ()).throw(RuntimeError("missing"))
+                    )
+                return SimpleNamespace(
+                    execute=lambda: SimpleNamespace(data=[bad])
+                )
+
+        with (
+            patch(
+                "app.services.release_schema_readiness.get_supabase_client",
+                return_value=Client(),
+            ),
+            self.assertRaises(ReleaseSchemaNotReadyError),
+        ):
+            assert_hosted_release_schema_ready()
 
 
 if __name__ == "__main__":
