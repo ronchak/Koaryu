@@ -94,7 +94,7 @@ export const ROLLOUT = Object.freeze({
   postRolloutMigrations: Object.freeze([
     Object.freeze({
       filename: "20260820170000_live_billing_reconciliation_v3.sql",
-      sha256: "77476b08ae03f3ceadd5625843e268a570a953846197a3cd2d4f8a04b3f45d78",
+      sha256: "a9d4667a8a2c9b1c0d1a0d69d11d01a30030fdf3363a86c5ad28ce7347b06f52",
     }),
   ]),
 });
