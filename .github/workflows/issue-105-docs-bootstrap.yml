@@ -1,0 +1,114 @@
+name: Issue 105 documentation bootstrap
+
+permissions:
+  contents: write
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: issue-105-docs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'codex/payments-1-reconciliation-v3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@v7
+        with:
+          ref: codex/payments-1-reconciliation-v3
+          fetch-depth: 0
+      - name: Patch schema-v3 operator documentation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def install(path: str, heading: str, marker: str, body: str) -> None:
+              target = Path(path)
+              text = target.read_text()
+              start = f'<!-- {marker}:start -->'
+              end = f'<!-- {marker}:end -->'
+              block = f'{start}\n{body.strip()}\n{end}'
+              if start in text and end in text:
+                  prefix, remainder = text.split(start, 1)
+                  _, suffix = remainder.split(end, 1)
+                  text = prefix + block + suffix
+              else:
+                  needle = heading + '\n'
+                  if needle not in text:
+                      raise SystemExit(f'missing documentation heading in {path}: {heading}')
+                  text = text.replace(needle, needle + '\n' + block + '\n', 1)
+              target.write_text(text)
+
+          install(
+              'docs/stripe-live-billing-rollout.md',
+              '## Read-only reconciliation',
+              'payments-reconciliation-v3',
+              '''
+          ### Schema-v3 rolling checkpoint contract
+
+          Schema v3 compares one explicit **29-day** provider window. The value is centralized as Stripe's 30-day Events API retention minus a one-day safety margin. A requested start older than that boundary fails explicitly. A shorter operator-supplied start is diagnostic only because checkpoint eligibility requires the complete default window.
+
+          A matching current window is necessary but not sufficient. A rolling checkpoint must name the previous accepted schema-v3 checkpoint, prove that it is still unexpired, overlap its accepted window by at least 24 hours, preserve a non-regressing global `live_billing_ingest_sequence` watermark, retain the exact candidate SHA and account generations, and show no failed, nonterminal, unmapped, provider-only, local-only, or wrong-mode event in the relevant surface. The first schema-v3 checkpoint uses a separate bootstrap rule. It requires no enabled live authorization and a clean durable local event history, and records `bootstrap_historical_provider_completeness_claimed=false`; it never claims that provider history outside retention was compared.
+
+          Webhook topology no longer reads a fabricated `connect` property. The report pins the exact platform and Connect URLs, `enabled` status, `livemode`, and exact enabled-event sets returned by Stripe. The Connect surface additionally requires fresh matched connected-account event context for every mapped account and current generation. Missing, duplicate, disabled, misrouted, wildcard, unexpected enabled, or event-contract-drifted endpoints fail closed.
+
+          Legacy schema-v2 checkpoints remain readable for audit. The v2 writer is no longer callable by `service_role`, and no new live authorization may bind to a checkpoint without its schema-v3 sidecar. Applying the additive migration disables any enabled legacy grant so it must be deliberately reauthorized against v3 evidence.
+
+          The production sequence after merge is:
+
+          1. Complete the exact-candidate staging rehearsal in Stripe test mode.
+          2. Collect a production report read-only, using the complete default window and exact deployed SHA.
+          3. Review the sanitized report and retain its exact bytes and SHA-256 digest.
+          4. Run `record-checkpoint` without `--execute` and review the schema-v3 RPC plan plus the independent production readiness re-probe.
+          5. Under a separately approved production change, rerun the same command with exact project confirmation and `--execute` to record the short-lived checkpoint.
+          6. Only after the remaining Payments workstreams land, create an operation-bounded studio grant under separate approval.
+          7. Run a separately approved attended canary with its own payer, amount, consent, and financial ceiling.
+
+          This PR executes none of those production steps.
+
+          ```bash
+          cd backend
+          venv/bin/python scripts/stripe_reconciliation_report.py \
+            --collect-read-only \
+            --probe production \
+            --candidate-sha <exact-40-character-production-sha> \
+            > <private-schema-v3-report.json>
+
+          venv/bin/python scripts/live_billing_authorizations.py record-checkpoint \
+            --report <private-schema-v3-report.json> \
+            --expires-at <future-UTC-timestamp-within-24-hours> \
+            --reason "Exact-candidate schema-v3 production reconciliation" \
+            --actor <auth-user-id-or-email>
+          ```
+              ''',
+          )
+
+          install(
+              'docs/operator-tooling.md',
+              '## Studio live billing authorization and reconciliation',
+              'payments-operator-v3',
+              '''
+          Schema-v3 reconciliation is the only recordable checkpoint contract. `stripe_reconciliation_report.py` derives the default 29-day provider window, refuses a requested start outside its retention safety boundary, and marks any shorter diagnostic window ineligible. It reads Stripe, Supabase, and the pinned readiness URL only; it never invokes a provider mutation. Offline and staging output remain permanently checkpoint-ineligible.
+
+          Continuity is explicit. Rolling evidence names an unexpired prior v3 checkpoint, proves at least 24 hours of overlap, verifies a non-regressing local ingest watermark, and rechecks account-generation and post-watermark event state. A first-v3 bootstrap is allowed only with zero enabled live authorizations and clean durable local history, and it records that inaccessible provider history was **not** claimed complete.
+
+          `live_billing_authorizations.py record-checkpoint` accepts only `schema_version=3`, independently re-probes the exact production readiness URL and candidate SHA, hashes the exact report bytes, and targets `record_stripe_live_billing_reconciliation_checkpoint_v3`. Without `--execute` it prints the complete plan and performs no database write. `status` and `drift` show the latest v3 checkpoint while retaining legacy v2 rows only as audit history.
+
+          The checkpoint execute path still requires a real Auth actor, `--expect-project`, an interactive TTY, a future expiry no more than 24 hours away, and an explicitly approved production change. Do not execute production collection, checkpoint recording, a studio grant, or a canary as part of repository verification.
+              ''',
+          )
+          PY
+      - name: Commit documentation and remove bootstrap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- docs/stripe-live-billing-rollout.md docs/operator-tooling.md
+          git rm -- .github/workflows/issue-105-docs-bootstrap.yml
+          git diff --cached --check
+          git commit -m "docs(payments): document reconciliation contract v3"
+          git push origin HEAD:codex/payments-1-reconciliation-v3
