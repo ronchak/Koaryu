@@ -382,8 +382,8 @@ BEGIN
         )
            OR EXISTS (
                SELECT 1
-                 FROM public.studio_live_billing_authorizations authorization
-                WHERE authorization.enabled
+                 FROM public.studio_live_billing_authorizations authz
+                WHERE authz.enabled
            )
            OR p_report #>> '{continuity,bootstrap_local_history_checked}'
                 <> 'true'
@@ -936,7 +936,7 @@ BEGIN
            )
     ) THEN
         RAISE EXCEPTION
-            'Current failed, stuck, or unmapped live events block authorization.'
+            'Current failed, stuck, or unmapped live events block authz.'
             USING ERRCODE = 'P0B53';
     END IF;
 
@@ -952,7 +952,7 @@ BEGIN
            OR v_generation IS NULL
            OR v_generation IS DISTINCT FROM NEW.connect_account_generation THEN
             RAISE EXCEPTION
-                'Current Connect account generation does not match authorization.'
+                'Current Connect account generation does not match authz.'
                 USING ERRCODE = 'P0B54';
         END IF;
 
@@ -1067,19 +1067,19 @@ BEGIN
         IN SHARE MODE;
 
     RETURN QUERY
-    SELECT true, authorization.studio_id, checkpoint.id
-      FROM public.studio_live_billing_authorizations authorization
+    SELECT true, authz.studio_id, checkpoint.id
+      FROM public.studio_live_billing_authorizations authz
       JOIN public.stripe_live_billing_reconciliation_checkpoints checkpoint
-        ON checkpoint.id = authorization.reconciliation_checkpoint_id
+        ON checkpoint.id = authz.reconciliation_checkpoint_id
       JOIN public.stripe_live_billing_reconciliation_checkpoints_v3 sidecar
         ON sidecar.checkpoint_id = checkpoint.id
       LEFT JOIN public.studio_payment_accounts account
-        ON account.studio_id = authorization.studio_id
-     WHERE authorization.studio_id = p_studio_id
-       AND authorization.scope = p_scope
-       AND authorization.enabled
-       AND authorization.expires_at > now()
-       AND authorization.local_event_ingest_watermark =
+        ON account.studio_id = authz.studio_id
+     WHERE authz.studio_id = p_studio_id
+       AND authz.scope = p_scope
+       AND authz.enabled
+       AND authz.expires_at > now()
+       AND authz.local_event_ingest_watermark =
            checkpoint.local_event_ingest_watermark
        AND checkpoint.stripe_livemode
        AND checkpoint.candidate_sha = p_candidate_sha
@@ -1173,7 +1173,7 @@ BEGIN
                   OR
                   (
                       event.live_billing_ingest_sequence >
-                          authorization.local_event_ingest_watermark
+                          authz.local_event_ingest_watermark
                       AND (
                           event.processing_status = 'failed'
                           OR (
@@ -1206,21 +1206,21 @@ BEGIN
        AND (
            (
                p_scope = 'core_subscription'
-               AND authorization.stripe_connected_account_id IS NULL
+               AND authz.stripe_connected_account_id IS NULL
                AND p_stripe_connected_account_id IS NULL
            )
            OR
            (
                p_scope = 'connect_onboarding'
                AND account.studio_id = p_studio_id
-               AND authorization.connect_account_generation =
+               AND authz.connect_account_generation =
                    private.current_connect_account_generation(account.metadata)
                AND (
                    (
                        p_operation = 'connect_account.create'
                        AND p_stripe_connected_account_id IS NULL
                        AND account.stripe_connected_account_id IS NULL
-                       AND authorization.stripe_connected_account_id IS NULL
+                       AND authz.stripe_connected_account_id IS NULL
                    )
                    OR
                    (
@@ -1237,8 +1237,8 @@ BEGIN
                        AND account.stripe_connected_account_id =
                            p_stripe_connected_account_id
                        AND (
-                           authorization.stripe_connected_account_id IS NULL
-                           OR authorization.stripe_connected_account_id =
+                           authz.stripe_connected_account_id IS NULL
+                           OR authz.stripe_connected_account_id =
                                p_stripe_connected_account_id
                        )
                        AND EXISTS (
@@ -1262,9 +1262,9 @@ BEGIN
            (
                p_scope = 'connect_payments'
                AND p_stripe_connected_account_id IS NOT NULL
-               AND authorization.stripe_connected_account_id =
+               AND authz.stripe_connected_account_id =
                    p_stripe_connected_account_id
-               AND authorization.connect_account_generation =
+               AND authz.connect_account_generation =
                    private.current_connect_account_generation(account.metadata)
                AND account.stripe_connected_account_id =
                    p_stripe_connected_account_id
@@ -1315,11 +1315,11 @@ SET search_path = ''
 AS $$
     SELECT checkpoint.id
       FROM public.stripe_connect_onboarding_bootstraps bootstrap
-      JOIN public.studio_live_billing_authorizations authorization
-        ON authorization.studio_id = bootstrap.studio_id
-       AND authorization.scope = 'connect_onboarding'
+      JOIN public.studio_live_billing_authorizations authz
+        ON authz.studio_id = bootstrap.studio_id
+       AND authz.scope = 'connect_onboarding'
       JOIN public.stripe_live_billing_reconciliation_checkpoints checkpoint
-        ON checkpoint.id = authorization.reconciliation_checkpoint_id
+        ON checkpoint.id = authz.reconciliation_checkpoint_id
       JOIN public.stripe_live_billing_reconciliation_checkpoints_v3 sidecar
         ON sidecar.checkpoint_id = checkpoint.id
       JOIN public.studio_payment_accounts account
@@ -1337,16 +1337,16 @@ AS $$
            bootstrap.stripe_connected_account_id
        AND private.current_connect_account_generation(account.metadata) =
            bootstrap.connect_account_generation
-       AND authorization.enabled
-       AND authorization.expires_at > now()
-       AND authorization.connect_account_generation =
+       AND authz.enabled
+       AND authz.expires_at > now()
+       AND authz.connect_account_generation =
            bootstrap.connect_account_generation
        AND (
-           authorization.stripe_connected_account_id IS NULL
-           OR authorization.stripe_connected_account_id =
+           authz.stripe_connected_account_id IS NULL
+           OR authz.stripe_connected_account_id =
                bootstrap.stripe_connected_account_id
        )
-       AND authorization.local_event_ingest_watermark =
+       AND authz.local_event_ingest_watermark =
            checkpoint.local_event_ingest_watermark
        AND checkpoint.stripe_livemode
        AND checkpoint.candidate_sha = p_candidate_sha
@@ -1445,7 +1445,7 @@ AS $$
                   OR
                   (
                       event.live_billing_ingest_sequence >
-                          authorization.local_event_ingest_watermark
+                          authz.local_event_ingest_watermark
                       AND (
                           event.processing_status = 'failed'
                           OR (
