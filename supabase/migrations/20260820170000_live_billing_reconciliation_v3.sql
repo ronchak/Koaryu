@@ -936,7 +936,7 @@ BEGIN
            )
     ) THEN
         RAISE EXCEPTION
-            'Current failed, stuck, or unmapped live events block authz.'
+            'Current failed, stuck, or unmapped live events block authorization.'
             USING ERRCODE = 'P0B53';
     END IF;
 
@@ -952,7 +952,7 @@ BEGIN
            OR v_generation IS NULL
            OR v_generation IS DISTINCT FROM NEW.connect_account_generation THEN
             RAISE EXCEPTION
-                'Current Connect account generation does not match authz.'
+                'Current Connect account generation does not match authorization.'
                 USING ERRCODE = 'P0B54';
         END IF;
 
@@ -1767,7 +1767,7 @@ BEGIN
     END IF;
 
     IF private.koaryu_release_operational_manifest_v7()
-       <> '__OPERATIONAL_MANIFEST_V19__' THEN
+       <> 'edb917a52aeb0b0451a403b640aa2599552641d4e6569e526e2a8267495c79a2' THEN
         v_failures :=
             array_append(
                 v_failures,
@@ -1788,13 +1788,13 @@ BEGIN
     END IF;
 
     IF private.koaryu_release_critical_surface_manifest_v17()
-       <> '__CRITICAL_SURFACE_MANIFEST_V19__' THEN
+       <> '0:5df0deffed6e55418dccce707ae31e68352035a3962c2cd1609f3f2f764d78ad' THEN
         v_failures :=
             array_append(v_failures, 'critical_surface_manifest_v19');
     END IF;
 
     IF private.koaryu_release_live_billing_v3_manifest_v19()
-       <> '__LIVE_BILLING_V3_MANIFEST_V19__' THEN
+       <> '0:d3d3467ba2ede7270190b86c2c36ced103528041ef89d0805f0187390416e338' THEN
         v_failures :=
             array_append(v_failures, 'live_billing_v3_manifest_v19');
     END IF;

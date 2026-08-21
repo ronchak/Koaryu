@@ -96,6 +96,14 @@ class LiveBillingAuthorizationCliTest(unittest.TestCase):
         self.assertTrue(any("current mapping" in reason for reason in reasons))
         self.assertTrue(any("payment-ready" in reason for reason in reasons))
 
+    def test_record_checkpoint_rejects_non_object_json_cleanly(self):
+        with patch.object(Path, "read_bytes", return_value=b"[]"):
+            with self.assertRaisesRegex(
+                LiveBillingOperatorError,
+                "all-clear schema-v3 checkpoint candidate",
+            ):
+                _load_report(Path("report.json"))
+
     def test_record_checkpoint_accepts_only_schema_v3_production_provider_report(self):
         for label, report in (
             ("v2", _report(schema_version=2)),

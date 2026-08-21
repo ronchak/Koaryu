@@ -319,11 +319,12 @@ def _load_report(path: Path) -> tuple[dict[str, Any], str]:
         report = json.loads(raw)
     except (OSError, json.JSONDecodeError) as exc:
         raise LiveBillingOperatorError(f"Could not read reconciliation report {path}.") from exc
+    if not isinstance(report, dict):
+        raise LiveBillingOperatorError("Report is not an all-clear schema-v3 checkpoint candidate.")
     continuity = report.get("continuity") or {}
     window_policy = report.get("window_policy") or {}
     if (
-        not isinstance(report, dict)
-        or report.get("checkpoint_eligible") is not True
+        report.get("checkpoint_eligible") is not True
         or report.get("schema_version") != 3
         or report.get("evidence_source") != "provider_read"
         or report.get("probe") != "production"
