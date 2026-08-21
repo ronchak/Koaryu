@@ -117,6 +117,37 @@ Only the service-role CLI calls the atomic grant/revoke/audit RPC. There is no p
 
 ## Read-only reconciliation
 
+<!-- payments-reconciliation-v3:start -->
+### Schema-v3 rolling checkpoint contract
+
+Schema v3 compares one explicit **29-day** provider window. The value is centralized as Stripe's 30-day Events API retention minus a one-day safety margin. A requested start older than that boundary fails explicitly. A shorter operator-supplied start is diagnostic only because checkpoint eligibility requires the complete default window.
+
+A matching current window is necessary but not sufficient. A rolling checkpoint must name the previous accepted schema-v3 checkpoint, prove that it is still unexpired, overlap its accepted window by at least 24 hours, preserve a non-regressing global `live_billing_ingest_sequence` watermark, retain the exact candidate SHA and account generations, and show no failed, nonterminal, unmapped, provider-only, local-only, or wrong-mode event in the relevant surface. The first schema-v3 checkpoint uses a separate bootstrap rule. It requires no enabled live authorization and a clean durable local event history, and records `bootstrap_historical_provider_completeness_claimed=false`; it never claims that provider history outside retention was compared.
+
+Webhook topology no longer reads a fabricated `connect` property. The report pins the exact platform and Connect URLs, `enabled` status, `livemode`, and exact enabled-event sets returned by Stripe. The Connect surface additionally requires fresh matched connected-account event context for every mapped account and current generation. Missing, duplicate, disabled, misrouted, wildcard, unexpected enabled, or event-contract-drifted endpoints fail closed.
+
+Legacy schema-v2 checkpoints remain readable for audit. The v2 writer is no longer callable by `service_role`, and no new live authorization may bind to a checkpoint without its schema-v3 sidecar. Applying the additive migration disables any enabled legacy grant so it must be deliberately reauthorized against v3 evidence.
+
+The production sequence after merge is:
+
+1. Complete the exact-candidate staging rehearsal in Stripe test mode.
+2. Collect a production report read-only, using the complete default window and exact deployed SHA.
+3. Review the sanitized report and retain its exact bytes and SHA-256 digest.
+4. Run `record-checkpoint` without `--execute` and review the schema-v3 RPC plan plus the independent production readiness re-probe.
+5. Under a separately approved production change, rerun the same command with exact project confirmation and `--execute` to record the short-lived checkpoint.
+6. Only after the remaining Payments workstreams land, create an operation-bounded studio grant under separate approval.
+7. Run a separately approved attended canary with its own payer, amount, consent, and financial ceiling.
+
+This PR executes none of those production steps.
+
+```bash
+cd backend
+venv/bin/python scripts/stripe_reconciliation_report.py   --collect-read-only   --probe production   --candidate-sha <exact-40-character-production-sha>   > <private-schema-v3-report.json>
+
+venv/bin/python scripts/live_billing_authorizations.py record-checkpoint   --report <private-schema-v3-report.json>   --expires-at <future-UTC-timestamp-within-24-hours>   --reason "Exact-candidate schema-v3 production reconciliation"   --actor <auth-user-id-or-email>
+```
+<!-- payments-reconciliation-v3:end -->
+
 The current reporter inventories every Stripe Connect account visible to the configured
 read-capable key, then separately lists events at platform scope and in each
 connected-account context. It still reconciles from the fixed 2026-07-13 start using

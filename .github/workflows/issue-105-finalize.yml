@@ -1,0 +1,97 @@
+name: Issue 105 cloud finalizer
+
+on:
+  push:
+    branches:
+      - codex/payments-1-reconciliation-v3
+
+permissions:
+  contents: write
+
+concurrency:
+  group: issue-105-cloud-finalizer
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Assert exact candidate head
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend development dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+
+      - name: Verify the active v3 source contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          active_paths = [
+              Path('backend/scripts/stripe_reconciliation_report.py'),
+              Path('backend/scripts/live_billing_authorizations.py'),
+              Path('supabase/migrations/20260820170000_live_billing_reconciliation_v3.sql'),
+              Path('supabase/verification/studio_live_billing_authorizations_contract.sql'),
+          ]
+          text = {path: path.read_text() for path in active_paths}
+          for path, source in text.items():
+              if '2026-07-13' in source or '2026-07-13T' in source:
+                  raise SystemExit(f'legacy fixed cutoff remains active in {path}')
+          reporter = text[active_paths[0]]
+          operator = text[active_paths[1]]
+          migration = text[active_paths[2]]
+          verification = text[active_paths[3]]
+          required = {
+              'report schema v3': ('schema_version', reporter),
+              'v3 checkpoint RPC in operator': ('record_stripe_live_billing_reconciliation_checkpoint_v3', operator),
+              'v3 checkpoint RPC in migration': ('record_stripe_live_billing_reconciliation_checkpoint_v3', migration),
+              'rolling retention contract': ('PROVIDER_EVENT_WINDOW', reporter),
+              'continuity contract': ('continuity', reporter),
+              'v3 verification contract': ('record_stripe_live_billing_reconciliation_checkpoint_v3', verification),
+          }
+          for label, (needle, source) in required.items():
+              if needle not in source:
+                  raise SystemExit(f'missing {label}: {needle}')
+          if 'row.get("connect")' in reporter or "row.get('connect')" in reporter:
+              raise SystemExit('reporter still reads the nonexistent Webhook Endpoint connect field')
+          PY
+
+      - name: Run focused payment checkpoint tests
+        run: |
+          cd backend
+          python -m pytest \
+            tests/test_stripe_reconciliation_report.py \
+            tests/test_live_billing_authorizations_cli.py \
+            tests/test_release_schema_readiness.py \
+            tests/test_studio_live_billing_authorizations.py \
+            tests/test_stripe_mutation_policy.py
+
+      - name: Verify generated API contracts
+        run: python scripts/generate-api-types.py --check
+
+      - name: Remove temporary cloud diagnostics
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f \
+            .github/workflows/issue-105-manifest-probe.yml \
+            .github/workflows/issue-105-source-export.yml \
+            .github/workflows/issue-105-finalize.yml
+          git commit -m "chore: remove issue 105 cloud diagnostics"
+          git push origin HEAD:codex/payments-1-reconciliation-v3

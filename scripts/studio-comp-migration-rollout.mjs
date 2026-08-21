@@ -91,6 +91,12 @@ export const ROLLOUT = Object.freeze({
       sha256: "22faa79522ba2018780fb260401cd23830df553ee3faf0546b2af689eb51bfc0",
     }),
   ]),
+  postRolloutMigrations: Object.freeze([
+    Object.freeze({
+      filename: "20260820170000_live_billing_reconciliation_v3.sql",
+      sha256: "a9d4667a8a2c9b1c0d1a0d69d11d01a30030fdf3363a86c5ad28ce7347b06f52",
+    }),
+  ]),
 });
 
 export const EXPECTED_OPERATIONAL_MANIFEST =
@@ -1561,9 +1567,11 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     .readdirSync(migrationsDirectory)
     .filter((name) => name.endsWith(".sql"))
     .sort();
-  if (filenames.length !== ROLLOUT.finalMigrationCount) {
+  const expectedRepositoryMigrationCount =
+    ROLLOUT.finalMigrationCount + ROLLOUT.postRolloutMigrations.length;
+  if (filenames.length !== expectedRepositoryMigrationCount) {
     throw new RolloutError(
-      `Candidate must contain exactly ${ROLLOUT.finalMigrationCount} migrations, found ${filenames.length}.`,
+      `Candidate must contain exactly ${expectedRepositoryMigrationCount} migrations, found ${filenames.length}.`,
     );
   }
   for (const filename of filenames) {
@@ -1572,7 +1580,20 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     }
   }
 
-  const orderedHistory = filenames
+  const expectedPostRollout = ROLLOUT.postRolloutMigrations.map(({ filename }) => filename);
+  const actualPostRollout = filenames.slice(ROLLOUT.finalMigrationCount);
+  if (JSON.stringify(actualPostRollout) !== JSON.stringify(expectedPostRollout)) {
+    throw new RolloutError("Post-rollout migration inventory drifted from the explicit allowlist.");
+  }
+  for (const migration of ROLLOUT.postRolloutMigrations) {
+    const actualHash = hashFile(path.join(migrationsDirectory, migration.filename));
+    if (actualHash !== migration.sha256) {
+      throw new RolloutError(`Source hash mismatch for ${migration.filename}.`);
+    }
+  }
+  const rolloutFilenames = filenames.slice(0, ROLLOUT.finalMigrationCount);
+
+  const orderedHistory = rolloutFilenames
     .map((filename) => {
       const separator = filename.indexOf("_");
       return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1580,17 +1601,17 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     .join("|");
   const preHistory = `${ROLLOUT.baselineMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.baselineMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.baselineMigrationCount)
     .map((filename) => {
       const separator = filename.indexOf("_");
       return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
     })
     .join("|"),
   )}`;
-  const postHistory = `${filenames.length}:${digest("md5", orderedHistory)}`;
+  const postHistory = `${rolloutFilenames.length}:${digest("md5", orderedHistory)}`;
   const intermediateHistory = `${ROLLOUT.intermediateMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.intermediateMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.intermediateMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1599,7 +1620,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const recoveryHistory = `${ROLLOUT.recoveryMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.recoveryMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.recoveryMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1608,7 +1629,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const convergenceHistory = `${ROLLOUT.convergenceMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.convergenceMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.convergenceMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1617,7 +1638,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const attestedHistory = `${ROLLOUT.attestedMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.attestedMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.attestedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1626,7 +1647,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const returnAttestedHistory = `${ROLLOUT.returnAttestedMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.returnAttestedMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.returnAttestedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1635,7 +1656,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const retainedHistory = `${ROLLOUT.retainedMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.retainedMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.retainedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1644,7 +1665,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const criticalHistory = `${ROLLOUT.criticalMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.criticalMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.criticalMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1653,7 +1674,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const columnAttestedHistory = `${ROLLOUT.columnAttestedMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.columnAttestedMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.columnAttestedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1662,7 +1683,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const trialLockedHistory = `${ROLLOUT.trialLockedMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.trialLockedMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.trialLockedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1671,7 +1692,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   )}`;
   const staffIdentityHistory = `${ROLLOUT.staffIdentityMigrationCount}:${digest(
     "md5",
-    filenames.slice(0, ROLLOUT.staffIdentityMigrationCount)
+    rolloutFilenames.slice(0, ROLLOUT.staffIdentityMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1684,7 +1705,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     );
   }
   const expectedTail = ROLLOUT.migrations.map(({ filename }) => filename);
-  if (JSON.stringify(filenames.slice(84, 86)) !== JSON.stringify(expectedTail)) {
+  if (JSON.stringify(rolloutFilenames.slice(84, 86)) !== JSON.stringify(expectedTail)) {
     throw new RolloutError("The July studio-comp pair must be the first two migrations after baseline 84.");
   }
 
@@ -1695,7 +1716,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     }
   }
 
-  const pendingMigrations = filenames.slice(ROLLOUT.baselineMigrationCount);
+  const pendingMigrations = rolloutFilenames.slice(ROLLOUT.baselineMigrationCount);
   const pendingVersions = pendingMigrations.map((filename) => filename.slice(0, 14));
   const pendingManifest = pendingMigrations.map((filename) => ({
     filename,
@@ -1703,7 +1724,8 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   }));
   return {
     candidateSha,
-    migrationCount: filenames.length,
+    migrationCount: rolloutFilenames.length,
+    repositoryMigrationCount: filenames.length,
     postHistory,
     intermediateHistory,
     recoveryHistory,
@@ -1715,73 +1737,73 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     columnAttestedHistory,
     trialLockedHistory,
     staffIdentityHistory,
-    preTargetHistory: filenames.slice(84, ROLLOUT.baselineMigrationCount)
+    preTargetHistory: rolloutFilenames.slice(84, ROLLOUT.baselineMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    postTargetHistory: filenames.slice(84)
+    postTargetHistory: rolloutFilenames.slice(84)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    intermediateTargetHistory: filenames.slice(84, ROLLOUT.intermediateMigrationCount)
+    intermediateTargetHistory: rolloutFilenames.slice(84, ROLLOUT.intermediateMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    recoveryTargetHistory: filenames.slice(84, ROLLOUT.recoveryMigrationCount)
+    recoveryTargetHistory: rolloutFilenames.slice(84, ROLLOUT.recoveryMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    convergenceTargetHistory: filenames.slice(84, ROLLOUT.convergenceMigrationCount)
+    convergenceTargetHistory: rolloutFilenames.slice(84, ROLLOUT.convergenceMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    attestedTargetHistory: filenames.slice(84, ROLLOUT.attestedMigrationCount)
+    attestedTargetHistory: rolloutFilenames.slice(84, ROLLOUT.attestedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    returnAttestedTargetHistory: filenames.slice(84, ROLLOUT.returnAttestedMigrationCount)
+    returnAttestedTargetHistory: rolloutFilenames.slice(84, ROLLOUT.returnAttestedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    retainedTargetHistory: filenames.slice(84, ROLLOUT.retainedMigrationCount)
+    retainedTargetHistory: rolloutFilenames.slice(84, ROLLOUT.retainedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    criticalTargetHistory: filenames.slice(84, ROLLOUT.criticalMigrationCount)
+    criticalTargetHistory: rolloutFilenames.slice(84, ROLLOUT.criticalMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    columnAttestedTargetHistory: filenames.slice(84, ROLLOUT.columnAttestedMigrationCount)
+    columnAttestedTargetHistory: rolloutFilenames.slice(84, ROLLOUT.columnAttestedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    trialLockedTargetHistory: filenames.slice(84, ROLLOUT.trialLockedMigrationCount)
+    trialLockedTargetHistory: rolloutFilenames.slice(84, ROLLOUT.trialLockedMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
-    staffIdentityTargetHistory: filenames.slice(84, ROLLOUT.staffIdentityMigrationCount)
+    staffIdentityTargetHistory: rolloutFilenames.slice(84, ROLLOUT.staffIdentityMigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
@@ -1789,7 +1811,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       .join("|"),
     pendingMigrations,
     integrationComplete:
-      filenames.length === ROLLOUT.finalMigrationCount &&
+      rolloutFilenames.length === ROLLOUT.finalMigrationCount &&
       JSON.stringify(pendingVersions) === JSON.stringify(ROLLOUT.releasePendingVersions),
     sourceManifestSha256: digest(
       "sha256",
