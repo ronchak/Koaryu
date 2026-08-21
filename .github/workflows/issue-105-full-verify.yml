@@ -1,0 +1,248 @@
+name: Issue 105 exact-head verification
+
+on:
+  push:
+    branches:
+      - codex/payments-1-reconciliation-v3
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: issue-105-exact-head-verification
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify-and-finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Assert exact candidate head
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1
+        with:
+          version: 2.95.4
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements-dev.txt
+          npm --prefix frontend ci
+
+      - name: Verify active v3 contract shape
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          reporter_path = Path('backend/scripts/stripe_reconciliation_report.py')
+          operator_path = Path('backend/scripts/live_billing_authorizations.py')
+          migration_path = Path('supabase/migrations/20260820170000_live_billing_reconciliation_v3.sql')
+          verification_path = Path('supabase/verification/studio_live_billing_authorizations_contract.sql')
+          tests_path = Path('backend/tests/test_stripe_reconciliation_report.py')
+          sources = {
+              reporter_path: reporter_path.read_text(),
+              operator_path: operator_path.read_text(),
+              migration_path: migration_path.read_text(),
+              verification_path: verification_path.read_text(),
+              tests_path: tests_path.read_text(),
+          }
+          for path in (reporter_path, operator_path, migration_path, verification_path):
+              source = sources[path]
+              if '2026-07-13' in source or '2026-07-13T' in source:
+                  raise SystemExit(f'legacy fixed cutoff remains active in {path}')
+          reporter = sources[reporter_path]
+          operator = sources[operator_path]
+          migration = sources[migration_path]
+          verification = sources[verification_path]
+          tests = sources[tests_path]
+          assertions = [
+              ('schema v3 reporter', '"schema_version": 3' in reporter or "'schema_version': 3" in reporter),
+              ('central rolling window', 'PROVIDER_EVENT_WINDOW' in reporter),
+              ('continuity evidence', 'continuity' in reporter and 'continuity' in migration),
+              ('v3 checkpoint writer', 'record_stripe_live_billing_reconciliation_checkpoint_v3' in operator and 'record_stripe_live_billing_reconciliation_checkpoint_v3' in migration),
+              ('v3 verification', 'record_stripe_live_billing_reconciliation_checkpoint_v3' in verification),
+              ('realistic endpoint fixtures', '"connect":' not in tests and "'connect':" not in tests),
+              ('no nonexistent endpoint readback', 'row.get("connect")' not in reporter and "row.get('connect')" not in reporter),
+          ]
+          failed = [label for label, passed in assertions if not passed]
+          if failed:
+              raise SystemExit('active v3 source contract failed: ' + ', '.join(failed))
+          PY
+
+      - name: Verify dependency and generated contracts
+        run: |
+          python -m pip check
+          python -m piptools compile --quiet --generate-hashes --strip-extras --output-file backend/requirements.txt backend/requirements.in
+          python -m piptools compile --quiet --generate-hashes --strip-extras --allow-unsafe --output-file backend/requirements-dev.txt backend/requirements-dev.in
+          git diff --exit-code -- backend/requirements.txt backend/requirements-dev.txt
+          python scripts/generate-api-types.py --check
+
+      - name: Run repository controls
+        run: |
+          npm run check:release-workflow
+          npm run check:env-examples
+          npm run audit:support-privacy
+
+      - name: Run full backend suite
+        run: |
+          set -o pipefail
+          cd backend
+          python -m pytest tests | tee /tmp/backend-tests.log
+          grep -E '[0-9]+ passed' /tmp/backend-tests.log | tail -1 > /tmp/backend-result.txt
+
+      - name: Run frontend tests
+        run: |
+          set -o pipefail
+          npm --prefix frontend test | tee /tmp/frontend-tests.log
+          {
+            grep -E '^# (tests|pass|fail) ' /tmp/frontend-tests.log || true
+          } | tr '\n' ';' > /tmp/frontend-result.txt
+
+      - name: Run frontend lint and production build
+        run: |
+          npm --prefix frontend run lint
+          cd frontend
+          set -a
+          source .env.example
+          set +a
+          npm run build
+
+      - name: Run dependency audits
+        run: |
+          python -m pip_audit -r backend/requirements.txt
+          npm --prefix frontend audit --omit=dev --audit-level=high
+
+      - name: Start disposable Supabase database
+        run: supabase db start
+
+      - name: Replay migrations and lint schema
+        run: |
+          supabase db reset --local
+          supabase db lint --local --fail-on error
+
+      - name: Run all database contracts
+        env:
+          SUPABASE_DB_TARGET: local
+        run: scripts/verify-supabase-contracts.sh
+
+      - name: Run database concurrency proofs
+        run: |
+          scripts/verify-connect-identity-concurrency.sh
+          scripts/verify-core-checkout-accept-reserve-concurrency.sh
+          scripts/verify-student-profile-rank-plan-concurrency.sh
+
+      - name: Stop disposable Supabase database
+        if: always()
+        run: supabase stop --no-backup
+
+      - name: Run deterministic performance gate
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+          KOARYU_PERFORMANCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}
+        run: npm run check:performance-regression -- --expected-sha "$EXPECTED_HEAD_SHA"
+
+      - name: Run backend static analysis
+        run: python -m bandit -r backend/app -ll
+
+      - name: Assert verification left the source tree unchanged
+        run: git diff --exit-code
+
+      - name: Publish exact PR contract and results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: "111"
+        run: |
+          BACKEND_RESULT=$(cat /tmp/backend-result.txt)
+          FRONTEND_RESULT=$(cat /tmp/frontend-result.txt)
+          cat > /tmp/pr-body.md <<EOF
+          Closes #105
+
+          ## Verified root cause
+
+          The active v2 reporter, checkpoint writer, authorization functions, verification SQL, and tests promoted the one-time 2026 migration boundary into a permanent provider-history requirement. Stripe cannot return that permanent history indefinitely, so exact provider/local equality became impossible even for a healthy deployment. The webhook topology check independently depended on a response-side `connect` property that Stripe Webhook Endpoint objects do not return.
+
+          ## Exact v3 contract
+
+          Schema v3 uses one centralized provider-supported rolling window with an explicit retention margin and rejects an explicitly requested start outside that supported window. It still requires exact provider/local event-key equality inside the complete rolling window, zero failed or nonterminal relevant events, zero unresolved accounts, correct live mode, exact candidate SHA and production readiness URL, a monotonic local ingest watermark, fresh platform evidence, and fresh generation-bound evidence for every mapped Connect account.
+
+          Continuity is explicit. A continuing checkpoint must identify a valid unexpired accepted v3 predecessor, overlap its accepted evidence, and never regress its ingest watermark. The first accepted v3 checkpoint uses the separately labeled bootstrap path, proves only the accessible supported window, and cannot claim inaccessible history. Later checkpoints cannot silently fall back to bootstrap.
+
+          Webhook topology is classified only through retrievable evidence. The exact platform and Connect URLs must each appear once, be enabled, match livemode and their exact enabled-event sets, and be corroborated by the separately fresh platform and connected-account delivery context. Missing, duplicate, disabled, misrouted, wildcard, drifted, or unexpected enabled endpoints fail closed.
+
+          ## Migration and compatibility behavior
+
+          `supabase/migrations/20260820170000_live_billing_reconciliation_v3.sql` is additive. Historical migrations are unchanged. Existing v2 checkpoint rows remain readable for audit, but the v2 writer loses service-role execution and new authorization binds only accepted schema-v3 checkpoints. The migration advances exact-head release readiness for the new migration and keeps browser roles denied from checkpoint, evidence, authorization, and operator surfaces.
+
+          ## Failure and continuity behavior
+
+          Provider-only, local-only, failed, pending, processing, ignored-in-scope, unmapped, wrong-mode, stale-generation, stale-SHA, expired predecessor, broken overlap, and regressed-watermark states remain ineligible. Runtime authorization still rechecks the bound checkpoint, deployed SHA, current account mapping and generation, readiness, expiry, and post-checkpoint event state atomically. `LIVE_BILLING_ENABLED=true` remains insufficient by itself.
+
+          ## Verification and exact final results
+
+          Exact tested head: `${GITHUB_SHA}`
+
+          * Full backend suite: `${BACKEND_RESULT}`
+          * Full frontend tests: `${FRONTEND_RESULT}`
+          * Frontend lint and production build: passed
+          * Complete migration replay, schema lint, all Supabase verification SQL, and three concurrency proofs: passed on a disposable local Supabase database
+          * Release-workflow, environment-example, support-privacy, generated API, dependency-lock, dependency-audit, deterministic-performance, and Bandit checks: passed
+          * Static v3 checks confirm no active dependency on the literal legacy cutoff and no fabricated Webhook Endpoint `connect` field
+
+          No test or CI command contacted or mutated production Stripe or Supabase.
+
+          ## Deployment and operator implications
+
+          Merge alone grants nothing. The next sequence remains an exact-candidate staging test-mode rehearsal, an approved production read-only reconciliation, explicit v3 checkpoint recording, an operation-bounded studio grant owned by the later authorization workstream, and a separately approved financial canary. The reporter and dry-run operator paths remain read-only. Existing live grants, if any, cannot become valid through a legacy v2 checkpoint.
+
+          ## Dependencies and non-goals
+
+          This is Payments 1/6 from PR #110. It is foundational for the later operation-level authorization work and independent of PR #75's refund/dispute accounting convergence. It does not expose customer billing controls, alter the 0.5% fee, redesign enrollment or consent, merge PR #75, grant a studio, change production Stripe configuration, record a production checkpoint, enable another live mutation, or move money.
+          EOF
+          gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --title "payments: repair reconciliation and live authorization checkpoint contract" \
+            --body-file /tmp/pr-body.md
+
+      - name: Remove cloud-only diagnostics
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f --ignore-unmatch \
+            .github/workflows/issue-105-manifest-probe.yml \
+            .github/workflows/issue-105-source-export.yml \
+            .github/workflows/issue-105-finalize.yml \
+            .github/workflows/issue-105-full-verify.yml
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: remove issue 105 cloud diagnostics"
+            git push origin HEAD:codex/payments-1-reconciliation-v3
+          fi
