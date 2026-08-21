@@ -34,10 +34,14 @@ jobs:
 
           repository = Path.cwd().resolve()
           payload_dir = repository / '.github/issue-105-payload'
-          encoded = ''.join(
-              path.read_text().strip()
-              for path in sorted(payload_dir.glob('part-*.txt'))
-          )
+          parts = [
+              payload_dir / 'part-01.txt',
+              payload_dir / 'part-02.txt',
+              payload_dir / 'part-03a.txt',
+              payload_dir / 'part-03b.txt',
+              payload_dir / 'part-04.txt',
+          ]
+          encoded = ''.join(path.read_text().strip() for path in parts)
           compressed = base64.b64decode(encoded, validate=True)
           expected = 'e6a70380c4146fd625c1d0ef50a4dabb7a10712cff30a5a5fa1eec19cfb685e3'
           actual = hashlib.sha256(compressed).hexdigest()
@@ -56,7 +60,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- backend/scripts/stripe_reconciliation_report.py backend/scripts/live_billing_authorizations.py backend/tests/test_stripe_reconciliation_report.py backend/tests/test_live_billing_authorizations_cli.py backend/app/services/release_schema_readiness.py backend/tests/test_release_schema_readiness.py supabase/migrations/20260820170000_live_billing_reconciliation_v3.sql supabase/verification/studio_live_billing_authorizations_contract.sql
-          git rm -- .github/workflows/issue-105-cloud-bootstrap.yml .github/workflows/issue-105-pr-bootstrap.yml .github/issue-105-payload/part-01.txt .github/issue-105-payload/part-02.txt .github/issue-105-payload/part-03.txt .github/issue-105-payload/part-04.txt
+          git rm -- .github/workflows/issue-105-cloud-bootstrap.yml .github/workflows/issue-105-pr-bootstrap.yml .github/issue-105-payload/part-01.txt .github/issue-105-payload/part-02.txt .github/issue-105-payload/part-03.txt .github/issue-105-payload/part-03a.txt .github/issue-105-payload/part-03b.txt .github/issue-105-payload/part-04.txt
           git diff --cached --check
           git commit -m "fix(payments): add reconciliation checkpoint contract v3"
           git push origin HEAD:codex/payments-1-reconciliation-v3
