@@ -177,10 +177,17 @@ curl https://koaryu.onrender.com/health/live
 curl https://koaryu.onrender.com/health/ready
 curl https://koaryu.onrender.com/api/v1/health/live
 curl https://koaryu.onrender.com/api/v1/health/ready
-curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
+curl -o /dev/null -w '%{http_code}\n' https://koaryu.onrender.com/openapi.json
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V4 database preflight. It returns 503 unless Supabase reports exactly 114 migrations, head `20260820060216`, the exact thirty-version pending sequence, manifest version `release-db-attestation-v21`, and no required-object/security failure. The V4 contract also requires the exact zero-invalid V18 archive-critical semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`. Migrations 112, 113, and 114 add the dashboard, interactive roster read, and atomic student archive contracts; all are additive and must be present before this readiness gate can pass. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+The schema route must return `404` in hosted staging and production: `/openapi.json`
+is gated to `ENVIRONMENT=development` alongside `/docs` and `/redoc`, so a `200` here
+means the service is running with a development environment and is publishing its
+whole route map. To inspect the deployed route inventory, build the schema from the
+release commit instead with `python3 scripts/generate-api-types.py`, which loads the
+app in process and never touches the network.
+
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V4 database preflight. It returns 503 unless Supabase reports exactly 115 migrations, head `20260822193000`, the exact thirty-one-version pending sequence, manifest version `release-db-attestation-v22`, and no required-object/security failure. The V4 contract also requires the exact zero-invalid V18 archive-critical semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`. Migrations 112, 113, and 114 add the dashboard, interactive roster read, and atomic student archive contracts, and migration 115 revokes the API roles' direct access to public tables; all are additive and must be present before this readiness gate can pass. Migration 115 is the only one that moves the operational semantic/ACL manifest, because that manifest hashes table ACLs. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
 
 Promote the database first. Do not route the new backend to a Supabase project
 until the final staging fingerprint and preflight pass. The exact-head manifest

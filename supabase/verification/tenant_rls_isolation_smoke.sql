@@ -282,7 +282,15 @@ BEGIN
 
     -- Exercise the restrictive guard against a permissive owner-write path.
     -- These DDL changes are visible only inside this rollback-only transaction.
-    EXECUTE 'GRANT INSERT, UPDATE, DELETE ON TABLE public.studios TO authenticated';
+    -- SELECT is granted here too. Migration 20260822193000 revoked the API
+    -- roles' standing read access, so without this the role is refused before
+    -- RLS is ever consulted and the isolation assertions below would pass
+    -- vacuously. RLS remains the defence-in-depth layer under that revoke, and
+    -- this contract is what proves it still isolates tenants.
+    EXECUTE 'GRANT SELECT ON TABLE public.account_deletion_requests, public.billing_plans, '
+            || 'public.guardians, public.leads, public.programs, public.staff_roles, '
+            || 'public.students, public.support_tickets TO authenticated';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.studios TO authenticated';
     EXECUTE 'CREATE POLICY tenant_rls_verification_owner_write ON public.studios FOR ALL TO authenticated USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid())';
 
     PERFORM set_config('request.jwt.claim.sub', v_owner_a::TEXT, true);
@@ -768,7 +776,9 @@ BEGIN
        OR has_table_privilege('authenticated', 'public.staff_profiles', 'INSERT')
        OR has_table_privilege('authenticated', 'public.staff_profiles', 'UPDATE')
        OR has_table_privilege('authenticated', 'public.staff_profiles', 'DELETE')
-       OR NOT has_table_privilege('authenticated', 'public.staff_profiles', 'SELECT')
+       -- Migration 20260822193000 revoked the standing read. Staff profiles
+       -- reach the browser through the backend, which connects as service_role.
+       OR has_table_privilege('authenticated', 'public.staff_profiles', 'SELECT')
        OR NOT has_table_privilege('service_role', 'public.staff_profiles', 'SELECT')
        OR NOT has_table_privilege('service_role', 'public.staff_profiles', 'INSERT')
        OR NOT has_table_privilege('service_role', 'public.staff_profiles', 'UPDATE')
@@ -976,6 +986,11 @@ BEGIN
         RAISE EXCEPTION 'Unnormalized legal name bypassed its database constraint.';
     END IF;
 
+    -- Migration 20260822193000 revoked the API roles' standing read access, so
+    -- grant it back for the length of this rollback-only transaction. Without
+    -- it the role is refused before RLS is consulted and the self-visibility
+    -- assertions below would pass without exercising anything.
+    EXECUTE 'GRANT SELECT ON TABLE public.staff_profiles TO authenticated';
     PERFORM set_config('request.jwt.claim.sub', v_viewer::TEXT, true);
     PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
     EXECUTE 'SET LOCAL ROLE authenticated';
@@ -1300,6 +1315,12 @@ BEGIN
     END IF;
 
     EXECUTE 'RESET ROLE';
+    -- Migration 20260822193000 revoked the API roles' standing read access, so
+    -- grant it back for the length of this rollback-only transaction. Without
+    -- it the role is refused before RLS is consulted and the archived-staff
+    -- visibility assertions below would pass without exercising anything.
+    EXECUTE 'GRANT SELECT ON TABLE public.account_deletion_requests, public.programs, '
+            || 'public.staff_profiles, public.staff_roles TO authenticated';
     PERFORM set_config('request.jwt.claim.sub', v_archived_caller::TEXT, true);
     PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
     EXECUTE 'SET LOCAL ROLE authenticated';

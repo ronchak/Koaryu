@@ -191,7 +191,12 @@ BEGIN
             ('support_tickets')
         ) AS tables(table_name)
         CROSS JOIN (VALUES
-            ('authenticated', 'SELECT'),
+            -- `authenticated` no longer needs SELECT here. These three tables
+            -- are served exclusively by the backend account and internal
+            -- support endpoints, which connect as service_role; nothing in
+            -- frontend/src reads them through PostgREST. Migration
+            -- 20260822193000 revoked the grant, and the forbidden matrix below
+            -- now asserts its absence.
             ('service_role', 'DELETE'),
             ('service_role', 'INSERT'),
             ('service_role', 'SELECT'),
@@ -214,9 +219,11 @@ BEGIN
             ('support_tickets')
         ) AS tables(table_name)
         CROSS JOIN (VALUES
+            ('anon', 'SELECT'),
             ('anon', 'INSERT'),
             ('anon', 'UPDATE'),
             ('anon', 'DELETE'),
+            ('authenticated', 'SELECT'),
             ('authenticated', 'INSERT'),
             ('authenticated', 'UPDATE'),
             ('authenticated', 'DELETE')
@@ -225,7 +232,7 @@ BEGIN
     WHERE has_table_privilege(checked.grantee, format('public.%I', checked.table_name), checked.privilege);
 
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'Browser-facing role(s) still have direct account/support write privileges: %', missing;
+        RAISE EXCEPTION 'Browser-facing role(s) still have direct account/support privileges: %', missing;
     END IF;
 
     IF NOT EXISTS (
