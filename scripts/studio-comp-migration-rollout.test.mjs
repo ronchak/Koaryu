@@ -278,13 +278,13 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("requires the exact V21 operational readiness output", () => {
+  it("requires the exact V22 operational readiness output", () => {
     assert.equal(
       validateOperationalReadiness(EXPECTED_OPERATIONAL_READINESS),
       EXPECTED_OPERATIONAL_READINESS,
     );
     for (const value of [null, "", "true|101|20260814043325", `${EXPECTED_OPERATIONAL_READINESS}|extra`]) {
-      assert.throws(() => validateOperationalReadiness(value), /V21 operational readiness/);
+      assert.throws(() => validateOperationalReadiness(value), /V22 operational readiness/);
     }
   });
 
@@ -319,12 +319,12 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(WRITER_RETURN_CONTRACT_STATE_SQL, /TABLE\(student_id uuid, guardian_imported boolean\)/);
   });
 
-  it("decodes the pinned CLI single-field CSV contract before exact V21 validation", () => {
+  it("decodes the pinned CLI single-field CSV contract before exact V22 validation", () => {
     const quotedReadiness = singleValueCsv(
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|114\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|115\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -361,10 +361,10 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-114 packet from immutable ancestry and source hashes", () => {
+  it("derives an exact 100-to-115 packet from immutable ancestry and source hashes", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(packet.migrationCount, 114);
+    assert.equal(packet.migrationCount, 115);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -383,7 +383,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
     assert.equal(packet.integrationComplete, true);
-    assert.equal(packet.pendingMigrations.length, 14);
+    assert.equal(packet.pendingMigrations.length, 15);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
       ROLLOUT.releasePendingVersions,
@@ -825,14 +825,14 @@ describe("studio-comp migration rollout guard", () => {
       "",
       EXPECTED_OPERATIONAL_READINESS.replace(/^true/, "false"),
       EXPECTED_OPERATIONAL_READINESS.replace(`|${ROLLOUT.finalMigrationCount}|`, "|109|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("|20260820060216|", "|20260814213000|"),
-      EXPECTED_OPERATIONAL_READINESS.replace(",20260820060216|", "|"),
+      EXPECTED_OPERATIONAL_READINESS.replace("|20260822193000|", "|20260814213000|"),
+      EXPECTED_OPERATIONAL_READINESS.replace(",20260822193000|", "|"),
       EXPECTED_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
-      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v21", "release-db-attestation-v16"),
+      EXPECTED_OPERATIONAL_READINESS.replace("release-db-attestation-v22", "release-db-attestation-v16"),
     ]) {
       assert.throws(
         () => classifyStateSnapshot(postSnapshot(packet, { operationalReadiness }), packet),
-        /V21 operational readiness/,
+        /V22 operational readiness/,
       );
     }
   });
@@ -1632,12 +1632,12 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("refuses to certify post-state before the exact 114-migration integration", () => {
+  it("refuses to certify post-state before the exact 115-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 114-migration sequence/,
+      /exact final 115-migration sequence/,
     );
   });
 
@@ -1674,6 +1674,7 @@ describe("studio-comp migration rollout guard", () => {
         "20260820012533_dashboard_fact_rpc.sql",
         "20260820025759_roster_read_rpc.sql",
         "20260820060216_atomic_bulk_student_archive.sql",
+        "20260822193000_revoke_client_read_access.sql",
       ],
     );
     assert.deepEqual(
@@ -1688,6 +1689,7 @@ describe("studio-comp migration rollout guard", () => {
         "20260820012533_dashboard_fact_rpc.sql",
         "20260820025759_roster_read_rpc.sql",
         "20260820060216_atomic_bulk_student_archive.sql",
+        "20260822193000_revoke_client_read_access.sql",
       ],
     );
     assert.deepEqual(
@@ -1791,6 +1793,7 @@ describe("studio-comp migration rollout guard", () => {
       "20260820012533_dashboard_fact_rpc.sql",
       "20260820025759_roster_read_rpc.sql",
       "20260820060216_atomic_bulk_student_archive.sql",
+      "20260822193000_revoke_client_read_access.sql",
     ].join("\n");
     assert.deepEqual(
       assertExactPendingMigrations(exactStaffIdentity, staffIdentityPacket),
@@ -1906,13 +1909,14 @@ describe("studio-comp migration rollout guard", () => {
         "20260820012533_dashboard_fact_rpc.sql",
         "20260820025759_roster_read_rpc.sql",
         "20260820060216_atomic_bulk_student_archive.sql",
+        "20260822193000_revoke_client_read_access.sql",
       ],
     );
     assert.notEqual(staffIdentityPacket.sourceManifestSha256, packet.sourceManifestSha256);
     assert.equal(
       buildProductionConfirmationPhrase(staffIdentityPacket),
       [
-        "APPLY 4 MIGRATIONS FROM",
+        "APPLY 5 MIGRATIONS FROM",
         candidateSha,
         "MANIFEST",
         staffIdentityPacket.sourceManifestSha256,

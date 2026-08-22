@@ -14,6 +14,7 @@ export const EXPECTED_SUPABASE_CONTRACTS = Object.freeze([
   "billing_external_payment_overpay_guard.sql",
   "billing_invoice_item_refs_contract.sql",
   "billing_invoice_retry_operations.sql",
+  "client_read_access_controls.sql",
   "core_operational_client_write_controls.sql",
   "email_usage_rpc_contract.sql",
   "export_jobs_admin_only_contract.sql",

@@ -1141,8 +1141,8 @@ BEGIN
             private.koaryu_release_critical_surface_manifest_v18();
     END IF;
     IF NOT v_preflight.ready
-       OR v_preflight.migration_count <> 114
-       OR v_preflight.migration_head <> '20260820060216'
+       OR v_preflight.migration_count <> 115
+       OR v_preflight.migration_head <> '20260822193000'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
            '20260727100000', '20260727110000', '20260801050957',
            '20260801060000', '20260801070000', '20260801080000',
@@ -1153,10 +1153,11 @@ BEGIN
            '20260814105424', '20260814114500', '20260814152000',
            '20260814170000', '20260814183000', '20260814200000',
            '20260814213000', '20260815220402', '20260816012723',
-           '20260820012533', '20260820025759', '20260820060216'
+           '20260820012533', '20260820025759', '20260820060216',
+           '20260822193000'
        ]::TEXT[]
        OR cardinality(v_preflight.security_failures) <> 0
-       OR v_preflight.manifest_version <> 'release-db-attestation-v21' THEN
+       OR v_preflight.manifest_version <> 'release-db-attestation-v22' THEN
         RAISE EXCEPTION 'Exact-head hosted schema preflight failed: %', v_preflight.security_failures;
     END IF;
 

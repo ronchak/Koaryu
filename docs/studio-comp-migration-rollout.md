@@ -1,9 +1,9 @@
 # Studio-Comp Migration Rollout
 
-Status: **candidate extends the release to migration 114/head 20260820060216; fresh candidate-bound staging re-read required; production human apply locked**
+Status: **candidate extends the release to migration 115/head 20260822193000; fresh candidate-bound staging re-read required; production human apply locked**
 
 This packet reconciles the production 100-migration V7 baseline and the last
-verified staging state with the immutable 114-migration release candidate.
+verified staging state with the immutable 115-migration release candidate.
 It is specialized to this rollout, not a generic migration or history-repair
 framework.
 
@@ -49,10 +49,10 @@ The fixed production pre-state is:
 The authorized release migrations are `20260814043325`, `20260814103046`,
 `20260814105424`, `20260814114500`, `20260814152000`, `20260814170000`,
 `20260814183000`, `20260814200000`, `20260814213000`, `20260815220402`,
-`20260816012723`, `20260820012533`, `20260820025759`, and
-`20260820060216`.
-The only certifiable post-state is migration count 114 at the latter head. Its
-V21 readiness signal retains the complete migration-85-through-114 sequence:
+`20260816012723`, `20260820012533`, `20260820025759`, `20260820060216`, and
+`20260822193000`.
+The only certifiable post-state is migration count 115 at the latter head. Its
+V22 readiness signal retains the complete migration-85-through-115 sequence:
 
 ```text
 20260727100000
@@ -85,6 +85,7 @@ V21 readiness signal retains the complete migration-85-through-114 sequence:
 20260820012533
 20260820025759
 20260820060216
+20260822193000
 ```
 
 Exact migration count 110 at head `20260815220402` is the accepted

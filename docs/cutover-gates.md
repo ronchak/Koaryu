@@ -48,10 +48,11 @@ Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. From the exact immutable candidate, run a fresh guarded
 inspection that must return `state=staff-identity`, use its state-bound token to
 dry-run the exact remaining migration packet through
-`20260820025759_roster_read_rpc.sql` and
-`20260820060216_atomic_bulk_student_archive.sql`, and let the human operator run the existing
-production apply gate. Promotion remains blocked until migration 114 produces
-exact V21 readiness and the final raw
+`20260820025759_roster_read_rpc.sql`,
+`20260820060216_atomic_bulk_student_archive.sql`, and
+`20260822193000_revoke_client_read_access.sql`, and let the human operator run the existing
+production apply gate. Promotion remains blocked until migration 115 produces
+exact V22 readiness and the final raw
 catalog/provider fingerprint.
 
 ## Gates that will refuse you
