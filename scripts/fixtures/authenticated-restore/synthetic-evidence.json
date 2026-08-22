@@ -1,0 +1,899 @@
+{
+  "schema_version": 1,
+  "exercise": {
+    "id": "restore-fixture-20260727a",
+    "mode": "synthetic_fixture",
+    "operator_alias": "fixture-operator",
+    "approval_refs": [
+      "fixture:self-contained"
+    ],
+    "started_at": "2026-07-27T18:00:00Z",
+    "finished_at": "2026-07-27T18:30:00Z",
+    "elapsed_seconds": 1800,
+    "rto_limit_seconds": 14400
+  },
+  "state_history": [
+    {
+      "state": "prepared",
+      "at": "2026-07-27T18:00:00Z",
+      "outcome": "passed"
+    },
+    {
+      "state": "restored",
+      "at": "2026-07-27T18:08:00Z",
+      "outcome": "passed"
+    },
+    {
+      "state": "verified",
+      "at": "2026-07-27T18:14:00Z",
+      "outcome": "passed"
+    },
+    {
+      "state": "app_tested",
+      "at": "2026-07-27T18:22:00Z",
+      "outcome": "passed"
+    },
+    {
+      "state": "destroyed",
+      "at": "2026-07-27T18:29:00Z",
+      "outcome": "passed"
+    }
+  ],
+  "target": {
+    "classification": "ephemeral_recovery",
+    "disposable": true,
+    "named_operator_access_only": true,
+    "supabase_ref": "rvfixture20260727abc",
+    "frontend_origin": "https://restore-fixture-20260727a.example.invalid",
+    "backend_api": "https://restore-api-20260727a.example.invalid/api/v1",
+    "auth_site_url": "https://restore-fixture-20260727a.example.invalid",
+    "auth_redirect_allowlist": [
+      "https://restore-fixture-20260727a.example.invalid/auth/callback"
+    ],
+    "created_at": "2026-07-27T17:55:00Z",
+    "destroy_by": "2026-07-27T21:55:00Z",
+    "provider_resources": [
+      {
+        "kind": "supabase_project",
+        "id": "fixture-supabase-project",
+        "ephemeral": true
+      },
+      {
+        "kind": "frontend_deployment",
+        "id": "fixture-frontend-deployment",
+        "ephemeral": true
+      },
+      {
+        "kind": "backend_deployment",
+        "id": "fixture-backend-deployment",
+        "ephemeral": true
+      },
+      {
+        "kind": "auth_callback",
+        "id": "fixture-auth-callback",
+        "ephemeral": true
+      },
+      {
+        "kind": "outbound_sink",
+        "id": "fixture-outbound-sink",
+        "ephemeral": true
+      }
+    ],
+    "configuration": {
+      "target_specific_keys": true,
+      "source_credentials_reused": false,
+      "source_sessions_cleared_before_exposure": true,
+      "migration_history_restored": true,
+      "auth_semantics_compared": true,
+      "realtime_semantics_compared": true,
+      "storage_semantics_compared": true
+    }
+  },
+  "outbound": {
+    "network_policy": "deny_by_default",
+    "stripe_mode": "test",
+    "live_billing_enabled": false,
+    "channels": [
+      {
+        "id": "email",
+        "mode": "sink",
+        "destination": "https://mail-sink-20260727a.example.invalid",
+        "target_scoped": true
+      },
+      {
+        "id": "sms",
+        "mode": "blocked",
+        "destination": null,
+        "target_scoped": true
+      },
+      {
+        "id": "stripe_mutation",
+        "mode": "blocked",
+        "destination": null,
+        "target_scoped": true
+      },
+      {
+        "id": "platform_webhook",
+        "mode": "blocked",
+        "destination": null,
+        "target_scoped": true
+      },
+      {
+        "id": "connect_webhook",
+        "mode": "blocked",
+        "destination": null,
+        "target_scoped": true
+      },
+      {
+        "id": "telemetry",
+        "mode": "blocked",
+        "destination": null,
+        "target_scoped": true
+      }
+    ]
+  },
+  "identity": {
+    "backup_set_id": "synthetic-backup-set-20260727a",
+    "provider_origin_download": false,
+    "provider_download_receipt_sha256": "1029384756abcdef1029384756abcdef1029384756abcdef1029384756abcdef",
+    "downloaded_at": "2026-07-27T17:58:00Z",
+    "artifacts": [
+      {
+        "name": "roles.sql.gpg",
+        "expected_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "observed_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "size_bytes": 101,
+        "observed_size_bytes": 101
+      },
+      {
+        "name": "schema.sql.gpg",
+        "expected_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "observed_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "size_bytes": 202,
+        "observed_size_bytes": 202
+      },
+      {
+        "name": "data.sql.gpg",
+        "expected_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "observed_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "size_bytes": 303,
+        "observed_size_bytes": 303
+      },
+      {
+        "name": "record-classification-manifest.json.gpg",
+        "expected_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "observed_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "size_bytes": 404,
+        "observed_size_bytes": 404
+      },
+      {
+        "name": "migration-history.sql.gpg",
+        "expected_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "observed_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "size_bytes": 505,
+        "observed_size_bytes": 505
+      },
+      {
+        "name": "storage-objects.tar.gpg",
+        "expected_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+        "observed_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+        "size_bytes": 606,
+        "observed_size_bytes": 606
+      },
+      {
+        "name": "backup-manifest.json.gpg",
+        "expected_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+        "observed_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+        "size_bytes": 707,
+        "observed_size_bytes": 707
+      },
+      {
+        "name": "restore-integrity-manifest.json.gpg",
+        "expected_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "observed_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "size_bytes": 808,
+        "observed_size_bytes": 808
+      }
+    ],
+    "application": {
+      "expected_sha": "0123456789abcdef0123456789abcdef01234567",
+      "frontend_provider_sha": "0123456789abcdef0123456789abcdef01234567",
+      "frontend_reported_sha": "0123456789abcdef0123456789abcdef01234567",
+      "backend_provider_sha": "0123456789abcdef0123456789abcdef01234567",
+      "backend_reported_sha": "0123456789abcdef0123456789abcdef01234567"
+    },
+    "migration": {
+      "expected_head": "20260727110000_order_billing_events_after_studio_comps.sql",
+      "actual_head": "20260727110000_order_billing_events_after_studio_comps.sql",
+      "expected_history_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+      "actual_history_sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+    }
+  },
+  "actors": [
+    {
+      "alias": "admin_a",
+      "synthetic": true,
+      "tenant_alias": "tenant_a",
+      "role": "admin"
+    },
+    {
+      "alias": "admin_b",
+      "synthetic": true,
+      "tenant_alias": "tenant_b",
+      "role": "admin"
+    },
+    {
+      "alias": "front_desk_a",
+      "synthetic": true,
+      "tenant_alias": "tenant_a",
+      "role": "front_desk"
+    },
+    {
+      "alias": "instructor_a",
+      "synthetic": true,
+      "tenant_alias": "tenant_a",
+      "role": "instructor"
+    },
+    {
+      "alias": "no_membership",
+      "synthetic": true,
+      "tenant_alias": null,
+      "role": null
+    },
+    {
+      "alias": "revoked_a",
+      "synthetic": true,
+      "tenant_alias": "tenant_a",
+      "role": "instructor"
+    }
+  ],
+  "application_checks": [
+    {
+      "id": "auth.anonymous.me.direct",
+      "actor_alias": null,
+      "expected_status": 401,
+      "actual_status": 401,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.anonymous.me.proxy",
+      "actor_alias": null,
+      "expected_status": 401,
+      "actual_status": 401,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.admin_a.sign_in",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.admin_a.me.direct",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.admin_a.me.proxy",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.admin_a.me.frontend",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.synthetic_wrong_project_access_token.rejected",
+      "actor_alias": null,
+      "expected_status": 401,
+      "actual_status": 401,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.synthetic_invalid_refresh_token.rejected",
+      "actor_alias": null,
+      "expected_status": 400,
+      "actual_status": 400,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "auth.revoked_a.sign_in.rejected",
+      "actor_alias": "revoked_a",
+      "expected_status": 400,
+      "actual_status": 400,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "tenant.admin_a.same_tenant.read.direct",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "tenant.admin_a.same_tenant.read.proxy",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "tenant.admin_a.same_tenant.read.frontend",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "tenant.admin_a.cross_tenant.read",
+      "actor_alias": "admin_a",
+      "expected_status": 404,
+      "actual_status": 404,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "tenant.admin_a.cross_tenant.write",
+      "actor_alias": "admin_a",
+      "expected_status": 404,
+      "actual_status": 404,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "role.admin_a.manage_staff",
+      "actor_alias": "admin_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "role.front_desk_a.read_roster",
+      "actor_alias": "front_desk_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "role.front_desk_a.manage_staff.denied",
+      "actor_alias": "front_desk_a",
+      "expected_status": 403,
+      "actual_status": 403,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 0,
+      "audit_rows_after": 0
+    },
+    {
+      "id": "role.instructor_a.take_attendance",
+      "actor_alias": "instructor_a",
+      "expected_status": 200,
+      "actual_status": 200,
+      "expected_outcome": "allow",
+      "actual_outcome": "allow",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "audit_rows_before": 0,
+      "audit_rows_after": 1
+    },
+    {
+      "id": "role.instructor_a.manage_roster.denied",
+      "actor_alias": "instructor_a",
+      "expected_status": 403,
+      "actual_status": 403,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 1,
+      "audit_rows_after": 1
+    },
+    {
+      "id": "role.no_membership.read.denied",
+      "actor_alias": "no_membership",
+      "expected_status": 404,
+      "actual_status": 404,
+      "expected_outcome": "deny",
+      "actual_outcome": "deny",
+      "response_body_captured": false,
+      "pii_captured": false,
+      "foreign_existence_disclosed": false,
+      "mutation_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mutation_after_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "audit_rows_before": 1,
+      "audit_rows_after": 1
+    }
+  ],
+  "storage": {
+    "bucket": "student-photos",
+    "private": true,
+    "restored_inventory": {
+      "expected_bucket_configuration_sha256": "abababababababababababababababababababababababababababababababab",
+      "observed_bucket_configuration_sha256": "abababababababababababababababababababababababababababababababab",
+      "expected_objects": [],
+      "observed_objects": []
+    },
+    "synthetic_probe": {
+      "actor_alias": "admin_a",
+      "tenant_alias": "tenant_a",
+      "path_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "uploaded_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+      "downloaded_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+      "size_bytes": 128,
+      "checks": [
+        {
+          "id": "storage.synthetic.same_tenant.read",
+          "actor_alias": "admin_a",
+          "expected_status": 200,
+          "actual_status": 200,
+          "expected_outcome": "allow",
+          "actual_outcome": "allow",
+          "object_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+          "signed_url_captured": false,
+          "pii_captured": false
+        },
+        {
+          "id": "storage.synthetic.anonymous.read",
+          "actor_alias": null,
+          "expected_status": 401,
+          "actual_status": 401,
+          "expected_outcome": "deny",
+          "actual_outcome": "deny",
+          "object_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+          "signed_url_captured": false,
+          "pii_captured": false
+        },
+        {
+          "id": "storage.synthetic.cross_tenant.read",
+          "actor_alias": "admin_b",
+          "expected_status": 404,
+          "actual_status": 404,
+          "expected_outcome": "deny",
+          "actual_outcome": "deny",
+          "object_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+          "signed_url_captured": false,
+          "pii_captured": false
+        }
+      ]
+    }
+  },
+  "integrity": {
+    "relation_inventory_expected_count": 13,
+    "relation_inventory_actual_count": 13,
+    "relations": [
+      {
+        "name": "public.studios",
+        "expected_rows": 2,
+        "actual_rows": 2,
+        "expected_pk_set_sha256": "0101010101010101010101010101010101010101010101010101010101010101",
+        "actual_pk_set_sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+      },
+      {
+        "name": "public.staff_roles",
+        "expected_rows": 5,
+        "actual_rows": 5,
+        "expected_pk_set_sha256": "0202020202020202020202020202020202020202020202020202020202020202",
+        "actual_pk_set_sha256": "0202020202020202020202020202020202020202020202020202020202020202"
+      },
+      {
+        "name": "public.students",
+        "expected_rows": 2,
+        "actual_rows": 2,
+        "expected_pk_set_sha256": "0303030303030303030303030303030303030303030303030303030303030303",
+        "actual_pk_set_sha256": "0303030303030303030303030303030303030303030303030303030303030303"
+      },
+      {
+        "name": "public.guardians",
+        "expected_rows": 2,
+        "actual_rows": 2,
+        "expected_pk_set_sha256": "0404040404040404040404040404040404040404040404040404040404040404",
+        "actual_pk_set_sha256": "0404040404040404040404040404040404040404040404040404040404040404"
+      },
+      {
+        "name": "public.attendance",
+        "expected_rows": 1,
+        "actual_rows": 1,
+        "expected_pk_set_sha256": "0505050505050505050505050505050505050505050505050505050505050505",
+        "actual_pk_set_sha256": "0505050505050505050505050505050505050505050505050505050505050505"
+      },
+      {
+        "name": "public.class_sessions",
+        "expected_rows": 2,
+        "actual_rows": 2,
+        "expected_pk_set_sha256": "0606060606060606060606060606060606060606060606060606060606060606",
+        "actual_pk_set_sha256": "0606060606060606060606060606060606060606060606060606060606060606"
+      },
+      {
+        "name": "public.leads",
+        "expected_rows": 2,
+        "actual_rows": 2,
+        "expected_pk_set_sha256": "0707070707070707070707070707070707070707070707070707070707070707",
+        "actual_pk_set_sha256": "0707070707070707070707070707070707070707070707070707070707070707"
+      },
+      {
+        "name": "auth.users",
+        "expected_rows": 6,
+        "actual_rows": 6,
+        "expected_pk_set_sha256": "0808080808080808080808080808080808080808080808080808080808080808",
+        "actual_pk_set_sha256": "0808080808080808080808080808080808080808080808080808080808080808"
+      },
+      {
+        "name": "auth.identities",
+        "expected_rows": 6,
+        "actual_rows": 6,
+        "expected_pk_set_sha256": "0909090909090909090909090909090909090909090909090909090909090909",
+        "actual_pk_set_sha256": "0909090909090909090909090909090909090909090909090909090909090909"
+      },
+      {
+        "name": "auth.sessions",
+        "expected_rows": 0,
+        "actual_rows": 0,
+        "expected_pk_set_sha256": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+        "actual_pk_set_sha256": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+      },
+      {
+        "name": "storage.buckets",
+        "expected_rows": 1,
+        "actual_rows": 1,
+        "expected_pk_set_sha256": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+        "actual_pk_set_sha256": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+      },
+      {
+        "name": "storage.objects",
+        "expected_rows": 0,
+        "actual_rows": 0,
+        "expected_pk_set_sha256": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+        "actual_pk_set_sha256": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+      },
+      {
+        "name": "supabase_migrations.schema_migrations",
+        "expected_rows": 84,
+        "actual_rows": 84,
+        "expected_pk_set_sha256": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+        "actual_pk_set_sha256": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d"
+      }
+    ],
+    "structural_digests": [
+      {
+        "id": "schema_inventory",
+        "expected_sha256": "1010101010101010101010101010101010101010101010101010101010101010",
+        "actual_sha256": "1010101010101010101010101010101010101010101010101010101010101010"
+      },
+      {
+        "id": "function_definitions_acl",
+        "expected_sha256": "2020202020202020202020202020202020202020202020202020202020202020",
+        "actual_sha256": "2020202020202020202020202020202020202020202020202020202020202020"
+      },
+      {
+        "id": "triggers",
+        "expected_sha256": "3030303030303030303030303030303030303030303030303030303030303030",
+        "actual_sha256": "3030303030303030303030303030303030303030303030303030303030303030"
+      },
+      {
+        "id": "rls_policies",
+        "expected_sha256": "4040404040404040404040404040404040404040404040404040404040404040",
+        "actual_sha256": "4040404040404040404040404040404040404040404040404040404040404040"
+      },
+      {
+        "id": "extensions",
+        "expected_sha256": "5050505050505050505050505050505050505050505050505050505050505050",
+        "actual_sha256": "5050505050505050505050505050505050505050505050505050505050505050"
+      },
+      {
+        "id": "realtime_publications",
+        "expected_sha256": "6060606060606060606060606060606060606060606060606060606060606060",
+        "actual_sha256": "6060606060606060606060606060606060606060606060606060606060606060"
+      },
+      {
+        "id": "migration_history",
+        "expected_sha256": "7070707070707070707070707070707070707070707070707070707070707070",
+        "actual_sha256": "7070707070707070707070707070707070707070707070707070707070707070"
+      }
+    ],
+    "relationship_checks": [
+      {
+        "id": "staff_roles_users",
+        "expected_violations": 0,
+        "actual_violations": 0
+      },
+      {
+        "id": "students_studios",
+        "expected_violations": 0,
+        "actual_violations": 0
+      },
+      {
+        "id": "attendance_students_sessions",
+        "expected_violations": 0,
+        "actual_violations": 0
+      },
+      {
+        "id": "storage_objects_buckets",
+        "expected_violations": 0,
+        "actual_violations": 0
+      }
+    ]
+  },
+  "cleanup": {
+    "checked_at": "2026-07-27T18:29:00Z",
+    "provider_readbacks": [
+      {
+        "kind": "supabase_project",
+        "id": "fixture-supabase-project",
+        "method": "fixture_assertion",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:28:00Z",
+        "evidence_sha256": "8181818181818181818181818181818181818181818181818181818181818181"
+      },
+      {
+        "kind": "frontend_deployment",
+        "id": "fixture-frontend-deployment",
+        "method": "fixture_assertion",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:27:00Z",
+        "evidence_sha256": "8282828282828282828282828282828282828282828282828282828282828282"
+      },
+      {
+        "kind": "backend_deployment",
+        "id": "fixture-backend-deployment",
+        "method": "fixture_assertion",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:27:00Z",
+        "evidence_sha256": "8383838383838383838383838383838383838383838383838383838383838383"
+      },
+      {
+        "kind": "auth_callback",
+        "id": "fixture-auth-callback",
+        "method": "fixture_assertion",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:26:00Z",
+        "evidence_sha256": "8484848484848484848484848484848484848484848484848484848484848484"
+      },
+      {
+        "kind": "outbound_sink",
+        "id": "fixture-outbound-sink",
+        "method": "fixture_assertion",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:26:00Z",
+        "evidence_sha256": "8585858585858585858585858585858585858585858585858585858585858585"
+      }
+    ],
+    "temporary_mutations": [
+      {
+        "id": "auth.admin_a",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:24:00Z",
+        "evidence_sha256": "9191919191919191919191919191919191919191919191919191919191919191"
+      },
+      {
+        "id": "auth.admin_b",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:24:00Z",
+        "evidence_sha256": "9292929292929292929292929292929292929292929292929292929292929292"
+      },
+      {
+        "id": "auth.front_desk_a",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:24:00Z",
+        "evidence_sha256": "9393939393939393939393939393939393939393939393939393939393939393"
+      },
+      {
+        "id": "auth.instructor_a",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:24:00Z",
+        "evidence_sha256": "9494949494949494949494949494949494949494949494949494949494949494"
+      },
+      {
+        "id": "auth.no_membership",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:24:00Z",
+        "evidence_sha256": "9595959595959595959595959595959595959595959595959595959595959595"
+      },
+      {
+        "id": "auth.revoked_a",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:24:00Z",
+        "evidence_sha256": "9696969696969696969696969696969696969696969696969696969696969696"
+      },
+      {
+        "id": "public.tenant_a",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:25:00Z",
+        "evidence_sha256": "9797979797979797979797979797979797979797979797979797979797979797"
+      },
+      {
+        "id": "public.tenant_b",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:25:00Z",
+        "evidence_sha256": "9898989898989898989898989898989898989898989898989898989898989898"
+      },
+      {
+        "id": "public.attendance_probe",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:23:00Z",
+        "evidence_sha256": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+      },
+      {
+        "id": "storage.synthetic_probe",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:23:00Z",
+        "evidence_sha256": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+      }
+    ],
+    "local_artifacts": [
+      {
+        "id": "plaintext_restore_directory",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:29:00Z",
+        "evidence_sha256": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+      },
+      {
+        "id": "provider_download_directory",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:29:00Z",
+        "evidence_sha256": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+      },
+      {
+        "id": "temporary_cli_workdir",
+        "observed_state": "absent",
+        "observed_at": "2026-07-27T18:29:00Z",
+        "evidence_sha256": "b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3"
+      },
+      {
+        "id": "credential_environment",
+        "observed_state": "cleared",
+        "observed_at": "2026-07-27T18:29:00Z",
+        "evidence_sha256": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4"
+      }
+    ],
+    "credentials_revoked": true,
+    "sessions_revoked": true,
+    "callback_removed": true,
+    "ordinary_staging_production_rows_delta": 0,
+    "logs_pii_scan": "passed"
+  }
+}
