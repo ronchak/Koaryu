@@ -377,8 +377,8 @@ This is a future, separately scoped provider-lifecycle rehearsal, not part of th
 - Finalize and pay a hosted invoice; verify `invoice.paid` creates the local payment and reports Koaryu fee basis.
 - Trigger a failed invoice payment and verify `invoice.payment_failed` plus `payment_intent.payment_failed` populate the failed-payment queue.
 - Record an external payment and confirm it has no application fee amount.
-- Refund a test payment and verify `charge.refunded` projects into `billing_refunds`.
-- Use Stripe's `pm_card_createDispute` test PaymentMethod and confirm `charge.dispute.created` projects into `billing_disputes`.
+- Refund a test payment and verify `refund.created` plus the terminal refund event project one `billing_refunds` row; pending or failed refunds must not reduce the local receivable.
+- Use Stripe's `pm_card_createDispute` test PaymentMethod and confirm inquiry/active/won/lost events project one `billing_disputes` row and reconcile payment, invoice, and payer totals.
 - Run a reconciliation pass for any object whose webhook delivery was missed or delayed.
 
 ### Koaryu Studio Checklist
