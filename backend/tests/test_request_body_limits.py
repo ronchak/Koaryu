@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.core.request_body_limits import (
+    CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS,
     CSV_IMPORT_MAPPING_JSON_MAX_BYTES,
     CSV_IMPORT_MULTIPART_METADATA_ALLOWANCE_BYTES,
     CSV_IMPORT_REQUEST_MAX_BYTES,
@@ -172,6 +173,153 @@ class RequestBodyLimitTest(unittest.TestCase):
         self.assertIs(replayed[0], first_message)
         self.assertIs(replayed[1], second_message)
         self.assertEqual(sent[0]["status"], 204)
+
+    def test_csv_import_admission_is_bounded_before_body_reads(self):
+        active_body_reads = 0
+        maximum_active_body_reads = 0
+        first_wave_started = asyncio.Event()
+        release_first_wave = asyncio.Event()
+        statuses = []
+
+        async def downstream(_scope, downstream_receive, downstream_send):
+            await downstream_receive()
+            await downstream_send(
+                {"type": "http.response.start", "status": 204, "headers": []}
+            )
+            await downstream_send({"type": "http.response.body", "body": b""})
+
+        middleware = RequestBodyLimitMiddleware(
+            downstream,
+            api_v1_prefix="/api/v1",
+        )
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/students/import/parse",
+            "headers": [(b"content-type", b"multipart/form-data; boundary=test")],
+        }
+
+        async def invoke():
+            nonlocal active_body_reads, maximum_active_body_reads
+            body_read = False
+
+            async def receive():
+                nonlocal active_body_reads, maximum_active_body_reads, body_read
+                if not body_read:
+                    body_read = True
+                    active_body_reads += 1
+                    maximum_active_body_reads = max(
+                        maximum_active_body_reads,
+                        active_body_reads,
+                    )
+                    if active_body_reads == CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS:
+                        first_wave_started.set()
+                    await release_first_wave.wait()
+                    active_body_reads -= 1
+                return {"type": "http.request", "body": b"body", "more_body": False}
+
+            async def send(message):
+                if message["type"] == "http.response.start":
+                    statuses.append(message["status"])
+
+            await middleware(scope.copy(), receive, send)
+
+        async def exercise():
+            tasks = [
+                asyncio.create_task(invoke())
+                for _ in range(CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS + 1)
+            ]
+            await asyncio.wait_for(first_wave_started.wait(), timeout=1)
+            await asyncio.sleep(0)
+            self.assertEqual(
+                active_body_reads,
+                CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS,
+            )
+            release_first_wave.set()
+            await asyncio.gather(*tasks)
+
+        asyncio.run(exercise())
+
+        self.assertEqual(
+            maximum_active_body_reads,
+            CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS,
+        )
+        self.assertEqual(
+            statuses,
+            [204] * (CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS + 1),
+        )
+
+    def test_declared_csv_overflow_does_not_wait_for_admission(self):
+        capacity_filled = asyncio.Event()
+        release_capacity = asyncio.Event()
+        active_receives = 0
+
+        async def downstream(_scope, downstream_receive, downstream_send):
+            await downstream_receive()
+            await downstream_send(
+                {"type": "http.response.start", "status": 204, "headers": []}
+            )
+            await downstream_send({"type": "http.response.body", "body": b""})
+
+        middleware = RequestBodyLimitMiddleware(
+            downstream,
+            api_v1_prefix="/api/v1",
+        )
+        base_scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/students/import/parse",
+            "headers": [(b"content-type", b"multipart/form-data; boundary=test")],
+        }
+
+        async def occupy_slot():
+            nonlocal active_receives
+
+            async def receive():
+                nonlocal active_receives
+                active_receives += 1
+                if active_receives == CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS:
+                    capacity_filled.set()
+                await release_capacity.wait()
+                return {"type": "http.request", "body": b"body", "more_body": False}
+
+            async def send(_message):
+                return None
+
+            await middleware(base_scope.copy(), receive, send)
+
+        async def exercise():
+            occupants = [
+                asyncio.create_task(occupy_slot())
+                for _ in range(CSV_IMPORT_MAX_IN_FLIGHT_REQUESTS)
+            ]
+            await asyncio.wait_for(capacity_filled.wait(), timeout=1)
+            overflow_statuses = []
+
+            async def overflow_receive():
+                raise AssertionError("Declared overflow must not read the body.")
+
+            async def overflow_send(message):
+                if message["type"] == "http.response.start":
+                    overflow_statuses.append(message["status"])
+
+            overflow_scope = base_scope.copy()
+            overflow_scope["headers"] = [
+                *base_scope["headers"],
+                (
+                    b"content-length",
+                    str(CSV_IMPORT_REQUEST_MAX_BYTES + 1).encode(),
+                ),
+            ]
+            await asyncio.wait_for(
+                middleware(overflow_scope, overflow_receive, overflow_send),
+                timeout=1,
+            )
+            self.assertEqual(overflow_statuses, [413])
+            release_capacity.set()
+            await asyncio.gather(*occupants)
+
+        asyncio.run(exercise())
 
     def test_bodyless_delete_is_replayed_without_changing_downstream_semantics(self):
         bodyless_message = {"type": "http.request", "body": b"", "more_body": False}
