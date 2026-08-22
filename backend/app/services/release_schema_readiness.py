@@ -51,18 +51,48 @@ class ReleaseSchemaNotReadyError(RuntimeError):
     pass
 
 
+def _describe_pending_drift(actual: Any) -> str:
+    """Summarise pending-version drift without dumping both full lists."""
+    if not isinstance(actual, list):
+        return f"expected {len(EXPECTED_RELEASE_PENDING_VERSIONS)} versions, got {actual!r}"
+    expected = set(EXPECTED_RELEASE_PENDING_VERSIONS)
+    seen = set(actual)
+    missing = sorted(expected - seen)
+    unexpected = sorted(seen - expected)
+    if not missing and not unexpected:
+        return f"same {len(actual)} versions in a different order"
+    parts = []
+    if missing:
+        parts.append(f"missing {missing}")
+    if unexpected:
+        parts.append(f"unexpected {unexpected}")
+    return ", ".join(parts)
+
+
 def validate_release_schema_preflight(row: Any) -> None:
     if not isinstance(row, dict):
         raise ReleaseSchemaNotReadyError("Release schema preflight returned no result.")
-    if (
-        row.get("ready") is not True
-        or row.get("migration_count") != EXPECTED_RELEASE_MIGRATION_COUNT
-        or row.get("migration_head") != EXPECTED_RELEASE_MIGRATION_HEAD
-        or row.get("pending_versions") != EXPECTED_RELEASE_PENDING_VERSIONS
-        or row.get("security_failures") != []
-        or row.get("manifest_version") != EXPECTED_RELEASE_MANIFEST_VERSION
+    mismatches: list[str] = []
+    if row.get("ready") is not True:
+        mismatches.append(f"ready={row.get('ready')!r} (expected True)")
+    for field, expected in (
+        ("migration_count", EXPECTED_RELEASE_MIGRATION_COUNT),
+        ("migration_head", EXPECTED_RELEASE_MIGRATION_HEAD),
+        ("manifest_version", EXPECTED_RELEASE_MANIFEST_VERSION),
+        ("security_failures", []),
     ):
-        raise ReleaseSchemaNotReadyError("Release schema preflight did not match exact head.")
+        actual = row.get(field)
+        if actual != expected:
+            mismatches.append(f"{field}={actual!r} (expected {expected!r})")
+    if row.get("pending_versions") != EXPECTED_RELEASE_PENDING_VERSIONS:
+        mismatches.append(
+            f"pending_versions: {_describe_pending_drift(row.get('pending_versions'))}"
+        )
+    if mismatches:
+        raise ReleaseSchemaNotReadyError(
+            "Release schema preflight did not match exact head. "
+            + "; ".join(mismatches)
+        )
 
 
 def assert_hosted_release_schema_ready() -> None:

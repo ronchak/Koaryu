@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 
@@ -9,6 +10,7 @@ from app.services.release_schema_readiness import assert_hosted_release_schema_r
 from app.services.stripe_mutation_policy import configured_stripe_mode
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -65,6 +67,13 @@ async def health_ready(response: Response):
         if settings.ENVIRONMENT.strip().lower() in {"production", "staging"}:
             await run_in_threadpool(assert_hosted_release_schema_ready)
     except Exception as exc:
+        # The 503 body stays deliberately generic because it is public. The
+        # cause only ever reaches the operator through this log line, so a
+        # readiness failure is diagnosable without guessing at the config.
+        logger.exception(
+            "Readiness check failed; serving 503",
+            extra={"environment": os.environ.get("ENVIRONMENT", "").strip().lower()},
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Runtime configuration is not ready.",
