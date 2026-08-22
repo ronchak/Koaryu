@@ -46,6 +46,9 @@ jobs:
       - name: Verify environment examples
         run: npm run check:env-examples
 
+      - name: Verify Supabase control inventory
+        run: npm run check:supabase-controls
+
       - name: Verify support privacy controls
         run: npm run audit:support-privacy
 
