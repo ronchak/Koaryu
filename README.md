@@ -217,6 +217,7 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - Support requests are stored as tickets, shown back to the user on the support page, and exposed for operator triage at `GET /api/v1/internal/support/tickets` with `X-Internal-Secret: $SUPPORT_TRIAGE_SECRET`. The daily GPT digest uses the Supabase connector against the sanitized `support_triage_digest(50)` RPC instead of raw ticket rows.
 - Internal support triage actions use `PATCH /api/v1/internal/support/tickets/{ticket_id}`. Status updates and notes are written through a transactional Supabase RPC so the ticket row and event trail stay together.
 - See `docs/support-triage.md` for the support queue, privacy rules, status workflow, and daily automation prompt expectations.
+- See `docs/email-domain-authentication.md` for the SPF/DMARC/DKIM records that keep `@koaryu.app` from being spoofed, and for the steps required before the domain may ever send mail.
 
 ## Billing Readiness
 
