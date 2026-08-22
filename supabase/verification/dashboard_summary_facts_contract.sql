@@ -70,47 +70,49 @@ BEGIN
         RAISE EXCEPTION 'Dashboard fact RPC ACL is not service-role-only.';
     END IF;
 
-    -- TEMPORARILY DISABLED -- see issue #113.
+    -- Assert ACL denial by invocation, not just by reading the catalog.
     --
-    -- These two checks assert that `anon` and `authenticated` cannot EXECUTE the
-    -- dashboard fact RPC, by actually invoking it and expecting insufficient_privilege.
-    -- On PostgreSQL 17.6 (supabase/postgres:17.6.1.106) that invocation does not raise;
-    -- it terminates the backend with SIGSEGV, taking down every open connection.
+    -- Guarded because of issue #113. supautils, loaded via session_preload_libraries,
+    -- rewrites permission-denied errors to append a GRANT hint when supautils.hint_roles
+    -- is non-empty. On images before 17.6.1.155 it does that correctly for tables and
+    -- segfaults on functions, so invoking a function we lack EXECUTE on terminates the
+    -- backend instead of raising insufficient_privilege.
     --
-    -- The crash is NOT specific to this function or this release: the same call against
-    -- the pre-existing public.soft_delete_student_atomic on origin/main at 111 migrations
-    -- crashes identically. See issue #113 for the full reproduction.
-    --
-    -- The catalog-based ACL assertions above (has_function_privilege, lines 66-71) still
-    -- verify that anon/authenticated/public lack EXECUTE, so the security property is
-    -- still covered -- it is simply no longer proven by invocation.
-    --
-    -- RE-ENABLE THIS once #113 is resolved. Do not delete it.
-    -- SET LOCAL ROLE anon;
-    -- v_denied := false;
-    -- BEGIN
-    -- PERFORM public.dashboard_summary_facts(
-    -- gen_random_uuid(), 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1'
-    -- );
-    -- EXCEPTION WHEN insufficient_privilege THEN
-    -- v_denied := true;
-    -- END;
-    -- IF NOT v_denied THEN
-    -- RAISE EXCEPTION 'anon execution of dashboard fact RPC was not denied.';
-    -- END IF;
-    --
-    -- SET LOCAL ROLE authenticated;
-    -- v_denied := false;
-    -- BEGIN
-    -- PERFORM public.dashboard_summary_facts(
-    -- gen_random_uuid(), 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1'
-    -- );
-    -- EXCEPTION WHEN insufficient_privilege THEN
-    -- v_denied := true;
-    -- END;
-    -- IF NOT v_denied THEN
-    -- RAISE EXCEPTION 'authenticated execution of dashboard fact RPC was not denied.';
-    -- END IF;
+    -- The guard runs the real assertion wherever it is safe and skips loudly where it
+    -- would crash the server. It is deliberately conservative: hint_roles being set is
+    -- necessary for the crash but not sufficient, so a patched image with hint_roles set
+    -- skips a check it could have run. Once the pinned Supabase CLI ships an image at or
+    -- past 17.6.1.155, drop the guard and run these unconditionally.
+    IF coalesce(current_setting('supautils.hint_roles', true), '') <> '' THEN
+        RAISE NOTICE 'Skipping invoking ACL denial check: supautils.hint_roles is set, which segfaults this backend on pre-17.6.1.155 images. See issue #113.';
+    ELSE
+        SET LOCAL ROLE anon;
+        v_denied := false;
+        BEGIN
+            PERFORM public.dashboard_summary_facts(
+                gen_random_uuid(), 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1'
+            );
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        IF NOT v_denied THEN
+            RAISE EXCEPTION 'anon execution of dashboard fact RPC was not denied.';
+        END IF;
+
+        SET LOCAL ROLE authenticated;
+        v_denied := false;
+        BEGIN
+            PERFORM public.dashboard_summary_facts(
+                gen_random_uuid(), 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1'
+            );
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        IF NOT v_denied THEN
+            RAISE EXCEPTION 'authenticated execution of dashboard fact RPC was not denied.';
+        END IF;
+    END IF;
+
     SET LOCAL ROLE postgres;
 
     INSERT INTO auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
