@@ -54,12 +54,18 @@ async def _lifespan(application: FastAPI):
         await asyncio.to_thread(runtime.shutdown)
 
 
+# The schema still builds in process for type generation and contract tests, but
+# serving it over HTTP publishes the whole route map — internal paths, auth model,
+# and header names included — so keep the route itself development-only.
+_schema_routes_enabled = settings.ENVIRONMENT == "development"
+
 app = FastAPI(
     title="Koaryu API",
     description="Backend API for Koaryu — Martial Arts Studio OS",
     version="1.0.0",
-    docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
-    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    openapi_url="/openapi.json" if _schema_routes_enabled else None,
+    docs_url="/docs" if _schema_routes_enabled else None,
+    redoc_url="/redoc" if _schema_routes_enabled else None,
     lifespan=_lifespan,
 )
 
