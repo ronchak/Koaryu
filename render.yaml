@@ -14,6 +14,8 @@ services:
         value: https://koaryu.app
       - key: ENVIRONMENT
         value: production
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: API_V1_PREFIX
         value: /api/v1
       - key: DEMO_RESET_ENABLED
@@ -103,6 +105,8 @@ services:
       # and the process refuses to boot against anything else.
       - key: ENVIRONMENT
         value: staging
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: FRONTEND_URL
         value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
       - key: API_V1_PREFIX
