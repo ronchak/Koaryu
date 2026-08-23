@@ -39,18 +39,29 @@ Merging `main` does not authorize an automatic production deployment. `frontend/
 
 Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only V4 Supabase preflight and requires the exact final migration count
-115, head `20260822193000`, the exact 31-version pending sequence, manifest version
-`release-db-attestation-v22`, the exact zero-invalid-count V18 archive-critical
+116, head `20260823193155`, the exact 32-version pending sequence, manifest version
+`release-db-attestation-v23`, the exact zero-invalid-count V18 archive-critical
 semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`, and required-object/security proof. That manifest covers
 `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware
 triggers, and every public RLS table's restrictive membership guard. The post-111
 V16 compatibility assertion is pinned to
 `0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239`. The
+operational semantic/ACL manifest remains pinned to
+`61c8251b04d170bb4777de6c35570d024d6c97897ef1c524bc1adbcff97b7931`. The
 raw PostgreSQL 17 catalog fingerprint is pinned to
 `column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:87649166980bfc6164e59482e122793d4b7867bbf360d2f1dbe3021fa151309b:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d71f968d375333515659bd0220224c127cee6e7b3878f9ae36427f7c1561c92c:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`. Schema 84, a
 partial 85-110 state, a missing final migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.
+
+Migration 116 reasserts the global default that removes PostgreSQL's automatic
+PUBLIC function EXECUTE grant, removes the schema-local API-role defaults, and
+fails closed if any public routine remains browser-callable. The
+fresh PostgreSQL 17 replay produced the same operational manifest and raw
+catalog fingerprint pinned above because migration `20260711215000` had already
+converged the effective routine ACL state. Migration 116 adds a schema-wide guard and a
+behavioral new-function probe; it does not invent a catalog change where none
+occurred.
 
 Migration 109 introduced the candidate V2 checkout-reservation path and retains
 the deployed `origin/main` predecessor reservation (V1) and V2 readiness

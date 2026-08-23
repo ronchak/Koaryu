@@ -51,6 +51,45 @@ BEGIN
 END;
 $$;
 
+-- Public routines are PostgREST RPC candidates or callable database objects.
+-- Check the pseudo-role directly as well as the two API roles so inherited
+-- PUBLIC EXECUTE cannot hide behind otherwise-empty role ACLs. Sweeping every
+-- pg_proc row also covers aggregates and window functions.
+DO $$
+DECLARE
+    v_role TEXT;
+    v_offenders TEXT;
+BEGIN
+    FOREACH v_role IN ARRAY ARRAY['public', 'anon', 'authenticated']
+    LOOP
+        WITH candidates AS MATERIALIZED (
+            SELECT
+                p.oid,
+                format(
+                    '%I.%I(%s)',
+                    n.nspname,
+                    p.proname,
+                    pg_get_function_identity_arguments(p.oid)
+                ) AS signature
+              FROM pg_proc AS p
+              JOIN pg_namespace AS n
+                ON n.oid = p.pronamespace
+               AND n.nspname = 'public'
+        )
+        SELECT string_agg(signature, ', ' ORDER BY signature)
+          INTO v_offenders
+          FROM candidates
+         WHERE has_function_privilege(v_role, oid, 'EXECUTE');
+
+        IF v_offenders IS NOT NULL THEN
+            RAISE EXCEPTION
+                '% still holds EXECUTE on public routines: %',
+                v_role, v_offenders;
+        END IF;
+    END LOOP;
+END;
+$$;
+
 DO $$
 DECLARE
     v_role TEXT;
@@ -103,6 +142,37 @@ BEGIN
     DROP TABLE public.koaryu_default_privilege_probe;
 END;
 $$;
+
+-- PostgreSQL normally grants EXECUTE on a new function to PUBLIC. Creating a
+-- real function proves the migration owner's global default suppresses that
+-- grant and Supabase's schema-local defaults do not restore API-role access.
+CREATE FUNCTION public.koaryu_default_privilege_probe()
+RETURNS void
+LANGUAGE sql
+AS $default_privilege_probe$
+    SELECT 1
+$default_privilege_probe$;
+
+DO $$
+DECLARE
+    v_role TEXT;
+BEGIN
+    FOREACH v_role IN ARRAY ARRAY['public', 'anon', 'authenticated']
+    LOOP
+        IF has_function_privilege(
+            v_role,
+            'public.koaryu_default_privilege_probe()'::regprocedure,
+            'EXECUTE'
+        ) THEN
+            RAISE EXCEPTION
+                'default privileges still grant % on newly created public functions',
+                v_role;
+        END IF;
+    END LOOP;
+END;
+$$;
+
+DROP FUNCTION public.koaryu_default_privilege_probe();
 
 -- Regression guard for the precedent this migration generalised: students was
 -- hardened first, and must stay hardened.

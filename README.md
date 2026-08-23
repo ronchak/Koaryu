@@ -154,7 +154,8 @@ The verification script defaults to the local database. Use
 the migrations are applied to the linked project. The backend now requires the worker-claim RPC migrations
 before webhook, account-deletion, or CSV-import workers can run. The contract
 checks cover account/support controls, belt-ladder sync, support triage,
-direct-client write lockdown, worker-claim RPCs, promotion RPCs,
+direct-client relation privileges, public-routine EXECUTE lockdown,
+worker-claim RPCs, promotion RPCs,
 recurring-session soft delete, student program filtering, atomic student import,
 lead conversion, student profile writes, studio operational clears, and studio
 onboarding. Most behavior checks run inside transactions that roll back.
