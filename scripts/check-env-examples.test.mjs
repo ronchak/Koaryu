@@ -37,6 +37,38 @@ This resolves the Vercel funded-plan gate by moving the primary trigger source, 
 Nobody may weaken the five-minute cadence merely to make a preview deploy.
 `;
 
+function renderArenaLines(values) {
+  return values
+    .map((value) => `      - key: MALLOC_ARENA_MAX\n        value: ${JSON.stringify(value)}`)
+    .join("\n");
+}
+
+function stagingRenderSource(values) {
+  return `
+services:
+  - type: web
+    name: koaryu-staging
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "false"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+${renderArenaLines(values)}
+`;
+}
+
 describe("environment example validation", () => {
   it("accepts deliberate placeholders and rejects real-looking secrets", () => {
     assert.equal(isPlaceholderValue("sk_test_your_key"), true);
@@ -122,6 +154,8 @@ services:
         sync: false
       - key: API_SECRET
         value: literal-secret
+      - key: MALLOC_ARENA_MAX
+        value: "2"
 `);
     const failures = validateRenderManifest(
       ["API_URL", "API_SECRET"],
@@ -132,6 +166,54 @@ services:
     assert.ok(failures.some((failure) => failure.includes("duplicate key(s): API_SECRET")));
     assert.ok(failures.some((failure) => failure.includes("must use sync: false")));
     assert.ok(failures.some((failure) => failure.includes("must not contain a literal value")));
+  });
+
+  it("accepts exactly one fixed arena setting on both Render services", () => {
+    const productionEntries = extractRenderEnvEntries(`
+envVars:
+${renderArenaLines(["2"])}
+`);
+    assert.deepEqual(validateRenderManifest(
+      [],
+      productionEntries,
+      [],
+      new Map(),
+      new Map(),
+    ), []);
+
+    assert.deepEqual(validateStagingRenderService(stagingRenderSource(["2"]), []), []);
+  });
+
+  it("rejects missing, wrong, and duplicate arena settings for both Render services", () => {
+    const cases = [
+      ["missing", [], "must declare MALLOC_ARENA_MAX"],
+      ["wrong", ["4"], 'must equal "2"'],
+      ["duplicate", ["2", "2"], "must be declared exactly once"],
+    ];
+
+    for (const [caseName, values, expectedDiagnostic] of cases) {
+      const productionEntries = extractRenderEnvEntries(`
+envVars:
+${renderArenaLines(values)}
+`);
+      const productionFailures = validateRenderManifest(
+        [],
+        productionEntries,
+        [],
+        new Map(),
+        new Map(),
+      );
+      assert.ok(
+        productionFailures.some((failure) => failure.includes(expectedDiagnostic)),
+        `production ${caseName}`,
+      );
+
+      const stagingFailures = validateStagingRenderService(stagingRenderSource(values), []);
+      assert.ok(
+        stagingFailures.some((failure) => failure.includes(expectedDiagnostic)),
+        `staging ${caseName}`,
+      );
+    }
   });
 
   it("rejects unsafe critical Render values even when the example drifts with them", () => {
@@ -160,6 +242,8 @@ envVars:
     value: /api
   - key: FRONTEND_URL
     value: https://koaryu.test
+  - key: MALLOC_ARENA_MAX
+    value: "2"
 `);
     const failures = validateRenderManifest(
       [...unsafeValues.keys()],
@@ -179,6 +263,8 @@ envVars:
 envVars:
   - key: LIVE_BILLING_ENABLED
     value: "true"
+  - key: MALLOC_ARENA_MAX
+    value: "2"
 `);
 
     assert.deepEqual(validateRenderManifest(
@@ -206,6 +292,8 @@ envVars:
 envVars:
   - key: LIVE_BILLING_ENABLED
     value: "false"
+  - key: MALLOC_ARENA_MAX
+    value: "2"
 `);
     const failures = validateRenderManifest(
       ["LIVE_BILLING_ENABLED"],
