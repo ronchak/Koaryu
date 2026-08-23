@@ -1,9 +1,9 @@
 # Studio-Comp Migration Rollout
 
-Status: **candidate extends the release to migration 115/head 20260822193000; fresh candidate-bound staging re-read required; production human apply locked**
+Status: **candidate extends the release to migration 116/head 20260823193155; fresh candidate-bound staging re-read required; production human apply locked**
 
 This packet reconciles the production 100-migration V7 baseline and the last
-verified staging state with the immutable 115-migration release candidate.
+verified staging state with the immutable 116-migration release candidate.
 It is specialized to this rollout, not a generic migration or history-repair
 framework.
 
@@ -24,7 +24,7 @@ Therefore:
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
 - the release authority is the operator-side raw-catalog verifier plus its
-  repository-pinned SHA-256 manifests; the database V20 readiness signal, backed
+  repository-pinned SHA-256 manifests; the database V23 readiness signal, backed
   by the V7 semantic/ACL manifest, V9 starting-belt invariant manifest, V11
   student-rank writer body/ACL manifest, V12 writer return-contract manifest,
   V13 retained-membership rank manifest, V14 critical RPC/trigger/FK manifest,
@@ -49,10 +49,10 @@ The fixed production pre-state is:
 The authorized release migrations are `20260814043325`, `20260814103046`,
 `20260814105424`, `20260814114500`, `20260814152000`, `20260814170000`,
 `20260814183000`, `20260814200000`, `20260814213000`, `20260815220402`,
-`20260816012723`, `20260820012533`, `20260820025759`, `20260820060216`, and
-`20260822193000`.
-The only certifiable post-state is migration count 115 at the latter head. Its
-V22 readiness signal retains the complete migration-85-through-115 sequence:
+`20260816012723`, `20260820012533`, `20260820025759`, `20260820060216`,
+`20260822193000`, and `20260823193155`.
+The only certifiable post-state is migration count 116 at the latter head. Its
+V23 readiness signal retains the complete migration-85-through-116 sequence:
 
 ```text
 20260727100000
@@ -86,6 +86,7 @@ V22 readiness signal retains the complete migration-85-through-115 sequence:
 20260820025759
 20260820060216
 20260822193000
+20260823193155
 ```
 
 Exact migration count 110 at head `20260815220402` is the accepted
@@ -93,16 +94,17 @@ Exact migration count 110 at head `20260815220402` is the accepted
 `110:65664dce61981374e865f081fc2f9347`, the exact ordered migration-85-through-110
 target history, `object_counts=3:1`, and the exact V17 V3 readiness result with
 `ready=true`, no security failures, and manifest version
-`release-db-attestation-v17`. This state can authorize only the immutable
-`20260816012723_archive_staff_access_and_readiness.sql` remainder after a fresh
-state-bound inspection token and exact one-file dry-run. Remote version/name
-history still is not content-hash proof; only the final post-111 raw catalog and
+`release-db-attestation-v17`. This state can authorize the immutable six-file
+remainder from `20260816012723_archive_staff_access_and_readiness.sql` through
+`20260823193155_revoke_public_function_execute.sql` after a fresh state-bound
+inspection token and exact dry-run. Remote version/name history still is not
+content-hash proof; only the final post-116 raw catalog and
 provider fingerprint can certify release authority.
 
 The checker derives filenames and source hashes from the final candidate, pins
 the first 100 identities to the observed V7 baseline, and reports
-`integration_complete=true` only when those eleven files are the release
-pending migrations and the 111-state readiness contract contains the twenty-seven
+`integration_complete=true` only when those sixteen files are the release
+pending migrations and the 116-state readiness contract contains the thirty-two
 historical versions above. The 070000/091000/093000/105313
 billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
@@ -184,7 +186,7 @@ exact source files:
 
 They remain pinned as the first two migrations after historical migration 84.
 They are already present in the 100-state baseline. Production must apply
-migrations 101 through 111. Staging was last verified at exact migration 111,
+migrations 101 through 116. Staging was last verified at exact migration 111,
 head `20260816012723`; do not rely on that recorded observation without a fresh
 candidate-bound re-read. An exact post-state has no migrations left to dry-run
 or apply.
@@ -196,8 +198,8 @@ complete object surface needed for safe forward recovery. Only exact pre-state
 100, attested state 104, return-attested state 105, retained state 106,
 critical state 107, column-attested state 108, or trial-locked state 109 may
 enter apply after a matching inspection token and dry-run. Exact
-`staff-identity` state 110 is also a guarded forward-resume origin for migration
-111 only. Final post-state 111 is inspect-only and has nothing left to apply.
+`staff-identity` state 110 is also a guarded forward-resume origin for migrations
+111 through 116. Final post-state 116 is inspect-only and has nothing left to apply.
 
 ## Transaction and old-application classification
 
@@ -226,6 +228,9 @@ The August release files have the following operational profile:
 | 109 | Adds the V2 checkout-reservation RPC, computes trial eligibility under the subscription row lock, serializes checkout acceptance against operator comp grants in both lock orders, preserves archived acceptance without projecting historical provider state, binds explicit live-subscription comp overrides to the exact accepted Core subscription, makes belt-ladder mutation plus audit an idempotent atomic operation, returns student write response data from the write transaction, and advances the critical-surface/readiness manifests to V16. | Requires the new backend and remains database-first. The predecessor reservation (V1), student-writer, and V2 readiness signatures remain service-role callable only for mixed-version cutover and rollback; the candidate uses the versioned writers and readiness V3. Core self-checkout stays disabled until the new backend is deployed after database promotion. | One migration transaction. Exact V15 state is guarded and may resume with migrations 109 through 111 after fresh inspection and dry-run. |
 | 110 | Adds the staff legal-name source-of-truth and audit actor-name snapshot schema, preserves its reviewed table/RLS/backfill/grant/trigger semantics, and updates only the V2 compatibility guard and V3 release-readiness definitions to require the exact V17 count, head, sequence, and manifest contract. | The identity schema is additive; the V2 response remains V7-shaped and reports ready only when V3 proves exact 110/V17. No approved application may serve at this head: `709239` requires V16, the candidate requires V18, and older V2 consumers that can report ready are not approved recovery artifacts. | One migration transaction. Exact V16 state 109 may resume with immutable 110 and 111. If 110 commits and 111 does not, stop and obtain a fresh exact candidate-bound inspection of `staff-identity`, dry-run exactly 111, then continue forward under the normal human production gate. |
 | 111 | Adds nullable `staff_roles.archived_at`; replaces central membership, role, and staff-profile authorization with active-membership checks; keeps any-row single-studio reservation and pending invites; blocks owner and last-active-admin archive, identity-replacement, identity-clearing, and demotion transitions; updates account-deletion survivor checks; reasserts the all-public-RLS restrictive guard; and advances the V3 release contract to V18 with the V17 archive-critical semantic manifest. | Additive archive state with service-role-only staff-role writes. Active same-studio access and zero-membership onboarding remain valid, while archived identities lose all tenant access immediately. Nullable pending rows may still link to an invited identity. | One migration transaction. Exact V16 state 109 or exact V17 `staff-identity` state 110 may resume with immutable 110/111 or 111 respectively after fresh inspection and dry-run. |
+| 112-114 | Add the dashboard facts RPC, roster read RPC, and atomic bulk student archive RPC. | Additive, service-role-only RPCs used by the release backend. | One transaction per migration. Re-inspect after any partial apply. |
+| 115 | Revokes anon and authenticated privileges on all public relations and sequences, removes their schema-local defaults, and adds the V22 readiness head. | Database-first and compatible because browser data access already goes through the backend. | One migration transaction with a fail-closed relation guard. |
+| 116 | Reasserts the global PUBLIC function default revoke, removes public-schema API-role function defaults, and adds a schema-wide routine guard plus V23 readiness. | Database-first and compatible because the browser makes no PostgREST RPC calls. | One migration transaction. The migration stops and rolls back if any browser-facing role can execute a public routine. |
 
 Before staging apply, record cardinalities for `student_program_memberships`,
 active unranked memberships eligible for the 101 backfill, `students`,
@@ -311,10 +316,13 @@ node scripts/studio-comp-migration-rollout.mjs \
 ```
 
 Staging was last verified at exact 111/head `20260816012723`. Re-read it from the
-exact candidate before relying on that state. The inspection must classify
-`post`, emit the final provider fingerprint, and report no remaining migration
-packet. Any different history, readiness, fingerprint, or unexpected remaining
-migration halts the rollout.
+exact candidate before relying on that state. The current rollout tool accepts
+110 as `staff-identity` and 116 as `post`; it has no resume classification for
+111. If the fresh read still reports 111, halt and add a reviewed exact-111
+resume state before any dry-run or apply. Do not relabel it as `staff-identity`
+or `post`. After the remaining migrations commit, a fresh inspection must
+classify `post`, emit the final provider fingerprint, and report no remaining
+migration packet.
 
 The exact candidate's staging rehearsal was approved through its durable PR
 release record. Any staging apply requires the same inspection token, exact
@@ -325,7 +333,7 @@ application:
 > `--approval-record <durable-url>` **in addition to** `--approve-staging-apply`.
 > Passing only the staging flag is refused. See `docs/cutover-gates.md`.
 
-1. require count 111, head `20260816012723`, the exact twenty-seven-version sequence, and the
+1. require count 116, head `20260823193155`, the exact thirty-two-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
@@ -335,10 +343,10 @@ application:
    exact: extra policies halt, constant-false deny predicates and the guarded
    membership predicate are classified canonically, and arbitrary non-null
    expressions do not pass;
-3. invoke the service-role-only V3 readiness RPC during every apparent-post
+3. invoke the service-role-only V4 readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v18`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v23`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
@@ -420,21 +428,22 @@ trigger/functions, or use a production restore as ordinary rollback.
 
 If migration 110 committed but 111 did not, the supported path is exact and
 forward-only: stop; run a fresh candidate-bound inspection that must classify
-`staff-identity`; mint its state-bound token; dry-run exactly
-`20260816012723_archive_staff_access_and_readiness.sql`; then let the human
-operator run the existing production apply gate. After 111, require the exact
-V18 readiness result and final raw catalog/provider fingerprint before promoting
+`staff-identity`; mint its state-bound token; dry-run the exact six-file remainder
+from `20260816012723_archive_staff_access_and_readiness.sql` through
+`20260823193155_revoke_public_function_execute.sql`; then let the human
+operator run the existing production apply gate. After 116, require the exact
+V23 readiness result and final raw catalog/provider fingerprint before promoting
 an application. No approved application serves at 110. The pre-release
 application SHA `709239680c9097a2ed647c3781c63fd957e58ed8` requires V16 and the
-candidate requires V18, so both fail readiness at V17. Pre-boundary V2 consumers
+candidate requires V23, so both fail readiness at V17. Pre-boundary V2 consumers
 from before `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through
 migration 110's exact V17 compatibility guard, but they are not approved
 recovery artifacts. Keep both `709239`/V16 and every such pre-boundary
 V2-consuming SHA out of the post-110 application rollback set; recovery is
-forward to 111.
+forward to 116.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 111 head and
+database-first: Render `/health/ready` remains 503 until the exact 116 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.
