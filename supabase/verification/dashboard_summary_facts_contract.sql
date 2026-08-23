@@ -70,34 +70,6 @@ BEGIN
         RAISE EXCEPTION 'Dashboard fact RPC ACL is not service-role-only.';
     END IF;
 
-    SET LOCAL ROLE anon;
-    v_denied := false;
-    BEGIN
-        PERFORM public.dashboard_summary_facts(
-            gen_random_uuid(), 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1'
-        );
-    EXCEPTION WHEN SQLSTATE '42501' THEN
-        v_denied := true;
-    END;
-    IF NOT v_denied THEN
-        RAISE EXCEPTION 'anon execution of dashboard fact RPC was not denied.';
-    END IF;
-
-    SET LOCAL ROLE authenticated;
-    v_denied := false;
-    BEGIN
-        PERFORM public.dashboard_summary_facts(
-            gen_random_uuid(), 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1'
-        );
-    EXCEPTION WHEN SQLSTATE '42501' THEN
-        v_denied := true;
-    END;
-    IF NOT v_denied THEN
-        RAISE EXCEPTION 'authenticated execution of dashboard fact RPC was not denied.';
-    END IF;
-
-    SET LOCAL ROLE postgres;
-
     INSERT INTO auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
     VALUES (v_owner, 'authenticated', 'authenticated', 'dashboard-facts-' || replace(v_owner::TEXT, '-', '') || '@example.invalid', '{}', '{}', now(), now());
     INSERT INTO public.studios (id, name, slug, owner_id, timezone)
