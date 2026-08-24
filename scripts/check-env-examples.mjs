@@ -101,8 +101,8 @@ const renderCriticalValues = new Map([
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
-const RENDER_DOCKERFILE_PATH = "backend/Dockerfile";
-const RENDER_DOCKER_CONTEXT = "backend";
+const RENDER_DOCKERFILE_PATH = "./Dockerfile";
+const RENDER_DOCKER_CONTEXT = ".";
 const RENDER_PYTHON_IMAGE =
   "python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317";
 

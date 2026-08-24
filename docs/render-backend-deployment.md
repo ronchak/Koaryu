@@ -14,8 +14,8 @@ Expected service settings:
 - Plan: `starter`
 - Region: Ohio
 - Root directory: `backend`
-- Dockerfile path: `backend/Dockerfile`
-- Docker context: `backend`
+- Dockerfile path: `./Dockerfile`
+- Docker context: `.`
 - Start command: the image's `backend/scripts/start-render.sh`
 - Health check path: `/health/ready`
 - Automatic production deploys: off; deploy one reviewed commit explicitly
@@ -27,6 +27,20 @@ The image installs Debian's `libjemalloc2`, exposes it through `/usr/local/lib/l
 The configured `starter` Render service runs a single lightweight Uvicorn process. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Dockerfile`, `backend/scripts/start-render.sh`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
 `render.yaml` intentionally sets `autoDeployTrigger: 'off'`. A merge to `main` must not release the backend before the fixed candidate has passed staging. Trigger the production deploy with the exact approved commit SHA, then read the deployed SHA back from Render before recording the release. Do not re-enable commit auto-deploy as a shortcut.
+
+### Native-to-Docker conversion
+
+Render resolves `dockerfilePath` and `dockerContext` from the service's root directory. With `rootDir: backend`, the Dockerfile path is `./Dockerfile` and the context is `.`. Prove both the path and the runtime conversion on `koaryu-staging` before changing production. The first staging build log must show `backend/Dockerfile`, install `libjemalloc2`, and reach `jemalloc preload verified`. Read the staging service afterward and confirm its runtime is Docker, its branch is `staging`, and its health path remains `/health/ready`.
+
+Current Render documentation supports changing an existing non-static service runtime through the API or a Blueprint sync. If Render refuses the in-place change, stop before touching production and use this fallback:
+
+1. Record the existing service ID, branch, plan, root directory, health path, domains, and environment-variable names. Do not print or copy secret values into the repository or deployment logs.
+2. Rename the existing service with a `-native-backup` suffix. Do not delete it.
+3. Provision a Docker replacement from the exact candidate commit with the original service name and configuration. Re-enter every `sync: false` value through Render's secret controls.
+4. Keep automatic deploys off. Require successful startup, `/health/live`, `/health/ready`, exact commit readback, Stripe mode readback, and `jemalloc preload verified` before routing traffic.
+5. Update `docs/services.md`, pinned service IDs in operator scripts, and any provider URL references in the same change. Keep the old service until the replacement passes the memory observation window and a separate cleanup explicitly authorizes removal.
+
+This fallback changes service IDs and may change the temporary `onrender.com` URL. Do not reuse the old production URL or remove the old service until the replacement URL and dependent Vercel variables have been verified.
 
 For a live dojo-floor demo, use the configured starter service only after it is warm, or use a larger always-on backend. Cold starts on small Render instances can still make the first authenticated or billing click feel broken even when the service is healthy.
 

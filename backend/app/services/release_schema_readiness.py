@@ -117,8 +117,9 @@ def assert_hosted_release_schema_ready() -> None:
 class HostedReleaseReadinessCache:
     """Coalesce hosted schema checks and briefly reuse successful results.
 
-    Failures are never cached. The lock also prevents simultaneous health probes
-    from creating duplicate Supabase clients while one preflight is in flight.
+    Failures are never cached. The lock intentionally stays held during the
+    network check. Concurrent probes share a successful check, and an outage
+    serializes retries instead of creating a provider request burst.
     """
 
     def __init__(

@@ -5,8 +5,8 @@ services:
     plan: starter
     region: ohio
     rootDir: backend
-    dockerfilePath: backend/Dockerfile
-    dockerContext: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -93,8 +93,8 @@ services:
     plan: free
     region: ohio
     rootDir: backend
-    dockerfilePath: backend/Dockerfile
-    dockerContext: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:

@@ -44,8 +44,8 @@ services:
   - type: web
     name: koaryu-staging
     runtime: docker
-    dockerfilePath: backend/Dockerfile
-    dockerContext: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -181,8 +181,8 @@ services:
   - type: web
     name: koaryu
     runtime: docker
-    dockerfilePath: backend/Dockerfile
-    dockerContext: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
 `;
     assert.deepEqual(
       validateRenderDockerRuntime(
@@ -202,7 +202,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app
     dockerfilePath: wrong/Dockerfile
-    dockerContext: .
+    dockerContext: backend
     envVars:
       - key: MALLOC_ARENA_MAX
         value: "2"
