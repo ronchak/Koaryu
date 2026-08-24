@@ -9,15 +9,7 @@ from app.services.release_schema_readiness import (
     EXPECTED_RELEASE_MANIFEST_VERSION,
     EXPECTED_RELEASE_PENDING_VERSIONS,
     HostedReleaseReadinessCache,
-    PRODUCTION_RESTORED_V22_MANIFEST_VERSION,
-    PRODUCTION_RESTORED_V22_MIGRATION_COUNT,
-    PRODUCTION_RESTORED_V22_MIGRATION_HEAD,
-    PRODUCTION_RESTORED_V22_PENDING_VERSIONS,
     ReleaseSchemaNotReadyError,
-    TRANSITIONAL_V23_MANIFEST_VERSION,
-    TRANSITIONAL_V23_MIGRATION_COUNT,
-    TRANSITIONAL_V23_MIGRATION_HEAD,
-    TRANSITIONAL_V23_PENDING_VERSIONS,
     assert_hosted_release_schema_ready,
     validate_release_schema_preflight,
 )
@@ -31,28 +23,6 @@ def exact_preflight_row():
         "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS,
         "security_failures": [],
         "manifest_version": EXPECTED_RELEASE_MANIFEST_VERSION,
-    }
-
-
-def exact_production_restored_v22_row():
-    return {
-        "ready": True,
-        "migration_count": PRODUCTION_RESTORED_V22_MIGRATION_COUNT,
-        "migration_head": PRODUCTION_RESTORED_V22_MIGRATION_HEAD,
-        "pending_versions": list(PRODUCTION_RESTORED_V22_PENDING_VERSIONS),
-        "security_failures": [],
-        "manifest_version": PRODUCTION_RESTORED_V22_MANIFEST_VERSION,
-    }
-
-
-def exact_transitional_v23_row():
-    return {
-        "ready": True,
-        "migration_count": TRANSITIONAL_V23_MIGRATION_COUNT,
-        "migration_head": TRANSITIONAL_V23_MIGRATION_HEAD,
-        "pending_versions": list(TRANSITIONAL_V23_PENDING_VERSIONS),
-        "security_failures": [],
-        "manifest_version": TRANSITIONAL_V23_MANIFEST_VERSION,
     }
 
 
@@ -75,6 +45,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "migration_count": 109},
             {**exact_preflight_row(), "migration_count": 110},
             {**exact_preflight_row(), "migration_count": 115},
+            {**exact_preflight_row(), "migration_count": 116},
             {**exact_preflight_row(), "migration_head": "20260801080000"},
             {**exact_preflight_row(), "migration_head": "20260801105313"},
             {**exact_preflight_row(), "migration_head": "20260801112153"},
@@ -88,6 +59,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "migration_head": "20260814213000"},
             {**exact_preflight_row(), "migration_head": "20260815220402"},
             {**exact_preflight_row(), "migration_head": "20260822193000"},
+            {**exact_preflight_row(), "migration_head": "20260823193155"},
             {**exact_preflight_row(), "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1]},
             {**exact_preflight_row(), "security_failures": ["table:missing"]},
             {**exact_preflight_row(), "manifest_version": "stale-manifest"},
@@ -104,141 +76,11 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v16"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v17"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v22"},
+            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v23"},
         ]
         for row in mismatches:
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):
                 validate_release_schema_preflight(row)
-
-    def test_restored_v22_requires_the_explicit_production_allowance(self):
-        row = exact_production_restored_v22_row()
-        with self.assertRaises(ReleaseSchemaNotReadyError):
-            validate_release_schema_preflight(row)
-        validate_release_schema_preflight(
-            row,
-            allow_production_restored_v22=True,
-        )
-
-    def test_restored_v22_sequence_is_independent_of_the_current_release(self):
-        self.assertIsInstance(PRODUCTION_RESTORED_V22_PENDING_VERSIONS, tuple)
-        self.assertEqual(
-            list(PRODUCTION_RESTORED_V22_PENDING_VERSIONS),
-            list(TRANSITIONAL_V23_PENDING_VERSIONS[:-1]),
-        )
-        self.assertEqual(
-            PRODUCTION_RESTORED_V22_PENDING_VERSIONS[-1],
-            PRODUCTION_RESTORED_V22_MIGRATION_HEAD,
-        )
-        self.assertIsInstance(TRANSITIONAL_V23_PENDING_VERSIONS, tuple)
-        self.assertEqual(
-            list(TRANSITIONAL_V23_PENDING_VERSIONS),
-            EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
-        )
-        self.assertEqual(
-            TRANSITIONAL_V23_PENDING_VERSIONS[-1],
-            TRANSITIONAL_V23_MIGRATION_HEAD,
-        )
-
-    def test_transitional_v23_requires_the_explicit_rollout_allowance(self):
-        row = exact_transitional_v23_row()
-        with self.assertRaises(ReleaseSchemaNotReadyError):
-            validate_release_schema_preflight(row)
-        validate_release_schema_preflight(row, allow_transitional_v23=True)
-
-    def test_every_transitional_v23_mismatch_fails_closed(self):
-        row = exact_transitional_v23_row()
-        mismatches = [
-            {**row, "ready": False},
-            {**row, "migration_count": 115},
-            {**row, "migration_count": 117},
-            {**row, "migration_head": "20260822193000"},
-            {**row, "pending_versions": row["pending_versions"][:-1]},
-            {**row, "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS},
-            {**row, "security_failures": ["operational_semantic_acl_manifest_v7"]},
-            {**row, "manifest_version": "release-db-attestation-v24"},
-            {**row, "unexpected": "field"},
-        ]
-        for candidate in mismatches:
-            with self.subTest(candidate=candidate), self.assertRaises(
-                ReleaseSchemaNotReadyError
-            ):
-                validate_release_schema_preflight(
-                    candidate,
-                    allow_transitional_v23=True,
-                )
-
-    def test_every_restored_v22_mismatch_fails_closed(self):
-        row = exact_production_restored_v22_row()
-        mismatches = [
-            {**row, "ready": False},
-            {**row, "migration_count": 114},
-            {**row, "migration_count": 116},
-            {**row, "migration_head": "20260820060216"},
-            {**row, "pending_versions": row["pending_versions"][:-1]},
-            {**row, "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS},
-            {**row, "security_failures": ["operational_semantic_acl_manifest_v7"]},
-            {**row, "manifest_version": "release-db-attestation-v23"},
-            {**row, "unexpected": "field"},
-        ]
-        for candidate in mismatches:
-            with self.subTest(candidate=candidate), self.assertRaises(
-                ReleaseSchemaNotReadyError
-            ):
-                validate_release_schema_preflight(
-                    candidate,
-                    allow_production_restored_v22=True,
-                )
-
-    def test_hosted_production_accepts_exact_restored_v22(self):
-        response = SimpleNamespace(data=[exact_production_restored_v22_row()])
-        client = SimpleNamespace(rpc=lambda _name, _params: SimpleNamespace(
-            execute=lambda: response
-        ))
-        with (
-            patch(
-                "app.services.release_schema_readiness.get_settings",
-                return_value=SimpleNamespace(ENVIRONMENT="production"),
-            ),
-            patch(
-                "app.services.release_schema_readiness.get_supabase_client",
-                return_value=client,
-            ),
-        ):
-            assert_hosted_release_schema_ready()
-
-    def test_hosted_staging_rejects_exact_restored_v22(self):
-        response = SimpleNamespace(data=[exact_production_restored_v22_row()])
-        client = SimpleNamespace(rpc=lambda _name, _params: SimpleNamespace(
-            execute=lambda: response
-        ))
-        with (
-            patch(
-                "app.services.release_schema_readiness.get_settings",
-                return_value=SimpleNamespace(ENVIRONMENT="staging"),
-            ),
-            patch(
-                "app.services.release_schema_readiness.get_supabase_client",
-                return_value=client,
-            ),
-            self.assertRaises(ReleaseSchemaNotReadyError),
-        ):
-            assert_hosted_release_schema_ready()
-
-    def test_hosted_staging_accepts_exact_transitional_v23(self):
-        response = SimpleNamespace(data=[exact_transitional_v23_row()])
-        client = SimpleNamespace(rpc=lambda _name, _params: SimpleNamespace(
-            execute=lambda: response
-        ))
-        with (
-            patch(
-                "app.services.release_schema_readiness.get_settings",
-                return_value=SimpleNamespace(ENVIRONMENT="staging"),
-            ),
-            patch(
-                "app.services.release_schema_readiness.get_supabase_client",
-                return_value=client,
-            ),
-        ):
-            assert_hosted_release_schema_ready()
 
     def test_hosted_check_uses_required_rpc(self):
         response = SimpleNamespace(data=[exact_preflight_row()])

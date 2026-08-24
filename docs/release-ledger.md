@@ -319,6 +319,29 @@ archive/RLS candidate is recorded in the Migration-111 section that follows.
 - Rollback verification: exact rollback SHA, native runtime only if deliberately restored, both health routes, live Stripe mode, and fresh RSS instance identity
 - Outcome: successful application cutover; database convergence remains gated
 
+### Production V24 database convergence — 2026-08-24
+
+- Environment: production Supabase `mimguepumzsgmcaycdsh` and Render `Koaryu` (`srv-d7mogk1kh4rs73aq6hqg`)
+- Application commit: `ded46bca0f6e5342e74a503ad6d3aa94defb940c`
+- Repository migration head: `20260824190500_attest_verified_restore_manifest.sql`
+- Applied migration head: 117 / `20260824190500_attest_verified_restore_manifest.sql`
+- Migration comparison: exact restored-production V24 post-state
+- Application deployed at: `2026-08-24T19:59:42.226653Z`; migration apply time not captured; independent verification completed after apply
+- Operator: Codex under Ronak's explicit override authorizing agent-run production apply
+- Approval/review: PR #131 exact head `cdce69359ec18f38f6b1079fab1d3ef23c9e4031`; OX alpha `GREEN LIGHT`; GitHub Codex no major issues; all required checks green
+- Verification:
+  - Human-gated tool re-read `restored-v22`, dry-ran exactly migrations 116 and 117, required the generated exact confirmation phrase, and reached `state=post`
+  - Production V4 returned true at exact 117/head `20260824190500`, 33 versions, no failures, V24, and restored manifest `f9ce359c...`
+  - Final raw fingerprint matched the pinned restored catalog, including scoped-constraint digest `47cacc1c...`; all failure counts were zero
+  - Supabase remained `ACTIVE_HEALTHY` on PostgreSQL `17.6.1.155`; public live/ready returned exact app SHA and live Stripe mode
+  - Security advisors reported a private no-policy info item and leaked-password-protection warning; neither concerns the readiness-only migration 117 or routine-ACL migration 116
+- Known gaps: Supabase performance advisors retain pre-existing unindexed-FK and unused-index notices outside this rollout
+- Application rollback target: `aed09efcb9559ee76776dbc324abcd370316ff87`
+- Database recovery action: forward-only corrective migration if later drift is found; do not rewrite or remove migration history
+- Rollback trigger: failed V24 readiness, wrong restored fingerprint, nonzero catalog failure, or public health/Stripe-mode regression
+- Rollback verification: exact migration history/readiness/fingerprint, both public health routes, and live Stripe mode
+- Outcome: successful V24 convergence; temporary V22/V23 application bridges removed in the follow-up cleanup
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.

@@ -47,12 +47,10 @@ That manifest covers
 `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware
 triggers, and every public RLS table's restrictive membership guard.
 
-The restored production database is a temporary exact-state exception to the
-normal database-first rule while the memory fix is deployed. Production may
-report ready only at its verified 115/V22 restored state, the exact 116/V23
-rollout bridge, or final V24. Staging accepts only the exact V23 bridge or V24.
-Remove both temporary application bridges after production reaches V24 and the
-hosted readback is recorded.
+Staging and production now report ready only at exact 117/V24. The temporary
+production V22 and hosted V23 application bridges were removed after the
+production V24 hosted readback. Historical V22/V23 states remain represented
+only in the guarded operator tool for exact forward-recovery diagnosis.
 
 The post-111 V16 compatibility assertion is pinned to
 `0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239`. The
@@ -61,14 +59,8 @@ semantic/ACL manifest
 `61c8251b04d170bb4777de6c35570d024d6c97897ef1c524bc1adbcff97b7931`
 or the independently proved logical-restore manifest
 `f9ce359c0ebf12039e8dfcb5308cd193ac18aa05cea23dad5b9f5208b0c51233`.
-The temporary restored-production database function
-`public.koaryu_release_schema_preflight_v4()` independently pins the verified
-equivalent digest
-`f9ce359c0ebf12039e8dfcb5308cd193ac18aa05cea23dad5b9f5208b0c51233`.
-Read-only production function-definition readback confirmed that comparison on
-2026-08-24; the Python validator checks the function's exact V22 result row. The
-raw PostgreSQL 17 catalog fingerprint is pinned to
-`column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:87649166980bfc6164e59482e122793d4b7867bbf360d2f1dbe3021fa151309b:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d71f968d375333515659bd0220224c127cee6e7b3878f9ae36427f7c1561c92c:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`. Schema 84, a
+The raw PostgreSQL 17 catalog fingerprint is pinned to
+`column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:87649166980bfc6164e59482e122793d4b7867bbf360d2f1dbe3021fa151309b:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d71f968d375333515659bd0220224c127cee6e7b3878f9ae36427f7c1561c92c:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`.
 The independently read-back restored-production catalog is byte-identical in
 every category except the proved logical-restore scoped-constraint digest:
 `scoped_constraints=149:47cacc1ce1d31ca8a7d63158aaa66aaf24452c085015c226f40e810995a6cd18:0`.
@@ -77,8 +69,8 @@ Read-only 2026-08-24 comparison also confirmed identical narrow function state
 `1:e430c825c094352cd460bd15933a3a43:0`, and V18 critical manifest. The rollout
 tool derives the exact restored production fingerprint from approved canonical
 staging evidence by replacing only that full catalog token; no per-category
-mixing is accepted. Schema 84, a
-partial 85-110 state, a missing final migration manifest, or any
+mixing is accepted. A schema-84 state, a partial 85-110 state, a missing final
+migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.
 
