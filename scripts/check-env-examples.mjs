@@ -379,7 +379,6 @@ export function validateRenderDockerRuntime(
     .split(/\r?\n/)
     .filter((line) => !line.trim().startsWith("#"));
   const dockerfileLines = activeDockerfileLines.map((line) => line.trim());
-  const activeDockerfileSource = activeDockerfileLines.join("\n");
   const directiveContracts = [
     {
       select: (line) => /^FROM\s/i.test(line),
@@ -417,8 +416,14 @@ export function validateRenderDockerRuntime(
     failures.push("backend/Dockerfile: must not override the reviewed command with ENTRYPOINT");
   }
   const pinnedJemallocInstall =
-    `apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"`;
-  if (!activeDockerfileSource.includes(pinnedJemallocInstall)) {
+    `&& apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}" \\`;
+  const jemallocInstallLines = dockerfileLines.filter(
+    (line) => line.includes("apt-get install") && line.includes("libjemalloc2"),
+  );
+  if (
+    jemallocInstallLines.length !== 1
+    || jemallocInstallLines[0] !== pinnedJemallocInstall
+  ) {
     failures.push("backend/Dockerfile: must install the exact declared jemalloc package version");
   }
 

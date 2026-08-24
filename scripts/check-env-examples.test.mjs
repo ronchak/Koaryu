@@ -70,7 +70,9 @@ services:
 const reviewedDockerfile = `
 FROM python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317
 ARG JEMALLOC_VERSION=5.3.0-1
-RUN apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"
+RUN apt-get update \\
+    && apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}" \\
+    && rm -rf /var/lib/apt/lists/*
 ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2
 USER koaryu
 CMD ["./scripts/start-render.sh"]
@@ -112,8 +114,10 @@ describe("environment example validation", () => {
     dockerfilePath: ./Dockerfile
     dockerContext: .
 `;
-    const exactInstall =
-      'RUN apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"';
+    const exactInstall = reviewedDockerfile
+      .split("\n")
+      .find((line) => line.includes("apt-get install"));
+    assert.ok(exactInstall);
     const commentedPinDockerfile = reviewedDockerfile.replace(
       exactInstall,
       `# ${exactInstall}\nRUN apt-get install --yes --no-install-recommends libjemalloc2`,
@@ -121,6 +125,33 @@ describe("environment example validation", () => {
     const failures = validateRenderDockerRuntime(
       renderSource,
       commentedPinDockerfile,
+      reviewedRenderStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("install the exact declared jemalloc package version"),
+    ));
+  });
+
+  it("rejects an inline-comment package pin followed by an unversioned install", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const exactInstall = reviewedDockerfile
+      .split("\n")
+      .find((line) => line.includes("apt-get install"));
+    assert.ok(exactInstall);
+    const inlineCommentPinDockerfile = reviewedDockerfile.replace(
+      exactInstall,
+      `RUN true # apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"\nRUN apt-get install --yes --no-install-recommends libjemalloc2`,
+    );
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      inlineCommentPinDockerfile,
       reviewedRenderStartScript,
     );
     assert.ok(failures.some(
