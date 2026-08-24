@@ -101,8 +101,12 @@ const renderCriticalValues = new Map([
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
-const RENDER_ARENA_KEY = "MALLOC_ARENA_MAX";
-const RENDER_ARENA_VALUE = "2";
+const RENDER_DOCKERFILE_PATH = "./Dockerfile";
+const RENDER_DOCKER_CONTEXT = ".";
+const RENDER_ROOT_DIR = "backend";
+const RENDER_PYTHON_IMAGE =
+  "python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317";
+const RENDER_JEMALLOC_VERSION = "5.3.0-1";
 
 // Reusable examples stay fail-closed even where production must deliberately
 // differ. Each exception names both sides so neither value can drift silently.
@@ -326,27 +330,129 @@ export function validateEnvExample(file, parsed) {
   return failures;
 }
 
-export function validateRenderArenaSetting(entries, serviceName) {
-  const arenaEntries = entries.filter((entry) => entry.key === RENDER_ARENA_KEY);
+function validateRenderDockerService(block, serviceName) {
   const failures = [];
-
-  if (arenaEntries.length === 0) {
-    failures.push(`render.yaml: ${serviceName} must declare ${RENDER_ARENA_KEY}`);
-    return failures;
-  }
-  if (arenaEntries.length > 1) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must be declared exactly once`);
+  if (!block) {
+    failures.push(`render.yaml: ${serviceName} service is missing`);
     return failures;
   }
 
-  const [entry] = arenaEntries;
-  if (entry.sync !== null) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must be a fixed literal entry without sync`);
+  for (const [key, expected] of [
+    ["runtime", "docker"],
+    ["rootDir", RENDER_ROOT_DIR],
+    ["dockerfilePath", RENDER_DOCKERFILE_PATH],
+    ["dockerContext", RENDER_DOCKER_CONTEXT],
+  ]) {
+    if (renderScalar(block, key) !== expected) {
+      failures.push(
+        `render.yaml: ${serviceName} ${key} must equal ${JSON.stringify(expected)}`,
+      );
+    }
   }
-  if (!entry.hasValue) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must contain a literal value`);
-  } else if (entry.value !== RENDER_ARENA_VALUE) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must equal ${JSON.stringify(RENDER_ARENA_VALUE)}`);
+  for (const nativeKey of ["buildCommand", "startCommand"]) {
+    if (renderScalar(block, nativeKey) !== null) {
+      failures.push(`render.yaml: ${serviceName} must not declare native-runtime ${nativeKey}`);
+    }
+  }
+  if (/^\s*- key:\s*MALLOC_ARENA_MAX\s*$/m.test(block)) {
+    failures.push(
+      `render.yaml: ${serviceName} must not retain the inactive glibc MALLOC_ARENA_MAX setting`,
+    );
+  }
+  return failures;
+}
+
+export function validateRenderDockerRuntime(
+  renderSource,
+  dockerfileSource,
+  startScriptSource,
+) {
+  const failures = [];
+  for (const serviceName of ["koaryu", "koaryu-staging"]) {
+    failures.push(...validateRenderDockerService(
+      renderServiceBlock(renderSource, serviceName),
+      serviceName,
+    ));
+  }
+
+  const activeDockerfileLines = dockerfileSource
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith("#"));
+  const dockerfileLines = activeDockerfileLines.map((line) => line.trim());
+  const directiveContracts = [
+    {
+      select: (line) => /^FROM\s/i.test(line),
+      expected: `FROM ${RENDER_PYTHON_IMAGE}`,
+      diagnostic: "must contain exactly one reviewed immutable final FROM instruction",
+    },
+    {
+      select: (line) => /^ARG JEMALLOC_VERSION=/i.test(line),
+      expected: `ARG JEMALLOC_VERSION=${RENDER_JEMALLOC_VERSION}`,
+      diagnostic: "must declare the exact jemalloc package version once",
+    },
+    {
+      select: (line) => line.includes("LD_PRELOAD"),
+      expected: "ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2",
+      diagnostic: "must declare the exact effective jemalloc preload once",
+    },
+    {
+      select: (line) => /^USER\s/i.test(line),
+      expected: "USER koaryu",
+      diagnostic: "must declare the non-root final user exactly once",
+    },
+    {
+      select: (line) => /^CMD\s/i.test(line),
+      expected: 'CMD ["./scripts/start-render.sh"]',
+      diagnostic: "must declare the allocator-verifying final command exactly once",
+    },
+  ];
+  for (const contract of directiveContracts) {
+    const matches = dockerfileLines.filter(contract.select);
+    if (matches.length !== 1 || matches[0] !== contract.expected) {
+      failures.push(`backend/Dockerfile: ${contract.diagnostic}`);
+    }
+  }
+  if (dockerfileLines.some((line) => /^ENTRYPOINT\s/i.test(line))) {
+    failures.push("backend/Dockerfile: must not override the reviewed command with ENTRYPOINT");
+  }
+  const pinnedJemallocInstall =
+    `&& apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}" \\`;
+  const jemallocInstallLines = dockerfileLines.filter(
+    (line) => line.includes("apt-get install") && line.includes("libjemalloc2"),
+  );
+  if (
+    jemallocInstallLines.length !== 1
+    || jemallocInstallLines[0] !== pinnedJemallocInstall
+  ) {
+    failures.push("backend/Dockerfile: must install the exact declared jemalloc package version");
+  }
+
+  const startScriptLines = startScriptSource.split(/\r?\n/);
+  if (startScriptLines[0] !== "#!/bin/sh") {
+    failures.push("backend/scripts/start-render.sh: must start with the exact #!/bin/sh shebang");
+  }
+  const activeStartScriptLines = startScriptSource
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  const expectedStartScriptLines = [
+    "set -eu",
+    'if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then',
+    'echo "jemalloc preload verification failed" >&2',
+    "exit 1",
+    "fi",
+    'echo "jemalloc preload verified"',
+    'exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}"',
+  ];
+  if (
+    activeStartScriptLines.length !== expectedStartScriptLines.length
+    || activeStartScriptLines.some(
+      (line, index) => line !== expectedStartScriptLines[index],
+    )
+  ) {
+    failures.push(
+      "backend/scripts/start-render.sh: must preserve the exact active fail-closed startup sequence",
+    );
   }
   return failures;
 }
@@ -359,7 +465,6 @@ export function validateRenderManifest(
   criticalValues = renderCriticalValues,
 ) {
   const failures = [];
-  failures.push(...validateRenderArenaSetting(entries, "production"));
   const keys = entries.map((entry) => entry.key);
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   const missing = requiredKeys.filter((key) => !keys.includes(key));
@@ -452,7 +557,6 @@ export function validateStagingRenderService(renderSource, secretKeys) {
   }
 
   const entries = extractRenderEnvEntries(block);
-  failures.push(...validateRenderArenaSetting(entries, "staging"));
   const declared = new Map(
     entries.filter((entry) => entry.hasValue).map((entry) => [entry.key, entry.value]),
   );
@@ -802,6 +906,15 @@ export function runEnvExampleCheck() {
     renderExampleValues,
   ));
   failures.push(...validateStagingRenderService(renderSource, backendPlaceholderKeys));
+  try {
+    failures.push(...validateRenderDockerRuntime(
+      renderSource,
+      readFileSync(resolve(ROOT, "backend/Dockerfile"), "utf8"),
+      readFileSync(resolve(ROOT, "backend/scripts/start-render.sh"), "utf8"),
+    ));
+  } catch (error) {
+    failures.push(`Render Docker runtime: ${error instanceof Error ? error.message : String(error)}`);
+  }
   let operationalAlertsSource;
   let releaseControlsSource;
   try {

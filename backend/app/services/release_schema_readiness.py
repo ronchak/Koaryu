@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.db.supabase import close_supabase_client, create_supabase_client
@@ -43,6 +46,7 @@ EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260822193000",
     "20260823193155",
 ]
+HOSTED_READINESS_SUCCESS_TTL_SECONDS = 30.0
 
 # Kept as a patchable factory symbol for existing readiness tests. It is an
 # isolated factory alias, not the removed process-global accessor.
@@ -109,3 +113,81 @@ def assert_hosted_release_schema_ready() -> None:
     finally:
         if hasattr(getattr(client, "auth", None), "close"):
             close_supabase_client(client)
+
+
+async def _run_check_in_thread(check: Callable[[], None]) -> None:
+    await asyncio.to_thread(check)
+
+
+class HostedReleaseReadinessCache:
+    """Coalesce hosted schema checks and briefly reuse successful results.
+
+    Failures are never cached. Waiters suspend on the event-loop lock before
+    the blocking check receives a worker thread, so health probes cannot occupy
+    the shared request thread pool while another preflight is in flight.
+    """
+
+    def __init__(
+        self,
+        *,
+        check=assert_hosted_release_schema_ready,
+        monotonic=time.monotonic,
+        run_check: Callable[[Callable[[], None]], Awaitable[None]] = (
+            _run_check_in_thread
+        ),
+        success_ttl_seconds: float = HOSTED_READINESS_SUCCESS_TTL_SECONDS,
+    ) -> None:
+        if success_ttl_seconds <= 0:
+            raise ValueError("success_ttl_seconds must be positive")
+        self._check = check
+        self._monotonic = monotonic
+        self._run_check = run_check
+        self._success_ttl_seconds = success_ttl_seconds
+        self._last_success_monotonic: float | None = None
+        self._inflight_lock = asyncio.Lock()
+        self._inflight: asyncio.Task[None] | None = None
+
+    def _success_is_fresh(self) -> bool:
+        now = self._monotonic()
+        last_success = self._last_success_monotonic
+        return (
+            last_success is not None
+            and 0 <= now - last_success < self._success_ttl_seconds
+        )
+
+    async def _check_and_cache_success(self) -> None:
+        await self._run_check(self._check)
+        self._last_success_monotonic = self._monotonic()
+
+    def _clear_inflight(self, completed: asyncio.Task[None]) -> None:
+        # A cancelled HTTP waiter is shielded from this task. Retrieve a later
+        # provider exception here so an all-waiters-cancelled outage does not
+        # produce an unhandled-task error; active waiters still receive the
+        # same exception when they await the completed task.
+        if not completed.cancelled():
+            completed.exception()
+        if self._inflight is completed:
+            self._inflight = None
+
+    async def assert_ready(self) -> None:
+        if self._success_is_fresh():
+            return
+        async with self._inflight_lock:
+            if self._success_is_fresh():
+                return
+            inflight = self._inflight
+            if inflight is None:
+                inflight = asyncio.create_task(self._check_and_cache_success())
+                self._inflight = inflight
+                inflight.add_done_callback(self._clear_inflight)
+
+        # One cancelled HTTP request must not cancel the shared provider check
+        # underneath other readiness waiters.
+        await asyncio.shield(inflight)
+
+
+_HOSTED_READINESS_CACHE = HostedReleaseReadinessCache()
+
+
+async def assert_hosted_release_schema_ready_cached() -> None:
+    await _HOSTED_READINESS_CACHE.assert_ready()

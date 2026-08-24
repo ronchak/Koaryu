@@ -77,7 +77,7 @@ class HealthEndpointTest(unittest.TestCase):
         with (
             patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
             patch(
-                "app.api.v1.endpoints.health.assert_hosted_release_schema_ready",
+                "app.api.v1.endpoints.health.assert_hosted_release_schema_ready_cached",
                 side_effect=RuntimeError("schema 84 and private provider detail"),
             ),
         ):
@@ -94,8 +94,12 @@ class HealthEndpointTest(unittest.TestCase):
         )
         with (
             patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
-            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready") as preflight,
-            patch("app.api.v1.endpoints.health.process_rss_observability.observe_process_rss") as rss_observer,
+            patch(
+                "app.api.v1.endpoints.health.assert_hosted_release_schema_ready_cached"
+            ) as preflight,
+            patch(
+                "app.api.v1.endpoints.health.process_rss_observability.observe_process_rss"
+            ) as rss_observer,
         ):
             response = self.client.get("/health/ready")
 
@@ -112,8 +116,10 @@ class HealthEndpointTest(unittest.TestCase):
         )
         with (
             patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
-            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready"),
-            patch("app.api.v1.endpoints.health.process_rss_observability.observe_process_rss") as rss_observer,
+            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready_cached"),
+            patch(
+                "app.api.v1.endpoints.health.process_rss_observability.observe_process_rss"
+            ) as rss_observer,
         ):
             for path in ("/health/ready", "/api/v1/health/ready"):
                 for method in (self.client.get, self.client.head):
@@ -135,7 +141,7 @@ class HealthEndpointTest(unittest.TestCase):
         )
         with (
             patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
-            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready"),
+            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready_cached"),
             patch(
                 "app.api.v1.endpoints.health.process_rss_observability.observe_process_rss",
                 side_effect=RuntimeError("observer internal detail"),
@@ -157,7 +163,7 @@ class HealthEndpointTest(unittest.TestCase):
         )
         with (
             patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
-            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready"),
+            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready_cached"),
         ):
             for path in ("/health/ready", "/api/v1/health/ready"):
                 with self.subTest(path=path):

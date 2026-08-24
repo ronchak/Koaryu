@@ -41,7 +41,9 @@ Database promotion precedes application promotion. Hosted readiness calls the
 service-role-only V4 Supabase preflight and requires the exact final migration count
 116, head `20260823193155`, the exact 32-version pending sequence, manifest version
 `release-db-attestation-v23`, the exact zero-invalid-count V18 archive-critical
-semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`, and required-object/security proof. That manifest covers
+semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`, and required-object/security proof. The backend reuses a successful preflight for at most 30 seconds to prevent health-probe client churn. It never caches failures, and concurrent probes share one check.
+
+That manifest covers
 `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware
 triggers, and every public RLS table's restrictive membership guard. The post-111
 V16 compatibility assertion is pinned to

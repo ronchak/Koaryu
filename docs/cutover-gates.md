@@ -35,9 +35,10 @@ land — that is what makes it safe to migrate before deploying. The reverse is 
 new code against an un-migrated database fails readiness and the service will not serve.
 
 `/health/ready` (`backend/app/api/v1/endpoints/health.py`) calls
-`assert_hosted_release_schema_ready`, which refuses unless the database reports the exact
-manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`
-(`backend/app/services/release_schema_readiness.py`).
+`assert_hosted_release_schema_ready_cached`, which refuses unless the database reports the exact
+manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused for at most
+30 seconds; failures are never cached.
+The cache lives in `backend/app/services/release_schema_readiness.py`.
 
 That manifest string is **not** echoed in the response body. A runbook that tells you to
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.

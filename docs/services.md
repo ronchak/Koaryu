@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Last verified against live systems: 2026-08-19.
+Last verified against live systems: 2026-08-24.
 
 ## Quick map
 
@@ -66,6 +66,7 @@ Both services are declared in `render.yaml`. Neither auto-deploys.
 | Service ID | `srv-d7mogk1kh4rs73aq6hqg` | `srv-d98g4kutrd3s73ek0elg` |
 | URL | `https://koaryu.onrender.com` | `https://koaryu-staging.onrender.com` |
 | Tracks branch | `main` | `staging` |
+| Runtime | Native Python; Docker + jemalloc pending merge and deploy | Docker, Python 3.11.9 + jemalloc |
 | Plan | `starter` (paid) | `free` |
 | Auto-deploy | off | off |
 | Health check | `/health/ready` | `/health/ready` |
