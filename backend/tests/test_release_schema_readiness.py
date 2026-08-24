@@ -14,6 +14,10 @@ from app.services.release_schema_readiness import (
     PRODUCTION_RESTORED_V22_MIGRATION_HEAD,
     PRODUCTION_RESTORED_V22_PENDING_VERSIONS,
     ReleaseSchemaNotReadyError,
+    TRANSITIONAL_V23_MANIFEST_VERSION,
+    TRANSITIONAL_V23_MIGRATION_COUNT,
+    TRANSITIONAL_V23_MIGRATION_HEAD,
+    TRANSITIONAL_V23_PENDING_VERSIONS,
     assert_hosted_release_schema_ready,
     validate_release_schema_preflight,
 )
@@ -38,6 +42,17 @@ def exact_production_restored_v22_row():
         "pending_versions": list(PRODUCTION_RESTORED_V22_PENDING_VERSIONS),
         "security_failures": [],
         "manifest_version": PRODUCTION_RESTORED_V22_MANIFEST_VERSION,
+    }
+
+
+def exact_transitional_v23_row():
+    return {
+        "ready": True,
+        "migration_count": TRANSITIONAL_V23_MIGRATION_COUNT,
+        "migration_head": TRANSITIONAL_V23_MIGRATION_HEAD,
+        "pending_versions": list(TRANSITIONAL_V23_PENDING_VERSIONS),
+        "security_failures": [],
+        "manifest_version": TRANSITIONAL_V23_MANIFEST_VERSION,
     }
 
 
@@ -107,12 +122,49 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
         self.assertIsInstance(PRODUCTION_RESTORED_V22_PENDING_VERSIONS, tuple)
         self.assertEqual(
             list(PRODUCTION_RESTORED_V22_PENDING_VERSIONS),
-            EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
+            list(TRANSITIONAL_V23_PENDING_VERSIONS[:-1]),
         )
         self.assertEqual(
             PRODUCTION_RESTORED_V22_PENDING_VERSIONS[-1],
             PRODUCTION_RESTORED_V22_MIGRATION_HEAD,
         )
+        self.assertIsInstance(TRANSITIONAL_V23_PENDING_VERSIONS, tuple)
+        self.assertEqual(
+            list(TRANSITIONAL_V23_PENDING_VERSIONS),
+            EXPECTED_RELEASE_PENDING_VERSIONS[:-1],
+        )
+        self.assertEqual(
+            TRANSITIONAL_V23_PENDING_VERSIONS[-1],
+            TRANSITIONAL_V23_MIGRATION_HEAD,
+        )
+
+    def test_transitional_v23_requires_the_explicit_rollout_allowance(self):
+        row = exact_transitional_v23_row()
+        with self.assertRaises(ReleaseSchemaNotReadyError):
+            validate_release_schema_preflight(row)
+        validate_release_schema_preflight(row, allow_transitional_v23=True)
+
+    def test_every_transitional_v23_mismatch_fails_closed(self):
+        row = exact_transitional_v23_row()
+        mismatches = [
+            {**row, "ready": False},
+            {**row, "migration_count": 115},
+            {**row, "migration_count": 117},
+            {**row, "migration_head": "20260822193000"},
+            {**row, "pending_versions": row["pending_versions"][:-1]},
+            {**row, "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS},
+            {**row, "security_failures": ["operational_semantic_acl_manifest_v7"]},
+            {**row, "manifest_version": "release-db-attestation-v24"},
+            {**row, "unexpected": "field"},
+        ]
+        for candidate in mismatches:
+            with self.subTest(candidate=candidate), self.assertRaises(
+                ReleaseSchemaNotReadyError
+            ):
+                validate_release_schema_preflight(
+                    candidate,
+                    allow_transitional_v23=True,
+                )
 
     def test_every_restored_v22_mismatch_fails_closed(self):
         row = exact_production_restored_v22_row()
@@ -168,6 +220,23 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
                 return_value=client,
             ),
             self.assertRaises(ReleaseSchemaNotReadyError),
+        ):
+            assert_hosted_release_schema_ready()
+
+    def test_hosted_staging_accepts_exact_transitional_v23(self):
+        response = SimpleNamespace(data=[exact_transitional_v23_row()])
+        client = SimpleNamespace(rpc=lambda _name, _params: SimpleNamespace(
+            execute=lambda: response
+        ))
+        with (
+            patch(
+                "app.services.release_schema_readiness.get_settings",
+                return_value=SimpleNamespace(ENVIRONMENT="staging"),
+            ),
+            patch(
+                "app.services.release_schema_readiness.get_supabase_client",
+                return_value=client,
+            ),
         ):
             assert_hosted_release_schema_ready()
 
