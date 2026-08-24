@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
+from app.services import process_rss_observability
 from app.services.release_schema_readiness import assert_hosted_release_schema_ready
 from app.services.stripe_mutation_policy import configured_stripe_mode
 
@@ -61,6 +62,12 @@ async def health_live_head(response: Response):
 async def health_ready(response: Response):
     """Return readiness after rechecking hosted configuration and database head."""
     _set_health_headers(response)
+    try:
+        process_rss_observability.observe_process_rss()
+    except Exception:
+        # The observer is private best-effort instrumentation. It must never
+        # change the existing fail-closed readiness contract.
+        pass
     try:
         settings = get_settings()
         settings.validate_runtime_configuration()
