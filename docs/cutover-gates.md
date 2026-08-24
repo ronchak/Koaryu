@@ -40,6 +40,15 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
+Production temporarily has one exact restored-state compatibility path while
+the memory fix is deployed: count 115, head `20260822193000`, the exact
+thirty-one-version sequence, V22 readiness, and zero security failures. Staging
+does not accept that state and remains pinned to 116/V23. Remove the production
+V22 allowance after a reviewed forward convergence and hosted readback. This is
+not permission to apply migration 116 directly: its source hardcodes staging's
+operational-manifest digest, while the verified restored production digest is
+different.
+
 That manifest string is **not** echoed in the response body. A runbook that tells you to
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
 
