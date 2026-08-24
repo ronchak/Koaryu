@@ -144,7 +144,8 @@ class HostedReleaseReadinessCache:
         self._run_check = run_check
         self._success_ttl_seconds = success_ttl_seconds
         self._last_success_monotonic: float | None = None
-        self._single_flight = asyncio.Lock()
+        self._inflight_lock = asyncio.Lock()
+        self._inflight: asyncio.Task[None] | None = None
 
     def _success_is_fresh(self) -> bool:
         now = self._monotonic()
@@ -154,14 +155,29 @@ class HostedReleaseReadinessCache:
             and 0 <= now - last_success < self._success_ttl_seconds
         )
 
+    async def _check_and_cache_success(self) -> None:
+        await self._run_check(self._check)
+        self._last_success_monotonic = self._monotonic()
+
+    def _clear_inflight(self, completed: asyncio.Task[None]) -> None:
+        if self._inflight is completed:
+            self._inflight = None
+
     async def assert_ready(self) -> None:
         if self._success_is_fresh():
             return
-        async with self._single_flight:
+        async with self._inflight_lock:
             if self._success_is_fresh():
                 return
-            await self._run_check(self._check)
-            self._last_success_monotonic = self._monotonic()
+            inflight = self._inflight
+            if inflight is None:
+                inflight = asyncio.create_task(self._check_and_cache_success())
+                self._inflight = inflight
+                inflight.add_done_callback(self._clear_inflight)
+
+        # One cancelled HTTP request must not cancel the shared provider check
+        # underneath other readiness waiters.
+        await asyncio.shield(inflight)
 
 
 _HOSTED_READINESS_CACHE = HostedReleaseReadinessCache()

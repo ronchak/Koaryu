@@ -77,10 +77,12 @@ CMD ["./scripts/start-render.sh"]
 `;
 
 const reviewedRenderStartScript = `
+set -eu
 if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then
   echo "jemalloc preload verification failed" >&2
   exit 1
 fi
+echo "jemalloc preload verified"
 exec python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
 `;
 
@@ -229,7 +231,7 @@ services:
       "MALLOC_ARENA_MAX",
       "declare the exact jemalloc package version once",
       "install the exact declared jemalloc package version",
-      "actively verify jemalloc is mapped",
+      "exact active fail-closed startup sequence",
     ]) {
       assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
     }
@@ -254,12 +256,29 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
       reviewedDockerfile,
       commentedStartScript,
     );
-    for (const diagnostic of [
-      "actively verify jemalloc is mapped",
-      "actively exec the single Uvicorn process",
-    ]) {
-      assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
-    }
+    assert.ok(failures.some(
+      (failure) => failure.includes("exact active fail-closed startup sequence"),
+    ));
+  });
+
+  it("rejects a startup guard whose failure branch no longer exits", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const noExitStartScript = reviewedRenderStartScript.replace("  exit 1\n", "");
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      reviewedDockerfile,
+      noExitStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("exact active fail-closed startup sequence"),
+    ));
   });
 
   it("rejects later Docker stages or effective directive overrides", () => {

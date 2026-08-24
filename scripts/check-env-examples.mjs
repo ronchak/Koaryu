@@ -422,24 +422,24 @@ export function validateRenderDockerRuntime(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"));
-  const startScriptRequirements = [
-    {
-      select: (line) => line.includes("/proc/self/maps"),
-      expected: 'if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then',
-      diagnostic: "must actively verify jemalloc is mapped before startup exactly once",
-    },
-    {
-      select: (line) => line.includes("uvicorn"),
-      expected:
-        'exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}"',
-      diagnostic: "must actively exec the single Uvicorn process exactly once",
-    },
+  const expectedStartScriptLines = [
+    "set -eu",
+    'if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then',
+    'echo "jemalloc preload verification failed" >&2',
+    "exit 1",
+    "fi",
+    'echo "jemalloc preload verified"',
+    'exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}"',
   ];
-  for (const contract of startScriptRequirements) {
-    const matches = activeStartScriptLines.filter(contract.select);
-    if (matches.length !== 1 || matches[0] !== contract.expected) {
-      failures.push(`backend/scripts/start-render.sh: ${contract.diagnostic}`);
-    }
+  if (
+    activeStartScriptLines.length !== expectedStartScriptLines.length
+    || activeStartScriptLines.some(
+      (line, index) => line !== expectedStartScriptLines[index],
+    )
+  ) {
+    failures.push(
+      "backend/scripts/start-render.sh: must preserve the exact active fail-closed startup sequence",
+    );
   }
   return failures;
 }

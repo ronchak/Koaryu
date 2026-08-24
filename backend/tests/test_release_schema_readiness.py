@@ -168,6 +168,77 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
 
         self.assertEqual(calls, ["check"])
 
+    def test_concurrent_probes_share_one_failure_then_a_later_probe_retries(self):
+        async def exercise_failure():
+            check_started = asyncio.Event()
+            release_check = asyncio.Event()
+            runner_calls = []
+
+            async def run_check(_blocking_check):
+                runner_calls.append("runner")
+                check_started.set()
+                await release_check.wait()
+                raise RuntimeError("database unavailable")
+
+            cache = HostedReleaseReadinessCache(
+                check=lambda: None,
+                run_check=run_check,
+            )
+            tasks = [asyncio.create_task(cache.assert_ready()) for _ in range(8)]
+            await asyncio.wait_for(check_started.wait(), timeout=2)
+            await asyncio.sleep(0)
+            self.assertEqual(runner_calls, ["runner"])
+            release_check.set()
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=2,
+            )
+            self.assertEqual(len(runner_calls), 1)
+            self.assertTrue(
+                all(
+                    isinstance(result, RuntimeError)
+                    and str(result) == "database unavailable"
+                    for result in results
+                )
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "database unavailable"):
+                await cache.assert_ready()
+            self.assertEqual(runner_calls, ["runner", "runner"])
+
+        asyncio.run(exercise_failure())
+
+    def test_cancelled_waiter_does_not_cancel_the_shared_check(self):
+        async def exercise_cancellation():
+            check_started = asyncio.Event()
+            release_check = asyncio.Event()
+            runner_calls = []
+
+            async def run_check(blocking_check):
+                runner_calls.append("runner")
+                check_started.set()
+                await release_check.wait()
+                blocking_check()
+
+            cache = HostedReleaseReadinessCache(
+                check=lambda: None,
+                run_check=run_check,
+            )
+            cancelled_waiter = asyncio.create_task(cache.assert_ready())
+            await asyncio.wait_for(check_started.wait(), timeout=2)
+            surviving_waiter = asyncio.create_task(cache.assert_ready())
+            await asyncio.sleep(0)
+
+            cancelled_waiter.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await cancelled_waiter
+
+            release_check.set()
+            await asyncio.wait_for(surviving_waiter, timeout=2)
+            self.assertEqual(runner_calls, ["runner"])
+
+        asyncio.run(exercise_cancellation())
+
 
 if __name__ == "__main__":
     unittest.main()
