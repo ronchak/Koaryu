@@ -76,7 +76,7 @@ USER koaryu
 CMD ["./scripts/start-render.sh"]
 `;
 
-const reviewedRenderStartScript = `
+const reviewedRenderStartScript = `#!/bin/sh
 set -eu
 if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then
   echo "jemalloc preload verification failed" >&2
@@ -101,6 +101,31 @@ describe("environment example validation", () => {
     assert.equal(isSecretLikeKey("SUPABASE_POSTGRES_URL"), true);
     assert.equal(isSecretLikeKey("PRIMARY_DB_CONNECTION_STRING"), true);
     assert.equal(isSecretLikeKey("NEXT_PUBLIC_API_URL"), false);
+  });
+
+  it("rejects a commented package pin followed by an unversioned install", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const exactInstall =
+      'RUN apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"';
+    const commentedPinDockerfile = reviewedDockerfile.replace(
+      exactInstall,
+      `# ${exactInstall}\nRUN apt-get install --yes --no-install-recommends libjemalloc2`,
+    );
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      commentedPinDockerfile,
+      reviewedRenderStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("install the exact declared jemalloc package version"),
+    ));
   });
 
   it("fails closed when a discovered environment key has no deliberate classification", () => {
@@ -278,6 +303,29 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
     );
     assert.ok(failures.some(
       (failure) => failure.includes("exact active fail-closed startup sequence"),
+    ));
+  });
+
+  it("rejects a startup script without the executable shell shebang", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const noShebangStartScript = reviewedRenderStartScript.replace(
+      "#!/bin/sh\n",
+      "",
+    );
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      reviewedDockerfile,
+      noShebangStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("exact #!/bin/sh shebang"),
     ));
   });
 

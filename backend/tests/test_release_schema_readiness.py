@@ -239,6 +239,47 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
 
         asyncio.run(exercise_cancellation())
 
+    def test_all_cancelled_waiters_consume_a_later_provider_failure(self):
+        async def exercise_cancelled_failure():
+            check_started = asyncio.Event()
+            release_check = asyncio.Event()
+            check_finished = asyncio.Event()
+            loop_errors = []
+            loop = asyncio.get_running_loop()
+            previous_handler = loop.get_exception_handler()
+            loop.set_exception_handler(
+                lambda _loop, context: loop_errors.append(context)
+            )
+
+            async def run_check(_blocking_check):
+                check_started.set()
+                await release_check.wait()
+                check_finished.set()
+                raise RuntimeError("database unavailable after disconnect")
+
+            try:
+                cache = HostedReleaseReadinessCache(
+                    check=lambda: None,
+                    run_check=run_check,
+                )
+                waiter = asyncio.create_task(cache.assert_ready())
+                await asyncio.wait_for(check_started.wait(), timeout=2)
+                waiter.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await waiter
+
+                release_check.set()
+                await asyncio.wait_for(check_finished.wait(), timeout=2)
+                for _ in range(3):
+                    await asyncio.sleep(0)
+
+                self.assertIsNone(cache._inflight)
+                self.assertEqual(loop_errors, [])
+            finally:
+                loop.set_exception_handler(previous_handler)
+
+        asyncio.run(exercise_cancelled_failure())
+
 
 if __name__ == "__main__":
     unittest.main()

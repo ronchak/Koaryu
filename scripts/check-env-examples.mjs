@@ -375,7 +375,11 @@ export function validateRenderDockerRuntime(
     ));
   }
 
-  const dockerfileLines = dockerfileSource.split(/\r?\n/).map((line) => line.trim());
+  const activeDockerfileLines = dockerfileSource
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith("#"));
+  const dockerfileLines = activeDockerfileLines.map((line) => line.trim());
+  const activeDockerfileSource = activeDockerfileLines.join("\n");
   const directiveContracts = [
     {
       select: (line) => /^FROM\s/i.test(line),
@@ -414,10 +418,14 @@ export function validateRenderDockerRuntime(
   }
   const pinnedJemallocInstall =
     `apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"`;
-  if (!dockerfileSource.includes(pinnedJemallocInstall)) {
+  if (!activeDockerfileSource.includes(pinnedJemallocInstall)) {
     failures.push("backend/Dockerfile: must install the exact declared jemalloc package version");
   }
 
+  const startScriptLines = startScriptSource.split(/\r?\n/);
+  if (startScriptLines[0] !== "#!/bin/sh") {
+    failures.push("backend/scripts/start-render.sh: must start with the exact #!/bin/sh shebang");
+  }
   const activeStartScriptLines = startScriptSource
     .split(/\r?\n/)
     .map((line) => line.trim())

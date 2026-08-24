@@ -160,6 +160,12 @@ class HostedReleaseReadinessCache:
         self._last_success_monotonic = self._monotonic()
 
     def _clear_inflight(self, completed: asyncio.Task[None]) -> None:
+        # A cancelled HTTP waiter is shielded from this task. Retrieve a later
+        # provider exception here so an all-waiters-cancelled outage does not
+        # produce an unhandled-task error; active waiters still receive the
+        # same exception when they await the completed task.
+        if not completed.cancelled():
+            completed.exception()
         if self._inflight is completed:
             self._inflight = None
 
