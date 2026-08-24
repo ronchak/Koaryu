@@ -410,6 +410,52 @@ for migration_file in "${migration_files[@]}"; do
     echo "[migration $migration_index/$migration_total] FAIL $migration_filename (psql exit $status)" >&2
     exit "$status"
   fi
+
+  if [[ "$migration_filename" == "20260823193155_revoke_public_function_execute.sql" ]]; then
+    echo "[restored V23 recovery] RUN exact migration-116 failure tuple"
+    if restored_v23_readiness="$(
+      "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet <<'SQL'
+BEGIN;
+
+CREATE OR REPLACE FUNCTION private.koaryu_release_operational_manifest_v7()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+SET "TimeZone" = 'UTC'
+AS $restored_manifest_fixture$
+SELECT 'f9ce359c0ebf12039e8dfcb5308cd193ac18aa05cea23dad5b9f5208b0c51233'::TEXT
+$restored_manifest_fixture$;
+
+SELECT ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
+       array_to_string(pending_versions, ',') || '|' ||
+       cardinality(security_failures)::text || '|' ||
+       coalesce(array_to_string(security_failures, ','), '') || '|' ||
+       manifest_version
+FROM public.koaryu_release_schema_preflight_v4();
+
+ROLLBACK;
+SQL
+    )"; then
+      restored_v23_readiness="$(printf '%s' "$restored_v23_readiness" | tr -d '\r\n')"
+    else
+      status=$?
+      echo "[restored V23 recovery] FAIL tuple acquisition (psql exit $status)" >&2
+      exit "$status"
+    fi
+    if (
+      cd "$ROOT_DIR"
+      node --input-type=module --eval '
+        import { EXPECTED_RESTORED_V23_PENDING_V24_OPERATIONAL_READINESS } from "./scripts/studio-comp-migration-rollout.mjs";
+        if (process.argv[1] !== EXPECTED_RESTORED_V23_PENDING_V24_OPERATIONAL_READINESS) process.exit(1);
+      ' "$restored_v23_readiness"
+    ); then
+      echo "[restored V23 recovery] PASS exact migration-116 failure tuple"
+    else
+      echo "[restored V23 recovery] FAIL exact migration-116 failure tuple" >&2
+      exit 1
+    fi
+  fi
 done
 
 echo "[operational manifest] RUN database-observable semantic and ACL signal"

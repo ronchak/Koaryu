@@ -514,7 +514,7 @@ BEGIN
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     SELECT * INTO v_v2 FROM public.koaryu_release_schema_preflight_v2();
     IF v_v4.ready IS TRUE
-       OR NOT ('migration_history_sequence_v23' = ANY(v_v4.security_failures))
+       OR NOT ('migration_history_sequence_v24' = ANY(v_v4.security_failures))
        OR v_v2.ready IS TRUE THEN
         RAISE EXCEPTION 'Readiness accepted substituted migration history: v4=%, v2=%',
             row_to_json(v_v4), row_to_json(v_v2);
@@ -523,6 +523,52 @@ BEGIN
     UPDATE supabase_migrations.schema_migrations
     SET version = '20260814170000'
     WHERE version = '20260814170001';
+END $$;
+
+CREATE OR REPLACE FUNCTION private.koaryu_release_operational_manifest_v7()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+SET "TimeZone" = 'UTC'
+AS $verified_restore_manifest_fixture$
+SELECT 'f9ce359c0ebf12039e8dfcb5308cd193ac18aa05cea23dad5b9f5208b0c51233'::TEXT
+$verified_restore_manifest_fixture$;
+
+DO $$
+DECLARE
+    v_v4 RECORD;
+BEGIN
+    SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
+    IF v_v4.ready IS DISTINCT FROM true
+       OR v_v4.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
+       OR v_v4.manifest_version <> 'release-db-attestation-v24' THEN
+        RAISE EXCEPTION 'V24 rejected the exact proved restored operational manifest: %',
+            row_to_json(v_v4);
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION private.koaryu_release_operational_manifest_v7()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+SET "TimeZone" = 'UTC'
+AS $unproved_restore_manifest_fixture$
+SELECT repeat('0', 64)::TEXT
+$unproved_restore_manifest_fixture$;
+
+DO $$
+DECLARE
+    v_v4 RECORD;
+BEGIN
+    SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
+    IF v_v4.ready IS DISTINCT FROM false
+       OR v_v4.security_failures IS DISTINCT FROM
+          ARRAY['operational_semantic_acl_manifest_v7']::TEXT[] THEN
+        RAISE EXCEPTION 'V24 accepted an unproved operational manifest: %',
+            row_to_json(v_v4);
+    END IF;
 END $$;
 
 ROLLBACK;

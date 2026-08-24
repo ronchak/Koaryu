@@ -42,34 +42,40 @@ The cache lives in `backend/app/services/release_schema_readiness.py`.
 
 Production temporarily has one exact restored-state compatibility path while
 the memory fix is deployed: count 115, head `20260822193000`, the exact
-thirty-one-version sequence, V22 readiness, and zero security failures. Staging
-does not accept that state and remains pinned to 116/V23. Remove the production
-V22 allowance after a reviewed forward convergence and hosted readback. This is
-not permission to apply migration 116 directly: its source hardcodes staging's
-operational-manifest digest, while the verified restored production digest is
-different.
+thirty-one-version sequence, V22 readiness, and zero security failures. During
+the forward rollout, both hosted environments may also accept exact 116/V23;
+the final state is 117/head `20260824190500`/V24. Remove both bridges after the
+production V24 hosted readback. Never apply migration 116 alone to restored
+production: its source hardcodes the canonical manifest. The guarded production
+packet must apply migrations 116 and 117 in order so the final V24 function
+accepts exactly the canonical or proved restored manifest.
+If 116 commits and 117 does not, stop serving readiness and re-inspect. Only the
+exact red V23 tuple with sole failure `operational_semantic_acl_manifest_v7`
+classifies `restored-v23-pending-v24`; that state may resume only migration 117.
 
 That manifest string is **not** echoed in the response body. A runbook that tells you to
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
 
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that V20 head. The prior `709239` application
-requires V16, while the release candidate requires V23. Older V2 consumers from
+requires V16, while the release candidate requires V24. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
-post-110 rollback set. From the exact immutable candidate, run a fresh guarded
-inspection that must return `state=staff-identity`, use its state-bound token to
-dry-run the exact remaining migration packet:
+post-110 rollback set. A database still at exact 110 must classify
+`state=staff-identity` and use its state-bound token to dry-run:
 `20260816012723_archive_staff_access_and_readiness.sql`,
 `20260820012533_dashboard_fact_rpc.sql`,
 `20260820025759_roster_read_rpc.sql`,
 `20260820060216_atomic_bulk_student_archive.sql`,
-`20260822193000_revoke_client_read_access.sql`, and
-`20260823193155_revoke_public_function_execute.sql`, then let the human operator
-run the existing production apply gate. Promotion remains blocked until migration 116 produces
-exact V23 readiness and the final raw
+`20260822193000_revoke_client_read_access.sql`,
+`20260823193155_revoke_public_function_execute.sql`, and
+`20260824190500_attest_verified_restore_manifest.sql`. Current restored
+production instead must classify exact `state=restored-v22` and dry-run only
+migrations 116 and 117. In either case, only the human operator runs the
+production apply gate. Promotion
+remains blocked until migration 117 produces exact V24 readiness and the final raw
 catalog/provider fingerprint.
 
 ## Gates that will refuse you

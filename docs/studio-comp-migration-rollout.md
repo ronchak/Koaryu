@@ -1,9 +1,10 @@
 # Studio-Comp Migration Rollout
 
-Status: **candidate extends the release to migration 116/head 20260823193155; fresh candidate-bound staging re-read required; production human apply locked**
+Status: **candidate extends the release to migration 117/head 20260824190500; staging is exact canonical V23; restored production V22 human apply locked**
 
 This packet reconciles the production 100-migration V7 baseline and the last
-verified staging state with the immutable 116-migration release candidate.
+verified canonical staging V23 and restored production V22 states with the
+immutable 117-migration release candidate.
 It is specialized to this rollout, not a generic migration or history-repair
 framework.
 
@@ -24,7 +25,7 @@ Therefore:
   candidate;
 - remote version/name history does **not** prove that those exact bytes ran;
 - the release authority is the operator-side raw-catalog verifier plus its
-  repository-pinned SHA-256 manifests; the database V23 readiness signal, backed
+  repository-pinned SHA-256 manifests; the database V24 readiness signal, backed
   by the V7 semantic/ACL manifest, V9 starting-belt invariant manifest, V11
   student-rank writer body/ACL manifest, V12 writer return-contract manifest,
   V13 retained-membership rank manifest, V14 critical RPC/trigger/FK manifest,
@@ -37,8 +38,12 @@ Therefore:
 
 Residual risk remains that history was repaired or altered independently and
 that the focused object fingerprint does not describe unrelated database state.
-Any partial history/object shape, unfamiliar history-table schema, or staging /
-production fingerprint mismatch halts the rollout.
+Any partial history/object shape or unfamiliar history-table schema halts the
+rollout. The only cross-environment fingerprint difference allowed is the full
+repository-pinned restored catalog, whose scoped-constraint digest is
+`47cacc1ce1d31ca8a7d63158aaa66aaf24452c085015c226f40e810995a6cd18`;
+every other catalog category, narrow function/trigger state, and critical
+manifest must match approved staging evidence exactly.
 
 The fixed production pre-state is:
 
@@ -50,9 +55,9 @@ The authorized release migrations are `20260814043325`, `20260814103046`,
 `20260814105424`, `20260814114500`, `20260814152000`, `20260814170000`,
 `20260814183000`, `20260814200000`, `20260814213000`, `20260815220402`,
 `20260816012723`, `20260820012533`, `20260820025759`, `20260820060216`,
-`20260822193000`, and `20260823193155`.
-The only certifiable post-state is migration count 116 at the latter head. Its
-V23 readiness signal retains the complete migration-85-through-116 sequence:
+`20260822193000`, `20260823193155`, and `20260824190500`.
+The only certifiable post-state is migration count 117 at the latter head. Its
+V24 readiness signal retains the complete migration-85-through-117 sequence:
 
 ```text
 20260727100000
@@ -87,6 +92,7 @@ V23 readiness signal retains the complete migration-85-through-116 sequence:
 20260820060216
 20260822193000
 20260823193155
+20260824190500
 ```
 
 Exact migration count 110 at head `20260815220402` is the accepted
@@ -94,17 +100,32 @@ Exact migration count 110 at head `20260815220402` is the accepted
 `110:65664dce61981374e865f081fc2f9347`, the exact ordered migration-85-through-110
 target history, `object_counts=3:1`, and the exact V17 V3 readiness result with
 `ready=true`, no security failures, and manifest version
-`release-db-attestation-v17`. This state can authorize the immutable six-file
+`release-db-attestation-v17`. This state can authorize the immutable seven-file
 remainder from `20260816012723_archive_staff_access_and_readiness.sql` through
-`20260823193155_revoke_public_function_execute.sql` after a fresh state-bound
+`20260824190500_attest_verified_restore_manifest.sql` after a fresh state-bound
 inspection token and exact dry-run. Remote version/name history still is not
-content-hash proof; only the final post-116 raw catalog and
+content-hash proof; only the final post-117 raw catalog and
 provider fingerprint can certify release authority.
+
+Exact restored production V22 is a separate accepted resume state: migration
+115/head `20260822193000`, the exact thirty-one-version sequence, ready V22,
+and the proved restored operational digest `f9ce359c...`. It may dry-run only
+migrations 116 and 117. Exact canonical staging V23 is migration 116/head
+`20260823193155`, ready V23, and may dry-run only migration 117. A V23 row with
+the restored digest remains rejected; migration 116 must never be applied alone.
+If 116 commits on restored production and 117 fails, the one supported recovery
+state is `restored-v23-pending-v24`: count/head/sequence are exact V23, readiness
+is false, and the sole failure is `operational_semantic_acl_manifest_v7`. It may
+dry-run and apply only migration 117; any other red V23 tuple is diverged.
+At final V24, production may emit the exact restored catalog fingerprint rather
+than staging's canonical catalog. The tool accepts only the complete canonical
+fingerprint or the complete restored variant derived by replacing the exact
+catalog token; it never accepts category-by-category hybrids.
 
 The checker derives filenames and source hashes from the final candidate, pins
 the first 100 identities to the observed V7 baseline, and reports
-`integration_complete=true` only when those sixteen files are the release
-pending migrations and the 116-state readiness contract contains the thirty-two
+`integration_complete=true` only when those seventeen files are the release
+pending migrations and the 117-state readiness contract contains the thirty-three
 historical versions above. The 070000/091000/093000/105313
 billing and 080000 alert
 tables, RLS, exact ACLs and stored function bodies, complete trigger/index
@@ -186,10 +207,11 @@ exact source files:
 
 They remain pinned as the first two migrations after historical migration 84.
 They are already present in the 100-state baseline. Production must apply
-migrations 101 through 116. Staging was last verified at exact migration 111,
-head `20260816012723`; do not rely on that recorded observation without a fresh
-candidate-bound re-read. An exact post-state has no migrations left to dry-run
-or apply.
+migrations 101 through 117. Staging is currently exact canonical V23 at
+migration 116/head `20260823193155`; production is exact restored V22 at
+migration 115/head `20260822193000`. Re-read both from the exact candidate
+before relying on either observation. An exact post-state has no migrations
+left to dry-run or apply.
 
 Historical intermediate migrations 101 through 103 remain read-only
 inspectable, but apply is deliberately disabled from intermediate 101,
@@ -199,7 +221,10 @@ complete object surface needed for safe forward recovery. Only exact pre-state
 critical state 107, column-attested state 108, or trial-locked state 109 may
 enter apply after a matching inspection token and dry-run. Exact
 `staff-identity` state 110 is also a guarded forward-resume origin for migrations
-111 through 116. Final post-state 116 is inspect-only and has nothing left to apply.
+111 through 117. Exact `restored-v22` 115 and `canonical-v23` 116 are guarded
+resume origins for two and one migrations respectively. Exact
+`restored-v23-pending-v24` is a fail-closed one-migration recovery origin. Final post-state 117 is
+inspect-only and has nothing left to apply.
 
 ## Transaction and old-application classification
 
@@ -231,6 +256,7 @@ The August release files have the following operational profile:
 | 112-114 | Add the dashboard facts RPC, roster read RPC, and atomic bulk student archive RPC. | Additive, service-role-only RPCs used by the release backend. | One transaction per migration. Re-inspect after any partial apply. |
 | 115 | Revokes anon and authenticated privileges on all public relations and sequences, removes their schema-local defaults, and adds the V22 readiness head. | Database-first and compatible because browser data access already goes through the backend. | One migration transaction with a fail-closed relation guard. |
 | 116 | Reasserts the global PUBLIC function default revoke, removes public-schema API-role function defaults, and adds a schema-wide routine guard plus V23 readiness. | Database-first and compatible because the browser makes no PostgREST RPC calls. | One migration transaction. The migration stops and rolls back if any browser-facing role can execute a public routine. |
+| 117 | Advances readiness to V24 and admits only the canonical `61c8251...` or proved restored `f9ce359...` zero-failure operational manifest. It changes no product data or operational object. | Application bridge accepts exact V22, V23, or V24 during rollout. | One migration transaction. Any third digest or hybrid history aborts; production applies 116 and 117 as one guarded packet. |
 
 Before staging apply, record cardinalities for `student_program_memberships`,
 active unranked memberships eligible for the 101 backfill, `students`,
@@ -315,14 +341,14 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-Staging was last verified at exact 111/head `20260816012723`. Re-read it from the
-exact candidate before relying on that state. The current rollout tool accepts
-110 as `staff-identity` and 116 as `post`; it has no resume classification for
-111. If the fresh read still reports 111, halt and add a reviewed exact-111
-resume state before any dry-run or apply. Do not relabel it as `staff-identity`
-or `post`. After the remaining migrations commit, a fresh inspection must
-classify `post`, emit the final provider fingerprint, and report no remaining
-migration packet.
+Staging is currently exact 116/head `20260823193155`. Re-read it from the exact
+candidate and require `state=canonical-v23`; that state may dry-run only
+`20260824190500_attest_verified_restore_manifest.sql`. Production must classify
+only as exact `restored-v22` and may dry-run only migrations 116 and 117. Do not
+relabel a hybrid or failing V23 row as either accepted state. The sole supported
+partial state after 116 is `restored-v23-pending-v24`, which may resume only 117. After the remaining
+migration packet commits, a fresh inspection must classify `post`, emit the
+final provider fingerprint, and report no remaining migration packet.
 
 The exact candidate's staging rehearsal was approved through its durable PR
 release record. Any staging apply requires the same inspection token, exact
@@ -333,7 +359,7 @@ application:
 > `--approval-record <durable-url>` **in addition to** `--approve-staging-apply`.
 > Passing only the staging flag is refused. See `docs/cutover-gates.md`.
 
-1. require count 116, head `20260823193155`, the exact thirty-two-version sequence, and the
+1. require count 117, head `20260824190500`, the exact thirty-three-version sequence, and the
    derived final history digest;
 2. require every table/RLS, policy, grant, function-security/search-path,
    trigger, index, table-ACL, sequence-ACL, and column-ACL identity in the final semantic
@@ -346,7 +372,7 @@ application:
 3. invoke the service-role-only V4 readiness RPC during every apparent-post
    linked inspection and require `ready=true`, exact
    count/head/pending versions, an empty failure list, and manifest version
-   `release-db-attestation-v23`; a missing, malformed, stale, or failing result
+   `release-db-attestation-v24`; a missing, malformed, stale, or failing result
    halts before `state=post` or a fingerprint can be emitted. Linked scalar
    results are decoded as strict single-column CSV, including standard quoting
    for the comma-delimited pending-version tuple; extra rows, extra columns, or
@@ -428,22 +454,23 @@ trigger/functions, or use a production restore as ordinary rollback.
 
 If migration 110 committed but 111 did not, the supported path is exact and
 forward-only: stop; run a fresh candidate-bound inspection that must classify
-`staff-identity`; mint its state-bound token; dry-run the exact six-file remainder
+`staff-identity`; mint its state-bound token; dry-run the exact seven-file remainder
 from `20260816012723_archive_staff_access_and_readiness.sql` through
-`20260823193155_revoke_public_function_execute.sql`; then let the human
-operator run the existing production apply gate. After 116, require the exact
-V23 readiness result and final raw catalog/provider fingerprint before promoting
+`20260824190500_attest_verified_restore_manifest.sql`; then let the human
+operator run the existing production apply gate. Restored production instead
+uses `state=restored-v22` and the exact two-file 116/117 remainder. After 117,
+require the exact V24 readiness result and final raw catalog/provider fingerprint before promoting
 an application. No approved application serves at 110. The pre-release
 application SHA `709239680c9097a2ed647c3781c63fd957e58ed8` requires V16 and the
-candidate requires V23, so both fail readiness at V17. Pre-boundary V2 consumers
+candidate requires V24, so both fail readiness at V17. Pre-boundary V2 consumers
 from before `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through
 migration 110's exact V17 compatibility guard, but they are not approved
 recovery artifacts. Keep both `709239`/V16 and every such pre-boundary
 V2-consuming SHA out of the post-110 application rollback set; recovery is
-forward to 116.
+forward to 117.
 
 If all migrations are recorded but readiness or the provider fingerprint fails,
 stop the release and add a reviewed forward migration. Application promotion is
-database-first: Render `/health/ready` remains 503 until the exact 116 head and
+database-first: Render `/health/ready` remains 503 until the exact 117 head and
 required-object proof pass. Application rollback is separate and does not roll
 back database history.

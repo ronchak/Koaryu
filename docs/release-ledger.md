@@ -298,6 +298,27 @@ archive/RLS candidate is recorded in the Migration-111 section that follows.
 - No commit, push, deployment, linked-project mutation, or external action was
   performed by this worker.
 
+### Production Docker/jemalloc memory cutover — 2026-08-24
+
+- Environment: production Render service `Koaryu` (`srv-d7mogk1kh4rs73aq6hqg`)
+- Application commit: `aed09efcb9559ee76776dbc324abcd370316ff87`
+- Repository migration head at deploy: `20260823193155_revoke_public_function_execute.sql`
+- Applied migration head: 115 / `20260822193000_revoke_client_read_access.sql`
+- Migration comparison: approved restored V22 compatibility; forward V24 convergence pending
+- Deployed at: `2026-08-24T18:56:21.629287Z`
+- Operator: Codex under Ronak's explicit merge and production-change approval
+- Approval/review: PR #130 exact head `dc7c98b34c42e6ea40c77635307b8476584d1900`; OX alpha `GREEN LIGHT`; GitHub Codex no major issues; all required checks green
+- Verification:
+  - Render deploy `dep-da6978ijnfac73a7kv30` reached `live` at the exact merge commit; service readback remained `main`, Docker, `/health/ready`, and auto-deploy off
+  - Production live and ready routes returned the exact merge SHA, environment `production`, and configured Stripe mode `live`
+  - Startup log recorded `jemalloc preload verified`, Uvicorn PID 1, and first RSS `164413440` bytes in the normal band
+- Known gaps: the initial RSS window is warm-up evidence, not a multi-hour leak verdict; production database remains exact restored V22 until guarded V24 convergence
+- Application rollback target: `32d3dd9633861d77507901348ee0890c363adced`
+- Database recovery action: forward-only reviewed migrations 116 and 117; no production migration was run during this deployment
+- Rollback trigger: failed readiness, wrong SHA/runtime/Stripe mode, missing jemalloc assertion, or sustained post-warm-up RSS growth comparable to the prior allocator
+- Rollback verification: exact rollback SHA, native runtime only if deliberately restored, both health routes, live Stripe mode, and fresh RSS instance identity
+- Outcome: successful application cutover; database convergence remains gated
+
 ## Release Entry Template
 
 Copy this section for each staging or production release. Use ISO 8601 UTC timestamps and link durable CI/PR/deployment evidence when available.

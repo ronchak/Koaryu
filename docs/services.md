@@ -66,7 +66,7 @@ Both services are declared in `render.yaml`. Neither auto-deploys.
 | Service ID | `srv-d7mogk1kh4rs73aq6hqg` | `srv-d98g4kutrd3s73ek0elg` |
 | URL | `https://koaryu.onrender.com` | `https://koaryu-staging.onrender.com` |
 | Tracks branch | `main` | `staging` |
-| Runtime | Native Python; Docker + jemalloc pending merge and deploy | Docker, Python 3.11.9 + jemalloc |
+| Runtime | Docker, Python 3.11.9 + jemalloc | Docker, Python 3.11.9 + jemalloc |
 | Plan | `starter` (paid) | `free` |
 | Auto-deploy | off | off |
 | Health check | `/health/ready` | `/health/ready` |
