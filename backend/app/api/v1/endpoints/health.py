@@ -7,7 +7,9 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.services import process_rss_observability
-from app.services.release_schema_readiness import assert_hosted_release_schema_ready
+from app.services.release_schema_readiness import (
+    assert_hosted_release_schema_ready_cached,
+)
 from app.services.stripe_mutation_policy import configured_stripe_mode
 
 router = APIRouter()
@@ -72,7 +74,7 @@ async def health_ready(response: Response):
         settings = get_settings()
         settings.validate_runtime_configuration()
         if settings.ENVIRONMENT.strip().lower() in {"production", "staging"}:
-            await run_in_threadpool(assert_hosted_release_schema_ready)
+            await run_in_threadpool(assert_hosted_release_schema_ready_cached)
     except Exception as exc:
         # The 503 body stays deliberately generic because it is public. The
         # cause only ever reaches the operator through this log line, so a

@@ -177,7 +177,7 @@ Koaryu supports exactly one studio membership per user. Creating or accepting a 
 ## Deployment And Demo Notes
 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
-- Render starts the FastAPI backend with a single Uvicorn process in production. Keep the root `render.yaml`, `backend/Procfile`, and `docs/render-backend-deployment.md` start commands aligned.
+- Render builds `backend/Dockerfile`, preloads jemalloc, verifies the allocator at startup, and starts one Uvicorn process. Keep `render.yaml`, the Docker startup files, `backend/Procfile`, and `docs/render-backend-deployment.md` aligned.
 - Production backend startup validates required Supabase, Stripe, and frontend origin configuration before serving traffic. If Render deploys but the service exits immediately, check the runtime logs for `Production configuration is incomplete`.
 - The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, plus the server-only `BACKEND_API_URL` for proxy and cron routes, for Production. Add them in Vercel Project Settings or with:
 
@@ -240,7 +240,7 @@ Recent deployment-readiness work in this repo tightened live-mode persistence an
 - lead conversion into students
 - reports and student hold data paths
 - belt ladder and related live persistence
-- Render cold-start behavior by replacing the four-worker Gunicorn command with a single Uvicorn process
+- Render memory behavior by running one Uvicorn process under jemalloc and sampling private process RSS every five minutes
 - landing-page first paint by removing auth middleware from `/` while keeping a non-blocking backend warmup
 - Koaryu Core checkout/portal duplicate-subscription protection and webhook ordering
 - Koaryu Payments autopay authorization, Connect webhook projection, invoice reconciliation, and cancellation cleanup

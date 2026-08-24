@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any
 
 from app.db.supabase import close_supabase_client, create_supabase_client
@@ -43,6 +45,7 @@ EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260822193000",
     "20260823193155",
 ]
+HOSTED_READINESS_SUCCESS_TTL_SECONDS = 30.0
 
 # Kept as a patchable factory symbol for existing readiness tests. It is an
 # isolated factory alias, not the removed process-global accessor.
@@ -109,3 +112,46 @@ def assert_hosted_release_schema_ready() -> None:
     finally:
         if hasattr(getattr(client, "auth", None), "close"):
             close_supabase_client(client)
+
+
+class HostedReleaseReadinessCache:
+    """Coalesce hosted schema checks and briefly reuse successful results.
+
+    Failures are never cached. The lock also prevents simultaneous health probes
+    from creating duplicate Supabase clients while one preflight is in flight.
+    """
+
+    def __init__(
+        self,
+        *,
+        check=assert_hosted_release_schema_ready,
+        monotonic=time.monotonic,
+        success_ttl_seconds: float = HOSTED_READINESS_SUCCESS_TTL_SECONDS,
+    ) -> None:
+        if success_ttl_seconds <= 0:
+            raise ValueError("success_ttl_seconds must be positive")
+        self._check = check
+        self._monotonic = monotonic
+        self._success_ttl_seconds = success_ttl_seconds
+        self._last_success_monotonic: float | None = None
+        self._lock = threading.Lock()
+
+    def assert_ready(self) -> None:
+        with self._lock:
+            now = self._monotonic()
+            last_success = self._last_success_monotonic
+            if (
+                last_success is not None
+                and 0 <= now - last_success < self._success_ttl_seconds
+            ):
+                return
+
+            self._check()
+            self._last_success_monotonic = self._monotonic()
+
+
+_HOSTED_READINESS_CACHE = HostedReleaseReadinessCache()
+
+
+def assert_hosted_release_schema_ready_cached() -> None:
+    _HOSTED_READINESS_CACHE.assert_ready()

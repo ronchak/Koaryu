@@ -101,8 +101,10 @@ const renderCriticalValues = new Map([
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
-const RENDER_ARENA_KEY = "MALLOC_ARENA_MAX";
-const RENDER_ARENA_VALUE = "2";
+const RENDER_DOCKERFILE_PATH = "backend/Dockerfile";
+const RENDER_DOCKER_CONTEXT = "backend";
+const RENDER_PYTHON_IMAGE =
+  "python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317";
 
 // Reusable examples stay fail-closed even where production must deliberately
 // differ. Each exception names both sides so neither value can drift silently.
@@ -326,27 +328,86 @@ export function validateEnvExample(file, parsed) {
   return failures;
 }
 
-export function validateRenderArenaSetting(entries, serviceName) {
-  const arenaEntries = entries.filter((entry) => entry.key === RENDER_ARENA_KEY);
+function validateRenderDockerService(block, serviceName) {
   const failures = [];
-
-  if (arenaEntries.length === 0) {
-    failures.push(`render.yaml: ${serviceName} must declare ${RENDER_ARENA_KEY}`);
-    return failures;
-  }
-  if (arenaEntries.length > 1) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must be declared exactly once`);
+  if (!block) {
+    failures.push(`render.yaml: ${serviceName} service is missing`);
     return failures;
   }
 
-  const [entry] = arenaEntries;
-  if (entry.sync !== null) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must be a fixed literal entry without sync`);
+  for (const [key, expected] of [
+    ["runtime", "docker"],
+    ["dockerfilePath", RENDER_DOCKERFILE_PATH],
+    ["dockerContext", RENDER_DOCKER_CONTEXT],
+  ]) {
+    if (renderScalar(block, key) !== expected) {
+      failures.push(
+        `render.yaml: ${serviceName} ${key} must equal ${JSON.stringify(expected)}`,
+      );
+    }
   }
-  if (!entry.hasValue) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must contain a literal value`);
-  } else if (entry.value !== RENDER_ARENA_VALUE) {
-    failures.push(`render.yaml: ${serviceName} ${RENDER_ARENA_KEY} must equal ${JSON.stringify(RENDER_ARENA_VALUE)}`);
+  for (const nativeKey of ["buildCommand", "startCommand"]) {
+    if (renderScalar(block, nativeKey) !== null) {
+      failures.push(`render.yaml: ${serviceName} must not declare native-runtime ${nativeKey}`);
+    }
+  }
+  if (/^\s*- key:\s*MALLOC_ARENA_MAX\s*$/m.test(block)) {
+    failures.push(
+      `render.yaml: ${serviceName} must not retain the inactive glibc MALLOC_ARENA_MAX setting`,
+    );
+  }
+  return failures;
+}
+
+export function validateRenderDockerRuntime(
+  renderSource,
+  dockerfileSource,
+  startScriptSource,
+) {
+  const failures = [];
+  for (const serviceName of ["koaryu", "koaryu-staging"]) {
+    failures.push(...validateRenderDockerService(
+      renderServiceBlock(renderSource, serviceName),
+      serviceName,
+    ));
+  }
+
+  const dockerfileRequirements = [
+    [
+      new RegExp(
+        `^FROM ${RENDER_PYTHON_IMAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        "m",
+      ),
+      "must use the reviewed immutable Python 3.11.9 bookworm image",
+    ],
+    [/apt-get install[^\n]*libjemalloc2/, "must install libjemalloc2"],
+    [
+      /^ENV LD_PRELOAD=\/usr\/local\/lib\/libjemalloc\.so\.2$/m,
+      "must preload the installed jemalloc library",
+    ],
+    [/^USER koaryu$/m, "must run as the non-root koaryu user"],
+    [
+      /^CMD \["\.\/scripts\/start-render\.sh"\]$/m,
+      "must start through the allocator-verifying wrapper",
+    ],
+  ];
+  for (const [pattern, diagnostic] of dockerfileRequirements) {
+    if (!pattern.test(dockerfileSource)) {
+      failures.push(`backend/Dockerfile: ${diagnostic}`);
+    }
+  }
+
+  const startScriptRequirements = [
+    [
+      /grep -Fq "libjemalloc\.so\.2" \/proc\/self\/maps/,
+      "must verify jemalloc is mapped before startup",
+    ],
+    [/exec python -m uvicorn app\.main:app/, "must exec the single Uvicorn process"],
+  ];
+  for (const [pattern, diagnostic] of startScriptRequirements) {
+    if (!pattern.test(startScriptSource)) {
+      failures.push(`backend/scripts/start-render.sh: ${diagnostic}`);
+    }
   }
   return failures;
 }
@@ -359,7 +420,6 @@ export function validateRenderManifest(
   criticalValues = renderCriticalValues,
 ) {
   const failures = [];
-  failures.push(...validateRenderArenaSetting(entries, "production"));
   const keys = entries.map((entry) => entry.key);
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   const missing = requiredKeys.filter((key) => !keys.includes(key));
@@ -452,7 +512,6 @@ export function validateStagingRenderService(renderSource, secretKeys) {
   }
 
   const entries = extractRenderEnvEntries(block);
-  failures.push(...validateRenderArenaSetting(entries, "staging"));
   const declared = new Map(
     entries.filter((entry) => entry.hasValue).map((entry) => [entry.key, entry.value]),
   );
@@ -802,6 +861,15 @@ export function runEnvExampleCheck() {
     renderExampleValues,
   ));
   failures.push(...validateStagingRenderService(renderSource, backendPlaceholderKeys));
+  try {
+    failures.push(...validateRenderDockerRuntime(
+      renderSource,
+      readFileSync(resolve(ROOT, "backend/Dockerfile"), "utf8"),
+      readFileSync(resolve(ROOT, "backend/scripts/start-render.sh"), "utf8"),
+    ));
+  } catch (error) {
+    failures.push(`Render Docker runtime: ${error instanceof Error ? error.message : String(error)}`);
+  }
   let operationalAlertsSource;
   let releaseControlsSource;
   try {

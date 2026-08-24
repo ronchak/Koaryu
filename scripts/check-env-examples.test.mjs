@@ -12,6 +12,7 @@ import {
   validateEnvExample,
   validateOperationalAlertCadence,
   validateProviderDeploymentControls,
+  validateRenderDockerRuntime,
   validateRenderManifest,
   validateStagingRenderService,
 } from "./check-env-examples.mjs";
@@ -37,17 +38,14 @@ This resolves the Vercel funded-plan gate by moving the primary trigger source, 
 Nobody may weaken the five-minute cadence merely to make a preview deploy.
 `;
 
-function renderArenaLines(values) {
-  return values
-    .map((value) => `      - key: MALLOC_ARENA_MAX\n        value: ${JSON.stringify(value)}`)
-    .join("\n");
-}
-
-function stagingRenderSource(values) {
+function stagingRenderSource() {
   return `
 services:
   - type: web
     name: koaryu-staging
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -65,9 +63,21 @@ services:
         value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
       - key: DEMO_RESET_ENABLED
         value: "false"
-${renderArenaLines(values)}
 `;
 }
+
+const reviewedDockerfile = `
+FROM python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317
+RUN apt-get install --yes --no-install-recommends libjemalloc2
+ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2
+USER koaryu
+CMD ["./scripts/start-render.sh"]
+`;
+
+const reviewedRenderStartScript = `
+grep -Fq "libjemalloc.so.2" /proc/self/maps
+exec python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
+`;
 
 describe("environment example validation", () => {
   it("accepts deliberate placeholders and rejects real-looking secrets", () => {
@@ -154,8 +164,6 @@ services:
         sync: false
       - key: API_SECRET
         value: literal-secret
-      - key: MALLOC_ARENA_MAX
-        value: "2"
 `);
     const failures = validateRenderManifest(
       ["API_URL", "API_SECRET"],
@@ -168,51 +176,54 @@ services:
     assert.ok(failures.some((failure) => failure.includes("must not contain a literal value")));
   });
 
-  it("accepts exactly one fixed arena setting on both Render services", () => {
-    const productionEntries = extractRenderEnvEntries(`
-envVars:
-${renderArenaLines(["2"])}
-`);
-    assert.deepEqual(validateRenderManifest(
+  it("accepts the jemalloc Docker contract for both Render services", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+`;
+    assert.deepEqual(
+      validateRenderDockerRuntime(
+        renderSource,
+        reviewedDockerfile,
+        reviewedRenderStartScript,
+      ),
       [],
-      productionEntries,
-      [],
-      new Map(),
-      new Map(),
-    ), []);
-
-    assert.deepEqual(validateStagingRenderService(stagingRenderSource(["2"]), []), []);
+    );
   });
 
-  it("rejects missing, wrong, and duplicate arena settings for both Render services", () => {
-    const cases = [
-      ["missing", [], "must declare MALLOC_ARENA_MAX"],
-      ["wrong", ["4"], 'must equal "2"'],
-      ["duplicate", ["2", "2"], "must be declared exactly once"],
-    ];
-
-    for (const [caseName, values, expectedDiagnostic] of cases) {
-      const productionEntries = extractRenderEnvEntries(`
-envVars:
-${renderArenaLines(values)}
-`);
-      const productionFailures = validateRenderManifest(
-        [],
-        productionEntries,
-        [],
-        new Map(),
-        new Map(),
-      );
-      assert.ok(
-        productionFailures.some((failure) => failure.includes(expectedDiagnostic)),
-        `production ${caseName}`,
-      );
-
-      const stagingFailures = validateStagingRenderService(stagingRenderSource(values), []);
-      assert.ok(
-        stagingFailures.some((failure) => failure.includes(expectedDiagnostic)),
-        `staging ${caseName}`,
-      );
+  it("rejects native runtime drift, inactive arena config, or an unverified preload", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app
+    dockerfilePath: wrong/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+`;
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      "FROM python:3.12",
+      "exec uvicorn",
+    );
+    for (const diagnostic of [
+      "koaryu runtime",
+      "koaryu dockerfilePath",
+      "koaryu dockerContext",
+      "native-runtime buildCommand",
+      "native-runtime startCommand",
+      "MALLOC_ARENA_MAX",
+      "install libjemalloc2",
+      "preload the installed jemalloc library",
+      "verify jemalloc is mapped",
+    ]) {
+      assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
     }
   });
 
@@ -242,8 +253,6 @@ envVars:
     value: /api
   - key: FRONTEND_URL
     value: https://koaryu.test
-  - key: MALLOC_ARENA_MAX
-    value: "2"
 `);
     const failures = validateRenderManifest(
       [...unsafeValues.keys()],
@@ -263,8 +272,6 @@ envVars:
 envVars:
   - key: LIVE_BILLING_ENABLED
     value: "true"
-  - key: MALLOC_ARENA_MAX
-    value: "2"
 `);
 
     assert.deepEqual(validateRenderManifest(
@@ -292,8 +299,6 @@ envVars:
 envVars:
   - key: LIVE_BILLING_ENABLED
     value: "false"
-  - key: MALLOC_ARENA_MAX
-    value: "2"
 `);
     const failures = validateRenderManifest(
       ["LIVE_BILLING_ENABLED"],

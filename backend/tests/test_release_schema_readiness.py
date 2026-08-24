@@ -1,3 +1,4 @@
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from app.services.release_schema_readiness import (
     EXPECTED_RELEASE_MIGRATION_HEAD,
     EXPECTED_RELEASE_MANIFEST_VERSION,
     EXPECTED_RELEASE_PENDING_VERSIONS,
+    HostedReleaseReadinessCache,
     ReleaseSchemaNotReadyError,
     assert_hosted_release_schema_ready,
     validate_release_schema_preflight,
@@ -93,6 +95,60 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
         ):
             assert_hosted_release_schema_ready()
         self.assertEqual(calls, [("koaryu_release_schema_preflight_v4", {})])
+
+    def test_success_cache_rechecks_only_after_ttl(self):
+        now = [10.0]
+        calls = []
+        cache = HostedReleaseReadinessCache(
+            check=lambda: calls.append(now[0]),
+            monotonic=lambda: now[0],
+            success_ttl_seconds=30.0,
+        )
+
+        cache.assert_ready()
+        now[0] = 39.999
+        cache.assert_ready()
+        self.assertEqual(calls, [10.0])
+
+        now[0] = 40.0
+        cache.assert_ready()
+        self.assertEqual(calls, [10.0, 40.0])
+
+    def test_failures_are_not_cached(self):
+        calls = []
+
+        def fail():
+            calls.append("check")
+            raise RuntimeError("database unavailable")
+
+        cache = HostedReleaseReadinessCache(check=fail)
+        for _ in range(2):
+            with self.assertRaisesRegex(RuntimeError, "database unavailable"):
+                cache.assert_ready()
+
+        self.assertEqual(calls, ["check", "check"])
+
+    def test_concurrent_probes_share_one_successful_preflight(self):
+        check_started = threading.Event()
+        release_check = threading.Event()
+        calls = []
+
+        def check():
+            calls.append("check")
+            check_started.set()
+            self.assertTrue(release_check.wait(timeout=2))
+
+        cache = HostedReleaseReadinessCache(check=check)
+        threads = [threading.Thread(target=cache.assert_ready) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        self.assertTrue(check_started.wait(timeout=2))
+        release_check.set()
+        for thread in threads:
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+
+        self.assertEqual(calls, ["check"])
 
 
 if __name__ == "__main__":

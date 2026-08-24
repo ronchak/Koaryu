@@ -10,18 +10,21 @@ Expected service settings:
 
 - Service name: `koaryu`
 - Type: Web Service
-- Runtime: Python
+- Runtime: Docker
 - Plan: `starter`
 - Region: Ohio
 - Root directory: `backend`
-- Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Dockerfile path: `backend/Dockerfile`
+- Docker context: `backend`
+- Start command: the image's `backend/scripts/start-render.sh`
 - Health check path: `/health/ready`
 - Automatic production deploys: off; deploy one reviewed commit explicitly
 
-Render should use Python `3.11`. The backend includes both `backend/runtime.txt` (`python-3.11.9`) and `backend/.python-version` (`3.11`) so Render does not default to a newer Python release that lacks compatible wheels for pinned dependencies.
+The image pins Python `3.11.9` on Debian bookworm. `backend/runtime.txt` and `backend/.python-version` keep non-Docker tools and local development on the same Python line.
 
-The configured `starter` Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
+The image installs Debian's `libjemalloc2`, exposes it through `/usr/local/lib/libjemalloc.so.2`, and sets `LD_PRELOAD` before Python starts. The startup wrapper checks `/proc/self/maps` and exits before Uvicorn if jemalloc is absent. This keeps an image or environment regression from silently falling back to glibc. The old `MALLOC_ARENA_MAX` setting is intentionally absent because it has no effect once jemalloc owns allocation.
+
+The configured `starter` Render service runs a single lightweight Uvicorn process. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Dockerfile`, `backend/scripts/start-render.sh`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
 `render.yaml` intentionally sets `autoDeployTrigger: 'off'`. A merge to `main` must not release the backend before the fixed candidate has passed staging. Trigger the production deploy with the exact approved commit SHA, then read the deployed SHA back from Render before recording the release. Do not re-enable commit auto-deploy as a shortcut.
 
@@ -187,7 +190,9 @@ whole route map. To inspect the deployed route inventory, build the schema from 
 release commit instead with `python3 scripts/generate-api-types.py`, which loads the
 app in process and never touches the network.
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V4 database preflight. It returns 503 unless Supabase reports exactly 116 migrations, head `20260823193155`, the exact thirty-two-version pending sequence, manifest version `release-db-attestation-v23`, and no required-object/security failure. The V4 contract also requires the exact zero-invalid V18 archive-critical semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`. Migrations 112, 113, and 114 add the dashboard, interactive roster read, and atomic student archive contracts. Migration 115 revokes the API roles' direct access to public tables, and migration 116 adds the public-routine default and schema-wide EXECUTE guard. All five are additive and must be present before this readiness gate can pass. Migration 115 moves the operational semantic/ACL manifest because it changes table ACLs. Migration 116 leaves the manifest unchanged because migration `20260711215000` had already removed the effective public-routine grants; the new migration makes that state fail closed and behaviorally verified. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration on every probe. A successful service-role-only V4 database preflight is reused for 30 seconds, and concurrent probes share one in-flight check. Failures are never cached. The route returns 503 unless Supabase reports exactly 116 migrations, head `20260823193155`, the exact thirty-two-version pending sequence, manifest version `release-db-attestation-v23`, and no required-object/security failure. The V4 contract also requires the exact zero-invalid V18 archive-critical semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`. Migrations 112, 113, and 114 add the dashboard, interactive roster read, and atomic student archive contracts. Migration 115 revokes the API roles' direct access to public tables, and migration 116 adds the public-routine default and schema-wide EXECUTE guard. All five are additive and must be present before this readiness gate can pass. Migration 115 moves the operational semantic/ACL manifest because it changes table ACLs. Migration 116 leaves the manifest unchanged because migration `20260711215000` had already removed the effective public-routine grants; the new migration makes that state fail closed and behaviorally verified. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+
+Each readiness probe also invokes the private RSS observer. It reads current RSS from `/proc/self/statm` at most once every five minutes and emits a `process_rss_observation` JSON log with the instance ID, commit, byte count, and threshold state. It adds no fields to the public health response. Search Render logs for `jemalloc preload verified` after startup and then for `process_rss_observation` while comparing memory across one instance ID.
 
 Promote the database first. Do not route the new backend to a Supabase project
 until the final staging fingerprint and preflight pass. The exact-head manifest

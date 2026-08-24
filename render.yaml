@@ -1,12 +1,12 @@
 services:
   - type: web
     name: koaryu
-    runtime: python
+    runtime: docker
     plan: starter
     region: ohio
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -14,8 +14,6 @@ services:
         value: https://koaryu.app
       - key: ENVIRONMENT
         value: production
-      - key: MALLOC_ARENA_MAX
-        value: "2"
       - key: API_V1_PREFIX
         value: /api/v1
       - key: DEMO_RESET_ENABLED
@@ -91,12 +89,12 @@ services:
   # database catches up.
   - type: web
     name: koaryu-staging
-    runtime: python
+    runtime: docker
     plan: free
     region: ohio
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -105,8 +103,6 @@ services:
       # and the process refuses to boot against anything else.
       - key: ENVIRONMENT
         value: staging
-      - key: MALLOC_ARENA_MAX
-        value: "2"
       - key: FRONTEND_URL
         value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
       - key: API_V1_PREFIX
