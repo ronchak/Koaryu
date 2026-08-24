@@ -418,16 +418,27 @@ export function validateRenderDockerRuntime(
     failures.push("backend/Dockerfile: must install the exact declared jemalloc package version");
   }
 
+  const activeStartScriptLines = startScriptSource
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
   const startScriptRequirements = [
-    [
-      /grep -Fq "libjemalloc\.so\.2" \/proc\/self\/maps/,
-      "must verify jemalloc is mapped before startup",
-    ],
-    [/exec python -m uvicorn app\.main:app/, "must exec the single Uvicorn process"],
+    {
+      select: (line) => line.includes("/proc/self/maps"),
+      expected: 'if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then',
+      diagnostic: "must actively verify jemalloc is mapped before startup exactly once",
+    },
+    {
+      select: (line) => line.includes("uvicorn"),
+      expected:
+        'exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}"',
+      diagnostic: "must actively exec the single Uvicorn process exactly once",
+    },
   ];
-  for (const [pattern, diagnostic] of startScriptRequirements) {
-    if (!pattern.test(startScriptSource)) {
-      failures.push(`backend/scripts/start-render.sh: ${diagnostic}`);
+  for (const contract of startScriptRequirements) {
+    const matches = activeStartScriptLines.filter(contract.select);
+    if (matches.length !== 1 || matches[0] !== contract.expected) {
+      failures.push(`backend/scripts/start-render.sh: ${contract.diagnostic}`);
     }
   }
   return failures;

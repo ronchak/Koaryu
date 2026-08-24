@@ -77,7 +77,10 @@ CMD ["./scripts/start-render.sh"]
 `;
 
 const reviewedRenderStartScript = `
-grep -Fq "libjemalloc.so.2" /proc/self/maps
+if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then
+  echo "jemalloc preload verification failed" >&2
+  exit 1
+fi
 exec python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
 `;
 
@@ -226,7 +229,34 @@ services:
       "MALLOC_ARENA_MAX",
       "declare the exact jemalloc package version once",
       "install the exact declared jemalloc package version",
-      "verify jemalloc is mapped",
+      "actively verify jemalloc is mapped",
+    ]) {
+      assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
+    }
+  });
+
+  it("rejects commented-out startup guards and direct Uvicorn fallback", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const commentedStartScript = `
+# if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then
+# exec python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
+python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
+`;
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      reviewedDockerfile,
+      commentedStartScript,
+    );
+    for (const diagnostic of [
+      "actively verify jemalloc is mapped",
+      "actively exec the single Uvicorn process",
     ]) {
       assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
     }
