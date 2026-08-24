@@ -1,10 +1,10 @@
 # Studio-Comp Migration Rollout
 
-Status: **candidate extends the release to migration 117/head 20260824190500; staging is exact canonical V23; restored production V22 human apply locked**
+Status: **complete at migration 117/head 20260824190500 on staging and production; exact V24 hosted readback recorded**
 
-This packet reconciles the production 100-migration V7 baseline and the last
-verified canonical staging V23 and restored production V22 states with the
-immutable 117-migration release candidate.
+This packet records the completed reconciliation from the production
+100-migration V7 baseline through canonical staging V23 and restored production
+V22 to the immutable 117-migration V24 release.
 It is specialized to this rollout, not a generic migration or history-repair
 framework.
 
@@ -207,11 +207,10 @@ exact source files:
 
 They remain pinned as the first two migrations after historical migration 84.
 They are already present in the 100-state baseline. Production must apply
-migrations 101 through 117. Staging is currently exact canonical V23 at
-migration 116/head `20260823193155`; production is exact restored V22 at
-migration 115/head `20260822193000`. Re-read both from the exact candidate
-before relying on either observation. An exact post-state has no migrations
-left to dry-run or apply.
+migrations 101 through 117. Staging and production are now exact post-state at
+migration 117/head `20260824190500`. The earlier V22/V23 states below remain
+documented only as guarded partial-recovery classifications. An exact post-state
+has no migrations left to dry-run or apply.
 
 Historical intermediate migrations 101 through 103 remain read-only
 inspectable, but apply is deliberately disabled from intermediate 101,
@@ -256,7 +255,7 @@ The August release files have the following operational profile:
 | 112-114 | Add the dashboard facts RPC, roster read RPC, and atomic bulk student archive RPC. | Additive, service-role-only RPCs used by the release backend. | One transaction per migration. Re-inspect after any partial apply. |
 | 115 | Revokes anon and authenticated privileges on all public relations and sequences, removes their schema-local defaults, and adds the V22 readiness head. | Database-first and compatible because browser data access already goes through the backend. | One migration transaction with a fail-closed relation guard. |
 | 116 | Reasserts the global PUBLIC function default revoke, removes public-schema API-role function defaults, and adds a schema-wide routine guard plus V23 readiness. | Database-first and compatible because the browser makes no PostgREST RPC calls. | One migration transaction. The migration stops and rolls back if any browser-facing role can execute a public routine. |
-| 117 | Advances readiness to V24 and admits only the canonical `61c8251...` or proved restored `f9ce359...` zero-failure operational manifest. It changes no product data or operational object. | Application bridge accepts exact V22, V23, or V24 during rollout. | One migration transaction. Any third digest or hybrid history aborts; production applies 116 and 117 as one guarded packet. |
+| 117 | Advances readiness to V24 and admits only the canonical `61c8251...` or proved restored `f9ce359...` zero-failure operational manifest. It changes no product data or operational object. | The transition application accepted exact V22, V23, or V24 during rollout; post-convergence application readiness is strict V24. | One migration transaction. Any third digest or hybrid history aborts; production applied 116 and 117 as one guarded packet. |
 
 Before staging apply, record cardinalities for `student_program_memberships`,
 active unranked memberships eligible for the 101 backfill, `students`,
@@ -324,14 +323,17 @@ The command is unavailable until the packet reports
 `integration_complete=true`. Acceptance requires the pinned staging ref
 `nxgsektqsgrtyfhawxbc`, one exact accepted history (`pre`, `intermediate`,
 `recovery`, `convergence`, `attested`, `return-attested`, `retained`, `critical`,
-`column-attested`, `trial-locked`, `staff-identity`, or `post`), its corresponding readiness
-result, the complete
+`column-attested`, `trial-locked`, `staff-identity`, `restored-v22`,
+`canonical-v23`, `restored-v23-pending-v24`, or `post`), its corresponding
+readiness result, the complete
 historical target sequence, the expected studio-comp objects, and an
 `inspection_token`. Any other partial, ahead, or manually altered state stops.
 The attested 104 state additionally requires an independent exact readback of
 all four writer return contracts before an inspection token is issued.
+An exact `post` result is terminal and has no dry-run or apply packet.
 
-Only after recording that inspection may the read-only rehearsal run:
+Only an accepted non-post state may run the read-only rehearsal after recording
+its state-bound inspection:
 
 ```bash
 node scripts/studio-comp-migration-rollout.mjs \
@@ -341,19 +343,20 @@ node scripts/studio-comp-migration-rollout.mjs \
   --inspection-token <token-from-staging-inspect>
 ```
 
-Staging is currently exact 116/head `20260823193155`. Re-read it from the exact
-candidate and require `state=canonical-v23`; that state may dry-run only
-`20260824190500_attest_verified_restore_manifest.sql`. Production must classify
-only as exact `restored-v22` and may dry-run only migrations 116 and 117. Do not
-relabel a hybrid or failing V23 row as either accepted state. The sole supported
-partial state after 116 is `restored-v23-pending-v24`, which may resume only 117. After the remaining
-migration packet commits, a fresh inspection must classify `post`, emit the
-final provider fingerprint, and report no remaining migration packet.
+For historical recovery, exact 116/head `20260823193155` may classify
+`canonical-v23` and dry-run only
+`20260824190500_attest_verified_restore_manifest.sql`. A future approved restore
+to the proved V22 snapshot may classify `restored-v22` and dry-run only
+migrations 116 and 117. Do not relabel a hybrid or failing V23 row as either
+accepted state. The sole supported partial state after 116 is
+`restored-v23-pending-v24`, which may resume only 117. These are not descriptions
+of either current hosted database; both currently classify `post` with no
+remaining packet.
 
-The exact candidate's staging rehearsal was approved through its durable PR
-release record. Any staging apply requires the same inspection token, exact
-project ref, durable approval record, and `--approve-staging-apply`. After
-application:
+The completed candidate's staging rehearsal was approved through its durable PR
+release record. Any future staging recovery apply requires a fresh inspection
+token, exact project ref, durable approval record, and
+`--approve-staging-apply`:
 
 > Concretely, staging apply needs `--confirm-project <ref>` and
 > `--approval-record <durable-url>` **in addition to** `--approve-staging-apply`.

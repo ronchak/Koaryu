@@ -5,7 +5,6 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.core.config import get_settings
 from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
@@ -13,12 +12,7 @@ from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 EXPECTED_RELEASE_MIGRATION_COUNT = 117
 EXPECTED_RELEASE_MIGRATION_HEAD = "20260824190500"
 EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v24"
-PRODUCTION_RESTORED_V22_MIGRATION_COUNT = 115
-PRODUCTION_RESTORED_V22_MIGRATION_HEAD = "20260822193000"
-PRODUCTION_RESTORED_V22_MANIFEST_VERSION = "release-db-attestation-v22"
-# This is the verified production V22 sequence, deliberately frozen apart from
-# the current release list so a later migration cannot redefine the allowance.
-PRODUCTION_RESTORED_V22_PENDING_VERSIONS = (
+EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260727100000",
     "20260727110000",
     "20260801050957",
@@ -50,16 +44,7 @@ PRODUCTION_RESTORED_V22_PENDING_VERSIONS = (
     "20260820025759",
     "20260820060216",
     "20260822193000",
-)
-TRANSITIONAL_V23_MIGRATION_COUNT = 116
-TRANSITIONAL_V23_MIGRATION_HEAD = "20260823193155"
-TRANSITIONAL_V23_MANIFEST_VERSION = "release-db-attestation-v23"
-TRANSITIONAL_V23_PENDING_VERSIONS = (
-    *PRODUCTION_RESTORED_V22_PENDING_VERSIONS,
     "20260823193155",
-)
-EXPECTED_RELEASE_PENDING_VERSIONS = [
-    *TRANSITIONAL_V23_PENDING_VERSIONS,
     "20260824190500",
 ]
 HOSTED_READINESS_SUCCESS_TTL_SECONDS = 30.0
@@ -91,40 +76,9 @@ def _describe_pending_drift(actual: Any) -> str:
     return ", ".join(parts)
 
 
-def _matches_production_restored_v22(row: Any) -> bool:
-    return isinstance(row, dict) and row == {
-        "ready": True,
-        "migration_count": PRODUCTION_RESTORED_V22_MIGRATION_COUNT,
-        "migration_head": PRODUCTION_RESTORED_V22_MIGRATION_HEAD,
-        "pending_versions": list(PRODUCTION_RESTORED_V22_PENDING_VERSIONS),
-        "security_failures": [],
-        "manifest_version": PRODUCTION_RESTORED_V22_MANIFEST_VERSION,
-    }
-
-
-def _matches_transitional_v23(row: Any) -> bool:
-    return isinstance(row, dict) and row == {
-        "ready": True,
-        "migration_count": TRANSITIONAL_V23_MIGRATION_COUNT,
-        "migration_head": TRANSITIONAL_V23_MIGRATION_HEAD,
-        "pending_versions": list(TRANSITIONAL_V23_PENDING_VERSIONS),
-        "security_failures": [],
-        "manifest_version": TRANSITIONAL_V23_MANIFEST_VERSION,
-    }
-
-
-def validate_release_schema_preflight(
-    row: Any,
-    *,
-    allow_production_restored_v22: bool = False,
-    allow_transitional_v23: bool = False,
-) -> None:
+def validate_release_schema_preflight(row: Any) -> None:
     if not isinstance(row, dict):
         raise ReleaseSchemaNotReadyError("Release schema preflight returned no result.")
-    if allow_production_restored_v22 and _matches_production_restored_v22(row):
-        return
-    if allow_transitional_v23 and _matches_transitional_v23(row):
-        return
     mismatches: list[str] = []
     if row.get("ready") is not True:
         mismatches.append(f"ready={row.get('ready')!r} (expected True)")
@@ -149,7 +103,6 @@ def validate_release_schema_preflight(
 
 
 def assert_hosted_release_schema_ready() -> None:
-    environment = get_settings().ENVIRONMENT.strip().lower()
     client = get_supabase_client()
     try:
         result = execute_required_rpc(
@@ -157,14 +110,7 @@ def assert_hosted_release_schema_ready() -> None:
             "koaryu_release_schema_preflight_v4",
             {},
         )
-        validate_release_schema_preflight(
-            first_rpc_row(result),
-            # Temporary restored-production compatibility. Remove this exact
-            # V22 allowance and the exact V23 rollout bridge after production
-            # reaches V24 and its hosted readback is recorded.
-            allow_production_restored_v22=environment == "production",
-            allow_transitional_v23=environment in {"staging", "production"},
-        )
+        validate_release_schema_preflight(first_rpc_row(result))
     finally:
         if hasattr(getattr(client, "auth", None), "close"):
             close_supabase_client(client)

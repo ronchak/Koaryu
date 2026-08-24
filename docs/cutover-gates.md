@@ -40,20 +40,14 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-Production temporarily has one exact restored-state compatibility path while
-the memory fix is deployed: count 115, head `20260822193000`, the exact
-thirty-one-version sequence, V22 readiness, and zero security failures. During
-the forward rollout, both hosted environments may also accept exact 116/V23;
-the final state is 117/head `20260824190500`/V24. Remove both bridges after the
-production V24 hosted readback. Never apply migration 116 alone to restored
-production: its source hardcodes the canonical manifest. The guarded production
-packet must apply migrations 116 and 117 in order so the final V24 function
-accepts exactly the canonical or proved restored manifest.
-If 116 commits and 117 does not, stop serving readiness and re-inspect. Only the
-exact red V23 tuple with sole failure `operational_semantic_acl_manifest_v7`
-classifies `restored-v23-pending-v24`; that state may resume only migration 117.
+Staging and production are both at 117/head `20260824190500`/V24. Hosted
+application readiness accepts only that exact V24 row; the temporary V22 and
+V23 application bridges were removed after production hosted readback. The
+rollout tool retains exact historical `restored-v22`, `canonical-v23`, and
+`restored-v23-pending-v24` classifications only for diagnosis of a proved
+partial restore or replay. They are not application readiness alternatives.
 
-That manifest string is **not** echoed in the response body. A runbook that tells you to
+The operational manifest string is **not** echoed in the response body. A runbook that tells you to
 look for it is wrong. `"status": "ready"` *is* the proof the attestation matched.
 
 If migration 113 commits and migration 114 does not, stop. No approved
@@ -71,12 +65,13 @@ post-110 rollback set. A database still at exact 110 must classify
 `20260820060216_atomic_bulk_student_archive.sql`,
 `20260822193000_revoke_client_read_access.sql`,
 `20260823193155_revoke_public_function_execute.sql`, and
-`20260824190500_attest_verified_restore_manifest.sql`. Current restored
-production instead must classify exact `state=restored-v22` and dry-run only
-migrations 116 and 117. In either case, only the human operator runs the
-production apply gate. Promotion
-remains blocked until migration 117 produces exact V24 readiness and the final raw
-catalog/provider fingerprint.
+`20260824190500_attest_verified_restore_manifest.sql`. If a future approved
+disaster recovery explicitly returns production to the proved restored V22
+snapshot, it must classify exact `state=restored-v22` and dry-run only
+migrations 116 and 117. These are hypothetical forward-recovery cases, not the
+current live state. In either case, only the authorized operator runs the
+production apply gate, and promotion remains blocked until migration 117
+produces exact V24 readiness and the final raw catalog/provider fingerprint.
 
 ## Gates that will refuse you
 
