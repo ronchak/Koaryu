@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import threading
+import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.db.supabase import close_supabase_client, create_supabase_client
@@ -114,12 +115,16 @@ def assert_hosted_release_schema_ready() -> None:
             close_supabase_client(client)
 
 
+async def _run_check_in_thread(check: Callable[[], None]) -> None:
+    await asyncio.to_thread(check)
+
+
 class HostedReleaseReadinessCache:
     """Coalesce hosted schema checks and briefly reuse successful results.
 
-    Failures are never cached. The lock intentionally stays held during the
-    network check. Concurrent probes share a successful check, and an outage
-    serializes retries instead of creating a provider request burst.
+    Failures are never cached. Waiters suspend on the event-loop lock before
+    the blocking check receives a worker thread, so health probes cannot occupy
+    the shared request thread pool while another preflight is in flight.
     """
 
     def __init__(
@@ -127,32 +132,40 @@ class HostedReleaseReadinessCache:
         *,
         check=assert_hosted_release_schema_ready,
         monotonic=time.monotonic,
+        run_check: Callable[[Callable[[], None]], Awaitable[None]] = (
+            _run_check_in_thread
+        ),
         success_ttl_seconds: float = HOSTED_READINESS_SUCCESS_TTL_SECONDS,
     ) -> None:
         if success_ttl_seconds <= 0:
             raise ValueError("success_ttl_seconds must be positive")
         self._check = check
         self._monotonic = monotonic
+        self._run_check = run_check
         self._success_ttl_seconds = success_ttl_seconds
         self._last_success_monotonic: float | None = None
-        self._lock = threading.Lock()
+        self._single_flight = asyncio.Lock()
 
-    def assert_ready(self) -> None:
-        with self._lock:
-            now = self._monotonic()
-            last_success = self._last_success_monotonic
-            if (
-                last_success is not None
-                and 0 <= now - last_success < self._success_ttl_seconds
-            ):
+    def _success_is_fresh(self) -> bool:
+        now = self._monotonic()
+        last_success = self._last_success_monotonic
+        return (
+            last_success is not None
+            and 0 <= now - last_success < self._success_ttl_seconds
+        )
+
+    async def assert_ready(self) -> None:
+        if self._success_is_fresh():
+            return
+        async with self._single_flight:
+            if self._success_is_fresh():
                 return
-
-            self._check()
+            await self._run_check(self._check)
             self._last_success_monotonic = self._monotonic()
 
 
 _HOSTED_READINESS_CACHE = HostedReleaseReadinessCache()
 
 
-def assert_hosted_release_schema_ready_cached() -> None:
-    _HOSTED_READINESS_CACHE.assert_ready()
+async def assert_hosted_release_schema_ready_cached() -> None:
+    await _HOSTED_READINESS_CACHE.assert_ready()

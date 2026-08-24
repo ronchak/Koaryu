@@ -177,7 +177,7 @@ Koaryu supports exactly one studio membership per user. Creating or accepting a 
 ## Deployment And Demo Notes
 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
-- Render builds `backend/Dockerfile`, preloads jemalloc, verifies the allocator at startup, and starts one Uvicorn process. Keep `render.yaml`, the Docker startup files, `backend/Procfile`, and `docs/render-backend-deployment.md` aligned.
+- Render builds `backend/Dockerfile`, preloads jemalloc, verifies the allocator at startup, and starts one Uvicorn process. Keep `render.yaml`, the Docker startup files, and `docs/render-backend-deployment.md` aligned.
 - Production backend startup validates required Supabase, Stripe, and frontend origin configuration before serving traffic. If Render deploys but the service exits immediately, check the runtime logs for `Production configuration is incomplete`.
 - The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, plus the server-only `BACKEND_API_URL` for proxy and cron routes, for Production. Add them in Vercel Project Settings or with:
 

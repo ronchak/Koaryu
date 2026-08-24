@@ -103,8 +103,10 @@ const renderCriticalValues = new Map([
 ]);
 const RENDER_DOCKERFILE_PATH = "./Dockerfile";
 const RENDER_DOCKER_CONTEXT = ".";
+const RENDER_ROOT_DIR = "backend";
 const RENDER_PYTHON_IMAGE =
   "python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317";
+const RENDER_JEMALLOC_VERSION = "5.3.0-1";
 
 // Reusable examples stay fail-closed even where production must deliberately
 // differ. Each exception names both sides so neither value can drift silently.
@@ -337,6 +339,7 @@ function validateRenderDockerService(block, serviceName) {
 
   for (const [key, expected] of [
     ["runtime", "docker"],
+    ["rootDir", RENDER_ROOT_DIR],
     ["dockerfilePath", RENDER_DOCKERFILE_PATH],
     ["dockerContext", RENDER_DOCKER_CONTEXT],
   ]) {
@@ -372,29 +375,47 @@ export function validateRenderDockerRuntime(
     ));
   }
 
-  const dockerfileRequirements = [
-    [
-      new RegExp(
-        `^FROM ${RENDER_PYTHON_IMAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-        "m",
-      ),
-      "must use the reviewed immutable Python 3.11.9 bookworm image",
-    ],
-    [/apt-get install[^\n]*libjemalloc2/, "must install libjemalloc2"],
-    [
-      /^ENV LD_PRELOAD=\/usr\/local\/lib\/libjemalloc\.so\.2$/m,
-      "must preload the installed jemalloc library",
-    ],
-    [/^USER koaryu$/m, "must run as the non-root koaryu user"],
-    [
-      /^CMD \["\.\/scripts\/start-render\.sh"\]$/m,
-      "must start through the allocator-verifying wrapper",
-    ],
+  const dockerfileLines = dockerfileSource.split(/\r?\n/).map((line) => line.trim());
+  const directiveContracts = [
+    {
+      select: (line) => /^FROM\s/i.test(line),
+      expected: `FROM ${RENDER_PYTHON_IMAGE}`,
+      diagnostic: "must contain exactly one reviewed immutable final FROM instruction",
+    },
+    {
+      select: (line) => /^ARG JEMALLOC_VERSION=/i.test(line),
+      expected: `ARG JEMALLOC_VERSION=${RENDER_JEMALLOC_VERSION}`,
+      diagnostic: "must declare the exact jemalloc package version once",
+    },
+    {
+      select: (line) => line.includes("LD_PRELOAD"),
+      expected: "ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2",
+      diagnostic: "must declare the exact effective jemalloc preload once",
+    },
+    {
+      select: (line) => /^USER\s/i.test(line),
+      expected: "USER koaryu",
+      diagnostic: "must declare the non-root final user exactly once",
+    },
+    {
+      select: (line) => /^CMD\s/i.test(line),
+      expected: 'CMD ["./scripts/start-render.sh"]',
+      diagnostic: "must declare the allocator-verifying final command exactly once",
+    },
   ];
-  for (const [pattern, diagnostic] of dockerfileRequirements) {
-    if (!pattern.test(dockerfileSource)) {
-      failures.push(`backend/Dockerfile: ${diagnostic}`);
+  for (const contract of directiveContracts) {
+    const matches = dockerfileLines.filter(contract.select);
+    if (matches.length !== 1 || matches[0] !== contract.expected) {
+      failures.push(`backend/Dockerfile: ${contract.diagnostic}`);
     }
+  }
+  if (dockerfileLines.some((line) => /^ENTRYPOINT\s/i.test(line))) {
+    failures.push("backend/Dockerfile: must not override the reviewed command with ENTRYPOINT");
+  }
+  const pinnedJemallocInstall =
+    `apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"`;
+  if (!dockerfileSource.includes(pinnedJemallocInstall)) {
+    failures.push("backend/Dockerfile: must install the exact declared jemalloc package version");
   }
 
   const startScriptRequirements = [

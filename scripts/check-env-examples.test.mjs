@@ -44,6 +44,7 @@ services:
   - type: web
     name: koaryu-staging
     runtime: docker
+    rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health/ready
@@ -68,7 +69,8 @@ services:
 
 const reviewedDockerfile = `
 FROM python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317
-RUN apt-get install --yes --no-install-recommends libjemalloc2
+ARG JEMALLOC_VERSION=5.3.0-1
+RUN apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"
 ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2
 USER koaryu
 CMD ["./scripts/start-render.sh"]
@@ -181,6 +183,7 @@ services:
   - type: web
     name: koaryu
     runtime: docker
+    rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
 `;
@@ -199,6 +202,7 @@ services:
   - type: web
     name: koaryu
     runtime: python
+    rootDir: wrong
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app
     dockerfilePath: wrong/Dockerfile
@@ -214,14 +218,47 @@ services:
     );
     for (const diagnostic of [
       "koaryu runtime",
+      "koaryu rootDir",
       "koaryu dockerfilePath",
       "koaryu dockerContext",
       "native-runtime buildCommand",
       "native-runtime startCommand",
       "MALLOC_ARENA_MAX",
-      "install libjemalloc2",
-      "preload the installed jemalloc library",
+      "declare the exact jemalloc package version once",
+      "install the exact declared jemalloc package version",
       "verify jemalloc is mapped",
+    ]) {
+      assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
+    }
+  });
+
+  it("rejects later Docker stages or effective directive overrides", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const driftedDockerfile = `${reviewedDockerfile}
+FROM python:3.11.9-slim-bookworm
+ENV LD_PRELOAD=/tmp/libjemalloc.so.2
+USER root
+CMD ["python", "-m", "uvicorn"]
+ENTRYPOINT ["sh", "-c"]
+`;
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      driftedDockerfile,
+      reviewedRenderStartScript,
+    );
+    for (const diagnostic of [
+      "exactly one reviewed immutable final FROM",
+      "exact effective jemalloc preload once",
+      "non-root final user exactly once",
+      "allocator-verifying final command exactly once",
+      "must not override the reviewed command with ENTRYPOINT",
     ]) {
       assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
     }

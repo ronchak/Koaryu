@@ -45,7 +45,7 @@ The local backend runs on `http://127.0.0.1:8001`.
 
 ## Production And Deployment Constraints
 
-- Keep `render.yaml`, `backend/Dockerfile`, `backend/scripts/start-render.sh`, `backend/Procfile`, `backend/runtime.txt`, the direct dependency input, and the hash-pinned runtime lock aligned when changing startup behavior.
+- Keep `render.yaml`, `backend/Dockerfile`, `backend/scripts/start-render.sh`, `backend/runtime.txt`, the direct dependency input, and the hash-pinned runtime lock aligned when changing startup behavior.
 - The production app intentionally fails fast when critical Supabase, Stripe, or frontend configuration is invalid. Do not relax those guards casually.
 - Be careful with support-ticket and account-deletion flows; they are internal operational surfaces protected by shared secrets.
 

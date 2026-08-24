@@ -3,8 +3,10 @@ FROM python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+ARG JEMALLOC_VERSION=5.3.0-1
+
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends libjemalloc2 \
+    && apt-get install --yes --no-install-recommends "libjemalloc2=${JEMALLOC_VERSION}" \
     && jemalloc_path="$(dpkg -L libjemalloc2 | sed -n '/\/libjemalloc\.so\.2$/p' | head -n 1)" \
     && test -n "$jemalloc_path" \
     && ln -s "$jemalloc_path" /usr/local/lib/libjemalloc.so.2 \
