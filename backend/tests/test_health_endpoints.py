@@ -20,11 +20,17 @@ class HealthEndpointTest(unittest.TestCase):
             "/api/v1/health/live",
         )
         ready_paths = ("/health/ready", "/api/v1/health/ready")
+        live_keys = {"status", "version", "service", "environment", "commit_sha"}
+        ready_keys = live_keys | {"configured_stripe_mode"}
 
         for path in (*live_paths, *ready_paths):
             with self.subTest(method="GET", path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    set(response.json()),
+                    ready_keys if path.endswith("/ready") else live_keys,
+                )
                 expected_status = "ready" if path.endswith("/ready") else "ok"
                 self.assertEqual(response.json()["status"], expected_status)
                 self.assertEqual(response.json()["environment"], "test")
@@ -89,11 +95,57 @@ class HealthEndpointTest(unittest.TestCase):
         with (
             patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
             patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready") as preflight,
+            patch("app.api.v1.endpoints.health.process_rss_observability.observe_process_rss") as rss_observer,
         ):
             response = self.client.get("/health/ready")
 
         self.assertEqual(response.status_code, 200)
         preflight.assert_called_once_with()
+        rss_observer.assert_called_once_with()
+
+    def test_readiness_aliases_share_the_private_observer_without_public_fields(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="staging",
+            STRIPE_MODE="test",
+            STRIPE_SECRET_KEY="sk_test_private",
+            validate_runtime_configuration=lambda: None,
+        )
+        with (
+            patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
+            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready"),
+            patch("app.api.v1.endpoints.health.process_rss_observability.observe_process_rss") as rss_observer,
+        ):
+            for path in ("/health/ready", "/api/v1/health/ready"):
+                for method in (self.client.get, self.client.head):
+                    with self.subTest(path=path, method=method.__name__):
+                        response = method(path)
+                        self.assertEqual(response.status_code, 200)
+                        self.assertNotIn("rss_bytes", response.text)
+                        self.assertNotIn("threshold_state", response.text)
+                        self.assertNotIn("process_id", response.text)
+
+        self.assertEqual(rss_observer.call_count, 4)
+
+    def test_observer_failure_does_not_change_readiness_result(self):
+        settings = SimpleNamespace(
+            ENVIRONMENT="staging",
+            STRIPE_MODE="test",
+            STRIPE_SECRET_KEY="sk_test_private",
+            validate_runtime_configuration=lambda: None,
+        )
+        with (
+            patch("app.api.v1.endpoints.health.get_settings", return_value=settings),
+            patch("app.api.v1.endpoints.health.assert_hosted_release_schema_ready"),
+            patch(
+                "app.api.v1.endpoints.health.process_rss_observability.observe_process_rss",
+                side_effect=RuntimeError("observer internal detail"),
+            ),
+        ):
+            response = self.client.get("/api/v1/health/ready")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ready")
+        self.assertNotIn("observer internal detail", response.text)
 
     def test_readiness_reports_only_the_sanitized_configured_stripe_mode(self):
         stripe_secret_key = "sk_test_not_a_real_provider_credential"
