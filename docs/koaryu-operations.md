@@ -87,11 +87,11 @@ The owner is the current incident and provider-alert recipient; email is preferr
 
 - Provisional planning targets are RPO of no more than 24 hours and RTO of no more than 4 hours. Neither target is a verified promise today.
 - The five encrypted production backup artifacts were verified on a second machine with matching names, sizes, mode `0600`, and SHA-256 hashes. This is a second-machine copy, not proven geographic or provider-independent off-site recovery.
-- The Supabase organization is currently on the Free plan, with no proven native daily-backup or PITR entitlement. The latest encrypted capture exceeded the provisional 24-hour RPO during the Phase 0 audit.
+- The Supabase organization is currently on the Free plan. A 2026-07-28 provider readback listed zero production or staging backups and reported PITR disabled for both projects; enabled WAL-G plumbing is not treated as a restore point. The July 10 encrypted capture is outside the provisional 24-hour RPO.
 - The hosted restore drill recovered database/Auth structure and validated counts, but an authenticated tenant-safe application read from the restored target remains unproven.
 - The encryption key remains in macOS Keychain. Copying the recovery key to a physically controlled flash drive is an outstanding human-only step; do not put it in the repository, cloud notes, or release evidence.
 
-Use [Staging and Recovery Runbook](staging-recovery-runbook.md) for backup and restore procedure and [Release Ledger](release-ledger.md) for the exact application rollback contract. An application rollback redeploys the named prior application SHA. A released additive migration is corrected forward; do not rewrite migration history or restore over production as an ordinary rollback.
+Use [Staging and Recovery Runbook](staging-recovery-runbook.md) for backup and restore procedure, [Authentication and Backup Control Inventory](audit-notes/authentication-backup-controls.md) for provider controls and approval decisions, and [Release Ledger](release-ledger.md) for the exact application rollback contract. An application rollback redeploys the named prior application SHA. A released additive migration is corrected forward; do not rewrite migration history or restore over production as an ordinary rollback.
 
 ## Explicit deferrals
 
