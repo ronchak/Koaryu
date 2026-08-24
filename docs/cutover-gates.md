@@ -6,6 +6,10 @@ rollout script, `docs/render-backend-deployment.md` for Render. This file covers
 the things those docs do not, all of which were found the hard way during the
 2026-08-15 cutover.
 
+The production PostgreSQL image patch has a separate backup, exact-image restore,
+provider request, and readback packet in
+[`production-postgres-image-patch.md`](production-postgres-image-patch.md).
+
 Read this before merging a release candidate, migrating a hosted database, or
 promoting a frontend.
 

@@ -2,6 +2,12 @@ DO $$
 DECLARE
     v_function RECORD;
     v_is_authenticated_helper BOOLEAN;
+    v_original_role NAME := current_user;
+    v_canary_schema NAME;
+    v_canary_name CONSTANT NAME := 'authorization_test_canary';
+    v_canary_oid OID;
+    v_denied BOOLEAN;
+    v_liveness INTEGER;
 BEGIN
     IF has_schema_privilege('anon', 'public', 'CREATE')
        OR has_schema_privilege('authenticated', 'public', 'CREATE') THEN
@@ -109,5 +115,83 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'set_student_is_minor must pin search_path to pg_catalog';
     END IF;
+
+    EXECUTE format($canary_create$
+        CREATE FUNCTION pg_temp.%I()
+        RETURNS void
+        LANGUAGE plpgsql
+        SECURITY INVOKER
+        SET search_path = pg_catalog
+        AS $canary_body$
+        BEGIN
+            RETURN;
+        END
+        $canary_body$
+    $canary_create$, v_canary_name);
+    SELECT nspname
+    INTO v_canary_schema
+    FROM pg_namespace
+    WHERE oid = pg_my_temp_schema();
+    SELECT p.oid
+    INTO v_canary_oid
+    FROM pg_proc AS p
+    JOIN pg_namespace AS n ON n.oid = p.pronamespace
+    WHERE n.nspname = v_canary_schema
+      AND p.proname = v_canary_name
+      AND pg_get_function_identity_arguments(p.oid) = '';
+    IF NOT has_schema_privilege('anon', v_canary_schema, 'USAGE')
+       OR NOT has_schema_privilege('authenticated', v_canary_schema, 'USAGE') THEN
+        EXECUTE format(
+            'GRANT USAGE ON SCHEMA %I TO anon, authenticated',
+            v_canary_schema
+        );
+    END IF;
+    EXECUTE format(
+        'REVOKE EXECUTE ON FUNCTION %I.%I() FROM PUBLIC, anon, authenticated',
+        v_canary_schema, v_canary_name
+    );
+    IF NOT has_schema_privilege('anon', v_canary_schema, 'USAGE')
+       OR NOT has_schema_privilege('authenticated', v_canary_schema, 'USAGE')
+       OR has_function_privilege('public', v_canary_oid, 'EXECUTE')
+       OR has_function_privilege('anon', v_canary_oid, 'EXECUTE')
+       OR has_function_privilege('authenticated', v_canary_oid, 'EXECUTE') THEN
+        RAISE EXCEPTION 'Authorization canary boundary is not schema-usable with function EXECUTE revoked.';
+    END IF;
+    RAISE NOTICE 'authorization_canary boundary schema=% schema_usage=anon,authenticated function_execute=none', v_canary_schema;
+
+    SET LOCAL ROLE anon;
+    v_denied := false;
+    BEGIN
+        EXECUTE format('SELECT %I.%I()', v_canary_schema, v_canary_name);
+    EXCEPTION WHEN SQLSTATE '42501' THEN
+        v_denied := true;
+    END;
+    IF NOT v_denied THEN
+        RAISE EXCEPTION 'anon authorization canary invocation was not denied with SQLSTATE 42501.';
+    END IF;
+    SELECT 1 INTO v_liveness;
+    IF v_liveness <> 1 THEN
+        RAISE EXCEPTION 'anon authorization canary session liveness check failed.';
+    END IF;
+    RAISE NOTICE 'authorization_canary role=anon sqlstate=42501 same_session_liveness=%', v_liveness;
+
+    SET LOCAL ROLE authenticated;
+    v_denied := false;
+    BEGIN
+        EXECUTE format('SELECT %I.%I()', v_canary_schema, v_canary_name);
+    EXCEPTION WHEN SQLSTATE '42501' THEN
+        v_denied := true;
+    END;
+    IF NOT v_denied THEN
+        RAISE EXCEPTION 'authenticated authorization canary invocation was not denied with SQLSTATE 42501.';
+    END IF;
+    SELECT 1 INTO v_liveness;
+    IF v_liveness <> 1 THEN
+        RAISE EXCEPTION 'authenticated authorization canary session liveness check failed.';
+    END IF;
+    RAISE NOTICE 'authorization_canary role=authenticated sqlstate=42501 same_session_liveness=%', v_liveness;
+
+    EXECUTE format('SET LOCAL ROLE %I', v_original_role);
+    EXECUTE format('DROP FUNCTION %I.%I()', v_canary_schema, v_canary_name);
 END
 $$;
