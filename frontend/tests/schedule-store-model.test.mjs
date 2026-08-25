@@ -7,6 +7,7 @@ import {
   compareSessions,
   createScheduleCoordinatorState,
   createScheduleReconciliationQueue,
+  discardSupersededScheduleWindowFailure,
   fetchScheduleWindowRange,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
@@ -172,6 +173,25 @@ describe("schedule store model", () => {
       /schedule window unavailable/
     );
     assert.equal(requests, 1);
+  });
+
+  it("discards only failures from schedule window reads that became superseded", async () => {
+    const failure = new Error("schedule window unavailable");
+
+    assert.equal(
+      await discardSupersededScheduleWindowFailure(
+        async () => { throw failure; },
+        () => false
+      ),
+      undefined
+    );
+    await assert.rejects(
+      discardSupersededScheduleWindowFailure(
+        async () => { throw failure; },
+        () => true
+      ),
+      /schedule window unavailable/
+    );
   });
 
   it("rejects stale reads after a newer request or schedule mutation", () => {

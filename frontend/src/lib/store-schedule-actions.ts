@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import {
   beginScheduleMutationState,
   compareSessions,
+  discardSupersededScheduleWindowFailure,
   fetchScheduleWindowRange,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
@@ -186,18 +187,31 @@ export function useStoreScheduleActions({
         mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
         requestSequenceAtStart: attendanceRequestSequence,
       });
-      const scheduleWindow = await fetchScheduleWindowRange(
-        api,
-        request.token,
-        startDate,
-        endDate,
-        intent,
-        canMaterializeSchedule
+      const isCurrentScheduleWindowRead = () =>
+        isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent());
+      const scheduleWindow = await discardSupersededScheduleWindowFailure(
+        () => fetchScheduleWindowRange(
+          api,
+          request.token,
+          startDate,
+          endDate,
+          intent,
+          canMaterializeSchedule
+        ),
+        isCurrentScheduleWindowRead
       );
+      if (!scheduleWindow) {
+        return {
+          committed: false,
+          value: sessionsRef.current.filter(
+            (session) => session.date >= startDate && session.date <= endDate
+          ),
+        };
+      }
       const rangeSessions = scheduleWindow.sessions;
       const attendanceRecords = normalizeAttendanceRecords(scheduleWindow.attendance);
 
-      if (!isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent())) {
+      if (!isCurrentScheduleWindowRead()) {
         return { committed: false, value: rangeSessions };
       }
 

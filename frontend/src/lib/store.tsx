@@ -65,6 +65,7 @@ import {
   createScheduleReconciliationQueue,
   createScheduleCoordinatorState,
   compareSessions,
+  discardSupersededScheduleWindowFailure,
   fetchScheduleWindowRange,
   isAuthoritativeScheduleReady,
   isScheduleReadCurrent,
@@ -305,37 +306,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       rangeRequestSequence,
     };
 
-    const scheduleWindow = await fetchScheduleWindowRange(
-      api,
-      request.token,
-      startDate,
-      endDate,
-      intent,
-      canMaterializeScheduleRange(currentRole)
+    const isCurrentScheduleWindowRead = () => {
+      const current = scheduleCoordinatorRef.current;
+      const sessionsAreCurrent = isScheduleReadCurrent({
+        authCurrent: request.isCurrent(),
+        currentGeneration: current.generation,
+        currentDataRevision: current.dataRevision,
+        currentRequestSequence: current.rangeRequestSequence,
+        dataRevisionAtStart: dataRevision,
+        generationAtStart: generation,
+        mutationsInFlight: current.mutationsInFlight,
+        requestSequenceAtStart: rangeRequestSequence,
+      });
+      const attendanceIsCurrent = isScheduleReadCurrent({
+        authCurrent: request.isCurrent(),
+        currentGeneration: current.generation,
+        currentDataRevision: current.dataRevision,
+        currentRequestSequence: current.attendanceRequestSequence,
+        dataRevisionAtStart: dataRevision,
+        generationAtStart: generation,
+        mutationsInFlight: current.mutationsInFlight,
+        requestSequenceAtStart: attendanceRequestSequence,
+      });
+      return sessionsAreCurrent && attendanceIsCurrent;
+    };
+    const scheduleWindow = await discardSupersededScheduleWindowFailure(
+      () => fetchScheduleWindowRange(
+        api,
+        request.token,
+        startDate,
+        endDate,
+        intent,
+        canMaterializeScheduleRange(currentRole)
+      ),
+      isCurrentScheduleWindowRead
     );
 
-    const current = scheduleCoordinatorRef.current;
-    const sessionsAreCurrent = isScheduleReadCurrent({
-      authCurrent: request.isCurrent(),
-      currentGeneration: current.generation,
-      currentDataRevision: current.dataRevision,
-      currentRequestSequence: current.rangeRequestSequence,
-      dataRevisionAtStart: dataRevision,
-      generationAtStart: generation,
-      mutationsInFlight: current.mutationsInFlight,
-      requestSequenceAtStart: rangeRequestSequence,
-    });
-    const attendanceIsCurrent = isScheduleReadCurrent({
-      authCurrent: request.isCurrent(),
-      currentGeneration: current.generation,
-      currentDataRevision: current.dataRevision,
-      currentRequestSequence: current.attendanceRequestSequence,
-      dataRevisionAtStart: dataRevision,
-      generationAtStart: generation,
-      mutationsInFlight: current.mutationsInFlight,
-      requestSequenceAtStart: attendanceRequestSequence,
-    });
-    if (!sessionsAreCurrent || !attendanceIsCurrent) {
+    if (!scheduleWindow || !isCurrentScheduleWindowRead()) {
       return;
     }
 
