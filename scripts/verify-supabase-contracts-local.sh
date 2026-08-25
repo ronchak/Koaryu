@@ -849,6 +849,37 @@ if [[ "$critical_surface_manifest" != "0:31bec59b620eaa151c33cae2da08f533087e888
 fi
 echo "[critical-surface manifest] PASS archive, checkout, and promotion identity signal"
 
+echo "[schedule-window manifest] RUN read RPC definition and ACL signal"
+schedule_window_manifest="$(
+  "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT private.koaryu_release_schedule_window_manifest_v1();
+"
+)"
+if [[ "$schedule_window_manifest" != "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7" ]]; then
+  echo "[schedule-window manifest] FAIL read RPC definition and ACL signal: $schedule_window_manifest" >&2
+  exit 1
+fi
+echo "[schedule-window manifest] PASS read RPC definition and ACL signal"
+
+echo "[V25 readiness] RUN exact final migration and manifest signal"
+operational_readiness="$({
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"
+} | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+if (
+  cd "$ROOT_DIR"
+  node --input-type=module --eval \
+    "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
+    "$operational_readiness"
+); then
+  echo "[V25 readiness] PASS exact final migration and manifest signal"
+else
+  status=$?
+  echo "[V25 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
+  exit "$status"
+fi
+
 echo "[catalog] RUN deterministic raw catalog security fingerprint"
 catalog_state="$({
   cd "$ROOT_DIR"
@@ -979,7 +1010,7 @@ assert_attestation_rejects() {
       node --input-type=module --eval \
         "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v4();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v5();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
   actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
@@ -1008,7 +1039,7 @@ assert_preflight_rejects() {
   echo "[attestation negative] RUN $label"
   actual_v2_ready="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v4();\nROLLBACK;\n'
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v5();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   if [[ "$actual_v2_ready" != "f" ]]; then
     echo "[attestation negative] FAIL V2 readiness result for $label: $actual_v2_ready" >&2
@@ -1213,6 +1244,18 @@ assert_attestation_rejects \
 assert_preflight_rejects \
   "dashboard RPC service-role grant drift" \
   "REVOKE EXECUTE ON FUNCTION public.dashboard_summary_facts(uuid, text, text, date, text) FROM service_role;"
+assert_attestation_rejects \
+  "schedule-window RPC body drift" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.schedule_window_read(uuid,date,date,text)'::regprocedure;" \
+  "f"
+assert_attestation_rejects \
+  "schedule-window RPC service-role grant drift" \
+  "REVOKE EXECUTE ON FUNCTION public.schedule_window_read(uuid,date,date,text) FROM service_role;" \
+  "f"
+assert_attestation_rejects \
+  "schedule-window manifest helper self-body drift (external authority only)" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_schedule_window_manifest_v1()'::regprocedure;" \
+  "t"
 assert_attestation_rejects \
   "promotion operation receipt column drift" \
   "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \

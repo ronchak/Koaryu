@@ -137,6 +137,7 @@ export type ClassSessionCreate = ApiContracts.ApiClassSessionCreate;
 export type ClassSession = ApiContracts.ApiClassSessionResponse;
 export type AttendanceStatus = ApiContracts.ApiAttendanceResponse["status"];
 export type AttendanceRecord = ApiContracts.ApiAttendanceResponse;
+export type ScheduleWindow = ApiContracts.ApiScheduleWindowResponse;
 
 export type ClassSessionDeleteScope = ApiContracts.ApiClassSessionDeleteScope["scope"];
 

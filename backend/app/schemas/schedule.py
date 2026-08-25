@@ -199,3 +199,25 @@ class AttendanceResponse(BaseModel):
 class AttendanceBulkCheckIn(BaseModel):
     session_id: str
     check_ins: list[AttendanceCheckIn]
+
+
+# ---- Page read model ----
+
+class ScheduleWindowRange(BaseModel):
+    start_date: str
+    end_date: str
+    day_count: int = Field(ge=1, le=93)
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_date_format(cls, value: str) -> str:
+        _parse_schedule_date(value)
+        return value
+
+
+class ScheduleWindowResponse(BaseModel):
+    contract_version: Literal["schedule-window-v1"]
+    range: ScheduleWindowRange
+    templates: list[ClassTemplateResponse]
+    sessions: list[ClassSessionResponse]
+    attendance: list[AttendanceResponse]

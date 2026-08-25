@@ -12,6 +12,40 @@ Direct PostgreSQL access remains out of scope. Reconsider it only if realistic
 250-student and 2,500-student load tests show that the RPC path misses a stated
 user-facing latency target.
 
+Dashboard summary facts already use one `dashboard_summary_facts` RPC. The
+server-paginated Students roster already uses one `list_student_roster` RPC.
+Those paths remain unchanged.
+
+Schedule now loads one bounded page projection from `GET /schedule/window`.
+After FastAPI resolves the authorized studio, the endpoint calls the
+service-role-only `schedule_window_read` RPC once and returns active templates,
+sessions in the requested range, and attendance for those sessions. The read is
+limited to 93 days and never materializes recurring sessions.
+
+Authorized calendar workflows still materialize recurring sessions through a
+POST. `POST /schedule/window/materialize` performs the existing write RPC, then
+calls the same read RPC. The two database operations are deliberate: the write
+commits recurring occurrences, and the read returns one validated page model.
+
+Billing still makes several independent initial requests. Its permission and
+payment-state boundaries need a separate read-model design and are not changed
+here.
+
+### Release order and rollback
+
+Apply the two additive database migrations before deploying the backend and
+frontend. The old Schedule endpoints remain available during rollout. If the
+new window path needs to be rolled back, restore the frontend first, then the
+backend. The unused read RPC can remain in the database until a later additive
+cleanup migration removes it.
+
+Migration `20260825043911` keeps `koaryu_release_schema_preflight_v4` returning
+the exact V24-shaped row after V25 lands, so the currently deployed backend
+stays healthy during database-first rollout. The new backend uses
+`koaryu_release_schema_preflight_v5`. Remove the V24 bridge in a later additive
+migration only after both hosted backends have deployed the V25-aware release
+and exact hosted readback is recorded.
+
 ## Rollout Switches
 
 Backend:

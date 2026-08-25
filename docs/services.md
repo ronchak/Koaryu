@@ -69,6 +69,7 @@ Both web services and the staging billing-transition cron are declared in
 | URL | `https://koaryu.onrender.com` | `https://koaryu-staging.onrender.com` |
 | Tracks branch | `main` | `staging` |
 | Runtime | Docker, Python 3.11.9 + jemalloc | Docker, Python 3.11.9 + jemalloc |
+| Region | Oregon | Oregon |
 | Plan | `starter` (paid) | `free` |
 | Auto-deploy | off | off |
 | Health check | `/health/ready` | `/health/ready` |
@@ -86,6 +87,11 @@ release task.
 The two web services track **different branches**. Deploying a commit to staging means
 moving the `staging` branch to it first — `git push origin main:staging` — and
 then triggering a manual deploy, because auto-deploy is off on both.
+
+The Render API reported both live services in Oregon on 2026-08-24. Render does
+not support changing an existing service's region. The Oregon declarations in
+`render.yaml` record the existing immutable placement; they do not move or
+replace either service.
 
 The staging service is on the free plan, which sleeps after roughly 15 minutes of
 inactivity. A slow or absent first response is usually spin-up, not a fault. If it

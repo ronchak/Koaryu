@@ -1,4 +1,10 @@
-import type { AttendanceRecord, AttendanceStatus, ClassSession, ClassTemplate } from "@/types";
+import type {
+  AttendanceRecord,
+  AttendanceStatus,
+  ClassSession,
+  ClassTemplate,
+  ScheduleWindow,
+} from "@/types";
 import { getLatestAttendanceRecord } from "./attendance-record-model.ts";
 
 const ATTENDANCE_TOGGLE_CYCLE: AttendanceStatus[] = ["present", "late", "absent"];
@@ -200,6 +206,11 @@ export async function runScheduleRangeRefreshWithRetry<T>(
 
 export type ScheduleRangeRefreshIntent = "read" | "materialize";
 
+export interface ScheduleWindowTransport {
+  get<T>(path: string, token: string): Promise<T>;
+  post<T>(path: string, body: unknown, token: string): Promise<T>;
+}
+
 export function buildScheduleRangeRequest(
   startDate: string,
   endDate: string,
@@ -211,9 +222,28 @@ export function buildScheduleRangeRequest(
   return {
     method: shouldMaterialize ? "POST" as const : "GET" as const,
     path: shouldMaterialize
-      ? `/schedule/sessions/materialize?${rangeQuery}`
-      : `/schedule/sessions?${rangeQuery}`,
+      ? `/schedule/window/materialize?${rangeQuery}`
+      : `/schedule/window?${rangeQuery}`,
   };
+}
+
+export async function fetchScheduleWindowRange(
+  transport: ScheduleWindowTransport,
+  token: string,
+  startDate: string,
+  endDate: string,
+  intent: ScheduleRangeRefreshIntent,
+  canMaterialize: boolean
+): Promise<ScheduleWindow> {
+  const request = buildScheduleRangeRequest(
+    startDate,
+    endDate,
+    intent,
+    canMaterialize
+  );
+  return request.method === "POST"
+    ? transport.post<ScheduleWindow>(request.path, {}, token)
+    : transport.get<ScheduleWindow>(request.path, token);
 }
 
 export type ScheduleCoordinatorState = {

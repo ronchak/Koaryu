@@ -40,8 +40,18 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-Staging and production are both at 117/head `20260824190500`/V24. Hosted
-application readiness accepts only that exact V24 row; the temporary V22 and
+Staging and production were last verified at 117/head `20260824190500`/V24.
+This release candidate advances the database to 119/head
+`20260825043911`/V25 through the schedule-window RPC and its attestation
+migration. The guarded rollout tool classifies the live starting point as
+`verified-v24` and permits exactly those two pending migrations.
+
+The currently deployed backend still accepts only the exact V24 row. Migration
+119 keeps `koaryu_release_schema_preflight_v4` returning that V24-shaped result
+after V25 lands, while the new backend reads exact V25 state from
+`koaryu_release_schema_preflight_v5`. Remove this bridge through a later
+additive migration only after both hosted backends run the V25-aware release.
+The temporary V22 and
 V23 application bridges were removed after production hosted readback. The
 rollout tool retains exact historical `restored-v22`, `canonical-v23`, and
 `restored-v23-pending-v24` classifications only for diagnosis of a proved
@@ -65,13 +75,15 @@ post-110 rollback set. A database still at exact 110 must classify
 `20260820060216_atomic_bulk_student_archive.sql`,
 `20260822193000_revoke_client_read_access.sql`,
 `20260823193155_revoke_public_function_execute.sql`, and
-`20260824190500_attest_verified_restore_manifest.sql`. If a future approved
+`20260824190500_attest_verified_restore_manifest.sql`,
+`20260825042838_schedule_window_read_rpc.sql`, and
+`20260825043911_attest_schedule_window_release.sql`. If a future approved
 disaster recovery explicitly returns production to the proved restored V22
 snapshot, it must classify exact `state=restored-v22` and dry-run only
-migrations 116 and 117. These are hypothetical forward-recovery cases, not the
-current live state. In either case, only the authorized operator runs the
-production apply gate, and promotion remains blocked until migration 117
-produces exact V24 readiness and the final raw catalog/provider fingerprint.
+migrations 116 through 119. These are hypothetical forward-recovery cases, not
+the current live state. In either case, only the authorized operator runs the
+production apply gate, and promotion remains blocked until migration 119
+produces exact V25 readiness and the final raw catalog/provider fingerprint.
 
 ## Gates that will refuse you
 

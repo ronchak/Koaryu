@@ -1223,6 +1223,20 @@ export interface ApiPromotionResponse {
   to_rank_name?: string | null;
 }
 
+export interface ApiScheduleWindowRange {
+  start_date: string;
+  end_date: string;
+  day_count: number;
+}
+
+export interface ApiScheduleWindowResponse {
+  contract_version: "schedule-window-v1";
+  range: ApiScheduleWindowRange;
+  templates: ApiClassTemplateResponse[];
+  sessions: ApiClassSessionResponse[];
+  attendance: ApiAttendanceResponse[];
+}
+
 export interface ApiStaffDeletionRequestCreate {
   confirmation_name: string;
   reason?: string | null;

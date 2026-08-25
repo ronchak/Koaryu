@@ -1,6 +1,27 @@
 # Studio-Comp Migration Rollout
 
-Status: **complete at migration 117/head 20260824190500 on staging and production; exact V24 hosted readback recorded**
+Status: **V24 is the verified live starting point; this release candidate targets migration 119/head 20260825043911 and V25**
+
+## Schedule-window release extension
+
+The completed V24 rollout remains the historical base described below. The
+current candidate adds exactly two migrations:
+
+- `20260825042838_schedule_window_read_rpc.sql`
+- `20260825043911_attest_schedule_window_release.sql`
+
+The guarded tool now classifies exact migration 117/head `20260824190500` as
+`verified-v24`. From that state, dry-run and apply may select only the two files
+above. The only candidate post-state is migration 119/head `20260825043911`
+with `release-db-attestation-v25` and the exact V25 catalog fingerprint.
+
+Migration 119 provides a temporary V24-shaped `preflight_v4` compatibility
+response so the deployed backend remains healthy during database-first
+rollout. The candidate backend uses `preflight_v5`. Remove the compatibility
+response in a later additive migration after both hosted backends have exact
+V25 readback.
+
+## Historical V24 rollout record
 
 This packet records the completed reconciliation from the production
 100-migration V7 baseline through canonical staging V23 and restored production

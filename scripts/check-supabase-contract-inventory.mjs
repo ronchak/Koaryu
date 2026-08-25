@@ -39,6 +39,7 @@ export const EXPECTED_SUPABASE_CONTRACTS = Object.freeze([
   "recurring_session_materialization_atomic_contract.sql",
   "remaining_operational_client_write_controls.sql",
   "schedule_recurring_soft_delete_contract.sql",
+  "schedule_window_read_contract.sql",
   "stripe_event_worker_claim_controls.sql",
   "student_import_row_atomic_contract.sql",
   "student_import_run_worker_claim_controls.sql",

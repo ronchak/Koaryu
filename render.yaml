@@ -3,7 +3,7 @@ services:
     name: koaryu
     runtime: docker
     plan: starter
-    region: ohio
+    region: oregon
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -95,7 +95,7 @@ services:
     name: koaryu-staging
     runtime: docker
     plan: free
-    region: ohio
+    region: oregon
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
