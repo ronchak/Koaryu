@@ -240,11 +240,17 @@ class ScheduleServiceTest(unittest.TestCase):
         )])
 
     def test_schedule_window_rejects_missing_malformed_and_cross_tenant_output(self):
+        attendance_outside_sessions = schedule_window_payload()
+        attendance_outside_sessions["attendance"][0]["session_id"] = "session-other"
+        session_outside_range = schedule_window_payload()
+        session_outside_range["sessions"][0]["date"] = "2026-05-25"
         malformed_payloads = [
             None,
             {"contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION},
             schedule_window_payload(studio_id="studio-2"),
             schedule_window_payload(start_date="2026-05-25", end_date="2026-05-25"),
+            attendance_outside_sessions,
+            session_outside_range,
         ]
         for payload in malformed_payloads:
             with self.subTest(payload=payload):

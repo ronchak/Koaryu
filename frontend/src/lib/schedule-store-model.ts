@@ -246,6 +246,20 @@ export async function fetchScheduleWindowRange(
     : transport.get<ScheduleWindow>(request.path, token);
 }
 
+export async function discardSupersededScheduleWindowFailure<T>(
+  request: () => Promise<T>,
+  isCurrent: () => boolean
+): Promise<T | undefined> {
+  try {
+    return await request();
+  } catch (error) {
+    if (!isCurrent()) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 export type ScheduleCoordinatorState = {
   attendanceRequestSequence: number;
   dataRevision: number;

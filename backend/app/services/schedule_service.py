@@ -154,6 +154,17 @@ class ScheduleService:
                 detail="Schedule window RPC returned attendance for another studio.",
             )
 
+        expected_start = date.fromisoformat(start_date)
+        expected_end = date.fromisoformat(end_date)
+        if any(
+            not expected_start <= ScheduleService._parse_date(item.date) <= expected_end
+            for item in window.sessions
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned a session outside the requested date range.",
+            )
+
         session_ids = {item.id for item in window.sessions}
         if any(item.session_id not in session_ids for item in window.attendance):
             raise HTTPException(
