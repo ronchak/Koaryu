@@ -2,6 +2,16 @@
 
 This runbook covers the v0.1.1 rendering and roster-performance changes. It is intentionally conservative: FastAPI remains the authorization wall, authenticated CRM data remains uncached, and every rollback switch favors correctness over speed.
 
+## Read-path architecture decision
+
+Koaryu will keep FastAPI in front of Supabase and use page-specific RPCs for
+critical read projections. The first optimization is fewer database round
+trips, not a second persistence layer.
+
+Direct PostgreSQL access remains out of scope. Reconsider it only if realistic
+250-student and 2,500-student load tests show that the RPC path misses a stated
+user-facing latency target.
+
 ## Rollout Switches
 
 Backend:
