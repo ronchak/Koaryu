@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.api.v1.endpoints import belts, leads, schedule, students
 from app.core.deps import (
     get_belt_configuration_admin_studio_id,
+    get_current_studio_id,
     get_current_user_id,
     get_current_write_staff_role,
     get_current_write_studio_id,
@@ -74,6 +75,7 @@ def _routes(*values: tuple[str, str]) -> set[tuple[str, str]]:
 AFFECTED_ROUTE_DEPENDENCIES = {
     get_current_write_studio_id: _routes(
         ("POST", "/students/{student_id}/photo"),
+        ("POST", "/schedule/window/materialize"),
         ("POST", "/schedule/sessions/materialize"),
         ("POST", "/schedule/attendance"),
         ("DELETE", "/schedule/attendance"),
@@ -435,6 +437,50 @@ class StaffPermissionPolicyTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         service_class.return_value.materialize_session_range.assert_awaited_once_with(
+            "studio-a",
+            "2026-07-13",
+            "2026-07-19",
+        )
+
+    def test_schedule_window_read_uses_the_authoritative_studio_dependency(self):
+        route = next(
+            route
+            for route in schedule.router.routes
+            if isinstance(route, APIRoute)
+            and route.path == "/schedule/window"
+            and "GET" in route.methods
+        )
+
+        self.assertIn(get_current_studio_id, _dependency_calls(route.dependant))
+
+        test_app = FastAPI()
+        test_app.include_router(schedule.router)
+        test_app.dependency_overrides[get_current_studio_id] = lambda: "studio-a"
+        test_app.dependency_overrides[get_supabase] = lambda: TableBackedSupabase()
+        payload = {
+            "contract_version": "schedule-window-v1",
+            "range": {
+                "start_date": "2026-07-13",
+                "end_date": "2026-07-19",
+                "day_count": 7,
+            },
+            "templates": [],
+            "sessions": [],
+            "attendance": [],
+        }
+        with patch("app.api.v1.endpoints.schedule.ScheduleService") as service_class:
+            service_class.return_value.read_schedule_window = AsyncMock(return_value=payload)
+            response = TestClient(test_app).get(
+                "/schedule/window",
+                params={
+                    "start_date": "2026-07-13",
+                    "end_date": "2026-07-19",
+                    "studio_id": "studio-b",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        service_class.return_value.read_schedule_window.assert_awaited_once_with(
             "studio-a",
             "2026-07-13",
             "2026-07-19",

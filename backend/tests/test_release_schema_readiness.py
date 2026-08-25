@@ -46,6 +46,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "migration_count": 110},
             {**exact_preflight_row(), "migration_count": 115},
             {**exact_preflight_row(), "migration_count": 116},
+            {**exact_preflight_row(), "migration_count": 117},
             {**exact_preflight_row(), "migration_head": "20260801080000"},
             {**exact_preflight_row(), "migration_head": "20260801105313"},
             {**exact_preflight_row(), "migration_head": "20260801112153"},
@@ -60,6 +61,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "migration_head": "20260815220402"},
             {**exact_preflight_row(), "migration_head": "20260822193000"},
             {**exact_preflight_row(), "migration_head": "20260823193155"},
+            {**exact_preflight_row(), "migration_head": "20260824190500"},
             {**exact_preflight_row(), "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:-1]},
             {**exact_preflight_row(), "security_failures": ["table:missing"]},
             {**exact_preflight_row(), "manifest_version": "stale-manifest"},
@@ -77,6 +79,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v17"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v22"},
             {**exact_preflight_row(), "manifest_version": "release-db-attestation-v23"},
+            {**exact_preflight_row(), "manifest_version": "release-db-attestation-v24"},
         ]
         for row in mismatches:
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):
@@ -97,7 +100,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v4", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v5", {})])
 
     def test_success_cache_rechecks_only_after_ttl(self):
         now = [10.0]

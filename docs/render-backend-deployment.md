@@ -12,7 +12,7 @@ Expected service settings:
 - Type: Web Service
 - Runtime: Docker
 - Plan: `starter`
-- Region: Ohio
+- Region: Oregon
 - Root directory: `backend`
 - Dockerfile path: `./Dockerfile`
 - Docker context: `.`

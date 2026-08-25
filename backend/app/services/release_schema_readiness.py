@@ -9,9 +9,9 @@ from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
-EXPECTED_RELEASE_MIGRATION_COUNT = 117
-EXPECTED_RELEASE_MIGRATION_HEAD = "20260824190500"
-EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v24"
+EXPECTED_RELEASE_MIGRATION_COUNT = 119
+EXPECTED_RELEASE_MIGRATION_HEAD = "20260825043911"
+EXPECTED_RELEASE_MANIFEST_VERSION = "release-db-attestation-v25"
 EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260727100000",
     "20260727110000",
@@ -46,6 +46,8 @@ EXPECTED_RELEASE_PENDING_VERSIONS = [
     "20260822193000",
     "20260823193155",
     "20260824190500",
+    "20260825042838",
+    "20260825043911",
 ]
 HOSTED_READINESS_SUCCESS_TTL_SECONDS = 30.0
 
@@ -107,7 +109,7 @@ def assert_hosted_release_schema_ready() -> None:
     try:
         result = execute_required_rpc(
             client,
-            "koaryu_release_schema_preflight_v4",
+            "koaryu_release_schema_preflight_v5",
             {},
         )
         validate_release_schema_preflight(first_rpc_row(result))
