@@ -47,6 +47,7 @@ describe("schedule range intent contracts", () => {
   it("uses one schedule-window request instead of templates, sessions, and attendance fan-out", () => {
     for (const readPath of [initialReconciliationSource, rangeRefreshSource]) {
       assert.match(readPath, /fetchScheduleWindowRange\(/);
+      assert.match(readPath, /setTemplates\(scheduleWindow\.templates\)/);
       assert.doesNotMatch(readPath, /Promise\.allSettled/);
       assert.doesNotMatch(readPath, /\/schedule\/templates/);
       assert.doesNotMatch(readPath, /\/schedule\/attendance/);
