@@ -57,22 +57,18 @@ BEGIN
     VALUES (v_studio, 'Billing operation verification', 'billing-operation-' || replace(v_studio::TEXT, '-', ''), v_owner);
     INSERT INTO public.staff_roles(studio_id, user_id, role)
     VALUES (v_studio, v_owner, 'admin'), (v_studio, v_reader, 'front_desk');
-    -- Older contract fixtures use a deliberately synthetic account id that
-    -- predates the Stripe-id shape guard. Seed only the task-owned mapping row
-    -- without exercising that unrelated trigger.
-    PERFORM set_config('session_replication_role', 'replica', true);
+    -- Use a Stripe-shaped synthetic account so the real mapping trigger remains active.
     INSERT INTO public.studio_payment_accounts(
         studio_id, stripe_connected_account_id, metadata
     ) VALUES (
-        v_studio, 'acct_operation_contract',
+        v_studio, 'acct_OperationContract123',
         jsonb_build_object('connect_account_generation', 1)
     );
-    PERFORM set_config('session_replication_role', 'origin', true);
     INSERT INTO public.billing_payers(
         id, studio_id, display_name, stripe_account_id, stripe_customer_id
     ) VALUES (
         v_payer, v_studio, 'Operation payer',
-        'acct_operation_contract', 'cus_operation_contract'
+        'acct_OperationContract123', 'cus_operation_contract'
     );
     IF (SELECT connect_account_generation FROM public.billing_payers WHERE id = v_payer)
        IS NOT NULL THEN
@@ -103,7 +99,7 @@ BEGIN
         id, studio_id, display_name, stripe_account_id,
         stripe_customer_id, connect_account_generation
     ) VALUES (
-        v_clear_payer, v_studio, 'Clearable payer', 'acct_operation_contract',
+        v_clear_payer, v_studio, 'Clearable payer', 'acct_OperationContract123',
         'cus_clearable_contract', 1
     );
     UPDATE public.billing_payers
@@ -124,7 +120,7 @@ BEGIN
     END IF;
     BEGIN
         UPDATE public.billing_payers
-        SET stripe_account_id = 'acct_operation_contract'
+        SET stripe_account_id = 'acct_OperationContract123'
         WHERE id = v_clear_payer;
         RAISE EXCEPTION 'A partial payer provider identity was accepted.';
     EXCEPTION WHEN check_violation THEN
@@ -133,7 +129,7 @@ BEGIN
 
     v_result := public.claim_billing_provider_operation_v1(
         v_studio, v_owner, 'invoice.create', 'invoice-operation-key', repeat('a', 64),
-        'acct_operation_contract', 1, v_lease, 30
+        'acct_OperationContract123', 1, v_lease, 30
     );
     v_operation_id := (v_result->'operation'->>'id')::UUID;
     IF v_result->>'outcome' <> 'claimed'
@@ -143,7 +139,7 @@ BEGIN
 
     v_result := public.claim_billing_provider_operation_v1(
         v_studio, v_owner, 'invoice.create', 'invoice-operation-key', repeat('a', 64),
-        'acct_operation_contract', 1, v_lease, 30
+        'acct_OperationContract123', 1, v_lease, 30
     );
     IF v_result->>'outcome' <> 'claimed' OR (v_result->'operation'->>'id')::UUID <> v_operation_id THEN
         RAISE EXCEPTION 'Same-key replay did not return the same operation.';
@@ -152,7 +148,7 @@ BEGIN
     BEGIN
         PERFORM public.claim_billing_provider_operation_v1(
             v_studio, v_owner, 'invoice.create', 'invoice-operation-key', repeat('b', 64),
-            'acct_operation_contract', 1, v_lease, 30
+            'acct_OperationContract123', 1, v_lease, 30
         );
         RAISE EXCEPTION 'Expected same workflow key with another hash to conflict.';
     EXCEPTION WHEN unique_violation THEN
@@ -162,12 +158,12 @@ BEGIN
     -- The same caller key is legal for a different product workflow.
     PERFORM public.claim_billing_provider_operation_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice-operation-key', repeat('c', 64),
-        'acct_operation_contract', 1, gen_random_uuid(), 30
+        'acct_OperationContract123', 1, gen_random_uuid(), 30
     );
 
     v_result := public.read_billing_provider_operation_v1(
         v_operation_id, v_studio, v_reader, 'invoice.create', 'invoice-operation-key',
-        repeat('a', 64), 'acct_operation_contract', 1
+        repeat('a', 64), 'acct_OperationContract123', 1
     );
     IF v_result->>'outcome' <> 'read' OR (v_result->'operation'->>'actor_id')::UUID <> v_owner THEN
         RAISE EXCEPTION 'Active Front Desk readback did not preserve original actor evidence.';
@@ -181,7 +177,7 @@ BEGIN
         p_operation_type => 'invoice.create',
         p_caller_request_key => 'invoice-operation-key',
         p_request_sha256 => repeat('a', 64),
-        p_stripe_connected_account_id => 'acct_operation_contract',
+        p_stripe_connected_account_id => 'acct_OperationContract123',
         p_connect_account_generation => 1,
         p_lease_owner => v_lease,
         p_expected_revision => v_revision,
@@ -192,7 +188,7 @@ BEGIN
     END IF;
     IF (public.claim_billing_provider_operation_v1(
         v_studio, v_owner, 'invoice.create', 'invoice-operation-key', repeat('a', 64),
-        'acct_operation_contract', 1, gen_random_uuid(), 30
+        'acct_OperationContract123', 1, gen_random_uuid(), 30
     )->>'outcome') <> 'provider_request_in_flight' THEN
         RAISE EXCEPTION 'Ambiguous in-flight operation was automatically re-leased.';
     END IF;
@@ -200,14 +196,14 @@ BEGIN
     v_revision := (v_result->'operation'->>'revision')::BIGINT;
     v_result := public.authorize_billing_provider_operation_recovery_v1(
         v_operation_id, v_studio, v_owner, 'invoice.create', 'invoice-operation-key', repeat('a', 64),
-        'acct_operation_contract', 1, v_owner, repeat('d', 64),
+        'acct_OperationContract123', 1, v_owner, repeat('d', 64),
         'provider_no_object_safe_to_retry', v_recovery_lease, 30, v_revision
     );
     v_revision := (v_result->'operation'->>'revision')::BIGINT;
     v_result := public.transition_billing_provider_operation_v1(
         p_operation_id => v_operation_id, p_studio_id => v_studio, p_actor_id => v_owner,
         p_operation_type => 'invoice.create', p_caller_request_key => 'invoice-operation-key',
-        p_request_sha256 => repeat('a', 64), p_stripe_connected_account_id => 'acct_operation_contract',
+        p_request_sha256 => repeat('a', 64), p_stripe_connected_account_id => 'acct_OperationContract123',
         p_connect_account_generation => 1, p_lease_owner => v_recovery_lease,
         p_expected_revision => v_revision, p_to_state => 'provider_request_in_flight'
     );
@@ -217,7 +213,7 @@ BEGIN
     BEGIN
         PERFORM public.authorize_billing_provider_operation_recovery_v1(
             v_operation_id, v_studio, v_owner, 'invoice.create', 'invoice-operation-key', repeat('a', 64),
-            'acct_operation_contract', 1, v_owner, repeat('e', 64),
+            'acct_OperationContract123', 1, v_owner, repeat('e', 64),
             'provider_no_object_safe_to_retry', gen_random_uuid(), 30,
             (v_result->'operation'->>'revision')::BIGINT
         );
@@ -229,7 +225,7 @@ BEGIN
     BEGIN
         PERFORM public.claim_billing_provider_operation_v1(
             v_studio, v_owner, 'enrollment.cancel.immediate', 'reserved-cancel-key', repeat('f', 64),
-            'acct_operation_contract', 1, gen_random_uuid(), 30
+            'acct_OperationContract123', 1, gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'Expected reserved cancellation workflow to remain unavailable.';
     EXCEPTION WHEN feature_not_supported THEN
@@ -238,13 +234,13 @@ BEGIN
 
     v_result := public.claim_billing_provider_operation_v1(
         v_studio, v_owner, 'payer.setup', 'payer-setup-key', repeat('1', 64),
-        'acct_operation_contract', 1, v_lease, 30
+        'acct_OperationContract123', 1, v_lease, 30
     );
     v_setup_operation := (v_result->'operation'->>'id')::UUID;
     v_revision := (v_result->'operation'->>'revision')::BIGINT;
     v_result := public.prepare_billing_payer_setup_request_v1(
         v_setup_operation, v_setup_request, v_studio, v_owner, v_payer,
-        'terms-2026-08', 'acct_operation_contract', 1, v_lease, v_revision,
+        'terms-2026-08', 'acct_OperationContract123', 1, v_lease, v_revision,
         v_now + interval '30 minutes'
     );
     IF v_result->>'outcome' <> 'prepared' OR (v_result->'setup_request'->>'id')::UUID <> v_setup_request THEN
@@ -253,7 +249,7 @@ BEGIN
     v_result := public.transition_billing_provider_operation_v1(
         p_operation_id => v_setup_operation, p_studio_id => v_studio, p_actor_id => v_owner,
         p_operation_type => 'payer.setup', p_caller_request_key => 'payer-setup-key',
-        p_request_sha256 => repeat('1', 64), p_stripe_connected_account_id => 'acct_operation_contract',
+        p_request_sha256 => repeat('1', 64), p_stripe_connected_account_id => 'acct_OperationContract123',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => v_revision, p_to_state => 'provider_request_in_flight'
     );
@@ -261,25 +257,25 @@ BEGIN
     v_result := public.transition_billing_provider_operation_v1(
         p_operation_id => v_setup_operation, p_studio_id => v_studio, p_actor_id => v_owner,
         p_operation_type => 'payer.setup', p_caller_request_key => 'payer-setup-key',
-        p_request_sha256 => repeat('1', 64), p_stripe_connected_account_id => 'acct_operation_contract',
+        p_request_sha256 => repeat('1', 64), p_stripe_connected_account_id => 'acct_OperationContract123',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => v_revision, p_to_state => 'provider_succeeded',
         p_provider_object_id => 'cs_test_operation_contract'
     );
     PERFORM public.bind_billing_payer_setup_session_v1(
         v_setup_request, v_setup_operation, v_studio, v_payer,
-        'cs_test_operation_contract', 'acct_operation_contract', 1, 1
+        'cs_test_operation_contract', 'acct_OperationContract123', 1, 1
     );
     v_result := public.accept_billing_payer_payment_consent_v1(
         v_setup_request, v_studio, v_payer, 'terms-2026-08',
-        'cs_test_operation_contract', 'acct_operation_contract', 1,
+        'cs_test_operation_contract', 'acct_OperationContract123', 1,
         repeat('2', 64), v_now + interval '1 minute'
     );
     v_consent := (v_result->'consent'->>'id')::UUID;
     v_result := public.complete_billing_payer_payment_consent_v1(
         v_consent, v_setup_request, v_setup_operation,
         'cs_test_operation_contract', 'seti_test_operation_contract',
-        'acct_operation_contract', 1, v_now + interval '2 minutes'
+        'acct_OperationContract123', 1, v_now + interval '2 minutes'
     );
     IF v_result->'operation'->>'state' <> 'projected' THEN
         RAISE EXCEPTION 'Consent completion claimed local payer projection was complete.';
@@ -287,7 +283,7 @@ BEGIN
     v_result := public.mark_billing_payer_setup_reconciliation_v1(
         v_setup_request, v_setup_operation,
         'cs_test_operation_contract', 'seti_test_operation_contract',
-        'acct_operation_contract', 1, 'payer_projection_update_failed'
+        'acct_OperationContract123', 1, 'payer_projection_update_failed'
     );
     IF v_result->>'outcome' <> 'reconciliation_required'
        OR v_result->'operation'->>'state' <> 'reconciliation_required'
@@ -306,7 +302,7 @@ BEGIN
     IF public.mark_billing_payer_setup_reconciliation_v1(
         v_setup_request, v_setup_operation,
         'cs_test_operation_contract', 'seti_test_operation_contract',
-        'acct_operation_contract', 1, 'payer_projection_update_failed'
+        'acct_OperationContract123', 1, 'payer_projection_update_failed'
     )->>'outcome' <> 'replay' THEN
         RAISE EXCEPTION 'Exact projected reconciliation did not replay.';
     END IF;
@@ -314,7 +310,7 @@ BEGIN
     v_result := public.transition_billing_provider_operation_v1(
         p_operation_id => v_setup_operation, p_studio_id => v_studio, p_actor_id => v_owner,
         p_operation_type => 'payer.setup', p_caller_request_key => 'payer-setup-key',
-        p_request_sha256 => repeat('1', 64), p_stripe_connected_account_id => 'acct_operation_contract',
+        p_request_sha256 => repeat('1', 64), p_stripe_connected_account_id => 'acct_OperationContract123',
         p_connect_account_generation => 1, p_lease_owner => v_lease,
         p_expected_revision => v_revision, p_to_state => 'projected',
         p_provider_object_id => 'cs_test_operation_contract',
@@ -324,7 +320,7 @@ BEGIN
         PERFORM public.finalize_billing_payer_setup_projection_v1(
             v_consent, v_setup_request, v_setup_operation, v_studio, v_payer,
             'cs_test_operation_contract', 'seti_test_operation_contract',
-            'acct_operation_contract', 1
+            'acct_OperationContract123', 1
         );
         RAISE EXCEPTION 'Expected finalization before payer projection to fail.';
     EXCEPTION WHEN object_not_in_prerequisite_state THEN
@@ -350,7 +346,7 @@ BEGIN
         PERFORM public.finalize_billing_payer_setup_projection_v1(
             v_consent, v_setup_request, v_setup_operation, v_studio, v_payer,
             'cs_test_operation_contract', 'seti_test_operation_contract',
-            'acct_operation_contract', 2
+            'acct_OperationContract123', 2
         );
         RAISE EXCEPTION 'Payer setup finalization accepted the wrong account generation.';
     EXCEPTION WHEN check_violation THEN
@@ -359,19 +355,19 @@ BEGIN
     v_result := public.finalize_billing_payer_setup_projection_v1(
         v_consent, v_setup_request, v_setup_operation, v_studio, v_payer,
         'cs_test_operation_contract', 'seti_test_operation_contract',
-        'acct_operation_contract', 1
+        'acct_OperationContract123', 1
     );
     IF v_result->'operation'->>'state' <> 'completed'
        OR (SELECT connect_account_generation FROM public.billing_payers WHERE id = v_payer) <> 1
        OR (public.read_active_billing_payer_payment_consent_v1(
-            v_studio, v_payer, 'terms-2026-08', 'acct_operation_contract', 1
+            v_studio, v_payer, 'terms-2026-08', 'acct_OperationContract123', 1
           )->'consent'->>'id')::UUID <> v_consent THEN
         RAISE EXCEPTION 'Payer setup did not converge with exact provider generation evidence.';
     END IF;
     IF public.finalize_billing_payer_setup_projection_v1(
         v_consent, v_setup_request, v_setup_operation, v_studio, v_payer,
         'cs_test_operation_contract', 'seti_test_operation_contract',
-        'acct_operation_contract', 1
+        'acct_OperationContract123', 1
     )->>'outcome' <> 'replay' THEN
         RAISE EXCEPTION 'Exact payer generation finalization did not replay.';
     END IF;
@@ -383,7 +379,7 @@ BEGIN
         PERFORM public.finalize_billing_payer_setup_projection_v1(
             v_consent, v_setup_request, v_setup_operation, v_studio, v_payer,
             'cs_test_operation_contract', 'seti_test_operation_contract',
-            'acct_operation_contract', 1
+            'acct_OperationContract123', 1
         );
         RAISE EXCEPTION 'Completed setup replay overwrote a conflicting payer generation.';
     EXCEPTION WHEN check_violation THEN
@@ -397,7 +393,7 @@ BEGIN
     v_result := public.mark_billing_payer_setup_reconciliation_v1(
         v_setup_request, v_setup_operation,
         'cs_test_operation_contract', 'seti_test_operation_contract',
-        'acct_operation_contract', 1, 'completed_consent_payment_method_missing'
+        'acct_OperationContract123', 1, 'completed_consent_payment_method_missing'
     );
     IF v_result->'operation'->>'state' <> 'reconciliation_required'
        OR v_result->'operation'->>'completed_at' IS NOT NULL
@@ -416,13 +412,13 @@ BEGIN
     IF public.mark_billing_payer_setup_reconciliation_v1(
         v_setup_request, v_setup_operation,
         'cs_test_operation_contract', 'seti_test_operation_contract',
-        'acct_operation_contract', 1, 'completed_consent_payment_method_missing'
+        'acct_OperationContract123', 1, 'completed_consent_payment_method_missing'
     )->>'outcome' <> 'replay' THEN
         RAISE EXCEPTION 'Exact completed reconciliation did not replay.';
     END IF;
 
     PERFORM public.revoke_billing_payer_payment_consent_v1(
-        v_consent, v_studio, v_payer, 'acct_operation_contract', 1,
+        v_consent, v_studio, v_payer, 'acct_OperationContract123', 1,
         v_now + interval '3 minutes', v_owner, 'payer_requested_revocation', NULL
     );
     IF NOT EXISTS (
