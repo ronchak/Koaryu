@@ -746,22 +746,28 @@ END;
 $$;
 -- END provider resource claim behavior
 
-UPDATE pg_proc
-SET prosrc = 'BEGIN RETURN NEW; END;'
-WHERE oid IN (
-    'private.preserve_billing_provider_operation_step_v1()'::REGPROCEDURE,
-    'private.enforce_billing_provider_step_parent_v1()'::REGPROCEDURE,
-    'private.enforce_billing_payer_connect_identity_v1()'::REGPROCEDURE,
-    'private.preserve_billing_provider_operation_resource_v1()'::REGPROCEDURE,
-    'private.preserve_billing_provider_operation_resource_alias_v1()'::REGPROCEDURE,
-    'public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer)'::REGPROCEDURE
-);
-UPDATE pg_proc
-SET prosrc = prosrc || chr(10) || '-- injected resource-claim drift'
-WHERE oid = 'public.claim_billing_provider_operation_resource_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)'::REGPROCEDURE;
-UPDATE pg_proc
-SET prosrc = 'SELECT repeat(''0'', 64)'
-WHERE oid = 'private.koaryu_release_operational_manifest_v9()'::REGPROCEDURE;
+-- Drift the same complete function set through owner-supported DDL. Direct pg_proc
+-- writes are unavailable in the hardened Supabase local container and are not a
+-- supported administration surface. Each ALTER changes pg_get_functiondef and the
+-- manifest's pinned configuration signal, then this transaction rolls everything back.
+ALTER FUNCTION private.preserve_billing_provider_operation_step_v1()
+    SET search_path = public;
+ALTER FUNCTION private.enforce_billing_provider_step_parent_v1()
+    SET search_path = public;
+ALTER FUNCTION private.enforce_billing_payer_connect_identity_v1()
+    SET search_path = public;
+ALTER FUNCTION private.preserve_billing_provider_operation_resource_v1()
+    SET search_path = public;
+ALTER FUNCTION private.preserve_billing_provider_operation_resource_alias_v1()
+    SET search_path = public;
+ALTER FUNCTION public.finalize_billing_payer_setup_projection_v1(
+    UUID, UUID, UUID, UUID, UUID, TEXT, TEXT, TEXT, INTEGER
+) SET search_path = public;
+ALTER FUNCTION public.claim_billing_provider_operation_resource_v1(
+    UUID, UUID, TEXT, TEXT, UUID, UUID, TEXT, TEXT, TEXT, INTEGER, UUID, INTEGER
+) SET search_path = public;
+ALTER FUNCTION private.koaryu_release_operational_manifest_v9()
+    SET search_path = public;
 
 DO $$
 DECLARE
