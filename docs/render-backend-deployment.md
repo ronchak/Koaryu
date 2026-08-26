@@ -76,6 +76,7 @@ STRIPE_PLATFORM_WEBHOOK_SECRET=
 STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
+BILLING_TRANSITION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
 OPERATIONAL_ALERT_WORKER_SECRET=
 OPERATIONAL_ALERT_PRIMARY_URL=
@@ -134,6 +135,7 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, the service also refuses
 - `STRIPE_CONNECT_WEBHOOK_SECRET`
 - `STRIPE_KOARYU_CORE_PRICE_ID`
 - `ACCOUNT_DELETION_WORKER_SECRET`
+- `BILLING_TRANSITION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
 `SUPABASE_URL` must be a public HTTPS URL in production. Production requires the exact canonical `FRONTEND_URL=https://koaryu.app`; paths, query strings, fragments, userinfo, ports, whitespace, and control characters are rejected before CORS or staff-invite redirects use it. Both Stripe webhook-secret settings use the same exact comma-rotation format: nonempty candidates without surrounding whitespace or control characters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode and mismatched keys. If `LIVE_BILLING_ENABLED=true` or `CORE_SELF_CHECKOUT_ENABLED=true`, startup additionally requires an exact validated `RENDER_GIT_COMMIT`. The general live-billing flag still requires the matching unexpired checkpoint and studio scope at runtime; the Core flag is limited to the three named self-service operations. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
@@ -151,6 +153,15 @@ Production access tokens should use the asymmetric key advertised by Supabase JW
 ### Internal Operations
 
 Account deletion is scheduled from the Vercel frontend project, not as a separate Render Cron service. Vercel Cron calls `/api/cron/account-deletions/process-due` once daily, and that route calls the protected Render backend endpoint with `ACCOUNT_DELETION_WORKER_SECRET`.
+
+Enrollment period transitions expose a separate fail-closed backend worker at
+`/api/v1/internal/billing/enrollment-transitions/process-due`, protected by
+`BILLING_TRANSITION_WORKER_SECRET`. No scheduler is declared yet because copying that
+credential into the frontend would widen its secret boundary. Before enabling scheduled
+cancellations, declare a repository-owned Render worker or Cron Job for staging that posts
+to this endpoint, prove due item and whole-subscription convergence in Stripe test mode,
+then mirror the same manifest for production with its own secret. Do not invoke the worker
+from an ad hoc external scheduler or share one environment's secret with another.
 
 If you configure or test the worker manually instead, call the protected endpoint at least daily:
 

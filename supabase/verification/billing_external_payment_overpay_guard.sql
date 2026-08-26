@@ -69,6 +69,7 @@ BEGIN
             invoice_id,
             status,
             amount_cents,
+            net_collected_amount_cents,
             currency,
             external_method
         )
@@ -77,6 +78,7 @@ BEGIN
             v_payer,
             v_invoice,
             'externally_recorded',
+            1,
             1,
             'usd',
             'cash'
@@ -96,6 +98,7 @@ BEGIN
         invoice_id,
         status,
         amount_cents,
+        net_collected_amount_cents,
         currency,
         payment_method_type,
         external_method,
@@ -106,6 +109,7 @@ BEGIN
         v_payer,
         v_invoice,
         'externally_recorded',
+        700,
         700,
         'usd',
         'external',
@@ -119,6 +123,7 @@ BEGIN
         invoice_id,
         status,
         amount_cents,
+        net_collected_amount_cents,
         currency,
         payment_method_type,
         external_method,
@@ -129,6 +134,7 @@ BEGIN
         v_payer,
         v_invoice,
         'externally_recorded',
+        300,
         300,
         'usd',
         'external',
@@ -143,6 +149,7 @@ BEGIN
             invoice_id,
             status,
             amount_cents,
+            net_collected_amount_cents,
             currency,
             payment_method_type,
             external_method,
@@ -153,6 +160,7 @@ BEGIN
             v_payer,
             v_invoice,
             'externally_recorded',
+            300,
             300,
             'usd',
             'external',
@@ -174,6 +182,7 @@ BEGIN
             invoice_id,
             status,
             amount_cents,
+            net_collected_amount_cents,
             currency,
             payment_method_type,
             external_method,
@@ -184,6 +193,7 @@ BEGIN
             v_payer,
             v_invoice,
             'externally_recorded',
+            1,
             1,
             'usd',
             'external',
@@ -226,7 +236,8 @@ BEGIN
 
     BEGIN
         UPDATE public.billing_payments
-           SET status = 'externally_recorded'
+           SET status = 'externally_recorded',
+               net_collected_amount_cents = 1
          WHERE id = v_pending_payment;
         RAISE EXCEPTION 'Expected invoice external overpayment update to be rejected.';
     EXCEPTION

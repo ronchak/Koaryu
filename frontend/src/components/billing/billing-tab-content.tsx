@@ -124,6 +124,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
     externalPayerId,
     isActionLoading,
     isLoadingAction,
+    canUseWorkflow,
     onCreateEnrollment,
     onEnrollmentEndDateChange,
     onEnrollmentNextBillDateChange,
@@ -131,12 +132,17 @@ export function BillingTabContent(props: BillingTabContentProps) {
     onEnrollmentPlanChange,
     onEnrollmentStartDateChange,
     onEnrollmentStudentChange,
+    onEnrollmentActivate,
+    onEnrollmentCancelImmediate,
+    onEnrollmentRevokeScheduled,
+    onEnrollmentSchedulePeriodEnd,
     onExternalAmountChange,
     onExternalMethodChange,
     onExternalNoteChange,
     onExternalPayerChange,
     onRecordExternalPayment,
     openBillingLink,
+    scheduledTransitions,
   } = actions;
 
   if (activeTab === "overview") {
@@ -174,8 +180,30 @@ export function BillingTabContent(props: BillingTabContentProps) {
       />
     );
   }
-  if (activeTab === "plans") return <BillingPlansTab billingPlans={billingPlans} />;
-  if (activeTab === "families") return <BillingFamiliesTab billingPayers={billingPayers} />;
+  if (activeTab === "plans") {
+    return (
+      <BillingPlansTab
+        billingPlans={billingPlans}
+        canUseWorkflow={canUseWorkflow}
+        isActionLoading={isActionLoading}
+        isLoadingAction={isLoadingAction}
+        onPlanSync={actions.onPlanSync}
+      />
+    );
+  }
+  if (activeTab === "families") {
+    return (
+      <BillingFamiliesTab
+        billingPayers={billingPayers}
+        canUseWorkflow={canUseWorkflow}
+        isActionLoading={isActionLoading}
+        isLoadingAction={isLoadingAction}
+        onAutopayDisable={actions.onAutopayDisable}
+        onAutopaySetup={actions.onAutopaySetup}
+        onPayerSync={actions.onPayerSync}
+      />
+    );
+  }
   if (activeTab === "enrollments") {
     return (
       <BillingEnrollmentsTab
@@ -185,6 +213,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         billingStudentOptions={billingStudentOptions}
         canManageRoutineBilling={canManageRoutineBilling}
         canSubmitEnrollmentForm={canSubmitEnrollmentForm}
+        canUseWorkflow={canUseWorkflow}
         enrollmentEndDate={enrollmentEndDate}
         enrollmentNextBillDate={enrollmentNextBillDate}
         enrollmentPayerId={enrollmentPayerId}
@@ -193,6 +222,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         enrollmentStudentId={enrollmentStudentId}
         isEnrollmentPayerSelectDisabled={isEnrollmentPayerSelectDisabled}
         isLoadingAction={isLoadingAction}
+        isActionLoading={isActionLoading}
         onCreateEnrollment={onCreateEnrollment}
         onEnrollmentEndDateChange={onEnrollmentEndDateChange}
         onEnrollmentNextBillDateChange={onEnrollmentNextBillDateChange}
@@ -200,9 +230,14 @@ export function BillingTabContent(props: BillingTabContentProps) {
         onEnrollmentPlanChange={onEnrollmentPlanChange}
         onEnrollmentStartDateChange={onEnrollmentStartDateChange}
         onEnrollmentStudentChange={onEnrollmentStudentChange}
+        onEnrollmentActivate={onEnrollmentActivate}
+        onEnrollmentCancelImmediate={onEnrollmentCancelImmediate}
+        onEnrollmentRevokeScheduled={onEnrollmentRevokeScheduled}
+        onEnrollmentSchedulePeriodEnd={onEnrollmentSchedulePeriodEnd}
         payerNameById={payerNameById}
         planNameById={planNameById}
         studentNameById={studentNameById}
+        scheduledTransitions={scheduledTransitions}
       />
     );
   }
@@ -212,6 +247,7 @@ export function BillingTabContent(props: BillingTabContentProps) {
         billingInvoices={billingInvoices}
         billingPayers={billingPayers}
         canReconcileInvoices={canManageRoutineBilling}
+        canUseWorkflow={canUseWorkflow}
         isActionLoading={isActionLoading}
         isLoadingAction={isLoadingAction}
         isPreviewMode={isPreviewMode}

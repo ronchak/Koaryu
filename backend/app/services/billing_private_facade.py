@@ -8,6 +8,10 @@ from fastapi import HTTPException, status
 
 from app.schemas.billing import BillingInvoiceCreate, BillingPlanProgramResponse, BillingPlanResponse
 from app.services.billing_autopay import BillingAutopayManager
+from app.services.billing_provider_operations import (
+    AUTOPAY_TERMS_VERSION,
+    BillingProviderOperationCoordinator,
+)
 from app.services.billing_enrollments import BillingEnrollmentManager
 from app.services.billing_invoice_projection import _object_get
 from app.services.billing_invoices import BillingInvoiceManager
@@ -52,20 +56,6 @@ class BillingPrivateFacadeMixin:
     def _sync_payer_customer(self, payer: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
         return BillingPayerManager(self, stripe_service_cls=self._billing_stripe_service_cls())._sync_payer_customer(payer, account)
 
-    def _activate_stripe_enrollment(
-        self,
-        enrollment: dict[str, Any],
-        plan: dict[str, Any],
-        studio_id: str,
-        actor_id: Optional[str] = None,
-    ) -> dict[str, Any]:
-        return BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._activate_stripe_enrollment(
-            enrollment,
-            plan,
-            studio_id,
-            actor_id=actor_id,
-        )
-
     def _find_or_create_billing_subscription(
         self,
         enrollment: dict[str, Any],
@@ -80,57 +70,17 @@ class BillingPrivateFacadeMixin:
             account,
         )
 
-    def _enrollment_has_stripe_link(self, enrollment: dict[str, Any]) -> bool:
-        return BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._enrollment_has_stripe_link(enrollment)
-
-    def _mark_enrollment_stripe_attach_pending(
+    def _project_checkout_session(
         self,
-        enrollment: dict[str, Any],
-        reason: str,
-    ) -> dict[str, Any]:
-        return BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._mark_enrollment_stripe_attach_pending(
-            enrollment,
-            reason,
-        )
-
-    def _attached_enrollment_fields(self, enrollment: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
-        return BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._attached_enrollment_fields(enrollment, update)
-
-    def _mark_enrollment_stripe_detach_pending(
-        self,
-        enrollment: dict[str, Any],
-        reason: str,
-    ) -> dict[str, Any]:
-        return BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._mark_enrollment_stripe_detach_pending(
-            enrollment,
-            reason,
-        )
-
-    def _detached_enrollment_fields(self, enrollment: dict[str, Any]) -> dict[str, Any]:
-        return BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._detached_enrollment_fields(enrollment)
-
-    def _detach_enrollment_from_subscription(self, enrollment: dict[str, Any]) -> None:
-        BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._detach_enrollment_from_subscription(enrollment)
-
-    def _create_paid_in_full_invoice(
-        self,
-        enrollment: dict[str, Any],
-        plan: dict[str, Any],
-        payer: dict[str, Any],
-        account: dict[str, Any],
-        *,
-        actor_id: str,
+        session: dict[str, Any],
+        account_id: Optional[str],
+        event_created: Optional[int] = None,
     ) -> None:
-        BillingEnrollmentManager(self, stripe_service_cls=self._billing_stripe_service_cls())._create_paid_in_full_invoice(
-            enrollment,
-            plan,
-            payer,
-            account,
-            actor_id=actor_id,
+        self._webhook_projector()._project_checkout_session(
+            session,
+            account_id,
+            event_created,
         )
-
-    def _project_checkout_session(self, session: dict[str, Any], account_id: Optional[str]) -> None:
-        self._webhook_projector()._project_checkout_session(session, account_id)
     def _project_invoice_event(
         self,
         invoice: dict[str, Any],
@@ -149,12 +99,34 @@ class BillingPrivateFacadeMixin:
         self._webhook_projector()._project_payment_intent(intent, account_id, event_type, event_created)
     def _link_adjustments_to_payment(self, payment: dict[str, Any], account_id: Optional[str]) -> dict[str, Any]:
         return self._webhook_projector()._link_adjustments_to_payment(payment, account_id)
-    def _project_charge_refund(self, charge: dict[str, Any], account_id: Optional[str]) -> None:
-        self._webhook_projector()._project_charge_refund(charge, account_id)
-    def _project_refund(self, refund: Any, account_id: Optional[str], *, charge: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-        return self._webhook_projector()._project_refund(refund, account_id, charge=charge)
-    def _project_dispute(self, dispute: dict[str, Any], account_id: Optional[str]) -> None:
-        self._webhook_projector()._project_dispute(dispute, account_id)
+    def _project_charge_refund(
+        self,
+        charge: dict[str, Any],
+        account_id: Optional[str],
+        event_created: Optional[int] = None,
+    ) -> None:
+        self._webhook_projector()._project_charge_refund(charge, account_id, event_created)
+    def _project_refund(
+        self,
+        refund: Any,
+        account_id: Optional[str],
+        *,
+        charge: Optional[dict[str, Any]] = None,
+        event_created: Optional[int] = None,
+    ) -> dict[str, Any]:
+        return self._webhook_projector()._project_refund(
+            refund,
+            account_id,
+            charge=charge,
+            event_created=event_created,
+        )
+    def _project_dispute(
+        self,
+        dispute: dict[str, Any],
+        account_id: Optional[str],
+        event_created: Optional[int] = None,
+    ) -> None:
+        self._webhook_projector()._project_dispute(dispute, account_id, event_created)
     def _refresh_invoice_and_payer_from_payment_events(self, payment: dict[str, Any]) -> None:
         self._webhook_projector()._refresh_invoice_and_payer_from_payment_events(payment)
     def _project_subscription(
@@ -455,7 +427,47 @@ class BillingPrivateFacadeMixin:
         return int(round(amount_cents * bps / 10000))
 
     def _payer_autopay_authorized(self, payer: dict[str, Any]) -> bool:
-        return payer.get("autopay_status") == "enabled" and bool(payer.get("autopay_terms_accepted_at"))
+        if (
+            payer.get("autopay_status") != "enabled"
+            or not payer.get("autopay_terms_accepted_at")
+            or not payer.get("default_payment_method_id")
+            or not payer.get("stripe_account_id")
+            or not payer.get("studio_id")
+            or not payer.get("id")
+        ):
+            return False
+        account = self._connect_accounts().by_stripe_account(
+            payer["stripe_account_id"]
+        )
+        if not account or account.get("studio_id") != payer.get("studio_id"):
+            return False
+        raw_generation = (account.get("metadata") or {}).get(
+            "connect_account_generation"
+        ) or 1
+        try:
+            generation = int(raw_generation)
+        except (TypeError, ValueError):
+            return False
+        if generation <= 0:
+            return False
+        try:
+            consent = BillingProviderOperationCoordinator(
+                self.supabase
+            ).read_active_payer_consent(
+                studio_id=payer["studio_id"],
+                payer_id=payer["id"],
+                terms_version=AUTOPAY_TERMS_VERSION,
+                stripe_connected_account_id=payer["stripe_account_id"],
+                connect_account_generation=generation,
+            )
+        except Exception:
+            return False
+        return bool(
+            consent.get("completed_at")
+            and not consent.get("revoked_at")
+            and not consent.get("superseded_at")
+            and consent.get("accepted_at") == payer.get("autopay_terms_accepted_at")
+        )
 
     def _idempotency_key(self, *parts: str) -> str:
         return build_idempotency_key(*parts)

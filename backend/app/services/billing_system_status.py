@@ -12,8 +12,13 @@ from app.schemas.billing import (
     BillingMutationCapabilitiesResponse,
     BillingSystemCheck,
     BillingSystemStatusResponse,
+    BillingWorkflowCapabilityResponse,
     BillingWebhookHealthResponse,
     StudioPaymentAccountResponse,
+)
+from app.services.billing_workflow_catalog import (
+    LIVE_SCOPE_OPERATIONS,
+    workflow_capabilities_for_role,
 )
 from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _to_text
@@ -50,7 +55,11 @@ class BillingSystemStatusReporter:
         self.connect_accounts = connect_accounts
         self.payment_account_loader = payment_account_loader
 
-    async def get_system_status(self, studio_id: str) -> BillingSystemStatusResponse:
+    async def get_system_status(
+        self,
+        studio_id: str,
+        actor_role: str = "admin",
+    ) -> BillingSystemStatusResponse:
         checked_at = datetime.now(timezone.utc).isoformat()
         checks: list[BillingSystemCheck] = []
 
@@ -125,16 +134,17 @@ class BillingSystemStatusReporter:
 
         stripe_mode = configured_stripe_mode(self.settings)
         ready_for_configured_mode = all(check.status == "pass" for check in checks)
+        authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
         live_payments_authorized = StripeMutationPolicy(
             self.settings,
-            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+            authorization_store=authorization_store,
         ).live_payments_authorized(studio_id=studio_id)
         account_id = account_response.stripe_connected_account_id
         mutation_policy = StripeMutationPolicy(
             self.settings,
-            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+            authorization_store=authorization_store,
         )
-        onboarding_authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
+        onboarding_authorization_store = authorization_store
         live_billing_enabled = getattr(self.settings, "LIVE_BILLING_ENABLED", False) is True
         onboarding_preflight_state = (
             onboarding_authorization_store.connect_onboarding_preflight_state(
@@ -171,6 +181,27 @@ class BillingSystemStatusReporter:
                 mutation_policy, "connected_invoice.create", studio_id, account_id,
             ),
         )
+        allowed_operations = (
+            authorization_store.current_allowed_operations(studio_id=studio_id)
+            if stripe_mode == "live"
+            else {
+                scope: frozenset(operations)
+                for scope, operations in LIVE_SCOPE_OPERATIONS.items()
+            }
+        )
+        workflow_capabilities = [
+            BillingWorkflowCapabilityResponse(**capability)
+            for capability in workflow_capabilities_for_role(
+                actor_role,
+                stripe_mode=stripe_mode,
+                scope_ready={
+                    "core_subscription": mutation_capabilities.core_subscription,
+                    "connect_onboarding": mutation_capabilities.connect_onboarding,
+                    "connect_payments": mutation_capabilities.connect_payments,
+                },
+                allowed_operations=allowed_operations,
+            )
+        ]
         return BillingSystemStatusResponse(
             studio_id=studio_id,
             configured_stripe_mode=stripe_mode,
@@ -186,6 +217,7 @@ class BillingSystemStatusReporter:
             platform_webhooks=platform_webhooks,
             connect_webhooks=connect_webhooks,
             mutation_capabilities=mutation_capabilities,
+            workflow_capabilities=workflow_capabilities,
             checks=checks,
         )
 

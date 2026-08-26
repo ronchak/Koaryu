@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from app.services.stripe_mutation_policy import (
-    LIVE_MUTATIONS_DISABLED_DETAIL,
-    StripeMutationBlocked,
-)
+import re
+from types import SimpleNamespace
+
+from postgrest.exceptions import APIError as PostgrestAPIError
+
+from app.services.platform_billing_helpers import stable_hash
+
 from tests.billing_lifecycle_helpers import (
     BillingInvoiceCreate,
     BillingInvoiceResponse,
@@ -31,7 +34,453 @@ from tests.billing_lifecycle_helpers import (
 )
 
 
+def _operation_conflict() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "23505",
+        "message": "billing_provider_operation_request_conflict",
+        "details": "",
+        "hint": "",
+    })
+
+
+class _AutopayOperationSupabase(_FakeSupabase):
+    def __init__(self, tables):
+        super().__init__(tables)
+        self.operation: dict | None = None
+        self.setup_request: dict | None = None
+        self.consent: dict | None = None
+        self.fail_bind = False
+        self.fail_payer_enable_once = False
+        self.closed_operations: list[dict] = []
+        self.close_calls: list[dict] = []
+        self.prepare_calls: list[dict] = []
+        self.operation_started_at = datetime.now(timezone.utc).isoformat()
+        self.on_update_query = self._handle_update
+
+    def _handle_update(self, query, _rows):
+        if (
+            self.fail_payer_enable_once
+            and query.name == "billing_payers"
+            and (query.update_payload or {}).get("autopay_status") == "enabled"
+        ):
+            self.fail_payer_enable_once = False
+            return []
+        return None
+
+    def _rpc_claim_billing_provider_operation_v1(self, params: dict) -> dict:
+        if self.operation is None:
+            operation_number = len(self.closed_operations) + 1
+            self.operation = {
+                "id": f"00000000-0000-4000-8000-{8100 + operation_number:012d}",
+                "studio_id": params["p_studio_id"],
+                "actor_id": params["p_actor_id"],
+                "operation_type": params["p_operation_type"],
+                "caller_request_key": params["p_caller_request_key"],
+                "request_sha256": params["p_request_sha256"],
+                "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                "connect_account_generation": params["p_connect_account_generation"],
+                "state": "started",
+                "provider_request_attempt_count": 0,
+                "provider_object_id": None,
+                "provider_secondary_object_id": None,
+                "reconciliation_reason_code": None,
+                "revision": 0,
+                "started_at": self.operation_started_at,
+            }
+            return {"outcome": "claimed", "operation": dict(self.operation)}
+        if (
+            self.operation["caller_request_key"] != params["p_caller_request_key"]
+            and self.operation["state"] == "definitive_rejected"
+            and self.setup_request is not None
+            and (
+                self.setup_request.get("superseded_at")
+                or (
+                    self.operation["provider_request_attempt_count"] == 0
+                    and self.operation.get("provider_object_id") is None
+                    and self.setup_request.get("stripe_checkout_session_id") is None
+                )
+            )
+        ):
+            if not self.setup_request.get("superseded_at"):
+                self.setup_request["superseded_at"] = "2026-08-26T12:27:00+00:00"
+            self.closed_operations.append({
+                "operation": dict(self.operation),
+                "setup_request": dict(self.setup_request),
+            })
+            self.operation = None
+            self.setup_request = None
+            self.consent = None
+            return self._rpc_claim_billing_provider_operation_v1(params)
+        exact = all(
+            self.operation[field] == params[param]
+            for field, param in (
+                ("studio_id", "p_studio_id"),
+                ("actor_id", "p_actor_id"),
+                ("operation_type", "p_operation_type"),
+                ("caller_request_key", "p_caller_request_key"),
+                ("request_sha256", "p_request_sha256"),
+                ("stripe_connected_account_id", "p_stripe_connected_account_id"),
+                ("connect_account_generation", "p_connect_account_generation"),
+            )
+        )
+        if not exact:
+            raise _operation_conflict()
+        state = self.operation["state"]
+        if state == "provider_request_in_flight":
+            outcome = "provider_request_in_flight"
+        elif state == "reconciliation_required":
+            outcome = "reconciliation_required"
+        elif state in {"completed", "definitive_failed", "definitive_rejected"}:
+            outcome = "replay"
+        else:
+            outcome = "continued"
+        return {"outcome": outcome, "operation": dict(self.operation)}
+
+    def _rpc_transition_billing_provider_operation_v1(self, params: dict) -> dict:
+        assert self.operation is not None
+        if self.operation["revision"] != params["p_expected_revision"]:
+            raise AssertionError("stale operation revision")
+        self.operation["state"] = params["p_to_state"]
+        self.operation["provider_object_id"] = (
+            params.get("p_provider_object_id") or self.operation.get("provider_object_id")
+        )
+        self.operation["provider_secondary_object_id"] = (
+            params.get("p_provider_secondary_object_id")
+            or self.operation.get("provider_secondary_object_id")
+        )
+        self.operation["reconciliation_reason_code"] = params.get(
+            "p_reconciliation_reason_code"
+        )
+        self.operation["error_code"] = params.get("p_error_code")
+        self.operation["error_summary"] = params.get("p_error_summary")
+        if params["p_to_state"] == "provider_request_in_flight":
+            self.operation["provider_request_attempt_count"] += 1
+        self.operation["revision"] += 1
+        return {"outcome": "transitioned", "operation": dict(self.operation)}
+
+    def _rpc_complete_billing_provider_operation_v1(self, params: dict) -> dict:
+        assert self.operation is not None
+        self.operation["state"] = "completed"
+        self.operation["revision"] += 1
+        return {"outcome": "completed", "operation": dict(self.operation)}
+
+    def _rpc_prepare_billing_payer_setup_request_v1(self, params: dict) -> dict:
+        self.prepare_calls.append(dict(params))
+        if self.setup_request is None:
+            self.setup_request = {
+                "id": params["p_setup_request_id"],
+                "operation_id": params["p_operation_id"],
+                "studio_id": params["p_studio_id"],
+                "payer_id": params["p_payer_id"],
+                "initiated_by": params["p_actor_id"],
+                "terms_version": params["p_terms_version"],
+                "stripe_checkout_session_id": None,
+                "stripe_setup_intent_id": None,
+                "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                "connect_account_generation": params["p_connect_account_generation"],
+                "setup_request_expires_at": params["p_expires_at"],
+                "accepted_at": None,
+                "completed_at": None,
+                "revoked_at": None,
+                "superseded_at": None,
+                "revision": 0,
+            }
+            return {"outcome": "prepared", "setup_request": dict(self.setup_request)}
+        return {"outcome": "replay", "setup_request": dict(self.setup_request)}
+
+    def _rpc_bind_billing_payer_setup_session_v1(self, params: dict) -> dict:
+        if self.fail_bind:
+            raise RuntimeError("database projection failed")
+        assert self.setup_request is not None
+        self.setup_request["stripe_checkout_session_id"] = params[
+            "p_stripe_checkout_session_id"
+        ]
+        self.setup_request["revision"] += 1
+        return {"outcome": "bound", "setup_request": dict(self.setup_request)}
+
+    def _rpc_read_billing_payer_setup_request_v1(self, _params: dict) -> dict:
+        assert self.setup_request is not None
+        return {"outcome": "read", "setup_request": dict(self.setup_request)}
+
+    def _rpc_read_billing_payer_setup_webhook_v1(self, params: dict) -> dict:
+        assert self.setup_request is not None
+        assert self.operation is not None
+        if (
+            self.setup_request.get("revoked_at")
+            or self.setup_request.get("superseded_at")
+            or str(self.setup_request.get("setup_request_expires_at") or "").startswith("2000-")
+        ):
+            raise AssertionError("setup request is not active")
+        if (
+            self.setup_request["id"] != params["p_setup_request_id"]
+            or self.setup_request["stripe_checkout_session_id"]
+            != params["p_stripe_checkout_session_id"]
+            or self.setup_request["stripe_connected_account_id"]
+            != params["p_stripe_connected_account_id"]
+            or self.setup_request["connect_account_generation"]
+            != params["p_connect_account_generation"]
+        ):
+            raise AssertionError("webhook identity mismatch")
+        return {
+            "outcome": "read",
+            "setup_request": dict(self.setup_request),
+            "operation": {
+                key: self.operation.get(key)
+                for key in (
+                    "id",
+                    "state",
+                    "operation_type",
+                    "provider_object_id",
+                    "provider_secondary_object_id",
+                    "revision",
+                )
+            },
+        }
+
+    def _rpc_accept_billing_payer_payment_consent_v1(self, params: dict) -> dict:
+        if self.consent is None:
+            self.consent = {
+                "id": "00000000-0000-4000-8000-000000008103",
+                "setup_request_id": params["p_setup_request_id"],
+                "studio_id": params["p_studio_id"],
+                "payer_id": params["p_payer_id"],
+                "terms_version": params["p_terms_version"],
+                "stripe_checkout_session_id": params["p_stripe_checkout_session_id"],
+                "stripe_setup_intent_id": None,
+                "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                "connect_account_generation": params["p_connect_account_generation"],
+                "acceptance_proof_sha256": params["p_acceptance_proof_sha256"],
+                "accepted_at": params["p_accepted_at"],
+                "completed_at": None,
+            }
+            return {"outcome": "accepted", "consent": dict(self.consent)}
+        return {"outcome": "replay", "consent": dict(self.consent)}
+
+    def _rpc_complete_billing_payer_payment_consent_v1(self, params: dict) -> dict:
+        assert self.consent is not None
+        assert self.setup_request is not None
+        assert self.operation is not None
+        self.consent["stripe_setup_intent_id"] = params["p_stripe_setup_intent_id"]
+        self.consent["completed_at"] = params["p_completed_at"]
+        self.setup_request["stripe_setup_intent_id"] = params["p_stripe_setup_intent_id"]
+        self.setup_request["completed_at"] = params["p_completed_at"]
+        self.operation["provider_secondary_object_id"] = params["p_stripe_setup_intent_id"]
+        self.operation["state"] = "projected"
+        self.operation["revision"] += 1
+        return {
+            "outcome": "completed",
+            "consent": dict(self.consent),
+            "operation": dict(self.operation),
+        }
+
+    def _rpc_finalize_billing_payer_setup_projection_v1(self, params: dict) -> dict:
+        assert self.operation is not None
+        assert self.setup_request is not None
+        assert self.consent is not None
+        payer = next(
+            row for row in self.tables["billing_payers"]
+            if row["id"] == params["p_payer_id"]
+        )
+        assert self.operation["state"] == "projected"
+        assert payer["autopay_status"] == "enabled"
+        assert payer["default_payment_method_id"]
+        assert payer["autopay_authorized_at"] == self.consent["completed_at"]
+        assert payer["autopay_terms_accepted_at"] == self.consent["accepted_at"]
+        self.operation["state"] = "completed"
+        self.operation["revision"] += 1
+        return {
+            "outcome": "completed",
+            "consent": dict(self.consent),
+            "setup_request": dict(self.setup_request),
+            "operation": dict(self.operation),
+        }
+
+    def _rpc_read_active_billing_payer_payment_consent_v1(self, _params: dict) -> dict:
+        assert self.consent is not None and self.consent.get("completed_at")
+        assert not self.consent.get("revoked_at")
+        assert not self.consent.get("superseded_at")
+        return {"outcome": "read", "consent": dict(self.consent)}
+
+    def _rpc_mark_billing_payer_setup_reconciliation_v1(self, params: dict) -> dict:
+        assert self.operation is not None
+        assert self.setup_request is not None
+        assert self.operation["state"] in {
+            "provider_succeeded",
+            "projected",
+            "completed",
+            "reconciliation_required",
+        }
+        assert self.operation["provider_object_id"] == params[
+            "p_stripe_checkout_session_id"
+        ]
+        if self.setup_request.get("stripe_checkout_session_id") is None:
+            self.setup_request["stripe_checkout_session_id"] = params[
+                "p_stripe_checkout_session_id"
+            ]
+            self.setup_request["revision"] += 1
+        else:
+            assert self.setup_request["stripe_checkout_session_id"] == params[
+                "p_stripe_checkout_session_id"
+            ]
+        self.operation["state"] = "reconciliation_required"
+        self.operation["reconciliation_reason_code"] = params[
+            "p_reconciliation_reason_code"
+        ]
+        self.operation["revision"] += 1
+        return {"outcome": "transitioned", "operation": dict(self.operation)}
+
+    def _rpc_close_billing_payer_setup_request_v1(self, params: dict) -> dict:
+        assert self.operation is not None
+        assert self.setup_request is not None
+        assert self.operation["state"] in {
+            "provider_succeeded",
+            "reconciliation_required",
+        }
+        assert params["p_close_reason_code"] in {
+            "checkout_session_expired",
+            "checkout_session_terminal_unusable",
+        }
+        assert re.fullmatch(r"[0-9a-f]{64}", params["p_provider_read_proof_sha256"])
+        assert self.operation["id"] == params["p_operation_id"]
+        assert self.setup_request["id"] == params["p_setup_request_id"]
+        assert self.operation["provider_object_id"] == params[
+            "p_stripe_checkout_session_id"
+        ]
+        assert self.setup_request["stripe_checkout_session_id"] == params[
+            "p_stripe_checkout_session_id"
+        ]
+        self.close_calls.append(dict(params))
+        self.operation["state"] = "definitive_rejected"
+        self.operation["error_code"] = "payer_setup_session_closed"
+        self.operation["error_summary"] = params["p_close_reason_code"]
+        self.operation["revision"] += 1
+        self.setup_request["close_reason_code"] = params["p_close_reason_code"]
+        self.setup_request["provider_read_proof_sha256"] = params[
+            "p_provider_read_proof_sha256"
+        ]
+        self.setup_request["closed_at"] = "2026-08-26T12:31:00+00:00"
+        self.setup_request["superseded_at"] = "2026-08-26T12:31:00+00:00"
+        self.setup_request["revision"] += 1
+        return {
+            "outcome": "closed",
+            "setup_request": dict(self.setup_request),
+            "operation": dict(self.operation),
+        }
+
+
+def _autopay_tables(*, saved_card: bool = False) -> dict[str, list[dict]]:
+    payer = {
+        "id": "payer_1",
+        "studio_id": "studio_1",
+        "display_name": "Rehearsal Payer",
+        "stripe_account_id": "acct_1",
+        "stripe_customer_id": "cus_1",
+        "autopay_status": "not_configured",
+        "billing_status": "current",
+        "metadata": {},
+    }
+    if saved_card:
+        payer.update({
+            "default_payment_method_id": "pm_saved",
+            "default_payment_method_brand": "visa",
+            "default_payment_method_last4": "4242",
+        })
+    return {
+        "studio_payment_accounts": [{
+            "studio_id": "studio_1",
+            "stripe_connected_account_id": "acct_1",
+            "status": "charges_enabled",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements_due": [],
+            "platform_fee_bps": 50,
+            "metadata": {"connect_account_generation": 1},
+        }],
+        "billing_payers": [payer],
+        "audit_logs": [],
+    }
+
+
 class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
+    def _prepared_consent_setup(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+        session = {
+            "id": "cs_setup_1",
+            "status": "complete",
+            "customer": "cus_1",
+            "setup_intent": "seti_1",
+            "consent": {"terms_of_service": "accepted"},
+            "metadata": dict(_FakeStripeService.setup_calls[0]["metadata"]),
+        }
+        return service, database, session
+
+    def test_setup_checkout_collects_provider_terms_in_setup_mode(self):
+        captured: dict = {}
+
+        class Session:
+            @staticmethod
+            def create(**payload):
+                captured.update(payload)
+                return {"id": "cs_1", "url": "https://checkout.stripe.test/setup"}
+
+        stripe_service = object.__new__(StripeService)
+        stripe_service._stripe = lambda: SimpleNamespace(  # type: ignore[method-assign]
+            checkout=SimpleNamespace(Session=Session),
+        )
+        metadata = {
+            "product": "koaryu_payments_autopay",
+            "studio_id": "studio_1",
+            "payer_id": "payer_1",
+            "billing_operation_id": "operation_1",
+            "terms_version": "koaryu-autopay-v1",
+        }
+
+        result = StripeService.create_setup_checkout_session.__wrapped__(
+            stripe_service,
+            account_id="acct_1",
+            studio_id="studio_1",
+            customer_id="cus_1",
+            success_url="https://app.koaryu.test/billing?autopay=success",
+            cancel_url="https://app.koaryu.test/billing?autopay=cancelled",
+            metadata=metadata,
+            idempotency_key="autopay-operation-key",
+            expires_at=1_800_000_000,
+        )
+
+        self.assertEqual(result["id"], "cs_1")
+        self.assertEqual(captured["mode"], "setup")
+        self.assertEqual(captured["customer"], "cus_1")
+        self.assertEqual(
+            captured["consent_collection"],
+            {"terms_of_service": "required"},
+        )
+        self.assertEqual(captured["setup_intent_data"], {"metadata": metadata})
+        self.assertEqual(captured["metadata"], metadata)
+        self.assertEqual(captured["expires_at"], 1_800_000_000)
+        self.assertEqual(captured["stripe_account"], "acct_1")
+        self.assertEqual(captured["idempotency_key"], "autopay-operation-key")
     def test_successful_invoice_payment_stores_payment_method_without_enabling_autopay(self):
         service = self.service()
         service.supabase = _FakeSupabase({
@@ -114,52 +563,43 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(payer["default_payment_method_last4"], "2167")
         self.assertEqual(payer["autopay_status"], "not_configured")
 
-    def test_autopay_setup_requires_explicit_terms_acceptance(self):
+    def test_saved_card_and_legacy_staff_fields_do_not_authorize_without_durable_consent(self):
+        service = self.service()
+        tables = _autopay_tables(saved_card=True)
+        payer = tables["billing_payers"][0]
+        payer["autopay_status"] = "enabled"
+        payer["autopay_terms_accepted_at"] = "2026-08-26T12:05:00+00:00"
+        service.supabase = _AutopayOperationSupabase(tables)
+
+        self.assertFalse(service._payer_autopay_authorized(payer))
+
+    def test_autopay_setup_rejects_missing_or_malformed_idempotency_key(self):
         service = self.service()
         service.settings = type("Settings", (), {
             "BILLING_PLATFORM_FEE_BPS": 50,
             "FRONTEND_URL": "https://app.koaryu.test",
         })()
 
-        with self.assertRaises(HTTPException) as context:
-            asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-            ))
+        for value in ("", "   ", "é" * 128):
+            with self.subTest(value=value), self.assertRaises(HTTPException) as context:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    value,
+                ))
 
-        self.assertEqual(context.exception.status_code, 400)
-        self.assertIn("accepted autopay terms", context.exception.detail)
+            self.assertEqual(context.exception.status_code, 400)
+            self.assertIn("Idempotency-Key", context.exception.detail)
 
-    def test_autopay_setup_uses_explicit_terms_and_allowed_redirect(self):
+    def test_saved_card_never_bypasses_provider_consent_checkout(self):
         service = self.service()
         service.settings = type("Settings", (), {
             "BILLING_PLATFORM_FEE_BPS": 50,
             "FRONTEND_URL": "https://app.koaryu.test",
         })()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-                "status": "charges_enabled",
-                "charges_enabled": True,
-                "payouts_enabled": True,
-                "details_submitted": True,
-                "requirements_due": [],
-                "platform_fee_bps": 50,
-                "metadata": {},
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Rehearsal Payer",
-                "stripe_customer_id": "cus_1",
-                "autopay_status": "not_configured",
-                "billing_status": "current",
-            }],
-            "audit_logs": [],
-        })
+        service.supabase = _AutopayOperationSupabase(_autopay_tables(saved_card=True))
         _FakeStripeService.retrieve_account_response = {
             "id": "acct_1",
             "charges_enabled": True,
@@ -174,130 +614,678 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "payer_1",
                 BillingPayerAutopaySetupRequest(
                     return_url="https://app.koaryu.test/billing",
-                    terms_accepted=True,
                 ),
                 "studio_1",
                 "user_1",
+                "autopay-key",
             ))
 
-        self.assertEqual(link.url, "https://app.koaryu.test/billing")
-        self.assertEqual(service.supabase.tables["billing_payers"][0]["autopay_status"], "enabled")
-        self.assertIsNotNone(service.supabase.tables["billing_payers"][0]["autopay_terms_accepted_at"])
+        self.assertEqual(link.url, "https://checkout.stripe.test/setup")
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertIsNone(payer.get("autopay_authorized_at"))
+        self.assertIsNone(payer.get("autopay_terms_accepted_at"))
+        self.assertEqual(len(_FakeStripeService.setup_calls), 1)
+        checkout = _FakeStripeService.setup_calls[0]
+        self.assertEqual(checkout["customer_id"], "cus_1")
+        self.assertEqual(checkout["metadata"]["terms_version"], "koaryu-autopay-v1")
+        self.assertIn("setup_request_id", checkout["metadata"])
+        self.assertIn("operation_id", checkout["metadata"])
+        self.assertNotIn("actor_id", checkout["metadata"])
+        self.assertNotIn("url", repr(service.supabase.operation))
+        self.assertNotIn("url", repr(service.supabase.setup_request))
+        started_at = datetime.fromisoformat(service.supabase.operation["started_at"])
+        self.assertEqual(
+            checkout["expires_at"],
+            int((started_at + timedelta(minutes=30)).timestamp()),
+        )
+        self.assertEqual(
+            service.supabase.setup_request["setup_request_expires_at"],
+            (started_at + timedelta(minutes=30)).isoformat(),
+        )
+        audit_metadata = service.supabase.tables["audit_logs"][0]["metadata"]
+        self.assertEqual(
+            set(audit_metadata),
+            {"operation_id", "setup_request_id", "terms_version"},
+        )
+
+    def test_lost_response_same_key_replays_without_second_stripe_mutation(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            first = asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+            database.operation["state"] = "completed"
+            second = asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+
+        self.assertEqual(first.url, "https://checkout.stripe.test/setup")
+        self.assertEqual(second.url, first.url)
+        self.assertEqual(len(_FakeStripeService.setup_calls), 1)
+        self.assertEqual(database.operation["provider_request_attempt_count"], 1)
+
+    def test_same_key_pre_provider_replay_inside_final_five_minutes_keeps_exact_request(self):
+        class AtTwelveOhOne(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls(2026, 8, 26, 12, 1, tzinfo=timezone.utc)
+                return value if tz is None else value.astimezone(tz)
+
+        class AtTwelveTwentySeven(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls(2026, 8, 26, 12, 27, tzinfo=timezone.utc)
+                return value if tz is None else value.astimezone(tz)
+
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        database.operation_started_at = "2026-08-26T12:00:00+00:00"
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            patch("app.services.billing_autopay.datetime", AtTwelveOhOne),
+            patch(
+                "app.services.billing_provider_operations.BillingProviderOperationCoordinator.transition",
+                side_effect=RuntimeError("crash after setup request preparation"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "crash after setup request preparation"),
+        ):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+
+        original_request_id = database.setup_request["id"]
+        self.assertEqual(database.operation["state"], "started")
         self.assertEqual(_FakeStripeService.setup_calls, [])
 
-    def test_checkout_projection_keeps_autopay_pending_when_payment_method_lookup_fails(self):
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            patch("app.services.billing_autopay.datetime", AtTwelveTwentySeven),
+            self.assertRaises(HTTPException) as expiring,
+        ):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+
+        self.assertEqual(expiring.exception.status_code, 409)
+        self.assertIn("new Idempotency-Key", expiring.exception.detail)
+        self.assertEqual(database.setup_request["id"], original_request_id)
+        self.assertEqual(
+            database.setup_request["setup_request_expires_at"],
+            "2026-08-26T12:30:00+00:00",
+        )
+        self.assertEqual(database.operation["state"], "definitive_rejected")
+        self.assertEqual(database.operation["provider_request_attempt_count"], 0)
+        self.assertEqual(len(database.prepare_calls), 2)
+        self.assertEqual(
+            database.prepare_calls[0]["p_setup_request_id"],
+            database.prepare_calls[1]["p_setup_request_id"],
+        )
+        self.assertEqual(_FakeStripeService.setup_calls, [])
+
+        database.operation_started_at = "2026-08-26T12:27:00+00:00"
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            patch("app.services.billing_autopay.datetime", AtTwelveTwentySeven),
+        ):
+            fresh = asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key-new",
+            ))
+
+        self.assertEqual(fresh.url, "https://checkout.stripe.test/setup")
+        self.assertEqual(len(_FakeStripeService.setup_calls), 1)
+        self.assertEqual(
+            database.closed_operations[0]["operation"]["provider_request_attempt_count"],
+            0,
+        )
+
+    def test_expired_checkout_closes_old_request_before_deliberate_new_key(self):
+        class ExpiredCheckoutStripeService(_FakeStripeService):
+            def create_setup_checkout_session(self, **payload):
+                self.__class__.setup_calls.append(payload)
+                sequence = len(self.__class__.setup_calls)
+                return {
+                    "id": f"cs_setup_{sequence}",
+                    "url": f"https://checkout.stripe.test/setup/{sequence}",
+                    "expires_at": payload["expires_at"],
+                }
+
+            def retrieve_connected_checkout_session(
+                self,
+                *,
+                account_id: str,
+                session_id: str,
+                expand=None,
+            ):
+                return {
+                    "id": session_id,
+                    "url": "https://checkout.stripe.test/setup/1",
+                    "status": "expired",
+                    "expires_at": int(
+                        datetime(2026, 8, 26, 12, 30, tzinfo=timezone.utc).timestamp()
+                    ),
+                }
+
+        class AtTwelveThirtyOne(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls(2026, 8, 26, 12, 31, tzinfo=timezone.utc)
+                return value if tz is None else value.astimezone(tz)
+
+        class AtTwelveOhOne(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls(2026, 8, 26, 12, 1, tzinfo=timezone.utc)
+                return value if tz is None else value.astimezone(tz)
+
+        ExpiredCheckoutStripeService.reset()
         service = self.service()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        ExpiredCheckoutStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", ExpiredCheckoutStripeService):
+            with patch("app.services.billing_autopay.datetime", AtTwelveOhOne):
+                first = asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key-old",
+                ))
+            with (
+                patch("app.services.billing_autopay.datetime", AtTwelveThirtyOne),
+                self.assertRaises(HTTPException) as expired,
+            ):
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key-old",
+                ))
+
+            database.operation_started_at = "2026-08-26T12:31:00+00:00"
+            with patch("app.services.billing_autopay.datetime", AtTwelveThirtyOne):
+                second = asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key-new",
+                ))
+
+        self.assertEqual(expired.exception.status_code, 409)
+        self.assertIn("new Idempotency-Key", expired.exception.detail)
+        self.assertEqual(first.url, "https://checkout.stripe.test/setup/1")
+        self.assertEqual(second.url, "https://checkout.stripe.test/setup/2")
+        self.assertEqual(len(ExpiredCheckoutStripeService.setup_calls), 2)
+        self.assertEqual(len(database.close_calls), 1)
+        close = database.close_calls[0]
+        self.assertEqual(
+            set(close),
+            {
+                "p_setup_request_id",
+                "p_operation_id",
+                "p_studio_id",
+                "p_payer_id",
+                "p_stripe_checkout_session_id",
+                "p_stripe_connected_account_id",
+                "p_connect_account_generation",
+                "p_close_reason_code",
+                "p_provider_read_proof_sha256",
+            },
+        )
+        self.assertEqual(close["p_close_reason_code"], "checkout_session_expired")
+        self.assertEqual(
+            close["p_provider_read_proof_sha256"],
+            stable_hash({
+                "operation_id": close["p_operation_id"],
+                "setup_request_id": close["p_setup_request_id"],
                 "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "stripe_checkout_session_id": "cs_setup_1",
                 "stripe_connected_account_id": "acct_1",
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Rehearsal Payer",
-                "stripe_customer_id": "cus_1",
-                "autopay_status": "pending",
-                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
-                "billing_status": "no_payment_method",
-                "metadata": {},
-            }],
-        })
+                "connect_account_generation": 1,
+                "checkout_session_status": "expired",
+                "checkout_session_expires_at": int(
+                    datetime(2026, 8, 26, 12, 30, tzinfo=timezone.utc).timestamp()
+                ),
+                "close_reason_code": "checkout_session_expired",
+            }),
+        )
+        self.assertNotIn("url", repr(close))
+        old = database.closed_operations[0]
+        self.assertEqual(old["operation"]["state"], "definitive_rejected")
+        self.assertEqual(old["operation"]["provider_request_attempt_count"], 1)
+        self.assertEqual(old["setup_request"]["superseded_at"], "2026-08-26T12:31:00+00:00")
+        self.assertNotIn("checkout.stripe.test", repr(old))
+        self.assertEqual(
+            len({call["idempotency_key"] for call in ExpiredCheckoutStripeService.setup_calls}),
+            2,
+        )
+
+    def test_ambiguous_or_in_flight_setup_is_never_definitively_closed(self):
+        for operation_state in ("provider_request_in_flight", "reconciliation_required"):
+            with self.subTest(operation_state=operation_state):
+                _FakeStripeService.reset()
+                service = self.service()
+                service.settings = type("Settings", (), {
+                    "BILLING_PLATFORM_FEE_BPS": 50,
+                    "FRONTEND_URL": "https://app.koaryu.test",
+                })()
+                database = _AutopayOperationSupabase(_autopay_tables())
+                service.supabase = database
+                _FakeStripeService.retrieve_account_response = {
+                    "id": "acct_1",
+                    "charges_enabled": True,
+                    "payouts_enabled": True,
+                    "details_submitted": True,
+                    "requirements": {"currently_due": []},
+                }
+                with patch("app.services.billing_service.StripeService", _FakeStripeService):
+                    asyncio.run(service.create_autopay_setup_link(
+                        "payer_1",
+                        BillingPayerAutopaySetupRequest(),
+                        "studio_1",
+                        "user_1",
+                        "autopay-key",
+                    ))
+                    database.operation["state"] = operation_state
+                    with self.assertRaises(HTTPException):
+                        asyncio.run(service.create_autopay_setup_link(
+                            "payer_1",
+                            BillingPayerAutopaySetupRequest(),
+                            "studio_1",
+                            "user_1",
+                            "autopay-key",
+                        ))
+
+                self.assertEqual(database.close_calls, [])
+                self.assertEqual(len(_FakeStripeService.setup_calls), 1)
+
+    def test_unknown_checkout_status_does_not_close_or_mutate_provider(self):
+        class UnknownStatusStripeService(_FakeStripeService):
+            def retrieve_connected_checkout_session(
+                self,
+                *,
+                account_id: str,
+                session_id: str,
+                expand=None,
+            ):
+                return {
+                    "id": session_id,
+                    "url": "https://checkout.stripe.test/setup",
+                    "status": "provider_status_not_understood",
+                }
+
+        UnknownStatusStripeService.reset()
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        UnknownStatusStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", UnknownStatusStripeService):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+            with self.assertRaises(HTTPException) as ambiguous:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
+
+        self.assertEqual(ambiguous.exception.status_code, 409)
+        self.assertEqual(database.operation["state"], "provider_succeeded")
+        self.assertEqual(database.close_calls, [])
+        self.assertEqual(len(UnknownStatusStripeService.setup_calls), 1)
+
+    def test_projected_replay_completes_locally_without_provider_retry(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+            database.operation["state"] = "projected"
+            with self.assertRaises(HTTPException) as replay:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
+
+        self.assertEqual(replay.exception.status_code, 409)
+        self.assertIn("local completion", replay.exception.detail)
+        self.assertEqual(database.operation["state"], "projected")
+        self.assertEqual(len(_FakeStripeService.setup_calls), 1)
+
+    def test_autopay_setup_requires_separately_synchronized_customer(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        tables = _autopay_tables()
+        tables["billing_payers"][0]["stripe_customer_id"] = None
+        database = _AutopayOperationSupabase(tables)
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as missing_customer:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
+
+        self.assertEqual(missing_customer.exception.status_code, 409)
+        self.assertIn("Sync this payer", missing_customer.exception.detail)
+        self.assertIsNone(database.operation)
+        self.assertEqual(_FakeStripeService.setup_calls, [])
+
+    def test_same_key_with_different_request_hash_conflicts(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        service.supabase = _AutopayOperationSupabase(_autopay_tables())
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(
+                    return_url="https://app.koaryu.test/billing",
+                ),
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+            with self.assertRaises(HTTPException) as conflict:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(
+                        return_url="https://app.koaryu.test/account",
+                    ),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
+
+        self.assertEqual(conflict.exception.status_code, 409)
+        self.assertIn("different billing request", conflict.exception.detail)
+        self.assertEqual(len(_FakeStripeService.setup_calls), 1)
+
+    def test_ambiguous_provider_outcome_requires_reconciliation_without_retry(self):
+        class AmbiguousStripeService(_FakeStripeService):
+            @classmethod
+            def reset(cls):
+                super().reset()
+
+            def create_setup_checkout_session(self, **payload):
+                self.__class__.setup_calls.append(payload)
+                raise RuntimeError("provider timeout with unknown outcome")
+
+        AmbiguousStripeService.reset()
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        service.supabase = database
+        AmbiguousStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", AmbiguousStripeService):
+            with self.assertRaises(HTTPException) as ambiguous:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
+            with self.assertRaises(HTTPException) as replay:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
+
+        self.assertEqual(ambiguous.exception.status_code, 503)
+        self.assertEqual(replay.exception.status_code, 409)
+        self.assertEqual(database.operation["state"], "reconciliation_required")
+        self.assertEqual(
+            database.operation["reconciliation_reason_code"],
+            "provider_setup_outcome_ambiguous",
+        )
+        self.assertEqual(database.operation["error_code"], "provider_outcome_ambiguous")
+        self.assertIsNone(database.operation["error_summary"])
+        self.assertNotIn("timeout", repr(database.operation))
+        self.assertEqual(len(AmbiguousStripeService.setup_calls), 1)
+
+    def test_setup_projection_failure_marks_reconciliation_without_hosted_url(self):
+        service = self.service()
+        service.settings = type("Settings", (), {
+            "BILLING_PLATFORM_FEE_BPS": 50,
+            "FRONTEND_URL": "https://app.koaryu.test",
+        })()
+        database = _AutopayOperationSupabase(_autopay_tables())
+        database.fail_bind = True
+        service.supabase = database
+        _FakeStripeService.retrieve_account_response = {
+            "id": "acct_1",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {"currently_due": []},
+        }
+
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as failed:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    BillingPayerAutopaySetupRequest(),
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
+
+        self.assertEqual(failed.exception.status_code, 503)
+        self.assertEqual(database.operation["state"], "reconciliation_required")
+        self.assertEqual(
+            database.operation["reconciliation_reason_code"],
+            "setup_session_projection_failed",
+        )
+        self.assertEqual(
+            database.setup_request["stripe_checkout_session_id"],
+            database.operation["provider_object_id"],
+        )
+        self.assertNotIn("checkout.stripe.test", repr(database.operation))
+        self.assertNotIn("checkout.stripe.test", repr(database.setup_request))
+        self.assertEqual(database.tables["audit_logs"], [])
+
+    def test_checkout_projection_failure_requires_reconciliation(self):
+        service, database, session = self._prepared_consent_setup()
 
         class FailingStripeService:
             def retrieve_connected_setup_intent(self, **_payload):
                 raise RuntimeError("Stripe timeout")
 
         with patch("app.services.billing_service.StripeService", FailingStripeService):
-            service._project_checkout_session({
-                "id": "cs_1",
-                "customer": "cus_1",
-                "setup_intent": "seti_1",
-                "metadata": {
-                    "product": "koaryu_payments_autopay",
-                    "studio_id": "studio_1",
-                    "payer_id": "payer_1",
-                },
-            }, "acct_1")
+            service._project_checkout_session(session, "acct_1", event_created=200)
 
         payer = service.supabase.tables["billing_payers"][0]
         self.assertEqual(payer["autopay_status"], "pending")
-        self.assertEqual(payer["billing_status"], "no_payment_method")
         self.assertIsNone(payer.get("autopay_authorized_at"))
-        self.assertEqual(payer["metadata"]["autopay_projection_error"]["type"], "RuntimeError")
+        self.assertIsNone(payer.get("autopay_terms_accepted_at"))
+        self.assertEqual(
+            payer["metadata"]["autopay_projection_error"]["code"],
+            "setup_payment_method_projection_ambiguous",
+        )
+        self.assertEqual(database.operation["state"], "reconciliation_required")
+        self.assertIsNotNone(database.consent)
+        self.assertIsNone(database.consent["completed_at"])
 
-    def test_checkout_projection_does_not_swallow_live_mutation_interlock(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Rehearsal Payer",
-                "stripe_customer_id": "cus_1",
-                "autopay_status": "pending",
-                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
-                "billing_status": "no_payment_method",
-                "metadata": {},
-            }],
-        })
+    def test_setup_intent_identity_mismatch_requires_reconciliation(self):
+        service, database, session = self._prepared_consent_setup()
 
-        class InterlockedStripeService:
-            def retrieve_connected_setup_intent(self, **_payload):
-                return {"id": "seti_1", "payment_method": "pm_123"}
-
-            def set_connected_customer_default_payment_method(self, **_payload):
-                raise StripeMutationBlocked(
-                    status_code=503,
-                    detail=LIVE_MUTATIONS_DISABLED_DETAIL,
-                )
-
-        with patch("app.services.billing_service.StripeService", InterlockedStripeService):
-            with self.assertRaises(StripeMutationBlocked):
-                service._project_checkout_session({
-                    "id": "cs_1",
-                    "customer": "cus_1",
-                    "setup_intent": "seti_1",
-                    "metadata": {
-                        "product": "koaryu_payments_autopay",
-                        "studio_id": "studio_1",
-                        "payer_id": "payer_1",
-                    },
-                }, "acct_1")
-
-        payer = service.supabase.tables["billing_payers"][0]
-        self.assertEqual(payer["autopay_status"], "pending")
-        self.assertEqual(payer["metadata"], {})
-
-    def test_successful_checkout_projection_clears_stale_projection_error_metadata(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Rehearsal Payer",
-                "stripe_customer_id": "cus_1",
-                "autopay_status": "pending",
-                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
-                "billing_status": "no_payment_method",
-                "metadata": {
-                    "autopay_projection_error": {"type": "RuntimeError"},
-                    "support_note": "keep me",
-                },
-            }],
-        })
-
-        class SuccessfulStripeService:
+        class MismatchedStripeService:
             def retrieve_connected_setup_intent(self, **_payload):
                 return {
                     "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_other",
+                    "metadata": session["metadata"],
+                    "payment_method": {"id": "pm_123", "type": "card"},
+                }
+
+        with patch("app.services.billing_service.StripeService", MismatchedStripeService):
+            service._project_checkout_session(session, "acct_1", event_created=200)
+
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertEqual(database.operation["state"], "reconciliation_required")
+        self.assertIsNotNone(database.consent)
+        self.assertIsNone(database.consent["completed_at"])
+
+    def test_successful_consent_projection_and_duplicate_webhook_replay(self):
+        service, database, session = self._prepared_consent_setup()
+        payer = database.tables["billing_payers"][0]
+        payer["metadata"] = {
+            "autopay_projection_error": {"code": "old_error"},
+            "support_note": "keep me",
+        }
+        payer["billing_status"] = "past_due"
+
+        class SuccessfulStripeService:
+            retrieve_calls = []
+
+            def retrieve_connected_setup_intent(self, **_payload):
+                self.__class__.retrieve_calls.append(_payload)
+                return {
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
                     "payment_method": {
                         "id": "pm_123",
                         "type": "card",
@@ -310,175 +1298,289 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                     },
                 }
 
-            def set_connected_customer_default_payment_method(self, **_payload):
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            service._project_checkout_session(session, "acct_1", event_created=200)
+            service._project_checkout_session(session, "acct_1", event_created=200)
+
+        payer = service.supabase.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "enabled")
+        self.assertEqual(payer["billing_status"], "past_due")
+        self.assertEqual(payer["default_payment_method_id"], "pm_123")
+        self.assertNotIn("autopay_projection_error", payer["metadata"])
+        self.assertEqual(payer["metadata"]["support_note"], "keep me")
+        self.assertIsNotNone(payer["autopay_terms_accepted_at"])
+        self.assertEqual(database.operation["state"], "completed")
+        self.assertEqual(database.operation["provider_secondary_object_id"], "seti_1")
+        self.assertIsNotNone(database.consent["completed_at"])
+        self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
+        consent_audits = [
+            row for row in database.tables["audit_logs"]
+            if row["action"] == "billing.autopay_consent_recorded"
+        ]
+        self.assertEqual(len(consent_audits), 1)
+        self.assertEqual(
+            set(consent_audits[0]["metadata"]),
+            {"operation_id", "setup_request_id", "terms_version"},
+        )
+
+    def test_completed_consent_missing_local_payment_method_marks_reconciliation(self):
+        service, database, session = self._prepared_consent_setup()
+
+        class SuccessfulStripeService:
+            def retrieve_connected_setup_intent(self, **_payload):
                 return {
-                    "id": "cus_1",
-                    "invoice_settings": {
-                        "default_payment_method": {
-                            "id": "pm_123",
-                            "type": "card",
-                            "card": {
-                                "brand": "visa",
-                                "last4": "2167",
-                                "exp_month": 12,
-                                "exp_year": 2030,
-                            },
-                        },
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {"brand": "visa", "last4": "2167"},
                     },
                 }
 
         with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
-            service._project_checkout_session({
-                "id": "cs_1",
-                "customer": "cus_1",
-                "setup_intent": "seti_1",
-                "metadata": {
-                    "product": "koaryu_payments_autopay",
-                    "studio_id": "studio_1",
-                    "payer_id": "payer_1",
-                },
-            }, "acct_1")
+            service._project_checkout_session(session, "acct_1", event_created=200)
 
-        payer = service.supabase.tables["billing_payers"][0]
+        payer = database.tables["billing_payers"][0]
+        payer["default_payment_method_id"] = None
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertEqual(database.operation["state"], "reconciliation_required")
+        self.assertEqual(
+            database.operation["reconciliation_reason_code"],
+            "completed_consent_payment_method_missing",
+        )
+
+        payer["default_payment_method_id"] = "pm_repaired"
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        self.assertEqual(database.operation["state"], "completed")
         self.assertEqual(payer["autopay_status"], "enabled")
-        self.assertEqual(payer["billing_status"], "current")
+        self.assertEqual(payer["autopay_authorized_at"], database.consent["completed_at"])
+
+    def test_projected_consent_missing_local_payment_method_marks_reconciliation(self):
+        service, database, session = self._prepared_consent_setup()
+        database.fail_payer_enable_once = True
+
+        class SuccessfulStripeService:
+            retrieve_calls = []
+
+            def retrieve_connected_setup_intent(self, **payload):
+                self.__class__.retrieve_calls.append(payload)
+                return {
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {"brand": "visa", "last4": "2167"},
+                    },
+                }
+
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "completed_consent_payer_enable_failed",
+            ):
+                service._project_checkout_session(session, "acct_1", event_created=200)
+
+        payer = database.tables["billing_payers"][0]
+        self.assertEqual(database.operation["state"], "projected")
+        self.assertIsNotNone(database.consent["completed_at"])
+        payer["default_payment_method_id"] = None
+
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertEqual(database.operation["state"], "reconciliation_required")
+        self.assertEqual(
+            database.operation["reconciliation_reason_code"],
+            "completed_consent_payment_method_missing",
+        )
+        self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
+
+    def test_crash_after_consent_completion_resumes_enable_and_finalizer_without_provider_work(self):
+        service, database, session = self._prepared_consent_setup()
+        database.fail_payer_enable_once = True
+
+        class SuccessfulStripeService:
+            retrieve_calls = []
+
+            def retrieve_connected_setup_intent(self, **payload):
+                self.__class__.retrieve_calls.append(payload)
+                return {
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {"brand": "visa", "last4": "2167"},
+                    },
+                }
+
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            with self.assertRaises(RuntimeError):
+                service._project_checkout_session(session, "acct_1", event_created=200)
+
+        payer = database.tables["billing_payers"][0]
+        self.assertEqual(database.operation["state"], "projected")
+        self.assertIsNotNone(database.consent["completed_at"])
+        self.assertEqual(payer["autopay_status"], "pending")
         self.assertEqual(payer["default_payment_method_id"], "pm_123")
-        self.assertNotIn("autopay_projection_error", payer["metadata"])
-        self.assertEqual(payer["metadata"]["support_note"], "keep me")
+
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        self.assertEqual(database.operation["state"], "completed")
+        self.assertEqual(payer["autopay_status"], "enabled")
+        self.assertEqual(payer["autopay_authorized_at"], database.consent["completed_at"])
+        self.assertEqual(len(SuccessfulStripeService.retrieve_calls), 1)
+
+    def test_revoked_durable_consent_fails_autopay_authorization_closed(self):
+        service, database, session = self._prepared_consent_setup()
+
+        class SuccessfulStripeService:
+            def retrieve_connected_setup_intent(self, **_payload):
+                return {
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {"brand": "visa", "last4": "2167"},
+                    },
+                }
+
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            service._project_checkout_session(session, "acct_1", event_created=200)
+
+        payer = database.tables["billing_payers"][0]
+        self.assertTrue(service._payer_autopay_authorized(payer))
+        database.consent["revoked_at"] = "2026-08-26T12:10:00+00:00"
+        self.assertFalse(service._payer_autopay_authorized(payer))
+
+    def test_missing_provider_consent_never_enables_autopay(self):
+        service, database, session = self._prepared_consent_setup()
+        session["consent"] = {}
+
+        service._project_checkout_session(session, "acct_1", event_created=200)
+
+        payer = database.tables["billing_payers"][0]
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertIsNone(payer.get("autopay_terms_accepted_at"))
+        self.assertEqual(database.operation["state"], "reconciliation_required")
+        self.assertEqual(
+            database.operation["reconciliation_reason_code"],
+            "provider_terms_or_setup_incomplete",
+        )
+
+    def test_expired_revoked_and_wrong_identity_setup_completion_fail_closed(self):
+        for scenario in ("expired", "revoked", "cross_payer", "cross_studio", "wrong_generation"):
+            with self.subTest(scenario=scenario):
+                service, database, session = self._prepared_consent_setup()
+                if scenario == "expired":
+                    database.setup_request["setup_request_expires_at"] = "2000-01-01T00:00:00+00:00"
+                elif scenario == "revoked":
+                    database.setup_request["revoked_at"] = "2026-08-26T12:05:00+00:00"
+                elif scenario == "cross_payer":
+                    session["metadata"]["payer_id"] = "payer_2"
+                elif scenario == "cross_studio":
+                    session["metadata"]["studio_id"] = "studio_2"
+                else:
+                    database.tables["studio_payment_accounts"][0]["metadata"] = {
+                        "connect_account_generation": 2,
+                    }
+
+                try:
+                    service._project_checkout_session(session, "acct_1", event_created=200)
+                except (AssertionError, HTTPException):
+                    pass
+
+                payer = database.tables["billing_payers"][0]
+                self.assertEqual(payer["autopay_status"], "pending")
+                self.assertIsNone(payer.get("autopay_terms_accepted_at"))
+                self.assertNotEqual(database.operation["state"], "completed")
 
     def test_disable_autopay_rewires_active_subscription_to_invoice_collection(self):
         service = self.service()
         service.supabase = _FakeSupabase({
             "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Family One",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
+                "id": "payer_1", "studio_id": "studio_1",
+                "display_name": "Family One", "autopay_status": "enabled",
                 "default_payment_method_id": "pm_123",
-                "autopay_status": "enabled",
-                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
-                "billing_status": "current",
-                "balance_cents": 0,
                 "created_at": "2026-05-18T00:00:00Z",
                 "updated_at": "2026-05-18T00:00:00Z",
             }],
             "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "payer_id": "payer_1",
-                "stripe_account_id": "acct_1",
-                "stripe_subscription_id": "sub_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "default_payment_method_id": "pm_123",
+                "id": "subscription_1", "studio_id": "studio_1",
+                "payer_id": "payer_1", "collection_mode": "autopay",
+                "status": "active", "stripe_subscription_id": "sub_1",
             }],
             "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
+                "id": "enrollment_1", "studio_id": "studio_1",
                 "billing_subscription_id": "subscription_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "billing_status": "current",
-                "start_date": "2026-05-18",
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
+                "collection_mode": "autopay", "status": "active",
             }],
-            "studio_payment_accounts": [],
             "audit_logs": [],
         })
-        _FakeStripeService.subscription_update_calls = []
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            response = asyncio.run(service.disable_autopay("payer_1", "studio_1", "user_1"))
+            with self.assertRaises(HTTPException) as blocked:
+                asyncio.run(service.disable_autopay(
+                    "payer_1", "studio_1", "user_1"
+                ))
 
-        self.assertEqual(response.autopay_status, "disabled")
-        self.assertEqual(_FakeStripeService.subscription_update_calls, [{
-            "account_id": "acct_1",
-            "studio_id": "studio_1",
-            "subscription_id": "sub_1",
-            "collection_method": "send_invoice",
-            "days_until_due": 7,
-            "default_payment_method": "",
-            "idempotency_key": "koaryu:autopay-disable:sub_1",
-        }])
-        subscription = service.supabase.tables["billing_subscriptions"][0]
-        self.assertEqual(subscription["collection_mode"], "invoice_link")
-        self.assertIsNone(subscription["default_payment_method_id"])
+        self.assertEqual(blocked.exception.status_code, 409)
+        self.assertIn("named cancellation workflow", blocked.exception.detail)
+        self.assertEqual(
+            service.supabase.tables["billing_payers"][0]["autopay_status"],
+            "enabled",
+        )
+        self.assertEqual(
+            service.supabase.tables["billing_subscriptions"][0]["collection_mode"],
+            "autopay",
+        )
         self.assertEqual(
             service.supabase.tables["student_billing_enrollments"][0]["collection_mode"],
-            "invoice_link",
+            "autopay",
         )
-        self.assertEqual(
-            service.supabase.tables["audit_logs"][0]["metadata"]["rewired_subscription_ids"],
-            ["subscription_1"],
-        )
-
+        self.assertEqual(_FakeStripeService.subscription_update_calls, [])
+        self.assertEqual(service.supabase.tables["audit_logs"], [])
     def test_disable_autopay_marks_subscription_pending_before_stripe_mutation(self):
         service = self.service()
         service.supabase = _FakeSupabase({
             "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Family One",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
+                "id": "payer_1", "studio_id": "studio_1",
+                "display_name": "Family One", "autopay_status": "enabled",
                 "default_payment_method_id": "pm_123",
-                "autopay_status": "enabled",
-                "autopay_terms_accepted_at": "2026-05-18T00:00:00Z",
-                "billing_status": "current",
-                "balance_cents": 0,
                 "created_at": "2026-05-18T00:00:00Z",
                 "updated_at": "2026-05-18T00:00:00Z",
             }],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "payer_id": "payer_1",
-                "stripe_account_id": "acct_1",
-                "stripe_subscription_id": "sub_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "default_payment_method_id": "pm_123",
-                "metadata": {},
-            }],
-            "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
-                "billing_subscription_id": "subscription_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "billing_status": "current",
-                "start_date": "2026-05-18",
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
-            }],
-            "studio_payment_accounts": [],
+            "billing_subscriptions": [],
             "audit_logs": [],
         })
-        test_case = self
 
-        class ObservingStripeService(_FakeStripeService):
-            def update_connected_subscription(self, **payload):
-                metadata = service.supabase.tables["billing_subscriptions"][0]["metadata"]
-                test_case.assertIn("autopay_disable_pending", metadata)
-                test_case.assertEqual(metadata["autopay_disable_pending"]["reason"], "payer_disabled_autopay")
-                test_case.assertEqual(metadata["autopay_disable_pending"]["stripe_subscription_id"], "sub_1")
-                return super().update_connected_subscription(**payload)
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            response = asyncio.run(service.disable_autopay(
+                "payer_1", "studio_1", "user_1"
+            ))
 
-        with patch("app.services.billing_service.StripeService", ObservingStripeService):
-            asyncio.run(service.disable_autopay("payer_1", "studio_1", "user_1"))
-
-        metadata = service.supabase.tables["billing_subscriptions"][0]["metadata"]
-        self.assertNotIn("autopay_disable_pending", metadata)
-        self.assertEqual(metadata["autopay_disable_history"][0]["stripe_subscription_id"], "sub_1")
-
+        self.assertEqual(response.autopay_status, "disabled")
+        self.assertEqual(_FakeStripeService.subscription_update_calls, [])
+        self.assertEqual(
+            service.supabase.tables["audit_logs"][0]["metadata"][
+                "rewired_subscription_ids"
+            ],
+            [],
+        )
     def test_autopay_invoice_requires_authorized_payer_terms(self):
         service = self.service()
         service.supabase = _FakeSupabase({
@@ -491,13 +1593,15 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "details_submitted": True,
                 "requirements_due": [],
                 "platform_fee_bps": 50,
-                "metadata": {},
+                "metadata": {"connect_account_generation": 1},
             }],
             "billing_payers": [{
                 "id": "payer_1",
                 "studio_id": "studio_1",
                 "display_name": "Rehearsal Payer",
                 "stripe_customer_id": "cus_1",
+                "stripe_account_id": "acct_1",
+                "connect_account_generation": 1,
                 "default_payment_method_id": "pm_123",
                 "autopay_status": "not_configured",
                 "billing_status": "current",
@@ -524,10 +1628,11 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                     ),
                     "studio_1",
                     "user_1",
+                    idempotency_key="autopay-consent-required",
                 ))
 
         self.assertEqual(context.exception.status_code, 409)
-        self.assertIn("accepted autopay terms", context.exception.detail)
+        self.assertIn("verified payer-owned consent", context.exception.detail)
 
     def test_autopay_enrollment_requires_authorized_payer_terms(self):
         service = self.service()
@@ -541,17 +1646,57 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "details_submitted": True,
                 "requirements_due": [],
                 "platform_fee_bps": 50,
-                "metadata": {},
+                "metadata": {"connect_account_generation": 2},
             }],
             "billing_payers": [{
                 "id": "payer_1",
                 "studio_id": "studio_1",
                 "display_name": "Rehearsal Payer",
+                "stripe_account_id": "acct_1",
                 "stripe_customer_id": "cus_1",
+                "connect_account_generation": 2,
                 "default_payment_method_id": "pm_123",
                 "autopay_status": "not_configured",
                 "billing_status": "current",
             }],
+            "billing_plans": [{
+                "id": "plan_1",
+                "studio_id": "studio_1",
+                "name": "Live Autopay Rehearsal",
+                "status": "active",
+                "amount_cents": 200,
+                "currency": "usd",
+                "billing_interval": "monthly",
+                "trial_days": 0,
+                "stripe_account_id": "acct_1",
+                "stripe_product_id": "prod_1",
+                "stripe_price_id": "price_1",
+            }],
+            "billing_plan_prices": [{
+                "id": "plan_price_1",
+                "studio_id": "studio_1",
+                "billing_plan_id": "plan_1",
+                "stripe_account_id": "acct_1",
+                "stripe_product_id": "prod_1",
+                "stripe_price_id": "price_1",
+                "amount_cents": 200,
+                "currency": "usd",
+                "billing_interval": "monthly",
+                "recurring": True,
+                "active": True,
+                "metadata": {"connect_account_generation": 2},
+            }],
+            "student_billing_enrollments": [{
+                "id": "enrollment_1",
+                "studio_id": "studio_1",
+                "student_id": "student_1",
+                "payer_id": "payer_1",
+                "billing_plan_id": "plan_1",
+                "collection_mode": "autopay",
+                "status": "pending",
+                "billing_status": "no_payment_method",
+                "metadata": {},
+            }],
         })
         _FakeStripeService.retrieve_account_response = {
             "id": "acct_1",
@@ -563,649 +1708,288 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             with self.assertRaises(HTTPException) as context:
-                service._activate_stripe_enrollment(
-                    {
-                        "id": "enrollment_1",
-                        "studio_id": "studio_1",
-                        "student_id": "student_1",
-                        "payer_id": "payer_1",
-                        "collection_mode": "autopay",
-                    },
-                    {
-                        "id": "plan_1",
-                        "studio_id": "studio_1",
-                        "name": "Live Autopay Rehearsal",
-                        "amount_cents": 200,
-                        "currency": "usd",
-                        "billing_interval": "monthly",
-                        "trial_days": 0,
-                        "stripe_price_id": "price_1",
-                    },
+                asyncio.run(service.activate_enrollment(
+                    "enrollment_1",
                     "studio_1",
-                )
+                    "user_1",
+                    "autopay-consent-required",
+                ))
 
         self.assertEqual(context.exception.status_code, 409)
-        self.assertIn("accepted autopay terms", context.exception.detail)
+        self.assertIn("verified payer consent", context.exception.detail)
 
-    def test_activation_marks_enrollment_attach_pending_before_subscription_item_mutation(self):
+    def _named_activation_service(self, *, existing_group: bool, locked: bool = False):
         service = self.service()
+        group_metadata = {"connect_account_generation": 2}
+        if locked:
+            group_metadata["stripe_quantity_sync_lock"] = {
+                "token": "other-worker",
+                "locked_at": "2026-08-26T00:00:00Z",
+            }
+        groups = [{
+            "id": "subscription_1", "studio_id": "studio_1",
+            "payer_id": "payer_1", "stripe_account_id": "acct_1",
+            "stripe_customer_id": "cus_1", "stripe_subscription_id": "sub_1",
+            "collection_mode": "invoice_link", "billing_interval": "monthly",
+            "currency": "usd", "status": "active", "metadata": group_metadata,
+        }] if existing_group else []
+        peers = [{
+            "id": "enrollment_existing", "studio_id": "studio_1",
+            "student_id": "student_2", "payer_id": "payer_1",
+            "billing_plan_id": "plan_1",
+            "billing_subscription_id": "subscription_1",
+            "stripe_subscription_id": "sub_1",
+            "stripe_subscription_item_id": "si_existing",
+            "collection_mode": "invoice_link", "status": "active",
+            "billing_status": "current", "start_date": "2026-05-18",
+            "metadata": {}, "created_at": "2026-05-18T00:00:00Z",
+            "updated_at": "2026-05-18T00:00:00Z",
+        }] if existing_group else []
         service.supabase = _FakeSupabase({
             "studio_payment_accounts": [{
                 "studio_id": "studio_1",
                 "stripe_connected_account_id": "acct_1",
-                "status": "charges_enabled",
-                "charges_enabled": True,
-                "payouts_enabled": True,
-                "details_submitted": True,
-                "requirements_due": [],
+                "status": "charges_enabled", "charges_enabled": True,
                 "platform_fee_bps": 50,
-                "metadata": {},
+                "metadata": {"connect_account_generation": 2},
             }],
             "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Family One",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "autopay_status": "not_configured",
-                "billing_status": "current",
+                "id": "payer_1", "studio_id": "studio_1",
+                "stripe_account_id": "acct_1", "stripe_customer_id": "cus_1",
+                "connect_account_generation": 2,
             }],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "payer_id": "payer_1",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "stripe_subscription_id": "sub_1",
-                "collection_mode": "invoice_link",
-                "billing_interval": "monthly",
-                "currency": "usd",
-                "status": "active",
+            "billing_plans": [{
+                "id": "plan_1", "studio_id": "studio_1", "name": "Monthly Tuition",
+                "status": "active", "amount_cents": 200, "currency": "usd",
+                "billing_interval": "monthly", "trial_days": 0,
+                "stripe_account_id": "acct_1", "stripe_product_id": "prod_1",
+                "stripe_price_id": "price_1",
             }],
-            "student_billing_enrollments": [
-                {
-                    "id": "enrollment_1",
-                    "studio_id": "studio_1",
-                    "student_id": "student_1",
-                    "payer_id": "payer_1",
-                    "billing_plan_id": "plan_1",
-                    "billing_subscription_id": None,
-                    "stripe_subscription_id": None,
-                    "stripe_subscription_item_id": None,
-                    "collection_mode": "invoice_link",
-                    "status": "pending",
-                    "billing_status": "no_payment_method",
-                    "start_date": "2026-05-18",
-                    "metadata": {},
-                    "created_at": "2026-05-18T00:00:00Z",
-                    "updated_at": "2026-05-18T00:00:00Z",
-                },
-                {
-                    "id": "enrollment_existing",
-                    "studio_id": "studio_1",
-                    "student_id": "student_2",
-                    "payer_id": "payer_1",
+            "billing_plan_prices": [{
+                "id": "local_price_1", "studio_id": "studio_1",
+                "billing_plan_id": "plan_1", "stripe_account_id": "acct_1",
+                "stripe_product_id": "prod_1", "stripe_price_id": "price_1",
+                "amount_cents": 200, "currency": "usd",
+                "billing_interval": "monthly", "recurring": True, "active": True,
+                "metadata": {"connect_account_generation": 2},
+            }],
+            "billing_subscriptions": groups,
+            "student_billing_enrollments": [{
+                "id": "enrollment_1", "studio_id": "studio_1",
+                "student_id": "student_1", "payer_id": "payer_1",
+                "billing_plan_id": "plan_1", "collection_mode": "invoice_link",
+                "status": "pending", "billing_status": "no_payment_method",
+                "start_date": "2026-05-18", "metadata": {},
+                "created_at": "2026-05-18T00:00:00Z",
+                "updated_at": "2026-05-18T00:00:00Z",
+            }, *peers],
+            "audit_logs": [],
+        })
+        service.supabase.insert_defaults["billing_subscriptions"] = {
+            "id": "subscription_created", "metadata": {},
+            "created_at": "2026-05-18T00:00:00Z",
+            "updated_at": "2026-05-18T00:00:00Z",
+        }
+        return service
+
+    def test_activation_marks_enrollment_attach_pending_before_subscription_item_mutation(self):
+        service = self._named_activation_service(existing_group=True)
+        test_case = self
+        _FakeStripeService.subscription_response = {
+            "id": "sub_1", "status": "active", "customer": "cus_1",
+            "metadata": {
+                "studio_id": "studio_1", "payer_id": "payer_1",
+                "billing_subscription_id": "subscription_1",
+            },
+            "items": {"data": [{
+                "id": "si_existing", "price": {"id": "price_1"}, "quantity": 1,
+                "metadata": {
+                    "studio_id": "studio_1", "payer_id": "payer_1",
                     "billing_plan_id": "plan_1",
                     "billing_subscription_id": "subscription_1",
-                    "stripe_subscription_id": "sub_1",
-                    "stripe_subscription_item_id": "si_existing",
-                    "collection_mode": "invoice_link",
-                    "status": "active",
-                    "billing_status": "upcoming",
-                    "start_date": "2026-05-18",
-                    "metadata": {},
-                    "created_at": "2026-05-18T00:00:00Z",
-                    "updated_at": "2026-05-18T00:00:00Z",
                 },
-            ],
-        })
-        _FakeStripeService.retrieve_account_response = {
-            "id": "acct_1",
-            "charges_enabled": True,
-            "payouts_enabled": True,
-            "details_submitted": True,
-            "requirements": {"currently_due": []},
+            }]},
         }
-        test_case = self
-        final_attach_updates = []
-
-        def observe_final_attach_update(query, _rows):
-            if (
-                query.name == "student_billing_enrollments"
-                and query.update_payload
-                and query.update_payload.get("stripe_subscription_item_id") == "si_existing"
-            ):
-                final_attach_updates.append(query.update_payload)
-                test_case.assertIn(
-                    "stripe_quantity_sync_lock",
-                    service.supabase.tables["billing_subscriptions"][0].get("metadata", {}),
-                )
-            return None
-
-        service.supabase.on_update_query = observe_final_attach_update
 
         class ObservingStripeService(_FakeStripeService):
             def update_connected_subscription_item(self, **payload):
-                metadata = service.supabase.tables["student_billing_enrollments"][0]["metadata"]
-                test_case.assertIn("stripe_attach_pending", metadata)
-                test_case.assertEqual(metadata["stripe_attach_pending"]["reason"], "activate")
-                test_case.assertEqual(metadata["stripe_attach_pending"]["billing_plan_id"], "plan_1")
+                enrollment = service.supabase.tables["student_billing_enrollments"][0]
+                intent = enrollment["metadata"]["provider_activation_intent"]
+                test_case.assertEqual(intent["branch"], "update_quantity")
+                test_case.assertEqual(intent["expected_quantity"], 2)
+                test_case.assertIn(
+                    "stripe_quantity_sync_lock",
+                    service.supabase.tables["billing_subscriptions"][0]["metadata"],
+                )
+                self.__class__.subscription_response["items"]["data"][0]["quantity"] = 2
                 return super().update_connected_subscription_item(**payload)
 
         with patch("app.services.billing_service.StripeService", ObservingStripeService):
-            response = service._activate_stripe_enrollment(
-                service.supabase.tables["student_billing_enrollments"][0],
-                {
-                    "id": "plan_1",
-                    "studio_id": "studio_1",
-                    "name": "Monthly Tuition",
-                    "amount_cents": 200,
-                    "currency": "usd",
-                    "billing_interval": "monthly",
-                    "trial_days": 0,
-                    "stripe_price_id": "price_1",
-                },
-                "studio_1",
-            )
+            response = asyncio.run(service.activate_enrollment(
+                "enrollment_1", "studio_1", "user_1", "quantity-key"
+            ))
 
-        enrollment = service.supabase.tables["student_billing_enrollments"][0]
-        self.assertEqual(response["status"], "active")
-        self.assertEqual(response["billing_subscription_id"], "subscription_1")
-        self.assertEqual(response["stripe_subscription_item_id"], "si_existing")
-        self.assertNotIn("stripe_attach_pending", enrollment["metadata"])
+        self.assertEqual(response.status, "active")
+        self.assertEqual(response.stripe_subscription_item_id, "si_existing")
         self.assertEqual(
-            enrollment["metadata"]["stripe_attach_history"][0]["stripe_subscription_item_id"],
-            "si_existing",
+            _FakeStripeService.subscription_item_update_calls[-1]["quantity"], 2
         )
-        self.assertEqual(_FakeStripeService.subscription_item_update_calls[-1]["quantity"], 2)
-        self.assertEqual(
-            _FakeStripeService.subscription_item_update_calls[-1]["idempotency_key"],
-            "koaryu:subscription-item-quantity:si_existing:2",
-        )
-        self.assertEqual(len(final_attach_updates), 1)
         self.assertNotIn(
             "stripe_quantity_sync_lock",
-            service.supabase.tables["billing_subscriptions"][0].get("metadata", {}),
+            service.supabase.tables["billing_subscriptions"][0]["metadata"],
         )
 
     def test_activation_holds_quantity_lock_while_creating_first_subscription(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-                "status": "charges_enabled",
-                "charges_enabled": True,
-                "payouts_enabled": True,
-                "details_submitted": True,
-                "requirements_due": [],
-                "platform_fee_bps": 50,
-                "metadata": {},
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Family One",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "billing_status": "current",
-            }],
-            "billing_subscriptions": [],
-            "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
-                "billing_subscription_id": None,
-                "stripe_subscription_id": None,
-                "stripe_subscription_item_id": None,
-                "collection_mode": "invoice_link",
-                "status": "pending",
-                "billing_status": "no_payment_method",
-                "start_date": "2026-05-18",
-                "metadata": {},
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
-            }],
-        })
-        _FakeStripeService.retrieve_account_response = {
-            "id": "acct_1",
-            "charges_enabled": True,
-            "payouts_enabled": True,
-            "details_submitted": True,
-            "requirements": {"currently_due": []},
-        }
+        service = self._named_activation_service(existing_group=False)
         test_case = self
 
         class ObservingStripeService(_FakeStripeService):
             def create_connected_subscription(self, **payload):
-                subscription = service.supabase.tables["billing_subscriptions"][0]
-                test_case.assertIn("stripe_quantity_sync_lock", subscription.get("metadata", {}))
-                test_case.assertEqual(payload["metadata"]["billing_subscription_id"], subscription["id"])
-                return super().create_connected_subscription(**payload)
+                group = service.supabase.tables["billing_subscriptions"][0]
+                test_case.assertIn("stripe_quantity_sync_lock", group["metadata"])
+                response = {
+                    "id": "sub_created", "status": "active",
+                    "customer": payload["customer_id"],
+                    "metadata": payload["metadata"],
+                    "items": {"data": [{
+                        "id": "si_created", "price": {"id": payload["price_id"]},
+                        "quantity": 1, "metadata": payload["item_metadata"],
+                    }]},
+                }
+                self.__class__.subscription_response = response
+                self.__class__.subscription_create_calls.append(payload)
+                return response
 
         with patch("app.services.billing_service.StripeService", ObservingStripeService):
-            response = service._activate_stripe_enrollment(
-                service.supabase.tables["student_billing_enrollments"][0],
-                {
-                    "id": "plan_1",
-                    "studio_id": "studio_1",
-                    "name": "Monthly Tuition",
-                    "amount_cents": 200,
-                    "currency": "usd",
-                    "billing_interval": "monthly",
-                    "trial_days": 0,
-                    "stripe_price_id": "price_1",
-                },
-                "studio_1",
-            )
+            response = asyncio.run(service.activate_enrollment(
+                "enrollment_1", "studio_1", "user_1", "create-key"
+            ))
 
-        subscription = service.supabase.tables["billing_subscriptions"][0]
-        enrollment = service.supabase.tables["student_billing_enrollments"][0]
-        self.assertEqual(response["status"], "active")
-        self.assertEqual(response["billing_subscription_id"], subscription["id"])
-        self.assertEqual(response["stripe_subscription_id"], "sub_created")
-        self.assertEqual(response["stripe_subscription_item_id"], "si_created")
-        self.assertNotIn("stripe_quantity_sync_lock", subscription.get("metadata", {}))
-        self.assertNotIn("stripe_attach_pending", enrollment["metadata"])
+        self.assertEqual(response.status, "active")
+        self.assertEqual(response.stripe_subscription_id, "sub_created")
+        self.assertEqual(response.stripe_subscription_item_id, "si_created")
+        self.assertNotIn(
+            "stripe_quantity_sync_lock",
+            service.supabase.tables["billing_subscriptions"][0]["metadata"],
+        )
 
     def test_subscription_item_quantity_update_rejects_concurrent_sync_lock(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-                "status": "charges_enabled",
-                "charges_enabled": True,
-                "payouts_enabled": True,
-                "details_submitted": True,
-                "requirements_due": [],
-                "platform_fee_bps": 50,
-                "metadata": {},
-            }],
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Family One",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "billing_status": "current",
-            }],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "payer_id": "payer_1",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "stripe_subscription_id": "sub_1",
-                "collection_mode": "invoice_link",
-                "billing_interval": "monthly",
-                "currency": "usd",
-                "status": "active",
-                "metadata": {
-                    "stripe_quantity_sync_lock": {
-                        "token": "other-worker",
-                        "locked_at": "2026-01-01T00:00:00Z",
-                    },
-                },
-            }],
-            "student_billing_enrollments": [
-                {
-                    "id": "enrollment_1",
-                    "studio_id": "studio_1",
-                    "student_id": "student_1",
-                    "payer_id": "payer_1",
-                    "billing_plan_id": "plan_1",
-                    "billing_subscription_id": None,
-                    "stripe_subscription_id": None,
-                    "stripe_subscription_item_id": None,
-                    "collection_mode": "invoice_link",
-                    "status": "pending",
-                    "billing_status": "no_payment_method",
-                    "start_date": "2026-05-18",
-                    "metadata": {},
-                    "created_at": "2026-05-18T00:00:00Z",
-                    "updated_at": "2026-05-18T00:00:00Z",
-                },
-                {
-                    "id": "enrollment_existing",
-                    "studio_id": "studio_1",
-                    "student_id": "student_2",
-                    "payer_id": "payer_1",
-                    "billing_plan_id": "plan_1",
-                    "billing_subscription_id": "subscription_1",
-                    "stripe_subscription_id": "sub_1",
-                    "stripe_subscription_item_id": "si_existing",
-                    "collection_mode": "invoice_link",
-                    "status": "active",
-                    "billing_status": "upcoming",
-                    "start_date": "2026-05-18",
-                    "metadata": {},
-                    "created_at": "2026-05-18T00:00:00Z",
-                    "updated_at": "2026-05-18T00:00:00Z",
-                },
-            ],
-        })
-        _FakeStripeService.retrieve_account_response = {
-            "id": "acct_1",
-            "charges_enabled": True,
-            "payouts_enabled": True,
-            "details_submitted": True,
-            "requirements": {"currently_due": []},
-        }
+        service = self._named_activation_service(existing_group=True, locked=True)
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            with self.assertRaises(HTTPException) as context:
-                service._activate_stripe_enrollment(
-                    service.supabase.tables["student_billing_enrollments"][0],
-                    {
-                        "id": "plan_1",
-                        "studio_id": "studio_1",
-                        "name": "Monthly Tuition",
-                        "amount_cents": 200,
-                        "currency": "usd",
-                        "billing_interval": "monthly",
-                        "trial_days": 0,
-                        "stripe_price_id": "price_1",
-                    },
-                    "studio_1",
-                )
+            with self.assertRaises(HTTPException) as blocked:
+                asyncio.run(service.activate_enrollment(
+                    "enrollment_1", "studio_1", "user_1", "locked-key"
+                ))
 
-        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(blocked.exception.status_code, 409)
         self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])
+        self.assertEqual(service.supabase.billing_provider_operations, {})
 
     def test_cancel_last_subscription_enrollment_cancels_subscription_without_deleting_last_item(self):
         service = self.service()
         service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-            }],
             "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
-                "billing_subscription_id": "subscription_1",
+                "id": "enrollment_1", "studio_id": "studio_1",
+                "collection_mode": "autopay", "status": "active",
                 "stripe_subscription_id": "sub_1",
                 "stripe_subscription_item_id": "si_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "billing_status": "current",
-                "start_date": "2026-05-18",
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
             }],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "status": "active",
-            }],
-            "audit_logs": [],
         })
-        _FakeStripeService.subscription_cancel_calls = []
-        _FakeStripeService.subscription_item_delete_calls = []
-        _FakeStripeService.subscription_item_update_calls = []
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            response = asyncio.run(service.set_enrollment_status(
-                "enrollment_1",
-                "canceled",
-                "studio_1",
-                "user_1",
-            ))
+            with self.assertRaises(HTTPException) as unavailable:
+                asyncio.run(service.set_enrollment_status(
+                    "enrollment_1", "canceled", "studio_1", "user_1"
+                ))
 
-        self.assertEqual(response.status, "canceled")
-        self.assertIsNone(service.supabase.tables["student_billing_enrollments"][0]["stripe_subscription_item_id"])
-        self.assertEqual(service.supabase.tables["billing_subscriptions"][0]["status"], "canceled")
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [{
-            "account_id": "acct_1",
-            "studio_id": "studio_1",
-            "subscription_id": "sub_1",
-            "idempotency_key": "koaryu:subscription-cancel:sub_1",
-        }])
+        self.assertEqual(unavailable.exception.status_code, 409)
+        self.assertIn("named supported workflows", unavailable.exception.detail)
+        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
         self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [])
         self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])
-
     def test_cancel_uses_subscription_stripe_account_when_studio_account_rotated(self):
         service = self.service()
         service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_new",
-            }],
             "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
-                "billing_subscription_id": "subscription_1",
+                "id": "enrollment_1", "studio_id": "studio_1",
+                "collection_mode": "autopay", "status": "active",
                 "stripe_subscription_id": "sub_1",
                 "stripe_subscription_item_id": "si_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "billing_status": "current",
-                "start_date": "2026-05-18",
-                "metadata": {},
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
             }],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "stripe_account_id": "acct_old",
-                "status": "active",
-            }],
-            "audit_logs": [],
         })
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            response = asyncio.run(service.set_enrollment_status(
-                "enrollment_1",
-                "canceled",
-                "studio_1",
-                "user_1",
-            ))
+            with self.assertRaises(HTTPException) as unavailable:
+                asyncio.run(service.set_enrollment_status(
+                    "enrollment_1", "canceled", "studio_1", "user_1"
+                ))
 
-        self.assertEqual(response.status, "canceled")
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [{
-            "account_id": "acct_old",
-            "studio_id": "studio_1",
-            "subscription_id": "sub_1",
-            "idempotency_key": "koaryu:subscription-cancel:sub_1",
-        }])
-        self.assertEqual(service.supabase.tables["billing_subscriptions"][0]["status"], "canceled")
-
+        self.assertEqual(unavailable.exception.status_code, 409)
+        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
     def test_cancel_marks_enrollment_detach_pending_before_stripe_mutation(self):
         service = self.service()
         service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-            }],
             "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
-                "billing_subscription_id": "subscription_1",
+                "id": "enrollment_1", "studio_id": "studio_1",
+                "collection_mode": "autopay", "status": "active",
                 "stripe_subscription_id": "sub_1",
                 "stripe_subscription_item_id": "si_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "billing_status": "current",
-                "start_date": "2026-05-18",
                 "metadata": {},
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
             }],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "status": "active",
-            }],
-            "audit_logs": [],
         })
-        test_case = self
 
-        class ObservingStripeService(_FakeStripeService):
-            def cancel_connected_subscription(self, **payload):
-                metadata = service.supabase.tables["student_billing_enrollments"][0]["metadata"]
-                test_case.assertIn("stripe_detach_pending", metadata)
-                test_case.assertEqual(metadata["stripe_detach_pending"]["reason"], "canceled")
-                test_case.assertEqual(metadata["stripe_detach_pending"]["stripe_subscription_id"], "sub_1")
-                return super().cancel_connected_subscription(**payload)
-
-        with patch("app.services.billing_service.StripeService", ObservingStripeService):
-            asyncio.run(service.set_enrollment_status(
-                "enrollment_1",
-                "canceled",
-                "studio_1",
-                "user_1",
-            ))
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException):
+                asyncio.run(service.set_enrollment_status(
+                    "enrollment_1", "canceled", "studio_1", "user_1"
+                ))
 
         enrollment = service.supabase.tables["student_billing_enrollments"][0]
-        self.assertIsNone(enrollment["billing_subscription_id"])
-        self.assertIsNone(enrollment["stripe_subscription_id"])
-        self.assertIsNone(enrollment["stripe_subscription_item_id"])
-        self.assertNotIn("stripe_detach_pending", enrollment["metadata"])
-        self.assertEqual(
-            enrollment["metadata"]["stripe_detach_history"][0]["stripe_subscription_item_id"],
-            "si_1",
-        )
-
+        self.assertEqual(enrollment["metadata"], {})
+        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
     def test_update_enrollment_to_external_records_local_detach_before_canceling_stripe(self):
         service = self.service()
         service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
-            }],
             "student_billing_enrollments": [{
-                "id": "enrollment_1",
-                "studio_id": "studio_1",
-                "student_id": "student_1",
-                "payer_id": "payer_1",
-                "billing_plan_id": "plan_1",
-                "billing_subscription_id": "subscription_1",
+                "id": "enrollment_1", "studio_id": "studio_1",
+                "collection_mode": "autopay", "status": "active",
                 "stripe_subscription_id": "sub_1",
                 "stripe_subscription_item_id": "si_1",
-                "collection_mode": "autopay",
-                "status": "active",
-                "billing_status": "current",
-                "start_date": "2026-05-18",
                 "metadata": {},
-                "created_at": "2026-05-18T00:00:00Z",
-                "updated_at": "2026-05-18T00:00:00Z",
             }],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "status": "active",
-            }],
-            "audit_logs": [],
-        })
-        test_case = self
-
-        class ObservingStripeService(_FakeStripeService):
-            def cancel_connected_subscription(self, **payload):
-                metadata = service.supabase.tables["student_billing_enrollments"][0]["metadata"]
-                test_case.assertIn("stripe_detach_pending", metadata)
-                test_case.assertEqual(metadata["stripe_detach_pending"]["reason"], "rewire")
-                return super().cancel_connected_subscription(**payload)
-
-        with patch("app.services.billing_service.StripeService", ObservingStripeService):
-            response = asyncio.run(service.update_enrollment(
-                "enrollment_1",
-                StudentBillingEnrollmentUpdate(collection_mode="external"),
-                "studio_1",
-                "user_1",
-            ))
-
-        enrollment = service.supabase.tables["student_billing_enrollments"][0]
-        self.assertEqual(response.collection_mode, "external")
-        self.assertEqual(enrollment["billing_status"], "externally_paid")
-        self.assertIsNone(enrollment["billing_subscription_id"])
-        self.assertIsNone(enrollment["stripe_subscription_id"])
-        self.assertIsNone(enrollment["stripe_subscription_item_id"])
-        self.assertNotIn("stripe_detach_pending", enrollment["metadata"])
-        self.assertEqual(_FakeStripeService.subscription_cancel_calls[-1], {
-            "account_id": "acct_1",
-            "studio_id": "studio_1",
-            "subscription_id": "sub_1",
-            "idempotency_key": "koaryu:subscription-cancel:sub_1",
         })
 
+        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+            with self.assertRaises(HTTPException) as unavailable:
+                asyncio.run(service.update_enrollment(
+                    "enrollment_1",
+                    StudentBillingEnrollmentUpdate(collection_mode="external"),
+                    "studio_1",
+                    "user_1",
+                ))
+
+        self.assertEqual(unavailable.exception.status_code, 409)
+        self.assertIn("Generic update is unavailable", unavailable.exception.detail)
+        self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
     def test_cancel_one_of_multiple_subscription_enrollments_deletes_only_that_item(self):
         service = self.service()
         service.supabase = _FakeSupabase({
-            "studio_payment_accounts": [{
-                "studio_id": "studio_1",
-                "stripe_connected_account_id": "acct_1",
+            "student_billing_enrollments": [{
+                "id": "enrollment_1", "studio_id": "studio_1",
+                "collection_mode": "autopay", "status": "active",
+                "stripe_subscription_id": "sub_1",
+                "stripe_subscription_item_id": "si_1",
             }],
-            "student_billing_enrollments": [
-                {
-                    "id": "enrollment_1",
-                    "studio_id": "studio_1",
-                    "student_id": "student_1",
-                    "payer_id": "payer_1",
-                    "billing_plan_id": "plan_1",
-                    "billing_subscription_id": "subscription_1",
-                    "stripe_subscription_id": "sub_1",
-                    "stripe_subscription_item_id": "si_1",
-                    "collection_mode": "autopay",
-                    "status": "active",
-                    "billing_status": "current",
-                    "start_date": "2026-05-18",
-                    "created_at": "2026-05-18T00:00:00Z",
-                    "updated_at": "2026-05-18T00:00:00Z",
-                },
-                {
-                    "id": "enrollment_2",
-                    "studio_id": "studio_1",
-                    "student_id": "student_2",
-                    "payer_id": "payer_1",
-                    "billing_plan_id": "plan_2",
-                    "billing_subscription_id": "subscription_1",
-                    "stripe_subscription_id": "sub_1",
-                    "stripe_subscription_item_id": "si_2",
-                    "collection_mode": "autopay",
-                    "status": "active",
-                    "billing_status": "current",
-                    "start_date": "2026-05-18",
-                    "created_at": "2026-05-18T00:00:00Z",
-                    "updated_at": "2026-05-18T00:00:00Z",
-                },
-            ],
-            "billing_subscriptions": [{
-                "id": "subscription_1",
-                "studio_id": "studio_1",
-                "status": "active",
-            }],
-            "audit_logs": [],
         })
-        _FakeStripeService.subscription_cancel_calls = []
-        _FakeStripeService.subscription_item_delete_calls = []
-        _FakeStripeService.subscription_item_update_calls = []
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            response = asyncio.run(service.set_enrollment_status(
-                "enrollment_1",
-                "canceled",
-                "studio_1",
-                "user_1",
-            ))
+            with self.assertRaises(HTTPException) as unavailable:
+                asyncio.run(service.set_enrollment_status(
+                    "enrollment_1", "canceled", "studio_1", "user_1"
+                ))
 
-        self.assertEqual(response.status, "canceled")
-        self.assertEqual(service.supabase.tables["billing_subscriptions"][0]["status"], "active")
+        self.assertEqual(unavailable.exception.status_code, 409)
         self.assertEqual(_FakeStripeService.subscription_cancel_calls, [])
-        self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [{
-            "account_id": "acct_1",
-            "studio_id": "studio_1",
-            "subscription_item_id": "si_1",
-            "idempotency_key": "koaryu:subscription-item-delete:si_1",
-        }])
+        self.assertEqual(_FakeStripeService.subscription_item_delete_calls, [])
+        self.assertEqual(_FakeStripeService.subscription_item_update_calls, [])

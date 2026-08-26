@@ -78,6 +78,16 @@ class _AuthorizationSupabase(RpcBackedSupabase):
             raise self.failure
         return self._response("acknowledge_connect_onboarding_bootstrap_initial_link_delivery")
 
+    def _rpc_set_studio_live_billing_authorization_operations_v1(self, params):
+        if self.failure:
+            raise self.failure
+        return self._response("set_studio_live_billing_authorization_operations_v1") or [{
+            "studio_id": params["p_studio_id"],
+            "scope": params["p_scope"],
+            "enabled": params["p_enabled"],
+            "allowed_operations": params["p_allowed_operations"],
+        }]
+
 
 class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
     def test_new_bootstrap_context_has_reproducible_provider_keys(self):
@@ -175,10 +185,11 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
             ),
             "studio_1",
         )
-        self.assertEqual(supabase.rpc_calls[0][0], "authorize_connect_onboarding_bootstrap_account_create_v2")
-        self.assertEqual(supabase.rpc_calls[0][1]["p_bootstrap_id"], context.bootstrap_id)
-        self.assertNotIn("p_bootstrap_token", supabase.rpc_calls[0][1])
-        self.assertEqual(supabase.rpc_calls[0][1]["p_account_create_payload_sha256"], "d" * 64)
+        self.assertEqual(supabase.rpc_calls[0][0], "authorize_studio_live_billing_mutation_atomic")
+        self.assertEqual(supabase.rpc_calls[1][0], "authorize_connect_onboarding_bootstrap_account_create_v2")
+        self.assertEqual(supabase.rpc_calls[1][1]["p_bootstrap_id"], context.bootstrap_id)
+        self.assertNotIn("p_bootstrap_token", supabase.rpc_calls[1][1])
+        self.assertEqual(supabase.rpc_calls[1][1]["p_account_create_payload_sha256"], "d" * 64)
 
     def test_rpc_denials_fail_closed_for_revocation_drift_or_stale_checkpoint(self):
         for response in ([], None, [{"authorized": False, "studio_id": "studio_1"}], [{
@@ -238,6 +249,7 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
                 "p_initial_link_idempotency_key": context.initial_link_idempotency_key,
             },
         ))
+        self.assertEqual(supabase.rpc_calls[-2][0], "authorize_studio_live_billing_mutation_atomic")
 
         supabase.response = [{"studio_id": "studio_1", "stripe_connected_account_id": "acct_1"}]
         row = store.bind_created_connect_account(
@@ -248,6 +260,86 @@ class StudioLiveBillingAuthorizationStoreTest(unittest.TestCase):
         )
         self.assertEqual(row["stripe_connected_account_id"], "acct_1")
         self.assertEqual(supabase.rpc_calls[-1][0], "bind_connect_onboarding_bootstrap_account_v2")
+
+    def test_operation_bounded_writer_uses_v30_rpc_and_exact_array(self):
+        supabase = _AuthorizationSupabase()
+        row = StudioLiveBillingAuthorizationStore(
+            supabase,
+            expected_candidate_sha=CANDIDATE_SHA,
+        ).set_authorization_operations(
+            studio_id="studio_1",
+            scope="connect_payments",
+            enabled=True,
+            expires_at="2026-08-27T00:00:00+00:00",
+            reason="canary",
+            actor_id="actor_1",
+            allowed_operations=("connected_invoice.create", "connected_invoice.pay"),
+            actor_email="operator@example.invalid",
+            stripe_connected_account_id="acct_1",
+        )
+
+        self.assertEqual(row["allowed_operations"], [
+            "connected_invoice.create",
+            "connected_invoice.pay",
+        ])
+        self.assertEqual(supabase.rpc_calls[-1][0], "set_studio_live_billing_authorization_operations_v1")
+        self.assertEqual(supabase.rpc_calls[-1][1]["p_allowed_operations"], row["allowed_operations"])
+
+    def test_operation_bounded_writer_rejects_noncanonical_arrays_before_rpc(self):
+        supabase = _AuthorizationSupabase()
+        store = StudioLiveBillingAuthorizationStore(
+            supabase,
+            expected_candidate_sha=CANDIDATE_SHA,
+        )
+        for operations in (
+            (),
+            ("connected_invoice.pay", "connected_invoice.create"),
+            ("connected_invoice.create", "connected_invoice.create"),
+            ("connected_invoice.*",),
+        ):
+            with self.subTest(operations=operations), self.assertRaises(HTTPException):
+                store.set_authorization_operations(
+                    studio_id="studio_1",
+                    scope="connect_payments",
+                    enabled=True,
+                    expires_at="2026-08-27T00:00:00+00:00",
+                    reason="canary",
+                    actor_id="actor_1",
+                    allowed_operations=operations,
+                )
+        self.assertEqual(supabase.rpc_calls, [])
+
+    def test_current_allowed_operations_returns_only_canonical_enabled_rows(self):
+        supabase = _AuthorizationSupabase()
+        supabase.tables["studio_live_billing_authorizations"] = [
+            {
+                "studio_id": "studio_1",
+                "scope": "connect_payments",
+                "enabled": True,
+                "allowed_operations": [
+                    "connected_invoice.create",
+                    "connected_invoice.pay",
+                ],
+            },
+            {
+                "studio_id": "studio_1",
+                "scope": "connect_onboarding",
+                "enabled": True,
+                "allowed_operations": ["connect_*"],
+            },
+        ]
+
+        operations = StudioLiveBillingAuthorizationStore(
+            supabase,
+            expected_candidate_sha=CANDIDATE_SHA,
+        ).current_allowed_operations(studio_id="studio_1")
+
+        self.assertEqual(operations, {
+            "connect_payments": frozenset({
+                "connected_invoice.create",
+                "connected_invoice.pay",
+            }),
+        })
 
     def test_prepare_and_load_recovery_keep_stable_context_service_side(self):
         row = {

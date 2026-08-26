@@ -18,6 +18,7 @@ from app.schemas.support import SupportTicketResponse
 
 class FakeSettings:
     ACCOUNT_DELETION_WORKER_SECRET = "delete-secret"
+    BILLING_TRANSITION_WORKER_SECRET = "billing-transition-secret"
     OPERATIONAL_ALERTS_ENABLED = False
     OPERATIONAL_ALERT_WORKER_SECRET = "operational-alert-secret"
     SUPPORT_TRIAGE_SECRET = "support-secret"
@@ -61,6 +62,47 @@ class InternalEndpointTest(unittest.TestCase):
         app.dependency_overrides.clear()
         internal.get_settings.cache_clear()
         internal.get_settings = get_settings
+
+    @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
+    @patch("app.api.v1.endpoints.internal.BillingService")
+    def test_due_billing_enrollment_transitions_require_dedicated_secret(
+        self,
+        billing_service_class,
+        _settings,
+    ):
+        response = self.client.post(
+            "/api/v1/internal/billing/enrollment-transitions/process-due",
+            headers={"X-Internal-Secret": "wrong-secret"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        billing_service_class.assert_not_called()
+
+    @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
+    @patch("app.api.v1.endpoints.internal.BillingService")
+    def test_due_billing_enrollment_transitions_dispatch_bounded_worker(
+        self,
+        billing_service_class,
+        _settings,
+    ):
+        service = billing_service_class.return_value
+        service.process_due_enrollment_transitions = AsyncMock(return_value={
+            "claimed": 2,
+            "completed": 1,
+            "reconciliation_required": 1,
+            "failed": 0,
+        })
+
+        response = self.client.post(
+            "/api/v1/internal/billing/enrollment-transitions/process-due?limit=7",
+            headers={"X-Internal-Secret": "billing-transition-secret"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["claimed"], 2)
+        called = service.process_due_enrollment_transitions.await_args.kwargs
+        self.assertEqual(called["limit"], 7)
+        self.assertEqual(called["worker_id"], "00000000-0000-0000-0000-0000000b1171")
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
     @patch("app.api.v1.endpoints.internal.AccountService")

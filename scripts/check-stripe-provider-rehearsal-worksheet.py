@@ -14,8 +14,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR_PATH = ROOT / "scripts" / "verify-stripe-provider-rehearsal.py"
 DEFAULT_WORKSHEET = ROOT / "docs" / "stripe-test-provider-rehearsal-capture.md"
-TEMPLATE_START = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V2_TEMPLATE:START -->"
-TEMPLATE_END = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V2_TEMPLATE:END -->"
+TEMPLATE_START = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:START -->"
+TEMPLATE_END = "<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:END -->"
 STUDIO = "<STUDIO_ID>"
 ACCOUNT = "<STRIPE_CONNECT_ACCOUNT_ID>"
 GENERATION = "<CONNECT_ACCOUNT_GENERATION>"
@@ -40,13 +40,13 @@ def load_template(worksheet: Path) -> dict[str, Any]:
     pattern = re.escape(TEMPLATE_START) + r"\s*```json\s*(\{.*?\})\s*```\s*" + re.escape(TEMPLATE_END)
     matches = re.findall(pattern, text, flags=re.DOTALL)
     if len(matches) != 1:
-        raise ValueError("worksheet must contain exactly one marked JSON schema-v2 template")
+        raise ValueError("worksheet must contain exactly one marked JSON schema-v3 template")
     try:
         template = json.loads(matches[0])
     except json.JSONDecodeError as exc:
-        raise ValueError(f"worksheet schema-v2 template is not valid JSON: {exc}") from exc
+        raise ValueError(f"worksheet schema-v3 template is not valid JSON: {exc}") from exc
     if not isinstance(template, dict):
-        raise ValueError("worksheet schema-v2 template must be a JSON object")
+        raise ValueError("worksheet schema-v3 template must be a JSON object")
     return template
 
 
@@ -79,6 +79,21 @@ def validate_template(template: dict[str, Any]) -> list[str]:
         if template.get(field) != expected:
             errors.append(f"top-level field {field} does not use the canonical worksheet value")
 
+    capabilities = template.get("role_capabilities")
+    if not _exact_keys(errors, "role capabilities", capabilities, VALIDATOR.ROLE_CAPABILITY_KEYS):
+        capabilities = {}
+    if capabilities.get("admin") != VALIDATOR.ADMIN_WORKFLOWS:
+        errors.append("Admin worksheet capabilities do not match the validator")
+    if capabilities.get("front_desk") != VALIDATOR.FRONT_DESK_WORKFLOWS:
+        errors.append("Front Desk worksheet capabilities do not match the validator")
+    if capabilities.get("instructor") != []:
+        errors.append("Instructor worksheet capabilities must be empty")
+    _exact_keys(errors, "workflow facts", template.get("workflow_facts"), VALIDATOR.WORKFLOW_FACT_KEYS)
+    terminal = template.get("terminal_counts")
+    if _exact_keys(errors, "terminal counts", terminal, VALIDATOR.TERMINAL_COUNT_KEYS):
+        if any(terminal.get(key) != 0 for key in VALIDATOR.TERMINAL_COUNT_KEYS):
+            errors.append("terminal count worksheet values must all be zero")
+
     steps = template.get("steps")
     if not isinstance(steps, list):
         errors.append("steps must be a list")
@@ -109,30 +124,30 @@ def validate_template(template: dict[str, Any]) -> list[str]:
     if not isinstance(mutations, list):
         errors.append("mutation_attempts must be a list")
     else:
-        by_operation = {
-            mutation.get("operation"): mutation for mutation in mutations if isinstance(mutation, dict)
+        by_step = {
+            mutation.get("step_name"): mutation for mutation in mutations if isinstance(mutation, dict)
         }
-        if len(by_operation) != len(mutations) or set(by_operation) != VALIDATOR.REQUIRED_MUTATION_OPERATIONS:
-            errors.append("mutation operations do not match the validator required operations")
-        for operation in VALIDATOR.REQUIRED_MUTATION_OPERATIONS:
-            mutation = by_operation.get(operation)
-            if not _exact_keys(errors, f"mutation {operation}", mutation, VALIDATOR.MUTATION_KEYS):
+        if len(by_step) != len(mutations) or set(by_step) != set(VALIDATOR.REQUIRED_MUTATIONS):
+            errors.append("mutation steps do not match the validator workflow plan")
+        for step_name, expected_mutation in VALIDATOR.REQUIRED_MUTATIONS.items():
+            mutation = by_step.get(step_name)
+            if not _exact_keys(errors, f"mutation {step_name}", mutation, VALIDATOR.MUTATION_KEYS):
                 continue
-            if mutation["operation"] != operation:
-                errors.append(f"mutation {operation} does not use its canonical operation")
+            workflow_id, operation, scope, actor_role, uses_account = expected_mutation
+            if (mutation["workflow_id"], mutation["operation"], mutation["scope"], mutation["actor_role"]) != (workflow_id, operation, scope, actor_role):
+                errors.append(f"mutation {step_name} does not use its canonical workflow contract")
             if mutation["studio_id"] != STUDIO:
-                errors.append(f"mutation {operation} does not use the canonical studio context")
-            if mutation["scope"] != VALIDATOR.MUTATION_SCOPES[operation]:
-                errors.append(f"mutation {operation} does not use the validator scope")
-            expected_account = None if operation == "connect_account.create" else ACCOUNT
+                errors.append(f"mutation {step_name} does not use the canonical studio context")
+            expected_account = ACCOUNT if uses_account else None
             if mutation["stripe_account_id"] != expected_account:
-                errors.append(f"mutation {operation} does not use the validator account context")
-            if mutation["automatic_retry_count"] != 0:
-                errors.append(f"mutation {operation} does not document zero automatic retries")
-            if mutation["outcome"] != "succeeded":
-                errors.append(f"mutation {operation} does not use the canonical outcome placeholder")
-            if mutation["idempotency_key"] != f"<IDEMPOTENCY_KEY:{operation}>":
-                errors.append(f"mutation {operation} does not use its canonical idempotency placeholder")
+                errors.append(f"mutation {step_name} does not use the validator account context")
+            if mutation["provider_mutation_count"] != 1 or mutation["automatic_retry_count"] != 0:
+                errors.append(f"mutation {step_name} does not document one mutation and zero retries")
+            expected_outcome = "reconciled" if step_name == "payer.customer_create" else "succeeded"
+            if mutation["outcome"] != expected_outcome:
+                errors.append(f"mutation {step_name} does not use the canonical outcome")
+            if mutation["caller_request_key_sha256"] != f"<CALLER_KEY_SHA256:{step_name}>":
+                errors.append(f"mutation {step_name} does not use its canonical key-digest placeholder")
 
     deliveries = template.get("webhook_delivery_evidence")
     if not isinstance(deliveries, dict) or set(deliveries) != {"platform", "connect"}:
@@ -171,7 +186,7 @@ def validate_template(template: dict[str, Any]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check Stripe rehearsal worksheet schema-v2 drift.")
+    parser = argparse.ArgumentParser(description="Check Stripe rehearsal worksheet schema-v3 drift.")
     parser.add_argument("--worksheet", type=Path, default=DEFAULT_WORKSHEET)
     args = parser.parse_args(argv)
     try:
@@ -183,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Worksheet check failed:", file=sys.stderr)
         print("\n".join(f"- {error}" for error in errors), file=sys.stderr)
         return 1
-    print("Stripe provider rehearsal worksheet matches validator schema v2.")
+    print("Stripe provider rehearsal worksheet matches validator schema v3.")
     return 0
 
 

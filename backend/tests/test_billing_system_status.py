@@ -164,6 +164,7 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         now = datetime.now(timezone.utc)
         tables = {
             "studio_payment_accounts": [{"studio_id": "studio_1"}],
+            "studio_live_billing_authorizations": [],
             "stripe_events": [_processed_event(account_id=None, observed_at=now)],
         }
         supabase = _PreflightSupabase(tables, begin=True)

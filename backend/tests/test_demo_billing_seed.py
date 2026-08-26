@@ -81,6 +81,13 @@ def test_demo_billing_seed_writes_coherent_fixture_rows():
     assert external_payment["request_hash"] == expected_request_hash
     assert len(external_payment["request_hash"]) == 64
 
+    for payment in supabase.tables["billing_payments"]:
+        assert payment["status"] in {"succeeded", "externally_recorded"}
+        assert payment["disputed_amount_cents"] == 0
+        assert payment["net_collected_amount_cents"] == payment["amount_cents"]
+        expected_refundable = payment["amount_cents"] if payment["stripe_charge_id"] else 0
+        assert payment["refundable_amount_cents"] == expected_refundable
+
     stripe_payment = next(row for row in supabase.tables["billing_payments"] if row["external_method"] is None)
     assert stripe_payment["idempotency_key"] is None
     assert stripe_payment["request_hash"] is None

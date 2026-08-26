@@ -8,6 +8,9 @@ from app.core.deps import ProviderDependency, get_current_user_id, get_requested
 from app.schemas.billing import (
     BillingInvoiceCreate,
     BillingInvoiceResponse,
+    BillingEnrollmentTransitionRequest,
+    BillingEnrollmentTransitionResponse,
+    BillingEnrollmentTransitionRevokeRequest,
     BillingLinkResponse,
     BillingPaymentResponse,
     BillingPaymentCohortSummaryResponse,
@@ -255,8 +258,15 @@ async def get_billing_system_status(
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(client, user_id, requested_studio_id)
-        return await BillingService(client).get_system_status(studio_id)
+        membership = resolve_billing_manager_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+        )
+        return await BillingService(client).get_system_status(
+            membership["studio_id"],
+            membership["role"],
+        )
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -377,6 +387,12 @@ async def archive_plan(
 @router.post("/plans/{plan_id}/sync", response_model=BillingPlanResponse)
 async def sync_plan(
     plan_id: str,
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
@@ -388,7 +404,12 @@ async def sync_plan(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        return await BillingService(client).sync_plan(plan_id, studio_id, user_id)
+        return await BillingService(client).sync_plan(
+            plan_id,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+        )
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -487,6 +508,12 @@ async def update_payer(
 @router.post("/payers/{payer_id}/sync", response_model=BillingPayerResponse)
 async def sync_payer(
     payer_id: str,
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
@@ -498,7 +525,12 @@ async def sync_payer(
             requested_studio_id,
             require_platform_subscription=True,
         )
-        return await BillingService(client).sync_payer(payer_id, studio_id, user_id)
+        return await BillingService(client).sync_payer(
+            payer_id,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+        )
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -510,18 +542,32 @@ async def sync_payer(
 async def create_autopay_setup_link(
     payer_id: str,
     data: BillingPayerAutopaySetupRequest,
+    response: Response,
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
+    response.headers["Cache-Control"] = "no-store"
     async def _provider_operation(client):
-        studio_id = _admin_studio_id(
+        studio_id = _routine_studio_id(
             client,
             user_id,
             requested_studio_id,
             require_platform_subscription=True,
         )
-        return await BillingService(client).create_autopay_setup_link(payer_id, data, studio_id, user_id)
+        return await BillingService(client).create_autopay_setup_link(
+            payer_id,
+            data,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+        )
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -643,6 +689,121 @@ async def update_enrollment(
     )
 
 
+@router.post("/enrollments/{enrollment_id}/activate", response_model=StudentBillingEnrollmentResponse)
+async def activate_enrollment(
+    enrollment_id: str,
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        studio_id = _routine_studio_id(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        )
+        return await BillingService(client).activate_enrollment(
+            enrollment_id,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+        )
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
+
+
+@router.post(
+    "/enrollments/{enrollment_id}/schedule-period-end",
+    response_model=BillingEnrollmentTransitionResponse,
+)
+async def schedule_enrollment_period_end(
+    enrollment_id: str,
+    data: BillingEnrollmentTransitionRequest,
+    request_idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=255),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        studio_id = _routine_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
+        return await BillingService(client).schedule_enrollment_period_end(
+            enrollment_id,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+            data.reason_code,
+        )
+
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+
+
+@router.post(
+    "/enrollment-transitions/{transition_intent_id}/revoke-scheduled",
+    response_model=BillingEnrollmentTransitionResponse,
+)
+async def revoke_scheduled_enrollment_transition(
+    transition_intent_id: str,
+    data: BillingEnrollmentTransitionRevokeRequest,
+    request_idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=255),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        studio_id = _routine_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
+        return await BillingService(client).revoke_enrollment_period_end(
+            transition_intent_id,
+            data.expected_revision,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+            data.reason_code,
+        )
+
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+
+
+@router.post(
+    "/enrollments/{enrollment_id}/cancel-immediate",
+    response_model=BillingEnrollmentTransitionResponse,
+)
+async def cancel_enrollment_immediate(
+    enrollment_id: str,
+    data: BillingEnrollmentTransitionRequest,
+    request_idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=255),
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        studio_id = _admin_studio_id(
+            client, user_id, requested_studio_id, require_platform_subscription=True
+        )
+        return await BillingService(client).cancel_enrollment_immediate(
+            enrollment_id,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+            data.reason_code,
+        )
+
+    return await run_supabase_operation(supabase, _provider_operation, lane="interactive")
+
+
 @router.post("/enrollments/{enrollment_id}/pause", response_model=StudentBillingEnrollmentResponse)
 async def pause_enrollment(
     enrollment_id: str,
@@ -718,7 +879,12 @@ async def list_invoices(
 @router.post("/invoices", response_model=BillingInvoiceResponse, status_code=201)
 async def create_invoice(
     data: BillingInvoiceCreate,
-    request_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
@@ -736,13 +902,24 @@ async def create_invoice(
 @router.post("/invoices/{invoice_id}/finalize", response_model=BillingInvoiceResponse)
 async def finalize_invoice(
     invoice_id: str,
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
-        return await BillingService(client).finalize_invoice(invoice_id, studio_id, user_id)
+        return await BillingService(client).finalize_invoice(
+            invoice_id,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+        )
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -781,13 +958,24 @@ async def retry_invoice_payment(
 @router.post("/invoices/{invoice_id}/void", response_model=BillingInvoiceResponse)
 async def void_invoice(
     invoice_id: str,
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
     async def _provider_operation(client):
         studio_id = _admin_studio_id(client, user_id, requested_studio_id, require_platform_subscription=True)
-        return await BillingService(client).void_invoice(invoice_id, studio_id, user_id)
+        return await BillingService(client).void_invoice(
+            invoice_id,
+            studio_id,
+            user_id,
+            request_idempotency_key,
+        )
     return await run_supabase_operation(
         supabase,
         _provider_operation,
@@ -896,7 +1084,12 @@ async def record_external_payment(
 async def refund_payment(
     payment_id: str,
     data: BillingRefundCreate,
-    request_idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    request_idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),

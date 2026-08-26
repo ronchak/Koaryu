@@ -504,6 +504,8 @@ END $$;
 
 DO $$
 DECLARE
+    v_v6 RECORD;
+    v_v5 RECORD;
     v_v4 RECORD;
     v_v2 RECORD;
 BEGIN
@@ -511,13 +513,19 @@ BEGIN
     SET version = '20260814170001'
     WHERE version = '20260814170000';
 
+    SELECT * INTO v_v6 FROM public.koaryu_release_schema_preflight_v6();
+    SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     SELECT * INTO v_v2 FROM public.koaryu_release_schema_preflight_v2();
-    IF v_v4.ready IS TRUE
-       OR NOT ('migration_history_sequence_v24' = ANY(v_v4.security_failures))
+    IF v_v6.ready IS TRUE
+       OR NOT ('migration_history_sequence_v30' = ANY(v_v6.security_failures))
+       OR v_v5.ready IS TRUE
+       OR NOT ('migration_history_sequence_v30' = ANY(v_v5.security_failures))
+       OR v_v4.ready IS TRUE
+       OR NOT ('migration_history_sequence_v30' = ANY(v_v4.security_failures))
        OR v_v2.ready IS TRUE THEN
-        RAISE EXCEPTION 'Readiness accepted substituted migration history: v4=%, v2=%',
-            row_to_json(v_v4), row_to_json(v_v2);
+        RAISE EXCEPTION 'Readiness accepted substituted migration history: v6=%, v5=%, v4=%, v2=%',
+            row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4), row_to_json(v_v2);
     END IF;
 
     UPDATE supabase_migrations.schema_migrations
@@ -525,49 +533,74 @@ BEGIN
     WHERE version = '20260814170001';
 END $$;
 
-CREATE OR REPLACE FUNCTION private.koaryu_release_operational_manifest_v7()
-RETURNS TEXT
-LANGUAGE sql
-STABLE
-SET search_path = pg_catalog
-SET "TimeZone" = 'UTC'
-AS $verified_restore_manifest_fixture$
-SELECT 'f9ce359c0ebf12039e8dfcb5308cd193ac18aa05cea23dad5b9f5208b0c51233'::TEXT
-$verified_restore_manifest_fixture$;
-
 DO $$
 DECLARE
+    v_v6 RECORD;
+    v_v5 RECORD;
     v_v4 RECORD;
 BEGIN
+    SELECT * INTO v_v6 FROM public.koaryu_release_schema_preflight_v6();
+    SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
-    IF v_v4.ready IS DISTINCT FROM true
+    IF v_v6.ready IS DISTINCT FROM true
+       OR v_v6.migration_count <> 119
+       OR v_v6.migration_head <> '20260826030249'
+       OR v_v6.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
+       OR v_v6.manifest_version <> 'release-db-attestation-v26'
+       OR v_v5.ready IS DISTINCT FROM true
+       OR v_v5.migration_count <> 118
+       OR v_v5.migration_head <> '20260826030234'
+       OR v_v5.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
+       OR v_v5.manifest_version <> 'release-db-attestation-v25'
+       OR v_v4.ready IS DISTINCT FROM true
+       OR v_v4.migration_count <> 117
+       OR v_v4.migration_head <> '20260824190500'
        OR v_v4.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
        OR v_v4.manifest_version <> 'release-db-attestation-v24' THEN
-        RAISE EXCEPTION 'V24 rejected the exact proved restored operational manifest: %',
-            row_to_json(v_v4);
+        RAISE EXCEPTION 'V26 readiness or compatibility drifted: v6=%, v5=%, v4=%',
+            row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4);
     END IF;
 END $$;
 
-CREATE OR REPLACE FUNCTION private.koaryu_release_operational_manifest_v7()
+CREATE OR REPLACE FUNCTION private.koaryu_release_operational_contract_v25()
 RETURNS TEXT
 LANGUAGE sql
 STABLE
 SET search_path = pg_catalog
 SET "TimeZone" = 'UTC'
-AS $unproved_restore_manifest_fixture$
-SELECT repeat('0', 64)::TEXT
-$unproved_restore_manifest_fixture$;
+AS $tampered_contract_fixture$
+SELECT repeat('0', 66)::TEXT
+$tampered_contract_fixture$;
 
 DO $$
 DECLARE
+    v_v6 RECORD;
+    v_v5 RECORD;
     v_v4 RECORD;
 BEGIN
+    SELECT * INTO v_v6 FROM public.koaryu_release_schema_preflight_v6();
+    SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
-    IF v_v4.ready IS DISTINCT FROM false
-       OR v_v4.security_failures IS DISTINCT FROM
-          ARRAY['operational_semantic_acl_manifest_v7']::TEXT[] THEN
-        RAISE EXCEPTION 'V24 accepted an unproved operational manifest: %',
-            row_to_json(v_v4);
+    IF v_v6.ready IS DISTINCT FROM false
+       OR NOT (ARRAY[
+            'live_billing_v3_manifest_v25',
+            'operational_contract_v26',
+            'operational_contract_v27'
+       ]::TEXT[] <@ v_v6.security_failures)
+       OR v_v5.ready IS DISTINCT FROM false
+       OR NOT (ARRAY[
+            'live_billing_v3_manifest_v25',
+            'operational_contract_v26',
+            'operational_contract_v27'
+       ]::TEXT[] <@ v_v5.security_failures)
+       OR v_v4.ready IS DISTINCT FROM false
+       OR NOT (ARRAY[
+            'live_billing_v3_manifest_v25',
+            'operational_contract_v26',
+            'operational_contract_v27'
+       ]::TEXT[] <@ v_v4.security_failures) THEN
+        RAISE EXCEPTION 'V27 compatibility accepted a tampered predecessor operational contract: v6=%, v5=%, v4=%',
+            row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4);
     END IF;
 END $$;
 

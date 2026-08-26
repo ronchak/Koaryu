@@ -5,6 +5,7 @@ import { Banknote, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatMoney } from "@/lib/billing-page-utils";
+import { paymentAdjustmentNotice } from "@/lib/billing-page-model";
 import type { BillingPayer, BillingPayment, ExportJob } from "@/types";
 import { Metric, SectionHeader, StatusPill } from "./billing-page-sections";
 
@@ -52,13 +53,13 @@ export function BillingReportsTab({
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-3">
-        <Metric label="UTC-month Stripe cohort" value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"} hint="Payments processed this UTC month, net of cumulative refunds" />
+        <Metric label="UTC-month Stripe cohort" value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"} hint="Net collected after confirmed refunds and balance-reversing disputes" />
         <Metric label="UTC-month external cohort" value={paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"} hint="External payments processed this UTC month" />
-        <Metric label="UTC-month fee cohort" value={paymentCohortAvailable ? formatMoney(koaryuFeeBasis) : "Unavailable"} hint="0.5% of the Stripe payment cohort net of cumulative refunds" />
+        <Metric label="UTC-month fee cohort" value={paymentCohortAvailable ? formatMoney(koaryuFeeBasis) : "Unavailable"} hint="0.5% of the Stripe net-collected cohort" />
       </div>
       <p className="text-xs text-muted">
-        These figures are the current UTC month payment cohort net of cumulative refunds recorded on those payments.
-        Refund event dates are unavailable here, so this is not cash movement or true period-net revenue.
+        These figures are the current UTC month payment cohort net of provider-confirmed refunds and
+        balance-reversing disputes. Adjustment event dates are outside this cohort, so this is not cash movement or recognized revenue.
       </p>
 
       <section className="rounded-[14px] border border-border bg-surface p-4">
@@ -111,22 +112,31 @@ export function BillingReportsTab({
       <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
         <div className="hidden grid-cols-[1fr_auto_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted sm:grid">
           <span>Payment</span>
-          <span>Amount</span>
+          <span>Payment accounting</span>
           <span>Status</span>
         </div>
         {billingPayments.length === 0 ? (
           <p className="p-4 text-sm text-muted">No payments recorded yet.</p>
-        ) : billingPayments.map((payment) => (
-          <div key={payment.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 sm:min-h-14 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-4 sm:py-1.5">
+        ) : billingPayments.map((payment) => {
+          const adjustmentNotice = paymentAdjustmentNotice(payment);
+          return <div key={payment.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 sm:min-h-14 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-4 sm:py-1.5">
             <div>
               <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment</p>
               <p className="font-medium text-text-primary">{payment.external_method || payment.payment_method_type || "Payment"}</p>
               <p className="text-xs text-muted">{payment.note || formatDate(payment.processed_at)}</p>
+              {adjustmentNotice ? <p className="mt-1 text-xs font-medium text-warning">{adjustmentNotice}</p> : null}
             </div>
-            <div><p className="mb-1 text-xs font-medium text-muted sm:hidden">Amount</p><p className="font-medium text-text-primary">{formatMoney(payment.amount_cents, payment.currency)}</p></div>
+            <div className="text-left sm:text-right">
+              <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment accounting</p>
+              <p className="font-medium text-text-primary">Net collected {formatMoney(payment.net_collected_amount_cents, payment.currency)}</p>
+              <p className="text-xs text-muted">Gross paid {formatMoney(payment.gross_paid_amount_cents, payment.currency)}</p>
+              {payment.refunded_amount_cents > 0 ? <p className="text-xs text-muted">Refunded {formatMoney(payment.refunded_amount_cents, payment.currency)}</p> : null}
+              {payment.disputed_amount_cents > 0 ? <p className="text-xs text-muted">Disputed {formatMoney(payment.disputed_amount_cents, payment.currency)}</p> : null}
+              {payment.stripe_charge_id ? <p className="text-xs text-muted">Refundable {formatMoney(payment.refundable_amount_cents, payment.currency)}</p> : null}
+            </div>
             <div><p className="mb-1 text-xs font-medium text-muted sm:hidden">Status</p><StatusPill status={payment.status} /></div>
-          </div>
-        ))}
+          </div>;
+        })}
       </section>
     </div>
   );

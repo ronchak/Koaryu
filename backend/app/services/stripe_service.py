@@ -247,6 +247,7 @@ class StripeService:
         phone: Optional[str] = None,
         address: Optional[dict[str, Any]] = None,
         metadata: dict[str, Any],
+        expand: Optional[list[str]] = None,
         idempotency_key: str,
     ):
         stripe = self._stripe()
@@ -257,6 +258,8 @@ class StripeService:
             payload["phone"] = phone
         if address:
             payload["address"] = {k: v for k, v in address.items() if v}
+        if expand:
+            payload["expand"] = expand
         return stripe.Customer.create(
             **payload,
             **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
@@ -274,6 +277,7 @@ class StripeService:
         phone: Optional[str] = None,
         address: Optional[dict[str, Any]] = None,
         metadata: dict[str, Any],
+        expand: Optional[list[str]] = None,
         idempotency_key: Optional[str] = None,
     ):
         stripe = self._stripe()
@@ -282,6 +286,8 @@ class StripeService:
         payload["phone"] = phone or ""
         if address is not None:
             payload["address"] = {k: v for k, v in address.items() if v}
+        if expand:
+            payload["expand"] = expand
         return stripe.Customer.modify(
             customer_id,
             **payload,
@@ -400,17 +406,34 @@ class StripeService:
         cancel_url: str,
         metadata: dict[str, Any],
         idempotency_key: str,
+        expires_at: int,
     ):
         stripe = self._stripe()
         return stripe.checkout.Session.create(
             customer=customer_id,
             currency="usd",
             mode="setup",
+            consent_collection={"terms_of_service": "required"},
             setup_intent_data={"metadata": metadata},
             metadata=metadata,
             success_url=success_url,
             cancel_url=cancel_url,
+            expires_at=expires_at,
             **self._request_options(account_id=account_id, idempotency_key=idempotency_key),
+        )
+
+    def retrieve_connected_checkout_session(
+        self,
+        *,
+        account_id: str,
+        session_id: str,
+        expand: Optional[list[str]] = None,
+    ):
+        stripe = self._stripe()
+        return stripe.checkout.Session.retrieve(
+            session_id,
+            expand=expand or [],
+            **self._request_options(account_id=account_id),
         )
 
     @stripe_mutation("connected_subscription.create")

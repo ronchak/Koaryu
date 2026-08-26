@@ -146,6 +146,29 @@ export interface ApiBeltRankUpdate {
   tip_color_hex?: string | null;
 }
 
+export interface ApiBillingEnrollmentTransitionProcessResponse {
+  claimed: number;
+  completed: number;
+  reconciliation_required: number;
+  failed: number;
+}
+
+export interface ApiBillingEnrollmentTransitionRequest {
+  reason_code?: string;
+}
+
+export interface ApiBillingEnrollmentTransitionResponse {
+  outcome: string;
+  requested_caller_request_key?: string | null;
+  intent: Record<string, unknown>;
+  operation?: Record<string, unknown> | null;
+}
+
+export interface ApiBillingEnrollmentTransitionRevokeRequest {
+  reason_code?: string;
+  expected_revision: number;
+}
+
 export interface ApiBillingInvoiceCreate {
   payer_id: string;
   student_id?: string | null;
@@ -187,6 +210,7 @@ export interface ApiBillingInvoiceResponse {
   amount_due_cents: number;
   amount_paid_cents: number;
   amount_remaining_cents: number;
+  invoice_receivable_amount_cents: number;
   currency: string;
   hosted_invoice_url?: string | null;
   invoice_pdf?: string | null;
@@ -216,7 +240,6 @@ export interface ApiBillingPayerAutopaySetupRequest {
   success_url?: string | null;
   cancel_url?: string | null;
   return_url?: string | null;
-  terms_accepted?: boolean;
 }
 
 export interface ApiBillingPayerCreate {
@@ -278,10 +301,13 @@ export interface ApiBillingPaymentCohortSummaryResponse {
   period_end: string;
   timezone: "UTC";
   payment_count: number;
+  gross_paid_amount_cents: number;
+  refunded_amount_cents: number;
+  disputed_amount_cents: number;
   stripe_net_amount_cents: number;
   external_net_amount_cents: number;
   net_amount_cents: number;
-  scope: "payment_cohort_net_of_cumulative_refunds";
+  scope: "payment_cohort_net_of_confirmed_adjustments";
   disclosure: string;
 }
 
@@ -295,9 +321,11 @@ export interface ApiBillingPaymentResponse {
   stripe_payment_intent_id?: string | null;
   stripe_charge_id?: string | null;
   stripe_account_id?: string | null;
+  connect_account_generation?: number | null;
   stripe_payment_method_id?: string | null;
   status: "pending" | "processing" | "succeeded" | "failed" | "refunded" | "disputed" | "externally_recorded";
   amount_cents: number;
+  gross_paid_amount_cents: number;
   currency: string;
   payment_method_type?: string | null;
   external_method?: string | null;
@@ -307,6 +335,11 @@ export interface ApiBillingPaymentResponse {
   failure_message?: string | null;
   application_fee_amount_cents: number;
   refunded_amount_cents: number;
+  disputed_amount_cents: number;
+  net_collected_amount_cents: number;
+  refundable_amount_cents: number;
+  adjustment_reconciliation_required: boolean;
+  adjustment_reconciliation_reason_code?: string | null;
   processed_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -400,9 +433,12 @@ export interface ApiBillingRefundResponse {
   stripe_charge_id?: string | null;
   stripe_payment_intent_id?: string | null;
   stripe_account_id?: string | null;
+  connect_account_generation?: number | null;
   amount_cents: number;
   status: string;
   reason?: string | null;
+  reconciliation_required: boolean;
+  reconciliation_reason_code?: string | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -445,6 +481,7 @@ export interface ApiBillingSystemStatusResponse {
   platform_webhooks: ApiBillingWebhookHealthResponse;
   connect_webhooks: ApiBillingWebhookHealthResponse;
   mutation_capabilities: ApiBillingMutationCapabilitiesResponse;
+  workflow_capabilities: ApiBillingWorkflowCapabilityResponse[];
   checks: ApiBillingSystemCheck[];
 }
 
@@ -458,6 +495,12 @@ export interface ApiBillingWebhookHealthResponse {
   stale_processing_count: number;
   mode_mismatch_count: number;
   error_reference?: string | null;
+}
+
+export interface ApiBillingWorkflowCapabilityResponse {
+  workflow_id: string;
+  enabled: boolean;
+  denial_reason_code?: string | null;
 }
 
 export interface ApiBody_execute_csv_import_api_v1_students_import_execute_post {

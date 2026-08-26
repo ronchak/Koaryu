@@ -41,7 +41,10 @@ def normalize_idempotency_key(value: Optional[str]) -> Optional[str]:
     normalized = value.strip()
     if not normalized:
         return None
-    if len(normalized) > MAX_IDEMPOTENCY_KEY_LENGTH:
+    if (
+        len(normalized) > MAX_IDEMPOTENCY_KEY_LENGTH
+        or len(normalized.encode("utf-8")) > MAX_IDEMPOTENCY_KEY_LENGTH
+    ):
         raise HTTPException(
             status_code=400,
             detail=f"Idempotency-Key must be {MAX_IDEMPOTENCY_KEY_LENGTH} characters or fewer.",

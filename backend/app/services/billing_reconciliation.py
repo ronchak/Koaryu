@@ -90,13 +90,12 @@ class BillingReconciliationService:
     ) -> BillingReconcileResponse:
         if not data.payer_id:
             raise HTTPException(status_code=400, detail="payer_id is required to reconcile a payer.")
-        payer = await self.billing_service.sync_payer(data.payer_id, studio_id, actor_id)
-        return BillingReconcileResponse(
-            object_type=data.object_type,
-            stripe_object_id=payer.stripe_customer_id,
-            local_object_id=payer.id,
-            status=payer.billing_status,
-            detail="Payer customer and default payment method were refreshed from Stripe.",
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Payer reconciliation cannot start a nested provider workflow. "
+                "Use the payer sync action with its own Idempotency-Key."
+            ),
         )
 
     def _reconcile_invoice(

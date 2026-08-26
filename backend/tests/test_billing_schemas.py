@@ -13,6 +13,7 @@ from app.schemas.billing import (
     BillingPayerCreate,
     BillingPayerResponse,
     BillingPayerUpdate,
+    BillingPaymentResponse,
     BillingReconcileRequest,
     BillingRefundCreate,
     ExportJobCreate,
@@ -67,6 +68,39 @@ class BillingPayerResponseTest(unittest.TestCase):
         ))
 
         self.assertEqual(payer.stripe_payment_method_type, "us_bank_account")
+
+
+class BillingPaymentResponseTest(unittest.TestCase):
+    def test_exposes_distinct_adjustment_accounting_for_collected_payment(self):
+        payment = BillingPaymentResponse(
+            id="payment_1",
+            studio_id="studio_1",
+            stripe_charge_id="ch_1",
+            status="disputed",
+            amount_cents=200,
+            refunded_amount_cents=75,
+            disputed_amount_cents=125,
+            created_at="2026-08-25T00:00:00Z",
+            updated_at="2026-08-25T00:00:00Z",
+        )
+
+        self.assertEqual(payment.gross_paid_amount_cents, 200)
+        self.assertEqual(payment.net_collected_amount_cents, 0)
+        self.assertEqual(payment.refundable_amount_cents, 0)
+
+    def test_failed_attempt_is_not_reported_as_gross_paid_or_refundable(self):
+        payment = BillingPaymentResponse(
+            id="payment_1",
+            studio_id="studio_1",
+            status="failed",
+            amount_cents=200,
+            created_at="2026-08-25T00:00:00Z",
+            updated_at="2026-08-25T00:00:00Z",
+        )
+
+        self.assertEqual(payment.gross_paid_amount_cents, 0)
+        self.assertEqual(payment.net_collected_amount_cents, 0)
+        self.assertEqual(payment.refundable_amount_cents, 0)
 
 
 class BillingRequestSchemaTest(unittest.TestCase):

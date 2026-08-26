@@ -3,6 +3,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from postgrest.exceptions import APIError as PostgrestAPIError
+
 from app.services.release_schema_readiness import (
     EXPECTED_RELEASE_MIGRATION_COUNT,
     EXPECTED_RELEASE_MIGRATION_HEAD,
@@ -46,6 +48,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             {**exact_preflight_row(), "migration_count": 110},
             {**exact_preflight_row(), "migration_count": 115},
             {**exact_preflight_row(), "migration_count": 116},
+            {**exact_preflight_row(), "migration_count": 117},
             {**exact_preflight_row(), "migration_head": "20260801080000"},
             {**exact_preflight_row(), "migration_head": "20260801105313"},
             {**exact_preflight_row(), "migration_head": "20260801112153"},
@@ -97,7 +100,48 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v4", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v8", {})])
+
+    def test_hosted_check_does_not_fallback_on_v5_provider_failure(self):
+        calls = []
+
+        def rpc(name, params):
+            calls.append((name, params))
+            error = PostgrestAPIError({
+                "code": "PGRST000",
+                "message": "Database unavailable",
+            })
+            return SimpleNamespace(execute=lambda: (_ for _ in ()).throw(error))
+
+        client = SimpleNamespace(rpc=rpc)
+        with patch(
+            "app.services.release_schema_readiness.get_supabase_client",
+            return_value=client,
+        ), self.assertRaises(PostgrestAPIError):
+            assert_hosted_release_schema_ready()
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v8", {})])
+
+    def test_hosted_check_fails_closed_when_v5_is_missing(self):
+        calls = []
+
+        def rpc(name, params):
+            calls.append((name, params))
+            error = PostgrestAPIError({
+                "code": "PGRST202",
+                "message": (
+                    "Could not find the function "
+                    "public.koaryu_release_schema_preflight_v8 in the schema cache"
+                ),
+            })
+            return SimpleNamespace(execute=lambda: (_ for _ in ()).throw(error))
+
+        client = SimpleNamespace(rpc=rpc)
+        with patch(
+            "app.services.release_schema_readiness.get_supabase_client",
+            return_value=client,
+        ), self.assertRaisesRegex(RuntimeError, "Apply the database migrations"):
+            assert_hosted_release_schema_ready()
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v8", {})])
 
     def test_success_cache_rechecks_only_after_ttl(self):
         now = [10.0]

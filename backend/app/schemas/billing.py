@@ -163,6 +163,14 @@ class BillingMutationCapabilitiesResponse(BaseModel):
     connect_payments: bool = False
 
 
+class BillingWorkflowCapabilityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: str
+    enabled: bool = False
+    denial_reason_code: Optional[str] = None
+
+
 class BillingSystemStatusResponse(BaseModel):
     studio_id: str
     configured_stripe_mode: Optional[Literal["test", "live"]] = None
@@ -174,6 +182,7 @@ class BillingSystemStatusResponse(BaseModel):
     platform_webhooks: BillingWebhookHealthResponse
     connect_webhooks: BillingWebhookHealthResponse
     mutation_capabilities: BillingMutationCapabilitiesResponse
+    workflow_capabilities: list[BillingWorkflowCapabilityResponse] = Field(default_factory=list)
     checks: list[BillingSystemCheck]
 
 
@@ -345,7 +354,6 @@ class BillingPayerAutopaySetupRequest(BaseModel):
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
     return_url: Optional[str] = None
-    terms_accepted: bool = False
 
 
 class BillingSubscriptionResponse(BaseModel):
@@ -447,6 +455,37 @@ class StudentBillingEnrollmentResponse(BaseModel):
         return value
 
 
+class BillingEnrollmentTransitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason_code: str = Field(
+        default="staff_requested",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9][a-z0-9_.:-]{0,127}$",
+    )
+
+
+class BillingEnrollmentTransitionRevokeRequest(BillingEnrollmentTransitionRequest):
+    expected_revision: int = Field(ge=1)
+
+
+class BillingEnrollmentTransitionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str
+    requested_caller_request_key: Optional[str] = None
+    intent: dict[str, Any]
+    operation: Optional[dict[str, Any]] = None
+
+
+class BillingEnrollmentTransitionProcessResponse(BaseModel):
+    claimed: int = 0
+    completed: int = 0
+    reconciliation_required: int = 0
+    failed: int = 0
+
+
 class BillingInvoiceItemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -499,6 +538,7 @@ class BillingInvoiceResponse(BaseModel):
     amount_due_cents: int = 0
     amount_paid_cents: int = 0
     amount_remaining_cents: int = 0
+    invoice_receivable_amount_cents: int = 0
     currency: str = "usd"
     hosted_invoice_url: Optional[str] = None
     invoice_pdf: Optional[str] = None
@@ -519,6 +559,7 @@ class BillingInvoiceResponse(BaseModel):
         if isinstance(value, dict):
             value = dict(value)
             value.setdefault("number", value.get("invoice_number"))
+            value.setdefault("invoice_receivable_amount_cents", value.get("amount_remaining_cents") or 0)
         return value
 
     @field_validator("last_payment_error", mode="before")
@@ -539,9 +580,11 @@ class BillingPaymentResponse(BaseModel):
     stripe_payment_intent_id: Optional[str] = None
     stripe_charge_id: Optional[str] = None
     stripe_account_id: Optional[str] = None
+    connect_account_generation: Optional[int] = None
     stripe_payment_method_id: Optional[str] = None
     status: PaymentStatus
     amount_cents: int
+    gross_paid_amount_cents: int = 0
     currency: str = "usd"
     payment_method_type: Optional[str] = None
     external_method: Optional[str] = None
@@ -551,9 +594,39 @@ class BillingPaymentResponse(BaseModel):
     failure_message: Optional[str] = None
     application_fee_amount_cents: int = 0
     refunded_amount_cents: int = 0
+    disputed_amount_cents: int = 0
+    net_collected_amount_cents: int = 0
+    refundable_amount_cents: int = 0
+    adjustment_reconciliation_required: bool = False
+    adjustment_reconciliation_reason_code: Optional[str] = None
     processed_at: Optional[str] = None
     created_at: str
     updated_at: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_adjustment_accounting(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        gross = (
+            max(0, int(normalized.get("amount_cents") or 0))
+            if normalized.get("status") in {"succeeded", "refunded", "disputed", "externally_recorded"}
+            else 0
+        )
+        refunded = min(gross, max(0, int(normalized.get("refunded_amount_cents") or 0)))
+        disputed = min(
+            max(0, gross - refunded),
+            max(0, int(normalized.get("disputed_amount_cents") or 0)),
+        )
+        net_collected = max(0, gross - refunded - disputed)
+        normalized["gross_paid_amount_cents"] = gross
+        normalized.setdefault("net_collected_amount_cents", net_collected)
+        normalized.setdefault(
+            "refundable_amount_cents",
+            net_collected if normalized.get("stripe_charge_id") else 0,
+        )
+        return normalized
 
 
 class BillingPaymentCohortSummaryResponse(BaseModel):
@@ -561,13 +634,17 @@ class BillingPaymentCohortSummaryResponse(BaseModel):
     period_end: str
     timezone: Literal["UTC"] = "UTC"
     payment_count: int = 0
+    gross_paid_amount_cents: int = 0
+    refunded_amount_cents: int = 0
+    disputed_amount_cents: int = 0
     stripe_net_amount_cents: int = 0
     external_net_amount_cents: int = 0
     net_amount_cents: int = 0
-    scope: Literal["payment_cohort_net_of_cumulative_refunds"] = "payment_cohort_net_of_cumulative_refunds"
+    scope: Literal["payment_cohort_net_of_confirmed_adjustments"] = "payment_cohort_net_of_confirmed_adjustments"
     disclosure: str = (
-        "Payments processed in the current UTC month, net of cumulative refunds recorded on those payments. "
-        "Refunds do not expose event dates here, so this is not cash movement or true period-net revenue."
+        "Payments processed in the current UTC month, net of provider-confirmed refunds and balance-reversing "
+        "disputes recorded on those payments. Adjustment event dates are outside this cohort, so this is not "
+        "cash movement or recognized revenue."
     )
 
 
@@ -623,9 +700,12 @@ class BillingRefundResponse(BaseModel):
     stripe_charge_id: Optional[str] = None
     stripe_payment_intent_id: Optional[str] = None
     stripe_account_id: Optional[str] = None
+    connect_account_generation: Optional[int] = None
     amount_cents: int
     status: str
     reason: Optional[str] = None
+    reconciliation_required: bool = False
+    reconciliation_reason_code: Optional[str] = None
     created_at: str
     updated_at: Optional[str] = None
 
@@ -638,9 +718,13 @@ class BillingDisputeResponse(BaseModel):
     stripe_charge_id: Optional[str] = None
     stripe_payment_intent_id: Optional[str] = None
     stripe_account_id: Optional[str] = None
+    connect_account_generation: Optional[int] = None
     amount_cents: int = 0
     status: str
+    state_category: Literal["warning", "active", "won", "lost", "unknown"] = "unknown"
     reason: Optional[str] = None
     liability_owner: str = "studio"
+    reconciliation_required: bool = False
+    reconciliation_reason_code: Optional[str] = None
     created_at: str
     updated_at: str

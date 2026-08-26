@@ -62,6 +62,10 @@ export function useBillingReportActions({
       setExternalNote("");
       return;
     }
+    if (!runtime.canUseWorkflow("payment.external.record")) {
+      runtime.setError("External payment recording is not available for the current studio and role.");
+      return;
+    }
     if (!runtime.token || !runtime.claimAction("record-external")) {
       return;
     }

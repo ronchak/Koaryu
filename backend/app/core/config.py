@@ -265,6 +265,7 @@ class Settings(BaseSettings):
     STRIPE_KOARYU_CORE_PRICE_ID: str = ""
     BILLING_PLATFORM_FEE_BPS: int = 50
     ACCOUNT_DELETION_WORKER_SECRET: str = ""
+    BILLING_TRANSITION_WORKER_SECRET: str = ""
     OPERATIONAL_ALERTS_ENABLED: bool = False
     OPERATIONAL_ALERT_WORKER_SECRET: str = ""
     OPERATIONAL_ALERT_PRIMARY_URL: str = ""
@@ -406,6 +407,7 @@ class Settings(BaseSettings):
             "STRIPE_CONNECT_WEBHOOK_SECRET": self.STRIPE_CONNECT_WEBHOOK_SECRET,
             "STRIPE_KOARYU_CORE_PRICE_ID": self.STRIPE_KOARYU_CORE_PRICE_ID,
             "ACCOUNT_DELETION_WORKER_SECRET": self.ACCOUNT_DELETION_WORKER_SECRET,
+            "BILLING_TRANSITION_WORKER_SECRET": self.BILLING_TRANSITION_WORKER_SECRET,
             "SUPPORT_TRIAGE_SECRET": self.SUPPORT_TRIAGE_SECRET,
         }
         optional_values = {
@@ -517,6 +519,9 @@ class Settings(BaseSettings):
 
         if not has_minimum_secret_length(self.ACCOUNT_DELETION_WORKER_SECRET):
             missing.append("ACCOUNT_DELETION_WORKER_SECRET must be a long random secret")
+
+        if not has_minimum_secret_length(self.BILLING_TRANSITION_WORKER_SECRET):
+            missing.append("BILLING_TRANSITION_WORKER_SECRET must be a long random secret")
 
         if not has_minimum_secret_length(self.SUPPORT_TRIAGE_SECRET):
             missing.append("SUPPORT_TRIAGE_SECRET must be a long random secret")

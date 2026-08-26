@@ -18,6 +18,11 @@ from typing import Any, Literal, Optional
 
 from fastapi import HTTPException, status
 
+from app.services.billing_workflow_catalog import (
+    LIVE_SCOPE_OPERATIONS,
+    validate_live_authorization_operations,
+)
+
 
 LiveBillingScope = Literal[
     "core_subscription",
@@ -141,9 +146,11 @@ class StudioLiveBillingAuthorizationStore:
         ):
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         try:
+            special_rpc_name: Optional[str] = None
+            special_rpc_params: Optional[dict[str, Any]] = None
             if operation == "connect_account.create" and bootstrap_context:
-                rpc_name = "authorize_connect_onboarding_bootstrap_account_create_v2"
-                rpc_params = {
+                special_rpc_name = "authorize_connect_onboarding_bootstrap_account_create_v2"
+                special_rpc_params = {
                     "p_bootstrap_id": bootstrap_context.bootstrap_id,
                     "p_studio_id": studio_id,
                     "p_candidate_sha": self.expected_candidate_sha,
@@ -152,8 +159,8 @@ class StudioLiveBillingAuthorizationStore:
                     "p_account_create_idempotency_key": bootstrap_context.account_create_idempotency_key,
                 }
             elif operation == "connect_onboarding_link.create" and bootstrap_context:
-                rpc_name = "authorize_connect_onboarding_bootstrap_initial_link_v2"
-                rpc_params = {
+                special_rpc_name = "authorize_connect_onboarding_bootstrap_initial_link_v2"
+                special_rpc_params = {
                     "p_bootstrap_id": bootstrap_context.bootstrap_id,
                     "p_studio_id": studio_id,
                     "p_candidate_sha": self.expected_candidate_sha,
@@ -164,21 +171,118 @@ class StudioLiveBillingAuthorizationStore:
                     "p_initial_link_idempotency_key": bootstrap_context.initial_link_idempotency_key,
                 }
             else:
-                rpc_name = "authorize_studio_live_billing_mutation_atomic"
-                rpc_params = {
-                    "p_studio_id": studio_id,
-                    "p_operation": operation,
-                    "p_scope": scope,
-                    "p_stripe_connected_account_id": account_id,
-                    "p_candidate_sha": self.expected_candidate_sha,
-                }
-            result = self.supabase.rpc(rpc_name, rpc_params).execute()
+                special_rpc_name = None
+            rpc_params = {
+                "p_studio_id": studio_id,
+                "p_operation": operation,
+                "p_scope": scope,
+                "p_stripe_connected_account_id": account_id,
+                "p_candidate_sha": self.expected_candidate_sha,
+            }
+            result = self.supabase.rpc(
+                "authorize_studio_live_billing_mutation_atomic",
+                rpc_params,
+            ).execute()
         except Exception:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
         row = result.data[0] if result.data else None
         if not row or row.get("authorized") is not True or row.get("studio_id") != studio_id:
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
+        if special_rpc_name and special_rpc_params:
+            try:
+                result = self.supabase.rpc(special_rpc_name, special_rpc_params).execute()
+            except Exception:
+                self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+            row = result.data[0] if result.data else None
+            if not row or row.get("authorized") is not True or row.get("studio_id") != studio_id:
+                self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         return studio_id
+
+    def set_authorization_operations(
+        self,
+        *,
+        studio_id: str,
+        scope: LiveBillingScope,
+        enabled: bool,
+        expires_at: Optional[str],
+        reason: str,
+        actor_id: str,
+        allowed_operations: list[str] | tuple[str, ...],
+        actor_email: Optional[str] = None,
+        stripe_connected_account_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        try:
+            exact_operations = validate_live_authorization_operations(
+                scope,
+                allowed_operations,
+                enabled=enabled,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Live billing operation set is invalid.",
+            ) from exc
+        try:
+            result = self.supabase.rpc(
+                "set_studio_live_billing_authorization_operations_v1",
+                {
+                    "p_studio_id": studio_id,
+                    "p_scope": scope,
+                    "p_enabled": enabled,
+                    "p_expires_at": expires_at,
+                    "p_reason": reason,
+                    "p_actor_id": actor_id,
+                    "p_allowed_operations": list(exact_operations),
+                    "p_actor_email": actor_email,
+                    "p_stripe_connected_account_id": stripe_connected_account_id,
+                },
+            ).execute()
+        except HTTPException:
+            raise
+        except Exception:
+            self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+        row = result.data[0] if result.data else None
+        if (
+            not row
+            or row.get("studio_id") != studio_id
+            or row.get("scope") != scope
+            or row.get("enabled") is not enabled
+            or tuple(row.get("allowed_operations") or ()) != exact_operations
+        ):
+            self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+        return row
+
+    def current_allowed_operations(
+        self,
+        *,
+        studio_id: str,
+    ) -> dict[LiveBillingScope, frozenset[str]]:
+        try:
+            rows = (
+                self.supabase.table("studio_live_billing_authorizations")
+                .select("studio_id,scope,enabled,allowed_operations")
+                .eq("studio_id", studio_id)
+                .eq("enabled", True)
+                .execute()
+            ).data or []
+        except Exception:
+            return {}
+        result: dict[LiveBillingScope, frozenset[str]] = {}
+        for row in rows:
+            scope = row.get("scope")
+            if scope not in LIVE_SCOPE_OPERATIONS:
+                continue
+            operations = row.get("allowed_operations")
+            try:
+                exact = validate_live_authorization_operations(
+                    scope,
+                    operations,
+                    enabled=True,
+                )
+            except ValueError:
+                continue
+            result[scope] = frozenset(exact)  # type: ignore[index]
+        return result
 
     def prepare_connect_onboarding_bootstrap(
         self,

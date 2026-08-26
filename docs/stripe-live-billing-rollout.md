@@ -42,21 +42,26 @@ Observed Koaryu Payments evidence:
   whose deliveries were not all successful. Review and disposition that event before
   any Koaryu Payments canary; it is not one of the six Koaryu Core platform events.
 
-The current reconciliation report correctly remains `checkpoint_eligible=false`, but
-two tooling assumptions now prevent the report from becoming green even after the old
-account/event cleanup:
+The production snapshot above predates schema v3 and correctly remained
+`checkpoint_eligible=false`. Its two tooling blockers were:
 
 1. The report uses a fixed event start of 2026-07-13. Stripe only guarantees Event API
    access for 30 days, so four valid local records from 2026-07-17 can no longer appear
    in a provider query and are now reported as `local_only` by construction. The
-   reviewed window must become a retention-bounded rolling window while preserving a
-   durable historical disposition.
+   reviewed window needed a retention-bounded rolling window with durable continuity.
 2. The report expects the listed Webhook Endpoint object to contain a response-side
    `connect` boolean. Stripe's current Webhook Endpoint object does not expose that
    field. The live account instead returns the enabled 23-event connected endpoint
    with an associated Connect application, and the local database contains processed
    connected-account events. Replace the classifier with a provider-supported,
-   test-covered endpoint-scope proof before recording a checkpoint.
+   test-covered endpoint-scope proof.
+
+The integrated 119/V26 repository candidate replaces both assumptions and adds the
+refund/dispute accounting convergence required by the next Payments packet. It uses a
+29-day provider window, explicit bootstrap and predecessor-overlap continuity, and URL
+plus delivery evidence from fields Stripe returns. This is repository evidence only.
+No hosted migration, production checkpoint, grant, or provider change follows from it. See
+`docs/stripe-live-billing-reconciliation-v3.md` for the exact contract.
 
 References: [Stripe Events are API-retrievable for 30 days](https://docs.stripe.com/api/events)
 and [the current Webhook Endpoint response shape](https://docs.stripe.com/api/webhook_endpoints/object).
@@ -74,7 +79,7 @@ For Koaryu Core customer use:
 
 For Koaryu Payments:
 
-1. Repair and retest the reconciliation reporter assumptions above.
+1. Merge and deploy the verified 119/V26 reconciliation and adjustment-convergence packet through the normal release gates.
 2. Run the complete provider lifecycle in isolated staging and Stripe test mode.
 3. Produce a fresh, exact-SHA, all-clear production read-only reconciliation and record
    its checkpoint.
@@ -117,20 +122,21 @@ Only the service-role CLI calls the atomic grant/revoke/audit RPC. There is no p
 
 ## Read-only reconciliation
 
-The current reporter inventories every Stripe Connect account visible to the configured
-read-capable key, then separately lists events at platform scope and in each
-connected-account context. It still reconciles from the fixed 2026-07-13 start using
-exact `(event ID, account ID)` equality. As recorded in the dated snapshot above, that
-implementation is now outside Stripe's 30-day Event API window and cannot produce an
-eligible checkpoint until the window and endpoint-scope classifier are repaired.
+The schema-v3 reporter inventories every Stripe Connect account visible to the
+configured read-capable key, then separately lists events at platform scope and in
+each connected-account context. It compares exact `(event ID, account ID)` equality
+inside a complete 29-day provider window. The first v3 report must pass an explicit
+local-history bootstrap. Later reports must bind the latest unexpired v3 checkpoint,
+overlap its window by at least 24 hours, and preserve the local ingest watermark.
 
-The intended contract remains: reconcile the union of provider accounts,
+The contract reconciles the union of provider accounts,
 provider-event account IDs, local-event account IDs, and local studio mappings against
 explicit exclusions; treat a local mapping absent from the provider inventory as
 unresolved; report only sanitized failures; require one exact enabled platform endpoint
 and one exact enabled connected-account endpoint with the six- and 23-event sets in
-`render-backend-deployment.md`; and reject wildcard subscriptions. Do not record a
-checkpoint from the current false-negative report.
+`render-backend-deployment.md`; and reject wildcard subscriptions. Endpoint scope is
+proved by exact URLs and separate delivery evidence, not a fabricated response-side
+`connect` field.
 
 Offline fixture validation performs no network access:
 

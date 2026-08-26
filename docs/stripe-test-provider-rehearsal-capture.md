@@ -1,12 +1,8 @@
-# Stripe test-provider rehearsal capture worksheet (schema v2)
+# Stripe test-provider rehearsal capture worksheet (schema v3)
 
-Use this worksheet once, in order, for the director-approved hosted Stripe **test-mode** rehearsal of one exact staging candidate. It is a capture worksheet, not evidence: replace every angle-bracket placeholder only in a private sanitized evidence file. Do not put secrets, provider payloads, hosted URLs, business/KYC details, payment details, or live financial data in that file. `secrets_redacted` is therefore `true`; `financial_canary_performed` is always `false`.
+Use this worksheet for one approved staging rehearsal of one exact candidate. It is an offline evidence contract, not a provider client. Never paste secrets, hosted URLs, payment details, KYC data, request or response payloads, or live financial data into the evidence file.
 
-This is staging only. Do not use production and do not use this flow to authorize live money movement.
-
-## 0. Preflight before opening the browser
-
-Run this exact command **before opening the browser**. Stop on any failure; do not proceed or substitute production.
+Before opening Stripe, verify the exact staging frontend and backend SHA and require Stripe test mode:
 
 ```bash
 npm run verify:deployed-release -- \
@@ -17,43 +13,18 @@ npm run verify:deployed-release -- \
   --expected-stripe-mode test
 ```
 
-Record the exact lowercase candidate SHA in `candidate_sha` and the readiness SHA in `health_commit_sha`; both must be the same candidate. Record test mode as `stripe_mode: "test"` and `livemode: false`. The preflight verifies the pinned frontend plus both backend readiness routes; each backend route must explicitly report Stripe mode `test`.
+Run the named workflows once, in template order. Preserve the original caller key for ambiguous responses, but record only its SHA-256 digest. Reconcile by exact provider readback and local projection. Never issue an automatic retry. Platform and Connect webhook evidence must come from separate delivered events and matching local `processed` rows.
 
-## Capture rules that apply throughout
+The rehearsal must finish with zero failed, stuck, unmapped, wrong-mode, wrong-generation, pending-transition, and reconciliation-required rows. Stop if any count is nonzero.
 
-- Establish one sanitized `studio_id` before any scoped action. It is reused by every mutation, non-health step, and both delivery records.
-- Capture one sanitized `stripe_account_id` and its positive `connect_account_generation` immediately after Connect account creation/readback. They are reused everywhere Connect-scoped.
-- Store the deterministic `idempotency_key` immediately for **every** mutation, including the initial `connect_onboarding_link.create`. Set each mutation's `automatic_retry_count` to `0`.
-- If a response is ambiguous, retain the stored key and reconcile by provider object/event and local readback. Do not issue a second mutation. Record `outcome: "reconciled"` only after that readback converges; otherwise stop for review.
-- Platform and Connect are separate surfaces: capture different `evt_...` IDs. Each delivery record's `local_event_id` equals that record's own `event_id`, and `local_processing_status` is `processed`.
-- There is no global event-ID field in schema v2. Do not add `webhook_event_ids`, any legacy list, provider payload, secret-shaped field, or any other extra field. The only event IDs are inside the two delivery records.
+## Canonical schema-v3 template
 
-## Operator sequence and field mapping
+Copy this block to a private evidence file and replace every angle-bracket placeholder. Keep the field set exact.
 
-1. **Exact candidate and mode.** Complete the preflight above before browser use. Fill top-level `candidate_sha`, `health_commit_sha`, `health_ready_url`, `stripe_mode`, `livemode`, `secrets_redacted`, and `financial_canary_performed`; mark `steps[].name: "health_exact_candidate"` `pass` with `stripe_account_id: null`. This health step has no `studio_id`.
-2. **Studio context.** Capture the single sanitized studio identifier before mutation. Fill top-level `studio_id`; repeat it in every later step, mutation, and delivery record.
-3. **Create and read back the Connect account/generation.** Immediately save the deterministic key for `mutation_attempts[].operation: "connect_account.create"`; its exact `scope` is `connect_onboarding` and `stripe_account_id` is `null`. On creation/readback capture the sanitized account ID and positive generation into top-level `stripe_account_id` and `connect_account_generation`, then mark `steps[].name: "connect_account_readback"` `pass` with that studio/account context.
-4. **Initial hosted Account Link, hosted onboarding, and readiness readback.** Immediately save the key for `connect_onboarding_link.create`, scope `connect_onboarding`, with the rehearsal account ID. Open only the hosted onboarding route after the link is safely delivered, and capture no hosted URL or provider payload. After return, read back the account/readiness state. Mark `hosted_onboarding_link` and `account_readiness_readback` `pass`, each with the studio and rehearsal account context.
-5. **Connected customer.** Immediately save the key for `connected_customer.create`, scope `connect_payments`, and the rehearsal account. Capture the sanitized readback outcome and mark `connected_customer` `pass` with studio/account context.
-6. **Setup payment method.** Immediately save the key for `connected_setup_checkout_session.create`, scope `connect_payments`, and the rehearsal account. Complete the hosted setup flow without recording its URL, payload, or payment data; after readback mark `setup_payment_method` `pass` with studio/account context.
-7. **Product and price.** Immediately save one key each for `connected_product.create` and `connected_price.create`; both use scope `connect_payments` and the rehearsal account. Record their sanitized successful/readback outcomes and mark `plan_product_price` `pass` with studio/account context.
-8. **Invoice creation and payment.** Immediately save one key each for `connected_invoice.create` and `connected_invoice.pay`; both use `connect_payments` and the rehearsal account. After invoice/payment readbacks converge, mark `invoice_payment` `pass` with studio/account context.
-9. **Refund convergence.** Immediately save the key for `connected_refund.create`, scope `connect_payments`, and the rehearsal account. Wait for provider and local refund readbacks to converge, then mark `refund_convergence` `pass` with studio/account context.
-10. **Dispute convergence.** This is a required readback step, not an additional schema-v2 mutation operation. Capture only the sanitized convergence result and mark `dispute_convergence` `pass` with studio/account context. Do not invent an operation row the validator does not require.
-11. **Platform webhook delivery and local readback.** Capture a platform `evt_...` identifier, a platform-contract event type, provider delivery status and 2xx status, and the local processed readback. Mark `platform_webhook_delivery_readback` `pass` with the studio and explicit `stripe_account_id: null`. In `webhook_delivery_evidence.platform`, both `stripe_account_id` and `connect_account_generation` are explicitly `null`.
-12. **Connect webhook delivery and local readback.** Capture a different Connect `evt_...` identifier, a Connect-contract event type, provider delivery status and 2xx status, and the local processed readback. Mark `connect_webhook_delivery_readback` `pass` with the studio and rehearsal account. In `webhook_delivery_evidence.connect`, the account and positive generation exactly match the top-level rehearsal context.
-13. **Assemble and validate offline.** Copy the canonical template below into a private `<sanitized-evidence.json>`, replace only its placeholders, retain only its exact fields, and validate it offline.
-
-Every mutation row has exactly these fields: `operation`, `studio_id`, `scope`, `stripe_account_id`, `automatic_retry_count`, `outcome`, and `idempotency_key`. Its `outcome` is `succeeded` or `reconciled`; all listed mutations have retry count zero. The exact required operations/scopes are captured in the template and map to `connect_onboarding` for the account and initial link, then `connect_payments` for connected customer, setup session, product, price, invoice create/pay, and refund.
-
-## Canonical copy-and-fill schema-v2 template
-
-This marked block is deliberately invalid until its angle-bracket placeholders are replaced in a private file. It is the only canonical template in this worksheet and is checked against the validator source.
-
-<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V2_TEMPLATE:START -->
+<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:START -->
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "candidate_sha": "<40-CHARACTER-CANDIDATE-SHA>",
   "health_commit_sha": "<40-CHARACTER-CANDIDATE-SHA>",
   "health_ready_url": "<PINNED_STAGING_BACKEND_ORIGIN>/health/ready",
@@ -64,80 +35,90 @@ This marked block is deliberately invalid until its angle-bracket placeholders a
   "studio_id": "<STUDIO_ID>",
   "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>",
   "connect_account_generation": "<CONNECT_ACCOUNT_GENERATION>",
+  "role_capabilities": {
+    "admin": ["connect.onboarding", "enrollment.activate", "enrollment.cancel.immediate", "enrollment.cancel.period_end.revoke", "enrollment.cancel.period_end.schedule", "invoice.create", "invoice.finalize", "invoice.retry", "payer.setup", "payer.sync", "payment.refund", "plan.sync"],
+    "front_desk": ["enrollment.activate", "enrollment.cancel.period_end.revoke", "enrollment.cancel.period_end.schedule", "payer.setup"],
+    "instructor": []
+  },
+  "workflow_facts": {
+    "product_id": "<PROD_ID>", "price_id": "<PRICE_ID>", "payer_id": "<PAYER_ID>", "customer_id": "<CUS_ID>",
+    "consent_payer_id": "<PAYER_ID>", "setup_request_id": "<SETUP_REQUEST_ID>", "consent_id": "<CONSENT_ID>",
+    "setup_intent_id": "<SETI_ID>", "payment_method_id": "<PM_ID>", "terms_version": "<TERMS_VERSION>",
+    "consent_accepted": true, "consent_completed": true, "duplicate_consent_completion_outcome": "replay",
+    "student_ids": ["<STUDENT_1_ID>", "<STUDENT_2_ID>"], "subscription_id": "<SUB_ID>", "subscription_item_id": "<SI_ID>",
+    "shared_provider_quantity": 2, "shared_local_active_count": 2,
+    "invoice_link_id": "<INVOICE_LINK_LOCAL_ID>", "invoice_link_stripe_id": "<INVOICE_LINK_STRIPE_ID>",
+    "invoice_link_finalized": true, "invoice_link_sent": true,
+    "automatic_invoice_id": "<AUTOMATIC_INVOICE_LOCAL_ID>", "automatic_payment_intent_id": "<PI_ID>", "automatic_charge_id": "<CH_ID>",
+    "automatic_amount_cents": 10000, "application_fee_bps": 50, "provider_application_fee_cents": 50,
+    "failed_payment_invoice_id": "<FAILED_INVOICE_LOCAL_ID>",
+    "failed_payment_retry_workflow": "invoice.retry", "failed_payment_retry_outcome": "succeeded", "failed_payment_retry_mutation_count": 1,
+    "period_schedule_state": "scheduled", "period_revoke_state": "revoked", "period_due_state": "completed",
+    "period_schedule_intent_id": "<SCHEDULE_INTENT_ID>", "period_revoke_intent_id": "<REVOKE_INTENT_ID>", "period_due_intent_id": "<DUE_INTENT_ID>",
+    "period_strategy": "subscription_item_delete_at_period_end", "period_quantity_before": 2, "period_quantity_after": 1,
+    "adjusted_payment_id": "<PAYMENT_LOCAL_ID>", "refund_id": "<REFUND_ID>", "dispute_id": "<DISPUTE_ID>",
+    "gross_paid_cents": 10000, "refunded_cents": 1000, "disputed_cents": 0, "net_collected_cents": 9000,
+    "refundable_remaining_cents": 9000, "invoice_remaining_before_cents": 0, "invoice_remaining_after_cents": 0,
+    "payer_status_before": "current", "payer_status_after": "current", "adjustment_reconciliation_required": false,
+    "ambiguous_mutation_step_name": "payer.customer_create", "ambiguous_caller_key_sha256": "<CALLER_KEY_SHA256:payer.customer_create>",
+    "ambiguous_provider_mutation_count": 1, "ambiguous_automatic_retry_count": 0, "ambiguous_provider_readback_count": 1,
+    "ambiguous_recovery_outcome": "reconciled", "ambiguous_final_state": "completed"
+  },
   "steps": [
     {"name": "health_exact_candidate", "status": "pass", "stripe_account_id": null},
-    {"name": "connect_account_readback", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
-    {"name": "hosted_onboarding_link", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
-    {"name": "account_readiness_readback", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
-    {"name": "connected_customer", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
-    {"name": "setup_payment_method", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "operation_bounded_role_capabilities", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
     {"name": "plan_product_price", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
-    {"name": "invoice_payment", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
-    {"name": "refund_convergence", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
-    {"name": "dispute_convergence", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "payer_customer", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "payer_consent_duplicate_replay", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "shared_subscription_quantity_two", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "invoice_link_finalize_send", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "automatic_payment_fee_50bps", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "failed_payment_named_retry", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "period_end_schedule_revoke_due", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "refund_dispute_convergence", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "ambiguous_same_key_readback_recovery", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
     {"name": "platform_webhook_delivery_readback", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": null},
-    {"name": "connect_webhook_delivery_readback", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"}
+    {"name": "connect_webhook_delivery_readback", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"},
+    {"name": "terminal_zero_counts", "status": "pass", "studio_id": "<STUDIO_ID>", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>"}
   ],
   "mutation_attempts": [
-    {"operation": "connect_account.create", "studio_id": "<STUDIO_ID>", "scope": "connect_onboarding", "stripe_account_id": null, "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connect_account.create>"},
-    {"operation": "connect_onboarding_link.create", "studio_id": "<STUDIO_ID>", "scope": "connect_onboarding", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connect_onboarding_link.create>"},
-    {"operation": "connected_customer.create", "studio_id": "<STUDIO_ID>", "scope": "connect_payments", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connected_customer.create>"},
-    {"operation": "connected_setup_checkout_session.create", "studio_id": "<STUDIO_ID>", "scope": "connect_payments", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connected_setup_checkout_session.create>"},
-    {"operation": "connected_product.create", "studio_id": "<STUDIO_ID>", "scope": "connect_payments", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connected_product.create>"},
-    {"operation": "connected_price.create", "studio_id": "<STUDIO_ID>", "scope": "connect_payments", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connected_price.create>"},
-    {"operation": "connected_invoice.create", "studio_id": "<STUDIO_ID>", "scope": "connect_payments", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connected_invoice.create>"},
-    {"operation": "connected_invoice.pay", "studio_id": "<STUDIO_ID>", "scope": "connect_payments", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connected_invoice.pay>"},
-    {"operation": "connected_refund.create", "studio_id": "<STUDIO_ID>", "scope": "connect_payments", "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>", "automatic_retry_count": 0, "outcome": "succeeded", "idempotency_key": "<IDEMPOTENCY_KEY:connected_refund.create>"}
+    {"step_name":"connect.account_create","workflow_id":"connect.onboarding","operation":"connect_account.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_onboarding","stripe_account_id":null,"caller_request_key_sha256":"<CALLER_KEY_SHA256:connect.account_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"connect.onboarding_link","workflow_id":"connect.onboarding","operation":"connect_onboarding_link.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_onboarding","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:connect.onboarding_link>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"payer.customer_create","workflow_id":"payer.sync","operation":"connected_customer.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:payer.customer_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"reconciled"},
+    {"step_name":"payer.setup_checkout","workflow_id":"payer.setup","operation":"connected_setup_checkout_session.create","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:payer.setup_checkout>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"plan.product_create","workflow_id":"plan.sync","operation":"connected_product.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:plan.product_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"plan.price_create","workflow_id":"plan.sync","operation":"connected_price.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:plan.price_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"enrollment.subscription_create","workflow_id":"enrollment.activate","operation":"connected_subscription.create","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:enrollment.subscription_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"enrollment.shared_quantity_update","workflow_id":"enrollment.activate","operation":"connected_subscription_item.update","actor_role":"front_desk","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:enrollment.shared_quantity_update>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"invoice_link.invoice_create","workflow_id":"invoice.create","operation":"connected_invoice.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:invoice_link.invoice_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"invoice_link.item_create","workflow_id":"invoice.create","operation":"connected_invoice_item.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:invoice_link.item_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"invoice_link.finalize","workflow_id":"invoice.finalize","operation":"connected_invoice.finalize","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:invoice_link.finalize>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"invoice_link.send","workflow_id":"invoice.finalize","operation":"connected_invoice.send","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:invoice_link.send>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"automatic.invoice_create","workflow_id":"invoice.create","operation":"connected_invoice.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:automatic.invoice_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"automatic.item_create","workflow_id":"invoice.create","operation":"connected_invoice_item.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:automatic.item_create>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"automatic.finalize","workflow_id":"invoice.finalize","operation":"connected_invoice.finalize","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:automatic.finalize>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"automatic.pay","workflow_id":"invoice.retry","operation":"connected_invoice.pay","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:automatic.pay>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"invoice_retry.pay","workflow_id":"invoice.retry","operation":"connected_invoice.pay","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:invoice_retry.pay>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"period_end.due_quantity_update","workflow_id":"enrollment.cancel.period_end.execute","operation":"connected_subscription_item.update","actor_role":"internal","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:period_end.due_quantity_update>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"},
+    {"step_name":"payment.refund","workflow_id":"payment.refund","operation":"connected_refund.create","actor_role":"admin","studio_id":"<STUDIO_ID>","scope":"connect_payments","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","caller_request_key_sha256":"<CALLER_KEY_SHA256:payment.refund>","provider_mutation_count":1,"automatic_retry_count":0,"outcome":"succeeded"}
   ],
   "webhook_delivery_evidence": {
-    "platform": {
-      "surface": "platform",
-      "endpoint_url": "<PINNED_STAGING_BACKEND_ORIGIN>/api/v1/webhooks/stripe/platform",
-      "connect": false,
-      "event_id": "<PLATFORM_EVT_ID>",
-      "event_type": "invoice.paid",
-      "studio_id": "<STUDIO_ID>",
-      "stripe_account_id": null,
-      "connect_account_generation": null,
-      "provider_delivery_status": "delivered",
-      "provider_http_status": 200,
-      "local_event_id": "<PLATFORM_EVT_ID>",
-      "local_processing_status": "processed"
-    },
-    "connect": {
-      "surface": "connect",
-      "endpoint_url": "<PINNED_STAGING_BACKEND_ORIGIN>/api/v1/webhooks/stripe/connect",
-      "connect": true,
-      "event_id": "<CONNECT_EVT_ID>",
-      "event_type": "invoice.paid",
-      "studio_id": "<STUDIO_ID>",
-      "stripe_account_id": "<STRIPE_CONNECT_ACCOUNT_ID>",
-      "connect_account_generation": "<CONNECT_ACCOUNT_GENERATION>",
-      "provider_delivery_status": "delivered",
-      "provider_http_status": 200,
-      "local_event_id": "<CONNECT_EVT_ID>",
-      "local_processing_status": "processed"
-    }
-  }
+    "platform": {"surface":"platform","endpoint_url":"<PINNED_STAGING_BACKEND_ORIGIN>/api/v1/webhooks/stripe/platform","connect":false,"event_id":"<PLATFORM_EVT_ID>","event_type":"invoice.paid","studio_id":"<STUDIO_ID>","stripe_account_id":null,"connect_account_generation":null,"provider_delivery_status":"delivered","provider_http_status":200,"local_event_id":"<PLATFORM_EVT_ID>","local_processing_status":"processed"},
+    "connect": {"surface":"connect","endpoint_url":"<PINNED_STAGING_BACKEND_ORIGIN>/api/v1/webhooks/stripe/connect","connect":true,"event_id":"<CONNECT_EVT_ID>","event_type":"invoice.paid","studio_id":"<STUDIO_ID>","stripe_account_id":"<STRIPE_CONNECT_ACCOUNT_ID>","connect_account_generation":"<CONNECT_ACCOUNT_GENERATION>","provider_delivery_status":"delivered","provider_http_status":200,"local_event_id":"<CONNECT_EVT_ID>","local_processing_status":"processed"}
+  },
+  "terminal_counts": {"failed":0,"stuck":0,"unmapped":0,"wrong_mode":0,"wrong_generation":0,"pending_transition":0,"reconciliation_required":0}
 }
 ```
-<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V2_TEMPLATE:END -->
+<!-- STRIPE_PROVIDER_REHEARSAL_SCHEMA_V3_TEMPLATE:END -->
 
-## Final offline validation
-
-Run the worksheet drift check while reviewing the documentation:
+Validate the worksheet and then the private evidence file offline:
 
 ```bash
 python3 scripts/check-stripe-provider-rehearsal-worksheet.py
-```
-
-Then validate the private completed evidence. The backend argument is the exact pinned staging **origin only** (no `/api/v1`):
-
-```bash
 python3 scripts/verify-stripe-provider-rehearsal.py \
   --evidence <sanitized-evidence.json> \
   --expected-candidate-sha <40-character-candidate-sha> \
   --expected-backend-origin https://koaryu-staging.onrender.com
 ```
 
-Stop and preserve the captured identifiers if either check fails. Do not add fields, retry mutations automatically, or use production to resolve a failed rehearsal.
+If either command fails, preserve the sanitized identifiers and stop. Do not contact production, retry a provider mutation, or weaken a terminal count.

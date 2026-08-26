@@ -13,6 +13,7 @@ from app.schemas.billing import (
     BillingPlanUpdate,
 )
 from app.services.billing_invoice_projection import _stripe_id
+from app.services.billing_plan_sync import BillingPlanSyncWorkflow
 from app.services.stripe_service import StripeService
 
 
@@ -54,8 +55,6 @@ class BillingPlanManager:
     async def create_plan(self, data: BillingPlanCreate, studio_id: str, actor_id: str) -> BillingPlanResponse:
         self._ensure_programs_in_studio(studio_id, data.program_ids)
         account = self._connect_accounts().ensure_row(studio_id)
-        if account.get("stripe_connected_account_id"):
-            account = self._connect_accounts().refresh_status(account, strict=True)
         plan_row = data.model_dump(exclude={"program_ids"})
         plan_row["studio_id"] = studio_id
         plan_row["name"] = " ".join(data.name.strip().split())
@@ -72,8 +71,6 @@ class BillingPlanManager:
             raise HTTPException(status_code=500, detail="Failed to create billing plan.")
         plan = result.data[0]
         self._replace_plan_programs(studio_id, plan["id"], data.program_ids)
-        if account.get("charges_enabled"):
-            plan = self._sync_plan_price(plan, account)
         self._audit(studio_id, actor_id, "billing.plan_created", plan["id"], {"name": plan["name"], "program_ids": data.program_ids})
         return self._plan_response(plan, account)
 
@@ -85,14 +82,12 @@ class BillingPlanManager:
         if "currency" in update and update["currency"]:
             update["currency"] = update["currency"].lower()
         account = self._connect_accounts().ensure_row(studio_id)
-        if account.get("stripe_connected_account_id"):
-            account = self._connect_accounts().refresh_status(account, strict=True)
-        should_sync_after_update = account.get("charges_enabled") and (
-            not current.get("stripe_price_id")
-            or any(key in update for key in ("amount_cents", "currency", "billing_interval", "name", "description"))
+        provider_fields_changed = any(
+            key in update
+            for key in ("amount_cents", "currency", "billing_interval", "name", "description")
         )
-        if current.get("status") == "pending" and account.get("charges_enabled") and current.get("stripe_price_id"):
-            update.setdefault("status", "active")
+        if provider_fields_changed and current.get("status") != "archived":
+            update["status"] = "pending"
         if update:
             try:
                 result = (
@@ -112,20 +107,25 @@ class BillingPlanManager:
         if data.program_ids is not None:
             self._ensure_programs_in_studio(studio_id, data.program_ids)
             self._replace_plan_programs(studio_id, plan_id, data.program_ids)
-        if should_sync_after_update:
-            current = self._sync_plan_price(current, account)
         self._audit(studio_id, actor_id, "billing.plan_updated", plan_id, {"changes": update, "program_ids": data.program_ids})
         return self._plan_response(current, account)
 
-    async def sync_plan(self, plan_id: str, studio_id: str, actor_id: str) -> BillingPlanResponse:
-        plan = self._get_row_or_404("billing_plans", plan_id, studio_id, "Billing plan not found.")
-        account = self._ensure_connect_ready(studio_id)
-        plan = self._sync_plan_price(plan, account, force=True)
-        self._audit(studio_id, actor_id, "billing.plan_synced", plan_id, {
-            "stripe_account_id": account.get("stripe_connected_account_id"),
-            "stripe_price_id": plan.get("stripe_price_id"),
-        })
-        return self._plan_response(plan, account)
+    async def sync_plan(
+        self,
+        plan_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None = None,
+    ) -> BillingPlanResponse:
+        return await BillingPlanSyncWorkflow(
+            self,
+            stripe_service_cls=self.stripe_service_cls,
+        ).sync_plan(
+            plan_id,
+            studio_id,
+            actor_id,
+            idempotency_key,
+        )
 
     async def archive_plan(self, plan_id: str, studio_id: str, actor_id: str) -> BillingPlanResponse:
         self._get_row_or_404("billing_plans", plan_id, studio_id, "Billing plan not found.")

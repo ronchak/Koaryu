@@ -150,7 +150,7 @@ export function BillingOverviewTab({
       label: "Collected this UTC month",
       value: paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable",
       helper: paymentCohortAvailable
-        ? `${currentMonthPaymentCount} payments, net of cumulative refunds`
+        ? `${currentMonthPaymentCount} payments, net of confirmed adjustments`
         : "Complete cohort could not be loaded",
       tone: "collected",
     },
@@ -170,7 +170,7 @@ export function BillingOverviewTab({
           ))}
         </div>
         <p className="border-t border-border px-4 py-2 text-[11px] text-muted">
-          Scope: current studio · As of latest loaded billing refresh · Method: current UTC-month payment cohort net of cumulative refunds
+          Scope: current studio · As of latest loaded billing refresh · Method: current UTC-month net collected after confirmed adjustments
         </p>
       </section>
 

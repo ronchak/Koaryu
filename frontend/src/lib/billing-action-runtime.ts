@@ -13,6 +13,7 @@ type BillingActionRequestOptions = {
 };
 
 type BillingActionRuntimeOptions = {
+  enabledWorkflowIds: ReadonlySet<string>;
   isPreviewMode: boolean;
   refreshBilling: () => Promise<void>;
   setError: (message: string) => void;
@@ -28,9 +29,11 @@ type PostBillingActionOptions = {
   refresh?: boolean;
   requestOptions?: BillingActionRequestOptions;
   successMessage: string;
+  workflowId: string;
 };
 
 export function useBillingActionRuntime({
+  enabledWorkflowIds,
   isPreviewMode,
   refreshBilling,
   setError,
@@ -70,9 +73,14 @@ export function useBillingActionRuntime({
     refresh = true,
     requestOptions,
     successMessage,
+    workflowId,
   }: PostBillingActionOptions) {
     if (isPreviewMode) {
       setMessage(successMessage);
+      return null;
+    }
+    if (!enabledWorkflowIds.has(workflowId)) {
+      setError("This billing workflow is not available for the current studio and role.");
       return null;
     }
     if (!token || !claimAction(action)) {
@@ -99,6 +107,7 @@ export function useBillingActionRuntime({
     isActionLoading: activeAction !== null,
     isLoadingAction: (action: string) => activeAction === action,
     isPreviewMode,
+    canUseWorkflow: (workflowId: string) => isPreviewMode || enabledWorkflowIds.has(workflowId),
     postBillingAction,
     refreshBilling,
     releaseAction,

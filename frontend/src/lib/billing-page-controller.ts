@@ -28,6 +28,10 @@ import {
   canManageRoutineBilling,
   resolveBillingProviderCopy,
 } from "@/lib/billing-policy";
+import {
+  billingWorkflowEnabled,
+  enabledBillingWorkflowIds,
+} from "@/lib/billing-workflow-capabilities";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import {
   PREVIEW_CONNECT,
@@ -61,7 +65,10 @@ type BillingPageControllerOptions = {
     | "studentsLoadError"
     | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentRole">;
+  studioStore: Pick<
+    StudioStoreContextValue,
+    "currentRole" | "currentStudioId" | "currentUserId"
+  >;
 };
 
 export function useBillingPageController({
@@ -73,7 +80,7 @@ export function useBillingPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
-  const { currentRole } = studioStore;
+  const { currentRole, currentStudioId, currentUserId } = studioStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const {
     refreshStudents,
@@ -131,17 +138,22 @@ export function useBillingPageController({
     shouldSettleEarly,
     token,
   });
+  const enabledWorkflowIds = enabledBillingWorkflowIds(
+    billingSystemStatus,
+    currentRole,
+    isPreviewMode,
+  );
   const coreProviderMutationsEnabled = areProviderMutationsEnabled(
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.core_subscription
+    billingWorkflowEnabled(enabledWorkflowIds, "core.subscription.checkout", isPreviewMode)
   );
   const connectOnboardingEnabled = areProviderMutationsEnabled(
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.connect_onboarding
+    billingWorkflowEnabled(enabledWorkflowIds, "connect.onboarding", isPreviewMode)
   );
   const connectPaymentsEnabled = areProviderMutationsEnabled(
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.connect_payments
+    billingWorkflowEnabled(enabledWorkflowIds, "payer.setup", isPreviewMode)
   );
   const billingProviderCopy = resolveBillingProviderCopy({
     isPreviewMode,
@@ -179,11 +191,16 @@ export function useBillingPageController({
     billingConnect,
     canManageRoutineBilling: canManageRoutineBillingActions,
     isPreviewMode,
+    payerOperationIdentity:
+      currentUserId && currentStudioId
+        ? { userId: currentUserId, studioId: currentStudioId }
+        : null,
     refreshBilling,
     setError,
     setExportJobs,
     setMessage,
     token,
+    enabledWorkflowIds,
   });
   const isEnrollmentPayerSelectDisabled = shouldDisableStudentBillingEnrollmentPayerSelect({
     canManageStudioBilling: canManageRoutineBillingActions,
@@ -426,8 +443,12 @@ export function useBillingPageController({
 
   const invoiceController = useBillingInvoiceController({
     canReconcileInvoices: canManageRoutineBillingActions,
+    canUseWorkflow: billingActions.canUseWorkflow,
     claimAction: billingActions.claimAction,
     isPreviewMode,
+    operationIdentity: currentUserId && currentStudioId
+      ? { userId: currentUserId, studioId: currentStudioId }
+      : null,
     releaseAction: billingActions.releaseAction,
     refreshBilling,
     setError,

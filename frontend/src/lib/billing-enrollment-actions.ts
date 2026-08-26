@@ -1,18 +1,34 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
 import type { BillingActionRuntime } from "@/lib/billing-action-runtime";
 import { buildStudentBillingEnrollmentCreatePayload } from "@/lib/billing-page-form-model";
+import {
+  buildEnrollmentActivationRequest,
+  clearEnrollmentActivationRequestKey,
+  resolveEnrollmentActivationRequestKey,
+  type EnrollmentActivationIdentity,
+} from "@/lib/billing-enrollment-activation-model";
 import type { StudentBillingEnrollment } from "@/types";
+import {
+  clearEnrollmentTransitionRequestKey,
+  enrollmentTransitionRequestOptions,
+  resolveEnrollmentTransitionRequestKey,
+  type EnrollmentTransitionAction,
+} from "@/lib/billing-enrollment-transition-model";
 
 export function useBillingEnrollmentActions({
   canManageRoutineBilling,
+  operationIdentity,
   runtime,
 }: {
   canManageRoutineBilling: boolean;
+  operationIdentity: EnrollmentActivationIdentity | null;
   runtime: BillingActionRuntime;
 }) {
+  const activationKeysRef = useRef(new Map<string, string>());
+  const transitionKeysRef = useRef(new Map<string, string>());
   const [enrollmentStudentId, setEnrollmentStudentId] = useState("");
   const [enrollmentPayerId, setEnrollmentPayerId] = useState("");
   const [enrollmentPlanId, setEnrollmentPlanId] = useState("");
@@ -21,6 +37,9 @@ export function useBillingEnrollmentActions({
   const [enrollmentStartDate, setEnrollmentStartDate] = useState("");
   const [enrollmentEndDate, setEnrollmentEndDate] = useState("");
   const [enrollmentNextBillDate, setEnrollmentNextBillDate] = useState("");
+  const [scheduledTransitions, setScheduledTransitions] = useState<
+    Record<string, { intentId: string; revision: number }>
+  >({});
 
   function resetEnrollmentForm() {
     setEnrollmentStudentId("");
@@ -45,6 +64,98 @@ export function useBillingEnrollmentActions({
     void enrollmentId;
     void collectionMode;
     runtime.setError("Collection-mode changes are currently unavailable.");
+  }
+
+  async function handleEnrollmentActivation(
+    enrollmentId: string,
+    options: { startNewRequest?: boolean } = {},
+  ) {
+    const requestKey = resolveEnrollmentActivationRequestKey({
+      enrollmentId,
+      identity: operationIdentity,
+      keysByEnrollment: activationKeysRef.current,
+      startNewRequest: options.startNewRequest,
+    });
+    const result = await runtime.postBillingAction<StudentBillingEnrollment>({
+      action: `enrollment-activate:${enrollmentId}`,
+      path: `/billing/enrollments/${enrollmentId}/activate`,
+      refresh: false,
+      requestOptions: buildEnrollmentActivationRequest(requestKey),
+      successMessage: "Enrollment activation requested.",
+      workflowId: "enrollment.activate",
+    });
+    if (result) {
+      clearEnrollmentActivationRequestKey({
+        enrollmentId,
+        identity: operationIdentity,
+        keysByEnrollment: activationKeysRef.current,
+      });
+      await runtime.refreshBilling();
+    }
+    return result;
+  }
+
+  async function handleNamedTransition({
+    action,
+    body,
+    path,
+    resourceId,
+    startNewRequest = false,
+  }: {
+    action: EnrollmentTransitionAction;
+    body: Record<string, unknown>;
+    path: string;
+    resourceId: string;
+    startNewRequest?: boolean;
+  }) {
+    const workflowId = {
+      "cancel-immediate": "enrollment.cancel.immediate",
+      "revoke-scheduled": "enrollment.cancel.period_end.revoke",
+      "schedule-period-end": "enrollment.cancel.period_end.schedule",
+    }[action];
+    const requestKey = resolveEnrollmentTransitionRequestKey({
+      action,
+      identity: operationIdentity,
+      keys: transitionKeysRef.current,
+      resourceId,
+      startNewRequest,
+    });
+    const result = await runtime.postBillingAction<Record<string, unknown>>({
+      action: `enrollment-transition:${action}:${resourceId}`,
+      path,
+      body,
+      refresh: false,
+      requestOptions: enrollmentTransitionRequestOptions(requestKey),
+      successMessage: "Enrollment transition requested.",
+      workflowId,
+    });
+    if (result) {
+      const intent = result.intent as Record<string, unknown> | undefined;
+      const intentId = intent?.id;
+      const intentRevision = intent?.revision;
+      if (
+        action === "schedule-period-end"
+        && typeof intentId === "string"
+        && typeof intentRevision === "number"
+      ) {
+        setScheduledTransitions((current) => ({
+          ...current,
+          [resourceId]: { intentId, revision: intentRevision },
+        }));
+      } else if (action === "revoke-scheduled") {
+        setScheduledTransitions((current) => Object.fromEntries(
+          Object.entries(current).filter(([, transition]) => transition.intentId !== resourceId),
+        ));
+      }
+      clearEnrollmentTransitionRequestKey({
+        action,
+        identity: operationIdentity,
+        keys: transitionKeysRef.current,
+        resourceId,
+      });
+      await runtime.refreshBilling();
+    }
+    return result;
   }
 
   async function handleCreateEnrollment(event: FormEvent<HTMLFormElement>) {
@@ -72,6 +183,10 @@ export function useBillingEnrollmentActions({
       runtime.setMessage("Demo enrollment attached.");
       return;
     }
+    if (!runtime.canUseWorkflow("enrollment.create.external")) {
+      runtime.setError("Enrollment creation is not available for the current studio and role.");
+      return;
+    }
     if (!runtime.token || !runtime.claimAction("create-enrollment")) {
       return;
     }
@@ -95,8 +210,44 @@ export function useBillingEnrollmentActions({
     enrollmentPlanId,
     enrollmentStartDate,
     enrollmentStudentId,
+    scheduledTransitions,
     onCreateEnrollment: handleCreateEnrollment,
     onEnrollmentAction: handleEnrollmentAction,
+    onEnrollmentActivate: handleEnrollmentActivation,
+    onEnrollmentCancelImmediate: (
+      enrollmentId: string,
+      options: { reasonCode?: string; startNewRequest?: boolean } = {},
+    ) => handleNamedTransition({
+      action: "cancel-immediate",
+      body: { reason_code: options.reasonCode ?? "staff_requested" },
+      path: `/billing/enrollments/${enrollmentId}/cancel-immediate`,
+      resourceId: enrollmentId,
+      startNewRequest: options.startNewRequest,
+    }),
+    onEnrollmentRevokeScheduled: (
+      transitionIntentId: string,
+      expectedRevision: number,
+      options: { reasonCode?: string; startNewRequest?: boolean } = {},
+    ) => handleNamedTransition({
+      action: "revoke-scheduled",
+      body: {
+        expected_revision: expectedRevision,
+        reason_code: options.reasonCode ?? "staff_requested",
+      },
+      path: `/billing/enrollment-transitions/${transitionIntentId}/revoke-scheduled`,
+      resourceId: transitionIntentId,
+      startNewRequest: options.startNewRequest,
+    }),
+    onEnrollmentSchedulePeriodEnd: (
+      enrollmentId: string,
+      options: { reasonCode?: string; startNewRequest?: boolean } = {},
+    ) => handleNamedTransition({
+      action: "schedule-period-end",
+      body: { reason_code: options.reasonCode ?? "staff_requested" },
+      path: `/billing/enrollments/${enrollmentId}/schedule-period-end`,
+      resourceId: enrollmentId,
+      startNewRequest: options.startNewRequest,
+    }),
     onEnrollmentCollectionModeChange: setEnrollmentCollectionMode,
     onEnrollmentEndDateChange: setEnrollmentEndDate,
     onEnrollmentModeUpdate: handleEnrollmentModeUpdate,

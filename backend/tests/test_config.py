@@ -28,6 +28,7 @@ VALID_PRODUCTION_SETTINGS = {
     "STRIPE_CONNECT_WEBHOOK_SECRET": _synthetic_webhook_secret("connect"),
     "STRIPE_KOARYU_CORE_PRICE_ID": "price_1234567890abcdef",
     "ACCOUNT_DELETION_WORKER_SECRET": "delete-secret-1234567890abcdefghijklmnopqrstuvwxyz",
+    "BILLING_TRANSITION_WORKER_SECRET": "t" * 40,
     "SUPPORT_TRIAGE_SECRET": "support-secret-1234567890abcdefghijklmnopqrstuvwxyz",
 }
 

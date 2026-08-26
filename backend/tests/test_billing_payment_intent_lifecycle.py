@@ -27,6 +27,246 @@ from tests.billing_lifecycle_helpers import (
 )
 
 class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
+    def test_succeeded_payment_without_latest_charge_is_not_refundable(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "metadata": {"connect_account_generation": 1},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+            }],
+            "billing_payments": [],
+            "billing_invoices": [],
+            "billing_refunds": [],
+            "billing_disputes": [],
+        })
+        service._recompute_payer_balance = lambda *_args: None
+
+        service._project_payment_intent({
+            "id": "pi_no_charge",
+            "amount": 12900,
+            "amount_received": 12900,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+        }, "acct_1", "payment_intent.succeeded", event_created=100)
+
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["status"], "succeeded")
+        self.assertIsNone(payment["stripe_charge_id"])
+        self.assertEqual(payment["net_collected_amount_cents"], 12900)
+        self.assertEqual(payment["refundable_amount_cents"], 0)
+
+    def test_invoice_payment_intent_retrieval_failure_projects_nonrefundable_fallback(self):
+        service = self.service()
+        local_invoice = {
+            "id": "invoice_1",
+            "studio_id": "studio_1",
+            "payer_id": "payer_1",
+            "stripe_invoice_id": "in_1",
+            "stripe_payment_intent_id": "pi_1",
+            "stripe_account_id": "acct_1",
+            "status": "paid",
+            "amount_due_cents": 200,
+            "amount_paid_cents": 200,
+            "amount_remaining_cents": 0,
+            "currency": "usd",
+            "application_fee_amount_cents": 0,
+            "paid_at": "2026-05-18T00:00:00Z",
+        }
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "metadata": {"connect_account_generation": 1},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+                "billing_status": "current",
+                "balance_cents": 0,
+            }],
+            "billing_invoices": [local_invoice],
+            "billing_payments": [],
+            "billing_refunds": [],
+            "billing_disputes": [],
+        })
+
+        with patch(
+            "app.services.billing_service.StripeService.retrieve_connected_payment_intent",
+            side_effect=RuntimeError("transient retrieval failure"),
+        ):
+            service._project_payment_from_invoice({
+                "id": "in_1",
+                "payment_intent": "pi_1",
+                "amount_paid": 200,
+                "currency": "usd",
+                "customer": "cus_1",
+                "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+            }, "acct_1", local_invoice, event_created=100)
+
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["status"], "succeeded")
+        self.assertIsNone(payment["stripe_charge_id"])
+        self.assertEqual(payment["net_collected_amount_cents"], 200)
+        self.assertEqual(payment["refundable_amount_cents"], 0)
+        self.assertEqual(local_invoice["amount_remaining_cents"], 0)
+
+    def test_processing_then_succeeded_payment_has_exact_accounting(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "metadata": {"connect_account_generation": 1},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+            }],
+            "billing_payments": [],
+            "billing_invoices": [],
+            "billing_refunds": [],
+            "billing_disputes": [],
+        })
+        intent = {
+            "id": "pi_1",
+            "amount": 12900,
+            "currency": "usd",
+            "customer": "cus_1",
+            "latest_charge": "ch_1",
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+        }
+
+        service._project_payment_intent(
+            intent,
+            "acct_1",
+            "payment_intent.processing",
+            event_created=100,
+        )
+        processing = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(processing["status"], "processing")
+        self.assertEqual(processing["net_collected_amount_cents"], 0)
+        self.assertEqual(processing["refundable_amount_cents"], 0)
+
+        service._project_payment_intent(
+            {**intent, "amount_received": 12900},
+            "acct_1",
+            "payment_intent.succeeded",
+            event_created=200,
+        )
+        succeeded = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(succeeded["status"], "succeeded")
+        self.assertEqual(succeeded["refunded_amount_cents"], 0)
+        self.assertEqual(succeeded["disputed_amount_cents"], 0)
+        self.assertEqual(succeeded["net_collected_amount_cents"], 12900)
+        self.assertEqual(succeeded["refundable_amount_cents"], 12900)
+
+    def test_failed_payment_has_zero_collected_and_refundable_amounts(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "metadata": {"connect_account_generation": 1},
+            }],
+            "billing_payers": [{
+                "id": "payer_1",
+                "studio_id": "studio_1",
+                "stripe_account_id": "acct_1",
+                "stripe_customer_id": "cus_1",
+            }],
+            "billing_payments": [],
+            "billing_invoices": [],
+            "billing_refunds": [],
+            "billing_disputes": [],
+        })
+
+        service._project_payment_intent({
+            "id": "pi_failed",
+            "amount": 12900,
+            "currency": "usd",
+            "customer": "cus_1",
+            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1"},
+        }, "acct_1", "payment_intent.payment_failed", event_created=100)
+
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["status"], "failed")
+        self.assertEqual(payment["net_collected_amount_cents"], 0)
+        self.assertEqual(payment["refundable_amount_cents"], 0)
+
+    def test_delayed_payment_projection_after_reconnect_preserves_established_identity(self):
+        service = self.service()
+        service.supabase = _FakeSupabase({
+            "studio_payment_accounts": [{
+                "studio_id": "studio_1",
+                "stripe_connected_account_id": "acct_1",
+                "metadata": {"connect_account_generation": 2},
+            }],
+            "billing_payers": [],
+            "billing_invoices": [],
+            "billing_refunds": [],
+            "billing_disputes": [],
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "payer_id": "payer_original",
+                "invoice_id": "invoice_original",
+                "stripe_customer_id": "cus_original",
+                "stripe_invoice_id": "in_original",
+                "stripe_payment_intent_id": "pi_1",
+                "stripe_charge_id": "ch_original",
+                "stripe_account_id": "acct_1",
+                "connect_account_generation": 1,
+                "stripe_payment_method_id": "pm_original",
+                "status": "succeeded",
+                "amount_cents": 12900,
+                "refunded_amount_cents": 0,
+                "disputed_amount_cents": 0,
+                "net_collected_amount_cents": 12900,
+                "refundable_amount_cents": 12900,
+                "last_stripe_event_created": 100,
+            }],
+        })
+        service._recompute_payer_balance = lambda *_args: None
+
+        service._project_payment_intent({
+            "id": "pi_1",
+            "amount": 12900,
+            "amount_received": 12900,
+            "currency": "usd",
+            "customer": "cus_replayed",
+            "invoice": "in_replayed",
+            "latest_charge": "ch_replayed",
+            "payment_method": "pm_replayed",
+            "metadata": {
+                "studio_id": "studio_1",
+                "payer_id": "payer_replayed",
+                "product": "koaryu_payments",
+            },
+        }, "acct_1", "payment_intent.succeeded", event_created=200)
+
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["payer_id"], "payer_original")
+        self.assertEqual(payment["invoice_id"], "invoice_original")
+        self.assertEqual(payment["stripe_customer_id"], "cus_original")
+        self.assertEqual(payment["stripe_invoice_id"], "in_original")
+        self.assertEqual(payment["stripe_payment_intent_id"], "pi_1")
+        self.assertEqual(payment["stripe_charge_id"], "ch_original")
+        self.assertEqual(payment["stripe_account_id"], "acct_1")
+        self.assertEqual(payment["connect_account_generation"], 1)
+        self.assertEqual(payment["stripe_payment_method_id"], "pm_original")
+
     def test_stale_failed_payment_intent_does_not_regress_succeeded_payment(self):
         service = self.service()
         service.supabase = _FakeSupabase({

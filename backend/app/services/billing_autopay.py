@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException, status
 
@@ -10,10 +11,27 @@ from app.schemas.billing import (
     BillingPayerAutopaySetupRequest,
     BillingPayerResponse,
 )
+from app.services.billing_invoice_projection import _object_get, _stripe_id
+from app.services.billing_provider_operations import (
+    AUTOPAY_TERMS_VERSION,
+    BillingProviderOperationContext,
+    BillingProviderOperationCoordinator,
+    PAYER_SETUP_OPERATION_TYPE,
+)
+from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
+from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.stripe_service import StripeService
 
 
 ACTIVE_AUTOPAY_SUBSCRIPTION_STATUSES = ["pending", "trialing", "active", "incomplete", "past_due"]
+AUTOPAY_SETUP_LIFETIME = timedelta(minutes=30)
+AUTOPAY_SETUP_MINIMUM_PROVIDER_LIFETIME = timedelta(minutes=5)
+AUTOPAY_SETUP_IN_PROGRESS_DETAIL = (
+    "Autopay setup is still being reconciled. Retry with the same Idempotency-Key."
+)
+AUTOPAY_SETUP_AMBIGUOUS_DETAIL = (
+    "Autopay setup outcome is not yet confirmed. Retry with the same Idempotency-Key after reconciliation."
+)
 
 
 class BillingAutopayManager:
@@ -53,54 +71,472 @@ class BillingAutopayManager:
         data: BillingPayerAutopaySetupRequest,
         studio_id: str,
         actor_id: str,
+        request_idempotency_key: str,
     ) -> BillingLinkResponse:
-        if not data.terms_accepted:
-            raise HTTPException(status_code=400, detail="Autopay setup requires accepted autopay terms.")
+        normalized_key = normalize_idempotency_key(request_idempotency_key)
+        if not normalized_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Idempotency-Key is required for autopay setup.",
+            )
         payer = self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
         account = self._ensure_connect_ready(studio_id)
-        payer = self._sync_payer_customer(payer, account)
-        if not payer.get("stripe_customer_id"):
-            raise HTTPException(status_code=409, detail="Stripe customer could not be created for this payer.")
+        account_id = str(account.get("stripe_connected_account_id") or "")
+        generation = self._connect_account_generation(account)
+        if not account_id or generation is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stripe account identity is not ready for autopay setup.",
+            )
+        customer_id = str(payer.get("stripe_customer_id") or "")
+        if payer.get("stripe_account_id") != account_id or not customer_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Sync this payer with Stripe before starting autopay setup, "
+                    "then retry with the same Idempotency-Key."
+                ),
+            )
         frontend_url = self.settings.FRONTEND_URL.rstrip("/")
-        now = datetime.now(timezone.utc).isoformat()
-        self.supabase.table("billing_payers").update({
-            "autopay_status": "pending",
-            "autopay_terms_accepted_at": now if data.terms_accepted else None,
-        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
         return_url = self._safe_redirect_url(data.return_url, f"{frontend_url}/billing?autopay=success")
-        if payer.get("default_payment_method_id"):
-            self.supabase.table("billing_payers").update({
-                "autopay_status": "enabled",
-                "autopay_authorized_at": now,
-                "autopay_terms_accepted_at": now,
-                "billing_status": "current",
-            }).eq("id", payer_id).eq("studio_id", studio_id).execute()
-            self._audit(studio_id, actor_id, "billing.autopay_authorized_existing_payment_method", payer_id, {
-                "stripe_customer_id": payer.get("stripe_customer_id"),
-                "default_payment_method_id": payer.get("default_payment_method_id"),
-            })
-            return BillingLinkResponse(url=return_url)
-        link = self.stripe_service_cls().create_setup_checkout_session(
-            account_id=account["stripe_connected_account_id"],
-            studio_id=studio_id,
-            customer_id=payer["stripe_customer_id"],
-            success_url=self._safe_redirect_url(data.success_url or data.return_url, f"{frontend_url}/billing?autopay=success"),
-            cancel_url=self._safe_redirect_url(data.cancel_url or data.return_url, f"{frontend_url}/billing?autopay=cancelled"),
-            metadata={
-                "studio_id": studio_id,
-                "payer_id": payer_id,
-                "product": "koaryu_payments_autopay",
-            },
-            idempotency_key=self._idempotency_key("payer-autopay-setup", payer_id, now),
+        success_url = self._safe_redirect_url(
+            data.success_url or data.return_url,
+            f"{frontend_url}/billing?autopay=success",
         )
-        self._audit(studio_id, actor_id, "billing.autopay_setup_started", payer_id, {
-            "stripe_customer_id": payer.get("stripe_customer_id"),
+        cancel_url = self._safe_redirect_url(
+            data.cancel_url or data.return_url,
+            f"{frontend_url}/billing?autopay=cancelled",
+        )
+        request_sha256 = stable_hash({
+            "operation_type": PAYER_SETUP_OPERATION_TYPE,
+            "studio_id": studio_id,
+            "payer_id": payer_id,
+            "stripe_customer_id": customer_id,
+            "stripe_connected_account_id": account_id,
+            "connect_account_generation": generation,
+            "terms_version": AUTOPAY_TERMS_VERSION,
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+            "return_url": return_url,
         })
-        return BillingLinkResponse(url=link["url"] if isinstance(link, dict) else link.url)
+        lease_owner = str(uuid4())
+        coordinator = BillingProviderOperationCoordinator(self.supabase)
+        claimed = coordinator.claim(
+            studio_id=studio_id,
+            actor_id=actor_id,
+            operation_type=PAYER_SETUP_OPERATION_TYPE,
+            caller_request_key=normalized_key,
+            request_sha256=request_sha256,
+            stripe_connected_account_id=account_id,
+            connect_account_generation=generation,
+            lease_owner=lease_owner,
+        )
+        operation = claimed["operation"]
+        outcome = str(claimed.get("outcome") or "")
+        context = BillingProviderOperationContext(
+            operation_id=str(operation["id"]),
+            studio_id=studio_id,
+            actor_id=actor_id,
+            operation_type=PAYER_SETUP_OPERATION_TYPE,
+            caller_request_key=normalized_key,
+            request_sha256=request_sha256,
+            stripe_connected_account_id=account_id,
+            connect_account_generation=generation,
+            lease_owner=lease_owner,
+        )
+        if outcome in {"busy", "provider_request_in_flight"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+            )
+        if outcome == "reconciliation_required" or operation.get("state") == "reconciliation_required":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
+            )
+        if operation.get("state") in {"definitive_failed", "definitive_rejected"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The prior autopay setup request was rejected. Use a new Idempotency-Key.",
+            )
+        setup_request_id = str(uuid5(NAMESPACE_URL, f"koaryu:payer-setup:{context.operation_id}"))
+        expires_at = self._operation_setup_expiry(operation)
+
+        if operation.get("state") == "started" and expires_at <= datetime.now(timezone.utc):
+            coordinator.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="setup_request_expired_before_provider",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The autopay setup request expired. Start a new setup with a new Idempotency-Key.",
+            )
+
+        if operation.get("state") == "projected":
+            return self._replay_autopay_setup_link(
+                coordinator=coordinator,
+                context=context,
+                operation=operation,
+                payer_id=payer_id,
+                setup_request_id=setup_request_id,
+                return_url=return_url,
+            )
+
+        if operation.get("state") in {"provider_succeeded", "completed"} or outcome == "replay":
+            return self._replay_autopay_setup_link(
+                coordinator=coordinator,
+                context=context,
+                operation=operation,
+                payer_id=payer_id,
+                setup_request_id=setup_request_id,
+                return_url=return_url,
+            )
+
+        setup_request = coordinator.prepare_payer_setup(
+            context,
+            operation,
+            setup_request_id=setup_request_id,
+            payer_id=payer_id,
+            terms_version=AUTOPAY_TERMS_VERSION,
+            expires_at=expires_at.isoformat(),
+        )
+        if expires_at <= (
+            datetime.now(timezone.utc) + AUTOPAY_SETUP_MINIMUM_PROVIDER_LIFETIME
+        ):
+            coordinator.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="setup_request_lifetime_insufficient",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "The autopay setup request is too close to expiry. "
+                    "Start a new setup with a new Idempotency-Key."
+                ),
+            )
+        pending = self.supabase.table("billing_payers").update({
+            "autopay_status": "pending",
+            "autopay_authorized_at": None,
+            "autopay_terms_accepted_at": None,
+        }).eq("id", payer_id).eq("studio_id", studio_id).execute()
+        if not pending.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Payer changed before autopay setup could start. Retry with the same Idempotency-Key.",
+            )
+        operation = coordinator.transition(
+            context,
+            operation,
+            "provider_request_in_flight",
+            result_code="payer_setup_requested",
+        )
+        try:
+            link = self.stripe_service_cls().create_setup_checkout_session(
+                account_id=account_id,
+                studio_id=studio_id,
+                customer_id=customer_id,
+                success_url=success_url,
+                cancel_url=cancel_url,
+                metadata={
+                    "product": "koaryu_payments_autopay",
+                    "studio_id": studio_id,
+                    "payer_id": payer_id,
+                    "operation_id": context.operation_id,
+                    "setup_request_id": setup_request_id,
+                    "terms_version": AUTOPAY_TERMS_VERSION,
+                    "stripe_account_id": account_id,
+                    "connect_account_generation": str(generation),
+                },
+                idempotency_key=self._idempotency_key(
+                    "payer-autopay-setup",
+                    context.operation_id,
+                ),
+                expires_at=int(expires_at.timestamp()),
+            )
+        except StripeMutationBlocked:
+            coordinator.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="provider_mutation_blocked",
+            )
+            raise
+        except Exception as exc:
+            self._mark_ambiguous_provider_request(
+                coordinator,
+                context,
+                operation,
+                exc,
+            )
+
+        session_id = _stripe_id(link)
+        hosted_url = _object_get(link, "url")
+        setup_intent_id = _stripe_id(_object_get(link, "setup_intent"))
+        if not session_id or not isinstance(hosted_url, str) or not hosted_url:
+            self._mark_ambiguous_provider_request(
+                coordinator,
+                context,
+                operation,
+                RuntimeError("provider_setup_response_incomplete"),
+            )
+        try:
+            operation = coordinator.transition(
+                context,
+                operation,
+                "provider_succeeded",
+                provider_object_id=session_id,
+                provider_secondary_object_id=setup_intent_id,
+                result_code="checkout_session_created",
+            )
+            setup_request = coordinator.bind_payer_setup_session(
+                context,
+                setup_request=setup_request,
+                payer_id=payer_id,
+                stripe_checkout_session_id=session_id,
+            )
+        except Exception as exc:
+            try:
+                coordinator.mark_payer_setup_reconciliation(
+                    setup_request_id=setup_request_id,
+                    operation_id=context.operation_id,
+                    stripe_checkout_session_id=session_id,
+                    stripe_setup_intent_id=setup_intent_id,
+                    stripe_connected_account_id=account_id,
+                    connect_account_generation=generation,
+                    reconciliation_reason_code="setup_session_projection_failed",
+                )
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
+            ) from exc
+
+        self._audit(
+            studio_id,
+            actor_id,
+            "billing.autopay_setup_started",
+            payer_id,
+            {
+                "operation_id": context.operation_id,
+                "setup_request_id": setup_request["id"],
+                "terms_version": AUTOPAY_TERMS_VERSION,
+            },
+        )
+        return BillingLinkResponse(url=hosted_url)
+
+    def _replay_autopay_setup_link(
+        self,
+        *,
+        coordinator: BillingProviderOperationCoordinator,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        payer_id: str,
+        setup_request_id: str,
+        return_url: str,
+    ) -> BillingLinkResponse:
+        operation_state = operation.get("state")
+        if operation_state == "projected":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Autopay consent is recorded but local completion is still pending.",
+            )
+        session_id = str(operation.get("provider_object_id") or "")
+        if operation_state == "provider_succeeded":
+            setup_request = coordinator.read_payer_setup_request(
+                setup_request_id=setup_request_id,
+                studio_id=context.studio_id,
+                payer_id=payer_id,
+                stripe_connected_account_id=context.stripe_connected_account_id,
+                connect_account_generation=context.connect_account_generation,
+            )
+            if not setup_request.get("stripe_checkout_session_id") and session_id:
+                try:
+                    coordinator.bind_payer_setup_session(
+                        context,
+                        setup_request=setup_request,
+                        payer_id=payer_id,
+                        stripe_checkout_session_id=session_id,
+                    )
+                except Exception as exc:
+                    try:
+                        coordinator.mark_payer_setup_reconciliation(
+                            setup_request_id=setup_request_id,
+                            operation_id=context.operation_id,
+                            stripe_checkout_session_id=session_id,
+                            stripe_setup_intent_id=operation.get(
+                                "provider_secondary_object_id"
+                            ),
+                            stripe_connected_account_id=context.stripe_connected_account_id,
+                            connect_account_generation=context.connect_account_generation,
+                            reconciliation_reason_code="setup_session_projection_failed",
+                        )
+                    except Exception:
+                        pass
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
+                    ) from exc
+        if session_id:
+            try:
+                session = self.stripe_service_cls().retrieve_connected_checkout_session(
+                    account_id=context.stripe_connected_account_id,
+                    session_id=session_id,
+                )
+                retrieved_session_id = _stripe_id(session)
+                raw_session_status = _object_get(session, "status")
+                session_status = (
+                    raw_session_status
+                    if isinstance(raw_session_status, str)
+                    and 0 < len(raw_session_status) <= 64
+                    else None
+                )
+                raw_expires_at = _object_get(session, "expires_at")
+                try:
+                    expires_at_epoch = (
+                        int(raw_expires_at) if raw_expires_at is not None else None
+                    )
+                except (TypeError, ValueError):
+                    expires_at_epoch = None
+                if operation_state == "provider_succeeded":
+                    if retrieved_session_id != session_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+                        )
+                    close_reason = None
+                    if session_status == "expired" or (
+                        expires_at_epoch is not None
+                        and expires_at_epoch <= int(datetime.now(timezone.utc).timestamp())
+                    ):
+                        close_reason = "checkout_session_expired"
+                    if close_reason:
+                        closed = coordinator.close_payer_setup_request(
+                            setup_request_id=setup_request_id,
+                            operation_id=context.operation_id,
+                            studio_id=context.studio_id,
+                            payer_id=payer_id,
+                            stripe_checkout_session_id=session_id,
+                            stripe_connected_account_id=context.stripe_connected_account_id,
+                            connect_account_generation=context.connect_account_generation,
+                            close_reason_code=close_reason,
+                            provider_read_proof_sha256=stable_hash({
+                                "operation_id": context.operation_id,
+                                "setup_request_id": setup_request_id,
+                                "studio_id": context.studio_id,
+                                "payer_id": payer_id,
+                                "stripe_checkout_session_id": session_id,
+                                "stripe_connected_account_id": context.stripe_connected_account_id,
+                                "connect_account_generation": context.connect_account_generation,
+                                "checkout_session_status": session_status,
+                                "checkout_session_expires_at": expires_at_epoch,
+                                "close_reason_code": close_reason,
+                            }),
+                        )
+                        if (
+                            closed.get("outcome") not in {"closed", "replay"}
+                            or (closed.get("operation") or {}).get("state")
+                            != "definitive_rejected"
+                            or not (closed.get("setup_request") or {}).get("superseded_at")
+                        ):
+                            raise RuntimeError("payer_setup_close_not_converged")
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                "The Stripe autopay setup session expired. "
+                                "Start a new setup with a new Idempotency-Key."
+                            ),
+                        )
+                    if session_status == "complete":
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+                        )
+                    if session_status != "open":
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+                        )
+                hosted_url = _object_get(session, "url")
+                if isinstance(hosted_url, str) and hosted_url:
+                    return BillingLinkResponse(url=hosted_url)
+            except HTTPException:
+                raise
+            except Exception:
+                if operation_state == "provider_succeeded":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+                    ) from None
+        if operation_state == "provider_succeeded":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+            )
+        return BillingLinkResponse(url=return_url)
+
+    def _mark_ambiguous_provider_request(
+        self,
+        coordinator: BillingProviderOperationCoordinator,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        exc: Exception,
+    ) -> None:
+        try:
+            coordinator.transition(
+                context,
+                operation,
+                "reconciliation_required",
+                error_code="provider_outcome_ambiguous",
+                reconciliation_reason_code="provider_setup_outcome_ambiguous",
+            )
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=AUTOPAY_SETUP_AMBIGUOUS_DETAIL,
+        ) from exc
+
+    @staticmethod
+    def _connect_account_generation(account: dict[str, Any]) -> Optional[int]:
+        value = (account.get("metadata") or {}).get("connect_account_generation") or 1
+        try:
+            generation = int(value)
+        except (TypeError, ValueError):
+            return None
+        return generation if generation > 0 else None
+
+    @staticmethod
+    def _operation_setup_expiry(operation: dict[str, Any]) -> datetime:
+        raw_started_at = operation.get("started_at")
+        try:
+            started_at = datetime.fromisoformat(str(raw_started_at).replace("Z", "+00:00"))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Billing operation start time could not be verified.",
+            ) from exc
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        return started_at.astimezone(timezone.utc) + AUTOPAY_SETUP_LIFETIME
 
     async def disable_autopay(self, payer_id: str, studio_id: str, actor_id: str) -> BillingPayerResponse:
         self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
-        rewired_subscription_ids = self._disable_payer_autopay_subscriptions(payer_id, studio_id)
+        active_subscription_ids = self._active_payer_autopay_subscription_ids(
+            payer_id, studio_id
+        )
+        if active_subscription_ids:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Autopay cannot be disabled while active provider subscriptions "
+                    "require the named cancellation workflow."
+                ),
+            )
         result = (
             self.supabase.table("billing_payers")
             .update({
@@ -114,11 +550,13 @@ class BillingAutopayManager:
         if not result.data:
             raise HTTPException(status_code=404, detail="Payer not found.")
         self._audit(studio_id, actor_id, "billing.autopay_disabled", payer_id, {
-            "rewired_subscription_ids": rewired_subscription_ids,
+            "rewired_subscription_ids": [],
         })
         return BillingPayerResponse(**result.data[0])
 
-    def _disable_payer_autopay_subscriptions(self, payer_id: str, studio_id: str) -> list[str]:
+    def _active_payer_autopay_subscription_ids(
+        self, payer_id: str, studio_id: str
+    ) -> list[str]:
         result = (
             self.supabase.table("billing_subscriptions")
             .select("*")
@@ -128,92 +566,4 @@ class BillingAutopayManager:
             .in_("status", ACTIVE_AUTOPAY_SUBSCRIPTION_STATUSES)
             .execute()
         )
-        subscriptions = result.data or []
-        if not subscriptions:
-            return []
-
-        stripe_service = self.stripe_service_cls()
-        rewired_ids: list[str] = []
-        for subscription in subscriptions:
-            subscription = self._mark_subscription_autopay_disable_pending(subscription)
-            subscription_id = subscription.get("stripe_subscription_id")
-            account_id = subscription.get("stripe_account_id") or self._connected_account_id_for_studio(studio_id)
-            if subscription_id:
-                if not account_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="Cannot disable autopay while an active Stripe subscription is missing its connected account.",
-                    )
-                stripe_service.update_connected_subscription(
-                    account_id=account_id,
-                    studio_id=studio_id,
-                    subscription_id=subscription_id,
-                    collection_method="send_invoice",
-                    days_until_due=7,
-                    default_payment_method="",
-                    idempotency_key=self._idempotency_key("autopay-disable", subscription_id),
-                )
-
-            rewired_ids.append(subscription["id"])
-            update_result = (
-                self.supabase.table("billing_subscriptions")
-                .update(self._disabled_autopay_subscription_fields(subscription))
-                .eq("id", subscription["id"])
-                .eq("studio_id", studio_id)
-                .execute()
-            )
-            if not update_result.data:
-                raise HTTPException(status_code=404, detail="Billing subscription not found.")
-            self.supabase.table("student_billing_enrollments").update({
-                "collection_mode": "invoice_link",
-            }).eq("studio_id", studio_id).eq("billing_subscription_id", subscription["id"]).in_("status", ["pending", "active"]).execute()
-
-        return rewired_ids
-
-    def _mark_subscription_autopay_disable_pending(self, subscription: dict[str, Any]) -> dict[str, Any]:
-        metadata = dict(subscription.get("metadata") or {})
-        metadata["autopay_disable_pending"] = {
-            "reason": "payer_disabled_autopay",
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "collection_mode": subscription.get("collection_mode"),
-            "stripe_subscription_id": subscription.get("stripe_subscription_id"),
-            "default_payment_method_id": subscription.get("default_payment_method_id"),
-        }
-        result = (
-            self.supabase.table("billing_subscriptions")
-            .update({"metadata": metadata})
-            .eq("id", subscription["id"])
-            .eq("studio_id", subscription["studio_id"])
-            .execute()
-        )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Billing subscription not found.")
-        return result.data[0]
-
-    def _disabled_autopay_subscription_fields(self, subscription: dict[str, Any]) -> dict[str, Any]:
-        metadata = dict(subscription.get("metadata") or {})
-        pending = metadata.pop("autopay_disable_pending", None)
-        if pending:
-            history = list(metadata.get("autopay_disable_history") or [])
-            history.append({
-                **pending,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-            })
-            metadata["autopay_disable_history"] = history[-5:]
-        return {
-            "collection_mode": "invoice_link",
-            "default_payment_method_id": None,
-            "metadata": metadata,
-        }
-
-    def _connected_account_id_for_studio(self, studio_id: str) -> Optional[str]:
-        result = (
-            self.supabase.table("studio_payment_accounts")
-            .select("stripe_connected_account_id")
-            .eq("studio_id", studio_id)
-            .limit(1)
-            .execute()
-        )
-        if not result.data:
-            return None
-        return result.data[0].get("stripe_connected_account_id")
+        return [str(subscription["id"]) for subscription in (result.data or [])]

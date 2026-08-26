@@ -19,6 +19,15 @@ from app.schemas.billing import (
     ExportJobResponse,
     ExternalPaymentCreate,
 )
+from app.services.billing_invoice_projection import _stripe_id
+from app.services.billing_provider_operations import (
+    BillingProviderOperationContext,
+    BillingProviderOperationCoordinator,
+    PAYMENT_REFUND_OPERATION_TYPE,
+    provider_operation_disposition,
+)
+from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
+from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.supabase_rpc import execute_required_rpc
 from app.services.stripe_service import StripeService
 
@@ -28,6 +37,9 @@ logger = logging.getLogger(__name__)
 EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL = "Idempotency-Key is required for external payments."
 EXTERNAL_PAYMENT_OVERPAY_DETAIL = "External payment exceeds the invoice remaining balance."
 EXTERNAL_PAYMENT_TARGET_REQUIRED_DETAIL = "External payments must target a payer or invoice."
+REFUND_AMBIGUOUS_DETAIL = (
+    "Refund outcome is not confirmed. Retry with the same Idempotency-Key after reconciliation."
+)
 
 
 def build_external_payment_request_hash(
@@ -56,6 +68,9 @@ class BillingPaymentManager:
 
     def _get_row_or_404(self, *args, **kwargs):
         return self.billing_service._get_row_or_404(*args, **kwargs)
+
+    def _connect_accounts(self):
+        return self.billing_service._connect_accounts()
 
     def _recompute_payer_balance(self, studio_id: str, payer_id: str | None) -> None:
         self.billing_service._recompute_payer_balance(studio_id, payer_id)
@@ -115,9 +130,12 @@ class BillingPaymentManager:
         while True:
             page = (
                 self.supabase.table("billing_payments")
-                .select("id, status, amount_cents, refunded_amount_cents, processed_at")
+                .select(
+                    "id, status, amount_cents, gross_paid_amount_cents, refunded_amount_cents, disputed_amount_cents, "
+                    "net_collected_amount_cents, processed_at"
+                )
                 .eq("studio_id", studio_id)
-                .in_("status", ["succeeded", "refunded", "externally_recorded"])
+                .in_("status", ["succeeded", "refunded", "disputed", "externally_recorded"])
                 .gte("processed_at", period_start.isoformat())
                 .lt("processed_at", period_end.isoformat())
                 .order("processed_at")
@@ -134,12 +152,30 @@ class BillingPaymentManager:
 
         stripe_net = 0
         external_net = 0
+        gross_paid = 0
+        refunded_total = 0
+        disputed_total = 0
         for payment in rows:
+            gross = max(
+                0,
+                int(payment.get("gross_paid_amount_cents"))
+                if payment.get("gross_paid_amount_cents") is not None
+                else int(payment.get("amount_cents") or 0),
+            )
+            refunded = min(gross, max(0, int(payment.get("refunded_amount_cents") or 0)))
+            disputed = min(
+                max(0, gross - refunded),
+                max(0, int(payment.get("disputed_amount_cents") or 0)),
+            )
             net_amount = max(
                 0,
-                int(payment.get("amount_cents") or 0)
-                - int(payment.get("refunded_amount_cents") or 0),
+                int(payment.get("net_collected_amount_cents"))
+                if payment.get("net_collected_amount_cents") is not None
+                else gross - refunded - disputed,
             )
+            gross_paid += gross
+            refunded_total += refunded
+            disputed_total += disputed
             if payment.get("status") == "externally_recorded":
                 external_net += net_amount
             else:
@@ -149,6 +185,9 @@ class BillingPaymentManager:
             period_start=period_start.isoformat(),
             period_end=period_end.isoformat(),
             payment_count=len(rows),
+            gross_paid_amount_cents=gross_paid,
+            refunded_amount_cents=refunded_total,
+            disputed_amount_cents=disputed_total,
             stripe_net_amount_cents=stripe_net,
             external_net_amount_cents=external_net,
             net_amount_cents=stripe_net + external_net,
@@ -190,6 +229,9 @@ class BillingPaymentManager:
             "payer_id": effective_payer_id,
             "status": "externally_recorded",
             "payment_method_type": "external",
+            "disputed_amount_cents": 0,
+            "net_collected_amount_cents": data.amount_cents,
+            "refundable_amount_cents": 0,
             "processed_at": datetime.now(timezone.utc).isoformat(),
             "idempotency_key": normalized_idempotency_key,
             "request_hash": request_hash if normalized_idempotency_key else None,
@@ -369,42 +411,240 @@ class BillingPaymentManager:
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingRefundResponse:
+        normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
+        if not normalized_idempotency_key:
+            raise HTTPException(status_code=400, detail="Idempotency-Key is required for refunds.")
         payment = self._get_row_or_404("billing_payments", payment_id, studio_id, "Payment not found.")
         if not payment.get("stripe_charge_id") or not payment.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Only Stripe payments can be refunded through Koaryu.")
+        account_id = str(payment["stripe_account_id"])
+        generation = self._exact_payment_account_generation(
+            payment,
+            studio_id=studio_id,
+            account_id=account_id,
+        )
+        request_sha256 = stable_hash({
+            "operation_type": PAYMENT_REFUND_OPERATION_TYPE,
+            "studio_id": studio_id,
+            "payment_id": payment_id,
+            "stripe_connected_account_id": account_id,
+            "connect_account_generation": generation,
+            "stripe_charge_id": payment["stripe_charge_id"],
+            "requested_amount_cents": data.amount_cents,
+            "reason": data.reason,
+        })
+        lease_owner = str(uuid4())
+        coordinator = BillingProviderOperationCoordinator(self.supabase)
+        claimed = coordinator.claim(
+            studio_id=studio_id,
+            actor_id=actor_id,
+            operation_type=PAYMENT_REFUND_OPERATION_TYPE,
+            caller_request_key=normalized_idempotency_key,
+            request_sha256=request_sha256,
+            stripe_connected_account_id=account_id,
+            connect_account_generation=generation,
+            lease_owner=lease_owner,
+        )
+        operation = claimed["operation"]
+        context = BillingProviderOperationContext(
+            operation_id=str(operation["id"]),
+            studio_id=studio_id,
+            actor_id=actor_id,
+            operation_type=PAYMENT_REFUND_OPERATION_TYPE,
+            caller_request_key=normalized_idempotency_key,
+            request_sha256=request_sha256,
+            stripe_connected_account_id=account_id,
+            connect_account_generation=generation,
+            lease_owner=lease_owner,
+        )
+        disposition = provider_operation_disposition(claimed)
+        if disposition == "replay":
+            try:
+                amount = self._refund_operation_amount(operation, data.amount_cents)
+                row = self._load_refund_operation_result(
+                    payment=payment,
+                    operation=operation,
+                    context=context,
+                    requested_amount_cents=amount,
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Completed refund result could not be verified.",
+                ) from exc
+            return BillingRefundResponse(**row)
+        if operation.get("state") == "projected":
+            try:
+                amount = self._refund_operation_amount(operation, data.amount_cents)
+                row = self._load_refund_operation_result(
+                    payment=payment,
+                    operation=operation,
+                    context=context,
+                    requested_amount_cents=amount,
+                )
+            except Exception as exc:
+                self._mark_refund_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payment_refund_projection_unverified",
+                    exc,
+                )
+            coordinator.complete(context, operation, result_code="payment_refund_completed")
+            return BillingRefundResponse(**row)
+        if operation.get("state") == "provider_succeeded":
+            try:
+                amount = self._refund_operation_amount(operation, data.amount_cents)
+            except Exception as exc:
+                self._mark_refund_reconciliation(
+                    coordinator,
+                    context,
+                    operation,
+                    "payment_refund_projection_unverified",
+                    exc,
+                )
+            try:
+                row = self._load_refund_operation_result(
+                    payment=payment,
+                    operation=operation,
+                    context=context,
+                    requested_amount_cents=amount,
+                )
+            except Exception:
+                row = self._resume_refund_projection(
+                    payment=payment,
+                    data=data,
+                    operation=operation,
+                    context=context,
+                )
+            operation = coordinator.transition(
+                context,
+                operation,
+                "projected",
+                result_code="payment_refund_projected",
+            )
+            coordinator.complete(context, operation, result_code="payment_refund_completed")
+            return BillingRefundResponse(**row)
+
         refundable_remaining = max(
             0,
-            int(payment.get("amount_cents") or 0)
-            - int(payment.get("refunded_amount_cents") or 0),
+            int(payment.get("refundable_amount_cents"))
+            if payment.get("refundable_amount_cents") is not None
+            else (
+                int(payment.get("amount_cents") or 0)
+                - int(payment.get("refunded_amount_cents") or 0)
+                - int(payment.get("disputed_amount_cents") or 0)
+            ),
         )
         amount = data.amount_cents or refundable_remaining
         if amount < 1:
+            coordinator.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="payment_refund_no_balance",
+            )
             raise HTTPException(status_code=409, detail="This payment has no refundable balance.")
         if amount > refundable_remaining:
+            coordinator.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="payment_refund_amount_exceeds_remaining",
+            )
             raise HTTPException(
                 status_code=409,
                 detail="Refund amount exceeds the remaining refundable payment balance.",
             )
-        normalized_idempotency_key = self._normalize_idempotency_key(idempotency_key)
-        if not normalized_idempotency_key:
-            raise HTTPException(status_code=400, detail="Idempotency-Key is required for refunds.")
-
-        refund = self.stripe_service_cls().create_connected_refund(
-            account_id=payment["stripe_account_id"],
-            studio_id=studio_id,
-            charge_id=payment["stripe_charge_id"],
-            amount=amount,
-            reason=data.reason,
-            refund_application_fee=True,
-            metadata={"studio_id": studio_id, "payment_id": payment_id, "product": "koaryu_payments"},
-            idempotency_key=self._idempotency_key(
-                "refund",
-                studio_id,
-                payment_id,
-                normalized_idempotency_key,
-            ),
+        operation = coordinator.transition(
+            context,
+            operation,
+            "provider_request_in_flight",
+            result_code="payment_refund_started",
+            result_summary=f"amount_cents:{amount}",
         )
-        row = self._project_refund(refund, payment["stripe_account_id"])
+        try:
+            refund = self.stripe_service_cls().create_connected_refund(
+                account_id=account_id,
+                studio_id=studio_id,
+                charge_id=payment["stripe_charge_id"],
+                amount=amount,
+                reason=data.reason,
+                refund_application_fee=True,
+                metadata={
+                    "studio_id": studio_id,
+                    "payment_id": payment_id,
+                    "product": "koaryu_payments",
+                },
+                idempotency_key=self._idempotency_key("payment-refund", context.operation_id),
+            )
+        except StripeMutationBlocked:
+            coordinator.transition(
+                context,
+                operation,
+                "definitive_rejected",
+                error_code="provider_mutation_blocked",
+            )
+            raise
+        except Exception as exc:
+            self._mark_refund_reconciliation(
+                coordinator,
+                context,
+                operation,
+                "payment_refund_provider_outcome_ambiguous",
+                exc,
+            )
+        refund_id = _stripe_id(refund)
+        provider_status = self._safe_refund_status(refund)
+        if not refund_id:
+            self._mark_refund_reconciliation(
+                coordinator,
+                context,
+                operation,
+                "payment_refund_provider_identity_ambiguous",
+                RuntimeError("payment_refund_provider_identity_ambiguous"),
+            )
+        try:
+            operation = coordinator.transition(
+                context,
+                operation,
+                "provider_succeeded",
+                provider_object_id=refund_id,
+                result_code=f"payment_refund_status_{provider_status}",
+                result_summary=f"amount_cents:{amount}",
+            )
+        except Exception as exc:
+            self._mark_refund_reconciliation(
+                coordinator,
+                context,
+                operation,
+                "payment_refund_provider_result_not_recorded",
+                exc,
+            )
+        try:
+            row = self._project_refund(refund, account_id)
+            self._verify_refund_projection(
+                row,
+                payment=payment,
+                operation=operation,
+                context=context,
+                expected_amount=amount,
+            )
+        except Exception as exc:
+            self._mark_refund_reconciliation(
+                coordinator,
+                context,
+                operation,
+                "payment_refund_local_projection_failed",
+                exc,
+            )
+        operation = coordinator.transition(
+            context,
+            operation,
+            "projected",
+            result_code="payment_refund_projected",
+        )
+        coordinator.complete(context, operation, result_code="payment_refund_completed")
         refund_status = str(row.get("status") or "pending")
         audit_action = (
             "billing.payment_refunded"
@@ -415,8 +655,192 @@ class BillingPaymentManager:
             "amount_cents": amount,
             "stripe_refund_id": row.get("stripe_refund_id"),
             "status": refund_status,
+            "operation_id": context.operation_id,
         })
         return BillingRefundResponse(**row)
+
+    def _exact_payment_account_generation(
+        self,
+        payment: dict[str, Any],
+        *,
+        studio_id: str,
+        account_id: str,
+    ) -> int:
+        account = self._connect_accounts().by_stripe_account(account_id)
+        raw_generation = (account or {}).get("metadata", {}).get("connect_account_generation")
+        if raw_generation is None:
+            raw_generation = 1
+        try:
+            generation = int(raw_generation)
+            payment_generation = int(payment.get("connect_account_generation"))
+        except (TypeError, ValueError):
+            generation = 0
+            payment_generation = 0
+        if (
+            not account
+            or account.get("studio_id") != studio_id
+            or not account.get("charges_enabled")
+            or generation <= 0
+            or payment_generation != generation
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Payment Stripe account identity is not current enough to refund safely.",
+            )
+        return generation
+
+    @staticmethod
+    def _refund_operation_amount(
+        operation: dict[str, Any],
+        requested_amount_cents: int | None,
+    ) -> int:
+        summary = str(operation.get("result_summary") or "")
+        try:
+            amount = int(summary.removeprefix("amount_cents:"))
+        except ValueError:
+            amount = 0
+        if (
+            not summary.startswith("amount_cents:")
+            or amount < 1
+            or (requested_amount_cents is not None and amount != requested_amount_cents)
+        ):
+            raise RuntimeError("payment_refund_saved_amount_invalid")
+        return amount
+
+    @staticmethod
+    def _safe_refund_status(refund: Any) -> str:
+        if isinstance(refund, dict):
+            value = refund.get("status")
+        else:
+            value = getattr(refund, "status", None)
+        normalized = str(value or "pending").strip().lower()
+        return normalized if normalized in {"pending", "succeeded", "failed", "canceled"} else "unknown"
+
+    def _load_refund_operation_result(
+        self,
+        *,
+        payment: dict[str, Any],
+        operation: dict[str, Any],
+        context: BillingProviderOperationContext,
+        requested_amount_cents: int | None,
+    ) -> dict[str, Any]:
+        refund_id = str(operation.get("provider_object_id") or "")
+        result = (
+            self.supabase.table("billing_refunds")
+            .select("*")
+            .eq("studio_id", context.studio_id)
+            .eq("stripe_account_id", context.stripe_connected_account_id)
+            .eq("stripe_refund_id", refund_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise RuntimeError("payment_refund_saved_result_missing")
+        row = result.data[0]
+        self._verify_refund_projection(
+            row,
+            payment=payment,
+            operation=operation,
+            context=context,
+            expected_amount=requested_amount_cents,
+        )
+        return row
+
+    def _resume_refund_projection(
+        self,
+        *,
+        payment: dict[str, Any],
+        data: BillingRefundCreate,
+        operation: dict[str, Any],
+        context: BillingProviderOperationContext,
+    ) -> dict[str, Any]:
+        coordinator = BillingProviderOperationCoordinator(self.supabase)
+        result_code = str(operation.get("result_code") or "")
+        prefix = "payment_refund_status_"
+        provider_status = result_code[len(prefix):] if result_code.startswith(prefix) else ""
+        try:
+            if provider_status not in {"pending", "succeeded", "failed", "canceled", "unknown"}:
+                raise RuntimeError("payment_refund_saved_status_invalid")
+            amount = self._refund_operation_amount(operation, data.amount_cents)
+        except Exception as exc:
+            self._mark_refund_reconciliation(
+                coordinator,
+                context,
+                operation,
+                "payment_refund_projection_unverified",
+                exc,
+            )
+        try:
+            row = self._project_refund({
+                "id": operation["provider_object_id"],
+                "charge": payment["stripe_charge_id"],
+                "payment_intent": payment.get("stripe_payment_intent_id"),
+                "amount": amount,
+                "reason": data.reason,
+                "status": provider_status,
+                "metadata": {
+                    "studio_id": context.studio_id,
+                    "payment_id": payment["id"],
+                    "product": "koaryu_payments",
+                },
+            }, context.stripe_connected_account_id)
+            self._verify_refund_projection(
+                row,
+                payment=payment,
+                operation=operation,
+                context=context,
+                expected_amount=amount,
+            )
+            return row
+        except Exception as exc:
+            self._mark_refund_reconciliation(
+                coordinator,
+                context,
+                operation,
+                "payment_refund_local_projection_failed",
+                exc,
+            )
+
+    @staticmethod
+    def _verify_refund_projection(
+        row: dict[str, Any],
+        *,
+        payment: dict[str, Any],
+        operation: dict[str, Any],
+        context: BillingProviderOperationContext,
+        expected_amount: int | None,
+    ) -> None:
+        if (
+            not row
+            or row.get("studio_id") != context.studio_id
+            or row.get("payment_id") != payment.get("id")
+            or row.get("stripe_refund_id") != operation.get("provider_object_id")
+            or row.get("stripe_charge_id") != payment.get("stripe_charge_id")
+            or row.get("stripe_account_id") != context.stripe_connected_account_id
+            or row.get("connect_account_generation") != context.connect_account_generation
+            or row.get("reconciliation_required") is True
+            or (expected_amount is not None and int(row.get("amount_cents") or 0) != expected_amount)
+        ):
+            raise RuntimeError("payment_refund_projection_not_converged")
+
+    @staticmethod
+    def _mark_refund_reconciliation(
+        coordinator: BillingProviderOperationCoordinator,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        reason_code: str,
+        exc: Exception,
+    ) -> None:
+        try:
+            coordinator.transition(
+                context,
+                operation,
+                "reconciliation_required",
+                reconciliation_reason_code=reason_code,
+            )
+        except Exception:
+            pass
+        raise HTTPException(status_code=503, detail=REFUND_AMBIGUOUS_DETAIL) from exc
 
     async def create_export_job(self, data: ExportJobCreate, studio_id: str, actor_id: str) -> ExportJobResponse:
         result = self.supabase.table("export_jobs").insert({

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Response, status
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.api.v1.endpoints import billing as billing_endpoints
 from app.api.v1.endpoints import students as student_endpoints
@@ -49,6 +50,60 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         self.assertTrue(header["required"])
         self.assertEqual(header["schema"]["minLength"], 1)
         self.assertEqual(header["schema"]["maxLength"], 255)
+
+    def test_autopay_setup_idempotency_header_is_required_and_length_bounded_in_openapi(self):
+        operation = app.openapi()["paths"][
+            "/api/v1/billing/payers/{payer_id}/autopay/setup-link"
+        ]["post"]
+        header = next(
+            parameter
+            for parameter in operation["parameters"]
+            if parameter["in"] == "header" and parameter["name"] == "Idempotency-Key"
+        )
+
+        self.assertTrue(header["required"])
+        self.assertEqual(header["schema"]["minLength"], 1)
+        self.assertEqual(header["schema"]["maxLength"], 255)
+
+    def test_explicit_sync_and_refund_idempotency_headers_are_required_and_bounded(self):
+        for path in (
+            "/api/v1/billing/plans/{plan_id}/sync",
+            "/api/v1/billing/payers/{payer_id}/sync",
+            "/api/v1/billing/payments/{payment_id}/refund",
+        ):
+            with self.subTest(path=path):
+                operation = app.openapi()["paths"][path]["post"]
+                header = next(
+                    parameter
+                    for parameter in operation["parameters"]
+                    if parameter["in"] == "header"
+                    and parameter["name"] == "Idempotency-Key"
+                )
+                self.assertTrue(header["required"])
+                self.assertEqual(header["schema"]["minLength"], 1)
+                self.assertEqual(header["schema"]["maxLength"], 255)
+
+    def test_explicit_sync_and_refund_http_routes_reject_missing_or_oversized_keys(self):
+        test_app = FastAPI()
+        test_app.include_router(billing_endpoints.router)
+        test_app.dependency_overrides[get_current_user_id] = lambda: "admin_1"
+        test_app.dependency_overrides[get_requested_studio_id] = lambda: "studio_1"
+        test_app.dependency_overrides[get_supabase] = lambda: object()
+        client = TestClient(test_app)
+
+        for path, payload in (
+            ("/billing/plans/plan_1/sync", None),
+            ("/billing/payers/payer_1/sync", None),
+            ("/billing/payments/payment_1/refund", {"amount_cents": 500}),
+        ):
+            for headers in ({}, {"Idempotency-Key": "x" * 256}):
+                with self.subTest(path=path, headers=headers):
+                    response = client.post(path, headers=headers, json=payload)
+                    self.assertEqual(response.status_code, 422, response.text)
+
+    def test_autopay_setup_request_rejects_staff_terms_assertion(self):
+        with self.assertRaises(ValidationError):
+            BillingPayerAutopaySetupRequest(terms_accepted=True)
 
     def assert_admin_required(self, coroutine_factory):
         with (
@@ -113,14 +168,6 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 ),
             ),
             (
-                "get_billing_system_status",
-                lambda: billing_endpoints.get_billing_system_status(
-                    user_id="front_desk_1",
-                    requested_studio_id="studio_1",
-                    supabase=object(),
-                ),
-            ),
-            (
                 "reconcile_billing_from_stripe",
                 lambda: billing_endpoints.reconcile_billing_from_stripe(
                     BillingReconcileRequest(object_type="invoice", stripe_object_id="in_1"),
@@ -161,6 +208,7 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 "sync_plan",
                 lambda: billing_endpoints.sync_plan(
                     "plan_1",
+                    request_idempotency_key="plan-sync-key",
                     user_id="front_desk_1",
                     requested_studio_id="studio_1",
                     supabase=object(),
@@ -189,16 +237,7 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 "sync_payer",
                 lambda: billing_endpoints.sync_payer(
                     "payer_1",
-                    user_id="front_desk_1",
-                    requested_studio_id="studio_1",
-                    supabase=object(),
-                ),
-            ),
-            (
-                "create_autopay_setup_link",
-                lambda: billing_endpoints.create_autopay_setup_link(
-                    "payer_1",
-                    BillingPayerAutopaySetupRequest(terms_accepted=True),
+                    request_idempotency_key="payer-sync-key",
                     user_id="front_desk_1",
                     requested_studio_id="studio_1",
                     supabase=object(),
@@ -346,6 +385,42 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             "client-operation-1",
         )
 
+    def test_finalize_and_void_invoice_propagate_caller_owned_keys(self):
+        with (
+            patch("app.api.v1.endpoints.billing._admin_studio_id", return_value="studio_1"),
+            patch("app.api.v1.endpoints.billing.BillingService") as billing_service,
+        ):
+            billing_service.return_value.finalize_invoice = AsyncMock(
+                return_value={"id": "invoice_1", "status": "open"}
+            )
+            billing_service.return_value.void_invoice = AsyncMock(
+                return_value={"id": "invoice_2", "status": "void"}
+            )
+
+            finalized = asyncio.run(billing_endpoints.finalize_invoice(
+                "invoice_1",
+                request_idempotency_key="finalize-operation",
+                user_id="admin_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            ))
+            voided = asyncio.run(billing_endpoints.void_invoice(
+                "invoice_2",
+                request_idempotency_key="void-operation",
+                user_id="admin_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            ))
+
+        self.assertEqual(finalized["status"], "open")
+        self.assertEqual(voided["status"], "void")
+        billing_service.return_value.finalize_invoice.assert_awaited_once_with(
+            "invoice_1", "studio_1", "admin_1", "finalize-operation"
+        )
+        billing_service.return_value.void_invoice.assert_awaited_once_with(
+            "invoice_2", "studio_1", "admin_1", "void-operation"
+        )
+
     def test_retry_invoice_preserves_safe_definitive_payment_status_for_client(self):
         safe_error = HTTPException(
             status_code=402,
@@ -387,11 +462,33 @@ class BillingEndpointPermissionTest(unittest.TestCase):
         manager_studio.assert_called_once()
         service.list_payers.assert_awaited_once_with("studio_1")
 
+    def test_front_desk_receives_role_scoped_billing_workflow_capabilities(self):
+        service = AsyncMock()
+        service.get_system_status = AsyncMock(return_value={"workflow_capabilities": []})
+        with (
+            patch(
+                "app.api.v1.endpoints.billing.resolve_billing_manager_staff_role_for_user",
+                return_value={"studio_id": "studio_1", "role": "front_desk"},
+            ) as manager_role,
+            patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
+        ):
+            result = asyncio.run(billing_endpoints.get_billing_system_status(
+                user_id="front_desk_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            ))
+
+        self.assertEqual(result, {"workflow_capabilities": []})
+        manager_role.assert_called_once()
+        service.get_system_status.assert_awaited_once_with("studio_1", "front_desk")
+
     def test_front_desk_can_use_only_the_named_routine_billing_writes(self):
         service = AsyncMock()
         service.add_student_billing_enrollment = AsyncMock(return_value={"id": "enrollment_1"})
+        service.activate_enrollment = AsyncMock(return_value={"id": "enrollment_1"})
         service.record_external_payment = AsyncMock(return_value={"id": "payment_1"})
         service.reconcile_invoice = AsyncMock(return_value={"id": "invoice_1"})
+        service.create_autopay_setup_link = AsyncMock(return_value={"url": "https://checkout.test/setup"})
 
         enrollment = StudentBillingEnrollmentCreate(
             student_id="student_1",
@@ -414,6 +511,13 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 requested_studio_id="studio_1",
                 supabase=object(),
             ))
+            activation_result = asyncio.run(billing_endpoints.activate_enrollment(
+                "enrollment_1",
+                request_idempotency_key="activation-key",
+                user_id="front_desk_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            ))
             payment_result = asyncio.run(billing_endpoints.record_external_payment(
                 payment,
                 request_idempotency_key="payment-key",
@@ -427,19 +531,40 @@ class BillingEndpointPermissionTest(unittest.TestCase):
                 requested_studio_id="studio_1",
                 supabase=object(),
             ))
+            autopay_result = asyncio.run(billing_endpoints.create_autopay_setup_link(
+                "payer_1",
+                BillingPayerAutopaySetupRequest(),
+                Response(),
+                request_idempotency_key="autopay-key",
+                user_id="front_desk_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            ))
 
         self.assertEqual(enrollment_result, {"id": "enrollment_1"})
+        self.assertEqual(activation_result, {"id": "enrollment_1"})
         self.assertEqual(payment_result, {"id": "payment_1"})
         self.assertEqual(invoice_result, {"id": "invoice_1"})
-        self.assertEqual(routine_studio.call_count, 3)
+        self.assertEqual(autopay_result, {"url": "https://checkout.test/setup"})
+        self.assertEqual(routine_studio.call_count, 5)
         service.add_student_billing_enrollment.assert_awaited_once_with(
             enrollment, "studio_1", "front_desk_1"
+        )
+        service.activate_enrollment.assert_awaited_once_with(
+            "enrollment_1", "studio_1", "front_desk_1", "activation-key"
         )
         service.record_external_payment.assert_awaited_once_with(
             payment, "studio_1", "front_desk_1", "payment-key"
         )
         service.reconcile_invoice.assert_awaited_once_with(
             "invoice_1", "studio_1", "front_desk_1"
+        )
+        service.create_autopay_setup_link.assert_awaited_once_with(
+            "payer_1",
+            BillingPayerAutopaySetupRequest(),
+            "studio_1",
+            "front_desk_1",
+            "autopay-key",
         )
 
     def test_contract_only_rejects_provider_enrollment_and_invoice_targeted_external_payment(self):
@@ -483,6 +608,33 @@ class BillingEndpointPermissionTest(unittest.TestCase):
             "External payments must currently target one payer, not an invoice.",
         )
         service.assert_not_called()
+
+    def test_admin_can_activate_enrollment_with_caller_owned_key(self):
+        service = AsyncMock()
+        service.activate_enrollment = AsyncMock(return_value={"id": "enrollment_1"})
+        with (
+            patch(
+                "app.api.v1.endpoints.billing._routine_studio_id",
+                return_value="studio_1",
+            ) as routine_studio,
+            patch("app.api.v1.endpoints.billing.BillingService", return_value=service),
+        ):
+            result = asyncio.run(billing_endpoints.activate_enrollment(
+                "enrollment_1",
+                request_idempotency_key="activation-key",
+                user_id="admin_1",
+                requested_studio_id="studio_1",
+                supabase=object(),
+            ))
+
+        self.assertEqual(result, {"id": "enrollment_1"})
+        routine_studio.assert_called_once()
+        service.activate_enrollment.assert_awaited_once_with(
+            "enrollment_1",
+            "studio_1",
+            "admin_1",
+            "activation-key",
+        )
 
     def test_contract_only_external_payment_http_boundary_rejects_missing_or_invoice_targets(self):
         test_app = FastAPI()

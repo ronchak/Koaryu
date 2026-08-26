@@ -35,8 +35,17 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
     body: Record<string, string | undefined>,
     action = "stripe-link"
   ) {
+    const workflowId = path.includes("/checkout")
+      ? "core.subscription.checkout"
+      : path.includes("/portal")
+        ? "core.subscription.portal"
+        : "connect.dashboard";
     if (runtime.isPreviewMode) {
       runtime.setMessage("Demo mode uses Stripe-hosted surfaces in production.");
+      return;
+    }
+    if (!runtime.canUseWorkflow(workflowId)) {
+      runtime.setError("This billing workflow is not available for the current studio and role.");
       return;
     }
     if (!runtime.token || !runtime.claimAction(action)) {
@@ -66,6 +75,10 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
   async function openConnectOnboarding(businessEntityType?: ConnectBusinessEntityType) {
     if (runtime.isPreviewMode) {
       runtime.setMessage("Demo mode uses Stripe-hosted surfaces in production.");
+      return;
+    }
+    if (!runtime.canUseWorkflow("connect.onboarding")) {
+      runtime.setError("Stripe onboarding is not available for the current studio and role.");
       return;
     }
     if (!runtime.token || !runtime.claimAction("connect")) {
@@ -111,6 +124,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
       action: "connect-reset",
       path: "/billing/connect/reset",
       successMessage: "Stripe connection cleared. Start onboarding again to connect the active Stripe platform.",
+      workflowId: "connect.reset",
     });
   }
 
