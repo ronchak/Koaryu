@@ -309,12 +309,12 @@ echo "RESTORED_V31_PAYER_GENERATION_STATE=$payer_generation_state"
 echo "RESTORED_V31_INVOICE_GENERATION_STATE=$invoice_generation_state"
 echo "RESTORED_V31_UNTOUCHED_ROW_FINGERPRINTS=$payments_after|$refunds_after|$disputes_after|$operations_after"
 
-if [[ "$resource_manifest" != "0:c04120ebdd5da5dbc6cfed75e07ef05c2518770f71659122f05794a1e472d767" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
-if [[ "$operational_contract" != "0:b23abcb96d2fb6debbcd21c823cdddebf06d99437362888bb633a85f6afcf6a4" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
-if [[ "$operational_manifest" != "db1de6ed5cb35d84ba284d2542017447bc625cd4f8192d86bc98b69f21408ab1" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
+if [[ "$resource_manifest" != "0:2338b921f8ae442e304e6ba964ef1af2120dfb25ab9f3d17cb42a59048d180b2" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
+if [[ "$operational_contract" != "0:100b9908bafdd63bffaf7a92a2de2a54816dd6fb4aafe26fec0b853f0f65c49d" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
+if [[ "$operational_manifest" != "9f8d37dbe6f761baa42518aaa4debdad9715d83c0733c73665acb37e322e916e" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
 if [[ "$readiness" != "true|124|20260826185651|0||release-db-attestation-v31" ]]; then echo "Restored V31 readiness mismatch: $readiness" >&2; exit 1; fi
 if [[ "$compat_readiness" != "true|123|20260826155911|0||release-db-attestation-v30" ]]; then echo "Restored V30 compatibility readiness mismatch: $compat_readiness" >&2; exit 1; fi
-if [[ "$expectation_state" != "1:9acdd3947e38cabcf186934f44cdfdb944a26d8ee0ac0370e59683f20b4dd901" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
+if [[ "$expectation_state" != "1:8994fd34dffbb0db5c1531a4f83f299881e0a2277b5b6c685858efc481ce02e8" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
 if ! (
   cd "$repository_root"
   node --input-type=module --eval '

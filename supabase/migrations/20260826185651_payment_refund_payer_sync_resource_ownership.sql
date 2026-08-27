@@ -1984,15 +1984,22 @@ BEGIN
             ) AS unexpected_privilege,
             COALESCE((
                 SELECT string_agg(
-                    privilege.grantor::TEXT || '>' || privilege.grantee::TEXT || ':' ||
+                    COALESCE(grantor_role.rolname, 'PUBLIC') || '>' ||
+                    COALESCE(grantee_role.rolname, 'PUBLIC') || ':' ||
                     privilege.privilege_type || ':' || privilege.is_grantable::TEXT,
-                    ',' ORDER BY privilege.grantor,privilege.grantee,
+                    ',' ORDER BY
+                                 COALESCE(grantor_role.rolname, 'PUBLIC') COLLATE "C",
+                                 COALESCE(grantee_role.rolname, 'PUBLIC') COLLATE "C",
                                  privilege.privilege_type COLLATE "C",privilege.is_grantable
                 )
                 FROM aclexplode(COALESCE(
                     relation.relacl,
                     acldefault('r',relation.relowner)
                 )) AS privilege
+                LEFT JOIN pg_roles AS grantor_role
+                  ON grantor_role.oid=privilege.grantor
+                LEFT JOIN pg_roles AS grantee_role
+                  ON grantee_role.oid=privilege.grantee
             ),'') AS acl_state
         FROM pg_class AS relation
         JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
@@ -2230,7 +2237,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    'b23abcb96d2fb6debbcd21c823cdddebf06d99437362888bb633a85f6afcf6a4'
+    '100b9908bafdd63bffaf7a92a2de2a54816dd6fb4aafe26fec0b853f0f65c49d'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -2302,7 +2309,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:c04120ebdd5da5dbc6cfed75e07ef05c2518770f71659122f05794a1e472d767' THEN
+       <> '0:2338b921f8ae442e304e6ba964ef1af2120dfb25ab9f3d17cb42a59048d180b2' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     SELECT expected_sha256 INTO v_expected
@@ -2420,7 +2427,7 @@ BEGIN
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> 'c98eeab1d937c17a76acc91c5aa5996bc2f1e38c38cb4f0ca114a65568676ec4' THEN
+       <> '867804be9dba3c01ca653d6d6f322c416087d318c746622d9c126be79ba1a2fa' THEN
         v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -2485,7 +2492,7 @@ BEGIN
         v_failures := array_append(v_failures, 'operation_allowlist_column');
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> 'db1de6ed5cb35d84ba284d2542017447bc625cd4f8192d86bc98b69f21408ab1' THEN
+       <> '9f8d37dbe6f761baa42518aaa4debdad9715d83c0733c73665acb37e322e916e' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(

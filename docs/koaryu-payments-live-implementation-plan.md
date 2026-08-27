@@ -274,13 +274,13 @@ anchors. It:
 - advances the exact release state to 124/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:c04120ebdd5da5dbc6cfed75e07ef05c2518770f71659122f05794a1e472d767`,
+  `0:2338b921f8ae442e304e6ba964ef1af2120dfb25ab9f3d17cb42a59048d180b2`,
   the V31 operational contract
-  `0:b23abcb96d2fb6debbcd21c823cdddebf06d99437362888bb633a85f6afcf6a4`,
+  `0:100b9908bafdd63bffaf7a92a2de2a54816dd6fb4aafe26fec0b853f0f65c49d`,
   the V31 operational manifest
-  `db1de6ed5cb35d84ba284d2542017447bc625cd4f8192d86bc98b69f21408ab1`,
+  `9f8d37dbe6f761baa42518aaa4debdad9715d83c0733c73665acb37e322e916e`,
   and expectation state
-  `1:9acdd3947e38cabcf186934f44cdfdb944a26d8ee0ac0370e59683f20b4dd901`.
+  `1:8994fd34dffbb0db5c1531a4f83f299881e0a2277b5b6c685858efc481ce02e8`.
 
 Latest local candidate evidence before publication:
 
@@ -294,6 +294,9 @@ Latest local candidate evidence before publication:
   all 123 tests;
 - all 124 migrations, both new and inherited restore paths, every negative attestation,
   every concurrency suite, and all 43 SQL contracts passed on ephemeral PostgreSQL 17;
+- a disposable Supabase provider-image reset applied all 124 migrations with the same
+  V31 trust anchors, the release UI atomic contract passed, and database lint reported
+  no errors;
 - `git diff --check` passed.
 
 Before the exact-head staging phase, no live grant, provider mutation, hosted write, or
