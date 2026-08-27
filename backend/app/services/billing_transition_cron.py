@@ -63,7 +63,10 @@ def process_due_billing_transitions(
         method="POST",
     )
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:
+        # Bandit B310 is not applicable: `backend_api_url` must equal one exact
+        # HTTPS origin from `_TARGETS`; arbitrary schemes, hosts, paths, and ports
+        # are rejected before this Request is constructed.
+        with urlopen(request, timeout=timeout_seconds) as response:  # nosec B310
             payload_bytes = response.read(_MAX_RESPONSE_BYTES + 1)
             status_code = response.status
     except (HTTPError, URLError, TimeoutError) as exc:
