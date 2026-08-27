@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -32,7 +31,6 @@ from app.services.supabase_rpc import execute_required_rpc
 from app.services.stripe_service import StripeService
 
 
-logger = logging.getLogger(__name__)
 
 EXTERNAL_PAYMENT_IDEMPOTENCY_REQUIRED_DETAIL = "Idempotency-Key is required for external payments."
 EXTERNAL_PAYMENT_OVERPAY_DETAIL = "External payment exceeds the invoice remaining balance."
@@ -243,7 +241,10 @@ class BillingPaymentManager:
             row,
         )
         if data.invoice_id:
-            invoice = self._apply_external_payment_to_invoice(studio_id, invoice, payment)
+            invoice = self._recompute_external_invoice_payment_totals(
+                studio_id,
+                invoice["id"],
+            )
             self._recompute_payer_balance(studio_id, invoice.get("payer_id"))
         elif effective_payer_id:
             self._recompute_payer_balance(studio_id, effective_payer_id)
@@ -337,71 +338,6 @@ class BillingPaymentManager:
             },
         )
         return self._get_row_or_404("billing_invoices", invoice_id, studio_id, "Invoice not found.")
-
-    def _apply_external_payment_to_invoice(
-        self,
-        studio_id: str,
-        invoice: dict[str, Any],
-        payment: dict[str, Any],
-    ) -> dict[str, Any]:
-        if not self._invoice_requires_stripe_external_sync(invoice):
-            return self._recompute_external_invoice_payment_totals(studio_id, invoice["id"])
-        if not self._external_payments_cover_invoice(studio_id, invoice):
-            return self._recompute_external_invoice_payment_totals(studio_id, invoice["id"])
-        if not self._mark_stripe_invoice_paid_out_of_band(invoice, payment, studio_id):
-            return self._get_row_or_404("billing_invoices", invoice["id"], studio_id, "Invoice not found.")
-        return self._recompute_external_invoice_payment_totals(studio_id, invoice["id"])
-
-    def _invoice_requires_stripe_external_sync(self, invoice: dict[str, Any]) -> bool:
-        if not invoice.get("stripe_invoice_id") or not invoice.get("stripe_account_id"):
-            return False
-        return invoice.get("status") != "paid" or bool(invoice.get("last_payment_error"))
-
-    def _external_payments_cover_invoice(self, studio_id: str, invoice: dict[str, Any]) -> bool:
-        due = int(invoice.get("amount_due_cents") or 0)
-        result = (
-            self.supabase.table("billing_payments")
-            .select("amount_cents")
-            .eq("studio_id", studio_id)
-            .eq("invoice_id", invoice["id"])
-            .in_("status", ["succeeded", "externally_recorded"])
-            .execute()
-        )
-        paid = sum(max(0, int(row.get("amount_cents") or 0)) for row in (result.data or []))
-        return paid >= due
-
-    def _mark_stripe_invoice_paid_out_of_band(
-        self,
-        invoice: dict[str, Any],
-        payment: dict[str, Any],
-        studio_id: str,
-    ) -> bool:
-        try:
-            self.stripe_service_cls().pay_connected_invoice(
-                account_id=invoice["stripe_account_id"],
-                studio_id=studio_id,
-                invoice_id=invoice["stripe_invoice_id"],
-                paid_out_of_band=True,
-                idempotency_key=self._idempotency_key("external-invoice-pay", payment["id"]),
-            )
-        except Exception as exc:
-            error_id = uuid4().hex
-            logger.error(
-                "Stripe out-of-band invoice sync failed; reference=%s; error_type=%s",
-                error_id,
-                type(exc).__name__,
-            )
-            update = {
-                "status": "open",
-                "paid_at": None,
-                "last_payment_error": f"Stripe sync failed after local payment recording. Reference: {error_id}",
-            }
-            self.supabase.table("billing_invoices").update(update).eq("id", invoice["id"]).eq("studio_id", studio_id).execute()
-            return False
-        else:
-            update = {"last_payment_error": None}
-            self.supabase.table("billing_invoices").update(update).eq("id", invoice["id"]).eq("studio_id", studio_id).execute()
-            return True
 
     async def refund_payment(
         self,

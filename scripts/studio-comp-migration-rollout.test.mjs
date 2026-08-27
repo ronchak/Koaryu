@@ -1088,7 +1088,7 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.deepEqual(
       classifyStateSnapshot(
-        postSnapshot(packet, { catalogState: EXPECTED_V30_RESTORED_CATALOG_STATE }),
+        postSnapshot(packet, { catalogState: EXPECTED_V31_RESTORED_CATALOG_STATE }),
         packet,
         validFingerprint,
       ),

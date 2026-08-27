@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.billing import (
+    BillingEnrollmentScheduledTransitionResponse,
     BillingSubscriptionResponse,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentResponse,
@@ -14,7 +15,11 @@ from app.schemas.billing import (
 from app.services.billing_enrollment_stripe_lifecycle import BillingEnrollmentStripeLifecycle
 from app.services.billing_enrollment_activation import BillingEnrollmentActivationWorkflow
 from app.services.billing_enrollment_transitions import BillingEnrollmentTransitionWorkflow
+from app.services.supabase_rpc import execute_required_rpc, rpc_rows
 from app.services.stripe_service import StripeService
+
+
+SCHEDULED_TRANSITION_READ_BATCH_SIZE = 300
 
 
 class BillingEnrollmentManager:
@@ -105,7 +110,10 @@ class BillingEnrollmentManager:
             .limit(300)
             .execute()
         )
-        return [StudentBillingEnrollmentResponse(**row) for row in (result.data or [])]
+        return self._enrollment_responses_with_scheduled_transitions(
+            result.data or [],
+            studio_id,
+        )
 
     async def list_student_billing(self, student_id: str, studio_id: str) -> list[StudentBillingEnrollmentResponse]:
         self._ensure_record_in_studio("students", student_id, studio_id, "Student not found.")
@@ -117,7 +125,58 @@ class BillingEnrollmentManager:
             .order("created_at", desc=True)
             .execute()
         )
-        return [StudentBillingEnrollmentResponse(**row) for row in (result.data or [])]
+        return self._enrollment_responses_with_scheduled_transitions(
+            result.data or [],
+            studio_id,
+        )
+
+    def _enrollment_responses_with_scheduled_transitions(
+        self,
+        rows: list[dict[str, Any]],
+        studio_id: str,
+    ) -> list[StudentBillingEnrollmentResponse]:
+        if not rows:
+            return []
+        enrollment_ids = [str(row["id"]) for row in rows]
+        expected_enrollment_ids = set(enrollment_ids)
+        scheduled_by_enrollment: dict[
+            str,
+            BillingEnrollmentScheduledTransitionResponse,
+        ] = {}
+        for start in range(0, len(enrollment_ids), SCHEDULED_TRANSITION_READ_BATCH_SIZE):
+            result = execute_required_rpc(
+                self.supabase,
+                "list_billing_enrollment_scheduled_transitions_v1",
+                {
+                    "p_studio_id": studio_id,
+                    "p_enrollment_ids": enrollment_ids[
+                        start:start + SCHEDULED_TRANSITION_READ_BATCH_SIZE
+                    ],
+                },
+            )
+            for transition in rpc_rows(result):
+                enrollment_id = transition.get("enrollment_id")
+                if (
+                    not isinstance(enrollment_id, str)
+                    or enrollment_id not in expected_enrollment_ids
+                    or enrollment_id in scheduled_by_enrollment
+                ):
+                    raise RuntimeError(
+                        "Scheduled enrollment transition state could not be verified."
+                    )
+                scheduled_by_enrollment[enrollment_id] = (
+                    BillingEnrollmentScheduledTransitionResponse(
+                        intent_id=transition.get("intent_id"),
+                        revision=transition.get("revision"),
+                    )
+                )
+        return [
+            StudentBillingEnrollmentResponse(
+                **row,
+                scheduled_period_end_transition=scheduled_by_enrollment.get(str(row["id"])),
+            )
+            for row in rows
+        ]
 
     async def add_student_billing_enrollment(
         self,

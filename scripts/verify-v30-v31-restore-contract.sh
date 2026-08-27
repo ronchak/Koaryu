@@ -110,6 +110,53 @@ INSERT INTO public.billing_invoices(
   ('31000000-0000-4000-8000-000000000009',
    '31000000-0000-4000-8000-000000000002',
    '31000000-0000-4000-8000-000000000005','void',500,0,500,'usd',NULL);
+INSERT INTO public.billing_invoices(
+  id,studio_id,payer_id,status,amount_due_cents,amount_paid_cents,
+  amount_remaining_cents,currency,stripe_invoice_id,stripe_account_id,
+  stripe_customer_id,collection_method,external,metadata
+) VALUES
+(
+  '31000000-0000-4000-8000-000000000013',
+  '31000000-0000-4000-8000-000000000002',
+  '31000000-0000-4000-8000-000000000004','draft',0,0,0,'usd',
+  'in_v31overlap','acct_v31restore','cus_v31restore_partial','send_invoice',false,
+  jsonb_build_object('connect_account_generation',1)
+),
+(
+  '31000000-0000-4000-8000-000000000015',
+  '31000000-0000-4000-8000-000000000002',
+  '31000000-0000-4000-8000-000000000004','draft',0,0,0,'usd',
+  'in_v31legacy_exact','acct_v31restore','cus_v31restore_partial','send_invoice',false,
+  '{}'::jsonb
+),
+(
+  '31000000-0000-4000-8000-000000000016',
+  '31000000-0000-4000-8000-000000000002',
+  '31000000-0000-4000-8000-000000000004','draft',0,0,0,'usd',
+  'in_v31legacy_empty','acct_v31restore','cus_v31restore_partial','send_invoice',false,
+  jsonb_build_object('connect_account_generation','')
+),
+(
+  '31000000-0000-4000-8000-000000000017',
+  '31000000-0000-4000-8000-000000000002',
+  '31000000-0000-4000-8000-000000000004','draft',0,0,0,'usd',
+  'in_v31legacy_customer','acct_v31restore','cus_v31restore_other','send_invoice',false,
+  '{}'::jsonb
+),
+(
+  '31000000-0000-4000-8000-000000000018',
+  '31000000-0000-4000-8000-000000000002',
+  '31000000-0000-4000-8000-000000000004','draft',0,0,0,'usd',
+  'in_v31legacy_account','acct_v31stale','cus_v31restore_partial','send_invoice',false,
+  '{}'::jsonb
+),
+(
+  '31000000-0000-4000-8000-000000000019',
+  '31000000-0000-4000-8000-000000000002',
+  '31000000-0000-4000-8000-000000000004','draft',0,0,0,'usd',
+  'in_v31legacy_external','acct_v31restore','cus_v31restore_partial','send_invoice',true,
+  '{}'::jsonb
+);
 INSERT INTO public.billing_payments(
   id,studio_id,payer_id,invoice_id,stripe_customer_id,
   stripe_payment_intent_id,stripe_charge_id,stripe_account_id,
@@ -183,11 +230,53 @@ table_fingerprint() {
 payments_before="$(table_fingerprint billing_payments)"
 refunds_before="$(table_fingerprint billing_refunds)"
 disputes_before="$(table_fingerprint billing_disputes)"
-operations_before="$(table_fingerprint billing_provider_operations)"
+operations_before="$(read_restored "SELECT count(*)::TEXT || ':' || encode(extensions.digest(convert_to(COALESCE(string_agg(to_jsonb(row_state)::TEXT, '|' ORDER BY row_state.id),''),'UTF8'),'sha256'),'hex') FROM public.billing_provider_operations AS row_state WHERE NOT (operation_type='invoice.finalize' AND caller_request_key='v31-overlap-finalize');")"
+legacy_invoice_negative_before="$(read_restored "SELECT encode(extensions.digest(convert_to(string_agg(to_jsonb(row_state)::TEXT, '|' ORDER BY row_state.id),'UTF8'),'sha256'),'hex') FROM public.billing_invoices AS row_state WHERE id BETWEEN '31000000-0000-4000-8000-000000000016'::uuid AND '31000000-0000-4000-8000-000000000019'::uuid;")"
+
+overlap_log="$temp_dir/v31-overlap-claim.log"
+PGAPPNAME=koaryu_v31_overlap_claim "$psql_bin" "${restored_args[@]}" >"$overlap_log" 2>&1 <<'SQL' &
+BEGIN;
+SELECT public.claim_billing_invoice_closeout_operation_v1(
+  '31000000-0000-4000-8000-000000000002'::UUID,
+  '31000000-0000-4000-8000-000000000001'::UUID,
+  'invoice.finalize','invoice_finalize',
+  '31000000-0000-4000-8000-000000000013'::UUID,
+  '31000000-0000-4000-8000-000000000004'::UUID,
+  'v31-overlap-finalize',repeat('9',64),
+  'acct_v31restore',1,
+  '31000000-0000-4000-8000-000000000014'::UUID,30
+);
+SELECT pg_sleep(5);
+COMMIT;
+SQL
+overlap_pid=$!
+overlap_active="false"
+for _ in $(seq 1 50); do
+  overlap_active="$(read_restored "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='koaryu_v31_overlap_claim' AND state='active' AND query LIKE '%pg_sleep%')::TEXT;")"
+  if [[ "$overlap_active" == "true" ]]; then break; fi
+  sleep 0.1
+done
+if [[ "$overlap_active" != "true" ]]; then
+  kill "$overlap_pid" >/dev/null 2>&1 || true
+  wait "$overlap_pid" >/dev/null 2>&1 || true
+  echo "V31 overlap claim did not reach its held transaction." >&2
+  sed -n '1,80p' "$overlap_log" >&2
+  exit 1
+fi
 
 "$psql_bin" "${restored_args[@]}" --single-transaction \
   --file="$repository_root/supabase/migrations/20260826185651_payment_refund_payer_sync_resource_ownership.sql" \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('20260826185651','payment_refund_payer_sync_resource_ownership');"
+if ! wait "$overlap_pid"; then
+  echo "V31 overlapping compatibility claim failed." >&2
+  sed -n '1,80p' "$overlap_log" >&2
+  exit 1
+fi
+overlap_owner_state="$(read_restored "SELECT count(*)::TEXT || ':' || bool_and(owner.operation_id=alias.operation_id AND owner.resource_claim_id=alias.resource_claim_id AND operation.state='started')::TEXT FROM public.billing_invoice_mutation_owners AS owner JOIN public.billing_provider_operation_resource_aliases AS alias ON alias.studio_id=owner.studio_id AND alias.resource_id=owner.invoice_id AND alias.caller_request_key='v31-overlap-finalize' JOIN public.billing_provider_operations AS operation ON operation.id=alias.operation_id WHERE owner.invoice_id='31000000-0000-4000-8000-000000000013'::UUID;")"
+if [[ "$overlap_owner_state" != "1:true" ]]; then
+  echo "V31 migration did not adopt the overlapping compatibility claim: $overlap_owner_state" >&2
+  exit 1
+fi
 
 resource_manifest="$(read_restored 'SELECT private.koaryu_release_resource_ownership_manifest_v31();')"
 operational_contract="$(read_restored 'SELECT private.koaryu_release_operational_contract_v31();')"
@@ -200,10 +289,12 @@ restored_catalog_state="$(read_restored "$catalog_sql")"
 normalization_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || status || ':' || amount_paid_cents::TEXT || ':' || amount_remaining_cents::TEXT || ':' || COALESCE(paid_at IS NOT NULL,false)::TEXT, '|' ORDER BY id) FROM public.billing_invoices WHERE id BETWEEN '31000000-0000-4000-8000-000000000006'::uuid AND '31000000-0000-4000-8000-000000000009'::uuid;")"
 payer_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || billing_status || ':' || balance_cents::TEXT, '|' ORDER BY id) FROM public.billing_payers WHERE id BETWEEN '31000000-0000-4000-8000-000000000003'::uuid AND '31000000-0000-4000-8000-000000000005'::uuid;")"
 payer_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || COALESCE(connect_account_generation::TEXT,''), '|' ORDER BY id) FROM public.billing_payers WHERE id BETWEEN '31000000-0000-4000-8000-000000000003'::uuid AND '31000000-0000-4000-8000-000000000005'::uuid;")"
+invoice_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || CASE WHEN NOT (metadata ? 'connect_account_generation') THEN '<missing>' WHEN metadata->>'connect_account_generation' = '' THEN '<empty>' ELSE COALESCE(metadata->>'connect_account_generation','<json-null>') END, '|' ORDER BY id) FROM public.billing_invoices WHERE id BETWEEN '31000000-0000-4000-8000-000000000015'::uuid AND '31000000-0000-4000-8000-000000000019'::uuid;")"
 payments_after="$(table_fingerprint billing_payments)"
 refunds_after="$(table_fingerprint billing_refunds)"
 disputes_after="$(table_fingerprint billing_disputes)"
-operations_after="$(table_fingerprint billing_provider_operations)"
+operations_after="$(read_restored "SELECT count(*)::TEXT || ':' || encode(extensions.digest(convert_to(COALESCE(string_agg(to_jsonb(row_state)::TEXT, '|' ORDER BY row_state.id),''),'UTF8'),'sha256'),'hex') FROM public.billing_provider_operations AS row_state WHERE NOT (operation_type='invoice.finalize' AND caller_request_key='v31-overlap-finalize');")"
+legacy_invoice_negative_after="$(read_restored "SELECT encode(extensions.digest(convert_to(string_agg(to_jsonb(row_state)::TEXT, '|' ORDER BY row_state.id),'UTF8'),'sha256'),'hex') FROM public.billing_invoices AS row_state WHERE id BETWEEN '31000000-0000-4000-8000-000000000016'::uuid AND '31000000-0000-4000-8000-000000000019'::uuid;")"
 
 echo "RESTORED_V31_RESOURCE_OWNERSHIP_MANIFEST=$resource_manifest"
 echo "RESTORED_V31_OPERATIONAL_CONTRACT=$operational_contract"
@@ -215,14 +306,15 @@ echo "RESTORED_V31_CATALOG_STATE=$restored_catalog_state"
 echo "RESTORED_V31_LEGACY_NORMALIZATION_STATE=$normalization_state"
 echo "RESTORED_V31_PAYER_RECEIVABLE_STATE=$payer_state"
 echo "RESTORED_V31_PAYER_GENERATION_STATE=$payer_generation_state"
+echo "RESTORED_V31_INVOICE_GENERATION_STATE=$invoice_generation_state"
 echo "RESTORED_V31_UNTOUCHED_ROW_FINGERPRINTS=$payments_after|$refunds_after|$disputes_after|$operations_after"
 
-if [[ "$resource_manifest" != "0:bb38b2815c7c6f65cb43684e2a1b4c01e1711c605c0914350d7dca41ff243068" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
-if [[ "$operational_contract" != "0:93ce2c0f805842bf3c8fb8fdd26f063f4728e03f2076de565c1f85c7431ccd5a" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
-if [[ "$operational_manifest" != "cf89e1619c3f1e25915cd2a5e19f42f950015d18d775dc6629115f247f4cd3c6" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
+if [[ "$resource_manifest" != "0:c04120ebdd5da5dbc6cfed75e07ef05c2518770f71659122f05794a1e472d767" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
+if [[ "$operational_contract" != "0:b23abcb96d2fb6debbcd21c823cdddebf06d99437362888bb633a85f6afcf6a4" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
+if [[ "$operational_manifest" != "db1de6ed5cb35d84ba284d2542017447bc625cd4f8192d86bc98b69f21408ab1" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
 if [[ "$readiness" != "true|124|20260826185651|0||release-db-attestation-v31" ]]; then echo "Restored V31 readiness mismatch: $readiness" >&2; exit 1; fi
 if [[ "$compat_readiness" != "true|123|20260826155911|0||release-db-attestation-v30" ]]; then echo "Restored V30 compatibility readiness mismatch: $compat_readiness" >&2; exit 1; fi
-if [[ "$expectation_state" != "1:36fa463fd5cdb85e674086fb59ec09b4b8b92bd310487a4ff46f98e4088e0ae3" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
+if [[ "$expectation_state" != "1:9acdd3947e38cabcf186934f44cdfdb944a26d8ee0ac0370e59683f20b4dd901" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
 if ! (
   cd "$repository_root"
   node --input-type=module --eval '
@@ -245,6 +337,14 @@ if [[ "$payer_generation_state" != "31000000-0000-4000-8000-000000000003:1|31000
   echo "Restored V31 payer generation backfill mismatch: $payer_generation_state" >&2
   exit 1
 fi
+if [[ "$invoice_generation_state" != "31000000-0000-4000-8000-000000000015:1|31000000-0000-4000-8000-000000000016:<empty>|31000000-0000-4000-8000-000000000017:<missing>|31000000-0000-4000-8000-000000000018:<missing>|31000000-0000-4000-8000-000000000019:<missing>" ]]; then
+  echo "Restored V31 invoice generation backfill mismatch: $invoice_generation_state" >&2
+  exit 1
+fi
+if [[ "$legacy_invoice_negative_before" != "$legacy_invoice_negative_after" ]]; then
+  echo "V31 invoice generation backfill mutated ambiguous or external invoices." >&2
+  exit 1
+fi
 if [[ "$payments_before" != "$payments_after" || "$refunds_before" != "$refunds_after" || "$disputes_before" != "$disputes_after" || "$operations_before" != "$operations_after" ]]; then
   echo "V31 normalization mutated payment/refund/dispute/provider evidence rows." >&2
   exit 1
@@ -262,6 +362,9 @@ DECLARE
   v_payment UUID := gen_random_uuid();
   v_pending_payment UUID := gen_random_uuid();
   v_pending_operation UUID;
+  v_plan UUID := gen_random_uuid();
+  v_product_plan UUID := gen_random_uuid();
+  v_product_operation UUID;
   v_operation UUID;
   v_old_operation UUID;
   v_old_version TEXT;
@@ -410,6 +513,147 @@ BEGIN
      OR (v_result->'operation'->>'id')::UUID<>v_pending_operation THEN
     RAISE EXCEPTION 'Exact pending refund key did not replay: %',v_result;
   END IF;
+
+  INSERT INTO public.billing_plans(
+    id,studio_id,name,amount_cents,currency,billing_interval,status
+  ) VALUES(v_plan,v_studio,'V31 resource plan',12000,'usd','monthly','pending');
+  v_result := public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_actor,'plan.sync','plan',v_plan,NULL,
+    'v31-plan-key-a',repeat('f',64),'acct_v31restore',1,gen_random_uuid(),30
+  );
+  v_old_operation := (v_result->'operation'->>'id')::UUID;
+  IF v_result->>'outcome'<>'claimed'
+     OR v_result->'resource'->>'payer_id' IS NOT NULL THEN
+    RAISE EXCEPTION 'Initial plan resource owner was invalid: %',v_result;
+  END IF;
+  v_result := public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_actor,'plan.sync','plan',v_plan,NULL,
+    'v31-plan-key-b',repeat('f',64),'acct_v31restore',1,gen_random_uuid(),30
+  );
+  IF v_result->>'outcome'<>'adopted'
+     OR (v_result->'operation'->>'id')::UUID<>v_old_operation THEN
+    RAISE EXCEPTION 'Same-version plan sync did not collapse: %',v_result;
+  END IF;
+  UPDATE public.billing_provider_operations SET
+    provider_step_plan_sha256=repeat('2',64),
+    provider_step_expected_count=2,
+    provider_step_plan_registered_at=clock_timestamp(),
+    revision=revision+1,
+    updated_at=clock_timestamp()
+  WHERE id=v_old_operation;
+  INSERT INTO public.billing_provider_operation_steps(
+    operation_id,studio_id,stripe_connected_account_id,
+    connect_account_generation,step_order,step_name,provider_operation,
+    request_sha256,stripe_idempotency_key,state,
+    provider_request_attempt_count,provider_object_id,result_code,
+    provider_succeeded_at
+  ) VALUES
+    (v_old_operation,v_studio,'acct_v31restore',1,1,'product',
+     'connected_product.create',repeat('3',64),'v31-plan-step-product',
+     'provider_succeeded',1,'prod_v31plan','plan_sync_product_succeeded',v_now),
+    (v_old_operation,v_studio,'acct_v31restore',1,2,'price',
+     'connected_price.create',repeat('4',64),'v31-plan-step-price',
+     'provider_succeeded',1,'price_v31plan','plan_sync_price_succeeded',v_now);
+  UPDATE public.billing_provider_operations SET
+    state='completed',provider_request_attempt_count=1,
+    provider_object_id='price_v31plan',result_code='plan_sync_completed',
+    result_summary='plan_sync_mode:product_price_steps',
+    provider_request_in_flight_at=v_now,provider_succeeded_at=v_now,
+    projected_at=v_now,completed_at=v_now,lease_owner=NULL,
+    lease_acquired_at=NULL,lease_expires_at=NULL,revision=revision+1,
+    updated_at=clock_timestamp()
+  WHERE id=v_old_operation;
+  UPDATE public.billing_plans SET stripe_account_id='acct_v31restore',
+    stripe_product_id='prod_v31plan',stripe_price_id='price_v31plan',
+    stripe_price_version=1,status='active',
+    updated_at=clock_timestamp() WHERE id=v_plan;
+  BEGIN
+    PERFORM public.claim_billing_provider_operation_resource_v1(
+      v_studio,v_actor,'plan.sync','plan',v_plan,NULL,
+      'v31-plan-key-unchanged',repeat('1',64),
+      'acct_v31restore',1,gen_random_uuid(),30
+    );
+    RAISE EXCEPTION 'A caller-selected hash replaced an unchanged completed plan.';
+  EXCEPTION WHEN unique_violation THEN
+    IF SQLERRM<>'billing_provider_operation_resource_request_conflict' THEN RAISE; END IF;
+  END;
+  UPDATE public.billing_plans SET
+    name='V31 resource plan updated',stripe_product_id='prod_v31plan_drift',
+    updated_at=clock_timestamp() WHERE id=v_plan;
+  BEGIN
+    PERFORM public.claim_billing_provider_operation_resource_v1(
+      v_studio,v_other,'plan.sync','plan',v_plan,NULL,
+      'v31-plan-key-c',repeat('1',64),'acct_v31restore',1,gen_random_uuid(),30
+    );
+    RAISE EXCEPTION 'Plan replacement accepted corrupted product projection evidence.';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM<>'billing_provider_operation_resource_prior_projection_unverified' THEN RAISE; END IF;
+  END;
+  UPDATE public.billing_plans SET
+    stripe_product_id='prod_v31plan',stripe_price_id='price_v31plan_drift',
+    updated_at=clock_timestamp() WHERE id=v_plan;
+  BEGIN
+    PERFORM public.claim_billing_provider_operation_resource_v1(
+      v_studio,v_other,'plan.sync','plan',v_plan,NULL,
+      'v31-plan-key-c',repeat('1',64),'acct_v31restore',1,gen_random_uuid(),30
+    );
+    RAISE EXCEPTION 'Plan replacement accepted corrupted price projection evidence.';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM<>'billing_provider_operation_resource_prior_projection_unverified' THEN RAISE; END IF;
+  END;
+  UPDATE public.billing_plans SET stripe_price_id='price_v31plan',
+    updated_at=clock_timestamp() WHERE id=v_plan;
+  v_result := public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_other,'plan.sync','plan',v_plan,NULL,
+    'v31-plan-key-c',repeat('1',64),'acct_v31restore',1,gen_random_uuid(),30
+  );
+  IF v_result->>'outcome'<>'replaced'
+     OR (v_result->'operation'->>'id')::UUID=v_old_operation
+     OR (v_result->'operation'->>'actor_id')::UUID<>v_other THEN
+    RAISE EXCEPTION 'Changed plan resource did not transfer to another active Admin: %',v_result;
+  END IF;
+
+  INSERT INTO public.billing_plans(
+    id,studio_id,name,amount_cents,currency,billing_interval,status,
+    stripe_account_id,stripe_product_id,stripe_price_id,stripe_price_version
+  ) VALUES(
+    v_product_plan,v_studio,'V31 product-only plan',9000,'usd','monthly','active',
+    'acct_v31restore','prod_v31product','price_v31product',1
+  );
+  v_result:=public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_actor,'plan.sync','plan',v_product_plan,NULL,
+    'v31-product-plan-key-a',repeat('5',64),
+    'acct_v31restore',1,gen_random_uuid(),30
+  );
+  v_product_operation:=(v_result->'operation'->>'id')::UUID;
+  UPDATE public.billing_provider_operations SET
+    provider_step_plan_sha256=repeat('6',64),
+    provider_step_expected_count=2,
+    provider_step_plan_registered_at=clock_timestamp(),
+    revision=revision+1,updated_at=clock_timestamp()
+  WHERE id=v_product_operation;
+  UPDATE public.billing_provider_operations SET
+    state='completed',provider_request_attempt_count=1,
+    provider_object_id='prod_v31product',result_code='plan_sync_completed',
+    result_summary='plan_sync_mode:product_update_only',
+    provider_request_in_flight_at=clock_timestamp(),
+    provider_succeeded_at=clock_timestamp(),projected_at=clock_timestamp(),
+    completed_at=clock_timestamp(),lease_owner=NULL,
+    lease_acquired_at=NULL,lease_expires_at=NULL,
+    revision=revision+1,updated_at=clock_timestamp()
+  WHERE id=v_product_operation;
+  UPDATE public.billing_plans SET name='V31 product-only plan updated',
+    updated_at=clock_timestamp() WHERE id=v_product_plan;
+  BEGIN
+    PERFORM public.claim_billing_provider_operation_resource_v1(
+      v_studio,v_actor,'plan.sync','plan',v_product_plan,NULL,
+      'v31-product-plan-key-b',repeat('7',64),
+      'acct_v31restore',1,gen_random_uuid(),30
+    );
+    RAISE EXCEPTION 'Product-only plan replacement accepted step-plan evidence.';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM<>'billing_provider_operation_resource_prior_projection_unverified' THEN RAISE; END IF;
+  END;
 
   v_result := public.claim_billing_provider_operation_resource_v1(
     v_studio,v_actor,'payer.sync','payer',v_sync_payer,v_sync_payer,
@@ -587,6 +831,72 @@ SQL
 drift_ready="$(read_restored "BEGIN; ALTER FUNCTION private.validate_billing_payment_identity_change() SET search_path=public; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
 if [[ "$drift_ready" != "false" ]]; then
   echo "Restored V31 preflight accepted payment-identity function drift." >&2
+  exit 1
+fi
+
+resource_body_ready="$(read_restored "BEGIN; CREATE TEMP TABLE v31_manifest_spoof(value TEXT); INSERT INTO v31_manifest_spoof SELECT private.koaryu_release_resource_ownership_manifest_v31(); CREATE OR REPLACE FUNCTION private.koaryu_release_resource_ownership_manifest_v31() RETURNS TEXT LANGUAGE sql STABLE SECURITY INVOKER SET search_path=pg_catalog AS 'SELECT value FROM pg_temp.v31_manifest_spoof LIMIT 1'; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$resource_body_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted resource-manifest body substitution." >&2
+  exit 1
+fi
+
+contract_body_ready="$(read_restored "BEGIN; CREATE TEMP TABLE v31_contract_spoof(value TEXT); INSERT INTO v31_contract_spoof SELECT private.koaryu_release_operational_contract_v31(); CREATE OR REPLACE FUNCTION private.koaryu_release_operational_contract_v31() RETURNS TEXT LANGUAGE sql STABLE SECURITY INVOKER SET search_path=pg_catalog SET \"TimeZone\"='UTC' AS 'SELECT value FROM pg_temp.v31_contract_spoof LIMIT 1'; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$contract_body_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted operational-contract body substitution." >&2
+  exit 1
+fi
+
+provider_body_ready="$(read_restored "BEGIN; CREATE TEMP TABLE v31_provider_spoof(value TEXT); INSERT INTO v31_provider_spoof SELECT private.koaryu_release_provider_operation_steps_manifest_v28(); CREATE OR REPLACE FUNCTION private.koaryu_release_provider_operation_steps_manifest_v28() RETURNS TEXT LANGUAGE sql STABLE SECURITY INVOKER SET search_path=pg_catalog AS 'SELECT value FROM pg_temp.v31_provider_spoof LIMIT 1'; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$provider_body_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted provider-manifest body substitution." >&2
+  exit 1
+fi
+
+expectation_acl_ready="$(read_restored "BEGIN; GRANT UPDATE ON private.koaryu_release_v31_expectations TO service_role; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$expectation_acl_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted broadened expectation-table ACLs." >&2
+  exit 1
+fi
+
+owner_integrity_ready="$(read_restored "BEGIN; ALTER TABLE public.billing_invoice_mutation_owners DROP CONSTRAINT billing_invoice_mutation_owners_pkey; ALTER TABLE public.billing_invoice_mutation_owners DROP CONSTRAINT billing_invoice_mutation_owners_payer_id_fkey; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$owner_integrity_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted invoice-owner PK/FK removal." >&2
+  exit 1
+fi
+
+owner_acl_ready="$(read_restored "BEGIN; GRANT UPDATE ON public.billing_invoice_mutation_owners TO service_role; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$owner_acl_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted broadened invoice-owner ACLs." >&2
+  exit 1
+fi
+
+owner_custom_acl_ready="$(read_restored "BEGIN; CREATE ROLE v31_owner_acl_probe NOLOGIN; GRANT SELECT ON public.billing_invoice_mutation_owners TO v31_owner_acl_probe; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$owner_custom_acl_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted a custom-role invoice-owner grant." >&2
+  exit 1
+fi
+
+owner_extra_column_ready="$(read_restored "BEGIN; ALTER TABLE public.billing_invoice_mutation_owners ADD COLUMN unexpected_probe TEXT; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$owner_extra_column_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted an unexpected invoice-owner column." >&2
+  exit 1
+fi
+
+owner_trigger_ready="$(read_restored "BEGIN; DROP TRIGGER preserve_billing_invoice_mutation_owner_v31 ON public.billing_invoice_mutation_owners; CREATE TRIGGER preserve_billing_invoice_mutation_owner_v31 AFTER UPDATE ON public.billing_invoice_mutation_owners FOR EACH ROW EXECUTE FUNCTION private.preserve_billing_invoice_mutation_owner_v31(); SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$owner_trigger_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted wrong invoice-owner trigger topology." >&2
+  exit 1
+fi
+
+maintenance_trigger_ready="$(read_restored "BEGIN; DROP TRIGGER maintain_billing_invoice_mutation_owner_v31 ON public.billing_provider_operation_resources; CREATE TRIGGER maintain_billing_invoice_mutation_owner_v31 AFTER UPDATE OF operation_id ON public.billing_provider_operation_resources FOR EACH ROW EXECUTE FUNCTION private.maintain_billing_invoice_mutation_owner_v31(); SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
+if [[ "$maintenance_trigger_ready" != "false" ]]; then
+  echo "Restored V31 preflight accepted wrong maintenance-trigger topology." >&2
+  exit 1
+fi
+maintenance_catalog_state="$(read_restored "BEGIN; DROP TRIGGER maintain_billing_invoice_mutation_owner_v31 ON public.billing_provider_operation_resources; CREATE TRIGGER maintain_billing_invoice_mutation_owner_v31 AFTER UPDATE OF operation_id ON public.billing_provider_operation_resources FOR EACH ROW EXECUTE FUNCTION private.maintain_billing_invoice_mutation_owner_v31(); ${catalog_sql}; ROLLBACK;")"
+expected_restored_catalog="$(cd "$repository_root" && node --input-type=module --eval "import { EXPECTED_V31_RESTORED_CATALOG_STATE } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V31_RESTORED_CATALOG_STATE);")"
+if [[ "$maintenance_catalog_state" == "$expected_restored_catalog" ]]; then
+  echo "Restored V31 rollout catalog accepted wrong maintenance-trigger topology." >&2
   exit 1
 fi
 

@@ -67,7 +67,8 @@ use the guarded staging apply with its exact generated arguments and durable app
 record. Do not use direct SQL, `db reset`, or a production link. After apply, require
 the exact candidate readiness version, migration count, migration head, and zero security
 failures recorded by the guarded packet. Do not reuse the older V30/123 expectation after
-the additive V31 correction.
+the additive V31 correction. The required post-state is V31, 124 migrations, head
+`20260826185651`, and zero security failures.
 
 ## Exact-SHA application deploy
 
@@ -98,6 +99,12 @@ npm run verify:deployed-release -- \
 The readiness evidence must agree on candidate SHA, staging Supabase, Stripe test mode,
 frontend origin, backend origin, and the 50-basis-point fee setting.
 
+Before provider rehearsal, prove that finalize, void, and retry cannot hold concurrent
+nonterminal ownership for one invoice. Confirm that a failed or reconciliation-required
+mutation blocks competing work, while an exact historical terminal key remains replayable.
+Also confirm invoice creation rejects a 32-item request and accepts the documented
+31-item maximum.
+
 ## Stripe test rehearsal
 
 Create or update only the Stripe test objects and the two staging webhook endpoints
@@ -115,6 +122,8 @@ python3 scripts/verify-stripe-provider-rehearsal.py \
 
 The schema-v3 evidence must finish with zero failed, stuck, unmapped, wrong-mode,
 wrong-generation, pending-transition, and reconciliation-required records.
+An externally recorded payment must remain a local accounting entry and must not call
+Stripe's connected-invoice pay endpoint or change a connected invoice out of band.
 
 ## Browser matrix
 

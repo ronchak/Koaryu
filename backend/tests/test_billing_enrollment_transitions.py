@@ -281,6 +281,43 @@ def test_whole_due_uses_readback_without_second_provider_mutation():
     assert facade.supabase.tables["student_billing_enrollments"][0]["status"] == "canceled"
 
 
+def test_whole_due_completes_after_cancellation_webhook_projects_first():
+    facade = _TransitionFacade(_tables())
+    _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])
+    manager = _manager(facade)
+
+    scheduled = asyncio.run(manager.schedule_period_end(
+        "enrollment_1", "studio_1", "actor_1", "webhook-first-due", "staff_requested"
+    ))
+    _TransitionStripe.subscriptions["sub_1"]["status"] = "canceled"
+    facade._project_subscription(
+        copy.deepcopy(_TransitionStripe.subscriptions["sub_1"]),
+        "acct_1",
+        event_type="customer.subscription.deleted",
+    )
+
+    enrollment = facade.supabase.tables["student_billing_enrollments"][0]
+    assert enrollment["status"] == "canceled"
+    assert enrollment["stripe_subscription_id"] is None
+    assert enrollment["stripe_subscription_item_id"] is None
+
+    result = asyncio.run(manager.process_due_transitions(worker_id="worker_1", limit=25))
+    replay = asyncio.run(manager.process_due_transitions(worker_id="worker_1", limit=25))
+
+    assert result == {"claimed": 1, "completed": 1, "reconciliation_required": 0, "failed": 0}
+    assert replay == {"claimed": 0, "completed": 0, "reconciliation_required": 0, "failed": 0}
+    assert len(_TransitionStripe.subscription_update_calls) == 1
+    assert _TransitionStripe.subscription_cancel_calls == []
+    assert _TransitionStripe.delete_item_calls == []
+    source = facade.supabase.billing_enrollment_transition_intents[scheduled["intent"]["id"]]
+    execute = next(
+        intent
+        for intent in facade.supabase.billing_enrollment_transition_intents.values()
+        if intent.get("source_intent_id") == source["id"]
+    )
+    assert source["state"] == execute["state"] == "completed"
+
+
 def test_item_due_deletes_once_and_converges_source_intent():
     peer = _enrollment(
         id="enrollment_2",

@@ -193,13 +193,16 @@ class BillingEnrollmentTransitionWorkflow:
         for intent in intents:
             try:
                 try:
-                    snapshot = self._snapshot(
-                        str(intent["enrollment_id"]),
-                        str(intent["studio_id"]),
-                        immediate=True,
-                    )
-                    self._verify_intent_snapshot(intent, snapshot)
-                    self._bind_due_intent_snapshot(intent, snapshot)
+                    if intent["mutation_strategy"] == "subscription_cancel_at_period_end":
+                        snapshot = self._snapshot_for_replay(intent)
+                    else:
+                        snapshot = self._snapshot(
+                            str(intent["enrollment_id"]),
+                            str(intent["studio_id"]),
+                            immediate=True,
+                        )
+                        self._verify_intent_snapshot(intent, snapshot)
+                        self._bind_due_intent_snapshot(intent, snapshot)
                 except Exception as exc:
                     if (
                         intent.get("mutation_strategy") == "subscription_item_delete_at_period_end"

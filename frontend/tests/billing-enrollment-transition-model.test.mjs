@@ -115,18 +115,32 @@ describe("billing enrollment transition request keys", () => {
     const tab = fs.readFileSync(
       path.join(root, "src/components/billing/billing-enrollments-tab.tsx"), "utf8",
     );
+    const contracts = fs.readFileSync(
+      path.join(root, "src/types/generated/api-contracts.ts"), "utf8",
+    );
 
     assert.match(actions, /enrollmentTransitionRequestOptions\(requestKey\)/);
     assert.match(actions, /if \(result\) \{[\s\S]*clearEnrollmentTransitionRequestKey/);
+    assert.doesNotMatch(actions, /scheduledTransitions|setScheduledTransitions/);
     assert.match(actions, /schedule-period-end/);
     assert.match(actions, /revoke-scheduled/);
     assert.match(actions, /cancel-immediate/);
     assert.match(tab, /onEnrollmentSchedulePeriodEnd\(enrollment\.id\)/);
-    assert.match(tab, /onEnrollmentRevokeScheduled\(scheduled\.intentId, scheduled\.revision\)/);
+    assert.match(tab, /const scheduled = enrollment\.scheduled_period_end_transition/);
+    assert.match(tab, /onEnrollmentRevokeScheduled\(scheduled\.intent_id, scheduled\.revision\)/);
+    assert.doesNotMatch(tab, /scheduled in this session/);
     assert.match(tab, /onEnrollmentCancelImmediate\(enrollment\.id\)/);
     assert.match(tab, /window\.confirm\("Cancel this recurring enrollment immediately\?/);
     assert.match(tab, /enrollment\.cancel\.period_end\.schedule/);
     assert.match(tab, /enrollment\.cancel\.period_end\.revoke/);
     assert.match(tab, /enrollment\.cancel\.immediate/);
+    assert.match(
+      contracts,
+      /export interface ApiBillingEnrollmentScheduledTransitionResponse \{[\s\S]*intent_id: string;[\s\S]*revision: number;/,
+    );
+    assert.match(
+      contracts,
+      /scheduled_period_end_transition\?: ApiBillingEnrollmentScheduledTransitionResponse \| null;/,
+    );
   });
 });

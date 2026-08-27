@@ -50,7 +50,7 @@ BEGIN
     -- The V28 restore harness retains the original V28 pin. This final-chain
     -- value is the V31-compatible repin after the resource-preservation owner changed.
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       <> '0:89c9cc469ce983a860eb1ad15eeb4d1be21eb52524ff7d73a64f50ba8f932492' THEN
+       <> '0:c38b23cb021f0a70e900d42f40df6f6efcc7c95567038052ebc97ea4352a7869' THEN
         RAISE EXCEPTION 'V28 step manifest drifted: %',
             private.koaryu_release_provider_operation_steps_manifest_v28();
     END IF;
@@ -432,8 +432,8 @@ BEGIN
             gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'A different actor replayed the canonical resource key.';
-    EXCEPTION WHEN unique_violation THEN
-        IF SQLERRM <> 'billing_provider_operation_resource_actor_conflict' THEN RAISE; END IF;
+    EXCEPTION WHEN insufficient_privilege THEN
+        IF SQLERRM <> 'billing_invoice_mutation_actor_forbidden' THEN RAISE; END IF;
     END;
     BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
@@ -443,8 +443,8 @@ BEGIN
             'acct_resource_contract', 1, gen_random_uuid(), 30
         );
         RAISE EXCEPTION 'A different actor adopted the resource under a new key.';
-    EXCEPTION WHEN unique_violation THEN
-        IF SQLERRM <> 'billing_provider_operation_resource_actor_conflict' THEN RAISE; END IF;
+    EXCEPTION WHEN insufficient_privilege THEN
+        IF SQLERRM <> 'billing_invoice_mutation_actor_forbidden' THEN RAISE; END IF;
     END;
     v_result := public.claim_billing_provider_operation_resource_v1(
         v_studio, v_owner, 'invoice.retry', 'invoice', v_invoice,
@@ -502,7 +502,7 @@ BEGIN
         );
         RAISE EXCEPTION 'Resource adoption accepted a changed payer.';
     EXCEPTION WHEN check_violation THEN
-        IF SQLERRM <> 'billing_provider_operation_resource_tenant_mismatch' THEN RAISE; END IF;
+        IF SQLERRM <> 'billing_invoice_mutation_identity_mismatch' THEN RAISE; END IF;
     END;
     BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(
@@ -513,7 +513,7 @@ BEGIN
         );
         RAISE EXCEPTION 'Resource claim crossed studio identity.';
     EXCEPTION WHEN check_violation THEN
-        IF SQLERRM <> 'billing_provider_operation_resource_tenant_mismatch' THEN RAISE; END IF;
+        IF SQLERRM <> 'billing_invoice_mutation_identity_mismatch' THEN RAISE; END IF;
     END;
     BEGIN
         PERFORM public.claim_billing_provider_operation_resource_v1(

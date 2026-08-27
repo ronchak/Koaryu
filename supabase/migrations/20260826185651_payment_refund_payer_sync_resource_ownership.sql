@@ -130,6 +130,10 @@ REVOKE ALL ON FUNCTION private.validate_billing_payment_identity_change()
 -- Existing linked payers predate the generation column. A payer can inherit the
 -- current generation only when its stored account ID is the studio's exact current
 -- account; mismatched or partial identities stop the migration for reconciliation.
+LOCK TABLE public.billing_invoices IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.billing_payers IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.studio_payment_accounts IN SHARE ROW EXCLUSIVE MODE;
+
 UPDATE public.billing_payers AS payer
 SET connect_account_generation =
         private.current_connect_account_generation(account.metadata),
@@ -170,6 +174,116 @@ BEGIN
     END IF;
 END;
 $payer_generation_backfill_guard$;
+
+-- Invoices created before provider-generation metadata was introduced may adopt
+-- the current generation only when every stored provider identity agrees with
+-- the payer and the studio's exact current Connect account. Ambiguous or stale
+-- identities remain untouched and continue to fail closed in the application.
+UPDATE public.billing_invoices AS invoice
+SET metadata = jsonb_set(
+        COALESCE(invoice.metadata, '{}'::JSONB),
+        '{connect_account_generation}',
+        to_jsonb(payer.connect_account_generation),
+        true
+    ),
+    updated_at = clock_timestamp()
+FROM public.billing_payers AS payer
+JOIN public.studio_payment_accounts AS account
+  ON account.studio_id = payer.studio_id
+WHERE invoice.studio_id = payer.studio_id
+  AND invoice.payer_id = payer.id
+  AND invoice.external IS FALSE
+  AND invoice.stripe_invoice_id IS NOT NULL
+  AND btrim(invoice.stripe_invoice_id) <> ''
+  AND invoice.stripe_account_id = account.stripe_connected_account_id
+  AND invoice.stripe_account_id = payer.stripe_account_id
+  AND btrim(invoice.stripe_account_id) <> ''
+  AND invoice.stripe_customer_id = payer.stripe_customer_id
+  AND btrim(invoice.stripe_customer_id) <> ''
+  AND payer.connect_account_generation =
+        private.current_connect_account_generation(account.metadata)
+  AND payer.connect_account_generation > 0
+  AND jsonb_typeof(invoice.metadata) = 'object'
+  AND NOT (invoice.metadata ? 'connect_account_generation');
+
+DO $invoice_generation_backfill_guard$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM public.billing_invoices AS invoice
+        JOIN public.billing_payers AS payer
+          ON payer.studio_id = invoice.studio_id
+         AND payer.id = invoice.payer_id
+        JOIN public.studio_payment_accounts AS account
+          ON account.studio_id = invoice.studio_id
+        WHERE invoice.stripe_invoice_id IS NOT NULL
+          AND invoice.external IS FALSE
+          AND btrim(invoice.stripe_invoice_id) <> ''
+          AND invoice.stripe_account_id = account.stripe_connected_account_id
+          AND invoice.stripe_account_id = payer.stripe_account_id
+          AND btrim(invoice.stripe_account_id) <> ''
+          AND invoice.stripe_customer_id = payer.stripe_customer_id
+          AND btrim(invoice.stripe_customer_id) <> ''
+          AND payer.connect_account_generation =
+                private.current_connect_account_generation(account.metadata)
+          AND payer.connect_account_generation > 0
+          AND jsonb_typeof(invoice.metadata) = 'object'
+          AND NOT (invoice.metadata ? 'connect_account_generation')
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'billing_invoice_connect_generation_backfill_incomplete';
+    END IF;
+END;
+$invoice_generation_backfill_guard$;
+
+CREATE FUNCTION public.list_billing_enrollment_scheduled_transitions_v1(
+    p_studio_id UUID,
+    p_enrollment_ids UUID[]
+) RETURNS TABLE(
+    enrollment_id UUID,
+    intent_id UUID,
+    revision BIGINT
+) LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    IF p_studio_id IS NULL
+       OR p_enrollment_ids IS NULL
+       OR cardinality(p_enrollment_ids) NOT BETWEEN 1 AND 300
+       OR EXISTS (
+            SELECT 1 FROM unnest(p_enrollment_ids) AS requested(id)
+            WHERE requested.id IS NULL
+       )
+       OR (
+            SELECT count(DISTINCT requested.id)
+            FROM unnest(p_enrollment_ids) AS requested(id)
+       ) <> cardinality(p_enrollment_ids) THEN
+        RAISE EXCEPTION USING ERRCODE = '22023',
+            MESSAGE = 'billing_enrollment_scheduled_transition_list_invalid';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        intent.enrollment_id,
+        intent.id AS intent_id,
+        intent.revision
+    FROM public.billing_enrollment_transition_intents AS intent
+    WHERE intent.studio_id = p_studio_id
+      AND intent.enrollment_id = ANY(p_enrollment_ids)
+      AND intent.transition_kind = 'schedule_period_end'
+      AND intent.state = 'scheduled'
+    ORDER BY intent.enrollment_id;
+END;
+$$;
+
+ALTER FUNCTION public.list_billing_enrollment_scheduled_transitions_v1(UUID, UUID[])
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_billing_enrollment_scheduled_transitions_v1(UUID, UUID[])
+    FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_billing_enrollment_scheduled_transitions_v1(UUID, UUID[])
+    TO service_role;
 
 CREATE TEMP TABLE koaryu_v31_legacy_invoice_normalization
 ON COMMIT DROP
@@ -275,16 +389,30 @@ END;
 $legacy_invoice_status_guard$;
 
 ALTER TABLE public.billing_provider_operation_resources
+    ALTER COLUMN payer_id DROP NOT NULL,
     ADD COLUMN resource_version_sha256 TEXT,
     ADD CONSTRAINT billing_provider_operation_resources_version_exact CHECK (
         CASE
             WHEN (operation_type, resource_type) IN (
                 ('payment.refund', 'payment'),
-                ('payer.sync', 'payer')
+                ('payer.sync', 'payer'),
+                ('plan.sync', 'plan')
             ) THEN resource_version_sha256 ~ '^[0-9a-f]{64}$'
             ELSE resource_version_sha256 IS NULL
         END
     );
+ALTER TABLE public.billing_provider_operation_resource_aliases
+    ALTER COLUMN payer_id DROP NOT NULL;
+ALTER TABLE public.billing_provider_operation_resources
+    ADD CONSTRAINT billing_provider_operation_resources_alias_identity_v31_unique
+        UNIQUE (id, studio_id, operation_type, resource_type, resource_id);
+ALTER TABLE public.billing_provider_operation_resource_aliases
+    ADD CONSTRAINT billing_provider_operation_resource_aliases_resource_v31_fkey
+        FOREIGN KEY (
+            resource_claim_id, studio_id, operation_type, resource_type, resource_id
+        ) REFERENCES public.billing_provider_operation_resources(
+            id, studio_id, operation_type, resource_type, resource_id
+        ) ON DELETE RESTRICT;
 
 CREATE FUNCTION private.billing_operation_resource_version_v31(
     p_operation_type TEXT,
@@ -335,6 +463,39 @@ ALTER FUNCTION private.billing_operation_resource_version_v31(
 ) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.billing_operation_resource_version_v31(
     TEXT,public.billing_payments,public.billing_payers,TEXT,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE FUNCTION private.billing_plan_resource_version_v31(
+    p_plan public.billing_plans,
+    p_stripe_connected_account_id TEXT,
+    p_connect_account_generation INTEGER
+)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = pg_catalog
+AS $$
+    SELECT encode(extensions.digest(convert_to(
+        jsonb_build_object(
+            'studio_id', p_plan.studio_id,
+            'plan_id', p_plan.id,
+            'stripe_connected_account_id', p_stripe_connected_account_id,
+            'connect_account_generation', p_connect_account_generation,
+            'name', p_plan.name,
+            'description', p_plan.description,
+            'amount_cents', COALESCE(p_plan.amount_cents, 0),
+            'currency', COALESCE(p_plan.currency, 'usd'),
+            'billing_interval', COALESCE(p_plan.billing_interval, 'monthly')
+        )::TEXT,
+        'UTF8'
+    ), 'sha256'), 'hex');
+$$;
+ALTER FUNCTION private.billing_plan_resource_version_v31(
+    public.billing_plans,TEXT,INTEGER
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.billing_plan_resource_version_v31(
+    public.billing_plans,TEXT,INTEGER
 ) FROM PUBLIC,anon,authenticated,service_role;
 
 CREATE OR REPLACE FUNCTION private.preserve_billing_provider_operation_resource_v1()
@@ -414,6 +575,8 @@ REVOKE ALL ON FUNCTION private.preserve_billing_provider_operation_resource_v1()
 ALTER TABLE public.billing_provider_operation_resources
     DROP CONSTRAINT billing_provider_operation_resources_pair_exact,
     ADD CONSTRAINT billing_provider_operation_resources_pair_exact CHECK (
+        (operation_type = 'plan.sync' AND resource_type = 'plan' AND payer_id IS NULL)
+        OR (payer_id IS NOT NULL AND (
         (operation_type = 'invoice.retry' AND resource_type = 'invoice')
         OR (operation_type = 'invoice.finalize' AND resource_type = 'invoice_finalize')
         OR (operation_type = 'invoice.void' AND resource_type = 'invoice_void')
@@ -421,10 +584,13 @@ ALTER TABLE public.billing_provider_operation_resources
         OR (operation_type = 'payer.sync' AND resource_type = 'payer')
         OR (operation_type IN ('enrollment.activate.autopay','enrollment.activate.invoice')
             AND resource_type = 'enrollment')
+        ))
     );
 ALTER TABLE public.billing_provider_operation_resource_aliases
     DROP CONSTRAINT billing_provider_operation_resource_aliases_pair_exact,
     ADD CONSTRAINT billing_provider_operation_resource_aliases_pair_exact CHECK (
+        (operation_type = 'plan.sync' AND resource_type = 'plan' AND payer_id IS NULL)
+        OR (payer_id IS NOT NULL AND (
         (operation_type = 'invoice.retry' AND resource_type = 'invoice')
         OR (operation_type = 'invoice.finalize' AND resource_type = 'invoice_finalize')
         OR (operation_type = 'invoice.void' AND resource_type = 'invoice_void')
@@ -432,12 +598,235 @@ ALTER TABLE public.billing_provider_operation_resource_aliases
         OR (operation_type = 'payer.sync' AND resource_type = 'payer')
         OR (operation_type IN ('enrollment.activate.autopay','enrollment.activate.invoice')
             AND resource_type = 'enrollment')
+        ))
     );
+
+ALTER TABLE public.billing_invoices
+    ADD CONSTRAINT billing_invoices_mutation_owner_identity_v31_unique
+        UNIQUE (id,studio_id,payer_id);
+
+CREATE TABLE public.billing_invoice_mutation_owners(
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    invoice_id UUID NOT NULL,
+    payer_id UUID NOT NULL REFERENCES public.billing_payers(id) ON DELETE RESTRICT,
+    operation_id UUID NOT NULL,
+    resource_claim_id UUID NOT NULL,
+    operation_type TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    revision BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (studio_id,invoice_id),
+    CONSTRAINT billing_invoice_mutation_owners_pair_exact CHECK (
+        (operation_type='invoice.retry' AND resource_type='invoice')
+        OR (operation_type='invoice.finalize' AND resource_type='invoice_finalize')
+        OR (operation_type='invoice.void' AND resource_type='invoice_void')
+    ),
+    CONSTRAINT billing_invoice_mutation_owners_operation_fkey
+        FOREIGN KEY (operation_id,studio_id,operation_type)
+        REFERENCES public.billing_provider_operations(id,studio_id,operation_type)
+        ON DELETE RESTRICT,
+    CONSTRAINT billing_invoice_mutation_owners_invoice_fkey
+        FOREIGN KEY (invoice_id,studio_id,payer_id)
+        REFERENCES public.billing_invoices(id,studio_id,payer_id)
+        ON DELETE RESTRICT,
+    CONSTRAINT billing_invoice_mutation_owners_resource_fkey
+        FOREIGN KEY (
+            resource_claim_id,studio_id,operation_type,resource_type,invoice_id,payer_id
+        ) REFERENCES public.billing_provider_operation_resources(
+            id,studio_id,operation_type,resource_type,resource_id,payer_id
+        ) ON DELETE RESTRICT
+);
+ALTER TABLE public.billing_invoice_mutation_owners OWNER TO postgres;
+ALTER TABLE public.billing_invoice_mutation_owners ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.billing_invoice_mutation_owners
+    FROM PUBLIC,anon,authenticated,service_role;
+CREATE POLICY billing_invoice_mutation_owners_no_client_access
+    ON public.billing_invoice_mutation_owners AS RESTRICTIVE
+    FOR ALL TO anon,authenticated USING (false) WITH CHECK (false);
+CREATE POLICY reject_ambiguous_staff_membership_access
+    ON public.billing_invoice_mutation_owners AS RESTRICTIVE
+    FOR ALL TO authenticated
+    USING ((SELECT private.has_unambiguous_studio_membership()))
+    WITH CHECK ((SELECT private.has_unambiguous_studio_membership()));
+
+CREATE FUNCTION private.maintain_billing_invoice_mutation_owner_v31()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path=''
+AS $$
+DECLARE
+    v_owner public.billing_invoice_mutation_owners%ROWTYPE;
+    v_old_state TEXT;
+    v_new_state TEXT;
+BEGIN
+    IF (NEW.operation_type,NEW.resource_type) NOT IN (
+        ('invoice.retry','invoice'),
+        ('invoice.finalize','invoice_finalize'),
+        ('invoice.void','invoice_void')
+    ) THEN
+        RETURN NEW;
+    END IF;
+    SELECT state INTO v_new_state
+    FROM public.billing_provider_operations WHERE id=NEW.operation_id;
+    IF v_new_state IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_owner_operation_missing';
+    END IF;
+    SELECT * INTO v_owner
+    FROM public.billing_invoice_mutation_owners
+    WHERE studio_id=NEW.studio_id AND invoice_id=NEW.resource_id
+    FOR UPDATE;
+    IF v_owner.operation_id IS NULL THEN
+        INSERT INTO public.billing_invoice_mutation_owners(
+            studio_id,invoice_id,payer_id,operation_id,resource_claim_id,
+            operation_type,resource_type,created_at,updated_at
+        ) VALUES(
+            NEW.studio_id,NEW.resource_id,NEW.payer_id,NEW.operation_id,NEW.id,
+            NEW.operation_type,NEW.resource_type,clock_timestamp(),clock_timestamp()
+        );
+        RETURN NEW;
+    END IF;
+    IF v_owner.operation_id IS NOT DISTINCT FROM NEW.operation_id THEN
+        RETURN NEW;
+    END IF;
+    SELECT state INTO v_old_state
+    FROM public.billing_provider_operations WHERE id=v_owner.operation_id;
+    IF v_old_state IN ('completed','definitive_failed','definitive_rejected')
+       AND v_new_state='started' THEN
+        UPDATE public.billing_invoice_mutation_owners SET
+            operation_id=NEW.operation_id,
+            resource_claim_id=NEW.id,
+            operation_type=NEW.operation_type,
+            resource_type=NEW.resource_type,
+            revision=revision+1,
+            updated_at=clock_timestamp()
+        WHERE studio_id=NEW.studio_id AND invoice_id=NEW.resource_id;
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION USING ERRCODE='23514',
+        MESSAGE='billing_invoice_mutation_owner_overlap';
+END;
+$$;
+ALTER FUNCTION private.maintain_billing_invoice_mutation_owner_v31()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.maintain_billing_invoice_mutation_owner_v31()
+    FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER maintain_billing_invoice_mutation_owner_v31
+    AFTER INSERT OR UPDATE OF operation_id
+    ON public.billing_provider_operation_resources
+    FOR EACH ROW EXECUTE FUNCTION private.maintain_billing_invoice_mutation_owner_v31();
+
+LOCK TABLE public.billing_provider_operation_resources IN SHARE ROW EXCLUSIVE MODE;
+
+DO $invoice_owner_backfill_guard$
+BEGIN
+    IF EXISTS (
+        SELECT resource.studio_id,resource.resource_id
+        FROM public.billing_provider_operation_resources AS resource
+        JOIN public.billing_provider_operations AS operation
+          ON operation.id=resource.operation_id
+        WHERE (resource.operation_type,resource.resource_type) IN (
+            ('invoice.retry','invoice'),
+            ('invoice.finalize','invoice_finalize'),
+            ('invoice.void','invoice_void')
+        )
+          AND operation.state NOT IN (
+              'completed','definitive_failed','definitive_rejected'
+          )
+        GROUP BY resource.studio_id,resource.resource_id
+        HAVING count(*)>1
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_owner_backfill_ambiguous';
+    END IF;
+END;
+$invoice_owner_backfill_guard$;
+
+INSERT INTO public.billing_invoice_mutation_owners(
+    studio_id,invoice_id,payer_id,operation_id,resource_claim_id,
+    operation_type,resource_type,created_at,updated_at
+)
+SELECT DISTINCT ON (resource.studio_id,resource.resource_id)
+    resource.studio_id,resource.resource_id,resource.payer_id,
+    operation.id,resource.id,resource.operation_type,resource.resource_type,
+    clock_timestamp(),clock_timestamp()
+FROM public.billing_provider_operation_resources AS resource
+JOIN public.billing_provider_operations AS operation
+  ON operation.id=resource.operation_id
+WHERE (resource.operation_type,resource.resource_type) IN (
+    ('invoice.retry','invoice'),
+    ('invoice.finalize','invoice_finalize'),
+    ('invoice.void','invoice_void')
+)
+ORDER BY resource.studio_id,resource.resource_id,
+    (operation.state NOT IN ('completed','definitive_failed','definitive_rejected')) DESC,
+    operation.created_at DESC,operation.id DESC;
+
+CREATE FUNCTION private.preserve_billing_invoice_mutation_owner_v31()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path=''
+AS $$
+DECLARE
+    v_old_state TEXT;
+    v_new_state TEXT;
+    v_resource_operation UUID;
+BEGIN
+    IF OLD.studio_id IS DISTINCT FROM NEW.studio_id
+       OR OLD.invoice_id IS DISTINCT FROM NEW.invoice_id
+       OR OLD.payer_id IS DISTINCT FROM NEW.payer_id
+       OR OLD.created_at IS DISTINCT FROM NEW.created_at THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_owner_identity_immutable';
+    END IF;
+    IF OLD.operation_id IS NOT DISTINCT FROM NEW.operation_id
+       OR NEW.revision IS DISTINCT FROM OLD.revision+1
+       OR NEW.updated_at<=OLD.updated_at THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_owner_revision_invalid';
+    END IF;
+    SELECT state INTO v_old_state
+    FROM public.billing_provider_operations WHERE id=OLD.operation_id;
+    SELECT state INTO v_new_state
+    FROM public.billing_provider_operations WHERE id=NEW.operation_id;
+    SELECT operation_id INTO v_resource_operation
+    FROM public.billing_provider_operation_resources
+    WHERE id=NEW.resource_claim_id
+      AND studio_id=NEW.studio_id
+      AND operation_type=NEW.operation_type
+      AND resource_type=NEW.resource_type
+      AND resource_id=NEW.invoice_id
+      AND payer_id=NEW.payer_id;
+    IF v_old_state NOT IN ('completed','definitive_failed','definitive_rejected')
+       OR v_new_state IS DISTINCT FROM 'started'
+       OR v_resource_operation IS DISTINCT FROM NEW.operation_id THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_owner_advance_invalid';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+ALTER FUNCTION private.preserve_billing_invoice_mutation_owner_v31()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.preserve_billing_invoice_mutation_owner_v31()
+    FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER preserve_billing_invoice_mutation_owner_v31
+    BEFORE UPDATE ON public.billing_invoice_mutation_owners
+    FOR EACH ROW EXECUTE FUNCTION private.preserve_billing_invoice_mutation_owner_v31();
 
 ALTER FUNCTION public.claim_billing_provider_operation_resource_v1(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
 ) RENAME TO claim_billing_provider_operation_resource_v30;
 REVOKE ALL ON FUNCTION public.claim_billing_provider_operation_resource_v30(
+    UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+ALTER FUNCTION public.claim_billing_invoice_closeout_operation_v1(
+    UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) RENAME TO claim_billing_invoice_closeout_operation_v30;
+REVOKE ALL ON FUNCTION public.claim_billing_invoice_closeout_operation_v30(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
 ) FROM PUBLIC,anon,authenticated,service_role;
 
@@ -451,6 +840,7 @@ DECLARE
     v_payment public.billing_payments%ROWTYPE;
     v_refund public.billing_refunds%ROWTYPE;
     v_payer public.billing_payers%ROWTYPE;
+    v_plan public.billing_plans%ROWTYPE;
     v_account public.studio_payment_accounts%ROWTYPE;
     v_resource public.billing_provider_operation_resources%ROWTYPE;
     v_alias public.billing_provider_operation_resource_aliases%ROWTYPE;
@@ -461,9 +851,12 @@ DECLARE
     v_outcome TEXT;
 BEGIN
     IF p_studio_id IS NULL OR p_actor_id IS NULL OR p_resource_id IS NULL
-       OR p_payer_id IS NULL OR p_lease_owner IS NULL
+       OR p_lease_owner IS NULL
        OR NOT ((p_operation_type='payment.refund' AND p_resource_type='payment')
-            OR (p_operation_type='payer.sync' AND p_resource_type='payer'))
+            OR (p_operation_type='payer.sync' AND p_resource_type='payer')
+            OR (p_operation_type='plan.sync' AND p_resource_type='plan'))
+       OR (p_resource_type='plan' AND p_payer_id IS NOT NULL)
+       OR (p_resource_type<>'plan' AND p_payer_id IS NULL)
        OR p_request_sha256 !~ '^[0-9a-f]{64}$'
        OR p_connect_account_generation<=0
        OR octet_length(p_stripe_connected_account_id) NOT BETWEEN 1 AND 255
@@ -479,7 +872,19 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='billing_provider_operation_actor_not_active';
     END IF;
 
-    IF p_resource_type='payment' THEN
+    IF p_resource_type='plan' THEN
+        SELECT * INTO v_plan FROM public.billing_plans
+        WHERE id=p_resource_id AND studio_id=p_studio_id FOR UPDATE;
+        IF v_plan.id IS NULL OR v_plan.status='archived' OR v_plan.archived_at IS NOT NULL
+           OR (
+                v_plan.stripe_account_id IS NOT NULL
+                AND v_plan.stripe_account_id IS DISTINCT FROM
+                    p_stripe_connected_account_id
+           ) THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_provider_operation_resource_plan_identity_mismatch';
+        END IF;
+    ELSIF p_resource_type='payment' THEN
         SELECT * INTO v_payment FROM public.billing_payments
         WHERE id=p_resource_id AND studio_id=p_studio_id FOR UPDATE;
         IF v_payment.id IS NULL OR v_payment.payer_id IS DISTINCT FROM p_payer_id
@@ -491,14 +896,17 @@ BEGIN
     ELSIF p_resource_id IS DISTINCT FROM p_payer_id THEN
         RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_resource_payer_identity_mismatch';
     END IF;
-    SELECT * INTO v_payer FROM public.billing_payers
-    WHERE id=p_payer_id AND studio_id=p_studio_id FOR UPDATE;
+    IF p_resource_type<>'plan' THEN
+        SELECT * INTO v_payer FROM public.billing_payers
+        WHERE id=p_payer_id AND studio_id=p_studio_id FOR UPDATE;
+    END IF;
     SELECT * INTO v_account FROM public.studio_payment_accounts
     WHERE studio_id=p_studio_id FOR UPDATE;
-    IF v_payer.id IS NULL OR v_account.studio_id IS NULL
+    IF v_account.studio_id IS NULL
        OR v_account.stripe_connected_account_id IS DISTINCT FROM p_stripe_connected_account_id
        OR private.current_connect_account_generation(v_account.metadata)
             IS DISTINCT FROM p_connect_account_generation
+       OR (p_resource_type<>'plan' AND v_payer.id IS NULL)
        OR (p_resource_type='payment' AND (
             v_payer.stripe_account_id IS DISTINCT FROM p_stripe_connected_account_id
             OR v_payer.connect_account_generation IS DISTINCT FROM p_connect_account_generation))
@@ -509,13 +917,20 @@ BEGIN
                 AND v_payer.connect_account_generation=p_connect_account_generation))) THEN
         RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_resource_payer_identity_mismatch';
     END IF;
-    v_current_resource_version := private.billing_operation_resource_version_v31(
-        p_operation_type,
-        v_payment,
-        v_payer,
-        p_stripe_connected_account_id,
-        p_connect_account_generation
-    );
+    v_current_resource_version := CASE
+        WHEN p_resource_type='plan' THEN private.billing_plan_resource_version_v31(
+            v_plan,
+            p_stripe_connected_account_id,
+            p_connect_account_generation
+        )
+        ELSE private.billing_operation_resource_version_v31(
+            p_operation_type,
+            v_payment,
+            v_payer,
+            p_stripe_connected_account_id,
+            p_connect_account_generation
+        )
+    END;
     IF v_current_resource_version !~ '^[0-9a-f]{64}$' THEN
         RAISE EXCEPTION USING ERRCODE='23514',
             MESSAGE='billing_provider_operation_resource_version_invalid';
@@ -608,7 +1023,38 @@ BEGIN
         RETURN private.billing_provider_operation_resource_json_v1(
             v_resource,v_operation,p_caller_request_key,'replaced');
     END IF;
-    IF v_operation.actor_id IS DISTINCT FROM p_actor_id THEN
+    IF v_operation.state='completed' AND p_resource_type='payment' THEN
+        SELECT * INTO v_refund FROM public.billing_refunds
+        WHERE studio_id=p_studio_id
+          AND payment_id=p_resource_id
+          AND stripe_refund_id=v_operation.provider_object_id
+          AND stripe_account_id=p_stripe_connected_account_id
+          AND connect_account_generation=p_connect_account_generation
+          AND reconciliation_required IS NOT TRUE
+        ORDER BY created_at,id
+        LIMIT 1
+        FOR UPDATE;
+    END IF;
+    IF v_operation.actor_id IS DISTINCT FROM p_actor_id
+       AND NOT (
+            v_operation.state = 'completed'
+            AND EXISTS (
+                SELECT 1
+                FROM public.staff_roles AS membership
+                WHERE membership.studio_id = p_studio_id
+                  AND membership.user_id = p_actor_id
+                  AND membership.archived_at IS NULL
+                  AND membership.role = 'admin'
+            )
+            AND (
+                v_resource.resource_version_sha256 IS DISTINCT FROM
+                    v_current_resource_version
+                OR (
+                    p_resource_type = 'payment'
+                    AND v_refund.status IN ('failed', 'canceled')
+                )
+            )
+       ) THEN
         RAISE EXCEPTION USING ERRCODE='23505',MESSAGE='billing_provider_operation_resource_actor_conflict';
     END IF;
     IF v_operation.state='completed' AND p_resource_type='payment' THEN
@@ -618,11 +1064,6 @@ BEGIN
             RAISE EXCEPTION USING ERRCODE='23505',
                 MESSAGE='billing_provider_operation_resource_request_conflict';
         END IF;
-        SELECT * INTO v_refund FROM public.billing_refunds WHERE studio_id=p_studio_id
-          AND payment_id=p_resource_id AND stripe_refund_id=v_operation.provider_object_id
-          AND stripe_account_id=p_stripe_connected_account_id
-          AND connect_account_generation=p_connect_account_generation
-          AND reconciliation_required IS NOT TRUE ORDER BY created_at,id LIMIT 1 FOR UPDATE;
         IF v_refund.id IS NULL THEN
             RAISE EXCEPTION USING ERRCODE='23514',
                 MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
@@ -646,7 +1087,68 @@ BEGIN
                 RAISE EXCEPTION USING ERRCODE='23514',
                     MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
             END IF;
-        ELSIF v_payer.stripe_customer_id IS DISTINCT FROM v_operation.provider_object_id THEN
+        ELSIF p_resource_type='plan' THEN
+            PERFORM 1
+            FROM public.billing_provider_operation_steps AS step
+            WHERE step.operation_id=v_operation.id
+            ORDER BY step.step_order
+            FOR UPDATE;
+            IF v_operation.result_code IS DISTINCT FROM 'plan_sync_completed' THEN
+                RAISE EXCEPTION USING ERRCODE='23514',
+                    MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
+            ELSIF v_operation.result_summary='plan_sync_mode:product_update_only' THEN
+                IF v_operation.provider_object_id IS NULL
+                   OR v_plan.stripe_product_id IS DISTINCT FROM v_operation.provider_object_id
+                   OR v_operation.provider_step_plan_sha256 IS NOT NULL
+                   OR v_operation.provider_step_expected_count IS NOT NULL
+                   OR EXISTS (
+                        SELECT 1 FROM public.billing_provider_operation_steps AS step
+                        WHERE step.operation_id=v_operation.id
+                   ) THEN
+                    RAISE EXCEPTION USING ERRCODE='23514',
+                        MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
+                END IF;
+            ELSIF v_operation.result_summary='plan_sync_mode:product_price_steps' THEN
+                IF v_operation.provider_step_plan_sha256 !~ '^[0-9a-f]{64}$'
+                   OR v_operation.provider_step_expected_count IS DISTINCT FROM 2
+                   OR v_operation.provider_object_id IS DISTINCT FROM v_plan.stripe_price_id
+                   OR (SELECT count(*) FROM public.billing_provider_operation_steps AS step
+                       WHERE step.operation_id=v_operation.id) <> 2
+                   OR NOT EXISTS (
+                        SELECT 1
+                        FROM public.billing_provider_operation_steps AS step
+                        WHERE step.operation_id=v_operation.id
+                          AND step.step_order=1
+                          AND step.step_name='product'
+                          AND step.provider_operation IN (
+                              'connected_product.create','connected_product.update'
+                          )
+                          AND step.state='provider_succeeded'
+                          AND step.provider_request_attempt_count=1
+                          AND step.result_code='plan_sync_product_succeeded'
+                          AND step.provider_object_id=v_plan.stripe_product_id
+                    )
+                   OR NOT EXISTS (
+                        SELECT 1
+                        FROM public.billing_provider_operation_steps AS step
+                        WHERE step.operation_id=v_operation.id
+                          AND step.step_order=2
+                          AND step.step_name='price'
+                          AND step.provider_operation='connected_price.create'
+                          AND step.state='provider_succeeded'
+                          AND step.provider_request_attempt_count=1
+                          AND step.result_code='plan_sync_price_succeeded'
+                          AND step.provider_object_id=v_plan.stripe_price_id
+                    ) THEN
+                    RAISE EXCEPTION USING ERRCODE='23514',
+                        MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
+                END IF;
+            ELSE
+                RAISE EXCEPTION USING ERRCODE='23514',
+                    MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
+            END IF;
+        ELSIF p_resource_type='payer'
+              AND v_payer.stripe_customer_id IS DISTINCT FROM v_operation.provider_object_id THEN
             RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
         END IF;
         INSERT INTO public.billing_provider_operations(studio_id,actor_id,operation_type,caller_request_key,request_sha256,stripe_connected_account_id,connect_account_generation,lease_owner,lease_acquired_at,lease_expires_at,started_at,created_at,updated_at)
@@ -719,6 +1221,228 @@ REVOKE ALL ON FUNCTION private.claim_payment_payer_operation_resource_v31(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
 ) FROM PUBLIC,anon,authenticated,service_role;
 
+CREATE FUNCTION private.claim_billing_invoice_mutation_v31(
+    p_studio_id UUID,p_actor_id UUID,p_operation_type TEXT,p_resource_type TEXT,
+    p_resource_id UUID,p_payer_id UUID,p_caller_request_key TEXT,p_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,p_connect_account_generation INTEGER,
+    p_lease_owner UUID,p_lease_seconds INTEGER DEFAULT 30
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE
+    v_invoice public.billing_invoices%ROWTYPE;
+    v_owner public.billing_invoice_mutation_owners%ROWTYPE;
+    v_owner_operation public.billing_provider_operations%ROWTYPE;
+    v_alias public.billing_provider_operation_resource_aliases%ROWTYPE;
+    v_alias_resource public.billing_provider_operation_resources%ROWTYPE;
+    v_alias_operation public.billing_provider_operations%ROWTYPE;
+    v_terminal_resource public.billing_provider_operation_resources%ROWTYPE;
+    v_replacement_operation public.billing_provider_operations%ROWTYPE;
+    v_result JSONB;
+    v_candidate_operation_id UUID;
+    v_candidate_resource_id UUID;
+    v_candidate_state TEXT;
+    v_now TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    IF p_studio_id IS NULL OR p_actor_id IS NULL OR p_resource_id IS NULL
+       OR p_payer_id IS NULL OR p_lease_owner IS NULL
+       OR NOT ((p_operation_type='invoice.retry' AND p_resource_type='invoice')
+            OR (p_operation_type='invoice.finalize' AND p_resource_type='invoice_finalize')
+            OR (p_operation_type='invoice.void' AND p_resource_type='invoice_void'))
+       OR p_request_sha256 !~ '^[0-9a-f]{64}$'
+       OR p_connect_account_generation<=0
+       OR octet_length(p_stripe_connected_account_id) NOT BETWEEN 1 AND 255
+       OR octet_length(p_caller_request_key) NOT BETWEEN 1 AND 255
+       OR p_caller_request_key IS DISTINCT FROM btrim(p_caller_request_key)
+       OR p_caller_request_key~'[[:cntrl:]]'
+       OR p_lease_seconds NOT BETWEEN 5 AND 300 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',
+            MESSAGE='billing_invoice_mutation_claim_invalid';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.staff_roles AS membership
+        WHERE membership.studio_id=p_studio_id
+          AND membership.user_id=p_actor_id
+          AND membership.archived_at IS NULL
+          AND membership.role='admin'
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501',
+            MESSAGE='billing_invoice_mutation_actor_forbidden';
+    END IF;
+    SELECT * INTO v_invoice
+    FROM public.billing_invoices
+    WHERE id=p_resource_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    IF v_invoice.id IS NULL OR v_invoice.payer_id IS DISTINCT FROM p_payer_id THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_identity_mismatch';
+    END IF;
+    SELECT * INTO v_owner
+    FROM public.billing_invoice_mutation_owners
+    WHERE studio_id=p_studio_id AND invoice_id=p_resource_id
+    FOR UPDATE;
+
+    SELECT * INTO v_alias
+    FROM public.billing_provider_operation_resource_aliases
+    WHERE studio_id=p_studio_id
+      AND operation_type=p_operation_type
+      AND caller_request_key=p_caller_request_key
+    FOR UPDATE;
+    IF FOUND THEN
+        SELECT * INTO v_alias_resource
+        FROM public.billing_provider_operation_resources
+        WHERE id=v_alias.resource_claim_id
+        FOR UPDATE;
+        SELECT * INTO v_alias_operation
+        FROM public.billing_provider_operations
+        WHERE id=v_alias.operation_id
+        FOR UPDATE;
+        IF v_alias_resource.id IS NULL OR v_alias_operation.id IS NULL
+           OR v_alias.resource_type IS DISTINCT FROM p_resource_type
+           OR v_alias.resource_id IS DISTINCT FROM p_resource_id
+           OR v_alias.payer_id IS DISTINCT FROM p_payer_id
+           OR v_alias_operation.actor_id IS DISTINCT FROM p_actor_id
+           OR v_alias_operation.request_sha256 IS DISTINCT FROM p_request_sha256
+           OR v_alias_operation.stripe_connected_account_id
+                IS DISTINCT FROM p_stripe_connected_account_id
+           OR v_alias_operation.connect_account_generation
+                IS DISTINCT FROM p_connect_account_generation THEN
+            RAISE EXCEPTION USING ERRCODE='23505',
+                MESSAGE='billing_invoice_mutation_request_conflict';
+        END IF;
+        IF v_alias_operation.state IN (
+            'completed','definitive_failed','definitive_rejected'
+        ) THEN
+            RETURN private.billing_provider_operation_resource_json_v1(
+                v_alias_resource,v_alias_operation,p_caller_request_key,'replay'
+            );
+        END IF;
+        IF v_owner.operation_id IS DISTINCT FROM v_alias_operation.id THEN
+            RAISE EXCEPTION USING ERRCODE='55P03',
+                MESSAGE='billing_invoice_mutation_in_progress';
+        END IF;
+    END IF;
+
+    IF v_owner.operation_id IS NOT NULL THEN
+        SELECT * INTO v_owner_operation
+        FROM public.billing_provider_operations
+        WHERE id=v_owner.operation_id
+        FOR UPDATE;
+        IF v_owner_operation.id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_invoice_mutation_owner_invalid';
+        END IF;
+        IF v_owner_operation.state NOT IN (
+            'completed','definitive_failed','definitive_rejected'
+        ) AND v_owner.operation_type IS DISTINCT FROM p_operation_type THEN
+            RAISE EXCEPTION USING ERRCODE='55P03',
+                MESSAGE='billing_invoice_mutation_in_progress';
+        END IF;
+    END IF;
+
+    IF v_owner.operation_id IS NOT NULL
+       AND v_owner.operation_type=p_operation_type
+       AND v_owner_operation.state IN ('definitive_failed','definitive_rejected') THEN
+        SELECT * INTO v_terminal_resource
+        FROM public.billing_provider_operation_resources
+        WHERE id=v_owner.resource_claim_id
+        FOR UPDATE;
+        IF v_terminal_resource.id IS NULL
+           OR v_terminal_resource.operation_id IS DISTINCT FROM v_owner.operation_id
+           OR v_terminal_resource.studio_id IS DISTINCT FROM p_studio_id
+           OR v_terminal_resource.operation_type IS DISTINCT FROM p_operation_type
+           OR v_terminal_resource.resource_type IS DISTINCT FROM p_resource_type
+           OR v_terminal_resource.resource_id IS DISTINCT FROM p_resource_id
+           OR v_terminal_resource.payer_id IS DISTINCT FROM p_payer_id THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_invoice_mutation_owner_invalid';
+        END IF;
+        INSERT INTO public.billing_provider_operations(
+            studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+            stripe_connected_account_id,connect_account_generation,lease_owner,
+            lease_acquired_at,lease_expires_at,started_at,created_at,updated_at
+        ) VALUES(
+            p_studio_id,p_actor_id,p_operation_type,p_caller_request_key,
+            p_request_sha256,p_stripe_connected_account_id,
+            p_connect_account_generation,p_lease_owner,v_now,
+            v_now+make_interval(secs=>p_lease_seconds),v_now,v_now,v_now
+        ) RETURNING * INTO v_replacement_operation;
+        UPDATE public.billing_provider_operation_resources SET
+            operation_id=v_replacement_operation.id,
+            revision=revision+1,
+            updated_at=v_now
+        WHERE id=v_terminal_resource.id
+        RETURNING * INTO v_terminal_resource;
+        INSERT INTO public.billing_provider_operation_resource_aliases(
+            resource_claim_id,operation_id,studio_id,operation_type,resource_type,
+            resource_id,payer_id,caller_request_key,created_at
+        ) VALUES(
+            v_terminal_resource.id,v_replacement_operation.id,p_studio_id,
+            p_operation_type,p_resource_type,p_resource_id,p_payer_id,
+            p_caller_request_key,v_now
+        );
+        v_result:=private.billing_provider_operation_resource_json_v1(
+            v_terminal_resource,v_replacement_operation,p_caller_request_key,'replaced'
+        );
+    ELSIF p_operation_type IN ('invoice.finalize','invoice.void') THEN
+        v_result:=public.claim_billing_invoice_closeout_operation_v30(
+            p_studio_id,p_actor_id,p_operation_type,p_resource_type,p_resource_id,
+            p_payer_id,p_caller_request_key,p_request_sha256,
+            p_stripe_connected_account_id,p_connect_account_generation,
+            p_lease_owner,p_lease_seconds
+        );
+    ELSE
+        v_result:=public.claim_billing_provider_operation_resource_v30(
+            p_studio_id,p_actor_id,p_operation_type,p_resource_type,p_resource_id,
+            p_payer_id,p_caller_request_key,p_request_sha256,
+            p_stripe_connected_account_id,p_connect_account_generation,
+            p_lease_owner,p_lease_seconds
+        );
+    END IF;
+    v_candidate_operation_id:=(v_result->'operation'->>'id')::UUID;
+    v_candidate_resource_id:=(v_result->'resource'->>'id')::UUID;
+    v_candidate_state:=v_result->'operation'->>'state';
+    IF v_candidate_operation_id IS NULL OR v_candidate_resource_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_claim_result_invalid';
+    END IF;
+    SELECT * INTO v_owner
+    FROM public.billing_invoice_mutation_owners
+    WHERE studio_id=p_studio_id AND invoice_id=p_resource_id
+    FOR UPDATE;
+    IF v_owner.operation_id IS NULL THEN
+        INSERT INTO public.billing_invoice_mutation_owners(
+            studio_id,invoice_id,payer_id,operation_id,resource_claim_id,
+            operation_type,resource_type,created_at,updated_at
+        ) VALUES(
+            p_studio_id,p_resource_id,p_payer_id,v_candidate_operation_id,
+            v_candidate_resource_id,p_operation_type,p_resource_type,v_now,v_now
+        );
+    ELSIF v_owner.operation_id IS DISTINCT FROM v_candidate_operation_id
+          AND v_candidate_state='started' THEN
+        UPDATE public.billing_invoice_mutation_owners SET
+            operation_id=v_candidate_operation_id,
+            resource_claim_id=v_candidate_resource_id,
+            operation_type=p_operation_type,
+            resource_type=p_resource_type,
+            revision=revision+1,
+            updated_at=v_now
+        WHERE studio_id=p_studio_id AND invoice_id=p_resource_id;
+    ELSIF v_owner.operation_id IS DISTINCT FROM v_candidate_operation_id
+          AND v_candidate_state NOT IN (
+              'completed','definitive_failed','definitive_rejected'
+          ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_owner_result_invalid';
+    END IF;
+    RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.claim_billing_invoice_mutation_v31(
+    UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.claim_billing_invoice_mutation_v31(
+    UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+
 CREATE FUNCTION public.claim_billing_provider_operation_resource_v1(
     p_studio_id UUID,p_actor_id UUID,p_operation_type TEXT,p_resource_type TEXT,
     p_resource_id UUID,p_payer_id UUID,p_caller_request_key TEXT,p_request_sha256 TEXT,
@@ -726,8 +1450,14 @@ CREATE FUNCTION public.claim_billing_provider_operation_resource_v1(
     p_lease_owner UUID,p_lease_seconds INTEGER DEFAULT 30
 ) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
+    IF (p_operation_type,p_resource_type)=('invoice.retry','invoice') THEN
+        RETURN private.claim_billing_invoice_mutation_v31(p_studio_id,p_actor_id,
+            p_operation_type,p_resource_type,p_resource_id,p_payer_id,p_caller_request_key,
+            p_request_sha256,p_stripe_connected_account_id,p_connect_account_generation,
+            p_lease_owner,p_lease_seconds);
+    END IF;
     IF (p_operation_type,p_resource_type) IN (
-        ('payment.refund','payment'),('payer.sync','payer')) THEN
+        ('payment.refund','payment'),('payer.sync','payer'),('plan.sync','plan')) THEN
         RETURN private.claim_payment_payer_operation_resource_v31(p_studio_id,p_actor_id,
             p_operation_type,p_resource_type,p_resource_id,p_payer_id,p_caller_request_key,
             p_request_sha256,p_stripe_connected_account_id,p_connect_account_generation,
@@ -746,6 +1476,29 @@ REVOKE ALL ON FUNCTION public.claim_billing_provider_operation_resource_v1(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
 ) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.claim_billing_provider_operation_resource_v1(
+    UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) TO service_role;
+
+CREATE FUNCTION public.claim_billing_invoice_closeout_operation_v1(
+    p_studio_id UUID,p_actor_id UUID,p_operation_type TEXT,p_resource_type TEXT,
+    p_resource_id UUID,p_payer_id UUID,p_caller_request_key TEXT,p_request_sha256 TEXT,
+    p_stripe_connected_account_id TEXT,p_connect_account_generation INTEGER,
+    p_lease_owner UUID,p_lease_seconds INTEGER DEFAULT 30
+) RETURNS JSONB LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
+    SELECT private.claim_billing_invoice_mutation_v31(
+        p_studio_id,p_actor_id,p_operation_type,p_resource_type,p_resource_id,
+        p_payer_id,p_caller_request_key,p_request_sha256,
+        p_stripe_connected_account_id,p_connect_account_generation,
+        p_lease_owner,p_lease_seconds
+    );
+$$;
+ALTER FUNCTION public.claim_billing_invoice_closeout_operation_v1(
+    UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.claim_billing_invoice_closeout_operation_v1(
+    UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
+) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.claim_billing_invoice_closeout_operation_v1(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
 ) TO service_role;
 
@@ -1107,13 +1860,19 @@ BEGIN
     ) AS (
         VALUES
             ('private.billing_operation_resource_version_v31(text,public.billing_payments,public.billing_payers,text,integer)', false, false, 'search_path=pg_catalog'),
+            ('private.billing_plan_resource_version_v31(public.billing_plans,text,integer)', false, false, 'search_path=pg_catalog'),
+            ('private.claim_billing_invoice_mutation_v31(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('private.claim_payment_payer_operation_resource_v31(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('private.enforce_billing_payer_connect_identity_v1()', true, false, 'search_path=""'),
             ('private.enforce_billing_provider_step_parent_v1()', false, false, 'search_path=""'),
+            ('private.maintain_billing_invoice_mutation_owner_v31()', false, false, 'search_path=""'),
             ('private.preserve_billing_provider_operation_resource_alias_v1()', false, false, 'search_path=""'),
             ('private.preserve_billing_provider_operation_resource_v1()', false, false, 'search_path=""'),
             ('private.preserve_billing_provider_operation_step_v1()', false, false, 'search_path=""'),
+            ('private.preserve_billing_invoice_mutation_owner_v31()', false, false, 'search_path=""'),
             ('private.validate_billing_payment_identity_change()', false, false, 'search_path=""'),
+            ('public.claim_billing_invoice_closeout_operation_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, true, 'search_path=""'),
+            ('public.claim_billing_invoice_closeout_operation_v30(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('public.claim_billing_provider_operation_resource_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, true, 'search_path=""'),
             ('public.claim_billing_provider_operation_resource_v30(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, false, 'search_path=""'),
             ('public.claim_due_billing_enrollment_transitions_v1(uuid,integer,integer)', true, true, 'search_path=""'),
@@ -1155,8 +1914,142 @@ BEGIN
         WHERE constraint_state.conname IN (
             'billing_provider_operation_resources_pair_exact',
             'billing_provider_operation_resource_aliases_pair_exact',
-            'billing_provider_operation_resources_version_exact'
+            'billing_provider_operation_resources_version_exact',
+            'billing_provider_operation_resources_alias_identity_v31_unique',
+            'billing_provider_operation_resource_aliases_resource_v31_fkey',
+            'billing_invoice_mutation_owners_pair_exact',
+            'billing_invoice_mutation_owners_operation_fkey',
+            'billing_invoice_mutation_owners_resource_fkey',
+            'billing_invoice_mutation_owners_invoice_fkey',
+            'billing_invoices_mutation_owner_identity_v31_unique',
+            'billing_invoice_mutation_owners_pkey',
+            'billing_invoice_mutation_owners_studio_id_fkey',
+            'billing_invoice_mutation_owners_payer_id_fkey',
+            'billing_invoice_mutation_owners_revision_check'
         )
+    ), required_invoice_owner_columns(
+        column_name,expected_type,expected_not_null,expected_default
+    ) AS (
+        VALUES
+            ('studio_id','uuid',true,''),
+            ('invoice_id','uuid',true,''),
+            ('payer_id','uuid',true,''),
+            ('operation_id','uuid',true,''),
+            ('resource_claim_id','uuid',true,''),
+            ('operation_type','text',true,''),
+            ('resource_type','text',true,''),
+            ('revision','bigint',true,'1'),
+            ('created_at','timestamp with time zone',true,'now()'),
+            ('updated_at','timestamp with time zone',true,'now()')
+    ), invoice_owner_column_state AS (
+        SELECT
+            required.column_name,
+            required.expected_type,
+            required.expected_not_null,
+            required.expected_default,
+            format_type(attribute.atttypid,attribute.atttypmod) AS actual_type,
+            attribute.attnotnull AS actual_not_null,
+            COALESCE(pg_get_expr(default_value.adbin,default_value.adrelid),'')
+                AS actual_default,
+            attribute.attidentity,
+            attribute.attgenerated
+        FROM required_invoice_owner_columns AS required
+        LEFT JOIN pg_attribute AS attribute
+          ON attribute.attrelid='public.billing_invoice_mutation_owners'::REGCLASS
+         AND attribute.attname=required.column_name
+         AND attribute.attnum>0
+         AND NOT attribute.attisdropped
+        LEFT JOIN pg_attrdef AS default_value
+          ON default_value.adrelid=attribute.attrelid
+         AND default_value.adnum=attribute.attnum
+    ), invoice_owner_table_state AS (
+        SELECT
+            owner.rolname AS owner_name,
+            relation.relrowsecurity,
+            has_table_privilege('service_role',relation.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS service_access,
+            has_table_privilege('authenticated',relation.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS auth_access,
+            has_table_privilege('anon',relation.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS anon_access,
+            EXISTS (
+                SELECT 1
+                FROM aclexplode(COALESCE(
+                    relation.relacl,
+                    acldefault('r',relation.relowner)
+                )) AS privilege
+                WHERE privilege.grantee=0
+            ) AS public_privilege,
+            EXISTS (
+                SELECT 1
+                FROM aclexplode(COALESCE(
+                    relation.relacl,
+                    acldefault('r',relation.relowner)
+                )) AS privilege
+                WHERE privilege.grantee<>relation.relowner
+            ) AS unexpected_privilege,
+            COALESCE((
+                SELECT string_agg(
+                    privilege.grantor::TEXT || '>' || privilege.grantee::TEXT || ':' ||
+                    privilege.privilege_type || ':' || privilege.is_grantable::TEXT,
+                    ',' ORDER BY privilege.grantor,privilege.grantee,
+                                 privilege.privilege_type COLLATE "C",privilege.is_grantable
+                )
+                FROM aclexplode(COALESCE(
+                    relation.relacl,
+                    acldefault('r',relation.relowner)
+                )) AS privilege
+            ),'') AS acl_state
+        FROM pg_class AS relation
+        JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
+        JOIN pg_roles AS owner ON owner.oid=relation.relowner
+        WHERE namespace.nspname='public'
+          AND relation.relname='billing_invoice_mutation_owners'
+          AND relation.relkind='r'
+    ), required_invoice_owner_triggers(
+        table_name,trigger_name,function_signature,expected_tgtype
+    ) AS (
+        VALUES
+            ('billing_invoice_mutation_owners',
+             'preserve_billing_invoice_mutation_owner_v31',
+             'private.preserve_billing_invoice_mutation_owner_v31()',19),
+            ('billing_provider_operation_resources',
+             'maintain_billing_invoice_mutation_owner_v31',
+             'private.maintain_billing_invoice_mutation_owner_v31()',21)
+    ), invoice_owner_trigger_state AS (
+        SELECT
+            required.trigger_name,
+            required.expected_tgtype,
+            trigger.tgenabled,
+            trigger.tgtype::INTEGER AS actual_tgtype,
+            trigger.tgfoid=to_regprocedure(required.function_signature)
+                AS function_matches,
+            encode(extensions.digest(convert_to(
+                COALESCE(pg_get_triggerdef(trigger.oid),''),'UTF8'
+            ),'sha256'),'hex') AS definition_sha256
+        FROM required_invoice_owner_triggers AS required
+        LEFT JOIN pg_class AS relation
+          ON relation.relname=required.table_name
+         AND relation.relnamespace='public'::REGNAMESPACE
+        LEFT JOIN pg_trigger AS trigger
+          ON trigger.tgrelid=relation.oid
+         AND trigger.tgname=required.trigger_name
+         AND NOT trigger.tgisinternal
+    ), invoice_owner_policy_state AS (
+        SELECT
+            policy.polname,
+            policy.polpermissive,
+            policy.polcmd,
+            (SELECT string_agg(role.rolname,',' ORDER BY role.rolname COLLATE "C")
+             FROM unnest(policy.polroles) AS role_oid
+             JOIN pg_roles AS role ON role.oid=role_oid) AS role_names,
+            regexp_replace(
+                COALESCE(pg_get_expr(policy.polqual,policy.polrelid),''),
+                '[[:space:]()]','','g'
+            ) AS using_expression,
+            regexp_replace(
+                COALESCE(pg_get_expr(policy.polwithcheck,policy.polrelid),''),
+                '[[:space:]()]','','g'
+            ) AS check_expression
+        FROM pg_policy AS policy
+        WHERE policy.polrelid='public.billing_invoice_mutation_owners'::REGCLASS
     ), object_state(category, value) AS (
         SELECT 'functions', string_agg(
             signature || ':' || COALESCE(owner_name, '') || ':' ||
@@ -1171,6 +2064,34 @@ BEGIN
         SELECT 'constraints', string_agg(
             definition, '|' ORDER BY definition COLLATE "C"
         ) FROM constraint_state
+        UNION ALL
+        SELECT 'invoice_owner_table', string_agg(
+            owner_name || ':' || relrowsecurity::TEXT || ':' ||
+            service_access::TEXT || ':' || auth_access::TEXT || ':' ||
+            anon_access::TEXT || ':' || public_privilege::TEXT || ':' ||
+            unexpected_privilege::TEXT || ':' || acl_state,
+            '|' ORDER BY owner_name COLLATE "C"
+        ) FROM invoice_owner_table_state
+        UNION ALL
+        SELECT 'invoice_owner_trigger', string_agg(
+            trigger_name || ':' || COALESCE(tgenabled::TEXT,'') || ':' ||
+            COALESCE(actual_tgtype::TEXT,'') || ':' ||
+            COALESCE(function_matches::TEXT,'') || ':' || definition_sha256,
+            '|' ORDER BY trigger_name COLLATE "C"
+        ) FROM invoice_owner_trigger_state
+        UNION ALL
+        SELECT 'invoice_owner_columns', string_agg(
+            column_name || ':' || COALESCE(actual_type,'') || ':' ||
+            COALESCE(actual_not_null::TEXT,'') || ':' || actual_default || ':' ||
+            COALESCE(attidentity::TEXT,'') || ':' || COALESCE(attgenerated::TEXT,''),
+            '|' ORDER BY column_name COLLATE "C"
+        ) FROM invoice_owner_column_state
+        UNION ALL
+        SELECT 'invoice_owner_policies', string_agg(
+            polname || ':' || polpermissive::TEXT || ':' || polcmd::TEXT || ':' ||
+            COALESCE(role_names,'') || ':' || using_expression || ':' || check_expression,
+            '|' ORDER BY polname COLLATE "C"
+        ) FROM invoice_owner_policy_state
         UNION ALL
         SELECT 'legacy_invoice_status_count', count(*)::TEXT
         FROM public.billing_invoices
@@ -1199,7 +2120,60 @@ BEGIN
              OR configuration <> expected_configuration
              OR service_execute IS DISTINCT FROM expected_service_execute
              OR anon_execute OR auth_execute OR public_execute)
-        + CASE WHEN (SELECT count(*) FROM constraint_state) = 3 THEN 0 ELSE 1 END
+        + CASE WHEN (SELECT count(*) FROM constraint_state) = 14 THEN 0 ELSE 1 END
+        + CASE WHEN (
+            SELECT count(*)=1
+               AND bool_and(owner_name='postgres')
+               AND bool_and(relrowsecurity)
+               AND NOT bool_or(
+                    service_access OR auth_access OR anon_access
+                    OR public_privilege OR unexpected_privilege
+               )
+            FROM invoice_owner_table_state
+          ) THEN 0 ELSE 1 END
+        + CASE WHEN (
+            SELECT count(*)=10 AND bool_and(
+                actual_type=expected_type
+                AND actual_not_null IS NOT DISTINCT FROM expected_not_null
+                AND actual_default=expected_default
+                AND attidentity=''
+                AND attgenerated=''
+            ) FROM invoice_owner_column_state
+          ) THEN 0 ELSE 1 END
+        + CASE WHEN (
+            SELECT count(*)=10
+            FROM pg_attribute
+            WHERE attrelid='public.billing_invoice_mutation_owners'::REGCLASS
+              AND attnum>0 AND NOT attisdropped
+          ) THEN 0 ELSE 1 END
+        + CASE WHEN (
+            SELECT count(*)=2
+               AND count(*) FILTER (
+                    WHERE polname='billing_invoice_mutation_owners_no_client_access'
+                      AND NOT polpermissive AND polcmd='*'
+                      AND role_names='anon,authenticated'
+                      AND using_expression='false' AND check_expression='false'
+               )=1
+               AND count(*) FILTER (
+                    WHERE polname='reject_ambiguous_staff_membership_access'
+                      AND NOT polpermissive AND polcmd='*'
+                      AND role_names='authenticated'
+                      AND regexp_replace(
+                          using_expression,'AShas_unambiguous_studio_membership$',''
+                      )='SELECTprivate.has_unambiguous_studio_membership'
+                      AND regexp_replace(
+                          check_expression,'AShas_unambiguous_studio_membership$',''
+                      )='SELECTprivate.has_unambiguous_studio_membership'
+               )=1
+            FROM invoice_owner_policy_state
+          ) THEN 0 ELSE 1 END
+        + CASE WHEN (
+            SELECT count(*)=2
+               AND bool_and(tgenabled='O')
+               AND bool_and(actual_tgtype=expected_tgtype)
+               AND bool_and(function_matches)
+            FROM invoice_owner_trigger_state
+          ) THEN 0 ELSE 1 END
         + CASE WHEN EXISTS (
             SELECT 1 FROM public.billing_invoices
             WHERE status IN ('partially_refunded', 'refunded')
@@ -1259,7 +2233,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    '93ce2c0f805842bf3c8fb8fdd26f063f4728e03f2076de565c1f85c7431ccd5a'
+    'b23abcb96d2fb6debbcd21c823cdddebf06d99437362888bb633a85f6afcf6a4'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -1271,7 +2245,7 @@ SET search_path = pg_catalog
 SET "TimeZone" = 'UTC'
 AS $$
     SELECT encode(extensions.digest(convert_to(
-        '1449e613ab87fea18e9f7678f96215d528b80b5d0c44c5da0f29323bdc392198' || '|' ||
+        'b4a027577eafe29feb731803721ae7d07f42e5aeec0b2fb9c2cd021856d75140' || '|' ||
         private.koaryu_release_resource_ownership_manifest_v31() || '|' ||
         private.koaryu_release_operational_contract_v31() || '|' ||
         (SELECT string_agg(
@@ -1331,7 +2305,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:bb38b2815c7c6f65cb43684e2a1b4c01e1711c605c0914350d7dca41ff243068' THEN
+       <> '0:c04120ebdd5da5dbc6cfed75e07ef05c2518770f71659122f05794a1e472d767' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     SELECT expected_sha256 INTO v_expected
@@ -1342,6 +2316,41 @@ BEGIN
        OR private.koaryu_release_operational_contract_v31()
             IS DISTINCT FROM '0:' || v_expected THEN
         v_failures := array_append(v_failures, 'operational_contract_v31');
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class AS relation
+        JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
+        JOIN pg_roles AS owner ON owner.oid=relation.relowner
+        WHERE namespace.nspname='private'
+          AND relation.relname='koaryu_release_v31_expectations'
+          AND relation.relkind='r'
+          AND owner.rolname='postgres'
+          AND relation.relrowsecurity
+    )
+       OR has_table_privilege(
+            'service_role','private.koaryu_release_v31_expectations',
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       OR has_table_privilege(
+            'authenticated','private.koaryu_release_v31_expectations',
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       OR has_table_privilege(
+            'anon','private.koaryu_release_v31_expectations',
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       OR EXISTS (
+            SELECT 1
+            FROM pg_class AS relation
+            CROSS JOIN LATERAL aclexplode(COALESCE(
+                relation.relacl,
+                acldefault('r',relation.relowner)
+            )) AS privilege
+            WHERE relation.oid='private.koaryu_release_v31_expectations'::REGCLASS
+              AND privilege.grantee<>relation.relowner
+       ) THEN
+        v_failures := array_append(v_failures, 'operational_contract_v31_expectation_acl');
     END IF;
     SELECT expected_sha256 INTO v_expected
     FROM private.koaryu_release_v30_expectations
@@ -1379,15 +2388,15 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_contract_v27');
     END IF;
     IF private.koaryu_release_operational_contract_v28()
-       <> '0:7691e95a22cb81e6e5f4d9ad760c3bc71f6d7884fac1db7c1f653113acebcb2c' THEN
+       <> '0:0d046247e917590e7c4017119704d6f799f5fa875d8253b86611f763332571f3' THEN
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
     IF private.koaryu_release_operational_contract_v29()
-       <> '0:888b276d8e5b47d9fe322ba57424f76936cd2f9bb4d07366885c3a273ef11ff2' THEN
+       <> '0:903280ba19a1da828cdc2d77c7bd6f6cee10687fc8395e5240dc3fd052697816' THEN
         v_failures := array_append(v_failures, 'operational_contract_v29');
     END IF;
     IF private.koaryu_release_operational_contract_v30()
-       <> '0:4d39a7cdd7c95c214358dcd5d889758a42b73bef7d096b57793ce34ddabcf51e' THEN
+       <> '0:9c1c7e59d288c13bd903e81ee4b7f4a92c741e1ed0421b3fb42e64cb7ffcf2cd' THEN
         v_failures := array_append(v_failures, 'operational_contract_v30');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -1403,13 +2412,31 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_manifest_v11_function');
     END IF;
     IF private.koaryu_release_operational_manifest_v11()
-       <> '8dbbee420da902c23cd027447366b7db421be967e64cb1715163c09ccaef7727' THEN
+       <> 'b4a027577eafe29feb731803721ae7d07f42e5aeec0b2fb9c2cd021856d75140' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v11');
     END IF;
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       <> '0:89c9cc469ce983a860eb1ad15eeb4d1be21eb52524ff7d73a64f50ba8f932492' THEN
+       <> '0:c38b23cb021f0a70e900d42f40df6f6efcc7c95567038052ebc97ea4352a7869' THEN
         v_failures := array_append(v_failures, 'provider_operation_steps_manifest_v28');
         v_failures := array_append(v_failures, 'operational_contract_v28');
+    END IF;
+    IF encode(extensions.digest(convert_to(pg_get_functiondef(
+        'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
+    ), 'UTF8'), 'sha256'), 'hex')
+       <> 'c98eeab1d937c17a76acc91c5aa5996bc2f1e38c38cb4f0ca114a65568676ec4' THEN
+        v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
+    END IF;
+    IF encode(extensions.digest(convert_to(pg_get_functiondef(
+        'private.koaryu_release_operational_contract_v31()'::REGPROCEDURE
+    ), 'UTF8'), 'sha256'), 'hex')
+       <> '6b54e02534f38bcd7bb6e6e811d9e01c9782958319514fee3f0a2f1d4ed167d4' THEN
+        v_failures:=array_append(v_failures,'operational_contract_v31_function');
+    END IF;
+    IF encode(extensions.digest(convert_to(pg_get_functiondef(
+        'private.koaryu_release_provider_operation_steps_manifest_v28()'::REGPROCEDURE
+    ), 'UTF8'), 'sha256'), 'hex')
+       <> 'b16b633c6f78a2d5cf7d63f1d32679563ff2429197cc92a4d94e826b33a26035' THEN
+        v_failures:=array_append(v_failures,'provider_operation_steps_manifest_v28_function');
     END IF;
     IF private.koaryu_release_live_billing_v3_manifest_v25()
        <> '0:6934453003f86c2db9e84835d77a5261df6410fc93b24e8dfc78a332c815d265' THEN
@@ -1461,13 +2488,13 @@ BEGIN
         v_failures := array_append(v_failures, 'operation_allowlist_column');
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> 'cf89e1619c3f1e25915cd2a5e19f42f950015d18d775dc6629115f247f4cd3c6' THEN
+       <> 'db1de6ed5cb35d84ba284d2542017447bc625cd4f8192d86bc98b69f21408ab1' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_operational_manifest_v12()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> '4922cbad03eff81973ea734ad9597a3608e8f1b08822e7eb21652ab57f219517' THEN
+       <> '835b8c872d97ec4fac41c85d412ef67e03b89e34983699c835b1c592ea3b1650' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12_function');
     END IF;
     RETURN QUERY SELECT cardinality(v_failures) = 0,
@@ -1606,6 +2633,18 @@ BEGIN
         encode(extensions.digest(convert_to(pg_get_functiondef(
             'private.koaryu_release_operational_manifest_v12()'::REGPROCEDURE
         ), 'UTF8'), 'sha256'), 'hex');
+    RAISE NOTICE 'KOARYU_V31_RESOURCE_MANIFEST_FUNCTION_SHA256=%',
+        encode(extensions.digest(convert_to(pg_get_functiondef(
+            'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
+        ), 'UTF8'), 'sha256'), 'hex');
+    RAISE NOTICE 'KOARYU_V31_OPERATIONAL_CONTRACT_FUNCTION_SHA256=%',
+        encode(extensions.digest(convert_to(pg_get_functiondef(
+            'private.koaryu_release_operational_contract_v31()'::REGPROCEDURE
+        ), 'UTF8'), 'sha256'), 'hex');
+    RAISE NOTICE 'KOARYU_V31_PROVIDER_STEPS_MANIFEST_FUNCTION_SHA256=%',
+        encode(extensions.digest(convert_to(pg_get_functiondef(
+            'private.koaryu_release_provider_operation_steps_manifest_v28()'::REGPROCEDURE
+        ), 'UTF8'), 'sha256'), 'hex');
     RAISE NOTICE 'KOARYU_V31_OPERATION_AUTHORIZATION_WRITER_FUNCTION_SHA256=%',
         encode(extensions.digest(convert_to(pg_get_functiondef(
             'public.set_studio_live_billing_authorization_operations_v1(uuid,text,boolean,timestamp with time zone,text,uuid,text[],text,text)'::REGPROCEDURE
@@ -1631,5 +2670,7 @@ BEGIN
         private.koaryu_release_operational_contract_v30();
     RAISE NOTICE 'KOARYU_V31_COMPAT_V28_PROVIDER_MANIFEST=%',
         private.koaryu_release_provider_operation_steps_manifest_v28();
+    RAISE NOTICE 'KOARYU_V31_CRITICAL_SURFACE_MANIFEST=%',
+        private.koaryu_release_critical_surface_manifest_v18();
 END;
 $v31_observation$;

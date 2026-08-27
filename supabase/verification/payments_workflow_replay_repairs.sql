@@ -22,6 +22,8 @@ DECLARE
     v_worker UUID := gen_random_uuid();
     v_result JSONB;
     v_operation UUID;
+    v_has_v31_invoice_owner BOOLEAN :=
+        to_regclass('public.billing_invoice_mutation_owners') IS NOT NULL;
 BEGIN
     IF has_function_privilege(
         'authenticated',
@@ -285,15 +287,32 @@ BEGIN
     EXCEPTION WHEN unique_violation THEN
         IF SQLERRM <> 'billing_invoice_closeout_request_conflict' THEN RAISE; END IF;
     END;
-    v_result := public.claim_billing_invoice_closeout_operation_v1(
-        v_studio, v_admin, 'invoice.void', 'invoice_void',
-        v_invoice, v_payer, 'void-key', repeat('f', 64),
-        'acct_v30replay', 1, gen_random_uuid(), 30
-    );
-    IF v_result->>'outcome' <> 'claimed'
-       OR (SELECT count(*) FROM public.billing_provider_operation_resources
-            WHERE studio_id = v_studio AND resource_id = v_invoice) <> 2 THEN
-        RAISE EXCEPTION 'Invoice closeout resource types did not remain independent.';
+    IF v_has_v31_invoice_owner THEN
+        BEGIN
+            PERFORM public.claim_billing_invoice_closeout_operation_v1(
+                v_studio, v_admin, 'invoice.void', 'invoice_void',
+                v_invoice, v_payer, 'void-key', repeat('f', 64),
+                'acct_v30replay', 1, gen_random_uuid(), 30
+            );
+            RAISE EXCEPTION 'Concurrent finalize and void owners were accepted.';
+        EXCEPTION WHEN lock_not_available THEN
+            IF SQLERRM <> 'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+        END;
+        IF (SELECT count(*) FROM public.billing_provider_operation_resources
+            WHERE studio_id = v_studio AND resource_id = v_invoice) <> 1 THEN
+            RAISE EXCEPTION 'Blocked invoice void created a second resource owner.';
+        END IF;
+    ELSE
+        v_result := public.claim_billing_invoice_closeout_operation_v1(
+            v_studio, v_admin, 'invoice.void', 'invoice_void',
+            v_invoice, v_payer, 'void-key', repeat('f', 64),
+            'acct_v30replay', 1, gen_random_uuid(), 30
+        );
+        IF v_result->>'outcome' <> 'claimed'
+           OR (SELECT count(*) FROM public.billing_provider_operation_resources
+                WHERE studio_id = v_studio AND resource_id = v_invoice) <> 2 THEN
+            RAISE EXCEPTION 'V30 invoice closeout resource types did not remain independent.';
+        END IF;
     END IF;
     BEGIN
         PERFORM public.claim_billing_invoice_closeout_operation_v1(
@@ -303,7 +322,13 @@ BEGIN
         );
         RAISE EXCEPTION 'Front Desk invoice closeout was accepted.';
     EXCEPTION WHEN insufficient_privilege THEN
-        IF SQLERRM <> 'billing_invoice_closeout_actor_forbidden' THEN RAISE; END IF;
+        IF v_has_v31_invoice_owner
+           AND SQLERRM <> 'billing_invoice_mutation_actor_forbidden' THEN
+            RAISE;
+        ELSIF NOT v_has_v31_invoice_owner
+           AND SQLERRM <> 'billing_invoice_closeout_actor_forbidden' THEN
+            RAISE;
+        END IF;
     END;
 END;
 $$;

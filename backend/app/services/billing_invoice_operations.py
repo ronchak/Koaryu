@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -427,7 +428,10 @@ class BillingInvoiceOperationWorkflow:
         if not invoice.get("stripe_invoice_id") and not invoice.get("stripe_account_id"):
             result = (
                 self.supabase.table("billing_invoices")
-                .update({"status": "void"})
+                .update({
+                    "status": "void",
+                    "voided_at": datetime.now(timezone.utc).isoformat(),
+                })
                 .eq("id", invoice_id)
                 .eq("studio_id", studio_id)
                 .execute()

@@ -176,7 +176,7 @@ class BillingProviderOperationCoordinator:
         operation_type: str,
         resource_type: str,
         resource_id: str,
-        payer_id: str,
+        payer_id: str | None,
         caller_request_key: str,
         request_sha256: str,
         stripe_connected_account_id: str,
@@ -922,6 +922,11 @@ class BillingProviderOperationCoordinator:
                 detail=RESOURCE_IDENTITY_RECONCILIATION_DETAIL,
             ) from exc
         if code == "40001":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=OPERATION_CONCURRENT_DETAIL,
+            ) from exc
+        if code == "55P03" and "billing_invoice_mutation_in_progress" in message:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=OPERATION_CONCURRENT_DETAIL,

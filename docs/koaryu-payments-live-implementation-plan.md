@@ -1,6 +1,6 @@
 # Koaryu Payments live implementation plan
 
-Status: local implementation complete; single-branch integration and release proof in progress
+Status: local implementation and verification complete; exact-head review and staging proof in progress
 
 Planning baseline: `main` at `1a9db595f8faf03e3b681b5cac91470c6ab4934c`
 
@@ -228,11 +228,20 @@ The additive V31 candidate
 latest-head review findings without changing the historical V26 through V30 restore
 anchors. It:
 
-- gives `payment.refund` and `payer.sync` one row-locked resource owner, with immutable
-  caller-desired hashes separated from database-derived resource versions;
+- gives `payment.refund`, `payer.sync`, and `plan.sync` one row-locked resource owner,
+  with immutable caller-desired hashes separated from database-derived resource versions;
+- derives plan ownership from the locked plan fields instead of trusting the caller hash,
+  and proves both product and price step projections before a changed plan can replace a
+  completed owner;
+- serializes `invoice.finalize`, `invoice.void`, and `invoice.retry` through one
+  invoice-level mutation owner while retaining operation-specific aliases for exact
+  historical replay;
 - keeps payer create/update local-only so the named `payer.sync` owner is the sole
   customer mutation path, and backfills linked payer generations only when their stored
   account is the studio's exact current Connect account;
+- adopts a missing legacy invoice generation only when the invoice, payer, customer, and
+  current Connect account match exactly. Present, malformed, stale, external, or
+  conflicting identity evidence remains untouched and fail-closed;
 - collapses same-version concurrent keys, replays an old alias after later state changes,
   and permits a new owner only after the authoritative resource version advances and the
   prior provider projection is proved;
@@ -244,27 +253,38 @@ anchors. It:
   later webhook replay from re-enabling the payer;
 - keeps invoice/payment webhooks from rewriting the payer's consent-bound default
   payment method; only the payer-owned setup projection may establish that field;
+- derives live Connect Payments scope readiness from the dedicated capability sentinel,
+  then enables each workflow only when its exact required Stripe operations are granted;
+- treats recorded external payments as local accounting evidence only. They never mark a
+  connected Stripe invoice paid out of band or issue another provider mutation;
+- caps invoice creation at 31 line items so the registered parent plus item steps remain
+  within the database's 32-step provider plan bound, and records `voided_at` for a local
+  invoice void;
 - retains a 30-minute local setup-operation deadline while requiring at least 30 minutes
   of Stripe Session lifetime at mutation time;
 - reclaims expired due-work leases with the already-bound provider operation instead of
   creating a second mutation owner;
+- completes whole-subscription due work from intent-bound identity when a cancellation
+  webhook reaches local projection first, without issuing a second provider mutation;
+- returns each active scheduled period-end intent and revision through a narrow
+  service-role RPC so reload preserves the exact revoke target;
 - normalizes only legacy `partially_refunded` and `refunded` invoice rows from immutable
   gross-payment evidence, recomputes affected payer receivables, and proves payment,
   refund, dispute, and provider-operation rows are byte-for-byte untouched;
 - advances the exact release state to 124/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:bb38b2815c7c6f65cb43684e2a1b4c01e1711c605c0914350d7dca41ff243068`,
+  `0:c04120ebdd5da5dbc6cfed75e07ef05c2518770f71659122f05794a1e472d767`,
   the V31 operational contract
-  `0:93ce2c0f805842bf3c8fb8fdd26f063f4728e03f2076de565c1f85c7431ccd5a`,
+  `0:b23abcb96d2fb6debbcd21c823cdddebf06d99437362888bb633a85f6afcf6a4`,
   the V31 operational manifest
-  `cf89e1619c3f1e25915cd2a5e19f42f950015d18d775dc6629115f247f4cd3c6`,
+  `db1de6ed5cb35d84ba284d2542017447bc625cd4f8192d86bc98b69f21408ab1`,
   and expectation state
-  `1:36fa463fd5cdb85e674086fb59ec09b4b8b92bd310487a4ff46f98e4088e0ae3`.
+  `1:9acdd3947e38cabcf186934f44cdfdb944a26d8ee0ac0370e59683f20b4dd901`.
 
 Latest local candidate evidence before publication:
 
-- backend: 1,285 tests plus 5,107 subtests passed;
+- backend: 1,303 tests plus 5,107 subtests passed;
 - frontend: all 719 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, targeted billing ESLint, and the production build with safe
@@ -273,7 +293,7 @@ Latest local candidate evidence before publication:
 - the rollout tool passed all 61 tests and the aggregate release-workflow gate passed
   all 123 tests;
 - all 124 migrations, both new and inherited restore paths, every negative attestation,
-  every concurrency suite, and all 42 SQL contracts passed on ephemeral PostgreSQL 17;
+  every concurrency suite, and all 43 SQL contracts passed on ephemeral PostgreSQL 17;
 - `git diff --check` passed.
 
 Before the exact-head staging phase, no live grant, provider mutation, hosted write, or
@@ -542,13 +562,13 @@ never append a newly discovered step after execution begins.
 | --- | --- | --- |
 | `payer.sync` | One customer create or update | Customer identity and expanded default-payment-method fields are projected, then the parent completes. |
 | `payer.setup` | One setup Checkout Session | The request returns the original short-lived URL, but recurring consent completes only from verified payer-controlled Checkout completion and payment-method readback. |
-| `plan.sync` | Product create/update, followed by price create only when the exact immutable price does not already exist | Each required mutation has its own durable step; existing exact price evidence must be verified before omitting a price-create step. |
+| `plan.sync` | Product create/update, followed by price create only when the exact immutable price does not already exist | Each required mutation has its own durable step. The locked plan fields define resource version, and both local product and price projections must match the completed step evidence before replacement. |
 | `enrollment.activate` | Require synchronized plan and payer first; then create a subscription, add an item, or change one shared-item quantity | Bind the exact payer, plan, subscription, item, expected quantity, account, and generation before the provider call. Paid-in-full enrollment delegates to the keyed invoice workflow instead of nesting an untracked invoice flow. |
-| `invoice.create` | Create one invoice, then one immutable item step per normalized line item | Step count and line-item hashes are frozen before the invoice call. Projection completes only after every item has a provider ID and authoritative invoice readback converges. |
+| `invoice.create` | Create one invoice, then one immutable item step per normalized line item | Step count and line-item hashes are frozen before the invoice call. The first release supports at most 31 line items, and projection completes only after every item has a provider ID and authoritative invoice readback converges. |
 | `invoice.finalize` | Finalize once, followed by send only for an exact `send_invoice` readback | Register the complete V28 step plan before finalization; partial finalize/send success is reconciliation-required and never repeats a provider call without proof. |
-| `invoice.retry` | One invoice-pay mutation | Replace the separate retry replay table with the shared parent operation after preserving its valid lease and alias tests. |
+| `invoice.retry` | One invoice-pay mutation | The operation keeps its own exact-key aliases but shares one invoice-level mutation owner with finalize and void, so no competing nonterminal invoice mutation can reach Stripe. |
 | `payment.refund` | One refund mutation | Eligibility and exact account generation are verified before the provider call; provider success and local adjustment projection must both converge before completion. |
-| `invoice.void` and any supported immediate cancellation | One provider mutation each | Keep Admin-only policy separate from replay mechanics, require a bounded key, and bind the exact resource so browser-key rotation cannot create a competing operation. |
+| `invoice.void` and any supported immediate cancellation | One provider mutation each | Keep Admin-only policy separate from replay mechanics, require a bounded key, and bind the exact resource. Invoice void shares the same invoice-level owner as finalize and retry. |
 
 The child-step state is provider evidence, not a generic workflow engine. Local validation,
 authorization, projection, audit, and response assembly remain in the owning billing

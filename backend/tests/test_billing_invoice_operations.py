@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 from stripe import CardError as StripeCardError
 
-from app.schemas.billing import BillingInvoiceCreate
+from app.schemas.billing import BillingInvoiceCreate, BillingInvoiceItemCreate
 from app.services.billing_invoice_operations import (
     INVOICE_CREATE_AMBIGUOUS_DETAIL,
     INVOICE_RETRY_AMBIGUOUS_DETAIL,
@@ -133,6 +133,15 @@ class _Facade:
     @staticmethod
     def _idempotency_key(*parts):
         return build_idempotency_key(*parts)
+
+    def _audit(self, studio_id, actor_id, action, entity_id, metadata):
+        self.supabase.tables["audit_logs"].append({
+            "studio_id": studio_id,
+            "actor_id": actor_id,
+            "action": action,
+            "entity_id": entity_id,
+            "metadata": metadata,
+        })
 
     @staticmethod
     def _invoice_request_hash(data):
@@ -368,6 +377,42 @@ def _operation(facade: _Facade, operation_type: str) -> dict:
         for row in facade.supabase.billing_provider_operations.values()
         if row["operation_type"] == operation_type
     )
+
+
+@pytest.mark.parametrize("metadata", ({}, {"connect_account_generation": ""}))
+@pytest.mark.parametrize(
+    ("workflow", "invoice_status"),
+    (
+        ("finalize", "draft"),
+        ("retry", "open"),
+        ("void", "open"),
+    ),
+)
+def test_invoice_mutations_reject_ambiguous_legacy_generation_before_provider(
+    metadata: dict,
+    workflow: str,
+    invoice_status: str,
+):
+    facade = _Facade(invoice=_open_invoice(status=invoice_status, metadata=metadata))
+    manager = _manager(facade)
+
+    with pytest.raises(HTTPException) as blocked:
+        if workflow == "finalize":
+            asyncio.run(manager.finalize_invoice(
+                "invoice_existing", "studio_1", "actor_1", "legacy-finalize"
+            ))
+        elif workflow == "retry":
+            asyncio.run(manager.retry_invoice_payment(
+                "invoice_existing", "studio_1", "actor_1", "legacy-retry"
+            ))
+        else:
+            asyncio.run(manager.void_invoice(
+                "invoice_existing", "studio_1", "actor_1", "legacy-void"
+            ))
+
+    assert blocked.value.status_code == 409
+    assert _Stripe.retrieve_calls == []
+    assert facade.supabase.billing_provider_operations == {}
 
 
 def test_create_requires_byte_bounded_key_and_exact_payer_generation():
@@ -731,6 +776,31 @@ def test_void_resource_replays_without_duplicate_provider_mutation():
     assert parent["result_summary"] == "invoice_void_mode:void"
 
 
+def test_local_void_records_timestamp_without_provider_mutation():
+    invoice = _open_invoice(
+        stripe_invoice_id=None,
+        stripe_account_id=None,
+        stripe_customer_id=None,
+    )
+    facade = _Facade(invoice=invoice)
+    manager = _manager(facade)
+
+    result = asyncio.run(manager.void_invoice(
+        invoice["id"], "studio_1", "actor_1", "void-local-key",
+    ))
+
+    assert result.status == "void"
+    assert result.voided_at is not None
+    assert _Stripe.void_calls == []
+
+
+def test_invoice_request_rejects_more_items_than_durable_step_limit():
+    item = BillingInvoiceItemCreate(description="Tuition", amount_cents=100)
+
+    with pytest.raises(ValueError):
+        BillingInvoiceCreate(payer_id="payer_1", items=[item] * 32)
+
+
 def test_void_provider_success_projection_failure_recovers_by_readback_only():
     invoice = _open_invoice()
     facade = _Facade(invoice=invoice)
@@ -993,6 +1063,220 @@ def test_retry_projected_projection_drift_marks_reconciliation_without_second_pa
     assert exc.value.status_code == 503
     assert parent["state"] == "reconciliation_required"
     assert len(_Stripe.pay_calls) == 1
+
+
+def test_invoice_mutations_share_one_owner_across_finalize_void_and_retry():
+    invoice = _open_invoice()
+    invoice["status"] = "draft"
+    facade = _Facade(invoice=invoice)
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+
+    finalize = operations.claim_resource(
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type="invoice.finalize",
+        resource_type="invoice_finalize",
+        resource_id=invoice["id"],
+        payer_id=invoice["payer_id"],
+        caller_request_key="finalize-owner",
+        request_sha256="a" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000111",
+    )
+    finalize_operation = finalize["operation"]
+
+    for operation_type, resource_type, key in (
+        ("invoice.void", "invoice_void", "void-blocked"),
+        ("invoice.retry", "invoice", "retry-blocked"),
+    ):
+        with pytest.raises(HTTPException) as blocked:
+            operations.claim_resource(
+                studio_id="studio_1",
+                actor_id="actor_1",
+                operation_type=operation_type,
+                resource_type=resource_type,
+                resource_id=invoice["id"],
+                payer_id=invoice["payer_id"],
+                caller_request_key=key,
+                request_sha256="b" * 64,
+                stripe_connected_account_id="acct_1",
+                connect_account_generation=2,
+                lease_owner="00000000-0000-4000-8000-000000000222",
+            )
+        assert blocked.value.status_code == 409
+
+    finalize_context = BillingProviderOperationContext(
+        operation_id=finalize_operation["id"],
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type="invoice.finalize",
+        caller_request_key="finalize-owner",
+        request_sha256="a" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000111",
+    )
+    operations.transition(
+        finalize_context,
+        finalize_operation,
+        "definitive_rejected",
+        error_code="provider_mutation_blocked",
+    )
+    void = operations.claim_resource(
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type="invoice.void",
+        resource_type="invoice_void",
+        resource_id=invoice["id"],
+        payer_id=invoice["payer_id"],
+        caller_request_key="void-owner",
+        request_sha256="b" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000222",
+    )
+    assert void["outcome"] == "claimed"
+    assert facade.supabase.billing_invoice_mutation_owners[
+        ("studio_1", invoice["id"])
+    ]["operation_id"] == void["operation"]["id"]
+
+    historical = operations.claim_resource(
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type="invoice.finalize",
+        resource_type="invoice_finalize",
+        resource_id=invoice["id"],
+        payer_id=invoice["payer_id"],
+        caller_request_key="finalize-owner",
+        request_sha256="a" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000333",
+    )
+    assert historical["outcome"] == "replay"
+    assert historical["operation"]["id"] == finalize_operation["id"]
+
+    void_operation = void["operation"]
+    void_context = BillingProviderOperationContext(
+        operation_id=void_operation["id"],
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type="invoice.void",
+        caller_request_key="void-owner",
+        request_sha256="b" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000222",
+    )
+    void_operation = operations.transition(
+        void_context,
+        void_operation,
+        "provider_request_in_flight",
+    )
+    operations.transition(
+        void_context,
+        void_operation,
+        "reconciliation_required",
+        reconciliation_reason_code="invoice_void_outcome_ambiguous",
+    )
+    with pytest.raises(HTTPException) as reconciliation_block:
+        operations.claim_resource(
+            studio_id="studio_1",
+            actor_id="actor_1",
+            operation_type="invoice.retry",
+            resource_type="invoice",
+            resource_id=invoice["id"],
+            payer_id=invoice["payer_id"],
+            caller_request_key="retry-after-void-ambiguous",
+            request_sha256="c" * 64,
+            stripe_connected_account_id="acct_1",
+            connect_account_generation=2,
+            lease_owner="00000000-0000-4000-8000-000000000444",
+        )
+    assert reconciliation_block.value.status_code == 409
+
+
+@pytest.mark.parametrize(
+    ("operation_type", "resource_type"),
+    (
+        ("invoice.finalize", "invoice_finalize"),
+        ("invoice.void", "invoice_void"),
+        ("invoice.retry", "invoice"),
+    ),
+)
+def test_terminal_invoice_mutation_replaces_same_resource_and_keeps_old_key(
+    operation_type: str,
+    resource_type: str,
+):
+    invoice = _open_invoice()
+    facade = _Facade(invoice=invoice)
+    operations = BillingProviderOperationCoordinator(facade.supabase)
+    first = operations.claim_resource(
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type=operation_type,
+        resource_type=resource_type,
+        resource_id=invoice["id"],
+        payer_id=invoice["payer_id"],
+        caller_request_key="terminal-k1",
+        request_sha256="d" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000111",
+    )
+    first_operation = first["operation"]
+    first_context = BillingProviderOperationContext(
+        operation_id=first_operation["id"],
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type=operation_type,
+        caller_request_key="terminal-k1",
+        request_sha256="d" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000111",
+    )
+    operations.transition(
+        first_context,
+        first_operation,
+        "definitive_rejected",
+        error_code="provider_mutation_blocked",
+    )
+    second = operations.claim_resource(
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type=operation_type,
+        resource_type=resource_type,
+        resource_id=invoice["id"],
+        payer_id=invoice["payer_id"],
+        caller_request_key="terminal-k2",
+        request_sha256="d" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000222",
+    )
+    assert second["outcome"] == "replaced"
+    assert second["resource"]["id"] == first["resource"]["id"]
+    assert second["operation"]["id"] != first_operation["id"]
+    historical = operations.claim_resource(
+        studio_id="studio_1",
+        actor_id="actor_1",
+        operation_type=operation_type,
+        resource_type=resource_type,
+        resource_id=invoice["id"],
+        payer_id=invoice["payer_id"],
+        caller_request_key="terminal-k1",
+        request_sha256="d" * 64,
+        stripe_connected_account_id="acct_1",
+        connect_account_generation=2,
+        lease_owner="00000000-0000-4000-8000-000000000333",
+    )
+    assert historical["outcome"] == "replay"
+    assert historical["operation"]["id"] == first_operation["id"]
+    assert facade.supabase.billing_invoice_mutation_owners[
+        ("studio_1", invoice["id"])
+    ]["operation_id"] == second["operation"]["id"]
 
 
 def test_retry_definitive_decline_is_terminal_and_sanitized():

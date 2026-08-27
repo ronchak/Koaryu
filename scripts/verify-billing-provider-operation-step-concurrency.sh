@@ -33,6 +33,7 @@ cleanup() {
   if ! "$psql_bin" "${psql_args[@]}" >/dev/null <<SQL
 BEGIN;
 DELETE FROM public.billing_provider_operation_steps WHERE studio_id = '$studio_id'::UUID;
+DELETE FROM public.billing_invoice_mutation_owners WHERE studio_id = '$studio_id'::UUID;
 DELETE FROM public.billing_provider_operation_resource_aliases WHERE studio_id = '$studio_id'::UUID;
 DELETE FROM public.billing_provider_operation_resources WHERE studio_id = '$studio_id'::UUID;
 DELETE FROM public.billing_provider_operations WHERE studio_id = '$studio_id'::UUID;

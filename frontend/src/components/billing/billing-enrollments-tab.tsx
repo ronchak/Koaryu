@@ -41,7 +41,6 @@ export function BillingEnrollmentsTab({
   payerNameById,
   planNameById,
   studentNameById,
-  scheduledTransitions,
 }: {
   billingEnrollments: StudentBillingEnrollment[];
   billingPayers: BillingPayer[];
@@ -73,7 +72,6 @@ export function BillingEnrollmentsTab({
   payerNameById: Map<string, string>;
   planNameById: Map<string, string>;
   studentNameById: Map<string, string>;
-  scheduledTransitions: Record<string, { intentId: string; revision: number }>;
 }) {
   return (
     <div className="space-y-5">
@@ -126,7 +124,7 @@ export function BillingEnrollmentsTab({
         {billingEnrollments.length === 0 ? (
           <p className="p-4 text-sm text-muted">No billing enrollments yet.</p>
         ) : billingEnrollments.map((enrollment) => {
-          const scheduled = scheduledTransitions[enrollment.id];
+          const scheduled = enrollment.scheduled_period_end_transition;
           const hasProviderSubscription = Boolean(
             enrollment.stripe_subscription_id && enrollment.stripe_subscription_item_id,
           );
@@ -162,7 +160,7 @@ export function BillingEnrollmentsTab({
             <div className="min-w-0 text-xs text-muted">
               <p className="mb-1 text-xs font-medium text-muted md:hidden">Billing state and actions</p>
               <p>{hasProviderSubscription ? "Recurring provider billing linked" : "No provider subscription"}</p>
-              {scheduled ? <p className="mt-1 text-warning">Period-end cancellation scheduled in this session.</p> : null}
+              {scheduled ? <p className="mt-1 text-warning">Period-end cancellation is scheduled.</p> : null}
               <div className="mt-2 flex flex-wrap gap-2">
                 {canActivate ? (
                   <Button size="sm" disabled={isActionLoading} isLoading={isLoadingAction(`enrollment-activate:${enrollment.id}`)} onClick={() => onEnrollmentActivate(enrollment.id)}>
@@ -175,8 +173,8 @@ export function BillingEnrollmentsTab({
                   </Button>
                 ) : null}
                 {scheduled && canUseWorkflow("enrollment.cancel.period_end.revoke") ? (
-                  <Button variant="secondary" size="sm" disabled={isActionLoading} isLoading={isLoadingAction(`enrollment-transition:revoke-scheduled:${scheduled.intentId}`)} onClick={() => onEnrollmentRevokeScheduled(scheduled.intentId, scheduled.revision)}>
-                    {isLoadingAction(`enrollment-transition:revoke-scheduled:${scheduled.intentId}`) ? "Revoking..." : "Revoke scheduled cancel"}
+                  <Button variant="secondary" size="sm" disabled={isActionLoading} isLoading={isLoadingAction(`enrollment-transition:revoke-scheduled:${scheduled.intent_id}`)} onClick={() => onEnrollmentRevokeScheduled(scheduled.intent_id, scheduled.revision)}>
+                    {isLoadingAction(`enrollment-transition:revoke-scheduled:${scheduled.intent_id}`) ? "Revoking..." : "Revoke scheduled cancel"}
                   </Button>
                 ) : null}
                 {canCancelImmediate ? (

@@ -37,9 +37,6 @@ export function useBillingEnrollmentActions({
   const [enrollmentStartDate, setEnrollmentStartDate] = useState("");
   const [enrollmentEndDate, setEnrollmentEndDate] = useState("");
   const [enrollmentNextBillDate, setEnrollmentNextBillDate] = useState("");
-  const [scheduledTransitions, setScheduledTransitions] = useState<
-    Record<string, { intentId: string; revision: number }>
-  >({});
 
   function resetEnrollmentForm() {
     setEnrollmentStudentId("");
@@ -141,23 +138,6 @@ export function useBillingEnrollmentActions({
       workflowId,
     });
     if (result) {
-      const intent = result.intent as Record<string, unknown> | undefined;
-      const intentId = intent?.id;
-      const intentRevision = intent?.revision;
-      if (
-        action === "schedule-period-end"
-        && typeof intentId === "string"
-        && typeof intentRevision === "number"
-      ) {
-        setScheduledTransitions((current) => ({
-          ...current,
-          [resourceId]: { intentId, revision: intentRevision },
-        }));
-      } else if (action === "revoke-scheduled") {
-        setScheduledTransitions((current) => Object.fromEntries(
-          Object.entries(current).filter(([, transition]) => transition.intentId !== resourceId),
-        ));
-      }
       clearEnrollmentTransitionRequestKey({
         action,
         identity: operationIdentity,
@@ -221,7 +201,6 @@ export function useBillingEnrollmentActions({
     enrollmentPlanId,
     enrollmentStartDate,
     enrollmentStudentId,
-    scheduledTransitions,
     onCreateEnrollment: handleCreateEnrollment,
     onEnrollmentAction: handleEnrollmentAction,
     onEnrollmentActivate: handleEnrollmentActivation,

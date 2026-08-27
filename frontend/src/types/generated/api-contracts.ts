@@ -146,6 +146,11 @@ export interface ApiBeltRankUpdate {
   tip_color_hex?: string | null;
 }
 
+export interface ApiBillingEnrollmentScheduledTransitionResponse {
+  intent_id: string;
+  revision: number;
+}
+
 export interface ApiBillingEnrollmentTransitionProcessResponse {
   claimed: number;
   completed: number;
@@ -1301,6 +1306,7 @@ export interface ApiStudentBillingEnrollmentResponse {
   next_bill_date?: string | null;
   stripe_subscription_id?: string | null;
   stripe_subscription_item_id?: string | null;
+  scheduled_period_end_transition?: ApiBillingEnrollmentScheduledTransitionResponse | null;
   created_at: string;
   updated_at: string;
 }

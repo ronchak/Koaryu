@@ -178,7 +178,10 @@ class BillingSystemStatusReporter:
             ),
             connect_onboarding=connect_onboarding_authorized,
             connect_payments=self._mutation_authorized(
-                mutation_policy, "connected_invoice.create", studio_id, account_id,
+                mutation_policy,
+                "connected_capability.readiness",
+                studio_id,
+                account_id,
             ),
         )
         allowed_operations = (

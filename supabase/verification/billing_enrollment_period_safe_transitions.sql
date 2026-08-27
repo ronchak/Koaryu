@@ -40,6 +40,9 @@ DECLARE
     v_execute public.billing_enrollment_transition_intents%ROWTYPE;
     v_started JSONB;
     v_operation_count INTEGER;
+    v_read_count INTEGER;
+    v_read_intent UUID;
+    v_read_revision BIGINT;
 BEGIN
     IF private.koaryu_release_enrollment_transition_manifest_v29()
        !~ '^0:[0-9a-f]{64}$' THEN
@@ -60,8 +63,16 @@ BEGIN
         'service_role',
         'public.claim_billing_enrollment_transition_v1(uuid,uuid,text,text,text,uuid,uuid,uuid,text,text,text,integer,timestamp with time zone,integer,integer,integer,integer,text,text,uuid,integer)',
         'EXECUTE'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.list_billing_enrollment_scheduled_transitions_v1(uuid,uuid[])',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.list_billing_enrollment_scheduled_transitions_v1(uuid,uuid[])',
+        'EXECUTE'
     ) THEN
-        RAISE EXCEPTION 'Enrollment-transition tables or claim RPC are not service-only.';
+        RAISE EXCEPTION 'Enrollment-transition tables or RPCs are not service-only.';
     END IF;
 
     INSERT INTO auth.users(
@@ -199,6 +210,40 @@ BEGIN
        OR v_item_schedule.provider_operation_id IS NOT NULL THEN
         RAISE EXCEPTION 'Item schedule was not local-only and exact: %', v_result;
     END IF;
+    SELECT count(*)
+    INTO v_read_count
+    FROM public.list_billing_enrollment_scheduled_transitions_v1(
+        v_studio, ARRAY[v_enrollment_item, v_enrollment_item_peer]
+    ) AS listed;
+    SELECT listed.intent_id, listed.revision
+    INTO v_read_intent, v_read_revision
+    FROM public.list_billing_enrollment_scheduled_transitions_v1(
+        v_studio, ARRAY[v_enrollment_item, v_enrollment_item_peer]
+    ) AS listed
+    LIMIT 1;
+    IF v_read_count <> 1
+       OR v_read_intent IS DISTINCT FROM v_item_schedule.id
+       OR v_read_revision IS DISTINCT FROM v_item_schedule.revision THEN
+        RAISE EXCEPTION 'Scheduled-transition read did not return exact identity: %, %, %',
+            v_read_count, v_read_intent, v_read_revision;
+    END IF;
+    SELECT count(*) INTO v_read_count
+    FROM public.list_billing_enrollment_scheduled_transitions_v1(
+        gen_random_uuid(), ARRAY[v_enrollment_item]
+    );
+    IF v_read_count <> 0 THEN
+        RAISE EXCEPTION 'Scheduled-transition read crossed studio identity.';
+    END IF;
+    BEGIN
+        PERFORM public.list_billing_enrollment_scheduled_transitions_v1(
+            v_studio, ARRAY[v_enrollment_item, v_enrollment_item]
+        );
+        RAISE EXCEPTION 'Scheduled-transition read accepted duplicate enrollment IDs.';
+    EXCEPTION WHEN invalid_parameter_value THEN
+        IF SQLERRM <> 'billing_enrollment_scheduled_transition_list_invalid' THEN
+            RAISE;
+        END IF;
+    END;
     v_replay := public.claim_billing_enrollment_transition_v1(
         v_studio, v_front_desk, 'schedule_period_end', 'item-schedule-key',
         repeat('a', 64), v_enrollment_item, v_payer_item, v_group_item,
@@ -264,6 +309,13 @@ BEGIN
        OR (SELECT state FROM public.billing_enrollment_transition_intents
             WHERE id=v_revoke_schedule.id) <> 'revoked' THEN
         RAISE EXCEPTION 'Local item revoke did not converge exactly: %', v_result;
+    END IF;
+    SELECT count(*) INTO v_read_count
+    FROM public.list_billing_enrollment_scheduled_transitions_v1(
+        v_studio, ARRAY[v_enrollment_revoke]
+    );
+    IF v_read_count <> 0 THEN
+        RAISE EXCEPTION 'Revoked transition remained visible as scheduled.';
     END IF;
     v_replay := public.revoke_billing_enrollment_transition_v1(
         v_revoke_schedule.id, v_studio, v_front_desk, v_revoke_schedule.revision,

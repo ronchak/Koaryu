@@ -142,7 +142,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
     onExternalPayerChange,
     onRecordExternalPayment,
     openBillingLink,
-    scheduledTransitions,
   } = actions;
 
   if (activeTab === "overview") {
@@ -237,7 +236,6 @@ export function BillingTabContent(props: BillingTabContentProps) {
         payerNameById={payerNameById}
         planNameById={planNameById}
         studentNameById={studentNameById}
-        scheduledTransitions={scheduledTransitions}
       />
     );
   }

@@ -421,6 +421,13 @@ class StudentBillingEnrollmentUpdate(BaseModel):
     next_bill_on: Optional[str] = Field(default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date"))
 
 
+class BillingEnrollmentScheduledTransitionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent_id: str
+    revision: int = Field(ge=1)
+
+
 class StudentBillingEnrollmentResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -441,6 +448,7 @@ class StudentBillingEnrollmentResponse(BaseModel):
     next_bill_date: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     stripe_subscription_item_id: Optional[str] = None
+    scheduled_period_end_transition: Optional[BillingEnrollmentScheduledTransitionResponse] = None
     created_at: str
     updated_at: str
 
@@ -509,7 +517,7 @@ class BillingInvoiceCreate(BaseModel):
     due_date: Optional[str] = None
     description: Optional[str] = None
     amount_cents: Optional[int] = Field(default=None, ge=0)
-    items: list[BillingInvoiceItemCreate] = Field(default_factory=list)
+    items: list[BillingInvoiceItemCreate] = Field(default_factory=list, max_length=31)
     send_hosted_invoice: bool = False
 
     @field_validator("currency")

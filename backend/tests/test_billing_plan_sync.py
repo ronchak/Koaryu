@@ -429,7 +429,7 @@ class TestBillingPlanSync:
         parent = next(iter(facade.supabase.billing_provider_operations.values()))
         assert parent["state"] == "reconciliation_required"
 
-    def test_old_key_replays_after_later_product_only_sync(self):
+    def test_different_key_same_desired_plan_collapses_and_old_key_replays(self):
         facade = _Facade(_tables())
         manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
 
@@ -444,6 +444,24 @@ class TestBillingPlanSync:
         ))
 
         assert replay.stripe_price_id == first.stripe_price_id == second.stripe_price_id
+        assert len(_Stripe.created_products) == 1
+        assert len(_Stripe.updated_products) == 0
+        assert len(_Stripe.created_prices) == 1
+        assert len(facade.supabase.tables["audit_logs"]) == 1
+
+    def test_changed_desired_plan_new_key_replaces_completed_owner(self):
+        facade = _Facade(_tables())
+        manager = BillingPlanManager(facade, stripe_service_cls=_Stripe)
+
+        first = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "plan-key-1",
+        ))
+        facade.supabase.tables["billing_plans"][0]["name"] = "Updated plan"
+        second = asyncio.run(manager.sync_plan(
+            "plan_1", "studio_1", "actor_1", "plan-key-2",
+        ))
+
+        assert second.stripe_price_id == first.stripe_price_id
         assert len(_Stripe.created_products) == 1
         assert len(_Stripe.updated_products) == 1
         assert len(_Stripe.created_prices) == 1

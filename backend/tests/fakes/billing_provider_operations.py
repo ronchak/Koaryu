@@ -25,6 +25,15 @@ def _refund_unsettled() -> PostgrestAPIError:
     })
 
 
+def _invoice_mutation_in_progress() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "55P03",
+        "message": "billing_invoice_mutation_in_progress",
+        "details": "",
+        "hint": "",
+    })
+
+
 def _transition_not_found() -> PostgrestAPIError:
     return PostgrestAPIError({
         "code": "P0002",
@@ -57,6 +66,9 @@ class BillingProviderOperationRpcMixin:
         ] = {}
         self.billing_provider_operation_alias_resources: dict[
             tuple[str, str, str], tuple[str, str, str]
+        ] = {}
+        self.billing_invoice_mutation_owners: dict[
+            tuple[str, str], dict[str, str]
         ] = {}
         self.billing_enrollment_transition_intents: dict[str, dict[str, Any]] = {}
         self.billing_enrollment_transition_aliases: dict[tuple[str, str, str], str] = {}
@@ -122,6 +134,64 @@ class BillingProviderOperationRpcMixin:
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
+        if params["p_operation_type"] in {
+            "invoice.finalize",
+            "invoice.retry",
+            "invoice.void",
+        }:
+            return self._rpc_claim_billing_invoice_mutation_v31(params)
+        return self._rpc_claim_billing_provider_operation_resource_unserialized(params)
+
+    def _rpc_claim_billing_invoice_mutation_v31(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        owner_key = (params["p_studio_id"], params["p_resource_id"])
+        alias_key = (
+            params["p_studio_id"],
+            params["p_operation_type"],
+            params["p_caller_request_key"],
+        )
+        owner = self.billing_invoice_mutation_owners.get(owner_key)
+        alias_operation_id = self.billing_provider_operation_aliases.get(alias_key)
+        if alias_operation_id is not None:
+            alias_operation = self._operation_by_id(alias_operation_id)
+            if alias_operation.get("state") in {
+                "completed",
+                "definitive_failed",
+                "definitive_rejected",
+            }:
+                return self._rpc_claim_billing_provider_operation_resource_unserialized(params)
+            if owner is not None and owner["operation_id"] != alias_operation_id:
+                raise _invoice_mutation_in_progress()
+        if owner is not None:
+            owner_operation = self._operation_by_id(owner["operation_id"])
+            if (
+                owner_operation.get("state")
+                not in {"completed", "definitive_failed", "definitive_rejected"}
+                and owner["operation_type"] != params["p_operation_type"]
+            ):
+                raise _invoice_mutation_in_progress()
+        result = self._rpc_claim_billing_provider_operation_resource_unserialized(params)
+        candidate = result["operation"]
+        candidate_owner = {
+            "operation_id": str(candidate["id"]),
+            "operation_type": params["p_operation_type"],
+            "resource_type": params["p_resource_type"],
+        }
+        if owner is None:
+            self.billing_invoice_mutation_owners[owner_key] = candidate_owner
+        elif (
+            owner["operation_id"] != candidate["id"]
+            and candidate.get("state") == "started"
+        ):
+            self.billing_invoice_mutation_owners[owner_key] = candidate_owner
+        return result
+
+    def _rpc_claim_billing_provider_operation_resource_unserialized(
+        self,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
         if (
             params["p_operation_type"],
             params["p_resource_type"],
@@ -131,6 +201,7 @@ class BillingProviderOperationRpcMixin:
             ("invoice.void", "invoice_void"),
             ("payment.refund", "payment"),
             ("payer.sync", "payer"),
+            ("plan.sync", "plan"),
             ("enrollment.activate.autopay", "enrollment"),
             ("enrollment.activate.invoice", "enrollment"),
         }:
@@ -226,6 +297,26 @@ class BillingProviderOperationRpcMixin:
         }
 
     def _resource_version_sha256(self, params: dict[str, Any]) -> str | None:
+        if params["p_resource_type"] == "plan":
+            row = next(
+                candidate
+                for candidate in self.tables.get("billing_plans", [])
+                if candidate.get("id") == params["p_resource_id"]
+                and candidate.get("studio_id") == params["p_studio_id"]
+            )
+            payload = {
+                "studio_id": row.get("studio_id"),
+                "plan_id": row.get("id"),
+                "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                "connect_account_generation": params["p_connect_account_generation"],
+                "name": row.get("name"),
+                "description": row.get("description"),
+                "amount_cents": int(row.get("amount_cents") or 0),
+                "currency": row.get("currency") or "usd",
+                "billing_interval": row.get("billing_interval") or "monthly",
+            }
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+            return hashlib.sha256(encoded).hexdigest()
         if params["p_resource_type"] not in {"payment", "payer"}:
             return None
         if params["p_resource_type"] == "payment":
@@ -277,6 +368,38 @@ class BillingProviderOperationRpcMixin:
         if params["p_resource_type"] == "payment":
             self._resource_projection(operation, params)
             return
+        if params["p_resource_type"] == "plan":
+            plan = next(
+                candidate
+                for candidate in self.tables.get("billing_plans", [])
+                if candidate.get("id") == params["p_resource_id"]
+                and candidate.get("studio_id") == params["p_studio_id"]
+            )
+            summary = operation.get("result_summary")
+            if operation.get("result_code") != "plan_sync_completed":
+                raise _operation_conflict()
+            if summary == "plan_sync_mode:product_update_only":
+                matches = operation.get("provider_object_id") == plan.get("stripe_product_id")
+            elif summary == "plan_sync_mode:product_price_steps":
+                step_plan = self.billing_provider_step_plans.get(operation["id"])
+                steps = list((step_plan or {}).get("steps") or [])
+                matches = (
+                    operation.get("provider_object_id") == plan.get("stripe_price_id")
+                    and len(steps) == 2
+                    and steps[0].get("step_order") == 1
+                    and steps[0].get("step_name") == "product"
+                    and steps[0].get("state") == "provider_succeeded"
+                    and steps[0].get("provider_object_id") == plan.get("stripe_product_id")
+                    and steps[1].get("step_order") == 2
+                    and steps[1].get("step_name") == "price"
+                    and steps[1].get("state") == "provider_succeeded"
+                    and steps[1].get("provider_object_id") == plan.get("stripe_price_id")
+                )
+            else:
+                matches = False
+            if not matches:
+                raise _operation_conflict()
+            return
         payer = next(
             candidate
             for candidate in self.tables.get("billing_payers", [])
@@ -316,7 +439,7 @@ class BillingProviderOperationRpcMixin:
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
-        return self._rpc_claim_billing_provider_operation_resource_v1(params)
+        return self._rpc_claim_billing_invoice_mutation_v31(params)
 
     def _rpc_transition_billing_provider_operation_v1(self, params: dict[str, Any]) -> dict[str, Any]:
         operation = self._operation_for_params(params)

@@ -1,0 +1,267 @@
+BEGIN;
+
+DO $invoice_mutation_contract$
+DECLARE
+    v_admin UUID:=gen_random_uuid();
+    v_other_admin UUID:=gen_random_uuid();
+    v_front_desk UUID:=gen_random_uuid();
+    v_studio UUID:=gen_random_uuid();
+    v_payer UUID:=gen_random_uuid();
+    v_invoice UUID:=gen_random_uuid();
+    v_finalize UUID;
+    v_void UUID;
+    v_result JSONB;
+    v_case RECORD;
+    v_terminal_invoice UUID;
+    v_terminal_first UUID;
+    v_terminal_second UUID;
+    v_terminal_resource UUID;
+BEGIN
+    IF has_table_privilege(
+        'service_role','public.billing_invoice_mutation_owners','SELECT'
+    ) OR has_table_privilege(
+        'authenticated','public.billing_invoice_mutation_owners','SELECT'
+    ) OR has_table_privilege(
+        'anon','public.billing_invoice_mutation_owners','SELECT'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.claim_billing_invoice_closeout_operation_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.claim_billing_invoice_closeout_operation_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'service_role',
+        'public.claim_billing_invoice_closeout_operation_v30(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)',
+        'EXECUTE'
+    ) THEN
+        RAISE EXCEPTION 'V31 invoice mutation owner ACLs are not fail-closed.';
+    END IF;
+
+    INSERT INTO auth.users(
+        id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at
+    ) VALUES
+        (v_admin,'authenticated','authenticated','v31-invoice-admin@example.invalid','{}','{}',now(),now()),
+        (v_other_admin,'authenticated','authenticated','v31-invoice-other@example.invalid','{}','{}',now(),now()),
+        (v_front_desk,'authenticated','authenticated','v31-invoice-front@example.invalid','{}','{}',now(),now());
+    INSERT INTO public.studios(id,name,slug,owner_id)
+    VALUES(v_studio,'V31 invoice serialization',
+           'v31-invoice-'||replace(v_studio::TEXT,'-',''),v_admin);
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES
+        (v_studio,v_admin,'admin'),
+        (v_studio,v_other_admin,'admin'),
+        (v_studio,v_front_desk,'front_desk');
+    INSERT INTO public.studio_payment_accounts(
+        studio_id,stripe_connected_account_id,metadata
+    ) VALUES(v_studio,'acct_v31invoice',jsonb_build_object('connect_account_generation',1));
+    INSERT INTO public.billing_payers(
+        id,studio_id,display_name,stripe_account_id,stripe_customer_id,
+        connect_account_generation
+    ) VALUES(v_payer,v_studio,'V31 invoice payer','acct_v31invoice','cus_v31invoice',1);
+    INSERT INTO public.billing_invoices(
+        id,studio_id,payer_id,invoice_type,status,amount_due_cents,
+        amount_paid_cents,amount_remaining_cents,currency,stripe_invoice_id,
+        stripe_account_id,stripe_customer_id,collection_method,external,metadata
+    ) VALUES(v_invoice,v_studio,v_payer,'manual','draft',5000,0,5000,'usd',
+             'in_v31invoice','acct_v31invoice','cus_v31invoice','send_invoice',false,
+             jsonb_build_object('connect_account_generation',1));
+
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_admin,'invoice.finalize','invoice_finalize',v_invoice,v_payer,
+        'v31-finalize-owner',repeat('a',64),'acct_v31invoice',1,gen_random_uuid(),30
+    );
+    v_finalize:=(v_result->'operation'->>'id')::UUID;
+    IF v_result->>'outcome'<>'claimed' THEN
+        RAISE EXCEPTION 'V31 finalize owner was not claimed.';
+    END IF;
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_admin,'invoice.finalize','invoice_finalize',v_invoice,v_payer,
+        'v31-finalize-alias',repeat('a',64),'acct_v31invoice',1,gen_random_uuid(),30
+    );
+    IF v_result->>'outcome'<>'adopted'
+       OR (v_result->'operation'->>'id')::UUID<>v_finalize THEN
+        RAISE EXCEPTION 'V31 same-operation alias did not adopt one owner.';
+    END IF;
+    BEGIN
+        PERFORM public.claim_billing_invoice_closeout_operation_v1(
+            v_studio,v_other_admin,'invoice.finalize','invoice_finalize',
+            v_invoice,v_payer,'v31-finalize-cross-actor',repeat('a',64),
+            'acct_v31invoice',1,gen_random_uuid(),30
+        );
+        RAISE EXCEPTION 'V31 cross-actor mutation adoption was accepted.';
+    EXCEPTION WHEN unique_violation THEN
+        IF SQLERRM<>'billing_invoice_closeout_request_conflict' THEN RAISE; END IF;
+    END;
+    BEGIN
+        PERFORM public.claim_billing_invoice_closeout_operation_v1(
+            v_studio,v_admin,'invoice.void','invoice_void',v_invoice,v_payer,
+            'v31-void-blocked',repeat('b',64),'acct_v31invoice',1,gen_random_uuid(),30
+        );
+        RAISE EXCEPTION 'V31 finalize and void acquired concurrent owners.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+    END;
+    BEGIN
+        PERFORM public.claim_billing_provider_operation_resource_v1(
+            v_studio,v_admin,'invoice.retry','invoice',v_invoice,v_payer,
+            'v31-retry-blocked-by-finalize',repeat('c',64),
+            'acct_v31invoice',1,gen_random_uuid(),30
+        );
+        RAISE EXCEPTION 'V31 finalize and retry acquired concurrent owners.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+    END;
+    IF (SELECT count(*) FROM public.billing_provider_operation_resources
+        WHERE studio_id=v_studio AND resource_id=v_invoice)<>1 THEN
+        RAISE EXCEPTION 'Blocked V31 invoice mutations created resources.';
+    END IF;
+
+    UPDATE public.billing_provider_operations SET
+        state='definitive_rejected',error_code='provider_mutation_blocked',
+        definitive_rejected_at=clock_timestamp(),lease_owner=NULL,
+        lease_acquired_at=NULL,lease_expires_at=NULL,
+        revision=revision+1,updated_at=clock_timestamp()
+    WHERE id=v_finalize;
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_admin,'invoice.void','invoice_void',v_invoice,v_payer,
+        'v31-void-owner',repeat('b',64),'acct_v31invoice',1,gen_random_uuid(),30
+    );
+    v_void:=(v_result->'operation'->>'id')::UUID;
+    IF v_result->>'outcome'<>'claimed'
+       OR v_void=v_finalize
+       OR (SELECT operation_id FROM public.billing_invoice_mutation_owners
+           WHERE studio_id=v_studio AND invoice_id=v_invoice)<>v_void THEN
+        RAISE EXCEPTION 'V31 terminal owner did not advance to void.';
+    END IF;
+    v_result:=public.claim_billing_invoice_closeout_operation_v1(
+        v_studio,v_admin,'invoice.finalize','invoice_finalize',v_invoice,v_payer,
+        'v31-finalize-owner',repeat('a',64),'acct_v31invoice',1,gen_random_uuid(),30
+    );
+    IF v_result->>'outcome'<>'replay'
+       OR (v_result->'operation'->>'id')::UUID<>v_finalize THEN
+        RAISE EXCEPTION 'V31 historical exact mutation key did not replay.';
+    END IF;
+
+    UPDATE public.billing_provider_operations SET
+        state='reconciliation_required',provider_request_attempt_count=1,
+        reconciliation_reason_code='invoice_void_outcome_ambiguous',
+        provider_request_in_flight_at=clock_timestamp(),
+        reconciliation_required_at=clock_timestamp(),lease_owner=NULL,
+        lease_acquired_at=NULL,lease_expires_at=NULL,
+        revision=revision+1,updated_at=clock_timestamp()
+    WHERE id=v_void;
+    BEGIN
+        PERFORM public.claim_billing_provider_operation_resource_v1(
+            v_studio,v_admin,'invoice.retry','invoice',v_invoice,v_payer,
+            'v31-retry-blocked-by-void',repeat('c',64),
+            'acct_v31invoice',1,gen_random_uuid(),30
+        );
+        RAISE EXCEPTION 'V31 retry and void acquired concurrent owners.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+    END;
+    BEGIN
+        PERFORM public.claim_billing_invoice_closeout_operation_v1(
+            v_studio,v_front_desk,'invoice.void','invoice_void',v_invoice,v_payer,
+            'v31-front-desk-void',repeat('b',64),'acct_v31invoice',1,gen_random_uuid(),30
+        );
+        RAISE EXCEPTION 'V31 Front Desk invoice mutation was accepted.';
+    EXCEPTION WHEN insufficient_privilege THEN
+        IF SQLERRM<>'billing_invoice_mutation_actor_forbidden' THEN RAISE; END IF;
+    END;
+
+    FOR v_case IN
+        SELECT * FROM (VALUES
+            ('invoice.finalize','invoice_finalize','draft'),
+            ('invoice.void','invoice_void','open'),
+            ('invoice.retry','invoice','open')
+        ) AS mutation(operation_type,resource_type,invoice_status)
+    LOOP
+        v_terminal_invoice:=gen_random_uuid();
+        INSERT INTO public.billing_invoices(
+            id,studio_id,payer_id,invoice_type,status,amount_due_cents,
+            amount_paid_cents,amount_remaining_cents,currency,stripe_invoice_id,
+            stripe_account_id,stripe_customer_id,collection_method,external,metadata
+        ) VALUES(
+            v_terminal_invoice,v_studio,v_payer,'manual',v_case.invoice_status,
+            900,0,900,'usd','in_'||replace(v_terminal_invoice::TEXT,'-',''),
+            'acct_v31invoice','cus_v31invoice','send_invoice',false,
+            jsonb_build_object('connect_account_generation',1)
+        );
+        IF v_case.operation_type='invoice.retry' THEN
+            v_result:=public.claim_billing_provider_operation_resource_v1(
+                v_studio,v_admin,v_case.operation_type,v_case.resource_type,
+                v_terminal_invoice,v_payer,
+                'v31-terminal-'||replace(v_case.operation_type,'.','-')||'-k1',
+                repeat('d',64),'acct_v31invoice',1,gen_random_uuid(),30
+            );
+        ELSE
+            v_result:=public.claim_billing_invoice_closeout_operation_v1(
+                v_studio,v_admin,v_case.operation_type,v_case.resource_type,
+                v_terminal_invoice,v_payer,
+                'v31-terminal-'||replace(v_case.operation_type,'.','-')||'-k1',
+                repeat('d',64),'acct_v31invoice',1,gen_random_uuid(),30
+            );
+        END IF;
+        v_terminal_first:=(v_result->'operation'->>'id')::UUID;
+        v_terminal_resource:=(v_result->'resource'->>'id')::UUID;
+        UPDATE public.billing_provider_operations SET
+            state='definitive_rejected',error_code='provider_mutation_blocked',
+            definitive_rejected_at=clock_timestamp(),lease_owner=NULL,
+            lease_acquired_at=NULL,lease_expires_at=NULL,
+            revision=revision+1,updated_at=clock_timestamp()
+        WHERE id=v_terminal_first;
+        IF v_case.operation_type='invoice.retry' THEN
+            v_result:=public.claim_billing_provider_operation_resource_v1(
+                v_studio,v_admin,v_case.operation_type,v_case.resource_type,
+                v_terminal_invoice,v_payer,
+                'v31-terminal-'||replace(v_case.operation_type,'.','-')||'-k2',
+                repeat('d',64),'acct_v31invoice',1,gen_random_uuid(),30
+            );
+        ELSE
+            v_result:=public.claim_billing_invoice_closeout_operation_v1(
+                v_studio,v_admin,v_case.operation_type,v_case.resource_type,
+                v_terminal_invoice,v_payer,
+                'v31-terminal-'||replace(v_case.operation_type,'.','-')||'-k2',
+                repeat('d',64),'acct_v31invoice',1,gen_random_uuid(),30
+            );
+        END IF;
+        v_terminal_second:=(v_result->'operation'->>'id')::UUID;
+        IF v_result->>'outcome'<>'replaced'
+           OR v_terminal_second=v_terminal_first
+           OR (v_result->'resource'->>'id')::UUID<>v_terminal_resource
+           OR (SELECT operation_id FROM public.billing_invoice_mutation_owners
+               WHERE studio_id=v_studio AND invoice_id=v_terminal_invoice)
+                <>v_terminal_second THEN
+            RAISE EXCEPTION 'V31 same-operation terminal owner did not replace: %',
+                v_case.operation_type;
+        END IF;
+        IF v_case.operation_type='invoice.retry' THEN
+            v_result:=public.claim_billing_provider_operation_resource_v1(
+                v_studio,v_admin,v_case.operation_type,v_case.resource_type,
+                v_terminal_invoice,v_payer,
+                'v31-terminal-'||replace(v_case.operation_type,'.','-')||'-k1',
+                repeat('d',64),'acct_v31invoice',1,gen_random_uuid(),30
+            );
+        ELSE
+            v_result:=public.claim_billing_invoice_closeout_operation_v1(
+                v_studio,v_admin,v_case.operation_type,v_case.resource_type,
+                v_terminal_invoice,v_payer,
+                'v31-terminal-'||replace(v_case.operation_type,'.','-')||'-k1',
+                repeat('d',64),'acct_v31invoice',1,gen_random_uuid(),30
+            );
+        END IF;
+        IF v_result->>'outcome'<>'replay'
+           OR (v_result->'operation'->>'id')::UUID<>v_terminal_first
+           OR (SELECT operation_id FROM public.billing_invoice_mutation_owners
+               WHERE studio_id=v_studio AND invoice_id=v_terminal_invoice)
+                <>v_terminal_second THEN
+            RAISE EXCEPTION 'V31 historical terminal key replay stole ownership: %',
+                v_case.operation_type;
+        END IF;
+    END LOOP;
+END;
+$invoice_mutation_contract$;
+
+ROLLBACK;
