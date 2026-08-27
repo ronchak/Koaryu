@@ -96,12 +96,8 @@ def process_due_billing_transitions(
 
 def main() -> None:
     config = BillingTransitionCronConfig.from_environment()
-    result = process_due_billing_transitions(config)
-    print(
-        "Billing transition cron completed "
-        f"environment={config.environment} "
-        f"claimed={result['claimed']} completed={result['completed']}"
-    )
+    process_due_billing_transitions(config)
+    print("Billing transition cron completed successfully.")
 
 
 if __name__ == "__main__":

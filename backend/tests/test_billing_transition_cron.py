@@ -6,6 +6,7 @@ import pytest
 
 from app.services.billing_transition_cron import (
     BillingTransitionCronConfig,
+    main,
     process_due_billing_transitions,
 )
 
@@ -100,3 +101,25 @@ def test_cron_fails_closed_on_unsafe_or_attention_required_results(payload: byte
     ):
         with pytest.raises(RuntimeError):
             process_due_billing_transitions(_config())
+
+
+def test_cron_main_does_not_log_environment_or_work_counts(capsys):
+    result = {
+        "claimed": 17,
+        "completed": 16,
+        "failed": 0,
+        "reconciliation_required": 0,
+    }
+    with patch(
+        "app.services.billing_transition_cron.BillingTransitionCronConfig.from_environment",
+        return_value=_config(),
+    ), patch(
+        "app.services.billing_transition_cron.process_due_billing_transitions",
+        return_value=result,
+    ):
+        main()
+
+    output = capsys.readouterr().out
+    assert output == "Billing transition cron completed successfully.\n"
+    assert "staging" not in output
+    assert "17" not in output
