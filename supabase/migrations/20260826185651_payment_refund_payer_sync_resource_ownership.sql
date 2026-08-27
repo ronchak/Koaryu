@@ -713,10 +713,10 @@ CREATE TRIGGER maintain_billing_invoice_mutation_owner_v31
     ON public.billing_provider_operation_resources
     FOR EACH ROW EXECUTE FUNCTION private.maintain_billing_invoice_mutation_owner_v31();
 
-LOCK TABLE public.billing_provider_operation_resources IN SHARE ROW EXCLUSIVE MODE;
-
-DO $invoice_owner_backfill_guard$
+DO $invoice_owner_backfill$
 BEGIN
+    EXECUTE 'LOCK TABLE public.billing_provider_operation_resources IN SHARE ROW EXCLUSIVE MODE';
+
     IF EXISTS (
         SELECT resource.studio_id,resource.resource_id
         FROM public.billing_provider_operation_resources AS resource
@@ -736,28 +736,30 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE='23514',
             MESSAGE='billing_invoice_mutation_owner_backfill_ambiguous';
     END IF;
-END;
-$invoice_owner_backfill_guard$;
 
-INSERT INTO public.billing_invoice_mutation_owners(
-    studio_id,invoice_id,payer_id,operation_id,resource_claim_id,
-    operation_type,resource_type,created_at,updated_at
-)
-SELECT DISTINCT ON (resource.studio_id,resource.resource_id)
-    resource.studio_id,resource.resource_id,resource.payer_id,
-    operation.id,resource.id,resource.operation_type,resource.resource_type,
-    clock_timestamp(),clock_timestamp()
-FROM public.billing_provider_operation_resources AS resource
-JOIN public.billing_provider_operations AS operation
-  ON operation.id=resource.operation_id
-WHERE (resource.operation_type,resource.resource_type) IN (
-    ('invoice.retry','invoice'),
-    ('invoice.finalize','invoice_finalize'),
-    ('invoice.void','invoice_void')
-)
-ORDER BY resource.studio_id,resource.resource_id,
-    (operation.state NOT IN ('completed','definitive_failed','definitive_rejected')) DESC,
-    operation.created_at DESC,operation.id DESC;
+    INSERT INTO public.billing_invoice_mutation_owners(
+        studio_id,invoice_id,payer_id,operation_id,resource_claim_id,
+        operation_type,resource_type,created_at,updated_at
+    )
+    SELECT DISTINCT ON (resource.studio_id,resource.resource_id)
+        resource.studio_id,resource.resource_id,resource.payer_id,
+        operation.id,resource.id,resource.operation_type,resource.resource_type,
+        clock_timestamp(),clock_timestamp()
+    FROM public.billing_provider_operation_resources AS resource
+    JOIN public.billing_provider_operations AS operation
+      ON operation.id=resource.operation_id
+    WHERE (resource.operation_type,resource.resource_type) IN (
+        ('invoice.retry','invoice'),
+        ('invoice.finalize','invoice_finalize'),
+        ('invoice.void','invoice_void')
+    )
+    ORDER BY resource.studio_id,resource.resource_id,
+        (operation.state NOT IN (
+            'completed','definitive_failed','definitive_rejected'
+        )) DESC,
+        operation.created_at DESC,operation.id DESC;
+END;
+$invoice_owner_backfill$;
 
 CREATE FUNCTION private.preserve_billing_invoice_mutation_owner_v31()
 RETURNS TRIGGER
