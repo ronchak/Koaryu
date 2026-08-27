@@ -381,7 +381,11 @@ current production state.
 
 The current candidate's staging apply requires a fresh inspection token, exact
 project ref, and exact-body PR #134 approval comment bound to the candidate and
-remaining manifest, plus
+remaining manifest. The tool also verifies the comment API record's exact
+`issue_url` belongs to `ronchak/Koaryu` PR #134, so a matching body copied to a
+different issue or pull request is refused. The record must be authored by GitHub login
+`ronchak` with `author_association=OWNER`; collaborator and outside-user comments are
+refused. It additionally requires
 `--approve-staging-apply`:
 
 > Concretely, staging apply needs `--confirm-project <ref>` and

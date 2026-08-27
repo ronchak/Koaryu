@@ -309,6 +309,35 @@ def _operation(facade):
     return next(iter(facade.supabase.billing_provider_operations.values()))
 
 
+def _existing_subscription_case(branch):
+    if branch == "add_item":
+        facade = _Facade(_tables(group=_group()))
+        provider = _provider_subscription()
+    else:
+        item = {
+            "id": "si_shared",
+            "price": {"id": "price_1"},
+            "quantity": 1,
+            "metadata": {
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "billing_plan_id": "plan_1",
+                "billing_subscription_id": "group_1",
+            },
+        }
+        peer = _enrollment(
+            id="enrollment_peer",
+            billing_subscription_id="group_1",
+            stripe_subscription_id="sub_1",
+            stripe_subscription_item_id="si_shared",
+            status="active",
+        )
+        facade = _Facade(_tables(group=_group(), peers=[peer]))
+        provider = _provider_subscription(items=[item])
+    _Stripe.subscriptions["sub_1"] = provider
+    return facade
+
+
 def test_activation_requires_canonical_key_and_recurring_identity():
     for key in (None, "é" * 128):
         facade = _Facade(_tables())
@@ -405,6 +434,129 @@ def test_add_item_uses_one_mutation_and_exact_provider_identity():
     assert intent["branch"] == "add_item"
     assert intent["expected_subscription_id"] == "sub_1"
     assert intent["expected_item_id"] is None
+
+
+def test_provider_backed_legacy_group_adopts_generation_before_add_item():
+    group = _group(metadata={"legacy_marker": "keep"})
+    facade = _Facade(_tables(group=group))
+    _Stripe.subscriptions["sub_1"] = _provider_subscription()
+
+    result = asyncio.run(_manager(facade).activate_enrollment(
+        "enrollment_1", "studio_1", "actor_1", "legacy-group-key"
+    ))
+
+    assert result.stripe_subscription_item_id == "si_added"
+    assert group["metadata"] == {
+        "legacy_marker": "keep",
+        "connect_account_generation": 2,
+    }
+    adoption = next(
+        query
+        for query in facade.supabase.query_log
+        if query["table"] == "billing_subscriptions"
+        and query["update"]
+        and query["update"].get("metadata", {}).get("connect_account_generation") == 2
+    )
+    assert ("is", "metadata->connect_account_generation", "null") in adoption["filters"]
+    assert ("eq", "stripe_subscription_id", "sub_1") in adoption["filters"]
+
+
+def test_legacy_group_adoption_rejects_stale_customer_without_mutation():
+    group = _group(
+        stripe_customer_id="cus_stale",
+        metadata={"legacy_marker": "keep"},
+    )
+    facade = _Facade(_tables(group=group))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_manager(facade).activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", "stale-group-key"
+        ))
+
+    assert exc.value.status_code == 409
+    assert group["metadata"] == {"legacy_marker": "keep"}
+    assert facade.supabase.billing_provider_operations == {}
+    assert _Stripe.add_item_calls == []
+    assert _Stripe.update_item_calls == []
+
+
+@pytest.mark.parametrize("branch", ["add_item", "update_quantity"])
+def test_local_scheduled_whole_subscription_rejects_activation_without_mutation(branch):
+    facade = _existing_subscription_case(branch)
+    group = facade.supabase.tables["billing_subscriptions"][0]
+    group["cancel_at_period_end"] = True
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_manager(facade).activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", f"scheduled-group-{branch}"
+        ))
+
+    assert exc.value.status_code == 409
+    assert "scheduled for cancellation" in exc.value.detail
+    assert _operation(facade)["state"] == "definitive_rejected"
+    assert _Stripe.create_subscription_calls == []
+    assert _Stripe.add_item_calls == []
+    assert _Stripe.update_item_calls == []
+    assert "stripe_quantity_sync_lock" not in group["metadata"]
+
+
+@pytest.mark.parametrize("branch", ["add_item", "update_quantity"])
+def test_provider_scheduled_whole_subscription_rejects_activation_without_mutation(branch):
+    facade = _existing_subscription_case(branch)
+    _Stripe.subscriptions["sub_1"]["cancel_at_period_end"] = True
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_manager(facade).activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", f"provider-scheduled-{branch}"
+        ))
+
+    assert exc.value.status_code == 409
+    assert "scheduled for cancellation" in exc.value.detail
+    assert _operation(facade)["state"] == "definitive_rejected"
+    assert _Stripe.add_item_calls == []
+    assert _Stripe.update_item_calls == []
+
+
+@pytest.mark.parametrize("branch", ["add_item", "update_quantity"])
+def test_schedule_inserted_between_activation_checks_prevents_provider_mutation(branch):
+    facade = _existing_subscription_case(branch)
+    original_transition = facade.supabase._rpc_transition_billing_provider_operation_v1
+
+    def transition_with_schedule_race(params):
+        result = original_transition(params)
+        if (
+            params["p_operation_type"].startswith("enrollment.activate.")
+            and params["p_to_state"] == "provider_request_in_flight"
+        ):
+            facade.supabase.tables["billing_subscriptions"][0][
+                "cancel_at_period_end"
+            ] = True
+            facade.supabase.tables.setdefault(
+                "billing_enrollment_transition_intents", []
+            ).append({
+                "id": "transition_race",
+                "studio_id": "studio_1",
+                "billing_subscription_id": "group_1",
+                "transition_kind": "schedule_period_end",
+                "mutation_strategy": "subscription_cancel_at_period_end",
+                "state": "scheduled",
+            })
+            _Stripe.subscriptions["sub_1"]["cancel_at_period_end"] = True
+        return result
+
+    facade.supabase._rpc_transition_billing_provider_operation_v1 = (
+        transition_with_schedule_race
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_manager(facade).activate_enrollment(
+            "enrollment_1", "studio_1", "actor_1", f"schedule-race-{branch}"
+        ))
+
+    assert exc.value.status_code == 409
+    assert _operation(facade)["state"] == "definitive_rejected"
+    assert _Stripe.add_item_calls == []
+    assert _Stripe.update_item_calls == []
 
 
 def test_update_quantity_counts_exact_family_and_releases_lock():
@@ -548,6 +700,30 @@ def test_prerequisites_fail_before_resource_or_provider():
         assert exc.value.status_code == 409
         assert facade.supabase.billing_provider_operations == {}
         assert _Stripe.create_subscription_calls == []
+
+
+def test_legacy_plan_price_adopts_generation_before_activation():
+    tables = _tables()
+    tables["billing_plan_prices"][0]["metadata"] = {"legacy_marker": "keep"}
+    facade = _Facade(tables)
+
+    result = asyncio.run(_manager(facade).activate_enrollment(
+        "enrollment_1", "studio_1", "actor_1", "legacy-price-key"
+    ))
+
+    assert result.status == "active"
+    assert tables["billing_plan_prices"][0]["metadata"] == {
+        "legacy_marker": "keep",
+        "connect_account_generation": 2,
+    }
+    adoption = next(
+        query
+        for query in facade.supabase.query_log
+        if query["table"] == "billing_plan_prices"
+        and query["update"]
+        and query["update"].get("metadata", {}).get("connect_account_generation") == 2
+    )
+    assert ("is", "metadata->connect_account_generation", "null") in adoption["filters"]
 
 
 def test_autopay_requires_consent_and_passes_exact_payment_method():

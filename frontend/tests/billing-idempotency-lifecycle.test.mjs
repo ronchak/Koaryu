@@ -80,6 +80,42 @@ describe("billing idempotency-key lifecycle", () => {
     }
   });
 
+  it("rotates a payer setup key only after confirmed completion or expiry", () => {
+    for (const message of [
+      "Autopay setup is already complete. Start a new setup with a new Idempotency-Key.",
+      "The Stripe autopay setup session expired. Start a new setup with a new Idempotency-Key.",
+    ]) {
+      const storage = memoryStorage();
+      const keysByPayer = new Map();
+      const options = {
+        identity,
+        keysByPayer,
+        operation: "payer.setup",
+        payerId: "payer-1",
+        storage,
+      };
+      const first = resolvePersistedPayerOperationRequestKey({
+        ...options,
+        createKey: () => "request-key-1",
+      });
+
+      assert.equal(
+        clearBillingIdempotencyKeyAfterTerminalError(
+          apiError(message, 409),
+          () => clearPersistedPayerOperationRequestKey(options),
+        ),
+        true,
+      );
+      assert.notEqual(
+        resolvePersistedPayerOperationRequestKey({
+          ...options,
+          createKey: () => "request-key-2",
+        }),
+        first,
+      );
+    }
+  });
+
   it("rotates plan, enrollment activation, transition, and invoice keys after a terminal 409", () => {
     {
       const storage = memoryStorage();
@@ -148,6 +184,7 @@ describe("billing idempotency-key lifecycle", () => {
   it("retains the same key for ambiguous, nonterminal, and network failures", () => {
     for (const error of [
       apiError("This operation is still in progress.", 409),
+      apiError("Autopay consent is recorded but local completion is still pending.", 409),
       apiError("Provider outcome is ambiguous.", 503),
       new Error("Failed to reach the backend."),
     ]) {
@@ -162,7 +199,7 @@ describe("billing idempotency-key lifecycle", () => {
     }
   });
 
-  it("wires terminal rotation into every persisted action family and clears payer setup on success", () => {
+  it("wires terminal rotation into every persisted action family and retains usable payer setup sessions", () => {
     const actionRuntime = fs.readFileSync(
       path.join(root, "src/lib/billing-action-runtime.ts"),
       "utf8",
@@ -189,7 +226,7 @@ describe("billing idempotency-key lifecycle", () => {
     assert.equal((planActions.match(/onTerminalIdempotencyError/g) || []).length, 1);
     assert.equal((enrollmentActions.match(/onTerminalIdempotencyError/g) || []).length, 2);
     assert.match(invoiceController, /clearBillingIdempotencyKeyAfterTerminalError/);
-    assert.match(
+    assert.doesNotMatch(
       payerActions,
       /if \(link\?\.url\) \{\s*clearPersistedPayerOperationRequestKey/s,
     );

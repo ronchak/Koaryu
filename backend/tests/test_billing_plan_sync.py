@@ -151,6 +151,26 @@ def _tables(plan=None):
     }
 
 
+def _price_row(**overrides):
+    return {
+        "id": "price_row",
+        "studio_id": "studio_1",
+        "billing_plan_id": "plan_1",
+        "stripe_account_id": "acct_1",
+        "stripe_product_id": "prod_existing",
+        "stripe_price_id": "price_existing",
+        "amount_cents": 12000,
+        "currency": "usd",
+        "billing_interval": "monthly",
+        "recurring": True,
+        "active": True,
+        "version": 1,
+        "metadata": {"connect_account_generation": 1},
+        "created_at": "2026-08-27T00:00:00Z",
+        **overrides,
+    }
+
+
 class TestBillingPlanSync:
     def setup_method(self):
         _Stripe.reset()
@@ -403,6 +423,76 @@ class TestBillingPlanSync:
             raise AssertionError("completed product drift must fail")
 
         assert len(_Stripe.updated_products) == 1
+
+    def test_exact_legacy_price_adopts_generation_before_product_update(self):
+        plan = _plan(
+            status="active",
+            stripe_account_id="acct_1",
+            stripe_product_id="prod_existing",
+            stripe_price_id="price_existing",
+        )
+        tables = _tables(plan)
+        tables["billing_plan_prices"].append(
+            _price_row(metadata={"legacy_marker": "keep"})
+        )
+        facade = _Facade(tables)
+
+        result = asyncio.run(BillingPlanManager(
+            facade,
+            stripe_service_cls=_Stripe,
+        ).sync_plan("plan_1", "studio_1", "actor_1", "legacy-price-key"))
+
+        assert result.status == "active"
+        assert tables["billing_plan_prices"][0]["metadata"] == {
+            "legacy_marker": "keep",
+            "connect_account_generation": 1,
+        }
+        assert len(_Stripe.updated_products) == 1
+        assert _Stripe.created_products == []
+        assert _Stripe.created_prices == []
+        adoption = next(
+            query
+            for query in facade.supabase.query_log
+            if query["table"] == "billing_plan_prices"
+            and query["update"]
+            and query["update"].get("metadata", {}).get("connect_account_generation") == 1
+        )
+        assert ("is", "metadata->connect_account_generation", "null") in adoption["filters"]
+
+    def test_legacy_price_adoption_does_not_overwrite_raced_generation(self):
+        plan = _plan(
+            status="active",
+            stripe_account_id="acct_1",
+            stripe_product_id="prod_existing",
+            stripe_price_id="price_existing",
+        )
+        tables = _tables(plan)
+        price = _price_row(metadata={"legacy_marker": "keep"})
+        tables["billing_plan_prices"].append(price)
+        facade = _Facade(tables)
+
+        def race_generation(_rows):
+            price["metadata"] = {
+                "legacy_marker": "keep",
+                "connect_account_generation": 2,
+            }
+
+        facade.supabase.before_update = race_generation
+
+        try:
+            asyncio.run(BillingPlanManager(
+                facade,
+                stripe_service_cls=_Stripe,
+            ).sync_plan("plan_1", "studio_1", "actor_1", "raced-generation-key"))
+        except HTTPException as exc:
+            assert exc.status_code == 409
+        else:
+            raise AssertionError("raced legacy generation must fail closed")
+
+        assert price["metadata"]["connect_account_generation"] == 2
+        assert _Stripe.updated_products == []
+        assert _Stripe.created_products == []
+        assert _Stripe.created_prices == []
 
     def test_local_projection_failure_requires_reconciliation_without_provider_retry(self):
         facade = _Facade(_tables())

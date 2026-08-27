@@ -96,6 +96,7 @@ services:
     runtime: docker
     plan: free
     region: oregon
+    branch: staging
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .

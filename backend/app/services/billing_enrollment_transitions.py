@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException, status
@@ -16,7 +16,7 @@ from app.services.billing_provider_operations import (
     ENROLLMENT_CANCEL_PERIOD_END_REVOKE_OPERATION_TYPE,
     ENROLLMENT_CANCEL_PERIOD_END_SCHEDULE_OPERATION_TYPE,
 )
-from app.services.billing_webhook_event_state import timestamp
+from app.services.billing_webhook_event_state import epoch_seconds, timestamp
 from app.services.platform_billing_helpers import normalize_idempotency_key, stable_hash
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from app.services.stripe_service import StripeService
@@ -30,13 +30,22 @@ TRANSITION_IN_PROGRESS_DETAIL = (
     "Enrollment transition is already in progress. Retry with the same Idempotency-Key."
 )
 TRANSITION_REJECTED_DETAIL = "Enrollment transition was rejected."
+WHOLE_SUBSCRIPTION_PERIOD_END_GRACE = timedelta(minutes=10)
+PERIOD_END_SCHEDULABLE_PROVIDER_STATUSES = frozenset({"active", "trialing", "past_due"})
 
 
 class BillingEnrollmentTransitionWorkflow:
-    def __init__(self, owner: Any, *, stripe_service_cls: type[StripeService] = StripeService):
+    def __init__(
+        self,
+        owner: Any,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
+        clock: Callable[[], datetime] | None = None,
+    ):
         self.owner = owner
         self.supabase = owner.supabase
         self.stripe_service_cls = stripe_service_cls
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
         self.lifecycle = owner._stripe_lifecycle()
         self.operations = BillingProviderOperationCoordinator(self.supabase)
 
@@ -63,6 +72,42 @@ class BillingEnrollmentTransitionWorkflow:
         if existing is not None:
             return self._resume_existing(existing, actor_id=actor_id, mutation="schedule")
         snapshot = self._snapshot(enrollment_id, studio_id, immediate=False)
+        if snapshot["mutation_strategy"] == "subscription_cancel_at_period_end":
+            group_id = str(snapshot["group"]["id"])
+            lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
+                studio_id, group_id,
+            )
+            try:
+                snapshot = self._snapshot(enrollment_id, studio_id, immediate=False)
+                return self._claim_schedule(
+                    snapshot,
+                    actor_id=actor_id,
+                    request_key=request_key,
+                    request_sha256=request_sha256,
+                    reason_code=reason_code,
+                )
+            finally:
+                self.lifecycle._release_subscription_quantity_sync_lock(
+                    studio_id, group_id, lock_token,
+                )
+        return self._claim_schedule(
+            snapshot,
+            actor_id=actor_id,
+            request_key=request_key,
+            request_sha256=request_sha256,
+            reason_code=reason_code,
+        )
+
+    def _claim_schedule(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        actor_id: str,
+        request_key: str,
+        request_sha256: str,
+        reason_code: str,
+    ) -> dict[str, Any]:
+        studio_id = str(snapshot["enrollment"]["studio_id"])
         lease_owner = str(uuid4())
         envelope = self.operations.claim_enrollment_transition(
             **self._claim_params(
@@ -84,7 +129,7 @@ class BillingEnrollmentTransitionWorkflow:
                 action="billing.student_enrollment_cancel_scheduled",
             )
             return envelope
-        return self._drive_provider_operation(
+        return self._drive_provider_operation_locked(
             envelope,
             snapshot=snapshot,
             actor_id=actor_id,
@@ -229,6 +274,8 @@ class BillingEnrollmentTransitionWorkflow:
                     try:
                         provider = self._retrieve_subscription(snapshot)
                         self._verify_provider(snapshot, provider, require_cancel_at_period_end=None)
+                        if self._whole_subscription_due_readback_is_pending(snapshot, provider):
+                            continue
                         if str(_object_get(provider, "status") or "") != "canceled":
                             raise RuntimeError("whole_due_subscription_not_canceled")
                         self._project_whole_cancellation(snapshot, provider)
@@ -315,7 +362,13 @@ class BillingEnrollmentTransitionWorkflow:
     ) -> dict[str, Any]:
         lock_token: str | None = None
         group_id = str(snapshot["group"]["id"])
-        if snapshot["mutation_strategy"].startswith("subscription_item_delete_"):
+        needs_quantity_lock = snapshot["mutation_strategy"].startswith(
+            "subscription_item_delete_"
+        ) or (
+            snapshot["mutation_strategy"] == "subscription_cancel_at_period_end"
+            and mutation in {"schedule", "revoke"}
+        )
+        if needs_quantity_lock:
             lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
                 str(snapshot["enrollment"]["studio_id"]), group_id,
             )
@@ -323,7 +376,7 @@ class BillingEnrollmentTransitionWorkflow:
                 refreshed = self._snapshot(
                     str(snapshot["enrollment"]["id"]),
                     str(snapshot["enrollment"]["studio_id"]),
-                    immediate=True,
+                    immediate=mutation in {"immediate", "execute_due"},
                 )
                 intent = envelope["intent"]
                 self._verify_intent_snapshot(intent, refreshed)
@@ -380,7 +433,48 @@ class BillingEnrollmentTransitionWorkflow:
                     provider_evidence_sha256=str(intent["provider_evidence_sha256"]),
                 )["intent"]
             return {**envelope, "intent": intent, "operation": operation}
-        if state == "started":
+        recovery_outcome = operation.get("recovery_outcome")
+        if state == "recovery_authorized" and (
+            intent.get("state") != "recovery_authorized"
+            or intent.get("recovery_outcome") != recovery_outcome
+            or intent.get("recovery_proof_sha256") != operation.get("recovery_proof_sha256")
+            or intent.get("recovery_actor_id") != operation.get("recovery_actor_id")
+        ):
+            raise HTTPException(status_code=503, detail=TRANSITION_AMBIGUOUS_DETAIL)
+        retry_authorized = (
+            state == "recovery_authorized"
+            and recovery_outcome == "provider_no_object_safe_to_retry"
+        )
+        if state == "recovery_authorized" and not retry_authorized:
+            if recovery_outcome != "provider_succeeded_reconcile_only":
+                raise HTTPException(status_code=503, detail=TRANSITION_AMBIGUOUS_DETAIL)
+            try:
+                provider = self._retrieve_subscription(snapshot)
+                self._verify_after_mutation(snapshot, provider, mutation=mutation)
+            except Exception as exc:
+                self._mark_reconciliation(
+                    intent,
+                    operation,
+                    context,
+                    "enrollment_transition_provider_readback_failed",
+                    exc,
+                )
+            proof = self._provider_proof(snapshot, provider)
+            operation = self.operations.transition(
+                context,
+                operation,
+                "provider_succeeded",
+                provider_object_id=self._expected_provider_object_id(intent),
+                result_code="enrollment_transition_recovery_readback_verified",
+            )
+            intent = self.operations.transition_enrollment_transition(
+                intent=intent,
+                operation=operation,
+                studio_id=context.studio_id,
+                actor_id=context.actor_id,
+                provider_evidence_sha256=proof,
+            )["intent"]
+        elif state == "started" or retry_authorized:
             operation = self.operations.transition(
                 context,
                 operation,
@@ -480,6 +574,24 @@ class BillingEnrollmentTransitionWorkflow:
         }[mutation]
         self._audit_once(intent, studio_id=context.studio_id, actor_id=context.actor_id, action=action)
         return {**envelope, "intent": intent, "operation": operation}
+
+    def _whole_subscription_due_readback_is_pending(
+        self,
+        snapshot: dict[str, Any],
+        provider: Any,
+    ) -> bool:
+        if (
+            str(_object_get(provider, "status") or "")
+            not in PERIOD_END_SCHEDULABLE_PROVIDER_STATUSES
+            or not bool(_object_get(provider, "cancel_at_period_end"))
+        ):
+            return False
+        boundary_epoch = epoch_seconds(snapshot.get("period_boundary"))
+        if boundary_epoch is None:
+            return False
+        now_epoch = self._clock().timestamp()
+        grace_ends_at = boundary_epoch + WHOLE_SUBSCRIPTION_PERIOD_END_GRACE.total_seconds()
+        return boundary_epoch <= now_epoch <= grace_ends_at
 
     def _snapshot(self, enrollment_id: str, studio_id: str, *, immediate: bool) -> dict[str, Any]:
         enrollment = self.owner._get_row_or_404(
@@ -687,6 +799,12 @@ class BillingEnrollmentTransitionWorkflow:
             provider,
             require_cancel_at_period_end=required_cancel_state,
         )
+        if (
+            mutation == "schedule"
+            and str(_object_get(provider, "status") or "")
+            not in PERIOD_END_SCHEDULABLE_PROVIDER_STATUSES
+        ):
+            raise RuntimeError("enrollment_transition_provider_status_not_schedulable")
 
     def _verify_after_mutation(self, snapshot: dict[str, Any], provider: Any, *, mutation: str) -> None:
         if mutation == "schedule":

@@ -135,7 +135,8 @@ export function BillingEnrollmentsTab({
           const canSchedule = hasProviderSubscription
             && enrollment.status === "active"
             && canUseWorkflow("enrollment.cancel.period_end.schedule");
-          const canCancelImmediate = hasProviderSubscription
+          const canCancelImmediate = !scheduled
+            && hasProviderSubscription
             && enrollment.status === "active"
             && canUseWorkflow("enrollment.cancel.immediate");
           return (

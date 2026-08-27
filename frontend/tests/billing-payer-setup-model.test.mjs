@@ -134,6 +134,43 @@ describe("hidden payer autopay setup adapter", () => {
     );
   });
 
+  it("reopens a usable payer setup session with its original key after reload", () => {
+    const values = new Map();
+    const storage = {
+      getItem: (key) => values.get(key) ?? null,
+      removeItem: (key) => values.delete(key),
+      setItem: (key, value) => values.set(key, value),
+    };
+    const options = {
+      identity: { userId: "user-1", studioId: "studio-1" },
+      operation: "payer.setup",
+      payerId: "payer-1",
+      storage,
+    };
+
+    const first = resolvePersistedPayerOperationRequestKey({
+      ...options,
+      createKey: () => "setup-key",
+      keysByPayer: new Map(),
+    });
+    const reopened = resolvePersistedPayerOperationRequestKey({
+      ...options,
+      createKey: () => assert.fail("reopen generated another setup key"),
+      keysByPayer: new Map(),
+    });
+
+    assert.equal(reopened, first);
+
+    const source = fs.readFileSync(
+      path.join(root, "src/lib/billing-payer-actions.ts"),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      source,
+      /if \(link\?\.url\) \{\s*clearPersistedPayerOperationRequestKey/s,
+    );
+  });
+
   it("separates persisted keys by user, studio, payer, and operation", () => {
     const scopes = [
       [{ userId: "user-1", studioId: "studio-1" }, "payer-1", "payer.sync"],

@@ -176,6 +176,8 @@ class BillingProviderOperationRpcMixin:
         candidate = result["operation"]
         candidate_owner = {
             "operation_id": str(candidate["id"]),
+            "studio_id": params["p_studio_id"],
+            "payer_id": params["p_payer_id"],
             "operation_type": params["p_operation_type"],
             "resource_type": params["p_resource_type"],
         }
@@ -187,6 +189,32 @@ class BillingProviderOperationRpcMixin:
         ):
             self.billing_invoice_mutation_owners[owner_key] = candidate_owner
         return result
+
+    def mutate_billing_payer_payment_consent(
+        self,
+        consent_id: str,
+        **updates: Any,
+    ) -> dict[str, Any]:
+        consent = next(
+            row
+            for row in self.tables.get("billing_payer_payment_consents", [])
+            if row.get("id") == consent_id
+        )
+        for owner in self.billing_invoice_mutation_owners.values():
+            if (
+                owner.get("studio_id") == consent.get("studio_id")
+                and owner.get("payer_id") == consent.get("payer_id")
+                and owner.get("operation_type") == "invoice.retry"
+                and self._operation_by_id(owner["operation_id"]).get("state")
+                in {
+                    "started",
+                    "provider_request_in_flight",
+                    "recovery_authorized",
+                }
+            ):
+                raise _invoice_mutation_in_progress()
+        consent.update(updates)
+        return dict(consent)
 
     def _rpc_claim_billing_provider_operation_resource_unserialized(
         self,

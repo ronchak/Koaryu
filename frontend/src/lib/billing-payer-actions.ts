@@ -100,12 +100,6 @@ export function useBillingPayerActions(
       workflowId: "payer.setup",
     });
     if (link?.url) {
-      clearPersistedPayerOperationRequestKey({
-        identity,
-        keysByPayer: autopaySetupKeysRef.current,
-        operation: "payer.setup",
-        payerId,
-      });
       const copied = await copyPayerAutopaySetupLink(link.url);
       runtime.setMessage(
         copied

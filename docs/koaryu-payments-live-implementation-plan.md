@@ -242,6 +242,9 @@ anchors. It:
 - adopts a missing legacy invoice generation only when the invoice, payer, customer, and
   current Connect account match exactly. Present, malformed, stale, external, or
   conflicting identity evidence remains untouched and fail-closed;
+- adopts missing legacy plan-price and provider-backed subscription generations only
+  when their locked Stripe identities match the studio's exact current Connect account
+  generation. Stale, conflicting, or explicitly populated generations remain untouched;
 - collapses same-version concurrent keys, replays an old alias after later state changes,
   and permits a new owner only after the authoritative resource version advances and the
   prior provider projection is proved;
@@ -251,6 +254,9 @@ anchors. It:
 - atomically revokes completed payer consent and setup evidence before disabling
   autopay, rejects usable pending setup and active subscription states, and prevents a
   later webhook replay from re-enabling the payer;
+- requires a fresh automatic invoice retry to hold current consent for the exact payer,
+  account generation, invoice payment method, and SetupIntent through the provider-pay
+  boundary. Manual retries, completed replay, and reconciliation-only reads stay separate;
 - keeps invoice/payment webhooks from rewriting the payer's consent-bound default
   payment method; only the payer-owned setup projection may establish that field;
 - derives live Connect Payments scope readiness from the dedicated capability sentinel,
@@ -264,6 +270,9 @@ anchors. It:
   of Stripe Session lifetime at mutation time;
 - reclaims expired due-work leases with the already-bound provider operation instead of
   creating a second mutation owner;
+- keeps whole-subscription period-end work retryable through the bounded provider
+  transition grace, then either converges from the original operation or fails closed
+  into reconciliation without creating a second mutation owner;
 - completes whole-subscription due work from intent-bound identity when a cancellation
   webhook reaches local projection first, without issuing a second provider mutation;
 - returns each active scheduled period-end intent and revision through a narrow
@@ -274,22 +283,22 @@ anchors. It:
 - advances the exact release state through schedule V25 to 126/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:fb34bb3fb5e77d686b72e2bb413d6502d75b6042a437caa03344e4d2f5fa5be0`,
+  `0:55f9397aba0a331d528b8f71d69599f14412c3c29f8eb0fe7d1a145d97a329c8`,
   the V31 operational contract
-  `0:0fafb4fe07bb2eb83d770efeb2acde63925b4185c23eac669c06783eb8f41a4e`,
+  `0:c55c099d57cb1dfbe50644386b4b38d794d2ed1b9d71454f7d8c8a84ee1db4f0`,
   the V31 operational manifest
-  `601e0bfa142286b2cbe13d9536f981e873d7e9359cf59a2dc2d055abde549293`,
+  `091e95661d36feba5f7e296e54a6633dc5d0a55d0f00274ce1792d16a862d7fa`,
   and expectation state
-  `1:ab1432b9cca6636e233729f30be7ead648596cc23b95e65cd800c611c6a39ea8`.
+  `1:4a2d99d5ae0de5f9e2aeb6c07d8dfef8e5b4f729fe2f00aa9648a9286ead5ed2`.
 
 Latest local candidate evidence before publication:
 
-- backend: 1,307 tests plus 5,119 subtests passed;
-- frontend: all 723 tests passed outside the sandbox, including the three
+- backend: 1,336 tests plus 5,119 subtests passed;
+- frontend: all 728 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, targeted billing ESLint, and the production build with safe
   placeholder build-time configuration passed;
-- API contract generation, 51 environment tests, and the explicit nine-check staging
+- API contract generation, 52 environment tests, and the explicit nine-check staging
   isolation guard passed;
 - the rollout tool passed all 63 tests and the aggregate release-workflow gate
   passed all 125 tests;

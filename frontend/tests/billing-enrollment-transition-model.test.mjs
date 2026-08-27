@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 
 import {
   clearEnrollmentTransitionRequestKey,
@@ -11,6 +15,116 @@ import {
 } from "../src/lib/billing-enrollment-transition-model.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+
+function loadBillingEnrollmentsTab() {
+  const source = fs.readFileSync(
+    path.join(root, "src/components/billing/billing-enrollments-tab.tsx"), "utf8",
+  );
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const componentModule = { exports: {} };
+  const testRequire = (specifier) => {
+    if (specifier === "react/jsx-runtime") return require(specifier);
+    if (specifier === "lucide-react") {
+      return {
+        Plus: () => React.createElement("span", null, "+"),
+        Users: () => React.createElement("span", null, "Users"),
+      };
+    }
+    if (specifier === "@/components/ui/button") {
+      return {
+        Button: (props) => React.createElement(
+          "button",
+          Object.fromEntries(Object.entries(props).filter(([key]) => (
+            !["children", "isLoading", "size", "variant"].includes(key)
+          ))),
+          props.children,
+        ),
+      };
+    }
+    if (specifier === "@/components/ui/input") {
+      return { Input: ({ label, ...props }) => React.createElement("label", null, label, React.createElement("input", props)) };
+    }
+    if (specifier === "@/lib/billing-page-utils") {
+      return { formatDate: (value) => value ?? "Never" };
+    }
+    if (specifier === "./billing-page-sections") {
+      return {
+        SectionHeader: ({ title }) => React.createElement("h2", null, title),
+        StatusPill: ({ status }) => React.createElement("span", null, status),
+      };
+    }
+    throw new Error(`Unexpected component import: ${specifier}`);
+  };
+
+  Function("require", "module", "exports", compiled)(
+    testRequire,
+    componentModule,
+    componentModule.exports,
+  );
+  return componentModule.exports.BillingEnrollmentsTab;
+}
+
+function renderEnrollmentActions({ scheduled, workflows }) {
+  const BillingEnrollmentsTab = loadBillingEnrollmentsTab();
+  const enrollment = {
+    billing_plan_id: "plan-1",
+    collection_mode: "automatic",
+    end_date: null,
+    id: "enrollment-1",
+    next_bill_date: "2026-09-01",
+    next_bill_on: "2026-09-01",
+    payer_id: "payer-1",
+    plan_id: "plan-1",
+    scheduled_period_end_transition: scheduled,
+    start_date: "2026-08-01",
+    status: "active",
+    stripe_subscription_id: "sub-1",
+    stripe_subscription_item_id: "si-1",
+    student_id: "student-1",
+  };
+  const noop = () => {};
+
+  return renderToStaticMarkup(React.createElement(BillingEnrollmentsTab, {
+    billingEnrollments: [enrollment],
+    billingPayers: [],
+    billingPlans: [],
+    billingStudentOptions: [],
+    canManageRoutineBilling: true,
+    canSubmitEnrollmentForm: false,
+    canUseWorkflow: (workflowId) => workflows.has(workflowId),
+    enrollmentEndDate: "",
+    enrollmentNextBillDate: "",
+    enrollmentPayerId: "",
+    enrollmentPlanId: "",
+    enrollmentStartDate: "",
+    enrollmentStudentId: "",
+    isActionLoading: false,
+    isEnrollmentPayerSelectDisabled: false,
+    isLoadingAction: () => false,
+    onCreateEnrollment: noop,
+    onEnrollmentActivate: noop,
+    onEnrollmentCancelImmediate: noop,
+    onEnrollmentEndDateChange: noop,
+    onEnrollmentNextBillDateChange: noop,
+    onEnrollmentPayerChange: noop,
+    onEnrollmentPlanChange: noop,
+    onEnrollmentRevokeScheduled: noop,
+    onEnrollmentSchedulePeriodEnd: noop,
+    onEnrollmentStartDateChange: noop,
+    onEnrollmentStudentChange: noop,
+    payerNameById: new Map([["payer-1", "Payer"]]),
+    planNameById: new Map([["plan-1", "Plan"]]),
+    studentNameById: new Map([["student-1", "Student"]]),
+  }));
+}
 
 function storage() {
   const values = new Map();
@@ -134,6 +248,7 @@ describe("billing enrollment transition request keys", () => {
     assert.match(tab, /enrollment\.cancel\.period_end\.schedule/);
     assert.match(tab, /enrollment\.cancel\.period_end\.revoke/);
     assert.match(tab, /enrollment\.cancel\.immediate/);
+    assert.match(tab, /const canCancelImmediate = !scheduled[\s\S]*enrollment\.cancel\.immediate/);
     assert.match(
       contracts,
       /export interface ApiBillingEnrollmentScheduledTransitionResponse \{[\s\S]*intent_id: string;[\s\S]*revision: number;/,
@@ -142,5 +257,46 @@ describe("billing enrollment transition request keys", () => {
       contracts,
       /scheduled_period_end_transition\?: ApiBillingEnrollmentScheduledTransitionResponse \| null;/,
     );
+  });
+
+  it("renders immediate and period-end cancellation when no transition is scheduled", () => {
+    const markup = renderEnrollmentActions({
+      scheduled: null,
+      workflows: new Set([
+        "enrollment.cancel.immediate",
+        "enrollment.cancel.period_end.schedule",
+      ]),
+    });
+
+    assert.match(markup, />Cancel now</);
+    assert.match(markup, />Cancel at period end</);
+    assert.doesNotMatch(markup, />Revoke scheduled cancel</);
+  });
+
+  it("renders revoke but not conflicting cancellation actions while a transition is scheduled", () => {
+    const markup = renderEnrollmentActions({
+      scheduled: { intent_id: "intent-1", revision: 2 },
+      workflows: new Set([
+        "enrollment.cancel.immediate",
+        "enrollment.cancel.period_end.revoke",
+        "enrollment.cancel.period_end.schedule",
+      ]),
+    });
+
+    assert.match(markup, /Period-end cancellation is scheduled\./);
+    assert.match(markup, />Revoke scheduled cancel</);
+    assert.doesNotMatch(markup, />Cancel now</);
+    assert.doesNotMatch(markup, />Cancel at period end</);
+  });
+
+  it("does not leak either action when the scheduled-transition capabilities are absent", () => {
+    const markup = renderEnrollmentActions({
+      scheduled: { intent_id: "intent-1", revision: 2 },
+      workflows: new Set(["enrollment.cancel.immediate"]),
+    });
+
+    assert.match(markup, /Period-end cancellation is scheduled\./);
+    assert.doesNotMatch(markup, />Revoke scheduled cancel</);
+    assert.doesNotMatch(markup, />Cancel now</);
   });
 });

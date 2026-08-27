@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIR, "..");
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
+const APPLY_APPROVAL_AUTHOR_LOGIN = "ronchak";
+const APPLY_APPROVAL_AUTHOR_ASSOCIATION = "OWNER";
 
 export const ROLLOUT = Object.freeze({
   cliVersion: "2.95.4",
@@ -177,13 +179,23 @@ export const EXPECTED_V30_LEGACY_OPERATIONAL_MANIFEST =
 export const EXPECTED_V30_RESTORED_LEGACY_OPERATIONAL_MANIFEST =
   "b1b7b4d041878aaa9a2a33ee530376ac906f5e6f4cea0a5d001516c99273e91b";
 export const EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST =
-  "0:fb34bb3fb5e77d686b72e2bb413d6502d75b6042a437caa03344e4d2f5fa5be0";
+  "0:55f9397aba0a331d528b8f71d69599f14412c3c29f8eb0fe7d1a145d97a329c8";
 export const EXPECTED_V31_OPERATIONAL_CONTRACT =
-  "0:0fafb4fe07bb2eb83d770efeb2acde63925b4185c23eac669c06783eb8f41a4e";
+  "0:c55c099d57cb1dfbe50644386b4b38d794d2ed1b9d71454f7d8c8a84ee1db4f0";
 export const EXPECTED_V31_OPERATIONAL_MANIFEST =
-  "601e0bfa142286b2cbe13d9536f981e873d7e9359cf59a2dc2d055abde549293";
+  "091e95661d36feba5f7e296e54a6633dc5d0a55d0f00274ce1792d16a862d7fa";
 export const EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST =
-  "330d873570885be3aee2109ce2b492fbc494bf47addd3bdcd573b9829453b264";
+  "7e563bb93c268757020448ed1a1213432fd6905b03b04b83abf89006deb36d78";
+export const EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST =
+  "0:2b3b9adfa939fb718719abf7b97eec2975a218a5cb5318158b4bb52d784e4a8b";
+export const EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT =
+  "0:553e9156f99f0d2af3b0d9b37b0492912ec7bda036f99717244ed9c7c4297ab1";
+export const EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST =
+  "e55e850ea0b71e81a5e1c93294d39864c4259bfa6a7ac72707a6f97776f3f4af";
+export const EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST =
+  "0:b6955a4f07e7b0e28a4a5a834c1b443c7c3d21f94c10e9958f578c0b54472551";
+export const EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT =
+  "0:1a796981a4605be52bb488044f01124a968e2af20adad9bc929fa17c130cd6a5";
 
 export const EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS =
   "true|119|20260825043911|" +
@@ -404,7 +416,7 @@ export const EXPECTED_V31_CATALOG_STATE =
   "column_acls=228:44119eb2d0f6a6f4d130b4353519eb478e6e830791ccef778e4c261e705269fc:0;" +
   "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
   "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
-  "functions=103:e05304ae385e4018bd9dbaeb8cdd232047f5697de7ecedd9b5515a69165d2b53:0;" +
+  "functions=103:618c75e95d2cdd1e4d51227a75836ca895e9df8e94d34e448f723c31dcc41fb7:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=176:f71ef6881d9692d2f8d59c7a55753aa7c637f72473fca97c8293ee6c640f7fdf:0;" +
@@ -417,7 +429,7 @@ export const EXPECTED_V31_RESTORED_CATALOG_STATE =
   "column_acls=228:44119eb2d0f6a6f4d130b4353519eb478e6e830791ccef778e4c261e705269fc:0;" +
   "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
   "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
-  "functions=103:e05304ae385e4018bd9dbaeb8cdd232047f5697de7ecedd9b5515a69165d2b53:0;" +
+  "functions=103:618c75e95d2cdd1e4d51227a75836ca895e9df8e94d34e448f723c31dcc41fb7:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=176:66315b7b7d9fc49b9b0ab73171fcf0dbfa0c1c279c8668269cf637e5d2aa53b5:0;" +
@@ -450,7 +462,7 @@ export const EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE =
 export const EXPECTED_V30_EXPECTATION_STATE =
   "1:64daabcda5df9823fa4b32e7320e715d1d96dd0d0acc697ebed4570256655643";
 export const EXPECTED_V31_EXPECTATION_STATE =
-  "1:ab1432b9cca6636e233729f30be7ead648596cc23b95e65cd800c611c6a39ea8";
+  "1:4a2d99d5ae0de5f9e2aeb6c07d8dfef8e5b4f729fe2f00aa9648a9286ead5ed2";
 
 export function validateOperationalManifest(value) {
   if (
@@ -576,6 +588,41 @@ export function validateV31OperationalManifest(value) {
 export function validateV31PredecessorOperationalManifest(value) {
   if (value !== EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST) {
     throw new RolloutError("V31 predecessor operational manifest did not match V30.");
+  }
+  return value;
+}
+
+export function validateV31CompatV29TransitionManifest(value) {
+  if (value !== EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST) {
+    throw new RolloutError("V31 compatibility V29 transition manifest mismatch.");
+  }
+  return value;
+}
+
+export function validateV31CompatV29OperationalContract(value) {
+  if (value !== EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT) {
+    throw new RolloutError("V31 compatibility V29 operational contract mismatch.");
+  }
+  return value;
+}
+
+export function validateV31CompatV29OperationalManifest(value) {
+  if (value !== EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST) {
+    throw new RolloutError("V31 compatibility V29 operational manifest mismatch.");
+  }
+  return value;
+}
+
+export function validateV31CompatV30ReplayRepairsManifest(value) {
+  if (value !== EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST) {
+    throw new RolloutError("V31 compatibility V30 replay-repair manifest mismatch.");
+  }
+  return value;
+}
+
+export function validateV31CompatV30OperationalContract(value) {
+  if (value !== EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT) {
+    throw new RolloutError("V31 compatibility V30 operational contract mismatch.");
   }
   return value;
 }
@@ -2947,13 +2994,50 @@ export function validateApplyApprovalRecord(
       "--approval-record must be an exact PR #134 GitHub issue-comment URL.",
     );
   }
-  const body = commandRunner(
+  const rawComment = commandRunner(
     "gh",
-    ["api", `repos/ronchak/Koaryu/issues/comments/${match[1]}`, "--jq", ".body"],
+    ["api", `repos/ronchak/Koaryu/issues/comments/${match[1]}`],
     { env, label: "durable apply approval read" },
-  ).replace(/\r?\n$/, "");
+  );
+  let comment;
+  try {
+    comment = JSON.parse(rawComment);
+  } catch {
+    throw new RolloutError(
+      "Durable approval record lookup did not return structured GitHub comment data.",
+    );
+  }
+  if (
+    !comment ||
+    Array.isArray(comment) ||
+    typeof comment !== "object" ||
+    typeof comment.body !== "string" ||
+    typeof comment.issue_url !== "string" ||
+    !comment.user ||
+    Array.isArray(comment.user) ||
+    typeof comment.user !== "object" ||
+    typeof comment.user.login !== "string" ||
+    typeof comment.author_association !== "string"
+  ) {
+    throw new RolloutError(
+      "Durable approval record lookup did not return structured GitHub comment data.",
+    );
+  }
+  if (comment.issue_url !== "https://api.github.com/repos/ronchak/Koaryu/issues/134") {
+    throw new RolloutError(
+      "Durable approval record does not belong to ronchak/Koaryu PR #134.",
+    );
+  }
+  if (
+    comment.user.login !== APPLY_APPROVAL_AUTHOR_LOGIN ||
+    comment.author_association !== APPLY_APPROVAL_AUTHOR_ASSOCIATION
+  ) {
+    throw new RolloutError(
+      "Durable approval record was not authored by the authorized Koaryu repository owner.",
+    );
+  }
   const expected = buildApplyApprovalRecordBody(packet, config.target, state);
-  if (body !== expected) {
+  if (comment.body !== expected) {
     throw new RolloutError(
       "Durable approval record does not exactly bind this candidate, target, inspected state, and remaining migration manifest.",
     );
@@ -3837,12 +3921,12 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     validateV30CompatV27ExpectationState(v27ExpectationState);
     validateV30CompatV28ExpectationState(v28ExpectationState);
     validateV30CompatV29ExpectationState(v29ExpectationState);
-    validateV29TransitionManifest(v29TransitionManifest);
-    validateV30CompatV29OperationalContract(v29OperationalContract);
-    validateV30PredecessorOperationalManifest(v29OperationalManifest);
+    validateV31CompatV29TransitionManifest(v29TransitionManifest);
+    validateV31CompatV29OperationalContract(v29OperationalContract);
+    validateV31CompatV29OperationalManifest(v29OperationalManifest);
     validateV30ExpectationState(v30ExpectationState);
-    validateV30ReplayRepairsManifest(v30ReplayRepairsManifest);
-    validateV30OperationalContract(v30OperationalContract);
+    validateV31CompatV30ReplayRepairsManifest(v30ReplayRepairsManifest);
+    validateV31CompatV30OperationalContract(v30OperationalContract);
     validateV31PredecessorOperationalManifest(v30OperationalManifest);
     validateV31ExpectationState(v31ExpectationState);
     validateV31ResourceOwnershipManifest(v31ResourceOwnershipManifest);
@@ -3905,10 +3989,10 @@ export function approvedProviderFingerprintVariants(stagingFingerprint) {
   const expectedSuffix =
     `;expectation=${EXPECTED_V30_COMPAT_V26_EXPECTATION_STATE};v27_expectation=${EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE};` +
     `v28_expectation=${EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE};v29_expectation=${EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE};` +
-    `v29_transition=${EXPECTED_V29_TRANSITION_MANIFEST};v29_contract=${EXPECTED_V30_COMPAT_V29_OPERATIONAL_CONTRACT};` +
-    `v29_manifest=${EXPECTED_V30_PREDECESSOR_OPERATIONAL_MANIFEST};` +
-    `v30_expectation=${EXPECTED_V30_EXPECTATION_STATE};v30_replay=${EXPECTED_V30_REPLAY_REPAIRS_MANIFEST};` +
-    `v30_contract=${EXPECTED_V30_OPERATIONAL_CONTRACT};v30_manifest=${EXPECTED_V30_OPERATIONAL_MANIFEST};` +
+    `v29_transition=${EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST};v29_contract=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT};` +
+    `v29_manifest=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST};` +
+    `v30_expectation=${EXPECTED_V30_EXPECTATION_STATE};v30_replay=${EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
+    `v30_contract=${EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT};v30_manifest=${EXPECTED_V30_OPERATIONAL_MANIFEST};` +
     `v31_compat_v30_manifest=${EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST};` +
     `v31_expectation=${EXPECTED_V31_EXPECTATION_STATE};v31_resource=${EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST};` +
     `v31_contract=${EXPECTED_V31_OPERATIONAL_CONTRACT};v31_manifest=${EXPECTED_V31_OPERATIONAL_MANIFEST};` +

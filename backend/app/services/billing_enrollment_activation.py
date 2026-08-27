@@ -24,6 +24,16 @@ ENROLLMENT_ACTIVATION_AMBIGUOUS_DETAIL = (
     "Retry with the same Idempotency-Key after reconciliation."
 )
 ACTIVATION_INTENT_KEY = "provider_activation_intent"
+OPEN_WHOLE_SUBSCRIPTION_TRANSITION_STATES = (
+    "scheduled",
+    "due_claimed",
+    "provider_request_in_flight",
+    "provider_succeeded",
+    "projected",
+    "recovery_authorized",
+    "reconciliation_required",
+)
+ACTIVATABLE_SUBSCRIPTION_STATUSES = frozenset({"active", "trialing", "past_due", "incomplete"})
 
 
 class BillingEnrollmentActivationWorkflow:
@@ -237,6 +247,18 @@ class BillingEnrollmentActivationWorkflow:
         intent: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         branch = intent["branch"]
+        if branch in {"add_item", "update_quantity"}:
+            try:
+                self._require_subscription_open_for_activation(
+                    group,
+                    context=context,
+                    intent=intent,
+                    check_provider=False,
+                )
+            except Exception as exc:
+                self._reject_scheduled_subscription_activation(
+                    operations, context, operation, exc,
+                )
         operation = operations.transition(
             context,
             operation,
@@ -244,6 +266,18 @@ class BillingEnrollmentActivationWorkflow:
             result_code="enrollment_activation_started",
             result_summary=self._result_summary(intent),
         )
+        if branch in {"add_item", "update_quantity"}:
+            try:
+                self._require_subscription_open_for_activation(
+                    group,
+                    context=context,
+                    intent=intent,
+                    check_provider=True,
+                )
+            except Exception as exc:
+                self._reject_scheduled_subscription_activation(
+                    operations, context, operation, exc,
+                )
         key = self.owner._idempotency_key(
             "enrollment-activate", context.operation_id, branch.replace("_", "-")
         )
@@ -329,6 +363,74 @@ class BillingEnrollmentActivationWorkflow:
             enrollment, context, operation, intent, plan=plan, payer=payer, group=group
         )
         return result, operation
+
+    def _require_subscription_open_for_activation(
+        self,
+        group: dict[str, Any],
+        *,
+        context: BillingProviderOperationContext,
+        intent: dict[str, Any],
+        check_provider: bool,
+    ) -> None:
+        current_group = self.owner._get_row_or_404(
+            "billing_subscriptions",
+            group["id"],
+            context.studio_id,
+            "Billing subscription not found.",
+        )
+        pending = (
+            self.supabase.table("billing_enrollment_transition_intents")
+            .select("id")
+            .eq("studio_id", context.studio_id)
+            .eq("billing_subscription_id", group["id"])
+            .eq("transition_kind", "schedule_period_end")
+            .eq("mutation_strategy", "subscription_cancel_at_period_end")
+            .in_("state", OPEN_WHOLE_SUBSCRIPTION_TRANSITION_STATES)
+            .limit(1)
+            .execute()
+        )
+        if current_group.get("cancel_at_period_end") is True or pending.data:
+            raise RuntimeError("subscription_scheduled_for_cancellation")
+        if not check_provider:
+            return
+        provider = self.stripe_service_cls().retrieve_connected_subscription(
+            account_id=context.stripe_connected_account_id,
+            subscription_id=str(intent["expected_subscription_id"]),
+            expand=["items.data"],
+        )
+        metadata = _object_get(provider, "metadata") or {}
+        if (
+            _stripe_id(provider) != intent.get("expected_subscription_id")
+            or _stripe_id(_object_get(provider, "customer")) != intent.get("customer_id")
+            or str(metadata.get("studio_id") or "") != context.studio_id
+            or str(metadata.get("payer_id") or "") != str(intent["payer_id"])
+            or str(metadata.get("billing_subscription_id") or "") != str(group["id"])
+            or str(_object_get(provider, "status") or "")
+            not in ACTIVATABLE_SUBSCRIPTION_STATUSES
+            or bool(_object_get(provider, "cancel_at_period_end"))
+        ):
+            raise RuntimeError("subscription_not_open_for_activation")
+
+    @staticmethod
+    def _reject_scheduled_subscription_activation(
+        operations: BillingProviderOperationCoordinator,
+        context: BillingProviderOperationContext,
+        operation: dict[str, Any],
+        cause: Exception,
+    ) -> None:
+        operations.transition(
+            context,
+            operation,
+            "definitive_rejected",
+            error_code="subscription_scheduled_for_cancellation",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Billing subscription is scheduled for cancellation. "
+                "Revoke the scheduled cancellation before activating another enrollment."
+            ),
+        ) from cause
 
     def _readback_and_project(
         self,
@@ -528,7 +630,12 @@ class BillingEnrollmentActivationWorkflow:
             or price_ids != {str(plan["stripe_price_id"])}
         ):
             raise HTTPException(status_code=409, detail="Billing plan price identity is not exact.")
-        row = rows[0]
+        row = self._adopt_legacy_plan_price_generation(
+            rows[0],
+            plan=plan,
+            account_id=account_id,
+            generation=generation,
+        )
         row_generation = (row.get("metadata") or {}).get("connect_account_generation")
         try:
             exact_generation = int(row_generation) == generation
@@ -543,6 +650,57 @@ class BillingEnrollmentActivationWorkflow:
         ):
             raise HTTPException(status_code=409, detail="Billing plan price identity is stale.")
         return row
+
+    def _adopt_legacy_plan_price_generation(
+        self,
+        row: dict[str, Any],
+        *,
+        plan: dict[str, Any],
+        account_id: str,
+        generation: int,
+    ) -> dict[str, Any]:
+        metadata = row.get("metadata")
+        if not isinstance(metadata, dict) or "connect_account_generation" in metadata:
+            return row
+        if (
+            row.get("studio_id") != plan.get("studio_id")
+            or row.get("billing_plan_id") != plan.get("id")
+            or row.get("stripe_account_id") != account_id
+            or row.get("stripe_product_id") != plan.get("stripe_product_id")
+            or row.get("stripe_price_id") != plan.get("stripe_price_id")
+            or not row.get("stripe_product_id")
+            or not row.get("stripe_price_id")
+        ):
+            return row
+        adopted_metadata = {**metadata, "connect_account_generation": generation}
+        result = (
+            self.supabase.table("billing_plan_prices")
+            .update({"metadata": adopted_metadata})
+            .eq("id", row["id"])
+            .eq("studio_id", plan["studio_id"])
+            .eq("billing_plan_id", plan["id"])
+            .eq("stripe_account_id", account_id)
+            .eq("stripe_product_id", plan["stripe_product_id"])
+            .eq("stripe_price_id", plan["stripe_price_id"])
+            .eq("amount_cents", int(plan.get("amount_cents") or 0))
+            .eq("currency", plan.get("currency") or "usd")
+            .eq("billing_interval", plan.get("billing_interval") or "monthly")
+            .eq("recurring", True)
+            .eq("active", True)
+            .is_("metadata->connect_account_generation", "null")
+            .execute()
+        )
+        if result.data:
+            return result.data[0]
+        refreshed = (
+            self.supabase.table("billing_plan_prices")
+            .select("*")
+            .eq("id", row["id"])
+            .eq("studio_id", plan["studio_id"])
+            .limit(1)
+            .execute()
+        )
+        return refreshed.data[0] if refreshed.data else row
 
     def _require_exact_payer(
         self, payer: dict[str, Any], account_id: str, generation: int, mode: str
@@ -567,22 +725,51 @@ class BillingEnrollmentActivationWorkflow:
         generation: int,
         payer: dict[str, Any],
     ) -> dict[str, Any]:
-        metadata = dict(group.get("metadata") or {})
-        current_generation = metadata.get("connect_account_generation")
-        if current_generation is None and not group.get("stripe_subscription_id"):
+        raw_metadata = group.get("metadata")
+        metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        can_adopt = (
+            isinstance(raw_metadata, dict)
+            and "connect_account_generation" not in metadata
+            and group.get("studio_id") == payer.get("studio_id")
+            and group.get("payer_id") == payer.get("id")
+            and group.get("stripe_account_id") == account_id
+            and group.get("stripe_customer_id") == payer.get("stripe_customer_id")
+            and payer.get("stripe_account_id") == account_id
+            and payer.get("connect_account_generation") == generation
+            and bool(group.get("stripe_customer_id"))
+        )
+        if can_adopt:
             metadata["connect_account_generation"] = generation
-            result = (
+            update = (
                 self.supabase.table("billing_subscriptions")
                 .update({"metadata": metadata})
                 .eq("id", group["id"])
                 .eq("studio_id", group["studio_id"])
-                .execute()
+                .eq("payer_id", payer["id"])
+                .eq("stripe_account_id", account_id)
+                .eq("stripe_customer_id", payer["stripe_customer_id"])
+                .is_("metadata->connect_account_generation", "null")
             )
+            if group.get("stripe_subscription_id"):
+                update = update.eq(
+                    "stripe_subscription_id", group["stripe_subscription_id"]
+                )
+            else:
+                update = update.is_("stripe_subscription_id", "null")
+            result = update.execute()
             if not result.data:
-                raise HTTPException(status_code=503, detail="Subscription group identity could not be stored.")
-            group = result.data[0]
+                group = self.owner._get_row_or_404(
+                    "billing_subscriptions",
+                    group["id"],
+                    group["studio_id"],
+                    "Billing subscription not found.",
+                )
+            else:
+                group = result.data[0]
         if (
-            group.get("stripe_account_id") != account_id
+            group.get("studio_id") != payer.get("studio_id")
+            or group.get("payer_id") != payer.get("id")
+            or group.get("stripe_account_id") != account_id
             or group.get("stripe_customer_id") != payer.get("stripe_customer_id")
             or (group.get("metadata") or {}).get("connect_account_generation") != generation
         ):
@@ -635,7 +822,11 @@ class BillingEnrollmentActivationWorkflow:
             or str(metadata.get("payer_id") or "") != str(payer["id"])
             or str(metadata.get("billing_subscription_id") or "") != str(group["id"])
             or str(_object_get(provider, "status") or "")
-            not in {"active", "trialing", "past_due", "incomplete"}
+            not in ACTIVATABLE_SUBSCRIPTION_STATUSES
+            or (
+                branch in {"add_item", "update_quantity"}
+                and bool(_object_get(provider, "cancel_at_period_end"))
+            )
             or (
                 branch in {"add_item", "update_quantity"}
                 and operation.get("provider_object_id")

@@ -16,6 +16,12 @@ DECLARE
     v_terminal_first UUID;
     v_terminal_second UUID;
     v_terminal_resource UUID;
+    v_retry_invoice UUID:=gen_random_uuid();
+    v_retry UUID;
+    v_setup_operation UUID:=gen_random_uuid();
+    v_setup_request UUID:=gen_random_uuid();
+    v_consent UUID:=gen_random_uuid();
+    v_now TIMESTAMPTZ:=clock_timestamp();
 BEGIN
     IF has_table_privilege(
         'service_role','public.billing_invoice_mutation_owners','SELECT'
@@ -170,6 +176,117 @@ BEGIN
     EXCEPTION WHEN insufficient_privilege THEN
         IF SQLERRM<>'billing_invoice_mutation_actor_forbidden' THEN RAISE; END IF;
     END;
+
+    INSERT INTO public.billing_provider_operations(
+        id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+        stripe_connected_account_id,connect_account_generation,state,
+        provider_request_attempt_count,provider_object_id,
+        provider_secondary_object_id,result_code,started_at,
+        provider_request_in_flight_at,provider_succeeded_at,projected_at,
+        completed_at,created_at,updated_at
+    ) VALUES(
+        v_setup_operation,v_studio,v_admin,'payer.setup','v31-retry-guard-setup',
+        repeat('e',64),'acct_v31invoice',1,'completed',1,
+        'cs_v31_retry_guard','seti_v31_retry_guard','payer_setup_completed',
+        v_now-interval '2 minutes',v_now-interval '90 seconds',
+        v_now-interval '60 seconds',v_now-interval '30 seconds',v_now,
+        v_now-interval '2 minutes',v_now
+    );
+    INSERT INTO public.billing_payer_setup_requests(
+        id,operation_id,studio_id,payer_id,initiated_by,terms_version,
+        stripe_checkout_session_id,stripe_setup_intent_id,
+        stripe_connected_account_id,connect_account_generation,
+        setup_request_expires_at,accepted_at,completed_at,created_at,updated_at
+    ) VALUES(
+        v_setup_request,v_setup_operation,v_studio,v_payer,v_admin,
+        'autopay_terms_v1','cs_v31_retry_guard','seti_v31_retry_guard',
+        'acct_v31invoice',1,v_now+interval '1 hour',
+        v_now-interval '45 seconds',v_now-interval '30 seconds',
+        v_now-interval '2 minutes',v_now
+    );
+    INSERT INTO public.billing_payer_payment_consents(
+        id,setup_request_id,studio_id,payer_id,terms_version,
+        stripe_checkout_session_id,stripe_setup_intent_id,
+        stripe_connected_account_id,connect_account_generation,
+        acceptance_proof_sha256,accepted_at,completed_at,
+        setup_request_expires_at,created_at,updated_at
+    ) VALUES(
+        v_consent,v_setup_request,v_studio,v_payer,'autopay_terms_v1',
+        'cs_v31_retry_guard','seti_v31_retry_guard','acct_v31invoice',1,
+        repeat('f',64),v_now-interval '45 seconds',
+        v_now-interval '30 seconds',v_now+interval '1 hour',
+        v_now-interval '2 minutes',v_now
+    );
+    UPDATE public.billing_payers
+    SET default_payment_method_id='pm_v31_retry_guard',
+        autopay_status='enabled',
+        autopay_authorized_at=v_now-interval '30 seconds',
+        autopay_terms_accepted_at=v_now-interval '45 seconds'
+    WHERE id=v_payer AND studio_id=v_studio;
+    INSERT INTO public.billing_invoices(
+        id,studio_id,payer_id,invoice_type,status,amount_due_cents,
+        amount_paid_cents,amount_remaining_cents,currency,stripe_invoice_id,
+        stripe_account_id,stripe_customer_id,collection_method,external,metadata
+    ) VALUES(
+        v_retry_invoice,v_studio,v_payer,'manual','open',5000,0,5000,'usd',
+        'in_v31_retry_guard','acct_v31invoice','cus_v31invoice',
+        'charge_automatically',false,
+        jsonb_build_object('connect_account_generation',1)
+    );
+    v_result:=public.claim_billing_provider_operation_resource_v1(
+        v_studio,v_admin,'invoice.retry','invoice',v_retry_invoice,v_payer,
+        'v31-retry-consent-owner',repeat('1',64),
+        'acct_v31invoice',1,gen_random_uuid(),30
+    );
+    v_retry:=(v_result->'operation'->>'id')::UUID;
+    UPDATE public.billing_provider_operations
+    SET state='provider_request_in_flight',provider_request_attempt_count=1,
+        provider_request_in_flight_at=clock_timestamp(),revision=revision+1,
+        updated_at=clock_timestamp()
+    WHERE id=v_retry;
+    BEGIN
+        UPDATE public.billing_payer_payment_consents
+        SET revoked_at=clock_timestamp(),revoked_by=v_admin,
+            revocation_reason_code='staff_disabled_autopay',
+            revision=revision+1,updated_at=clock_timestamp()
+        WHERE id=v_consent;
+        RAISE EXCEPTION 'V31 consent revoked inside invoice retry mutation boundary.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+    END;
+    BEGIN
+        UPDATE public.billing_payers
+        SET autopay_status='disabled',updated_at=clock_timestamp()
+        WHERE id=v_payer AND studio_id=v_studio;
+        RAISE EXCEPTION 'V31 payer changed inside invoice retry mutation boundary.';
+    EXCEPTION WHEN lock_not_available THEN
+        IF SQLERRM<>'billing_invoice_mutation_in_progress' THEN RAISE; END IF;
+    END;
+    IF (SELECT revoked_at FROM public.billing_payer_payment_consents
+        WHERE id=v_consent) IS NOT NULL
+       OR (SELECT autopay_status FROM public.billing_payers WHERE id=v_payer)
+            IS DISTINCT FROM 'enabled' THEN
+        RAISE EXCEPTION 'V31 blocked payer or consent mutation persisted.';
+    END IF;
+    UPDATE public.billing_provider_operations
+    SET state='provider_succeeded',provider_object_id='in_v31_retry_guard',
+        provider_succeeded_at=clock_timestamp(),revision=revision+1,
+        updated_at=clock_timestamp()
+    WHERE id=v_retry;
+    UPDATE public.billing_payer_payment_consents
+    SET revoked_at=clock_timestamp(),revoked_by=v_admin,
+        revocation_reason_code='staff_disabled_autopay',
+        revision=revision+1,updated_at=clock_timestamp()
+    WHERE id=v_consent;
+    UPDATE public.billing_payers
+    SET autopay_status='disabled',updated_at=clock_timestamp()
+    WHERE id=v_payer AND studio_id=v_studio;
+    IF (SELECT revoked_at FROM public.billing_payer_payment_consents
+        WHERE id=v_consent) IS NULL
+       OR (SELECT autopay_status FROM public.billing_payers WHERE id=v_payer)
+            IS DISTINCT FROM 'disabled' THEN
+        RAISE EXCEPTION 'V31 payer or consent mutation stayed blocked after provider success.';
+    END IF;
 
     FOR v_case IN
         SELECT * FROM (VALUES

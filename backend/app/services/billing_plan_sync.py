@@ -644,9 +644,8 @@ class BillingPlanSyncWorkflow:
             .execute()
         )
         if existing.data:
-            price = existing.data[0]
-            self._verify_price_row(
-                price,
+            price = self._verify_price_row(
+                existing.data[0],
                 plan=plan,
                 account_id=context.stripe_connected_account_id,
                 generation=generation,
@@ -784,7 +783,7 @@ class BillingPlanSyncWorkflow:
         if len(product_ids) != 1 or len(price_ids) != 1:
             raise HTTPException(status_code=409, detail="Plan has contradictory active Stripe price identity.")
         row = rows[0]
-        self._verify_price_row(
+        row = self._verify_price_row(
             row,
             plan=plan,
             account_id=account_id,
@@ -793,15 +792,22 @@ class BillingPlanSyncWorkflow:
         )
         return row
 
-    @staticmethod
     def _verify_price_row(
+        self,
         row: dict[str, Any],
         *,
         plan: dict[str, Any],
         account_id: str,
         generation: int,
         product_id: str,
-    ) -> None:
+    ) -> dict[str, Any]:
+        row = self._adopt_legacy_price_generation(
+            row,
+            plan=plan,
+            account_id=account_id,
+            generation=generation,
+            product_id=product_id,
+        )
         row_generation = (row.get("metadata") or {}).get("connect_account_generation")
         try:
             exact_generation = int(row_generation) == generation
@@ -821,6 +827,61 @@ class BillingPlanSyncWorkflow:
             or not exact_generation
         ):
             raise HTTPException(status_code=409, detail="Plan Stripe price identity is not exact.")
+        return row
+
+    def _adopt_legacy_price_generation(
+        self,
+        row: dict[str, Any],
+        *,
+        plan: dict[str, Any],
+        account_id: str,
+        generation: int,
+        product_id: str,
+    ) -> dict[str, Any]:
+        metadata = row.get("metadata")
+        if not isinstance(metadata, dict) or "connect_account_generation" in metadata:
+            return row
+        if (
+            not plan.get("stripe_product_id")
+            or not plan.get("stripe_price_id")
+            or plan.get("stripe_product_id") != product_id
+            or plan.get("stripe_price_id") != row.get("stripe_price_id")
+            or row.get("studio_id") != plan.get("studio_id")
+            or row.get("billing_plan_id") != plan.get("id")
+            or row.get("stripe_account_id") != account_id
+            or row.get("stripe_product_id") != product_id
+        ):
+            return row
+        recurring = plan.get("billing_interval") != "paid_in_full"
+        adopted_metadata = {**metadata, "connect_account_generation": generation}
+        result = (
+            self.supabase.table("billing_plan_prices")
+            .update({"metadata": adopted_metadata})
+            .eq("id", row["id"])
+            .eq("studio_id", plan["studio_id"])
+            .eq("billing_plan_id", plan["id"])
+            .eq("stripe_account_id", account_id)
+            .eq("stripe_product_id", product_id)
+            .eq("stripe_price_id", plan["stripe_price_id"])
+            .eq("amount_cents", int(plan.get("amount_cents") or 0))
+            .eq("currency", plan.get("currency") or "usd")
+            .eq("billing_interval", plan.get("billing_interval") or "monthly")
+            .eq("recurring", recurring)
+            .eq("active", True)
+            .is_("metadata->connect_account_generation", "null")
+            .execute()
+        )
+        if result.data:
+            return result.data[0]
+        refreshed = (
+            self.supabase.table("billing_plan_prices")
+            .select("*")
+            .eq("id", row["id"])
+            .eq("studio_id", plan["studio_id"])
+            .limit(1)
+            .execute()
+        )
+        return refreshed.data[0] if refreshed.data else row
 
     def _local_ready_account(self, studio_id: str) -> dict[str, Any]:
         account = self.owner._connect_accounts().ensure_row(studio_id)

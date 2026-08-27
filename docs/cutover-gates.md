@@ -105,7 +105,11 @@ to obtain the rollout script.
 **Staging apply needs more than `--approve-staging-apply`.** It also requires
 `--confirm-project <ref>` and an exact PR #134 issue-comment URL. The tool reads that
 comment through GitHub and requires its complete body to bind the candidate SHA, target,
-project ref, inspected state, remaining migration count/set, and remaining manifest.
+project ref, inspected state, remaining migration count/set, and remaining manifest. It
+also requires the GitHub API record's exact `issue_url` to identify
+`ronchak/Koaryu` PR #134, preventing a matching body on another issue or pull request
+from serving as the approval. The API record must also identify `ronchak` with GitHub
+`author_association=OWNER`; comments from collaborators or outside users are refused.
 A stale approval record is rejected after any code, state, or remainder change.
 
 **Production apply requires a real terminal.** `confirmProductionApply()` throws unless

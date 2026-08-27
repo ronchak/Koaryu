@@ -51,6 +51,11 @@ import {
   EXPECTED_V31_OPERATIONAL_CONTRACT,
   EXPECTED_V31_OPERATIONAL_MANIFEST,
   EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST,
+  EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST,
+  EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT,
+  EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST,
+  EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
+  EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT,
   EXPECTED_PRE_OPERATIONAL_READINESS,
   EXPECTED_INTERMEDIATE_OPERATIONAL_READINESS,
   EXPECTED_RECOVERY_OPERATIONAL_READINESS,
@@ -148,12 +153,12 @@ const validFingerprint =
   `v27_expectation=${EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE};` +
   `v28_expectation=${EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE};` +
   `v29_expectation=${EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE};` +
-  `v29_transition=${EXPECTED_V29_TRANSITION_MANIFEST};` +
-  `v29_contract=${EXPECTED_V30_COMPAT_V29_OPERATIONAL_CONTRACT};` +
-  `v29_manifest=${EXPECTED_V30_PREDECESSOR_OPERATIONAL_MANIFEST};` +
+  `v29_transition=${EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST};` +
+  `v29_contract=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT};` +
+  `v29_manifest=${EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST};` +
   `v30_expectation=${EXPECTED_V30_EXPECTATION_STATE};` +
-  `v30_replay=${EXPECTED_V30_REPLAY_REPAIRS_MANIFEST};` +
-  `v30_contract=${EXPECTED_V30_OPERATIONAL_CONTRACT};` +
+  `v30_replay=${EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST};` +
+  `v30_contract=${EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT};` +
   `v30_manifest=${EXPECTED_V30_OPERATIONAL_MANIFEST};` +
   `v31_compat_v30_manifest=${EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST};` +
   `v31_expectation=${EXPECTED_V31_EXPECTATION_STATE};` +
@@ -241,12 +246,12 @@ function postSnapshot(packet, overrides = {}) {
     v27ExpectationState: EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE,
     v28ExpectationState: EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE,
     v29ExpectationState: EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE,
-    v29TransitionManifest: EXPECTED_V29_TRANSITION_MANIFEST,
-    v29OperationalContract: EXPECTED_V30_COMPAT_V29_OPERATIONAL_CONTRACT,
-    v29OperationalManifest: EXPECTED_V30_PREDECESSOR_OPERATIONAL_MANIFEST,
+    v29TransitionManifest: EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST,
+    v29OperationalContract: EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT,
+    v29OperationalManifest: EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST,
     v30ExpectationState: EXPECTED_V30_EXPECTATION_STATE,
-    v30ReplayRepairsManifest: EXPECTED_V30_REPLAY_REPAIRS_MANIFEST,
-    v30OperationalContract: EXPECTED_V30_OPERATIONAL_CONTRACT,
+    v30ReplayRepairsManifest: EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST,
+    v30OperationalContract: EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT,
     v30OperationalManifest: EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST,
     v31ExpectationState: EXPECTED_V31_EXPECTATION_STATE,
     v31ResourceOwnershipManifest: EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST,
@@ -1543,12 +1548,12 @@ describe("studio-comp migration rollout guard", () => {
       ["v27_expectation_state", EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE],
       ["v28_expectation_state", EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE],
       ["v29_expectation_state", EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE],
-      ["v29_transition_manifest", EXPECTED_V29_TRANSITION_MANIFEST],
-      ["v29_operational_contract", EXPECTED_V30_COMPAT_V29_OPERATIONAL_CONTRACT],
-      ["v29_operational_manifest", EXPECTED_V30_PREDECESSOR_OPERATIONAL_MANIFEST],
+      ["v29_transition_manifest", EXPECTED_V31_COMPAT_V29_TRANSITION_MANIFEST],
+      ["v29_operational_contract", EXPECTED_V31_COMPAT_V29_OPERATIONAL_CONTRACT],
+      ["v29_operational_manifest", EXPECTED_V31_COMPAT_V29_OPERATIONAL_MANIFEST],
       ["v30_expectation_state", EXPECTED_V30_EXPECTATION_STATE],
-      ["v30_replay_repairs_manifest", EXPECTED_V30_REPLAY_REPAIRS_MANIFEST],
-      ["v30_operational_contract", EXPECTED_V30_OPERATIONAL_CONTRACT],
+      ["v30_replay_repairs_manifest", EXPECTED_V31_COMPAT_V30_REPLAY_REPAIRS_MANIFEST],
+      ["v30_operational_contract", EXPECTED_V31_COMPAT_V30_OPERATIONAL_CONTRACT],
       ["v30_operational_manifest", EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST],
       ["v31_expectation_state", EXPECTED_V31_EXPECTATION_STATE],
       ["v31_resource_ownership_manifest", EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST],
@@ -2708,9 +2713,14 @@ describe("studio-comp migration rollout guard", () => {
     const approvedRunner = (command, args) => {
       assert.equal(command, "gh");
       assert.deepEqual(args, [
-        "api", "repos/ronchak/Koaryu/issues/comments/123456789", "--jq", ".body",
+        "api", "repos/ronchak/Koaryu/issues/comments/123456789",
       ]);
-      return `${expectedBody}\n`;
+      return JSON.stringify({
+        body: expectedBody,
+        issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/134",
+        user: { login: "ronchak" },
+        author_association: "OWNER",
+      });
     };
     assert.doesNotThrow(() =>
       validateApplyApprovalRecord(config, packet, "schedule-v25", approvedRunner, {}));
@@ -2727,6 +2737,62 @@ describe("studio-comp migration rollout guard", () => {
     assert.throws(
       () => validateApplyApprovalRecord(config, packet, "v25", approvedRunner, {}),
       /does not exactly bind/,
+    );
+    const forgedOtherIssueRunner = () => JSON.stringify({
+      body: expectedBody,
+      issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/133",
+      user: { login: "ronchak" },
+      author_association: "OWNER",
+    });
+    assert.throws(
+      () => validateApplyApprovalRecord(
+        config,
+        packet,
+        "schedule-v25",
+        forgedOtherIssueRunner,
+        {},
+      ),
+      /does not belong to ronchak\/Koaryu PR #134/,
+    );
+    for (const untrustedAuthor of [
+      {
+        user: { login: "untrusted-outsider" },
+        author_association: "NONE",
+      },
+      {
+        user: { login: "ronchak" },
+        author_association: "COLLABORATOR",
+      },
+    ]) {
+      const untrustedAuthorRunner = () => JSON.stringify({
+        body: expectedBody,
+        issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/134",
+        ...untrustedAuthor,
+      });
+      assert.throws(
+        () => validateApplyApprovalRecord(
+          config,
+          packet,
+          "schedule-v25",
+          untrustedAuthorRunner,
+          {},
+        ),
+        /not authored by the authorized Koaryu repository owner/,
+      );
+    }
+    const missingAuthorRunner = () => JSON.stringify({
+      body: expectedBody,
+      issue_url: "https://api.github.com/repos/ronchak/Koaryu/issues/134",
+    });
+    assert.throws(
+      () => validateApplyApprovalRecord(
+        config,
+        packet,
+        "schedule-v25",
+        missingAuthorRunner,
+        {},
+      ),
+      /did not return structured GitHub comment data/,
     );
   });
 

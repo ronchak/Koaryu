@@ -18,6 +18,7 @@ from app.services.billing_invoice_operations import (
 )
 from app.services.billing_invoices import BillingInvoiceManager
 from app.services.billing_provider_operations import (
+    AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
 )
@@ -90,6 +91,7 @@ class _Facade:
         }
         self.supabase = _InvoiceSupabase({
             "billing_payers": [payer or _payer()],
+            "billing_payer_payment_consents": [],
             "billing_invoices": [invoice] if invoice else [],
             "billing_invoice_items": [],
             "audit_logs": [],
@@ -190,9 +192,13 @@ class _Facade:
 
 class _Stripe:
     invoices: dict[str, dict] = {}
+    setup_intents: dict[str, dict] = {}
     invoice_create_calls: list[dict] = []
     item_create_calls: list[dict] = []
     retrieve_calls: list[dict] = []
+    setup_intent_retrieve_calls: list[dict] = []
+    setup_intent_retrieve_hook = None
+    pay_before_mutation_hook = None
     finalize_calls: list[dict] = []
     send_calls: list[dict] = []
     pay_calls: list[dict] = []
@@ -208,9 +214,13 @@ class _Stripe:
     @classmethod
     def reset(cls):
         cls.invoices = {}
+        cls.setup_intents = {}
         cls.invoice_create_calls = []
         cls.item_create_calls = []
         cls.retrieve_calls = []
+        cls.setup_intent_retrieve_calls = []
+        cls.setup_intent_retrieve_hook = None
+        cls.pay_before_mutation_hook = None
         cls.finalize_calls = []
         cls.send_calls = []
         cls.pay_calls = []
@@ -255,6 +265,15 @@ class _Stripe:
         invoice.update(copy.deepcopy(self.__class__.readback_overrides))
         return invoice
 
+    def retrieve_connected_setup_intent(self, **payload):
+        self.__class__.setup_intent_retrieve_calls.append(copy.deepcopy(payload))
+        setup_intent = copy.deepcopy(
+            self.__class__.setup_intents[payload["setup_intent_id"]]
+        )
+        if self.__class__.setup_intent_retrieve_hook is not None:
+            self.__class__.setup_intent_retrieve_hook()
+        return setup_intent
+
     def finalize_connected_invoice(self, **payload):
         self.__class__.finalize_calls.append(copy.deepcopy(payload))
         if self.__class__.finalize_exception:
@@ -270,6 +289,8 @@ class _Stripe:
         return copy.deepcopy(self.__class__.invoices[payload["invoice_id"]])
 
     def pay_connected_invoice(self, **payload):
+        if self.__class__.pay_before_mutation_hook is not None:
+            self.__class__.pay_before_mutation_hook()
         self.__class__.pay_calls.append(copy.deepcopy(payload))
         invoice = self.__class__.invoices[payload["invoice_id"]]
         if self.__class__.pay_exception and not self.__class__.pay_exception_after_commit:
@@ -301,6 +322,34 @@ def _payer(**overrides):
         "connect_account_generation": 2,
         "default_payment_method_id": None,
         "verified_consent": False,
+        **overrides,
+    }
+
+
+def _autopay_payer(**overrides):
+    return _payer(**{
+        "default_payment_method_id": "pm_1",
+        "autopay_status": "enabled",
+        "autopay_authorized_at": "2026-08-27T00:00:00Z",
+        "autopay_terms_accepted_at": "2026-08-26T23:59:00Z",
+        **overrides,
+    })
+
+
+def _active_consent(**overrides):
+    return {
+        "id": "consent_1",
+        "setup_request_id": "setup_request_1",
+        "studio_id": "studio_1",
+        "payer_id": "payer_1",
+        "terms_version": AUTOPAY_TERMS_VERSION,
+        "stripe_connected_account_id": "acct_1",
+        "connect_account_generation": 2,
+        "stripe_setup_intent_id": "seti_1",
+        "accepted_at": "2026-08-26T23:59:00Z",
+        "completed_at": "2026-08-27T00:00:00Z",
+        "revoked_at": None,
+        "superseded_at": None,
         **overrides,
     }
 
@@ -339,10 +388,30 @@ def _seed_retry_provider(invoice: dict) -> None:
         "currency": invoice["currency"],
         "customer": invoice["stripe_customer_id"],
         "collection_method": invoice.get("collection_method") or "send_invoice",
+        "default_payment_method": invoice.get("default_payment_method_id"),
         "metadata": {
             "studio_id": invoice["studio_id"],
             "payer_id": invoice["payer_id"],
             "invoice_id": invoice["id"],
+        },
+    }
+
+
+def _seed_autopay_consent(facade: _Facade, invoice: dict) -> None:
+    facade.supabase.tables["billing_payer_payment_consents"] = [_active_consent()]
+    _Stripe.setup_intents["seti_1"] = {
+        "id": "seti_1",
+        "status": "succeeded",
+        "customer": invoice["stripe_customer_id"],
+        "payment_method": "pm_1",
+        "metadata": {
+            "product": "koaryu_payments_autopay",
+            "studio_id": invoice["studio_id"],
+            "payer_id": invoice["payer_id"],
+            "setup_request_id": "setup_request_1",
+            "terms_version": AUTOPAY_TERMS_VERSION,
+            "stripe_account_id": invoice["stripe_account_id"],
+            "connect_account_generation": "2",
         },
     }
 
@@ -844,6 +913,187 @@ def test_retry_success_and_old_key_replay_pay_and_audit_once():
     assert parent["state"] == "completed"
     assert parent["provider_object_id"] == "in_existing"
     assert parent["result_summary"] == "invoice_retry_mode:pay"
+
+
+@pytest.mark.parametrize(
+    ("payer_overrides", "consent_overrides"),
+    [
+        ({"autopay_status": "disabled"}, {}),
+        ({}, {"revoked_at": "2026-08-27T00:05:00Z"}),
+    ],
+)
+def test_retry_autopay_requires_enabled_unrevoked_consent_before_provider_mutation(
+    payer_overrides,
+    consent_overrides,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(**payer_overrides), invoice=invoice)
+    facade.supabase.tables["billing_payer_payment_consents"] = [
+        _active_consent(**consent_overrides)
+    ]
+    _seed_retry_provider(invoice)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-revoked-consent"
+        ))
+
+    assert exc.value.status_code == 409
+    assert _Stripe.pay_calls == []
+    assert _Stripe.setup_intent_retrieve_calls == []
+    assert _operation(facade, "invoice.retry")["state"] == "definitive_rejected"
+
+
+@pytest.mark.parametrize(
+    ("payer_overrides", "consent_overrides", "provider_method"),
+    [
+        ({}, {}, "pm_other"),
+        ({}, {"connect_account_generation": 3}, "pm_1"),
+    ],
+)
+def test_retry_autopay_rejects_payment_method_or_generation_drift_before_pay(
+    payer_overrides,
+    consent_overrides,
+    provider_method,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id=provider_method,
+    )
+    facade = _Facade(
+        payer=_autopay_payer(**payer_overrides),
+        invoice=invoice,
+    )
+    facade.supabase.tables["billing_payer_payment_consents"] = [
+        _active_consent(**consent_overrides)
+    ]
+    _seed_retry_provider(invoice)
+    _Stripe.setup_intents["seti_1"] = {
+        "id": "seti_1",
+        "status": "succeeded",
+        "customer": "cus_1",
+        "payment_method": "pm_1",
+        "metadata": {
+            "product": "koaryu_payments_autopay",
+            "studio_id": "studio_1",
+            "payer_id": "payer_1",
+            "setup_request_id": "setup_request_1",
+            "terms_version": AUTOPAY_TERMS_VERSION,
+            "stripe_account_id": "acct_1",
+            "connect_account_generation": "2",
+        },
+    }
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", "retry-identity-drift"
+        ))
+
+    assert exc.value.status_code == 409
+    assert _Stripe.pay_calls == []
+
+
+def test_retry_autopay_with_exact_active_consent_pays_once_and_replays_after_revoke():
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    manager = _manager(facade)
+
+    first = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", "retry-active-consent"
+    ))
+    facade.supabase.tables["billing_payer_payment_consents"][0]["revoked_at"] = (
+        "2026-08-27T00:05:00Z"
+    )
+    replay = asyncio.run(manager.retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", "retry-active-consent"
+    ))
+
+    assert first.status == replay.status == "paid"
+    assert len(_Stripe.pay_calls) == 1
+    assert len(_Stripe.retrieve_calls) == 1
+    assert len(_Stripe.setup_intent_retrieve_calls) == 1
+
+
+@pytest.mark.parametrize("closed_field", ["revoked_at", "superseded_at"])
+def test_retry_autopay_rechecks_consent_after_setup_intent_read_before_pay(
+    closed_field,
+):
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+
+    def close_consent_after_provider_read():
+        facade.supabase.tables["billing_payer_payment_consents"][0][closed_field] = (
+            "2026-08-27T00:05:00Z"
+        )
+
+    _Stripe.setup_intent_retrieve_hook = close_consent_after_provider_read
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(_manager(facade).retry_invoice_payment(
+            invoice["id"], "studio_1", "actor_1", f"retry-race-{closed_field}"
+        ))
+
+    assert exc.value.status_code == 409
+    assert len(_Stripe.retrieve_calls) == 1
+    assert len(_Stripe.setup_intent_retrieve_calls) == 1
+    assert _Stripe.pay_calls == []
+    operation = _operation(facade, "invoice.retry")
+    assert operation["state"] == "definitive_rejected"
+    assert operation["provider_request_attempt_count"] == 0
+
+
+def test_retry_autopay_owner_blocks_revoke_inside_provider_mutation_boundary():
+    invoice = _open_invoice(
+        collection_method="charge_automatically",
+        default_payment_method_id="pm_1",
+    )
+    facade = _Facade(payer=_autopay_payer(), invoice=invoice)
+    _seed_retry_provider(invoice)
+    _seed_autopay_consent(facade, invoice)
+    blocked_revocations = []
+
+    def attempt_revoke_after_final_validation():
+        try:
+            facade.supabase.mutate_billing_payer_payment_consent(
+                "consent_1",
+                revoked_at="2026-08-27T00:05:00Z",
+            )
+        except PostgrestAPIError as exc:
+            blocked_revocations.append((exc.code, exc.message))
+
+    _Stripe.pay_before_mutation_hook = attempt_revoke_after_final_validation
+    paid = asyncio.run(_manager(facade).retry_invoice_payment(
+        invoice["id"], "studio_1", "actor_1", "retry-consent-owner"
+    ))
+
+    assert paid.status == "paid"
+    assert blocked_revocations == [
+        ("55P03", "billing_invoice_mutation_in_progress")
+    ]
+    assert facade.supabase.tables["billing_payer_payment_consents"][0][
+        "revoked_at"
+    ] is None
+    assert len(_Stripe.pay_calls) == 1
+    assert _operation(facade, "invoice.retry")["state"] == "completed"
+
+    consent = facade.supabase.mutate_billing_payer_payment_consent(
+        "consent_1",
+        revoked_at="2026-08-27T00:05:00Z",
+    )
+    assert consent["revoked_at"] == "2026-08-27T00:05:00Z"
 
 
 def test_retry_lost_provider_response_uses_readback_without_second_pay():

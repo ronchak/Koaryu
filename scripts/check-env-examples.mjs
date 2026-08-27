@@ -558,6 +558,9 @@ export function validateStagingRenderService(renderSource, secretKeys) {
   if (renderScalar(block, "healthCheckPath") !== "/health/ready") {
     failures.push("render.yaml: staging healthCheckPath must enforce /health/ready");
   }
+  if (renderScalar(block, "branch") !== "staging") {
+    failures.push("render.yaml: staging web service branch must equal \"staging\"");
+  }
 
   const entries = extractRenderEnvEntries(block);
   const declared = new Map(

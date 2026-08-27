@@ -134,9 +134,12 @@ REVOKE ALL ON FUNCTION private.validate_billing_payment_identity_change()
 -- account; mismatched or partial identities stop the migration for reconciliation.
 DO $generation_backfills$
 BEGIN
-    EXECUTE 'LOCK TABLE public.billing_invoices IN SHARE ROW EXCLUSIVE MODE';
-    EXECUTE 'LOCK TABLE public.billing_payers IN SHARE ROW EXCLUSIVE MODE';
     EXECUTE 'LOCK TABLE public.studio_payment_accounts IN SHARE ROW EXCLUSIVE MODE';
+    EXECUTE 'LOCK TABLE public.billing_payers IN SHARE ROW EXCLUSIVE MODE';
+    EXECUTE 'LOCK TABLE public.billing_plans IN SHARE ROW EXCLUSIVE MODE';
+    EXECUTE 'LOCK TABLE public.billing_plan_prices IN SHARE ROW EXCLUSIVE MODE';
+    EXECUTE 'LOCK TABLE public.billing_subscriptions IN SHARE ROW EXCLUSIVE MODE';
+    EXECUTE 'LOCK TABLE public.billing_invoices IN SHARE ROW EXCLUSIVE MODE';
 
     UPDATE public.billing_payers AS payer
     SET connect_account_generation =
@@ -174,6 +177,91 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = '23514',
             MESSAGE = 'billing_payer_connect_generation_backfill_incomplete';
     END IF;
+
+    -- Pre-generation plan prices can adopt the current account generation only
+    -- when the active plan and price still name one exact provider identity.
+    -- Rows with stale provider IDs, explicit generation metadata, or a second
+    -- contradictory active price remain unchanged and fail the strict app check.
+    UPDATE public.billing_plan_prices AS price
+    SET metadata = jsonb_set(
+            price.metadata,
+            '{connect_account_generation}',
+            to_jsonb(private.current_connect_account_generation(account.metadata)),
+            true
+        )
+    FROM public.billing_plans AS plan
+    JOIN public.studio_payment_accounts AS account
+      ON account.studio_id = plan.studio_id
+    WHERE price.studio_id = plan.studio_id
+      AND price.billing_plan_id = plan.id
+      AND plan.status = 'active'
+      AND plan.stripe_account_id = account.stripe_connected_account_id
+      AND plan.stripe_product_id = price.stripe_product_id
+      AND plan.stripe_price_id = price.stripe_price_id
+      AND price.stripe_account_id = account.stripe_connected_account_id
+      AND btrim(price.stripe_account_id) <> ''
+      AND btrim(price.stripe_product_id) <> ''
+      AND btrim(price.stripe_price_id) <> ''
+      AND price.amount_cents = plan.amount_cents
+      AND price.currency = plan.currency
+      AND price.billing_interval = plan.billing_interval
+      AND price.recurring = (plan.billing_interval <> 'paid_in_full')
+      AND price.active IS TRUE
+      AND account.status = 'charges_enabled'
+      AND account.charges_enabled IS TRUE
+      AND private.current_connect_account_generation(account.metadata) > 0
+      AND jsonb_typeof(price.metadata) = 'object'
+      AND NOT (price.metadata ? 'connect_account_generation')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.billing_plan_prices AS other
+          WHERE other.studio_id = price.studio_id
+            AND other.billing_plan_id = price.billing_plan_id
+            AND other.stripe_account_id = price.stripe_account_id
+            AND other.amount_cents = price.amount_cents
+            AND other.currency = price.currency
+            AND other.billing_interval = price.billing_interval
+            AND other.recurring = price.recurring
+            AND other.active IS TRUE
+            AND other.id <> price.id
+            AND (
+                other.stripe_product_id IS DISTINCT FROM price.stripe_product_id
+                OR other.stripe_price_id IS DISTINCT FROM price.stripe_price_id
+            )
+      );
+
+    -- Provider-backed subscription groups follow the same rule. The group,
+    -- payer, customer, studio account, and current generation must all agree.
+    UPDATE public.billing_subscriptions AS subscription
+    SET metadata = jsonb_set(
+            subscription.metadata,
+            '{connect_account_generation}',
+            to_jsonb(payer.connect_account_generation),
+            true
+        ),
+        updated_at = clock_timestamp()
+    FROM public.billing_payers AS payer
+    JOIN public.studio_payment_accounts AS account
+      ON account.studio_id = payer.studio_id
+    WHERE subscription.studio_id = payer.studio_id
+      AND subscription.payer_id = payer.id
+      AND subscription.stripe_account_id = account.stripe_connected_account_id
+      AND subscription.stripe_account_id = payer.stripe_account_id
+      AND btrim(subscription.stripe_account_id) <> ''
+      AND subscription.stripe_customer_id = payer.stripe_customer_id
+      AND btrim(subscription.stripe_customer_id) <> ''
+      AND subscription.stripe_subscription_id IS NOT NULL
+      AND btrim(subscription.stripe_subscription_id) <> ''
+      AND subscription.status IN (
+          'pending', 'trialing', 'active', 'incomplete', 'past_due'
+      )
+      AND payer.connect_account_generation =
+            private.current_connect_account_generation(account.metadata)
+      AND payer.connect_account_generation > 0
+      AND account.status = 'charges_enabled'
+      AND account.charges_enabled IS TRUE
+      AND jsonb_typeof(subscription.metadata) = 'object'
+      AND NOT (subscription.metadata ? 'connect_account_generation');
 
     -- Invoices created before provider-generation metadata was introduced may
     -- adopt the current generation only when every stored provider identity
@@ -816,6 +904,105 @@ CREATE TRIGGER preserve_billing_invoice_mutation_owner_v31
     BEFORE UPDATE ON public.billing_invoice_mutation_owners
     FOR EACH ROW EXECUTE FUNCTION private.preserve_billing_invoice_mutation_owner_v31();
 
+CREATE FUNCTION private.reject_payer_change_during_invoice_retry_v31()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $$
+BEGIN
+    IF OLD.stripe_account_id IS NOT DISTINCT FROM NEW.stripe_account_id
+       AND OLD.stripe_customer_id IS NOT DISTINCT FROM NEW.stripe_customer_id
+       AND OLD.connect_account_generation
+            IS NOT DISTINCT FROM NEW.connect_account_generation
+       AND OLD.default_payment_method_id
+            IS NOT DISTINCT FROM NEW.default_payment_method_id
+       AND OLD.autopay_status IS NOT DISTINCT FROM NEW.autopay_status
+       AND OLD.autopay_authorized_at
+            IS NOT DISTINCT FROM NEW.autopay_authorized_at
+       AND OLD.autopay_terms_accepted_at
+            IS NOT DISTINCT FROM NEW.autopay_terms_accepted_at THEN
+        RETURN NEW;
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM public.billing_invoice_mutation_owners AS owner
+        JOIN public.billing_provider_operations AS operation
+          ON operation.id=owner.operation_id
+        WHERE owner.studio_id=NEW.studio_id
+          AND owner.payer_id=NEW.id
+          AND owner.operation_type='invoice.retry'
+          AND operation.state IN (
+              'started','provider_request_in_flight','recovery_authorized'
+          )
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='55P03',
+            MESSAGE='billing_invoice_mutation_in_progress';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+ALTER FUNCTION private.reject_payer_change_during_invoice_retry_v31()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.reject_payer_change_during_invoice_retry_v31()
+    FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER reject_payer_change_during_invoice_retry_v31
+    BEFORE UPDATE OF
+        stripe_account_id,stripe_customer_id,connect_account_generation,
+        default_payment_method_id,autopay_status,autopay_authorized_at,
+        autopay_terms_accepted_at
+    ON public.billing_payers
+    FOR EACH ROW EXECUTE FUNCTION private.reject_payer_change_during_invoice_retry_v31();
+
+CREATE FUNCTION private.reject_consent_change_during_invoice_retry_v31()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $$
+DECLARE
+    v_studio_id UUID:=NEW.studio_id;
+    v_payer_id UUID:=NEW.payer_id;
+BEGIN
+    PERFORM 1
+    FROM public.billing_payers
+    WHERE id=v_payer_id AND studio_id=v_studio_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_payer_consent_identity_mismatch';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM public.billing_invoice_mutation_owners AS owner
+        JOIN public.billing_provider_operations AS operation
+          ON operation.id=owner.operation_id
+        WHERE owner.studio_id=v_studio_id
+          AND owner.payer_id=v_payer_id
+          AND owner.operation_type='invoice.retry'
+          AND operation.state IN (
+              'started','provider_request_in_flight','recovery_authorized'
+          )
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='55P03',
+            MESSAGE='billing_invoice_mutation_in_progress';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+ALTER FUNCTION private.reject_consent_change_during_invoice_retry_v31()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.reject_consent_change_during_invoice_retry_v31()
+    FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER reject_consent_insert_during_invoice_retry_v31
+    BEFORE INSERT ON public.billing_payer_payment_consents
+    FOR EACH ROW EXECUTE FUNCTION private.reject_consent_change_during_invoice_retry_v31();
+CREATE TRIGGER reject_consent_update_during_invoice_retry_v31
+    BEFORE UPDATE OF
+        accepted_at,completed_at,revoked_at,superseded_at,stripe_setup_intent_id
+    ON public.billing_payer_payment_consents
+    FOR EACH ROW EXECUTE FUNCTION private.reject_consent_change_during_invoice_retry_v31();
+
 ALTER FUNCTION public.claim_billing_provider_operation_resource_v1(
     UUID,UUID,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT,INTEGER,UUID,INTEGER
 ) RENAME TO claim_billing_provider_operation_resource_v30;
@@ -1274,6 +1461,14 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE='23514',
             MESSAGE='billing_invoice_mutation_identity_mismatch';
     END IF;
+    PERFORM 1
+    FROM public.billing_payers
+    WHERE id=p_payer_id AND studio_id=p_studio_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='23514',
+            MESSAGE='billing_invoice_mutation_identity_mismatch';
+    END IF;
     SELECT * INTO v_owner
     FROM public.billing_invoice_mutation_owners
     WHERE studio_id=p_studio_id AND invoice_id=p_resource_id
@@ -1697,9 +1892,11 @@ DECLARE
     v_schedule public.billing_enrollment_transition_intents%ROWTYPE;
     v_execute public.billing_enrollment_transition_intents%ROWTYPE;
     v_operation public.billing_provider_operations%ROWTYPE;
+    v_alias public.billing_enrollment_transition_aliases%ROWTYPE;
     v_now TIMESTAMPTZ;
     v_provider_key TEXT;
     v_provider_hash TEXT;
+    v_expected_provider_object_id TEXT;
     v_returned INTEGER:=0;
 BEGIN
     IF p_worker_id IS NULL OR p_lease_seconds NOT BETWEEN 5 AND 300
@@ -1751,15 +1948,187 @@ BEGIN
         ORDER BY execute.created_at DESC,execute.id DESC
         LIMIT 1 FOR UPDATE;
         IF FOUND THEN
-            IF v_execute.state='due_claimed'
+            IF v_schedule.state='due_claimed'
+               AND v_execute.state='recovery_authorized' THEN
+                SELECT * INTO v_operation
+                FROM public.billing_provider_operations
+                WHERE id=v_execute.provider_operation_id
+                  AND studio_id=v_execute.studio_id
+                FOR UPDATE;
+                IF v_operation.id IS NULL
+                   OR v_execute.studio_id IS DISTINCT FROM v_schedule.studio_id
+                   OR v_execute.enrollment_id IS DISTINCT FROM v_schedule.enrollment_id
+                   OR v_execute.payer_id IS DISTINCT FROM v_schedule.payer_id
+                   OR v_execute.billing_subscription_id IS DISTINCT FROM
+                        v_schedule.billing_subscription_id
+                   OR v_execute.mutation_strategy IS DISTINCT FROM
+                        v_schedule.mutation_strategy
+                   OR v_execute.request_sha256 IS DISTINCT FROM v_schedule.request_sha256
+                   OR v_execute.stripe_connected_account_id IS DISTINCT FROM
+                        v_schedule.stripe_connected_account_id
+                   OR v_execute.connect_account_generation IS DISTINCT FROM
+                        v_schedule.connect_account_generation
+                   OR v_execute.stripe_subscription_id IS DISTINCT FROM
+                        v_schedule.stripe_subscription_id
+                   OR v_execute.stripe_subscription_item_id IS DISTINCT FROM
+                        v_schedule.stripe_subscription_item_id
+                   OR v_execute.period_boundary IS DISTINCT FROM
+                        v_schedule.period_boundary
+                   OR v_execute.expected_quantity IS DISTINCT FROM
+                        v_schedule.expected_quantity
+                   OR v_execute.expected_subscription_item_count IS DISTINCT FROM
+                        v_schedule.expected_subscription_item_count
+                   OR v_execute.same_item_active_count IS DISTINCT FROM
+                        v_schedule.same_item_active_count
+                   OR v_execute.provider_quantity IS DISTINCT FROM
+                        v_schedule.provider_quantity
+                   OR v_execute.recovery_outcome IS DISTINCT FROM
+                        'provider_no_object_safe_to_retry'
+                   OR v_operation.state IS DISTINCT FROM 'recovery_authorized'
+                   OR v_operation.operation_type IS DISTINCT FROM
+                        'enrollment.cancel.period_end.execute'
+                   OR v_operation.recovery_outcome IS DISTINCT FROM
+                        v_execute.recovery_outcome
+                   OR v_operation.recovery_proof_sha256 IS DISTINCT FROM
+                        v_execute.recovery_proof_sha256
+                   OR v_operation.recovery_actor_id IS DISTINCT FROM
+                        v_execute.recovery_actor_id
+                   OR v_operation.actor_id IS DISTINCT FROM v_execute.initiated_by
+                   OR v_operation.caller_request_key IS DISTINCT FROM
+                        v_execute.provider_caller_request_key
+                   OR v_operation.request_sha256 IS DISTINCT FROM
+                        v_execute.provider_request_sha256
+                   OR v_operation.stripe_connected_account_id IS DISTINCT FROM
+                        v_execute.stripe_connected_account_id
+                   OR v_operation.connect_account_generation IS DISTINCT FROM
+                        v_execute.connect_account_generation
+                   OR v_operation.provider_object_id IS NOT NULL
+                   OR v_operation.provider_secondary_object_id IS NOT NULL
+                   OR v_operation.provider_request_attempt_count>=2
+                   OR v_operation.lease_owner IS DISTINCT FROM v_execute.lease_owner
+                   OR v_operation.lease_expires_at IS NULL
+                   OR v_operation.lease_expires_at>v_now
+                   OR v_execute.lease_expires_at IS NULL
+                   OR v_execute.lease_expires_at>v_now THEN
+                    CONTINUE;
+                END IF;
+                UPDATE public.billing_provider_operations
+                SET lease_owner=p_worker_id,
+                    lease_acquired_at=v_now,
+                    lease_expires_at=v_now+make_interval(secs=>p_lease_seconds),
+                    revision=revision+1,
+                    updated_at=v_now
+                WHERE id=v_operation.id
+                RETURNING * INTO v_operation;
+                UPDATE public.billing_enrollment_transition_intents
+                SET lease_owner=p_worker_id,
+                    lease_acquired_at=v_now,
+                    lease_expires_at=v_now+make_interval(secs=>p_lease_seconds),
+                    revision=revision+1,
+                    updated_at=v_now
+                WHERE id=v_execute.id
+                RETURNING * INTO v_execute;
+                RETURN NEXT v_execute;
+                v_returned:=v_returned+1;
+                EXIT WHEN v_returned>=p_limit;
+            ELSIF v_execute.state='due_claimed'
                AND v_execute.lease_expires_at<=v_now THEN
                 IF v_execute.provider_operation_id IS NOT NULL THEN
+                    v_expected_provider_object_id:=CASE
+                        WHEN v_execute.mutation_strategy LIKE 'subscription_cancel_%'
+                            THEN v_execute.stripe_subscription_id
+                        ELSE v_execute.stripe_subscription_item_id
+                    END;
                     SELECT * INTO v_operation FROM public.billing_provider_operations
                     WHERE id=v_execute.provider_operation_id
                       AND studio_id=v_execute.studio_id FOR UPDATE;
+                    SELECT * INTO v_alias
+                    FROM public.billing_enrollment_transition_aliases
+                    WHERE intent_id=v_execute.id
+                      AND studio_id=v_execute.studio_id
+                      AND transition_kind='execute_due'
+                      AND caller_request_key=v_execute.provider_caller_request_key
+                    ORDER BY created_at,id
+                    LIMIT 1 FOR UPDATE;
                     IF v_operation.id IS NULL
-                       OR v_operation.operation_type<>'enrollment.cancel.period_end.execute'
-                       OR v_operation.state NOT IN ('started','provider_succeeded','projected') THEN
+                       OR v_operation.id IS DISTINCT FROM v_execute.provider_operation_id
+                       OR v_alias.id IS NULL
+                       OR v_alias.intent_id IS DISTINCT FROM v_execute.id
+                       OR v_alias.studio_id IS DISTINCT FROM v_execute.studio_id
+                       OR v_alias.transition_kind IS DISTINCT FROM 'execute_due'
+                       OR v_alias.actor_id IS DISTINCT FROM v_execute.initiated_by
+                       OR v_alias.caller_request_key IS DISTINCT FROM
+                            v_execute.provider_caller_request_key
+                       OR v_alias.request_sha256 IS DISTINCT FROM
+                            v_execute.provider_request_sha256
+                       OR v_execute.source_intent_id IS DISTINCT FROM v_schedule.id
+                       OR v_execute.studio_id IS DISTINCT FROM v_schedule.studio_id
+                       OR v_execute.enrollment_id IS DISTINCT FROM v_schedule.enrollment_id
+                       OR v_execute.payer_id IS DISTINCT FROM v_schedule.payer_id
+                       OR v_execute.billing_subscription_id IS DISTINCT FROM
+                            v_schedule.billing_subscription_id
+                       OR v_execute.mutation_strategy IS DISTINCT FROM
+                            v_schedule.mutation_strategy
+                       OR v_execute.request_sha256 IS DISTINCT FROM v_schedule.request_sha256
+                       OR v_execute.stripe_connected_account_id IS DISTINCT FROM
+                            v_schedule.stripe_connected_account_id
+                       OR v_execute.connect_account_generation IS DISTINCT FROM
+                            v_schedule.connect_account_generation
+                       OR v_execute.stripe_subscription_id IS DISTINCT FROM
+                            v_schedule.stripe_subscription_id
+                       OR v_execute.stripe_subscription_item_id IS DISTINCT FROM
+                            v_schedule.stripe_subscription_item_id
+                       OR v_execute.period_boundary IS DISTINCT FROM
+                            v_schedule.period_boundary
+                       OR v_execute.expected_quantity IS DISTINCT FROM
+                            v_schedule.expected_quantity
+                       OR v_execute.expected_subscription_item_count IS DISTINCT FROM
+                            v_schedule.expected_subscription_item_count
+                       OR v_execute.same_item_active_count IS DISTINCT FROM
+                            v_schedule.same_item_active_count
+                       OR v_execute.provider_quantity IS DISTINCT FROM
+                            v_schedule.provider_quantity
+                       OR v_execute.initiated_by IS DISTINCT FROM v_schedule.initiated_by
+                       OR v_operation.studio_id IS DISTINCT FROM v_execute.studio_id
+                       OR v_operation.operation_type IS DISTINCT FROM
+                            'enrollment.cancel.period_end.execute'
+                       OR v_operation.state NOT IN ('started','provider_succeeded','projected')
+                       OR v_operation.actor_id IS DISTINCT FROM v_execute.initiated_by
+                       OR v_operation.caller_request_key IS DISTINCT FROM
+                            v_execute.provider_caller_request_key
+                       OR v_operation.request_sha256 IS DISTINCT FROM
+                            v_execute.provider_request_sha256
+                       OR v_operation.stripe_connected_account_id IS DISTINCT FROM
+                            v_execute.stripe_connected_account_id
+                       OR v_operation.connect_account_generation IS DISTINCT FROM
+                            v_execute.connect_account_generation
+                       OR (
+                            v_operation.state='started'
+                            AND (
+                                v_operation.provider_request_attempt_count IS DISTINCT FROM 0
+                                OR v_operation.provider_request_in_flight_at IS NOT NULL
+                                OR v_operation.provider_request_id IS NOT NULL
+                                OR v_operation.provider_object_id IS NOT NULL
+                                OR v_operation.provider_secondary_object_id IS NOT NULL
+                                OR v_operation.recovery_proof_sha256 IS NOT NULL
+                                OR v_operation.recovery_outcome IS NOT NULL
+                                OR v_operation.recovery_actor_id IS NOT NULL
+                                OR v_operation.recovery_authorized_at IS NOT NULL
+                            )
+                       )
+                       OR (
+                            v_operation.state IN ('provider_succeeded','projected')
+                            AND (
+                                v_operation.provider_request_attempt_count NOT BETWEEN 1 AND 2
+                                OR v_operation.provider_object_id IS DISTINCT FROM
+                                    v_expected_provider_object_id
+                            )
+                       )
+                       OR v_operation.lease_owner IS DISTINCT FROM v_execute.lease_owner
+                       OR v_operation.lease_expires_at IS NULL
+                       OR v_operation.lease_expires_at>v_now
+                       OR v_execute.lease_expires_at IS NULL
+                       OR v_execute.lease_expires_at>v_now THEN
                         CONTINUE;
                     END IF;
                     UPDATE public.billing_provider_operations
@@ -1869,6 +2238,8 @@ BEGIN
             ('private.preserve_billing_provider_operation_resource_v1()', false, false, 'search_path=""'),
             ('private.preserve_billing_provider_operation_step_v1()', false, false, 'search_path=""'),
             ('private.preserve_billing_invoice_mutation_owner_v31()', false, false, 'search_path=""'),
+            ('private.reject_consent_change_during_invoice_retry_v31()', true, false, 'search_path=""'),
+            ('private.reject_payer_change_during_invoice_retry_v31()', true, false, 'search_path=""'),
             ('private.koaryu_release_schedule_window_manifest_v1()', false, false, 'search_path=pg_catalog'),
             ('private.validate_billing_payment_identity_change()', false, false, 'search_path=""'),
             ('public.claim_billing_invoice_closeout_operation_v1(uuid,uuid,text,text,uuid,uuid,text,text,text,integer,uuid,integer)', true, true, 'search_path=""'),
@@ -2068,7 +2439,16 @@ BEGIN
              'private.preserve_billing_invoice_mutation_owner_v31()',19),
             ('billing_provider_operation_resources',
              'maintain_billing_invoice_mutation_owner_v31',
-             'private.maintain_billing_invoice_mutation_owner_v31()',21)
+             'private.maintain_billing_invoice_mutation_owner_v31()',21),
+            ('billing_payer_payment_consents',
+             'reject_consent_insert_during_invoice_retry_v31',
+             'private.reject_consent_change_during_invoice_retry_v31()',7),
+            ('billing_payer_payment_consents',
+             'reject_consent_update_during_invoice_retry_v31',
+             'private.reject_consent_change_during_invoice_retry_v31()',19),
+            ('billing_payers',
+             'reject_payer_change_during_invoice_retry_v31',
+             'private.reject_payer_change_during_invoice_retry_v31()',19)
     ), invoice_owner_trigger_state AS (
         SELECT
             required.trigger_name,
@@ -2228,7 +2608,7 @@ BEGIN
             FROM invoice_owner_policy_state
           ) THEN 0 ELSE 1 END
         + CASE WHEN (
-            SELECT count(*)=2
+            SELECT count(*)=5
                AND bool_and(tgenabled='O')
                AND bool_and(actual_tgtype=expected_tgtype)
                AND bool_and(function_matches)
@@ -2293,7 +2673,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    '0fafb4fe07bb2eb83d770efeb2acde63925b4185c23eac669c06783eb8f41a4e'
+    'c55c099d57cb1dfbe50644386b4b38d794d2ed1b9d71454f7d8c8a84ee1db4f0'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -2305,7 +2685,7 @@ SET search_path = pg_catalog
 SET "TimeZone" = 'UTC'
 AS $$
     SELECT encode(extensions.digest(convert_to(
-        '330d873570885be3aee2109ce2b492fbc494bf47addd3bdcd573b9829453b264' || '|' ||
+        '7e563bb93c268757020448ed1a1213432fd6905b03b04b83abf89006deb36d78' || '|' ||
         private.koaryu_release_resource_ownership_manifest_v31() || '|' ||
         private.koaryu_release_operational_contract_v31() || '|' ||
         (SELECT string_agg(
@@ -2366,7 +2746,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:fb34bb3fb5e77d686b72e2bb413d6502d75b6042a437caa03344e4d2f5fa5be0' THEN
+       <> '0:55f9397aba0a331d528b8f71d69599f14412c3c29f8eb0fe7d1a145d97a329c8' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -2547,19 +2927,19 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_contract_v26');
     END IF;
     IF private.koaryu_release_operational_contract_v27()
-       <> '0:c86c9569398ab09a3c5bf8c71f2558b24d454ab7be486356ae7a5b142d002863' THEN
+       <> '0:2e8b9cdc5036c41d565b3f442eb968db70e7fb45255165310c15e978abeb0d45' THEN
         v_failures := array_append(v_failures, 'operational_contract_v27');
     END IF;
     IF private.koaryu_release_operational_contract_v28()
-       <> '0:bad1e55d7938106e61b9799435f236cee26e06cc9e7827efe6436ecefeaf9f38' THEN
+       <> '0:34ac9f200fe9259be482894f3770e0e321b319d459bc604b4f88e26194d22a20' THEN
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
     IF private.koaryu_release_operational_contract_v29()
-       <> '0:e88193588365450a20fc05d1d50bae43d21ac9f38002e8bc8daa7dd8ac1f7276' THEN
+       <> '0:553e9156f99f0d2af3b0d9b37b0492912ec7bda036f99717244ed9c7c4297ab1' THEN
         v_failures := array_append(v_failures, 'operational_contract_v29');
     END IF;
     IF private.koaryu_release_operational_contract_v30()
-       <> '0:83cdec2d99ff624fa580d3c96a36699b7d8a04222cbeb6d6d9fcaa9a521d8af3' THEN
+       <> '0:1a796981a4605be52bb488044f01124a968e2af20adad9bc929fa17c130cd6a5' THEN
         v_failures := array_append(v_failures, 'operational_contract_v30');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -2575,18 +2955,18 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_manifest_v11_function');
     END IF;
     IF private.koaryu_release_operational_manifest_v11()
-       <> '330d873570885be3aee2109ce2b492fbc494bf47addd3bdcd573b9829453b264' THEN
+       <> '7e563bb93c268757020448ed1a1213432fd6905b03b04b83abf89006deb36d78' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v11');
     END IF;
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       <> '0:c38b23cb021f0a70e900d42f40df6f6efcc7c95567038052ebc97ea4352a7869' THEN
+       <> '0:17dc610684d147acfc18f8b5f777aa4b3a034bf328d4172bb9d87372166b7388' THEN
         v_failures := array_append(v_failures, 'provider_operation_steps_manifest_v28');
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_resource_ownership_manifest_v31()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> 'bd73decc2f8a0a2137d930f8a3df727d48d83e27ef43167f0f712e78830ac9bb' THEN
+       <> 'ca33c3643dd1e0e3b65e16dfd0095bbf73a43728c73b4b8ad6372b4cd6db29bf' THEN
         v_failures:=array_append(v_failures,'resource_ownership_manifest_v31_function');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -2651,13 +3031,13 @@ BEGIN
         v_failures := array_append(v_failures, 'operation_allowlist_column');
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> '601e0bfa142286b2cbe13d9536f981e873d7e9359cf59a2dc2d055abde549293' THEN
+       <> '091e95661d36feba5f7e296e54a6633dc5d0a55d0f00274ce1792d16a862d7fa' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_operational_manifest_v12()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> 'e9620730988075628439069b437f14d676cc108f21a0f420aaec65c9169f3d51' THEN
+       <> 'ce150bddf014fd310a1db9ccc5194e3d25b18e2570bd1c57bbb49430e31354c5' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12_function');
     END IF;
     RETURN QUERY SELECT cardinality(v_failures) = 0,
@@ -2849,8 +3229,16 @@ BEGIN
         private.koaryu_release_operational_contract_v28();
     RAISE NOTICE 'KOARYU_V31_COMPAT_V29_OPERATIONAL_CONTRACT=%',
         private.koaryu_release_operational_contract_v29();
+    RAISE NOTICE 'KOARYU_V31_COMPAT_V29_TRANSITION_MANIFEST=%',
+        private.koaryu_release_enrollment_transition_manifest_v29();
+    RAISE NOTICE 'KOARYU_V31_COMPAT_V29_OPERATIONAL_MANIFEST=%',
+        private.koaryu_release_operational_manifest_v10();
     RAISE NOTICE 'KOARYU_V31_COMPAT_V30_OPERATIONAL_CONTRACT=%',
         private.koaryu_release_operational_contract_v30();
+    RAISE NOTICE 'KOARYU_V31_COMPAT_V30_REPLAY_MANIFEST=%',
+        private.koaryu_release_payments_replay_repairs_manifest_v30();
+    RAISE NOTICE 'KOARYU_V31_COMPAT_V30_OPERATIONAL_MANIFEST=%',
+        private.koaryu_release_operational_manifest_v11();
     RAISE NOTICE 'KOARYU_V31_COMPAT_V28_PROVIDER_MANIFEST=%',
         private.koaryu_release_provider_operation_steps_manifest_v28();
     RAISE NOTICE 'KOARYU_V31_CRITICAL_SURFACE_MANIFEST=%',

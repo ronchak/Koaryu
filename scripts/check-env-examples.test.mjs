@@ -484,6 +484,7 @@ envVars:
 services:
   - type: web
     name: koaryu-staging
+    branch: staging
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -508,6 +509,43 @@ services:
       (failure) => failure.includes("staging LIVE_BILLING_ENABLED")
         && failure.includes('must equal "false"'),
     ));
+  });
+
+  it("pins the staging web service to the staging branch", () => {
+    const reviewed = `
+services:
+  - type: web
+    name: koaryu-staging
+    branch: staging
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "false"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: BILLING_TRANSITION_SCHEDULER_ENABLED
+        value: "true"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+`;
+    assert.deepEqual(validateStagingRenderService(reviewed, []), []);
+    assert.ok(validateStagingRenderService(
+      reviewed.replace("branch: staging", "branch: main"),
+      [],
+    ).some((failure) => failure.includes("branch")));
+    assert.ok(validateStagingRenderService(
+      reviewed.replace("    branch: staging\n", ""),
+      [],
+    ).some((failure) => failure.includes("branch")));
   });
 
   it("requires the exact repository-owned staging billing-transition cron", () => {

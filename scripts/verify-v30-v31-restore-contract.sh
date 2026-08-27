@@ -88,10 +88,10 @@ INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(
   '31000000-0000-4000-8000-000000000001','admin'
 );
 INSERT INTO public.studio_payment_accounts(
-  studio_id,stripe_connected_account_id,metadata
+  studio_id,stripe_connected_account_id,status,charges_enabled,metadata
 ) VALUES(
   '31000000-0000-4000-8000-000000000002','acct_v31restore',
-  '{"connect_account_generation":1}'
+  'charges_enabled',true,'{"connect_account_generation":1}'
 );
 INSERT INTO public.billing_payers(
   id,studio_id,display_name,stripe_account_id,stripe_customer_id,
@@ -106,6 +106,52 @@ INSERT INTO public.billing_payers(
   ('31000000-0000-4000-8000-000000000005',
    '31000000-0000-4000-8000-000000000002','Underpaid legacy payer',
    'acct_v31restore','cus_v31restore_underpaid',1,'current',0);
+INSERT INTO public.billing_plans(
+  id,studio_id,name,amount_cents,currency,billing_interval,status,
+  stripe_account_id,stripe_product_id,stripe_price_id,stripe_price_version
+) VALUES
+  ('31000000-0000-4000-8000-000000000020',
+   '31000000-0000-4000-8000-000000000002','Exact legacy generation plan',
+   12000,'usd','monthly','active','acct_v31restore',
+   'prod_v31legacy_exact','price_v31legacy_exact',1),
+  ('31000000-0000-4000-8000-000000000021',
+   '31000000-0000-4000-8000-000000000002','Stale legacy generation plan',
+   12000,'usd','monthly','active','acct_v31restore',
+   'prod_v31legacy_current','price_v31legacy_current',1);
+INSERT INTO public.billing_plan_prices(
+  id,studio_id,billing_plan_id,stripe_account_id,stripe_product_id,
+  stripe_price_id,amount_cents,currency,billing_interval,recurring,active,
+  version,metadata
+) VALUES
+  ('31000000-0000-4000-8000-000000000022',
+   '31000000-0000-4000-8000-000000000002',
+   '31000000-0000-4000-8000-000000000020','acct_v31restore',
+   'prod_v31legacy_exact','price_v31legacy_exact',12000,'usd','monthly',
+   true,true,1,'{"legacy_marker":"keep"}'::jsonb),
+  ('31000000-0000-4000-8000-000000000023',
+   '31000000-0000-4000-8000-000000000002',
+   '31000000-0000-4000-8000-000000000021','acct_v31restore',
+   'prod_v31legacy_stale','price_v31legacy_stale',12000,'usd','monthly',
+   true,true,1,'{"legacy_marker":"keep"}'::jsonb);
+INSERT INTO public.billing_subscriptions(
+  id,studio_id,payer_id,stripe_account_id,stripe_customer_id,
+  stripe_subscription_id,collection_mode,billing_interval,currency,status,metadata
+) VALUES
+  ('31000000-0000-4000-8000-000000000024',
+   '31000000-0000-4000-8000-000000000002',
+   '31000000-0000-4000-8000-000000000004','acct_v31restore',
+   'cus_v31restore_partial','sub_v31legacy_exact','invoice_link','monthly','usd',
+   'active','{"legacy_marker":"keep"}'::jsonb),
+  ('31000000-0000-4000-8000-000000000025',
+   '31000000-0000-4000-8000-000000000002',
+   '31000000-0000-4000-8000-000000000005','acct_v31restore',
+   'cus_v31restore_stale','sub_v31legacy_stale','invoice_link','monthly','usd',
+   'active','{"legacy_marker":"keep"}'::jsonb),
+  ('31000000-0000-4000-8000-000000000026',
+   '31000000-0000-4000-8000-000000000002',
+   '31000000-0000-4000-8000-000000000003','acct_v31restore',
+   'cus_v31restore_full','sub_v31legacy_explicit','invoice_link','monthly','usd',
+   'active','{"connect_account_generation":9}'::jsonb);
 INSERT INTO public.billing_invoices(
   id,studio_id,payer_id,status,amount_due_cents,amount_paid_cents,
   amount_remaining_cents,currency,paid_at
@@ -302,6 +348,8 @@ normalization_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || statu
 payer_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || billing_status || ':' || balance_cents::TEXT, '|' ORDER BY id) FROM public.billing_payers WHERE id BETWEEN '31000000-0000-4000-8000-000000000003'::uuid AND '31000000-0000-4000-8000-000000000005'::uuid;")"
 payer_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || COALESCE(connect_account_generation::TEXT,''), '|' ORDER BY id) FROM public.billing_payers WHERE id BETWEEN '31000000-0000-4000-8000-000000000003'::uuid AND '31000000-0000-4000-8000-000000000005'::uuid;")"
 invoice_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || CASE WHEN NOT (metadata ? 'connect_account_generation') THEN '<missing>' WHEN metadata->>'connect_account_generation' = '' THEN '<empty>' ELSE COALESCE(metadata->>'connect_account_generation','<json-null>') END, '|' ORDER BY id) FROM public.billing_invoices WHERE id BETWEEN '31000000-0000-4000-8000-000000000015'::uuid AND '31000000-0000-4000-8000-000000000019'::uuid;")"
+plan_price_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || COALESCE(metadata->>'connect_account_generation','<missing>') || ':' || COALESCE(metadata->>'legacy_marker','<none>'), '|' ORDER BY id) FROM public.billing_plan_prices WHERE id BETWEEN '31000000-0000-4000-8000-000000000022'::uuid AND '31000000-0000-4000-8000-000000000023'::uuid;")"
+subscription_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || COALESCE(metadata->>'connect_account_generation','<missing>') || ':' || COALESCE(metadata->>'legacy_marker','<none>'), '|' ORDER BY id) FROM public.billing_subscriptions WHERE id BETWEEN '31000000-0000-4000-8000-000000000024'::uuid AND '31000000-0000-4000-8000-000000000026'::uuid;")"
 payments_after="$(table_fingerprint billing_payments)"
 refunds_after="$(table_fingerprint billing_refunds)"
 disputes_after="$(table_fingerprint billing_disputes)"
@@ -319,14 +367,16 @@ echo "RESTORED_V31_LEGACY_NORMALIZATION_STATE=$normalization_state"
 echo "RESTORED_V31_PAYER_RECEIVABLE_STATE=$payer_state"
 echo "RESTORED_V31_PAYER_GENERATION_STATE=$payer_generation_state"
 echo "RESTORED_V31_INVOICE_GENERATION_STATE=$invoice_generation_state"
+echo "RESTORED_V31_PLAN_PRICE_GENERATION_STATE=$plan_price_generation_state"
+echo "RESTORED_V31_SUBSCRIPTION_GENERATION_STATE=$subscription_generation_state"
 echo "RESTORED_V31_UNTOUCHED_ROW_FINGERPRINTS=$payments_after|$refunds_after|$disputes_after|$operations_after"
 
-if [[ "$resource_manifest" != "0:fb34bb3fb5e77d686b72e2bb413d6502d75b6042a437caa03344e4d2f5fa5be0" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
-if [[ "$operational_contract" != "0:0fafb4fe07bb2eb83d770efeb2acde63925b4185c23eac669c06783eb8f41a4e" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
-if [[ "$operational_manifest" != "601e0bfa142286b2cbe13d9536f981e873d7e9359cf59a2dc2d055abde549293" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
+if [[ "$resource_manifest" != "0:55f9397aba0a331d528b8f71d69599f14412c3c29f8eb0fe7d1a145d97a329c8" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
+if [[ "$operational_contract" != "0:c55c099d57cb1dfbe50644386b4b38d794d2ed1b9d71454f7d8c8a84ee1db4f0" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
+if [[ "$operational_manifest" != "091e95661d36feba5f7e296e54a6633dc5d0a55d0f00274ce1792d16a862d7fa" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
 if [[ "$readiness" != "true|126|20260826185651|0||release-db-attestation-v31" ]]; then echo "Restored V31 readiness mismatch: $readiness" >&2; exit 1; fi
 if [[ "$compat_readiness" != "true|125|20260826155911|0||release-db-attestation-v30" ]]; then echo "Restored V30 compatibility readiness mismatch: $compat_readiness" >&2; exit 1; fi
-if [[ "$expectation_state" != "1:ab1432b9cca6636e233729f30be7ead648596cc23b95e65cd800c611c6a39ea8" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
+if [[ "$expectation_state" != "1:4a2d99d5ae0de5f9e2aeb6c07d8dfef8e5b4f729fe2f00aa9648a9286ead5ed2" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
 if ! (
   cd "$repository_root"
   node --input-type=module --eval '
@@ -351,6 +401,14 @@ if [[ "$payer_generation_state" != "31000000-0000-4000-8000-000000000003:1|31000
 fi
 if [[ "$invoice_generation_state" != "31000000-0000-4000-8000-000000000015:1|31000000-0000-4000-8000-000000000016:<empty>|31000000-0000-4000-8000-000000000017:<missing>|31000000-0000-4000-8000-000000000018:<missing>|31000000-0000-4000-8000-000000000019:<missing>" ]]; then
   echo "Restored V31 invoice generation backfill mismatch: $invoice_generation_state" >&2
+  exit 1
+fi
+if [[ "$plan_price_generation_state" != "31000000-0000-4000-8000-000000000022:1:keep|31000000-0000-4000-8000-000000000023:<missing>:keep" ]]; then
+  echo "Restored V31 plan-price generation adoption mismatch: $plan_price_generation_state" >&2
+  exit 1
+fi
+if [[ "$subscription_generation_state" != "31000000-0000-4000-8000-000000000024:1:keep|31000000-0000-4000-8000-000000000025:<missing>:keep|31000000-0000-4000-8000-000000000026:9:<none>" ]]; then
+  echo "Restored V31 subscription generation adoption mismatch: $subscription_generation_state" >&2
   exit 1
 fi
 if [[ "$legacy_invoice_negative_before" != "$legacy_invoice_negative_after" ]]; then
@@ -760,9 +818,18 @@ DECLARE
   v_schedule UUID := gen_random_uuid();
   v_execute UUID := gen_random_uuid();
   v_operation UUID := gen_random_uuid();
+  v_mismatch_student UUID := gen_random_uuid();
+  v_mismatch_enrollment UUID := gen_random_uuid();
+  v_mismatch_schedule UUID := gen_random_uuid();
+  v_mismatch_execute UUID := gen_random_uuid();
+  v_mismatch_operation UUID := gen_random_uuid();
   v_old_worker UUID := gen_random_uuid();
   v_new_worker UUID := gen_random_uuid();
   v_claimed UUID;
+  v_execute_revision BIGINT;
+  v_operation_revision BIGINT;
+  v_mismatch_execute_revision BIGINT;
+  v_mismatch_operation_revision BIGINT;
   v_now TIMESTAMPTZ := clock_timestamp();
 BEGIN
   INSERT INTO public.billing_payers(
@@ -792,7 +859,7 @@ BEGIN
     started_at,created_at,updated_at
   ) VALUES(v_operation,v_studio,v_actor,'enrollment.cancel.period_end.execute',
            'v31-due-provider',repeat('e',64),'acct_v31restore',1,'started',0,
-           v_old_worker,v_now-interval '2 minutes',v_now-interval '1 minute',
+           v_old_worker,v_now-interval '1 minute',v_now+interval '1 minute',
            v_now-interval '2 minutes',v_now-interval '2 minutes',v_now-interval '2 minutes');
   INSERT INTO public.billing_enrollment_transition_intents(
     id,studio_id,enrollment_id,payer_id,billing_subscription_id,
@@ -820,6 +887,114 @@ BEGIN
            v_now-interval '1 minute',0,2,1,1,v_actor,'v31.due','due_claimed',
            v_old_worker,v_now-interval '2 minutes',v_now-interval '1 minute',
            v_now-interval '2 minutes',v_now-interval '2 minutes',v_now-interval '2 minutes');
+  INSERT INTO public.billing_enrollment_transition_aliases(
+    intent_id,studio_id,transition_kind,caller_request_key,actor_id,
+    request_sha256,created_at
+  ) VALUES(
+    v_execute,v_studio,'execute_due','v31-due-provider',v_actor,
+    repeat('e',64),v_now-interval '2 minutes'
+  );
+
+  SELECT revision INTO v_execute_revision
+  FROM public.billing_enrollment_transition_intents WHERE id=v_execute;
+  SELECT revision INTO v_operation_revision
+  FROM public.billing_provider_operations WHERE id=v_operation;
+  SELECT due.id INTO v_claimed
+  FROM public.claim_due_billing_enrollment_transitions_v1(v_new_worker,30,1) AS due;
+  IF v_claimed IS NOT NULL
+     OR (SELECT revision FROM public.billing_enrollment_transition_intents
+         WHERE id=v_execute)<>v_execute_revision
+     OR (SELECT revision FROM public.billing_provider_operations
+         WHERE id=v_operation)<>v_operation_revision THEN
+    RAISE EXCEPTION 'Due claim stole a provider operation with an active lease.';
+  END IF;
+
+  INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name)
+  VALUES(v_mismatch_student,v_studio,'Due','Mismatch');
+  INSERT INTO public.student_billing_enrollments(
+    id,studio_id,student_id,payer_id,billing_plan_id,billing_subscription_id,
+    collection_mode,status,stripe_subscription_id,stripe_subscription_item_id
+  ) VALUES(
+    v_mismatch_enrollment,v_studio,v_mismatch_student,v_payer,v_plan,v_subscription,
+    'invoice_link','active','sub_v31due','si_v31due_mismatch'
+  );
+  INSERT INTO public.billing_provider_operations(
+    id,studio_id,actor_id,operation_type,caller_request_key,request_sha256,
+    stripe_connected_account_id,connect_account_generation,state,
+    provider_request_attempt_count,lease_owner,lease_acquired_at,lease_expires_at,
+    started_at,created_at,updated_at
+  ) VALUES(
+    v_mismatch_operation,v_studio,gen_random_uuid(),
+    'enrollment.cancel.period_end.execute','v31-due-provider-mismatch',repeat('c',64),
+    'acct_v31restore',1,'started',0,v_old_worker,
+    v_now-interval '2 minutes',v_now-interval '1 minute',
+    v_now-interval '2 minutes',v_now-interval '2 minutes',v_now-interval '2 minutes'
+  );
+  INSERT INTO public.billing_enrollment_transition_intents(
+    id,studio_id,enrollment_id,payer_id,billing_subscription_id,
+    transition_kind,mutation_strategy,request_sha256,stripe_connected_account_id,
+    connect_account_generation,stripe_subscription_id,stripe_subscription_item_id,
+    period_boundary,expected_quantity,expected_subscription_item_count,
+    same_item_active_count,provider_quantity,initiated_by,reason_code,state,
+    due_claimed_at,created_at,updated_at
+  ) VALUES(
+    v_mismatch_schedule,v_studio,v_mismatch_enrollment,v_payer,v_subscription,
+    'schedule_period_end','subscription_item_delete_at_period_end',repeat('b',64),
+    'acct_v31restore',1,'sub_v31due','si_v31due_mismatch',v_now-interval '2 minutes',
+    0,2,1,1,v_actor,'v31.due.mismatch','due_claimed',v_now-interval '2 minutes',
+    v_now-interval '2 minutes',v_now-interval '2 minutes'
+  );
+  INSERT INTO public.billing_enrollment_transition_intents(
+    id,studio_id,enrollment_id,payer_id,billing_subscription_id,source_intent_id,
+    provider_operation_id,transition_kind,mutation_strategy,request_sha256,
+    provider_caller_request_key,provider_request_sha256,stripe_connected_account_id,
+    connect_account_generation,stripe_subscription_id,stripe_subscription_item_id,
+    period_boundary,expected_quantity,expected_subscription_item_count,
+    same_item_active_count,provider_quantity,initiated_by,reason_code,state,
+    lease_owner,lease_acquired_at,lease_expires_at,due_claimed_at,created_at,updated_at
+  ) VALUES(
+    v_mismatch_execute,v_studio,v_mismatch_enrollment,v_payer,v_subscription,
+    v_mismatch_schedule,v_mismatch_operation,'execute_due',
+    'subscription_item_delete_at_period_end',repeat('b',64),
+    'v31-due-provider-mismatch',repeat('c',64),'acct_v31restore',1,
+    'sub_v31due','si_v31due_mismatch',v_now-interval '2 minutes',0,2,1,1,
+    v_actor,'v31.due.mismatch','due_claimed',v_old_worker,
+    v_now-interval '2 minutes',v_now-interval '1 minute',v_now-interval '2 minutes',
+    v_now-interval '2 minutes',v_now-interval '2 minutes'
+  );
+  INSERT INTO public.billing_enrollment_transition_aliases(
+    intent_id,studio_id,transition_kind,caller_request_key,actor_id,
+    request_sha256,created_at
+  ) VALUES(
+    v_mismatch_execute,v_studio,'execute_due','v31-due-provider-mismatch',v_actor,
+    repeat('c',64),v_now-interval '2 minutes'
+  );
+  SELECT revision INTO v_mismatch_execute_revision
+  FROM public.billing_enrollment_transition_intents WHERE id=v_mismatch_execute;
+  SELECT revision INTO v_mismatch_operation_revision
+  FROM public.billing_provider_operations WHERE id=v_mismatch_operation;
+  v_claimed:=NULL;
+  SELECT due.id INTO v_claimed
+  FROM public.claim_due_billing_enrollment_transitions_v1(v_new_worker,30,1) AS due;
+  IF v_claimed IS NOT NULL
+     OR (SELECT revision FROM public.billing_enrollment_transition_intents
+         WHERE id=v_mismatch_execute)<>v_mismatch_execute_revision
+     OR (SELECT revision FROM public.billing_provider_operations
+         WHERE id=v_mismatch_operation)<>v_mismatch_operation_revision THEN
+    RAISE EXCEPTION 'Due claim adopted a provider operation with mismatched identity.';
+  END IF;
+
+  UPDATE public.billing_provider_operations
+  SET lease_acquired_at=v_now-interval '2 minutes',
+      lease_expires_at=v_now-interval '1 minute',
+      revision=revision+1,
+      updated_at=clock_timestamp()
+  WHERE id=v_operation;
+  SELECT revision INTO v_execute_revision
+  FROM public.billing_enrollment_transition_intents WHERE id=v_execute;
+  SELECT revision INTO v_operation_revision
+  FROM public.billing_provider_operations WHERE id=v_operation;
+  v_claimed:=NULL;
   SELECT due.id INTO v_claimed
   FROM public.claim_due_billing_enrollment_transitions_v1(v_new_worker,30,1) AS due;
   IF v_claimed IS DISTINCT FROM v_execute
@@ -828,12 +1003,78 @@ BEGIN
      OR (SELECT lease_owner FROM public.billing_provider_operations
          WHERE id=v_operation) IS DISTINCT FROM v_new_worker
      OR (SELECT revision FROM public.billing_enrollment_transition_intents
-         WHERE id=v_execute)<>2
+         WHERE id=v_execute)<>v_execute_revision+1
      OR (SELECT revision FROM public.billing_provider_operations
-         WHERE id=v_operation)<>2
+         WHERE id=v_operation)<>v_operation_revision+1
      OR (SELECT count(*) FROM public.billing_enrollment_transition_intents
          WHERE source_intent_id=v_schedule AND transition_kind='execute_due')<>1 THEN
     RAISE EXCEPTION 'Bound expired due work did not reclaim one exact durable operation.';
+  END IF;
+
+  UPDATE public.billing_provider_operations
+  SET state='recovery_authorized',
+      provider_request_attempt_count=1,
+      provider_request_in_flight_at=v_now-interval '3 minutes',
+      recovery_proof_sha256=repeat('a',64),
+      recovery_outcome='provider_no_object_safe_to_retry',
+      recovery_actor_id=v_actor,
+      recovery_authorized_at=v_now-interval '2 minutes',
+      lease_owner=v_old_worker,
+      lease_acquired_at=v_now-interval '1 minute',
+      lease_expires_at=v_now+interval '1 minute',
+      revision=revision+1,
+      updated_at=clock_timestamp()
+  WHERE id=v_operation
+  RETURNING revision INTO v_operation_revision;
+  UPDATE public.billing_enrollment_transition_intents
+  SET state='recovery_authorized',
+      recovery_proof_sha256=repeat('a',64),
+      recovery_outcome='provider_no_object_safe_to_retry',
+      recovery_actor_id=v_actor,
+      recovery_authorized_at=v_now-interval '2 minutes',
+      lease_owner=v_old_worker,
+      lease_acquired_at=v_now-interval '2 minutes',
+      lease_expires_at=v_now-interval '1 minute',
+      revision=revision+1,
+      updated_at=clock_timestamp()
+  WHERE id=v_execute
+  RETURNING revision INTO v_execute_revision;
+
+  v_claimed:=NULL;
+  SELECT due.id INTO v_claimed
+  FROM public.claim_due_billing_enrollment_transitions_v1(v_new_worker,30,1) AS due;
+  IF v_claimed IS NOT NULL
+     OR (SELECT revision FROM public.billing_enrollment_transition_intents
+         WHERE id=v_execute)<>v_execute_revision
+     OR (SELECT revision FROM public.billing_provider_operations
+         WHERE id=v_operation)<>v_operation_revision THEN
+    RAISE EXCEPTION 'Due recovery reclaimed work before both leases expired.';
+  END IF;
+
+  UPDATE public.billing_provider_operations
+  SET lease_acquired_at=v_now-interval '2 minutes',
+      lease_expires_at=v_now-interval '1 minute',
+      revision=revision+1,
+      updated_at=clock_timestamp()
+  WHERE id=v_operation
+  RETURNING revision INTO v_operation_revision;
+  v_claimed:=NULL;
+  SELECT due.id INTO v_claimed
+  FROM public.claim_due_billing_enrollment_transitions_v1(v_new_worker,30,1) AS due;
+  IF v_claimed IS DISTINCT FROM v_execute
+     OR (SELECT state FROM public.billing_enrollment_transition_intents
+         WHERE id=v_execute)<>'recovery_authorized'
+     OR (SELECT lease_owner FROM public.billing_enrollment_transition_intents
+         WHERE id=v_execute) IS DISTINCT FROM v_new_worker
+     OR (SELECT lease_owner FROM public.billing_provider_operations
+         WHERE id=v_operation) IS DISTINCT FROM v_new_worker
+     OR (SELECT revision FROM public.billing_enrollment_transition_intents
+         WHERE id=v_execute)<>v_execute_revision+1
+     OR (SELECT revision FROM public.billing_provider_operations
+         WHERE id=v_operation)<>v_operation_revision+1
+     OR (SELECT count(*) FROM public.billing_enrollment_transition_intents
+         WHERE source_intent_id=v_schedule AND transition_kind='execute_due')<>1 THEN
+    RAISE EXCEPTION 'Expired exact no-object recovery did not reclaim the same due intent.';
   END IF;
 END;
 $due_reclaim_contract$;
