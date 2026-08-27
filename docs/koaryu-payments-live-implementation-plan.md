@@ -264,7 +264,7 @@ anchors. It:
 
 Latest local candidate evidence before publication:
 
-- backend: 1,284 tests plus 5,107 subtests passed;
+- backend: 1,285 tests plus 5,107 subtests passed;
 - frontend: all 719 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, targeted billing ESLint, and the production build with safe
