@@ -130,23 +130,23 @@ REVOKE ALL ON FUNCTION private.validate_billing_payment_identity_change()
 -- Existing linked payers predate the generation column. A payer can inherit the
 -- current generation only when its stored account ID is the studio's exact current
 -- account; mismatched or partial identities stop the migration for reconciliation.
-LOCK TABLE public.billing_invoices IN SHARE ROW EXCLUSIVE MODE;
-LOCK TABLE public.billing_payers IN SHARE ROW EXCLUSIVE MODE;
-LOCK TABLE public.studio_payment_accounts IN SHARE ROW EXCLUSIVE MODE;
-
-UPDATE public.billing_payers AS payer
-SET connect_account_generation =
-        private.current_connect_account_generation(account.metadata),
-    updated_at = clock_timestamp()
-FROM public.studio_payment_accounts AS account
-WHERE payer.studio_id = account.studio_id
-  AND payer.stripe_account_id = account.stripe_connected_account_id
-  AND payer.stripe_customer_id IS NOT NULL
-  AND payer.connect_account_generation IS NULL
-  AND private.current_connect_account_generation(account.metadata) > 0;
-
-DO $payer_generation_backfill_guard$
+DO $generation_backfills$
 BEGIN
+    EXECUTE 'LOCK TABLE public.billing_invoices IN SHARE ROW EXCLUSIVE MODE';
+    EXECUTE 'LOCK TABLE public.billing_payers IN SHARE ROW EXCLUSIVE MODE';
+    EXECUTE 'LOCK TABLE public.studio_payment_accounts IN SHARE ROW EXCLUSIVE MODE';
+
+    UPDATE public.billing_payers AS payer
+    SET connect_account_generation =
+            private.current_connect_account_generation(account.metadata),
+        updated_at = clock_timestamp()
+    FROM public.studio_payment_accounts AS account
+    WHERE payer.studio_id = account.studio_id
+      AND payer.stripe_account_id = account.stripe_connected_account_id
+      AND payer.stripe_customer_id IS NOT NULL
+      AND payer.connect_account_generation IS NULL
+      AND private.current_connect_account_generation(account.metadata) > 0;
+
     IF EXISTS (
         SELECT 1
         FROM public.billing_payers AS payer
@@ -172,42 +172,37 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = '23514',
             MESSAGE = 'billing_payer_connect_generation_backfill_incomplete';
     END IF;
-END;
-$payer_generation_backfill_guard$;
 
--- Invoices created before provider-generation metadata was introduced may adopt
--- the current generation only when every stored provider identity agrees with
--- the payer and the studio's exact current Connect account. Ambiguous or stale
--- identities remain untouched and continue to fail closed in the application.
-UPDATE public.billing_invoices AS invoice
-SET metadata = jsonb_set(
-        COALESCE(invoice.metadata, '{}'::JSONB),
-        '{connect_account_generation}',
-        to_jsonb(payer.connect_account_generation),
-        true
-    ),
-    updated_at = clock_timestamp()
-FROM public.billing_payers AS payer
-JOIN public.studio_payment_accounts AS account
-  ON account.studio_id = payer.studio_id
-WHERE invoice.studio_id = payer.studio_id
-  AND invoice.payer_id = payer.id
-  AND invoice.external IS FALSE
-  AND invoice.stripe_invoice_id IS NOT NULL
-  AND btrim(invoice.stripe_invoice_id) <> ''
-  AND invoice.stripe_account_id = account.stripe_connected_account_id
-  AND invoice.stripe_account_id = payer.stripe_account_id
-  AND btrim(invoice.stripe_account_id) <> ''
-  AND invoice.stripe_customer_id = payer.stripe_customer_id
-  AND btrim(invoice.stripe_customer_id) <> ''
-  AND payer.connect_account_generation =
-        private.current_connect_account_generation(account.metadata)
-  AND payer.connect_account_generation > 0
-  AND jsonb_typeof(invoice.metadata) = 'object'
-  AND NOT (invoice.metadata ? 'connect_account_generation');
+    -- Invoices created before provider-generation metadata was introduced may
+    -- adopt the current generation only when every stored provider identity
+    -- agrees exactly. Ambiguous or stale identities remain fail-closed.
+    UPDATE public.billing_invoices AS invoice
+    SET metadata = jsonb_set(
+            COALESCE(invoice.metadata, '{}'::JSONB),
+            '{connect_account_generation}',
+            to_jsonb(payer.connect_account_generation),
+            true
+        ),
+        updated_at = clock_timestamp()
+    FROM public.billing_payers AS payer
+    JOIN public.studio_payment_accounts AS account
+      ON account.studio_id = payer.studio_id
+    WHERE invoice.studio_id = payer.studio_id
+      AND invoice.payer_id = payer.id
+      AND invoice.external IS FALSE
+      AND invoice.stripe_invoice_id IS NOT NULL
+      AND btrim(invoice.stripe_invoice_id) <> ''
+      AND invoice.stripe_account_id = account.stripe_connected_account_id
+      AND invoice.stripe_account_id = payer.stripe_account_id
+      AND btrim(invoice.stripe_account_id) <> ''
+      AND invoice.stripe_customer_id = payer.stripe_customer_id
+      AND btrim(invoice.stripe_customer_id) <> ''
+      AND payer.connect_account_generation =
+            private.current_connect_account_generation(account.metadata)
+      AND payer.connect_account_generation > 0
+      AND jsonb_typeof(invoice.metadata) = 'object'
+      AND NOT (invoice.metadata ? 'connect_account_generation');
 
-DO $invoice_generation_backfill_guard$
-BEGIN
     IF EXISTS (
         SELECT 1
         FROM public.billing_invoices AS invoice
@@ -234,7 +229,7 @@ BEGIN
             MESSAGE = 'billing_invoice_connect_generation_backfill_incomplete';
     END IF;
 END;
-$invoice_generation_backfill_guard$;
+$generation_backfills$;
 
 CREATE FUNCTION public.list_billing_enrollment_scheduled_transitions_v1(
     p_studio_id UUID,
