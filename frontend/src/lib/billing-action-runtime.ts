@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { clearBillingIdempotencyKeyAfterTerminalError } from "@/lib/billing-idempotency-lifecycle";
 
 type BillingActionRequestOptions = {
   headers?: Record<string, string>;
@@ -26,6 +27,7 @@ type PostBillingActionOptions = {
   body?: Record<string, unknown>;
   errorMessage?: string;
   path: string;
+  onTerminalIdempotencyError?: () => void;
   refresh?: boolean;
   requestOptions?: BillingActionRequestOptions;
   successMessage: string;
@@ -70,6 +72,7 @@ export function useBillingActionRuntime({
     body = {},
     errorMessage = "Billing action could not be completed.",
     path,
+    onTerminalIdempotencyError,
     refresh = true,
     requestOptions,
     successMessage,
@@ -94,6 +97,12 @@ export function useBillingActionRuntime({
       }
       return result;
     } catch (err) {
+      if (onTerminalIdempotencyError) {
+        clearBillingIdempotencyKeyAfterTerminalError(
+          err,
+          onTerminalIdempotencyError,
+        );
+      }
       setError(err instanceof Error ? err.message : errorMessage);
       return null;
     } finally {

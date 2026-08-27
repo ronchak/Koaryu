@@ -254,10 +254,14 @@ class BillingEnrollmentTransitionWorkflow:
                         )
                         result["reconciliation_required"] += 1
                     continue
-                started = self.operations.start_due_enrollment_transition(
-                    intent_id=str(intent["id"]),
-                    worker_id=worker_id,
-                    expected_revision=int(intent["revision"]),
+                started = (
+                    {"outcome": "resumed", "intent": intent}
+                    if intent.get("provider_operation_id")
+                    else self.operations.start_due_enrollment_transition(
+                        intent_id=str(intent["id"]),
+                        worker_id=worker_id,
+                        expected_revision=int(intent["revision"]),
+                    )
                 )
                 self._drive_provider_operation(
                     started,
@@ -298,6 +302,51 @@ class BillingEnrollmentTransitionWorkflow:
         )
 
     def _drive_provider_operation(
+        self,
+        envelope: dict[str, Any],
+        *,
+        snapshot: dict[str, Any],
+        actor_id: str,
+        lease_owner: str,
+        mutation: str,
+    ) -> dict[str, Any]:
+        lock_token: str | None = None
+        group_id = str(snapshot["group"]["id"])
+        if snapshot["mutation_strategy"].startswith("subscription_item_delete_"):
+            lock_token = self.lifecycle._claim_subscription_quantity_sync_lock(
+                str(snapshot["enrollment"]["studio_id"]), group_id,
+            )
+            try:
+                refreshed = self._snapshot(
+                    str(snapshot["enrollment"]["id"]),
+                    str(snapshot["enrollment"]["studio_id"]),
+                    immediate=True,
+                )
+                intent = envelope["intent"]
+                self._verify_intent_snapshot(intent, refreshed)
+                if mutation == "execute_due":
+                    self._bind_due_intent_snapshot(intent, refreshed)
+                snapshot = refreshed
+                return self._drive_provider_operation_locked(
+                    envelope,
+                    snapshot=snapshot,
+                    actor_id=actor_id,
+                    lease_owner=lease_owner,
+                    mutation=mutation,
+                )
+            finally:
+                self.lifecycle._release_subscription_quantity_sync_lock(
+                    str(snapshot["enrollment"]["studio_id"]), group_id, lock_token,
+                )
+        return self._drive_provider_operation_locked(
+            envelope,
+            snapshot=snapshot,
+            actor_id=actor_id,
+            lease_owner=lease_owner,
+            mutation=mutation,
+        )
+
+    def _drive_provider_operation_locked(
         self,
         envelope: dict[str, Any],
         *,

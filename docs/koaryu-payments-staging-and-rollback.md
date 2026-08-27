@@ -65,12 +65,20 @@ node scripts/studio-comp-migration-rollout.mjs \
 Confirm the exact project ref, inspected state, pending set, and inspection token. Then
 use the guarded staging apply with its exact generated arguments and durable approval
 record. Do not use direct SQL, `db reset`, or a production link. After apply, require
-V30 readiness at 123 migrations with head `20260826155911` and zero security failures.
+the exact candidate readiness version, migration count, migration head, and zero security
+failures recorded by the guarded packet. Do not reuse the older V30/123 expectation after
+the additive V31 correction.
 
 ## Exact-SHA application deploy
 
-Deploy the backend and frontend from `<PR_HEAD_SHA>`, then verify the pair before any
-provider mutation:
+Create or update only `koaryu-billing-transitions-staging`, populate its secret through
+the staging web-service reference, and deploy the cron from `<PR_HEAD_SHA>`. Manually
+trigger one zero-work run and require a successful bounded result. Production keeps
+`BILLING_TRANSITION_SCHEDULER_ENABLED=false` and receives no cron in this task.
+
+Then deploy the staging backend and frontend from `<PR_HEAD_SHA>`. The backend may expose
+period-end scheduling only after the staging cron is active. Verify the exact deployed
+pair before any provider mutation:
 
 ```text
 npm run verify:deployed-release -- \
@@ -120,15 +128,17 @@ show demo interactions but must issue no provider request.
 Rollback closes new writes and preserves evidence:
 
 1. Stop the rehearsal and record the last known operation and event state.
-2. Redeploy the prior known-good staging frontend and backend SHA. Do not promote or
-   modify production.
-3. Disable only test-mode webhook endpoints introduced for the rehearsal after all
+2. Set `BILLING_TRANSITION_SCHEDULER_ENABLED=false`, suspend the staging transition
+   cron, and prove no due worker run remains active.
+3. Redeploy only the prior staging frontend/backend SHA proven compatible with the
+   retained V31 sparse-payment identity contract. Do not promote or modify production.
+4. Disable only test-mode webhook endpoints introduced for the rehearsal after all
    delivered events have a local terminal readback.
-4. Leave the additive V25 through V30 migrations in staging. Do not down-migrate or
+5. Leave the additive V25 through V31 migrations in staging. Do not down-migrate or
    delete provider-operation, consent, transition, event, refund, or dispute evidence.
-5. Reconcile every ambiguous test object by provider readback. Never retry merely because
+6. Reconcile every ambiguous test object by provider readback. Never retry merely because
    a response was lost.
-6. Require zero active UI/provider workflows before declaring rollback complete.
+7. Require zero active UI/provider workflows before declaring rollback complete.
 
 ## Production packet awaiting approval
 
@@ -140,15 +150,18 @@ The production packet is prepared but must not be executed in this task:
 3. Inspect production migration and provider state read-only.
 4. Apply the exact migrations through the guarded production rollout tool after its
    separate interactive confirmation.
-5. Deploy the exact merged backend SHA, verify readiness, then deploy a production-target
+5. Create the separately approved production transition cron with its own production
+   service-secret reference, deploy the exact merged SHA, and prove one manual zero-work
+   run. Only then set the production scheduler flag true.
+6. Deploy the exact merged backend SHA, verify readiness, then deploy a production-target
    Vercel build from the same SHA.
-6. Run production reconciliation read-only and record a fresh exact-SHA schema-v3
+7. Run production reconciliation read-only and record a fresh exact-SHA schema-v3
    checkpoint only after separate approval.
-7. Grant one named studio only the exact canary operations, payer, amount, and generation
+8. Grant one named studio only the exact canary operations, payer, amount, and generation
    approved for the attended canary.
-8. Verify the 50-basis-point fee, webhook delivery, local projections, refund, and
+9. Verify the 50-basis-point fee, webhook delivery, local projections, refund, and
    cleanup; revoke the grant immediately.
-9. Finish with read-only reconciliation and preserve all evidence.
+10. Finish with read-only reconciliation and preserve all evidence.
 
 Commercial copy, consent language, pilot membership, and any ongoing grant remain a
 separate production decision.

@@ -200,6 +200,13 @@ class BillingSystemStatusReporter:
                     "connect_payments": mutation_capabilities.connect_payments,
                 },
                 allowed_operations=allowed_operations,
+                transition_scheduler_ready=bool(
+                    getattr(
+                        self.settings,
+                        "BILLING_TRANSITION_SCHEDULER_ENABLED",
+                        False,
+                    )
+                ),
             )
         ]
         return BillingSystemStatusResponse(

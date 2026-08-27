@@ -47,8 +47,10 @@ BEGIN
        ) THEN
         RAISE EXCEPTION 'Provider operation step ACLs are not service-only.';
     END IF;
+    -- The V28 restore harness retains the original V28 pin. This final-chain
+    -- value is the V31-compatible repin after the resource-preservation owner changed.
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       <> '0:fc27387abfcf7dfafb1c43552341f78c707b4b6c546f4bb1a02841fb88235fd8' THEN
+       <> '0:7f3821f26bcaf36cda41a699d66a29362537e82c28a04f1b23bc43a407b885be' THEN
         RAISE EXCEPTION 'V28 step manifest drifted: %',
             private.koaryu_release_provider_operation_steps_manifest_v28();
     END IF;

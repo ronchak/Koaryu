@@ -21,6 +21,7 @@ Last verified against live systems: 2026-08-24.
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 | `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
+| Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both are promoted by hand, on purpose —
@@ -58,7 +59,8 @@ enforced by `scripts/check-env-examples.mjs`.
 
 ## Render — backend
 
-Both services are declared in `render.yaml`. Neither auto-deploys.
+Both web services and the staging billing-transition cron are declared in
+`render.yaml`. None auto-deploys.
 
 | | Production | Staging |
 | --- | --- | --- |
@@ -73,7 +75,15 @@ Both services are declared in `render.yaml`. Neither auto-deploys.
 | `ENVIRONMENT` | `production` | `staging` |
 | Stripe mode | `live` | `test` |
 
-The two services track **different branches**. Deploying a commit to staging means
+`koaryu-billing-transitions-staging` is a starter Render Cron Job that tracks the
+`staging` branch, runs every five minutes, and calls only the protected staging
+transition endpoint. It reuses the staging web service's worker secret through a
+Render service reference. Render bills cron execution by runtime with a $1 monthly
+minimum for the service. The production web service keeps
+`BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
+release task.
+
+The two web services track **different branches**. Deploying a commit to staging means
 moving the `staging` branch to it first — `git push origin main:staging` — and
 then triggering a manual deploy, because auto-deploy is off on both.
 

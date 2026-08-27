@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -43,6 +45,9 @@ class BillingProviderOperationRpcMixin:
         ] = {}
         self.billing_provider_operation_aliases: dict[
             tuple[str, str, str], str
+        ] = {}
+        self.billing_provider_operation_alias_resources: dict[
+            tuple[str, str, str], tuple[str, str, str]
         ] = {}
         self.billing_enrollment_transition_intents: dict[str, dict[str, Any]] = {}
         self.billing_enrollment_transition_aliases: dict[tuple[str, str, str], str] = {}
@@ -115,6 +120,8 @@ class BillingProviderOperationRpcMixin:
             ("invoice.finalize", "invoice_finalize"),
             ("invoice.retry", "invoice"),
             ("invoice.void", "invoice_void"),
+            ("payment.refund", "payment"),
+            ("payer.sync", "payer"),
             ("enrollment.activate.autopay", "enrollment"),
             ("enrollment.activate.invoice", "enrollment"),
         }:
@@ -132,7 +139,10 @@ class BillingProviderOperationRpcMixin:
         resource = self.billing_provider_operation_resources.get(resource_key)
         alias_operation_id = self.billing_provider_operation_aliases.get(alias_key)
         if alias_operation_id is not None:
-            if resource is None or resource["operation_id"] != alias_operation_id:
+            if (
+                resource is None
+                or self.billing_provider_operation_alias_resources.get(alias_key) != resource_key
+            ):
                 raise _operation_conflict()
             operation = self._operation_by_id(alias_operation_id)
             self._assert_resource_request_matches(operation, params)
@@ -148,12 +158,14 @@ class BillingProviderOperationRpcMixin:
                 "resource_id": params["p_resource_id"],
                 "payer_id": params["p_payer_id"],
                 "operation_id": operation["id"],
+                "resource_version_sha256": self._resource_version_sha256(params),
                 "revision": 1,
                 "created_at": "2026-08-27T00:00:00Z",
                 "updated_at": "2026-08-27T00:00:00Z",
             }
             self.billing_provider_operation_resources[resource_key] = resource
             self.billing_provider_operation_aliases[alias_key] = operation["id"]
+            self.billing_provider_operation_alias_resources[alias_key] = resource_key
             outcome = "claimed"
         else:
             if (
@@ -162,16 +174,32 @@ class BillingProviderOperationRpcMixin:
             ):
                 raise _operation_conflict()
             operation = self._operation_by_id(resource["operation_id"])
-            self._assert_resource_request_matches(operation, params)
+            current_resource_version = self._resource_version_sha256(params)
             if operation["state"] in {"definitive_failed", "definitive_rejected"}:
                 claimed = self._rpc_claim_billing_provider_operation_v1(params)
                 operation = claimed["operation"]
                 resource["operation_id"] = operation["id"]
+                resource["resource_version_sha256"] = current_resource_version
+                resource["revision"] += 1
+                outcome = "replaced"
+            elif (
+                operation["state"] == "completed"
+                and resource["resource_version_sha256"] != current_resource_version
+            ):
+                self._assert_resource_projection(operation, params)
+                claimed = self._rpc_claim_billing_provider_operation_v1(params)
+                operation = claimed["operation"]
+                resource["operation_id"] = operation["id"]
+                resource["resource_version_sha256"] = current_resource_version
                 resource["revision"] += 1
                 outcome = "replaced"
             else:
+                if resource["resource_version_sha256"] != current_resource_version:
+                    raise _operation_conflict()
+                self._assert_resource_request_matches(operation, params)
                 outcome = "adopted"
             self.billing_provider_operation_aliases[alias_key] = operation["id"]
+            self.billing_provider_operation_alias_resources[alias_key] = resource_key
         canonical_key = str(operation["caller_request_key"])
         return {
             "outcome": outcome,
@@ -180,6 +208,76 @@ class BillingProviderOperationRpcMixin:
             "resource": dict(resource),
             "operation": dict(operation),
         }
+
+    def _resource_version_sha256(self, params: dict[str, Any]) -> str | None:
+        if params["p_resource_type"] not in {"payment", "payer"}:
+            return None
+        if params["p_resource_type"] == "payment":
+            row = next(
+                candidate
+                for candidate in self.tables.get("billing_payments", [])
+                if candidate.get("id") == params["p_resource_id"]
+                and candidate.get("studio_id") == params["p_studio_id"]
+            )
+            payload = {
+                "operation_type": params["p_operation_type"],
+                "studio_id": row.get("studio_id"),
+                "payment_id": row.get("id"),
+                "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                "connect_account_generation": params["p_connect_account_generation"],
+                "refunded_amount_cents": row.get("refunded_amount_cents"),
+                "version": 1,
+            }
+        else:
+            row = next(
+                candidate
+                for candidate in self.tables.get("billing_payers", [])
+                if candidate.get("id") == params["p_resource_id"]
+                and candidate.get("studio_id") == params["p_studio_id"]
+            )
+            payload = {
+                "address_city": row.get("address_city"),
+                "address_line1": row.get("address_line1"),
+                "address_state": row.get("address_state"),
+                "address_zip": row.get("address_zip"),
+                "connect_account_generation": params["p_connect_account_generation"],
+                "display_name": row.get("display_name"),
+                "email": row.get("email"),
+                "operation_type": params["p_operation_type"],
+                "payer_id": row.get("id"),
+                "phone": row.get("phone"),
+                "stripe_connected_account_id": params["p_stripe_connected_account_id"],
+                "studio_id": row.get("studio_id"),
+                "version": 1,
+            }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _assert_resource_projection(
+        self,
+        operation: dict[str, Any],
+        params: dict[str, Any],
+    ) -> None:
+        if params["p_resource_type"] == "payment":
+            if not any(
+                row.get("studio_id") == params["p_studio_id"]
+                and row.get("payment_id") == params["p_resource_id"]
+                and row.get("stripe_refund_id") == operation.get("provider_object_id")
+                and row.get("stripe_account_id") == params["p_stripe_connected_account_id"]
+                and row.get("connect_account_generation") == params["p_connect_account_generation"]
+                and row.get("reconciliation_required") is not True
+                for row in self.tables.get("billing_refunds", [])
+            ):
+                raise _operation_conflict()
+            return
+        payer = next(
+            candidate
+            for candidate in self.tables.get("billing_payers", [])
+            if candidate.get("id") == params["p_resource_id"]
+            and candidate.get("studio_id") == params["p_studio_id"]
+        )
+        if payer.get("stripe_customer_id") != operation.get("provider_object_id"):
+            raise _operation_conflict()
 
     def _rpc_read_billing_provider_operation_v1(self, params: dict[str, Any]) -> dict[str, Any]:
         operation = self._operation_for_params(params)
@@ -231,6 +329,18 @@ class BillingProviderOperationRpcMixin:
             operation["result_summary"] = params["p_result_summary"]
         operation["revision"] += 1
         return {"outcome": "completed", "operation": dict(operation)}
+
+    def _rpc_read_active_billing_payer_payment_consent_v1(self, params: dict[str, Any]) -> dict[str, Any]:
+        consent = next((row for row in self.tables.get("billing_payer_payment_consents", [])
+            if row.get("studio_id") == params["p_studio_id"]
+            and row.get("payer_id") == params["p_payer_id"]
+            and row.get("terms_version") == params["p_terms_version"]
+            and row.get("stripe_connected_account_id") == params["p_stripe_connected_account_id"]
+            and row.get("connect_account_generation") == params["p_connect_account_generation"]
+            and row.get("completed_at") and not row.get("revoked_at") and not row.get("superseded_at")), None)
+        if consent is None:
+            raise AssertionError("active payer consent not found")
+        return {"outcome": "read", "consent": dict(consent)}
 
     def _rpc_authorize_billing_provider_operation_recovery_v1(
         self,
@@ -448,7 +558,23 @@ class BillingProviderOperationRpcMixin:
     def _rpc_claim_due_billing_enrollment_transitions_v1(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         results = []
         for source in list(self.billing_enrollment_transition_intents.values()):
-            if source["transition_kind"] != "schedule_period_end" or source["state"] != "scheduled":
+            if source["transition_kind"] != "schedule_period_end":
+                continue
+            if source["state"] == "due_claimed":
+                execute = next((candidate for candidate in self.billing_enrollment_transition_intents.values()
+                    if candidate.get("source_intent_id") == source["id"]
+                    and candidate.get("transition_kind") == "execute_due"
+                    and candidate.get("state") == "due_claimed"), None)
+                if execute is not None:
+                    execute["lease_owner"] = params["p_worker_id"]
+                    execute["revision"] += 1
+                    if execute.get("provider_operation_id"):
+                        operation = self._operation_by_id(execute["provider_operation_id"])
+                        operation["lease_owner"] = params["p_worker_id"]
+                        operation["revision"] += 1
+                    results.append(dict(execute))
+                continue
+            if source["state"] != "scheduled":
                 continue
             intent_id = f"00000000-0000-4000-8000-{len(self.billing_enrollment_transition_intents) + 9701:012d}"
             item_strategy = source["mutation_strategy"] == "subscription_item_delete_at_period_end"

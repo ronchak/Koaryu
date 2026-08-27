@@ -114,8 +114,10 @@ BEGIN
         END IF;
     END LOOP;
 
+    -- The V25-to-V26 restore harness retains the historical V26 anchor. This
+    -- final-chain assertion is the separately approved V31 compatibility pin.
     IF private.koaryu_release_operational_contract_v26()
-       <> '0:73cc55b6578a3c959ab117abecf8084f4b1e401cf4f31a410bb88389a1ee9aa0' THEN
+       <> '0:e8feb5956d506eb70db13babfc58a98ee9186bd85e3ee2e11d7a86fbb17c7ff4' THEN
         RAISE EXCEPTION 'V26 operational contract has failures: %',
             private.koaryu_release_operational_contract_v26();
     END IF;

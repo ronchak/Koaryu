@@ -223,7 +223,53 @@ commit `199340b` after the explicit release-authority approval. It:
   and predecessor V10 manifest
   `689cf757117638efbf23579f77a2ba10638d710350e7dfd18d99f061503ef27b`.
 
-No live grant, provider mutation, hosted write, or deployment has occurred.
+The additive V31 candidate
+`20260826185651_payment_refund_payer_sync_resource_ownership.sql` closes the
+latest-head review findings without changing the historical V26 through V30 restore
+anchors. It:
+
+- gives `payment.refund` and `payer.sync` one row-locked resource owner, with immutable
+  caller-desired hashes separated from database-derived resource versions;
+- collapses same-version concurrent keys, replays an old alias after later state changes,
+  and permits a new owner only after the authoritative resource version advances and the
+  prior provider projection is proved;
+- atomically revokes completed payer consent and setup evidence before disabling
+  autopay, rejects usable pending setup and active subscription states, and prevents a
+  later webhook replay from re-enabling the payer;
+- retains a 30-minute local setup-operation deadline while requiring at least 30 minutes
+  of Stripe Session lifetime at mutation time;
+- reclaims expired due-work leases with the already-bound provider operation instead of
+  creating a second mutation owner;
+- normalizes only legacy `partially_refunded` and `refunded` invoice rows from immutable
+  gross-payment evidence, recomputes affected payer receivables, and proves payment,
+  refund, dispute, and provider-operation rows are byte-for-byte untouched;
+- advances the exact release state to 124/V31 and adds independent V24-to-V25 and
+  V30-to-V31 PostgreSQL 17 restore assertions;
+- pins resource ownership
+  `0:88d995d82173f5ac5f42b424ec392ad1432000645265d68e9b71d2c0f829f36c`,
+  the V31 operational contract
+  `0:a6ba54bedd4ae2643cac443fad2abf684e406488e33330d401bb264a360e805a`,
+  the V31 operational manifest
+  `d7b8f30fb72ad7b20308bf96711308d7d2d6b8ce4376c478cbb5b7f1eb3eb7e4`,
+  and expectation state
+  `1:19c7bacdf55084069c582878a7c23e4e1eb466b8f9e03c8d9fa30580a28f4e56`.
+
+Latest local candidate evidence before publication:
+
+- backend: 1,283 tests plus 5,107 subtests passed;
+- frontend: all 719 tests passed outside the sandbox, including the three
+  Chromium-backed print-geometry tests;
+- frontend TypeScript, targeted billing ESLint, and the production build with safe
+  placeholder build-time configuration passed;
+- API contract generation and 51 environment/staging-isolation checks passed;
+- the rollout tool passed all 61 tests and the aggregate release-workflow gate passed
+  all 123 tests;
+- all 124 migrations, both new and inherited restore paths, every negative attestation,
+  every concurrency suite, and all 42 SQL contracts passed on ephemeral PostgreSQL 17;
+- `git diff --check` passed.
+
+Before the exact-head staging phase, no live grant, provider mutation, hosted write, or
+deployment had occurred.
 
 Issue #108 is preserved in local application commit `9cac6b0`:
 
@@ -292,8 +338,9 @@ The #107 application and bounded worker are preserved in local commit `35936e0`:
   plus ambiguous whole-due readback have distinct V30 reconciliation owners;
 - whole due performs no second provider mutation, while item due deletes the unused item
   or writes the exact remaining quantity after authoritative readback;
-- the protected internal worker endpoint requires its own backend-only secret and remains
-  unscheduled until a repository-declared staging Render worker or Cron Job is rehearsed;
+- the protected internal worker endpoint requires its own backend-only secret; V31 keeps
+  period-end scheduling fail-closed unless the repository-declared five-minute staging
+  Render Cron Job is active, while production remains disabled pending approval;
 - the full backend passes 1,240 tests plus 5,104 subtests; the full non-browser frontend
   passes 711 tests; focused transitions pass 30; API generation, TypeScript, targeted
   ESLint, and diff checks pass.
@@ -565,8 +612,9 @@ Local implementation is complete on the single integration branch:
   finalize/retry/void only when the server returns the exact workflow capability;
 - raw provider object identifiers were removed from the primary plan, payer, enrollment,
   and invoice tables;
-- persisted caller keys remain scoped to user, studio, workflow, and resource, and are
-  cleared only after a confirmed result;
+- persisted caller keys remain scoped to user, studio, workflow, and resource; ambiguous
+  outcomes retain the key, while confirmed success or a terminal 409 rotates it so the
+  backend's corrected-request path is reachable;
 - the Stripe rehearsal worksheet and validator are schema v3 and structurally require
   the complete launch flow, exact 50-basis-point arithmetic, same-key ambiguous recovery,
   distinct webhook surfaces, and zero unsafe terminal counts;

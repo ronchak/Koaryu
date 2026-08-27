@@ -417,6 +417,12 @@ class BillingPaymentManager:
         payment = self._get_row_or_404("billing_payments", payment_id, studio_id, "Payment not found.")
         if not payment.get("stripe_charge_id") or not payment.get("stripe_account_id"):
             raise HTTPException(status_code=409, detail="Only Stripe payments can be refunded through Koaryu.")
+        payer_id = payment.get("payer_id")
+        if not payer_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Payment payer identity is incomplete and requires reconciliation.",
+            )
         account_id = str(payment["stripe_account_id"])
         generation = self._exact_payment_account_generation(
             payment,
@@ -435,10 +441,13 @@ class BillingPaymentManager:
         })
         lease_owner = str(uuid4())
         coordinator = BillingProviderOperationCoordinator(self.supabase)
-        claimed = coordinator.claim(
+        claimed = coordinator.claim_resource(
             studio_id=studio_id,
             actor_id=actor_id,
             operation_type=PAYMENT_REFUND_OPERATION_TYPE,
+            resource_type="payment",
+            resource_id=payment_id,
+            payer_id=str(payer_id),
             caller_request_key=normalized_idempotency_key,
             request_sha256=request_sha256,
             stripe_connected_account_id=account_id,
@@ -449,10 +458,10 @@ class BillingPaymentManager:
         context = BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
-            actor_id=actor_id,
+            actor_id=str(operation["actor_id"]),
             operation_type=PAYMENT_REFUND_OPERATION_TYPE,
-            caller_request_key=normalized_idempotency_key,
-            request_sha256=request_sha256,
+            caller_request_key=str(claimed["canonical_caller_request_key"]),
+            request_sha256=str(operation["request_sha256"]),
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
             lease_owner=lease_owner,

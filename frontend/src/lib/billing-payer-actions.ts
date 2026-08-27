@@ -45,6 +45,12 @@ export function useBillingPayerActions(
     const result = await runtime.postBillingAction<BillingPayer>({
       action: `payer-sync:${payerId}`,
       path: `/billing/payers/${payerId}/sync`,
+      onTerminalIdempotencyError: () => clearPersistedPayerOperationRequestKey({
+        identity,
+        keysByPayer: payerSyncKeysRef.current,
+        operation: "payer.sync",
+        payerId,
+      }),
       refresh: false,
       requestOptions: { headers: request.headers },
       successMessage: "Payer sync requested.",
@@ -82,12 +88,24 @@ export function useBillingPayerActions(
       action: `autopay-setup:${payerId}`,
       body: request.body,
       path: `/billing/payers/${payerId}/autopay/setup-link`,
+      onTerminalIdempotencyError: () => clearPersistedPayerOperationRequestKey({
+        identity,
+        keysByPayer: autopaySetupKeysRef.current,
+        operation: "payer.setup",
+        payerId,
+      }),
       refresh: false,
       requestOptions: { headers: request.headers },
       successMessage: "Stripe autopay setup link created.",
       workflowId: "payer.setup",
     });
     if (link?.url) {
+      clearPersistedPayerOperationRequestKey({
+        identity,
+        keysByPayer: autopaySetupKeysRef.current,
+        operation: "payer.setup",
+        payerId,
+      });
       const copied = await copyPayerAutopaySetupLink(link.url);
       runtime.setMessage(
         copied

@@ -113,6 +113,7 @@ class _BillingFacade:
             for account_id in sorted(payment_accounts)
         ])
         for payment in tables.get("billing_payments", []):
+            payment.setdefault("payer_id", "payer_1")
             if payment.get("stripe_account_id"):
                 payment.setdefault("connect_account_generation", 1)
         self.supabase = _BillingSupabase(tables)
@@ -831,6 +832,9 @@ class BillingPaymentManagerTests(unittest.TestCase):
         payload = BillingRefundCreate(amount_cents=500)
 
         asyncio.run(manager.refund_payment("payment_1", payload, "studio_1", "actor_1", "refund-key-1"))
+        payment = facade.supabase.tables["billing_payments"][0]
+        payment["refunded_amount_cents"] = 500
+        payment["refundable_amount_cents"] = 700
         asyncio.run(manager.refund_payment("payment_1", payload, "studio_1", "actor_1", "refund-key-2"))
         asyncio.run(manager.refund_payment("payment_1", payload, "studio_1", "actor_1", "refund-key-1"))
 
@@ -902,6 +906,9 @@ class BillingPaymentManagerTests(unittest.TestCase):
             "actor_1",
             "refund-key-1",
         ))
+        payment = facade.supabase.tables["billing_payments"][0]
+        payment["refunded_amount_cents"] = 400
+        payment["refundable_amount_cents"] = 800
         asyncio.run(manager.refund_payment(
             "payment_1",
             BillingRefundCreate(amount_cents=500),
@@ -1211,6 +1218,9 @@ class BillingPaymentManagerTests(unittest.TestCase):
                 "a" * MAX_IDEMPOTENCY_KEY_LENGTH,
             )
         )
+        payment = facade.supabase.tables["billing_payments"][0]
+        payment["refunded_amount_cents"] = 500
+        payment["refundable_amount_cents"] = 700
         asyncio.run(
             manager.refund_payment(
                 "payment_1",

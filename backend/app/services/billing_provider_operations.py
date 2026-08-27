@@ -40,6 +40,12 @@ ENROLLMENT_CANCEL_PERIOD_END_EXECUTE_OPERATION_TYPE = "enrollment.cancel.period_
 ENROLLMENT_CANCEL_PERIOD_END_REVOKE_OPERATION_TYPE = "enrollment.cancel.period_end.revoke"
 ENROLLMENT_CANCEL_IMMEDIATE_OPERATION_TYPE = "enrollment.cancel.immediate"
 AUTOPAY_TERMS_VERSION = "koaryu-autopay-v1"
+AUTOPAY_DISABLE_SETUP_PENDING_DETAIL = (
+    "Autopay cannot be disabled while a payer setup session or consent is pending."
+)
+AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL = (
+    "Autopay cannot be disabled while active provider subscriptions require the named cancellation workflow."
+)
 
 
 def provider_operation_disposition(claimed: dict[str, Any]) -> str:
@@ -416,6 +422,32 @@ class BillingProviderOperationCoordinator:
             expected_key="setup_request",
         )["setup_request"]
 
+    def find_payer_setup_request(
+        self,
+        *,
+        setup_request_id: str,
+        studio_id: str,
+        payer_id: str,
+        stripe_connected_account_id: str,
+        connect_account_generation: int,
+    ) -> Optional[dict[str, Any]]:
+        try:
+            return self.read_payer_setup_request(
+                setup_request_id=setup_request_id,
+                studio_id=studio_id,
+                payer_id=payer_id,
+                stripe_connected_account_id=stripe_connected_account_id,
+                connect_account_generation=connect_account_generation,
+            )
+        except PostgrestAPIError as exc:
+            if (
+                str(getattr(exc, "code", "") or "") == "P0002"
+                and "billing_payer_setup_request_not_found"
+                in str(getattr(exc, "message", "") or exc)
+            ):
+                return None
+            raise
+
     def accept_payer_consent(
         self,
         *,
@@ -507,6 +539,27 @@ class BillingProviderOperationCoordinator:
             },
             expected_key="consent",
         )["consent"]
+
+    def disable_payer_autopay(
+        self,
+        *,
+        studio_id: str,
+        payer_id: str,
+        actor_id: str,
+        disabled_at: str,
+        reason_code: str = "staff_disabled_autopay",
+    ) -> dict[str, Any]:
+        return self._rpc(
+            "disable_billing_payer_autopay_v1",
+            {
+                "p_studio_id": studio_id,
+                "p_payer_id": payer_id,
+                "p_actor_id": actor_id,
+                "p_disabled_at": disabled_at,
+                "p_reason_code": reason_code,
+            },
+            expected_key="payer",
+        )
 
     def mark_payer_setup_reconciliation(
         self,
@@ -862,6 +915,16 @@ class BillingProviderOperationCoordinator:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=OPERATION_UNAVAILABLE_DETAIL,
+            ) from exc
+        if code == "55000" and "billing_payer_autopay_disable_setup_pending" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=AUTOPAY_DISABLE_SETUP_PENDING_DETAIL,
+            ) from exc
+        if code == "55000" and "billing_payer_autopay_disable_subscription_active" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL,
             ) from exc
 
 

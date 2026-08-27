@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { api } from "@/lib/api";
+import { clearBillingIdempotencyKeyAfterTerminalError } from "@/lib/billing-idempotency-lifecycle";
 import {
   buildInvoiceOperationRequest,
   clearPersistedInvoiceOperationRequestKey,
@@ -88,6 +89,16 @@ export function useBillingInvoiceController({
       setMessage(successMessage);
       await refreshBilling();
     } catch (err) {
+      if (action !== "reconcile") {
+        clearBillingIdempotencyKeyAfterTerminalError(err, () => {
+          clearPersistedInvoiceOperationRequestKey({
+            identity: operationIdentity,
+            keysByTarget: operationKeysRef.current,
+            operation: `invoice.${action}`,
+            targetId: invoiceId,
+          });
+        });
+      }
       setError(err instanceof Error ? err.message : "Billing action could not be completed.");
     } finally {
       releaseAction(actionKey);

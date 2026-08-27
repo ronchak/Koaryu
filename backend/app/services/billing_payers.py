@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from app.schemas.billing import BillingPayerCreate, BillingPayerResponse, BillingPayerUpdate
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
+    AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
     PAYER_SYNC_OPERATION_TYPE,
@@ -132,10 +133,13 @@ class BillingPayerManager:
         )
         lease_owner = str(uuid4())
         coordinator = BillingProviderOperationCoordinator(self.supabase)
-        claimed = coordinator.claim(
+        claimed = coordinator.claim_resource(
             studio_id=studio_id,
             actor_id=actor_id,
             operation_type=PAYER_SYNC_OPERATION_TYPE,
+            resource_type="payer",
+            resource_id=payer_id,
+            payer_id=payer_id,
             caller_request_key=normalized_key,
             request_sha256=request_sha256,
             stripe_connected_account_id=account_id,
@@ -146,10 +150,10 @@ class BillingPayerManager:
         context = BillingProviderOperationContext(
             operation_id=str(operation["id"]),
             studio_id=studio_id,
-            actor_id=actor_id,
+            actor_id=str(operation["actor_id"]),
             operation_type=PAYER_SYNC_OPERATION_TYPE,
-            caller_request_key=normalized_key,
-            request_sha256=request_sha256,
+            caller_request_key=str(claimed["canonical_caller_request_key"]),
+            request_sha256=str(operation["request_sha256"]),
             stripe_connected_account_id=account_id,
             connect_account_generation=generation,
             lease_owner=lease_owner,
@@ -404,11 +408,44 @@ class BillingPayerManager:
         customer_id: str,
         context: BillingProviderOperationContext,
     ) -> dict[str, Any]:
+        payment_fields = self._payment_method_fields_from_customer(provider_customer)
+        active_consent = None
+        if not payment_fields.get("default_payment_method_id"):
+            try:
+                active_consent = BillingProviderOperationCoordinator(
+                    self.supabase
+                ).read_active_payer_consent(
+                    studio_id=context.studio_id,
+                    payer_id=str(payer["id"]),
+                    terms_version=AUTOPAY_TERMS_VERSION,
+                    stripe_connected_account_id=context.stripe_connected_account_id,
+                    connect_account_generation=context.connect_account_generation,
+                )
+            except Exception:
+                active_consent = None
+        if (
+            not payment_fields.get("default_payment_method_id")
+            and active_consent is not None
+            and payer.get("default_payment_method_id")
+            and payer.get("autopay_status") == "enabled"
+            and payer.get("autopay_authorized_at") == active_consent.get("completed_at")
+            and payer.get("autopay_terms_accepted_at") == active_consent.get("accepted_at")
+        ):
+            payment_fields = {
+                key: payer.get(key)
+                for key in (
+                    "default_payment_method_id",
+                    "default_payment_method_brand",
+                    "default_payment_method_last4",
+                    "default_payment_method_exp_month",
+                    "default_payment_method_exp_year",
+                )
+            }
         update = {
             "stripe_account_id": context.stripe_connected_account_id,
             "stripe_customer_id": customer_id,
             "connect_account_generation": context.connect_account_generation,
-            **self._payment_method_fields_from_customer(provider_customer),
+            **payment_fields,
         }
         result = (
             self.supabase.table("billing_payers")

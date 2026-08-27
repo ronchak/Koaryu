@@ -10,6 +10,7 @@ import {
   isSecretLikeKey,
   parseEnvText,
   validateEnvExample,
+  validateBillingTransitionCron,
   validateOperationalAlertCadence,
   validateProviderDeploymentControls,
   validateRenderDockerRuntime,
@@ -507,6 +508,42 @@ services:
       (failure) => failure.includes("staging LIVE_BILLING_ENABLED")
         && failure.includes('must equal "false"'),
     ));
+  });
+
+  it("requires the exact repository-owned staging billing-transition cron", () => {
+    const reviewed = `
+services:
+  - type: cron
+    name: koaryu-billing-transitions-staging
+    runtime: docker
+    plan: starter
+    region: ohio
+    branch: staging
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m app.services.billing_transition_cron
+    schedule: "*/5 * * * *"
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: KOARYU_BACKEND_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
+      - key: BILLING_TRANSITION_WORKER_SECRET
+        fromService:
+          type: web
+          name: koaryu-staging
+          envVarKey: BILLING_TRANSITION_WORKER_SECRET
+`;
+    assert.deepEqual(validateBillingTransitionCron(reviewed), []);
+    for (const drifted of [
+      reviewed.replace('schedule: "*/5 * * * *"', 'schedule: "0 * * * *"'),
+      reviewed.replace("name: koaryu-staging", "name: koaryu"),
+      reviewed.replace("autoDeployTrigger: 'off'", "autoDeployTrigger: commit"),
+    ]) {
+      assert.ok(validateBillingTransitionCron(drifted).length > 0);
+    }
   });
 
   it("requires manual production promotion while preserving staging and cron controls", () => {

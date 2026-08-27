@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response, status
 from supabase import Client
 
+from app.core.config import get_settings
 from app.core.deps import ProviderDependency, get_current_user_id, get_requested_studio_id, get_supabase, run_supabase_operation
 from app.schemas.billing import (
     BillingInvoiceCreate,
@@ -734,6 +735,12 @@ async def schedule_enrollment_period_end(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
+    if not get_settings().BILLING_TRANSITION_SCHEDULER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Period-end cancellation scheduling is unavailable until its worker is active.",
+        )
+
     async def _provider_operation(client):
         studio_id = _routine_studio_id(
             client, user_id, requested_studio_id, require_platform_subscription=True

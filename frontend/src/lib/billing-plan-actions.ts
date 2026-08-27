@@ -63,6 +63,11 @@ export function useBillingPlanActions({
     const result = await runtime.postBillingAction<BillingPlan>({
       action: `plan-sync:${planId}`,
       path: `/billing/plans/${planId}/sync`,
+      onTerminalIdempotencyError: () => clearPlanSyncRequestKey({
+        identity: operationIdentity,
+        keysByPlan: planSyncKeysRef.current,
+        planId,
+      }),
       refresh: false,
       requestOptions: { headers: request.headers },
       successMessage: "Plan sync requested.",

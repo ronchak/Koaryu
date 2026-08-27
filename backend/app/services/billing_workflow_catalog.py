@@ -224,6 +224,7 @@ def workflow_capabilities_for_role(
     stripe_mode: str | None,
     scope_ready: dict[LiveBillingScope, bool],
     allowed_operations: dict[LiveBillingScope, frozenset[str]],
+    transition_scheduler_ready: bool,
 ) -> list[dict[str, object]]:
     if role not in {"admin", "front_desk"}:
         return []
@@ -246,6 +247,12 @@ def workflow_capabilities_for_role(
                 )
             if not enabled:
                 denial_reason = WORKFLOW_GRANT_DENIED
+        if (
+            workflow.workflow_id == "enrollment.cancel.period_end.schedule"
+            and not transition_scheduler_ready
+        ):
+            enabled = False
+            denial_reason = "billing_transition_scheduler_not_ready"
         capabilities.append({
             "workflow_id": workflow.workflow_id,
             "enabled": enabled,

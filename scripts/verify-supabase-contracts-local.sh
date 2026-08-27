@@ -415,6 +415,20 @@ for migration_file in "${migration_files[@]}"; do
   migration_version="${BASH_REMATCH[1]}"
   migration_name="${BASH_REMATCH[2]}"
 
+  if [[ "$migration_filename" == "20260826030234_live_billing_reconciliation_v3.sql" ]]; then
+    echo "[restored V25] RUN V24 dump/restore then migration 118"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v24-v25-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V25] PASS V24 dump/restore then migration 118"
+    else
+      status=$?
+      echo "[restored V25] FAIL V24 dump/restore then migration 118 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
   if [[ "$migration_filename" == "20260826030249_payments_adjustment_convergence.sql" ]]; then
     echo "[historical generation backfill] RUN generation-2 predecessor fixture"
     if run_interruptible "$PSQL" "${psql_args[@]}" <<'SQL'
@@ -609,6 +623,20 @@ SQL
     fi
   fi
 
+  if [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
+    echo "[restored V31] RUN V30 dump/restore then migration 124"
+    if run_interruptible bash \
+      "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+      echo "[restored V31] PASS V30 dump/restore then migration 124"
+    else
+      status=$?
+      echo "[restored V31] FAIL V30 dump/restore then migration 124 (exit $status)" >&2
+      exit "$status"
+    fi
+  fi
+
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -654,6 +682,32 @@ FROM public.koaryu_release_schema_preflight_v9();
       exit 1
     fi
     echo "[V30 readiness] PASS exact release and V29 compatibility states"
+  fi
+
+  if [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
+    v31_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
+       cardinality(security_failures)::TEXT || '|' || manifest_version
+FROM public.koaryu_release_schema_preflight_v11();
+" | tr -d '\r\n')"
+    if [[ "$v31_readiness" != "true|124|20260826185651|0|release-db-attestation-v31" ]]; then
+      v31_failures="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT COALESCE(array_to_string(security_failures, ','), '')
+FROM public.koaryu_release_schema_preflight_v11();
+" | tr -d '\r\n')"
+      echo "[V31 readiness] FAIL exact release state: $v31_readiness failures=$v31_failures" >&2
+      exit 1
+    fi
+    v30_compat_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
+       cardinality(security_failures)::TEXT || '|' || manifest_version
+FROM public.koaryu_release_schema_preflight_v10();
+" | tr -d '\r\n')"
+    if [[ "$v30_compat_readiness" != "true|123|20260826155911|0|release-db-attestation-v30" ]]; then
+      echo "[V30 compatibility] FAIL exact predecessor state: $v30_compat_readiness" >&2
+      exit 1
+    fi
+    echo "[V31 readiness] PASS exact release and V30 compatibility states"
   fi
 
   if [[ "$migration_filename" == "20260826030249_payments_adjustment_convergence.sql" ]]; then

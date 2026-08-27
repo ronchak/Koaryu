@@ -13,6 +13,7 @@ from app.schemas.billing import (
 )
 from app.services.billing_invoice_projection import _object_get, _stripe_id
 from app.services.billing_provider_operations import (
+    AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL,
     AUTOPAY_TERMS_VERSION,
     BillingProviderOperationContext,
     BillingProviderOperationCoordinator,
@@ -24,8 +25,9 @@ from app.services.stripe_service import StripeService
 
 
 ACTIVE_AUTOPAY_SUBSCRIPTION_STATUSES = ["pending", "trialing", "active", "incomplete", "past_due"]
-AUTOPAY_SETUP_LIFETIME = timedelta(minutes=30)
-AUTOPAY_SETUP_MINIMUM_PROVIDER_LIFETIME = timedelta(minutes=5)
+AUTOPAY_SETUP_OPERATION_LIFETIME = timedelta(minutes=30)
+AUTOPAY_SETUP_PROVIDER_LIFETIME = timedelta(minutes=35)
+AUTOPAY_SETUP_PROVIDER_MINIMUM_LIFETIME = timedelta(minutes=30)
 AUTOPAY_SETUP_IN_PROGRESS_DETAIL = (
     "Autopay setup is still being reconciled. Retry with the same Idempotency-Key."
 )
@@ -160,9 +162,9 @@ class BillingAutopayManager:
                 detail="The prior autopay setup request was rejected. Use a new Idempotency-Key.",
             )
         setup_request_id = str(uuid5(NAMESPACE_URL, f"koaryu:payer-setup:{context.operation_id}"))
-        expires_at = self._operation_setup_expiry(operation)
+        operation_deadline = self._operation_setup_deadline(operation)
 
-        if operation.get("state") == "started" and expires_at <= datetime.now(timezone.utc):
+        if operation.get("state") == "started" and operation_deadline <= datetime.now(timezone.utc):
             coordinator.transition(
                 context,
                 operation,
@@ -181,7 +183,6 @@ class BillingAutopayManager:
                 operation=operation,
                 payer_id=payer_id,
                 setup_request_id=setup_request_id,
-                return_url=return_url,
             )
 
         if operation.get("state") in {"provider_succeeded", "completed"} or outcome == "replay":
@@ -191,9 +192,20 @@ class BillingAutopayManager:
                 operation=operation,
                 payer_id=payer_id,
                 setup_request_id=setup_request_id,
-                return_url=return_url,
             )
 
+        setup_request = coordinator.find_payer_setup_request(
+            setup_request_id=setup_request_id,
+            studio_id=studio_id,
+            payer_id=payer_id,
+            stripe_connected_account_id=account_id,
+            connect_account_generation=generation,
+        )
+        expires_at = (
+            self._setup_request_expiry(setup_request)
+            if setup_request
+            else datetime.now(timezone.utc) + AUTOPAY_SETUP_PROVIDER_LIFETIME
+        )
         setup_request = coordinator.prepare_payer_setup(
             context,
             operation,
@@ -202,8 +214,8 @@ class BillingAutopayManager:
             terms_version=AUTOPAY_TERMS_VERSION,
             expires_at=expires_at.isoformat(),
         )
-        if expires_at <= (
-            datetime.now(timezone.utc) + AUTOPAY_SETUP_MINIMUM_PROVIDER_LIFETIME
+        if expires_at < (
+            datetime.now(timezone.utc) + AUTOPAY_SETUP_PROVIDER_MINIMUM_LIFETIME
         ):
             coordinator.transition(
                 context,
@@ -337,9 +349,16 @@ class BillingAutopayManager:
         operation: dict[str, Any],
         payer_id: str,
         setup_request_id: str,
-        return_url: str,
     ) -> BillingLinkResponse:
         operation_state = operation.get("state")
+        if operation_state == "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Autopay setup is already complete. "
+                    "Start a new setup with a new Idempotency-Key."
+                ),
+            )
         if operation_state == "projected":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -477,7 +496,10 @@ class BillingAutopayManager:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
             )
-        return BillingLinkResponse(url=return_url)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=AUTOPAY_SETUP_IN_PROGRESS_DETAIL,
+        )
 
     def _mark_ambiguous_provider_request(
         self,
@@ -511,7 +533,7 @@ class BillingAutopayManager:
         return generation if generation > 0 else None
 
     @staticmethod
-    def _operation_setup_expiry(operation: dict[str, Any]) -> datetime:
+    def _operation_setup_deadline(operation: dict[str, Any]) -> datetime:
         raw_started_at = operation.get("started_at")
         try:
             started_at = datetime.fromisoformat(str(raw_started_at).replace("Z", "+00:00"))
@@ -522,7 +544,23 @@ class BillingAutopayManager:
             ) from exc
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
-        return started_at.astimezone(timezone.utc) + AUTOPAY_SETUP_LIFETIME
+        return started_at.astimezone(timezone.utc) + AUTOPAY_SETUP_OPERATION_LIFETIME
+
+    @staticmethod
+    def _setup_request_expiry(setup_request: dict[str, Any]) -> datetime:
+        raw_expires_at = setup_request.get("setup_request_expires_at")
+        try:
+            expires_at = datetime.fromisoformat(
+                str(raw_expires_at).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Autopay setup expiry could not be verified.",
+            ) from exc
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at.astimezone(timezone.utc)
 
     async def disable_autopay(self, payer_id: str, studio_id: str, actor_id: str) -> BillingPayerResponse:
         self._get_row_or_404("billing_payers", payer_id, studio_id, "Payer not found.")
@@ -532,27 +570,18 @@ class BillingAutopayManager:
         if active_subscription_ids:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Autopay cannot be disabled while active provider subscriptions "
-                    "require the named cancellation workflow."
-                ),
+                detail=AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL,
             )
-        result = (
-            self.supabase.table("billing_payers")
-            .update({
-                "autopay_status": "disabled",
-                "autopay_disabled_at": datetime.now(timezone.utc).isoformat(),
-            })
-            .eq("id", payer_id)
-            .eq("studio_id", studio_id)
-            .execute()
+        envelope = BillingProviderOperationCoordinator(self.supabase).disable_payer_autopay(
+            studio_id=studio_id,
+            payer_id=payer_id,
+            actor_id=actor_id,
+            disabled_at=datetime.now(timezone.utc).isoformat(),
         )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Payer not found.")
         self._audit(studio_id, actor_id, "billing.autopay_disabled", payer_id, {
             "rewired_subscription_ids": [],
         })
-        return BillingPayerResponse(**result.data[0])
+        return BillingPayerResponse(**envelope["payer"])
 
     def _active_payer_autopay_subscription_ids(
         self, payer_id: str, studio_id: str

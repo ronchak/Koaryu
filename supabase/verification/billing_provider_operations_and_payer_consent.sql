@@ -45,6 +45,14 @@ BEGIN
         'authenticated',
         'public.close_billing_payer_setup_request_v1(uuid,uuid,uuid,uuid,text,text,integer,text,text)',
         'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'service_role',
+        'public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text)',
+        'EXECUTE'
+    ) OR has_function_privilege(
+        'authenticated',
+        'public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text)',
+        'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'Billing provider RPC privileges are not service-only.';
     END IF;
@@ -640,6 +648,163 @@ BEGIN
     IF v_result->>'outcome' <> 'replay' THEN
         RAISE EXCEPTION 'Exact unexpired setup request did not replay inside its final five minutes.';
     END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+    v_admin UUID := gen_random_uuid();
+    v_front_desk UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_payer UUID := gen_random_uuid();
+    v_operation UUID := gen_random_uuid();
+    v_request UUID := gen_random_uuid();
+    v_consent UUID := gen_random_uuid();
+    v_now TIMESTAMPTZ := clock_timestamp();
+    v_disabled_at TIMESTAMPTZ := clock_timestamp();
+    v_result JSONB;
+BEGIN
+    INSERT INTO auth.users(
+        id, aud, role, email, raw_app_meta_data, raw_user_meta_data,
+        created_at, updated_at
+    ) VALUES
+        (v_admin, 'authenticated', 'authenticated',
+         'autopay-disable-admin@example.invalid', '{}', '{}', v_now, v_now),
+        (v_front_desk, 'authenticated', 'authenticated',
+         'autopay-disable-front-desk@example.invalid', '{}', '{}', v_now, v_now);
+    INSERT INTO public.studios(id, name, slug, owner_id)
+    VALUES (
+        v_studio, 'Autopay disable contract',
+        'autopay-disable-' || replace(v_studio::TEXT, '-', ''), v_admin
+    );
+    INSERT INTO public.staff_roles(studio_id, user_id, role) VALUES
+        (v_studio, v_admin, 'admin'),
+        (v_studio, v_front_desk, 'front_desk');
+    INSERT INTO public.studio_payment_accounts(
+        studio_id, stripe_connected_account_id, metadata
+    ) VALUES (
+        v_studio, 'acct_AutopayDisableContract',
+        jsonb_build_object('connect_account_generation', 1)
+    );
+    INSERT INTO public.billing_payers(
+        id, studio_id, display_name, stripe_account_id,
+        stripe_customer_id, connect_account_generation, autopay_status
+    ) VALUES (
+        v_payer, v_studio, 'Autopay disable payer',
+        'acct_AutopayDisableContract', 'cus_autopay_disable', 1, 'pending'
+    );
+    INSERT INTO public.billing_provider_operations(
+        id, studio_id, actor_id, operation_type, caller_request_key,
+        request_sha256, stripe_connected_account_id,
+        connect_account_generation, state, provider_request_attempt_count,
+        provider_object_id, provider_succeeded_at
+    ) VALUES (
+        v_operation, v_studio, v_admin, 'payer.setup',
+        'autopay-disable-setup', repeat('a', 64),
+        'acct_AutopayDisableContract', 1, 'provider_succeeded', 1,
+        'cs_autopay_disable', v_now
+    );
+    INSERT INTO public.billing_payer_setup_requests(
+        id, operation_id, studio_id, payer_id, initiated_by, terms_version,
+        stripe_checkout_session_id, stripe_connected_account_id,
+        connect_account_generation, setup_request_expires_at,
+        created_at, updated_at
+    ) VALUES (
+        v_request, v_operation, v_studio, v_payer, v_admin,
+        'koaryu-autopay-v1', 'cs_autopay_disable',
+        'acct_AutopayDisableContract', 1, v_now + interval '35 minutes',
+        v_now - interval '1 minute', v_now
+    );
+
+    BEGIN
+        PERFORM public.disable_billing_payer_autopay_v1(
+            v_studio, v_payer, v_admin, v_disabled_at,
+            'staff_disabled_autopay'
+        );
+        RAISE EXCEPTION 'Pending payer setup was silently disabled.';
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN
+        IF SQLERRM <> 'billing_payer_autopay_disable_setup_pending' THEN
+            RAISE;
+        END IF;
+    END;
+    IF (SELECT autopay_status FROM public.billing_payers WHERE id = v_payer)
+           <> 'pending'
+       OR (SELECT revoked_at FROM public.billing_payer_setup_requests
+           WHERE id = v_request) IS NOT NULL THEN
+        RAISE EXCEPTION 'Rejected autopay disable changed pending setup state.';
+    END IF;
+
+    UPDATE public.billing_provider_operations
+    SET state = 'completed',
+        provider_secondary_object_id = 'seti_autopay_disable',
+        projected_at = v_now,
+        completed_at = v_now,
+        revision = revision + 1,
+        updated_at = clock_timestamp()
+    WHERE id = v_operation;
+    UPDATE public.billing_payer_setup_requests
+    SET stripe_setup_intent_id = 'seti_autopay_disable',
+        accepted_at = v_now - interval '30 seconds',
+        completed_at = v_now - interval '20 seconds',
+        revision = revision + 1,
+        updated_at = clock_timestamp()
+    WHERE id = v_request;
+    INSERT INTO public.billing_payer_payment_consents(
+        id, setup_request_id, studio_id, payer_id, terms_version,
+        stripe_checkout_session_id, stripe_setup_intent_id,
+        stripe_connected_account_id, connect_account_generation,
+        acceptance_proof_sha256, accepted_at, completed_at,
+        setup_request_expires_at, created_at, updated_at
+    ) VALUES (
+        v_consent, v_request, v_studio, v_payer, 'koaryu-autopay-v1',
+        'cs_autopay_disable', 'seti_autopay_disable',
+        'acct_AutopayDisableContract', 1, repeat('b', 64),
+        v_now - interval '30 seconds', v_now - interval '20 seconds',
+        v_now + interval '35 minutes', v_now - interval '30 seconds', v_now
+    );
+    UPDATE public.billing_payers
+    SET autopay_status = 'enabled',
+        default_payment_method_id = 'pm_autopay_disable',
+        autopay_authorized_at = v_now - interval '20 seconds',
+        autopay_terms_accepted_at = v_now - interval '30 seconds'
+    WHERE id = v_payer;
+
+    v_result := public.disable_billing_payer_autopay_v1(
+        v_studio, v_payer, v_admin, v_disabled_at,
+        'staff_disabled_autopay'
+    );
+    IF v_result->>'outcome' <> 'disabled'
+       OR v_result->'payer'->>'autopay_status' <> 'disabled'
+       OR (v_result->>'revoked_consent_id')::UUID <> v_consent
+       OR (SELECT revoked_at FROM public.billing_payer_payment_consents
+           WHERE id = v_consent) IS DISTINCT FROM v_disabled_at
+       OR (SELECT revoked_by FROM public.billing_payer_payment_consents
+           WHERE id = v_consent) IS DISTINCT FROM v_admin
+       OR (SELECT revocation_reason_code FROM public.billing_payer_payment_consents
+           WHERE id = v_consent) <> 'staff_disabled_autopay'
+       OR (SELECT revoked_at FROM public.billing_payer_setup_requests
+           WHERE id = v_request) IS DISTINCT FROM v_disabled_at
+       OR (SELECT default_payment_method_id FROM public.billing_payers
+           WHERE id = v_payer) <> 'pm_autopay_disable' THEN
+        RAISE EXCEPTION 'Atomic autopay disable did not revoke consent safely.';
+    END IF;
+    IF public.disable_billing_payer_autopay_v1(
+        v_studio, v_payer, v_admin, v_disabled_at,
+        'staff_disabled_autopay'
+    )->>'outcome' <> 'replay' THEN
+        RAISE EXCEPTION 'Exact autopay disable did not replay.';
+    END IF;
+    BEGIN
+        PERFORM public.disable_billing_payer_autopay_v1(
+            v_studio, v_payer, v_front_desk, v_disabled_at,
+            'staff_disabled_autopay'
+        );
+        RAISE EXCEPTION 'Front Desk disabled payer autopay.';
+    EXCEPTION WHEN insufficient_privilege THEN
+        IF SQLERRM <> 'billing_payer_autopay_disable_actor_invalid' THEN
+            RAISE;
+        END IF;
+    END;
 END;
 $$;
 

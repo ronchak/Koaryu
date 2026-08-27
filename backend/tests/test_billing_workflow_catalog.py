@@ -113,14 +113,17 @@ def test_role_capabilities_are_sanitized_and_fail_closed():
     ready = {scope: True for scope in LIVE_SCOPE_OPERATIONS}
 
     admin = workflow_capabilities_for_role(
-        "admin", stripe_mode="live", scope_ready=ready, allowed_operations=allowed
+        "admin", stripe_mode="live", scope_ready=ready, allowed_operations=allowed,
+        transition_scheduler_ready=True,
     )
     front_desk = workflow_capabilities_for_role(
-        "front_desk", stripe_mode="live", scope_ready=ready, allowed_operations=allowed
+        "front_desk", stripe_mode="live", scope_ready=ready, allowed_operations=allowed,
+        transition_scheduler_ready=True,
     )
 
     assert workflow_capabilities_for_role(
-        "instructor", stripe_mode="live", scope_ready=ready, allowed_operations=allowed
+        "instructor", stripe_mode="live", scope_ready=ready, allowed_operations=allowed,
+        transition_scheduler_ready=True,
     ) == []
     assert {tuple(sorted(capability)) for capability in admin} == {
         ("denial_reason_code", "enabled", "workflow_id")
@@ -144,6 +147,31 @@ def test_role_capabilities_are_sanitized_and_fail_closed():
         "enabled": False,
         "denial_reason_code": "named_enrollment_cancellation_workflow_required",
     }
+
+    without_scheduler = workflow_capabilities_for_role(
+        "front_desk",
+        stripe_mode="test",
+        scope_ready=ready,
+        allowed_operations=allowed,
+        transition_scheduler_ready=False,
+    )
+    period_end = next(
+        capability
+        for capability in without_scheduler
+        if capability["workflow_id"] == "enrollment.cancel.period_end.schedule"
+    )
+    assert period_end == {
+        "workflow_id": "enrollment.cancel.period_end.schedule",
+        "enabled": False,
+        "denial_reason_code": "billing_transition_scheduler_not_ready",
+    }
+    revoke = next(
+        capability
+        for capability in without_scheduler
+        if capability["workflow_id"] == "enrollment.cancel.period_end.revoke"
+    )
+    assert revoke["enabled"] is True
+    assert revoke["denial_reason_code"] is None
 
 
 def test_catalog_is_immutable_data_without_callable_provider_logic():

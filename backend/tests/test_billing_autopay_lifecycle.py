@@ -43,6 +43,24 @@ def _operation_conflict() -> PostgrestAPIError:
     })
 
 
+def _setup_request_not_found() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "P0002",
+        "message": "billing_payer_setup_request_not_found",
+        "details": "",
+        "hint": "",
+    })
+
+
+def _autopay_disable_pending() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "55000",
+        "message": "billing_payer_autopay_disable_setup_pending",
+        "details": "",
+        "hint": "",
+    })
+
+
 class _AutopayOperationSupabase(_FakeSupabase):
     def __init__(self, tables):
         super().__init__(tables)
@@ -54,6 +72,7 @@ class _AutopayOperationSupabase(_FakeSupabase):
         self.closed_operations: list[dict] = []
         self.close_calls: list[dict] = []
         self.prepare_calls: list[dict] = []
+        self.disable_calls: list[dict] = []
         self.operation_started_at = datetime.now(timezone.utc).isoformat()
         self.on_update_query = self._handle_update
 
@@ -199,7 +218,8 @@ class _AutopayOperationSupabase(_FakeSupabase):
         return {"outcome": "bound", "setup_request": dict(self.setup_request)}
 
     def _rpc_read_billing_payer_setup_request_v1(self, _params: dict) -> dict:
-        assert self.setup_request is not None
+        if self.setup_request is None:
+            raise _setup_request_not_found()
         return {"outcome": "read", "setup_request": dict(self.setup_request)}
 
     def _rpc_read_billing_payer_setup_webhook_v1(self, params: dict) -> dict:
@@ -300,6 +320,54 @@ class _AutopayOperationSupabase(_FakeSupabase):
         assert not self.consent.get("revoked_at")
         assert not self.consent.get("superseded_at")
         return {"outcome": "read", "consent": dict(self.consent)}
+
+    def _rpc_disable_billing_payer_autopay_v1(self, params: dict) -> dict:
+        self.disable_calls.append(dict(params))
+        payer = next(
+            row for row in self.tables["billing_payers"]
+            if row["id"] == params["p_payer_id"]
+            and row["studio_id"] == params["p_studio_id"]
+        )
+        if (
+            self.setup_request
+            and not self.setup_request.get("revoked_at")
+            and not self.setup_request.get("superseded_at")
+            and not self.setup_request.get("completed_at")
+            and self.operation
+            and self.operation.get("state") in {
+                "started",
+                "provider_request_in_flight",
+                "provider_succeeded",
+                "projected",
+                "reconciliation_required",
+                "recovery_authorized",
+            }
+        ):
+            raise _autopay_disable_pending()
+        revoked_consent_id = None
+        if (
+            self.consent
+            and self.consent.get("completed_at")
+            and not self.consent.get("revoked_at")
+            and not self.consent.get("superseded_at")
+        ):
+            revoked_consent_id = self.consent["id"]
+            self.consent.update({
+                "revoked_at": params["p_disabled_at"],
+                "revoked_by": params["p_actor_id"],
+                "revocation_reason_code": params["p_reason_code"],
+            })
+            if self.setup_request:
+                self.setup_request["revoked_at"] = params["p_disabled_at"]
+        payer.update({
+            "autopay_status": "disabled",
+            "autopay_disabled_at": params["p_disabled_at"],
+        })
+        return {
+            "outcome": "disabled",
+            "payer": dict(payer),
+            "revoked_consent_id": revoked_consent_id,
+        }
 
     def _rpc_mark_billing_payer_setup_reconciliation_v1(self, params: dict) -> dict:
         assert self.operation is not None
@@ -594,12 +662,19 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             self.assertIn("Idempotency-Key", context.exception.detail)
 
     def test_saved_card_never_bypasses_provider_consent_checkout(self):
+        class AtTwelveTwenty(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                value = cls(2026, 8, 26, 12, 20, tzinfo=timezone.utc)
+                return value if tz is None else value.astimezone(tz)
+
         service = self.service()
         service.settings = type("Settings", (), {
             "BILLING_PLATFORM_FEE_BPS": 50,
             "FRONTEND_URL": "https://app.koaryu.test",
         })()
         service.supabase = _AutopayOperationSupabase(_autopay_tables(saved_card=True))
+        service.supabase.operation_started_at = "2026-08-26T12:00:00+00:00"
         _FakeStripeService.retrieve_account_response = {
             "id": "acct_1",
             "charges_enabled": True,
@@ -609,7 +684,10 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         }
         _FakeStripeService.setup_calls = []
 
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
+        with (
+            patch("app.services.billing_service.StripeService", _FakeStripeService),
+            patch("app.services.billing_autopay.datetime", AtTwelveTwenty),
+        ):
             link = asyncio.run(service.create_autopay_setup_link(
                 "payer_1",
                 BillingPayerAutopaySetupRequest(
@@ -634,14 +712,18 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertNotIn("actor_id", checkout["metadata"])
         self.assertNotIn("url", repr(service.supabase.operation))
         self.assertNotIn("url", repr(service.supabase.setup_request))
-        started_at = datetime.fromisoformat(service.supabase.operation["started_at"])
         self.assertEqual(
             checkout["expires_at"],
-            int((started_at + timedelta(minutes=30)).timestamp()),
+            int(datetime(2026, 8, 26, 12, 55, tzinfo=timezone.utc).timestamp()),
         )
         self.assertEqual(
             service.supabase.setup_request["setup_request_expires_at"],
-            (started_at + timedelta(minutes=30)).isoformat(),
+            "2026-08-26T12:55:00+00:00",
+        )
+        self.assertGreaterEqual(
+            checkout["expires_at"]
+            - int(datetime(2026, 8, 26, 12, 20, tzinfo=timezone.utc).timestamp()),
+            30 * 60,
         )
         audit_metadata = service.supabase.tables["audit_logs"][0]["metadata"]
         self.assertEqual(
@@ -664,26 +746,40 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "details_submitted": True,
             "requirements": {"currently_due": []},
         }
+        request = BillingPayerAutopaySetupRequest(
+            return_url="https://app.koaryu.test/internal/staff-page",
+        )
 
         with patch("app.services.billing_service.StripeService", _FakeStripeService):
             first = asyncio.run(service.create_autopay_setup_link(
                 "payer_1",
-                BillingPayerAutopaySetupRequest(),
+                request,
+                "studio_1",
+                "user_1",
+                "autopay-key",
+            ))
+            replay = asyncio.run(service.create_autopay_setup_link(
+                "payer_1",
+                request,
                 "studio_1",
                 "user_1",
                 "autopay-key",
             ))
             database.operation["state"] = "completed"
-            second = asyncio.run(service.create_autopay_setup_link(
-                "payer_1",
-                BillingPayerAutopaySetupRequest(),
-                "studio_1",
-                "user_1",
-                "autopay-key",
-            ))
+            with self.assertRaises(HTTPException) as completed:
+                asyncio.run(service.create_autopay_setup_link(
+                    "payer_1",
+                    request,
+                    "studio_1",
+                    "user_1",
+                    "autopay-key",
+                ))
 
         self.assertEqual(first.url, "https://checkout.stripe.test/setup")
-        self.assertEqual(second.url, first.url)
+        self.assertEqual(replay.url, first.url)
+        self.assertEqual(completed.exception.status_code, 409)
+        self.assertIn("new Idempotency-Key", completed.exception.detail)
+        self.assertNotIn("internal/staff-page", completed.exception.detail)
         self.assertEqual(len(_FakeStripeService.setup_calls), 1)
         self.assertEqual(database.operation["provider_request_attempt_count"], 1)
 
@@ -755,7 +851,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(database.setup_request["id"], original_request_id)
         self.assertEqual(
             database.setup_request["setup_request_expires_at"],
-            "2026-08-26T12:30:00+00:00",
+            "2026-08-26T12:36:00+00:00",
         )
         self.assertEqual(database.operation["state"], "definitive_rejected")
         self.assertEqual(database.operation["provider_request_attempt_count"], 0)
@@ -1511,7 +1607,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
 
     def test_disable_autopay_rewires_active_subscription_to_invoice_collection(self):
         service = self.service()
-        service.supabase = _FakeSupabase({
+        service.supabase = _AutopayOperationSupabase({
             "billing_payers": [{
                 "id": "payer_1", "studio_id": "studio_1",
                 "display_name": "Family One", "autopay_status": "enabled",
@@ -1556,7 +1652,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(service.supabase.tables["audit_logs"], [])
     def test_disable_autopay_marks_subscription_pending_before_stripe_mutation(self):
         service = self.service()
-        service.supabase = _FakeSupabase({
+        service.supabase = _AutopayOperationSupabase({
             "billing_payers": [{
                 "id": "payer_1", "studio_id": "studio_1",
                 "display_name": "Family One", "autopay_status": "enabled",
@@ -1580,6 +1676,69 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "rewired_subscription_ids"
             ],
             [],
+        )
+
+    def test_disable_autopay_rejects_usable_pending_setup_without_state_change(self):
+        service, database, _session = self._prepared_consent_setup()
+        payer = database.tables["billing_payers"][0]
+
+        with self.assertRaises(HTTPException) as blocked:
+            asyncio.run(service.disable_autopay("payer_1", "studio_1", "user_1"))
+
+        self.assertEqual(blocked.exception.status_code, 409)
+        self.assertIn("setup session or consent is pending", blocked.exception.detail)
+        self.assertEqual(payer["autopay_status"], "pending")
+        self.assertIsNone(database.setup_request.get("revoked_at"))
+        self.assertIsNone(database.consent)
+        self.assertEqual(len(database.disable_calls), 1)
+
+    def test_disable_after_completion_revokes_consent_before_webhook_replay(self):
+        service, database, session = self._prepared_consent_setup()
+
+        class SuccessfulStripeService:
+            def retrieve_connected_setup_intent(self, **_payload):
+                return {
+                    "id": "seti_1",
+                    "status": "succeeded",
+                    "customer": "cus_1",
+                    "metadata": session["metadata"],
+                    "payment_method": {
+                        "id": "pm_123",
+                        "type": "card",
+                        "card": {"brand": "visa", "last4": "2167"},
+                    },
+                }
+
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            service._project_checkout_session(session, "acct_1", event_created=200)
+
+        database.tables["billing_payers"][0].setdefault(
+            "created_at", "2026-08-26T12:00:00+00:00"
+        )
+        database.tables["billing_payers"][0].setdefault(
+            "updated_at", "2026-08-26T12:00:00+00:00"
+        )
+        response = asyncio.run(service.disable_autopay("payer_1", "studio_1", "user_1"))
+        self.assertEqual(response.autopay_status, "disabled")
+        self.assertIsNotNone(database.consent["revoked_at"])
+        self.assertEqual(database.consent["revoked_by"], "user_1")
+        self.assertEqual(
+            database.consent["revocation_reason_code"],
+            "staff_disabled_autopay",
+        )
+        self.assertEqual(
+            database.setup_request["revoked_at"],
+            database.consent["revoked_at"],
+        )
+
+        with patch("app.services.billing_service.StripeService", SuccessfulStripeService):
+            try:
+                service._project_checkout_session(session, "acct_1", event_created=201)
+            except (AssertionError, HTTPException):
+                pass
+        self.assertEqual(
+            database.tables["billing_payers"][0]["autopay_status"],
+            "disabled",
         )
     def test_autopay_invoice_requires_authorized_payer_terms(self):
         service = self.service()

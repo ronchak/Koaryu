@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from app.schemas.billing import BillingPayerCreate, BillingPayerUpdate
 from app.services.billing_payers import BillingPayerManager
+from app.services.billing_provider_operations import BillingProviderOperationContext
 from app.services.stripe_mutation_policy import StripeMutationBlocked
 from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
@@ -134,6 +135,61 @@ class _FakeStripeService:
 
 
 class BillingPayerManagerTests(unittest.TestCase):
+    def test_payer_sync_preserves_active_consent_payment_method_when_provider_default_is_null(self):
+        payer = {
+            "id": "payer_1", "studio_id": "studio_1", "display_name": "Pat",
+            "autopay_status": "enabled", "autopay_authorized_at": "2026-08-01T00:00:00Z",
+            "autopay_terms_accepted_at": "2026-08-01T00:00:00Z",
+            "default_payment_method_id": "pm_verified", "default_payment_method_brand": "visa",
+            "default_payment_method_last4": "4242", "default_payment_method_exp_month": 12,
+            "default_payment_method_exp_year": 2030,
+        }
+        facade = _BillingFacade({"billing_payers": [payer], "audit_logs": [],
+            "billing_payer_payment_consents": [{
+                "id": "consent_1", "studio_id": "studio_1", "payer_id": "payer_1",
+                "terms_version": "koaryu-autopay-v1", "stripe_connected_account_id": "acct_1",
+                "connect_account_generation": 1, "accepted_at": "2026-08-01T00:00:00Z",
+                "completed_at": "2026-08-01T00:00:00Z", "revoked_at": None, "superseded_at": None,
+            }]}, account={
+            "charges_enabled": True, "status": "charges_enabled",
+            "stripe_connected_account_id": "acct_1", "metadata": {"connect_account_generation": 1},
+        })
+        manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
+        context = BillingProviderOperationContext(
+            operation_id="operation_1", studio_id="studio_1", actor_id="actor_1",
+            operation_type="payer.sync", caller_request_key="key", request_sha256="a" * 64,
+            stripe_connected_account_id="acct_1", connect_account_generation=1,
+            lease_owner="lease_1",
+        )
+
+        projected = manager._project_payer_sync_result(
+            payer=payer,
+            provider_customer={"id": "cus_1", "invoice_settings": {"default_payment_method": None}},
+            customer_id="cus_1",
+            context=context,
+        )
+
+        self.assertEqual(projected["default_payment_method_id"], "pm_verified")
+        self.assertEqual(projected["default_payment_method_last4"], "4242")
+
+    def test_payer_sync_clears_local_payment_method_without_active_consent(self):
+        payer = {
+            "id": "payer_1", "studio_id": "studio_1", "autopay_status": "enabled",
+            "autopay_authorized_at": "2026-08-01T00:00:00Z",
+            "autopay_terms_accepted_at": "2026-08-01T00:00:00Z",
+            "default_payment_method_id": "pm_unproved",
+        }
+        facade = _BillingFacade({"billing_payers": [payer], "audit_logs": []}, account={
+            "charges_enabled": True, "stripe_connected_account_id": "acct_1",
+            "metadata": {"connect_account_generation": 1},
+        })
+        context = BillingProviderOperationContext("op","studio_1","actor_1","payer.sync","key","a"*64,"acct_1",1,"lease")
+        projected = BillingPayerManager(facade)._project_payer_sync_result(
+            payer=payer, provider_customer={"invoice_settings": {"default_payment_method": None}},
+            customer_id="cus_1", context=context,
+        )
+        self.assertIsNone(projected["default_payment_method_id"])
+
     def test_create_update_get_and_list_payers_without_stripe(self):
         facade = _BillingFacade({
             "guardians": [{"id": "guardian_1", "studio_id": "studio_1"}],
@@ -287,7 +343,7 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertEqual(operation["result_summary"], "sync_mode:update")
         self.assertEqual(facade.supabase.tables["billing_payers"][0]["metadata"], {})
 
-    def test_payer_sync_old_key_replays_after_a_new_key_without_metadata_receipts(self):
+    def test_payer_sync_different_key_collapses_and_old_key_replays_without_metadata_receipts(self):
         _FakeStripeService.reset()
         original_metadata = {"source": "guardian-import"}
         facade = _BillingFacade(
@@ -327,8 +383,8 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertEqual(second.stripe_customer_id, "cus_created")
         self.assertEqual(first_replay.stripe_customer_id, "cus_created")
         self.assertEqual(len(_FakeStripeService.created_customers), 1)
-        self.assertEqual(len(_FakeStripeService.updated_customers), 1)
-        self.assertEqual(len(facade.supabase.tables["audit_logs"]), 2)
+        self.assertEqual(len(_FakeStripeService.updated_customers), 0)
+        self.assertEqual(len(facade.supabase.tables["audit_logs"]), 1)
         self.assertEqual(
             facade.supabase.tables["billing_payers"][0]["metadata"],
             original_metadata,
@@ -340,7 +396,6 @@ class BillingPayerManagerTests(unittest.TestCase):
         }
         self.assertEqual(summaries, {
             "payer-sync-key-1": "sync_mode:create",
-            "payer-sync-key-2": "sync_mode:update",
         })
 
     def test_payer_sync_same_key_rejects_changed_desired_customer_state(self):

@@ -79,6 +79,11 @@ export function useBillingEnrollmentActions({
     const result = await runtime.postBillingAction<StudentBillingEnrollment>({
       action: `enrollment-activate:${enrollmentId}`,
       path: `/billing/enrollments/${enrollmentId}/activate`,
+      onTerminalIdempotencyError: () => clearEnrollmentActivationRequestKey({
+        enrollmentId,
+        identity: operationIdentity,
+        keysByEnrollment: activationKeysRef.current,
+      }),
       refresh: false,
       requestOptions: buildEnrollmentActivationRequest(requestKey),
       successMessage: "Enrollment activation requested.",
@@ -124,6 +129,12 @@ export function useBillingEnrollmentActions({
       action: `enrollment-transition:${action}:${resourceId}`,
       path,
       body,
+      onTerminalIdempotencyError: () => clearEnrollmentTransitionRequestKey({
+        action,
+        identity: operationIdentity,
+        keys: transitionKeysRef.current,
+        resourceId,
+      }),
       refresh: false,
       requestOptions: enrollmentTransitionRequestOptions(requestKey),
       successMessage: "Enrollment transition requested.",

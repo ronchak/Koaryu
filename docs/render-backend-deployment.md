@@ -156,19 +156,22 @@ Account deletion is scheduled from the Vercel frontend project, not as a separat
 
 Enrollment period transitions expose a separate fail-closed backend worker at
 `/api/v1/internal/billing/enrollment-transitions/process-due`, protected by
-`BILLING_TRANSITION_WORKER_SECRET`. No scheduler is declared yet because copying that
-credential into the frontend would widen its secret boundary. Before enabling scheduled
-cancellations, declare a repository-owned Render worker or Cron Job for staging that posts
-to this endpoint, prove due item and whole-subscription convergence in Stripe test mode,
-then mirror the same manifest for production with its own secret. Do not invoke the worker
-from an ad hoc external scheduler or share one environment's secret with another.
+`BILLING_TRANSITION_WORKER_SECRET`. The repository declares
+`koaryu-billing-transitions-staging` as a five-minute Render Cron Job. It reuses the
+staging web service secret by Render service reference and posts only to the pinned
+staging origin. `BILLING_TRANSITION_SCHEDULER_ENABLED` keeps the public scheduling
+route and capability closed unless that environment's worker is intentionally active.
+The production value remains `false`, and no production cron may be created in the
+staging release task. After separate production approval, mirror the staging cron with
+the production origin and production web-service secret, prove one manual run, then
+enable the production flag. Never share one environment's secret with another.
 
-If you configure or test the worker manually instead, call the protected endpoint at least daily:
+For a manual staging verification, call the same protected endpoint directly:
 
 ```bash
 curl -X POST \
-  -H "X-Internal-Secret: $ACCOUNT_DELETION_WORKER_SECRET" \
-  https://koaryu.onrender.com/api/v1/internal/account-deletions/process-due
+  -H "X-Internal-Secret: $BILLING_TRANSITION_WORKER_SECRET" \
+  https://koaryu-staging.onrender.com/api/v1/internal/billing/enrollment-transitions/process-due
 ```
 
 Support tickets can be polled by an operator:

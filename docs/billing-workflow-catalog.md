@@ -20,6 +20,14 @@ permit for the exact operation. The frontend receives only workflow ID, enabled 
 and a stable denial code. It does not receive object identifiers, authorization rows,
 recovery proofs, or operator evidence.
 
+`enrollment.cancel.period_end.schedule` has an additional runtime prerequisite:
+`BILLING_TRANSITION_SCHEDULER_ENABLED` must be true for that environment. The public
+route also enforces the same interlock and returns 503 while it is false. Staging sets
+the flag only with the repository-declared five-minute Render Cron Job; production
+remains false until its separately approved scheduler exists. Revocation stays
+available so an existing scheduled intent can still be withdrawn if the worker is
+disabled.
+
 `studio_live_billing_authorizations.allowed_operations` is the live grant owner.
 Enabled grants must contain a nonempty, byte-sorted, duplicate-free list drawn from the
 exact operation set for their scope. Empty, null, wildcard, prefix, duplicate, and
