@@ -53,9 +53,6 @@ class BillingPrivateFacadeMixin:
     def _sync_plan_price(self, plan: dict[str, Any], account: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
         return BillingPlanManager(self, stripe_service_cls=self._billing_stripe_service_cls())._sync_plan_price(plan, account, force=force)
 
-    def _sync_payer_customer(self, payer: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
-        return BillingPayerManager(self, stripe_service_cls=self._billing_stripe_service_cls())._sync_payer_customer(payer, account)
-
     def _find_or_create_billing_subscription(
         self,
         enrollment: dict[str, Any],
@@ -377,22 +374,6 @@ class BillingPrivateFacadeMixin:
 
     def _payment_method_fields_from_payment_method(self, payment_method: Any) -> dict[str, Any]:
         return BillingPayerManager(self, stripe_service_cls=self._billing_stripe_service_cls())._payment_method_fields_from_payment_method(
-            payment_method,
-        )
-
-    def _store_invoice_payment_method(
-        self,
-        studio_id: str,
-        payer_id: str,
-        account_id: Optional[str],
-        customer_id: Optional[str],
-        payment_method: Any,
-    ) -> None:
-        BillingPayerManager(self, stripe_service_cls=self._billing_stripe_service_cls())._store_invoice_payment_method(
-            studio_id,
-            payer_id,
-            account_id,
-            customer_id,
             payment_method,
         )
 

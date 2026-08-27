@@ -33,6 +33,12 @@ Enabled grants must contain a nonempty, byte-sorted, duplicate-free list drawn f
 exact operation set for their scope. Empty, null, wildcard, prefix, duplicate, and
 unknown values fail closed in both the operator client and V30 database RPC.
 
+Payer create and update are local database workflows. They never create or update a
+Stripe customer implicitly; `payer.sync` is the only named customer mutation owner and
+requires its own caller key, resource version, tenant, account, and generation proof.
+Invoice payment webhooks record the payment's method on the payment evidence only; they
+never replace the payer's consent-bound default payment method.
+
 Catalog tests compare the live FastAPI router and decorated Stripe methods to the
 catalog. A new mutation route or connected sink therefore fails CI until it receives an
 explicit owner and classification.

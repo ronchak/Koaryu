@@ -87,7 +87,7 @@ INSERT INTO public.billing_payers(
 ) VALUES
   ('31000000-0000-4000-8000-000000000003',
    '31000000-0000-4000-8000-000000000002','Fully refunded legacy payer',
-   'acct_v31restore','cus_v31restore_full',1,'past_due',1000),
+   'acct_v31restore','cus_v31restore_full',NULL,'past_due',1000),
   ('31000000-0000-4000-8000-000000000004',
    '31000000-0000-4000-8000-000000000002','Partially refunded legacy payer',
    'acct_v31restore','cus_v31restore_partial',1,'past_due',400),
@@ -199,6 +199,7 @@ catalog_sql="$(cd "$repository_root" && node --input-type=module --eval "import 
 restored_catalog_state="$(read_restored "$catalog_sql")"
 normalization_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || status || ':' || amount_paid_cents::TEXT || ':' || amount_remaining_cents::TEXT || ':' || COALESCE(paid_at IS NOT NULL,false)::TEXT, '|' ORDER BY id) FROM public.billing_invoices WHERE id BETWEEN '31000000-0000-4000-8000-000000000006'::uuid AND '31000000-0000-4000-8000-000000000009'::uuid;")"
 payer_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || billing_status || ':' || balance_cents::TEXT, '|' ORDER BY id) FROM public.billing_payers WHERE id BETWEEN '31000000-0000-4000-8000-000000000003'::uuid AND '31000000-0000-4000-8000-000000000005'::uuid;")"
+payer_generation_state="$(read_restored "SELECT string_agg(id::TEXT || ':' || COALESCE(connect_account_generation::TEXT,''), '|' ORDER BY id) FROM public.billing_payers WHERE id BETWEEN '31000000-0000-4000-8000-000000000003'::uuid AND '31000000-0000-4000-8000-000000000005'::uuid;")"
 payments_after="$(table_fingerprint billing_payments)"
 refunds_after="$(table_fingerprint billing_refunds)"
 disputes_after="$(table_fingerprint billing_disputes)"
@@ -213,14 +214,15 @@ echo "RESTORED_V31_EXPECTATION_STATE=$expectation_state"
 echo "RESTORED_V31_CATALOG_STATE=$restored_catalog_state"
 echo "RESTORED_V31_LEGACY_NORMALIZATION_STATE=$normalization_state"
 echo "RESTORED_V31_PAYER_RECEIVABLE_STATE=$payer_state"
+echo "RESTORED_V31_PAYER_GENERATION_STATE=$payer_generation_state"
 echo "RESTORED_V31_UNTOUCHED_ROW_FINGERPRINTS=$payments_after|$refunds_after|$disputes_after|$operations_after"
 
-if [[ "$resource_manifest" != "0:88d995d82173f5ac5f42b424ec392ad1432000645265d68e9b71d2c0f829f36c" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
-if [[ "$operational_contract" != "0:a6ba54bedd4ae2643cac443fad2abf684e406488e33330d401bb264a360e805a" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
-if [[ "$operational_manifest" != "d7b8f30fb72ad7b20308bf96711308d7d2d6b8ce4376c478cbb5b7f1eb3eb7e4" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
+if [[ "$resource_manifest" != "0:bb38b2815c7c6f65cb43684e2a1b4c01e1711c605c0914350d7dca41ff243068" ]]; then echo "Restored V31 resource manifest mismatch." >&2; exit 1; fi
+if [[ "$operational_contract" != "0:93ce2c0f805842bf3c8fb8fdd26f063f4728e03f2076de565c1f85c7431ccd5a" ]]; then echo "Restored V31 operational contract mismatch." >&2; exit 1; fi
+if [[ "$operational_manifest" != "cf89e1619c3f1e25915cd2a5e19f42f950015d18d775dc6629115f247f4cd3c6" ]]; then echo "Restored V31 operational manifest mismatch." >&2; exit 1; fi
 if [[ "$readiness" != "true|124|20260826185651|0||release-db-attestation-v31" ]]; then echo "Restored V31 readiness mismatch: $readiness" >&2; exit 1; fi
 if [[ "$compat_readiness" != "true|123|20260826155911|0||release-db-attestation-v30" ]]; then echo "Restored V30 compatibility readiness mismatch: $compat_readiness" >&2; exit 1; fi
-if [[ "$expectation_state" != "1:19c7bacdf55084069c582878a7c23e4e1eb466b8f9e03c8d9fa30580a28f4e56" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
+if [[ "$expectation_state" != "1:36fa463fd5cdb85e674086fb59ec09b4b8b92bd310487a4ff46f98e4088e0ae3" ]]; then echo "Restored V31 expectation mismatch." >&2; exit 1; fi
 if ! (
   cd "$repository_root"
   node --input-type=module --eval '
@@ -239,6 +241,10 @@ if [[ "$payer_state" != "31000000-0000-4000-8000-000000000003:current:0|31000000
   echo "Restored V31 payer receivable recomputation mismatch: $payer_state" >&2
   exit 1
 fi
+if [[ "$payer_generation_state" != "31000000-0000-4000-8000-000000000003:1|31000000-0000-4000-8000-000000000004:1|31000000-0000-4000-8000-000000000005:1" ]]; then
+  echo "Restored V31 payer generation backfill mismatch: $payer_generation_state" >&2
+  exit 1
+fi
 if [[ "$payments_before" != "$payments_after" || "$refunds_before" != "$refunds_after" || "$disputes_before" != "$disputes_after" || "$operations_before" != "$operations_after" ]]; then
   echo "V31 normalization mutated payment/refund/dispute/provider evidence rows." >&2
   exit 1
@@ -254,6 +260,8 @@ DECLARE
   v_payer UUID := gen_random_uuid();
   v_sync_payer UUID := gen_random_uuid();
   v_payment UUID := gen_random_uuid();
+  v_pending_payment UUID := gen_random_uuid();
+  v_pending_operation UUID;
   v_operation UUID;
   v_old_operation UUID;
   v_old_version TEXT;
@@ -354,6 +362,53 @@ BEGIN
      OR (v_result->'operation'->>'id')::UUID=v_old_operation
      OR v_result->'resource'->>'resource_version_sha256'=v_old_version THEN
     RAISE EXCEPTION 'Advanced refund version did not replace its projected owner: %',v_result;
+  END IF;
+
+  INSERT INTO public.billing_payments(
+    id,studio_id,payer_id,stripe_customer_id,stripe_payment_intent_id,
+    stripe_charge_id,stripe_account_id,connect_account_generation,status,
+    amount_cents,currency,net_collected_amount_cents,refundable_amount_cents,processed_at
+  ) VALUES(
+    v_pending_payment,v_studio,v_payer,'cus_v31owner','pi_v31pending','ch_v31pending',
+    'acct_v31restore',1,'succeeded',500,'usd',500,500,v_now
+  );
+  v_result := public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_actor,'payment.refund','payment',v_pending_payment,v_payer,
+    'v31-pending-refund-key-a',repeat('e',64),
+    'acct_v31restore',1,gen_random_uuid(),30
+  );
+  v_pending_operation := (v_result->'operation'->>'id')::UUID;
+  UPDATE public.billing_provider_operations SET
+    state='completed',provider_request_attempt_count=1,
+    provider_object_id='re_v31pending',result_code='payment_refund_completed',
+    provider_request_in_flight_at=v_now,provider_succeeded_at=v_now,
+    projected_at=v_now,completed_at=v_now,lease_owner=NULL,
+    lease_acquired_at=NULL,lease_expires_at=NULL,revision=revision+1,
+    updated_at=clock_timestamp()
+  WHERE id=v_pending_operation;
+  INSERT INTO public.billing_refunds(
+    studio_id,payment_id,stripe_refund_id,stripe_charge_id,stripe_payment_intent_id,
+    stripe_account_id,connect_account_generation,amount_cents,status
+  ) VALUES(v_studio,v_pending_payment,'re_v31pending','ch_v31pending','pi_v31pending',
+           'acct_v31restore',1,100,'pending');
+  BEGIN
+    PERFORM public.claim_billing_provider_operation_resource_v1(
+      v_studio,v_actor,'payment.refund','payment',v_pending_payment,v_payer,
+      'v31-pending-refund-key-b',repeat('e',64),
+      'acct_v31restore',1,gen_random_uuid(),30
+    );
+    RAISE EXCEPTION 'A new refund request replayed an unsettled prior refund.';
+  EXCEPTION WHEN object_not_in_prerequisite_state THEN
+    IF SQLERRM<>'billing_provider_operation_resource_prior_refund_unsettled' THEN RAISE; END IF;
+  END;
+  v_result := public.claim_billing_provider_operation_resource_v1(
+    v_studio,v_actor,'payment.refund','payment',v_pending_payment,v_payer,
+    'v31-pending-refund-key-a',repeat('e',64),
+    'acct_v31restore',1,gen_random_uuid(),30
+  );
+  IF v_result->>'outcome'<>'replay'
+     OR (v_result->'operation'->>'id')::UUID<>v_pending_operation THEN
+    RAISE EXCEPTION 'Exact pending refund key did not replay: %',v_result;
   END IF;
 
   v_result := public.claim_billing_provider_operation_resource_v1(

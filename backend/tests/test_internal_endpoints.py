@@ -4,6 +4,7 @@ import threading
 import time
 import unittest
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 from fastapi import HTTPException, Response
 from fastapi.testclient import TestClient
@@ -19,6 +20,7 @@ from app.schemas.support import SupportTicketResponse
 class FakeSettings:
     ACCOUNT_DELETION_WORKER_SECRET = "delete-secret"
     BILLING_TRANSITION_WORKER_SECRET = "billing-transition-secret"
+    BILLING_TRANSITION_SCHEDULER_ENABLED = True
     OPERATIONAL_ALERTS_ENABLED = False
     OPERATIONAL_ALERT_WORKER_SECRET = "operational-alert-secret"
     SUPPORT_TRIAGE_SECRET = "support-secret"
@@ -102,7 +104,32 @@ class InternalEndpointTest(unittest.TestCase):
         self.assertEqual(response.json()["claimed"], 2)
         called = service.process_due_enrollment_transitions.await_args.kwargs
         self.assertEqual(called["limit"], 7)
-        self.assertEqual(called["worker_id"], "00000000-0000-0000-0000-0000000b1171")
+        self.assertNotEqual(UUID(called["worker_id"]).int, 0)
+
+    @patch(
+        "app.api.v1.endpoints.internal.get_settings",
+        return_value=type(
+            "DisabledTransitionSettings",
+            (),
+            {
+                "BILLING_TRANSITION_WORKER_SECRET": "billing-transition-secret",
+                "BILLING_TRANSITION_SCHEDULER_ENABLED": False,
+            },
+        )(),
+    )
+    @patch("app.api.v1.endpoints.internal.BillingService")
+    def test_due_billing_enrollment_transitions_fail_closed_when_scheduler_disabled(
+        self,
+        billing_service_class,
+        _settings,
+    ):
+        response = self.client.post(
+            "/api/v1/internal/billing/enrollment-transitions/process-due",
+            headers={"X-Internal-Secret": "billing-transition-secret"},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        billing_service_class.assert_not_called()
 
     @patch("app.api.v1.endpoints.internal.get_settings", return_value=FakeSettings())
     @patch("app.api.v1.endpoints.internal.AccountService")

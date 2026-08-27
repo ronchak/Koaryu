@@ -223,32 +223,34 @@ class BillingPayerManagerTests(unittest.TestCase):
         self.assertEqual([payer.display_name for payer in listed], ["Alice", "Zed"])
         self.assertEqual(facade.supabase.tables["audit_logs"][0]["action"], "billing.payer_created")
 
-    def test_sync_payer_customer_uses_injected_stripe_and_records_saved_card(self):
+    def test_create_and_update_stay_local_when_connect_is_ready(self):
         _FakeStripeService.reset()
-        facade = _BillingFacade({
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Pat",
-                "autopay_status": "pending",
-                "billing_status": "no_payment_method",
-                "created_at": "2026-01-01T00:00:00Z",
-                "updated_at": "2026-01-01T00:00:00Z",
-            }]
+        facade = _BillingFacade({"billing_payers": [], "audit_logs": []}, account={
+            "charges_enabled": True,
+            "status": "charges_enabled",
+            "stripe_connected_account_id": "acct_1",
+            "metadata": {"connect_account_generation": 1},
         })
         manager = BillingPayerManager(facade, stripe_service_cls=_FakeStripeService)
 
-        updated = manager._sync_payer_customer(
-            facade.supabase.tables["billing_payers"][0],
-            {"stripe_connected_account_id": "acct_1"},
-        )
+        created = asyncio.run(manager.create_payer(
+            BillingPayerCreate(display_name="Pat"), "studio_1", "actor_1",
+        ))
+        updated = asyncio.run(manager.update_payer(
+            created.id, BillingPayerUpdate(phone="555-0101"), "studio_1", "actor_1",
+        ))
 
-        self.assertEqual(_FakeStripeService.created_customers[0]["idempotency_key"], "koaryu:payer-customer:payer_1")
-        self.assertEqual(updated["stripe_customer_id"], "cus_created")
-        self.assertEqual(updated["default_payment_method_id"], "pm_card")
-        self.assertEqual(updated["default_payment_method_brand"], "visa")
-        self.assertEqual(updated["billing_status"], "current")
-        self.assertEqual(updated["autopay_status"], "pending")
+        self.assertIsNone(created.stripe_customer_id)
+        self.assertIsNone(created.stripe_account_id)
+        self.assertIsNone(
+            facade.supabase.tables["billing_payers"][0].get(
+                "connect_account_generation"
+            )
+        )
+        self.assertEqual(updated.phone, "555-0101")
+        self.assertEqual(_FakeStripeService.created_customers, [])
+        self.assertEqual(_FakeStripeService.updated_customers, [])
+        self.assertEqual(_FakeStripeService.retrieved_customers, [])
 
     def test_payer_sync_create_replays_saved_result_without_second_provider_call(self):
         _FakeStripeService.reset()
@@ -284,6 +286,8 @@ class BillingPayerManagerTests(unittest.TestCase):
 
         self.assertEqual(first.stripe_customer_id, "cus_created")
         self.assertEqual(replay.stripe_customer_id, first.stripe_customer_id)
+        self.assertEqual(first.default_payment_method_id, "pm_card")
+        self.assertEqual(first.default_payment_method_last4, "4242")
         self.assertEqual(first.billing_status, "past_due")
         self.assertEqual(len(_FakeStripeService.created_customers), 1)
         self.assertEqual(_FakeStripeService.updated_customers, [])

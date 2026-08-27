@@ -137,22 +137,6 @@ class BillingPaymentEventProjector:
     def _payment_method_type(self, intent: dict[str, Any], charge: Any) -> Optional[str]:
         return self.billing_service._payment_method_type(intent, charge)
 
-    def _store_invoice_payment_method(
-        self,
-        studio_id: str,
-        payer_id: str,
-        account_id: Optional[str],
-        customer_id: Optional[str],
-        payment_method: Any,
-    ) -> None:
-        self.billing_service._store_invoice_payment_method(
-            studio_id,
-            payer_id,
-            account_id,
-            customer_id,
-            payment_method,
-        )
-
     def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
         self.billing_service._recompute_payer_balance(studio_id, payer_id)
 
@@ -311,14 +295,6 @@ class BillingPaymentEventProjector:
             if local_invoice.get("status") not in PAYMENT_PROJECTION_PRESERVED_INVOICE_STATUSES:
                 self._refresh_invoice_and_payer_from_payment_events(payment)
                 invoice_recomputed = True
-        if payment_status == "succeeded" and row.get("payer_id"):
-            self._store_invoice_payment_method(
-                studio_id,
-                row["payer_id"],
-                account_id,
-                _stripe_id(intent.get("customer")),
-                intent.get("payment_method"),
-            )
         if payment.get("payer_id") and not invoice_recomputed:
             self._recompute_payer_balance(studio_id, payment.get("payer_id"))
 

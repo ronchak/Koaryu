@@ -549,7 +549,7 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         self.assertEqual(captured["expires_at"], 1_800_000_000)
         self.assertEqual(captured["stripe_account"], "acct_1")
         self.assertEqual(captured["idempotency_key"], "autopay-operation-key")
-    def test_successful_invoice_payment_stores_payment_method_without_enabling_autopay(self):
+    def test_successful_invoice_payment_does_not_replace_payer_consent_method(self):
         service = self.service()
         service.supabase = _FakeSupabase({
             "billing_payments": [],
@@ -572,15 +572,11 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
             "billing_payers": [{
                 "id": "payer_1",
                 "studio_id": "studio_1",
-                "autopay_status": "not_configured",
+                "autopay_status": "enabled",
+                "default_payment_method_id": "pm_consented",
+                "default_payment_method_brand": "visa",
+                "default_payment_method_last4": "4242",
             }],
-        })
-        service._store_invoice_payment_method = lambda studio_id, payer_id, account_id, customer_id, payment_method: service.supabase.tables["billing_payers"][0].update({
-            "stripe_account_id": account_id,
-            "stripe_customer_id": customer_id,
-            "default_payment_method_id": payment_method["id"],
-            "default_payment_method_brand": payment_method["card"]["brand"],
-            "default_payment_method_last4": payment_method["card"]["last4"],
         })
 
         service._project_payment_intent({
@@ -602,34 +598,10 @@ class BillingAutopayLifecycleTest(BillingPaymentsLifecycleTestBase):
         }, "acct_1", "payment_intent.succeeded")
 
         payer = service.supabase.tables["billing_payers"][0]
-        self.assertEqual(payer["default_payment_method_id"], "pm_1")
+        self.assertEqual(payer["default_payment_method_id"], "pm_consented")
         self.assertEqual(payer["default_payment_method_brand"], "visa")
-        self.assertEqual(payer["default_payment_method_last4"], "2167")
-        self.assertEqual(payer["autopay_status"], "not_configured")
-
-    def test_payer_sync_stores_saved_card_without_enabling_autopay(self):
-        service = self.service()
-        service.supabase = _FakeSupabase({
-            "billing_payers": [{
-                "id": "payer_1",
-                "studio_id": "studio_1",
-                "display_name": "Rehearsal Payer",
-                "stripe_account_id": "acct_1",
-                "stripe_customer_id": "cus_1",
-                "autopay_status": "not_configured",
-                "billing_status": "no_payment_method",
-            }],
-        })
-
-        with patch("app.services.billing_service.StripeService", _FakeStripeService):
-            payer = service._sync_payer_customer(
-                service.supabase.tables["billing_payers"][0],
-                {"stripe_connected_account_id": "acct_1"},
-            )
-
-        self.assertEqual(payer["default_payment_method_id"], "pm_123")
-        self.assertEqual(payer["default_payment_method_last4"], "2167")
-        self.assertEqual(payer["autopay_status"], "not_configured")
+        self.assertEqual(payer["default_payment_method_last4"], "4242")
+        self.assertEqual(payer["autopay_status"], "enabled")
 
     def test_saved_card_and_legacy_staff_fields_do_not_authorize_without_durable_consent(self):
         service = self.service()

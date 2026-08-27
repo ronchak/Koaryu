@@ -127,6 +127,50 @@ ALTER FUNCTION private.validate_billing_payment_identity_change()
 REVOKE ALL ON FUNCTION private.validate_billing_payment_identity_change()
     FROM PUBLIC, anon, authenticated, service_role;
 
+-- Existing linked payers predate the generation column. A payer can inherit the
+-- current generation only when its stored account ID is the studio's exact current
+-- account; mismatched or partial identities stop the migration for reconciliation.
+UPDATE public.billing_payers AS payer
+SET connect_account_generation =
+        private.current_connect_account_generation(account.metadata),
+    updated_at = clock_timestamp()
+FROM public.studio_payment_accounts AS account
+WHERE payer.studio_id = account.studio_id
+  AND payer.stripe_account_id = account.stripe_connected_account_id
+  AND payer.stripe_customer_id IS NOT NULL
+  AND payer.connect_account_generation IS NULL
+  AND private.current_connect_account_generation(account.metadata) > 0;
+
+DO $payer_generation_backfill_guard$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM public.billing_payers AS payer
+        LEFT JOIN public.studio_payment_accounts AS account
+          ON account.studio_id = payer.studio_id
+        WHERE NOT (
+            (
+                payer.stripe_account_id IS NULL
+                AND payer.stripe_customer_id IS NULL
+                AND payer.connect_account_generation IS NULL
+            )
+            OR (
+                payer.stripe_account_id IS NOT NULL
+                AND payer.stripe_customer_id IS NOT NULL
+                AND payer.connect_account_generation IS NOT NULL
+                AND payer.stripe_account_id = account.stripe_connected_account_id
+                AND payer.connect_account_generation =
+                    private.current_connect_account_generation(account.metadata)
+                AND payer.connect_account_generation > 0
+            )
+        )
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = '23514',
+            MESSAGE = 'billing_payer_connect_generation_backfill_incomplete';
+    END IF;
+END;
+$payer_generation_backfill_guard$;
+
 CREATE TEMP TABLE koaryu_v31_legacy_invoice_normalization
 ON COMMIT DROP
 AS
@@ -336,6 +380,24 @@ BEGIN
                 AND NEW.resource_version_sha256 IS NOT NULL
                 AND NEW.resource_version_sha256 IS DISTINCT FROM
                     OLD.resource_version_sha256
+            )
+            OR (
+                v_old_state = 'completed'
+                AND OLD.operation_type = 'payment.refund'
+                AND OLD.resource_version_sha256 IS NOT NULL
+                AND NEW.resource_version_sha256 IS NOT DISTINCT FROM
+                    OLD.resource_version_sha256
+                AND EXISTS (
+                    SELECT 1
+                    FROM public.billing_provider_operations AS operation
+                    JOIN public.billing_refunds AS refund
+                      ON refund.studio_id = OLD.studio_id
+                     AND refund.payment_id = OLD.resource_id
+                     AND refund.stripe_refund_id = operation.provider_object_id
+                    WHERE operation.id = OLD.operation_id
+                      AND refund.status IN ('failed', 'canceled')
+                      AND refund.reconciliation_required IS NOT TRUE
+                )
             )
        ) THEN
         RAISE EXCEPTION USING ERRCODE = '23514',
@@ -549,16 +611,41 @@ BEGIN
     IF v_operation.actor_id IS DISTINCT FROM p_actor_id THEN
         RAISE EXCEPTION USING ERRCODE='23505',MESSAGE='billing_provider_operation_resource_actor_conflict';
     END IF;
-    IF v_operation.state='completed'
-       AND v_resource.resource_version_sha256 IS DISTINCT FROM
-            v_current_resource_version THEN
+    IF v_operation.state='completed' AND p_resource_type='payment' THEN
+        IF v_resource.resource_version_sha256 IS NOT DISTINCT FROM
+           v_current_resource_version
+           AND v_operation.request_sha256 IS DISTINCT FROM p_request_sha256 THEN
+            RAISE EXCEPTION USING ERRCODE='23505',
+                MESSAGE='billing_provider_operation_resource_request_conflict';
+        END IF;
+        SELECT * INTO v_refund FROM public.billing_refunds WHERE studio_id=p_studio_id
+          AND payment_id=p_resource_id AND stripe_refund_id=v_operation.provider_object_id
+          AND stripe_account_id=p_stripe_connected_account_id
+          AND connect_account_generation=p_connect_account_generation
+          AND reconciliation_required IS NOT TRUE ORDER BY created_at,id LIMIT 1 FOR UPDATE;
+        IF v_refund.id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE='23514',
+                MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
+        END IF;
+        IF v_resource.resource_version_sha256 IS NOT DISTINCT FROM
+           v_current_resource_version
+           AND v_refund.status NOT IN ('failed','canceled') THEN
+            RAISE EXCEPTION USING ERRCODE='55000',
+                MESSAGE='billing_provider_operation_resource_prior_refund_unsettled';
+        END IF;
+    END IF;
+    IF v_operation.state='completed' AND (
+        v_resource.resource_version_sha256 IS DISTINCT FROM v_current_resource_version
+        OR (
+            p_resource_type='payment'
+            AND v_refund.status IN ('failed','canceled')
+        )
+    ) THEN
         IF p_resource_type='payment' THEN
-            SELECT * INTO v_refund FROM public.billing_refunds WHERE studio_id=p_studio_id
-              AND payment_id=p_resource_id AND stripe_refund_id=v_operation.provider_object_id
-              AND stripe_account_id=p_stripe_connected_account_id
-              AND connect_account_generation=p_connect_account_generation
-              AND reconciliation_required IS NOT TRUE ORDER BY created_at,id LIMIT 1 FOR UPDATE;
-            IF v_refund.id IS NULL THEN RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_resource_prior_projection_unverified'; END IF;
+            IF v_refund.id IS NULL THEN
+                RAISE EXCEPTION USING ERRCODE='23514',
+                    MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
+            END IF;
         ELSIF v_payer.stripe_customer_id IS DISTINCT FROM v_operation.provider_object_id THEN
             RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='billing_provider_operation_resource_prior_projection_unverified';
         END IF;
@@ -1172,7 +1259,7 @@ INSERT INTO private.koaryu_release_v31_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v31',
-    'a6ba54bedd4ae2643cac443fad2abf684e406488e33330d401bb264a360e805a'
+    '93ce2c0f805842bf3c8fb8fdd26f063f4728e03f2076de565c1f85c7431ccd5a'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v12()
@@ -1244,7 +1331,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       <> '0:88d995d82173f5ac5f42b424ec392ad1432000645265d68e9b71d2c0f829f36c' THEN
+       <> '0:bb38b2815c7c6f65cb43684e2a1b4c01e1711c605c0914350d7dca41ff243068' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     SELECT expected_sha256 INTO v_expected
@@ -1292,15 +1379,15 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_contract_v27');
     END IF;
     IF private.koaryu_release_operational_contract_v28()
-       <> '0:473017cea92211b3525437654fd5f0a5c091ddc383c6609305bc443a86b6fb0d' THEN
+       <> '0:7691e95a22cb81e6e5f4d9ad760c3bc71f6d7884fac1db7c1f653113acebcb2c' THEN
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
     IF private.koaryu_release_operational_contract_v29()
-       <> '0:c59b390f0ce954c85ba5dececa24662ae8a00634101d7577b925d4e81f9e55ce' THEN
+       <> '0:888b276d8e5b47d9fe322ba57424f76936cd2f9bb4d07366885c3a273ef11ff2' THEN
         v_failures := array_append(v_failures, 'operational_contract_v29');
     END IF;
     IF private.koaryu_release_operational_contract_v30()
-       <> '0:7c44fe0cd9460e9c66fb4b83df08f377800c6f0ee27922979beadd18f8301948' THEN
+       <> '0:4d39a7cdd7c95c214358dcd5d889758a42b73bef7d096b57793ce34ddabcf51e' THEN
         v_failures := array_append(v_failures, 'operational_contract_v30');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -1316,11 +1403,11 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_manifest_v11_function');
     END IF;
     IF private.koaryu_release_operational_manifest_v11()
-       <> '92efd06c3d43f6353aa72b7fd8a2b440ebeed8d200f15982f7ac809d78fa8498' THEN
+       <> '8dbbee420da902c23cd027447366b7db421be967e64cb1715163c09ccaef7727' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v11');
     END IF;
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       <> '0:7f3821f26bcaf36cda41a699d66a29362537e82c28a04f1b23bc43a407b885be' THEN
+       <> '0:89c9cc469ce983a860eb1ad15eeb4d1be21eb52524ff7d73a64f50ba8f932492' THEN
         v_failures := array_append(v_failures, 'provider_operation_steps_manifest_v28');
         v_failures := array_append(v_failures, 'operational_contract_v28');
     END IF;
@@ -1374,7 +1461,7 @@ BEGIN
         v_failures := array_append(v_failures, 'operation_allowlist_column');
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       <> 'd7b8f30fb72ad7b20308bf96711308d7d2d6b8ce4376c478cbb5b7f1eb3eb7e4' THEN
+       <> 'cf89e1619c3f1e25915cd2a5e19f42f950015d18d775dc6629115f247f4cd3c6' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -1542,5 +1629,7 @@ BEGIN
         private.koaryu_release_operational_contract_v29();
     RAISE NOTICE 'KOARYU_V31_COMPAT_V30_OPERATIONAL_CONTRACT=%',
         private.koaryu_release_operational_contract_v30();
+    RAISE NOTICE 'KOARYU_V31_COMPAT_V28_PROVIDER_MANIFEST=%',
+        private.koaryu_release_provider_operation_steps_manifest_v28();
 END;
 $v31_observation$;

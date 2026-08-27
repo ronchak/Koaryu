@@ -230,12 +230,20 @@ anchors. It:
 
 - gives `payment.refund` and `payer.sync` one row-locked resource owner, with immutable
   caller-desired hashes separated from database-derived resource versions;
+- keeps payer create/update local-only so the named `payer.sync` owner is the sole
+  customer mutation path, and backfills linked payer generations only when their stored
+  account is the studio's exact current Connect account;
 - collapses same-version concurrent keys, replays an old alias after later state changes,
   and permits a new owner only after the authoritative resource version advances and the
   prior provider projection is proved;
+- rejects a new refund key with an explicit settling conflict while the prior refund is
+  pending, while exact-key replay remains available and failed/canceled refunds may start
+  a new owner after projection proof;
 - atomically revokes completed payer consent and setup evidence before disabling
   autopay, rejects usable pending setup and active subscription states, and prevents a
   later webhook replay from re-enabling the payer;
+- keeps invoice/payment webhooks from rewriting the payer's consent-bound default
+  payment method; only the payer-owned setup projection may establish that field;
 - retains a 30-minute local setup-operation deadline while requiring at least 30 minutes
   of Stripe Session lifetime at mutation time;
 - reclaims expired due-work leases with the already-bound provider operation instead of
@@ -246,17 +254,17 @@ anchors. It:
 - advances the exact release state to 124/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:88d995d82173f5ac5f42b424ec392ad1432000645265d68e9b71d2c0f829f36c`,
+  `0:bb38b2815c7c6f65cb43684e2a1b4c01e1711c605c0914350d7dca41ff243068`,
   the V31 operational contract
-  `0:a6ba54bedd4ae2643cac443fad2abf684e406488e33330d401bb264a360e805a`,
+  `0:93ce2c0f805842bf3c8fb8fdd26f063f4728e03f2076de565c1f85c7431ccd5a`,
   the V31 operational manifest
-  `d7b8f30fb72ad7b20308bf96711308d7d2d6b8ce4376c478cbb5b7f1eb3eb7e4`,
+  `cf89e1619c3f1e25915cd2a5e19f42f950015d18d775dc6629115f247f4cd3c6`,
   and expectation state
-  `1:19c7bacdf55084069c582878a7c23e4e1eb466b8f9e03c8d9fa30580a28f4e56`.
+  `1:36fa463fd5cdb85e674086fb59ec09b4b8b92bd310487a4ff46f98e4088e0ae3`.
 
 Latest local candidate evidence before publication:
 
-- backend: 1,283 tests plus 5,107 subtests passed;
+- backend: 1,284 tests plus 5,107 subtests passed;
 - frontend: all 719 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, targeted billing ESLint, and the production build with safe

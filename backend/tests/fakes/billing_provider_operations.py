@@ -16,6 +16,15 @@ def _operation_conflict() -> PostgrestAPIError:
     })
 
 
+def _refund_unsettled() -> PostgrestAPIError:
+    return PostgrestAPIError({
+        "code": "55000",
+        "message": "billing_provider_operation_resource_prior_refund_unsettled",
+        "details": "",
+        "hint": "",
+    })
+
+
 def _transition_not_found() -> PostgrestAPIError:
     return PostgrestAPIError({
         "code": "P0002",
@@ -175,6 +184,17 @@ class BillingProviderOperationRpcMixin:
                 raise _operation_conflict()
             operation = self._operation_by_id(resource["operation_id"])
             current_resource_version = self._resource_version_sha256(params)
+            completed_replacement = False
+            if operation["state"] == "completed":
+                if resource["resource_version_sha256"] != current_resource_version:
+                    self._assert_resource_projection(operation, params)
+                    completed_replacement = True
+                elif params["p_resource_type"] == "payment":
+                    projection = self._resource_projection(operation, params)
+                    if projection.get("status") in {"failed", "canceled"}:
+                        completed_replacement = True
+                    else:
+                        raise _refund_unsettled()
             if operation["state"] in {"definitive_failed", "definitive_rejected"}:
                 claimed = self._rpc_claim_billing_provider_operation_v1(params)
                 operation = claimed["operation"]
@@ -182,11 +202,7 @@ class BillingProviderOperationRpcMixin:
                 resource["resource_version_sha256"] = current_resource_version
                 resource["revision"] += 1
                 outcome = "replaced"
-            elif (
-                operation["state"] == "completed"
-                and resource["resource_version_sha256"] != current_resource_version
-            ):
-                self._assert_resource_projection(operation, params)
+            elif completed_replacement:
                 claimed = self._rpc_claim_billing_provider_operation_v1(params)
                 operation = claimed["operation"]
                 resource["operation_id"] = operation["id"]
@@ -259,16 +275,7 @@ class BillingProviderOperationRpcMixin:
         params: dict[str, Any],
     ) -> None:
         if params["p_resource_type"] == "payment":
-            if not any(
-                row.get("studio_id") == params["p_studio_id"]
-                and row.get("payment_id") == params["p_resource_id"]
-                and row.get("stripe_refund_id") == operation.get("provider_object_id")
-                and row.get("stripe_account_id") == params["p_stripe_connected_account_id"]
-                and row.get("connect_account_generation") == params["p_connect_account_generation"]
-                and row.get("reconciliation_required") is not True
-                for row in self.tables.get("billing_refunds", [])
-            ):
-                raise _operation_conflict()
+            self._resource_projection(operation, params)
             return
         payer = next(
             candidate
@@ -278,6 +285,28 @@ class BillingProviderOperationRpcMixin:
         )
         if payer.get("stripe_customer_id") != operation.get("provider_object_id"):
             raise _operation_conflict()
+
+    def _resource_projection(
+        self,
+        operation: dict[str, Any],
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        projection = next(
+            (
+                row
+                for row in self.tables.get("billing_refunds", [])
+                if row.get("studio_id") == params["p_studio_id"]
+                and row.get("payment_id") == params["p_resource_id"]
+                and row.get("stripe_refund_id") == operation.get("provider_object_id")
+                and row.get("stripe_account_id") == params["p_stripe_connected_account_id"]
+                and row.get("connect_account_generation") == params["p_connect_account_generation"]
+                and row.get("reconciliation_required") is not True
+            ),
+            None,
+        )
+        if projection is None:
+            raise _operation_conflict()
+        return projection
 
     def _rpc_read_billing_provider_operation_v1(self, params: dict[str, Any]) -> dict[str, Any]:
         operation = self._operation_for_params(params)

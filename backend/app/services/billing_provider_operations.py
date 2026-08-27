@@ -46,6 +46,12 @@ AUTOPAY_DISABLE_SETUP_PENDING_DETAIL = (
 AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL = (
     "Autopay cannot be disabled while active provider subscriptions require the named cancellation workflow."
 )
+REFUND_PRIOR_SETTLING_DETAIL = (
+    "A prior refund for this payment is still settling. Wait for its final provider status before starting another refund."
+)
+RESOURCE_IDENTITY_RECONCILIATION_DETAIL = (
+    "The payer or payment provider identity requires reconciliation before this operation can continue."
+)
 
 
 def provider_operation_disposition(claimed: dict[str, Any]) -> str:
@@ -906,6 +912,15 @@ class BillingProviderOperationCoordinator:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=IDEMPOTENCY_CONFLICT_DETAIL,
             ) from exc
+        if code == "23514" and (
+            "billing_provider_operation_resource_payer_identity_mismatch" in message
+            or "billing_provider_operation_resource_payment_identity_mismatch" in message
+            or "billing_provider_operation_resource_prior_projection_unverified" in message
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=RESOURCE_IDENTITY_RECONCILIATION_DETAIL,
+            ) from exc
         if code == "40001":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -925,6 +940,11 @@ class BillingProviderOperationCoordinator:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=AUTOPAY_DISABLE_SUBSCRIPTION_ACTIVE_DETAIL,
+            ) from exc
+        if code == "55000" and "billing_provider_operation_resource_prior_refund_unsettled" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=REFUND_PRIOR_SETTLING_DETAIL,
             ) from exc
 
 

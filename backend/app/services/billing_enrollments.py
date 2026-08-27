@@ -41,9 +41,6 @@ class BillingEnrollmentManager:
     def _sync_plan_price(self, plan: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
         return self.billing_service._sync_plan_price(plan, account)
 
-    def _sync_payer_customer(self, payer: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
-        return self.billing_service._sync_payer_customer(payer, account)
-
     def _payer_autopay_authorized(self, payer: dict[str, Any]) -> bool:
         return self.billing_service._payer_autopay_authorized(payer)
 

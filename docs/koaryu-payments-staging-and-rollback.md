@@ -75,6 +75,13 @@ Create or update only `koaryu-billing-transitions-staging`, populate its secret 
 the staging web-service reference, and deploy the cron from `<PR_HEAD_SHA>`. Manually
 trigger one zero-work run and require a successful bounded result. Production keeps
 `BILLING_TRANSITION_SCHEDULER_ENABLED=false` and receives no cron in this task.
+The Blueprint's `branch: staging` is configuration metadata, not release evidence;
+verify the cron deployment itself reports `<PR_HEAD_SHA>` before enabling the route.
+
+Before deploying the backend or cron, confirm the staging `koaryu-staging` web service
+already owns `BILLING_TRANSITION_WORKER_SECRET`; the candidate intentionally refuses to
+boot or run the worker without it. Do not create or rotate the production value in this
+task.
 
 Then deploy the staging backend and frontend from `<PR_HEAD_SHA>`. The backend may expose
 period-end scheduling only after the staging cron is active. Verify the exact deployed
@@ -151,8 +158,9 @@ The production packet is prepared but must not be executed in this task:
 4. Apply the exact migrations through the guarded production rollout tool after its
    separate interactive confirmation.
 5. Create the separately approved production transition cron with its own production
-   service-secret reference, deploy the exact merged SHA, and prove one manual zero-work
-   run. Only then set the production scheduler flag true.
+   service-secret reference after confirming the production web service owns the same
+   secret, deploy the exact merged SHA, and prove one manual zero-work run. Only then set
+   the production scheduler flag true.
 6. Deploy the exact merged backend SHA, verify readiness, then deploy a production-target
    Vercel build from the same SHA.
 7. Run production reconciliation read-only and record a fresh exact-SHA schema-v3

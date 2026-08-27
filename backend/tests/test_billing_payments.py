@@ -195,6 +195,7 @@ class _FakeStripeService:
     refunds: list[dict] = []
     pay_error: Exception | None = None
     refund_error: Exception | None = None
+    refund_status = "succeeded"
 
     @classmethod
     def reset(cls) -> None:
@@ -202,6 +203,7 @@ class _FakeStripeService:
         cls.refunds = []
         cls.pay_error = None
         cls.refund_error = None
+        cls.refund_status = "succeeded"
 
     def pay_connected_invoice(self, **payload):
         self.__class__.out_of_band_payments.append(payload)
@@ -218,7 +220,7 @@ class _FakeStripeService:
             "charge": payload["charge_id"],
             "amount": payload["amount"],
             "reason": payload.get("reason"),
-            "status": "succeeded",
+            "status": self.__class__.refund_status,
             "metadata": payload["metadata"],
         }
 
@@ -879,6 +881,41 @@ class BillingPaymentManagerTests(unittest.TestCase):
             ))
 
         self.assertEqual(conflict.exception.status_code, 409)
+        self.assertEqual(len(_FakeStripeService.refunds), 1)
+        self.assertEqual(len(facade.supabase.tables["audit_logs"]), 1)
+
+    def test_new_refund_key_waits_while_prior_refund_is_unsettled(self):
+        _FakeStripeService.reset()
+        _FakeStripeService.refund_status = "pending"
+        facade = _BillingFacade({
+            "billing_payments": [{
+                "id": "payment_1",
+                "studio_id": "studio_1",
+                "stripe_charge_id": "ch_1",
+                "stripe_account_id": "acct_1",
+                "amount_cents": 1200,
+                "refunded_amount_cents": 0,
+            }],
+            "audit_logs": [],
+        })
+        manager = BillingPaymentManager(facade, stripe_service_cls=_FakeStripeService)
+        payload = BillingRefundCreate(amount_cents=500)
+
+        first = asyncio.run(manager.refund_payment(
+            "payment_1", payload, "studio_1", "actor_1", "refund-key-1",
+        ))
+        replay = asyncio.run(manager.refund_payment(
+            "payment_1", payload, "studio_1", "actor_1", "refund-key-1",
+        ))
+        with self.assertRaises(HTTPException) as unsettled:
+            asyncio.run(manager.refund_payment(
+                "payment_1", payload, "studio_1", "actor_1", "refund-key-2",
+            ))
+
+        self.assertEqual(first.status, "pending")
+        self.assertEqual(replay.stripe_refund_id, first.stripe_refund_id)
+        self.assertEqual(unsettled.exception.status_code, 409)
+        self.assertIn("still settling", unsettled.exception.detail)
         self.assertEqual(len(_FakeStripeService.refunds), 1)
         self.assertEqual(len(facade.supabase.tables["audit_logs"]), 1)
 

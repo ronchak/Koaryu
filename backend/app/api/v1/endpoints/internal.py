@@ -5,7 +5,7 @@ import threading
 import time
 from typing import Optional
 from urllib.parse import urlparse
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from starlette.concurrency import run_in_threadpool
@@ -179,10 +179,15 @@ async def process_due_billing_enrollment_transitions(
         settings.BILLING_TRANSITION_WORKER_SECRET,
         "Billing transition worker",
     )
+    if not settings.BILLING_TRANSITION_SCHEDULER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Billing transition scheduling is not enabled.",
+        )
 
     async def _provider_operation(client):
         return await BillingService(client).process_due_enrollment_transitions(
-            worker_id=str(UUID(int=0xB1171)),
+            worker_id=str(uuid4()),
             limit=limit,
         )
 

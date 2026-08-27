@@ -55,9 +55,6 @@ class BillingAutopayManager:
     def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
         return self.billing_service._ensure_connect_ready(studio_id)
 
-    def _sync_payer_customer(self, payer: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
-        return self.billing_service._sync_payer_customer(payer, account)
-
     def _safe_redirect_url(self, value: Optional[str], default: str) -> str:
         return self.billing_service._safe_redirect_url(value, default)
 
