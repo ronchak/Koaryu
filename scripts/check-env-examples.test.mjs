@@ -517,7 +517,7 @@ services:
     name: koaryu-billing-transitions-staging
     runtime: docker
     plan: starter
-    region: ohio
+    region: oregon
     branch: staging
     rootDir: backend
     dockerfilePath: ./Dockerfile

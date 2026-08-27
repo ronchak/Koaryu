@@ -38,7 +38,7 @@ fi
 "$psql_bin" "${restored_args[@]}" --single-transaction \
   --file="$repository_root/supabase/migrations/20260826051527_billing_provider_operations_and_payer_consent.sql" \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('20260826051527','billing_provider_operations_and_payer_consent');"
-predecessor_readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v7();" | tr -d '\r\n')"
+predecessor_readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v8();" | tr -d '\r\n')"
 predecessor_provider_manifest="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command='SELECT private.koaryu_release_provider_operations_manifest_v27();' | tr -d '\r\n')"
 predecessor_operational_contract="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command='SELECT private.koaryu_release_operational_contract_v27();' | tr -d '\r\n')"
 echo "RESTORED_V27_PREDECESSOR_READINESS=$predecessor_readiness"
@@ -52,8 +52,8 @@ steps_manifest="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --c
 operational_contract="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command='SELECT private.koaryu_release_operational_contract_v28();' | tr -d '\r\n')"
 operational_manifest="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command='SELECT private.koaryu_release_operational_manifest_v8();' | tr -d '\r\n')"
 canonical_manifest="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command='SELECT private.koaryu_release_operational_manifest_v9();' | tr -d '\r\n')"
-readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v8();" | tr -d '\r\n')"
-compat_readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v7();" | tr -d '\r\n')"
+readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v9();" | tr -d '\r\n')"
+compat_readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v8();" | tr -d '\r\n')"
 catalog_sql="$(cd "$repository_root" && node --input-type=module --eval "import {CATALOG_STATE_SQL} from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);")"
 catalog_state="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="$catalog_sql" | tr -d '\r\n')"
 v27_expectation_state="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT '1:' || encode(extensions.digest(convert_to('operational_contract_v27:' || expected_sha256,'UTF8'),'sha256'),'hex') FROM private.koaryu_release_v27_expectations WHERE expectation_key='operational_contract_v27';" | tr -d '\r\n')"
@@ -77,27 +77,27 @@ if [[ "$steps_manifest" != "0:1de704b805b929154bf88e1727838d0d95c1c3da16246c3d48
   echo "Restored V28 provider-operation manifest mismatch: $steps_manifest" >&2
   exit 1
 fi
-if [[ "$operational_contract" != "0:e8802a0d7f2f7eb77d416d8c95af1cc10686425ef48a6852406cbd01d9059b4d" ]]; then
+if [[ "$operational_contract" != "0:d3d60ab2e0e41154fa4236e7300a755f3a25caa0edf75c93f2697551e29bbbfa" ]]; then
   echo "Restored V28 operational contract mismatch: $operational_contract" >&2
   exit 1
 fi
-if [[ "$canonical_manifest" != "5641619e5c03ccf472b87226fd633f366b382a44e227adf581ca1b5c900ccfd1" ]]; then
+if [[ "$canonical_manifest" != "bc0e88150f543978befadfa4711b4c7f1f376c386b75df1e1f5c741c295dba6a" ]]; then
   echo "Restored V28 canonical manifest mismatch: $canonical_manifest" >&2
   exit 1
 fi
-if [[ "$readiness" != "true|121|20260826073728|0|release-db-attestation-v28" ]]; then
+if [[ "$readiness" != "true|123|20260826073728|0|release-db-attestation-v28" ]]; then
   echo "Restored V28 readiness mismatch: $readiness" >&2
   exit 1
 fi
-if [[ "$compat_readiness" != "true|120|20260826051527|0|release-db-attestation-v27" ]]; then
+if [[ "$compat_readiness" != "true|122|20260826051527|0|release-db-attestation-v27" ]]; then
   echo "Restored V27 compatibility readiness mismatch: $compat_readiness" >&2
   exit 1
 fi
-if [[ "$v27_expectation_state" != "1:60918ae6ec16fdc78fe22e76b9751c48b413b641cd1063f137aac6a863c48b9a" ]]; then
+if [[ "$v27_expectation_state" != "1:74da7c7a75b048163e208473d28cf32366ace36108e99abe21947d89449d7ce6" ]]; then
   echo "Restored V28-compatible V27 expectation mismatch: $v27_expectation_state" >&2
   exit 1
 fi
-if [[ "$v28_expectation_state" != "1:4b7bbc8c6a4a7bd183b952a8a08f5fd2b4e23369a3fe463874b609a21b31fc1b" ]]; then
+if [[ "$v28_expectation_state" != "1:ffde05a120e904a830fb9a61cd610ca474522dadf933408b410c1985e836d202" ]]; then
   echo "Restored V28 expectation mismatch: $v28_expectation_state" >&2
   exit 1
 fi
@@ -117,4 +117,4 @@ fi
     "$catalog_state"
 )
 
-echo "PASS: V27 dump/restore then migration 121 produced the exact V28 step contract."
+echo "PASS: V27 dump/restore then migration 123 produced the exact V28 step contract."

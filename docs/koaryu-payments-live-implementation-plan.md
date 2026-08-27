@@ -271,30 +271,31 @@ anchors. It:
 - normalizes only legacy `partially_refunded` and `refunded` invoice rows from immutable
   gross-payment evidence, recomputes affected payer receivables, and proves payment,
   refund, dispute, and provider-operation rows are byte-for-byte untouched;
-- advances the exact release state to 124/V31 and adds independent V24-to-V25 and
+- advances the exact release state through schedule V25 to 126/V31 and adds independent V24-to-V25 and
   V30-to-V31 PostgreSQL 17 restore assertions;
 - pins resource ownership
-  `0:2338b921f8ae442e304e6ba964ef1af2120dfb25ab9f3d17cb42a59048d180b2`,
+  `0:fb34bb3fb5e77d686b72e2bb413d6502d75b6042a437caa03344e4d2f5fa5be0`,
   the V31 operational contract
-  `0:100b9908bafdd63bffaf7a92a2de2a54816dd6fb4aafe26fec0b853f0f65c49d`,
+  `0:0fafb4fe07bb2eb83d770efeb2acde63925b4185c23eac669c06783eb8f41a4e`,
   the V31 operational manifest
-  `9f8d37dbe6f761baa42518aaa4debdad9715d83c0733c73665acb37e322e916e`,
+  `601e0bfa142286b2cbe13d9536f981e873d7e9359cf59a2dc2d055abde549293`,
   and expectation state
-  `1:8994fd34dffbb0db5c1531a4f83f299881e0a2277b5b6c685858efc481ce02e8`.
+  `1:ab1432b9cca6636e233729f30be7ead648596cc23b95e65cd800c611c6a39ea8`.
 
 Latest local candidate evidence before publication:
 
-- backend: 1,303 tests plus 5,107 subtests passed;
-- frontend: all 719 tests passed outside the sandbox, including the three
+- backend: 1,307 tests plus 5,119 subtests passed;
+- frontend: all 723 tests passed outside the sandbox, including the three
   Chromium-backed print-geometry tests;
 - frontend TypeScript, targeted billing ESLint, and the production build with safe
   placeholder build-time configuration passed;
-- API contract generation and 51 environment/staging-isolation checks passed;
-- the rollout tool passed all 61 tests and the aggregate release-workflow gate passed
-  all 123 tests;
-- all 124 migrations, both new and inherited restore paths, every negative attestation,
-  every concurrency suite, and all 43 SQL contracts passed on ephemeral PostgreSQL 17;
-- a disposable Supabase provider-image reset applied all 124 migrations with the same
+- API contract generation, 51 environment tests, and the explicit nine-check staging
+  isolation guard passed;
+- the rollout tool passed all 63 tests and the aggregate release-workflow gate
+  passed all 125 tests;
+- all 126 migrations, every inherited and new restore path, every negative attestation,
+  every concurrency suite, and all 44 SQL contracts passed on ephemeral PostgreSQL 17;
+- a disposable Supabase provider-image reset applied all 126 migrations with the same
   V31 trust anchors, the release UI atomic contract passed, and database lint reported
   no errors;
 - `git diff --check` passed.
@@ -380,7 +381,7 @@ The #107 application and bounded worker are preserved in local commit `35936e0`:
 
 | Item | Current role | Disposition |
 | --- | --- | --- |
-| PR #133 | Open migration/readiness dependency | Open and clean as of 2026-08-26. It adds two schedule-read migrations and advances release readiness from the same 117/V24 baseline used by the local Payments work. Merge it first, then rebase and repin the Payments migration chain, or explicitly choose the reverse order and rebuild #133. Do not merge both attestation sequences unchanged. |
+| PR #133 | Integrated migration/readiness dependency | Its complete four-commit schedule-window change is integrated into PR #134 before the seven Payments migrations. Keep #133 unmerged and close it as superseded after the combined head is pushed and verified. |
 | PR #111 | Reconciliation and checkpoint v3 | Closed without merge on 2026-08-25. Its corrected intent is implemented and reverified from current `main` in local commits `6525905` and `c97c565`; the old PR head remains historical evidence only. |
 | PR #75 | Refund and dispute convergence | Closed without merge on 2026-08-25. Its valid accounting intent is implemented and reverified from current `main` in local commit `c97c565`; the old PR head remains historical evidence only. |
 | PR #110 | Reviewer-owned migration plan | Closed without merge on 2026-08-25. This document supersedes it as the active delivery plan. |
@@ -389,28 +390,17 @@ The #107 application and bounded worker are preserved in local commit `35936e0`:
 | Issue #108 | Exact operation grants and role-aware capabilities | Implement after reconciliation, replay, and transition contracts exist, in the same release branch and PR. |
 | Issue #109 | Narrow UI, staging proof, and canary runbook | Final workstream in the same release branch and PR after every lower-layer dependency is integrated. |
 
-There are no remaining open Payments feature PRs. PR #133 is relevant because it owns the
-same migration-count and readiness surfaces, not because it implements Payments. Green
-checks on the closed #75 and #111 heads are historical evidence only. Their old migration
-counts, generated contracts, and full-suite results are not release evidence.
+There are no remaining open Payments feature PRs. PR #133 no longer owns a competing
+migration tail because its complete change is part of this candidate. Green checks on
+the separate #133 head and the closed #75 and #111 heads are historical evidence only;
+the combined PR #134 head is the sole release candidate.
 
 ### Integration decision before publication
 
-The current local Payments commits intentionally preserve the implementation while review
-continues, but their V25 through V27 attestation sequence cannot be published unchanged if
-PR #133 lands first. The preferred cut is:
-
-1. Merge the already-clean PR #133 through its normal release-candidate gate.
-2. Fast-forward local `main` to the exact merged SHA.
-3. Rebase the Payments foundation onto that SHA and rebuild only its additive migration
-   tail, readiness versions, migration counts, catalog pins, rollout inventory, and restore
-   fixtures.
-4. Re-run the full database, backend, generated-contract, frontend, and release checks on
-   the exact repinned head before opening the replacement Payments PR.
-
-This preserves #133's already-reviewed read-path work and gives Payments one authoritative
-attestation sequence. It does not authorize merging #133 or publishing the local Payments
-branches in this task.
+The dependency was resolved without merging #133: all four commits from its exact head
+were cherry-picked into the existing PR #134 branch, then the Payments public preflight
+chain was shifted to V6 through V12 and every catalog, expectation, restore, and rollout
+anchor was regenerated. The combined 126-migration head is the only publishable sequence.
 
 ## Product contract for the first live release
 
@@ -669,10 +659,10 @@ director approval before production use.
 
 ## Dependency and merge order
 
-PR #133 remains a separate schedule-read change with two competing attestation
-migrations from the same V24 baseline. This Payments candidate intentionally does not
-merge or copy it. Stage Payments from current `main`; then rebase and re-attest #133
-after the release ordering is decided. Never apply both migration tails unchanged.
+The complete PR #133 schedule-read change precedes Payments in this candidate. Its
+schedule V25 state at migration 119 is an accepted rollout origin; the guarded packet
+then selects exactly the seven Payments migrations through V31. Do not merge or deploy
+the old #133 branch separately.
 
 Workstreams 1 and 2 were developed together in isolated worktrees. Integrate them only
 after rebasing onto the authoritative base, rebuilding their additive release tail, and

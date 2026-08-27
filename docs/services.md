@@ -84,9 +84,11 @@ minimum for the service. The production web service keeps
 `BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
 release task.
 
-The two web services track **different branches**. Deploying a commit to staging means
-moving the `staging` branch to it first — `git push origin main:staging` — and
-then triggering a manual deploy, because auto-deploy is off on both.
+The two web services track **different branches**. For an unmerged release candidate,
+move `staging` to the exact reviewed commit with
+`git push origin <PR_HEAD_SHA>:staging`, then trigger manual exact-commit deploys for
+the staging web service and cron. Never substitute `main` or an older PR head; auto-deploy
+is off on both services.
 
 The Render API reported both live services in Oregon on 2026-08-24. Render does
 not support changing an existing service's region. The Oregon declarations in

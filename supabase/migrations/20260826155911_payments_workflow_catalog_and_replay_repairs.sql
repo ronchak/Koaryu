@@ -7,13 +7,15 @@ DECLARE
     v_preflight RECORD;
 BEGIN
     SELECT * INTO v_preflight
-    FROM public.koaryu_release_schema_preflight_v9();
+    FROM public.koaryu_release_schema_preflight_v10();
     IF v_preflight.ready IS DISTINCT FROM true
-       OR v_preflight.migration_count IS DISTINCT FROM 122
+       OR v_preflight.migration_count IS DISTINCT FROM 124
        OR v_preflight.migration_head IS DISTINCT FROM '20260826102840'
        OR v_preflight.manifest_version IS DISTINCT FROM 'release-db-attestation-v29'
-       OR cardinality(v_preflight.security_failures) <> 0 THEN
-        RAISE EXCEPTION 'Payments replay repairs require exact ready 122/V29.';
+       OR cardinality(v_preflight.security_failures) <> 0
+       OR private.koaryu_release_schedule_window_manifest_v1()
+            IS DISTINCT FROM '0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7' THEN
+        RAISE EXCEPTION 'Payments replay repairs require exact ready 124/V29.';
     END IF;
 END;
 $v29_guard$;
@@ -871,16 +873,16 @@ GRANT EXECUTE ON FUNCTION public.set_studio_live_billing_authorization_atomic(
 ) TO service_role;
 
 UPDATE private.koaryu_release_v29_expectations
-SET expected_sha256 = '929c7edaca033aac1485896f7d55531c16cedf753c8be8343d41bb12906c382f'
+SET expected_sha256 = '982fdf3857f160204c92badb9d7cd5269eadef78238fbe9e2cd6f8cd7729a692'
 WHERE expectation_key = 'operational_contract_v29';
 UPDATE private.koaryu_release_v28_expectations
-SET expected_sha256 = '6c9c41a9d5641b350ed3d638893d4fd16e3c066c6f7af45bc650fcee16550a97'
+SET expected_sha256 = '1cd9763f68ad9f4657eb64dccec1efbc441544216b3a97804385684dad0444a0'
 WHERE expectation_key = 'operational_contract_v28';
 UPDATE private.koaryu_release_v27_expectations
-SET expected_sha256 = '8bef95cd38732a5a470038c8e87164c5cb329fe98264af53f242847c88a5be3e'
+SET expected_sha256 = '9778cbb1bf3584e9d8c83cfba6bd7ed955910dea2a1c3cad2cd18730755901bf'
 WHERE expectation_key = 'operational_contract_v27';
 UPDATE private.koaryu_release_v26_expectations
-SET expected_sha256 = '73cc55b6578a3c959ab117abecf8084f4b1e401cf4f31a410bb88389a1ee9aa0'
+SET expected_sha256 = '4eafa8402fd37c9003a5e0d4bbb961bf344fc4170fac7ad1e1f5bd3b9b55de5c'
 WHERE expectation_key = 'operational_contract_v26';
 
 CREATE FUNCTION private.koaryu_release_payments_replay_repairs_manifest_v30()
@@ -1024,7 +1026,7 @@ INSERT INTO private.koaryu_release_v30_expectations(
     expectation_key, expected_sha256
 ) VALUES (
     'operational_contract_v30',
-    '7d3b98ad5301ac1eb04eb1131f16f58158e37c3d4c7e01afbe427d46294ccd2a'
+    '6396d71a8da8966ca50d412e6d5caccb7dc624775e69aef993b61e303f5d0400'
 );
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v11()
@@ -1048,7 +1050,7 @@ ALTER FUNCTION private.koaryu_release_operational_manifest_v11() OWNER TO postgr
 REVOKE ALL ON FUNCTION private.koaryu_release_operational_manifest_v11()
     FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION public.koaryu_release_schema_preflight_v10()
+CREATE FUNCTION public.koaryu_release_schema_preflight_v11()
 RETURNS TABLE(
     ready BOOLEAN,
     migration_count INTEGER,
@@ -1075,7 +1077,7 @@ BEGIN
                FILTER (WHERE version >= '20260727100000')
     INTO v_count, v_head, v_pending
     FROM supabase_migrations.schema_migrations;
-    IF v_count <> 123 OR v_head <> '20260826155911' THEN
+    IF v_count <> 125 OR v_head <> '20260826155911' THEN
         v_failures := array_append(v_failures, 'migration_history_v30');
     END IF;
     IF COALESCE(v_pending, ARRAY[]::TEXT[]) IS DISTINCT FROM ARRAY[
@@ -1087,7 +1089,8 @@ BEGIN
         '20260814152000','20260814170000','20260814183000','20260814200000',
         '20260814213000','20260815220402','20260816012723','20260820012533',
         '20260820025759','20260820060216','20260822193000','20260823193155',
-        '20260824190500','20260826030234','20260826030249','20260826051527',
+        '20260824190500','20260825042838','20260825043911',
+        '20260826030234','20260826030249','20260826051527',
         '20260826073728','20260826102840','20260826155911'
     ]::TEXT[] THEN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
@@ -1144,7 +1147,7 @@ BEGIN
         v_failures := array_append(v_failures, 'provider_operation_steps_manifest_v28');
     END IF;
     IF private.koaryu_release_operational_manifest_v10()
-       <> '689cf757117638efbf23579f77a2ba10638d710350e7dfd18d99f061503ef27b' THEN
+       <> '32107329f69000537b2e8167d12674a90f46a7a7c8978149b70b8dac5edc7e17' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v10');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -1172,25 +1175,29 @@ BEGIN
         v_failures := array_append(v_failures, 'critical_surface_manifest_v18');
     END IF;
     IF private.koaryu_release_live_billing_v3_manifest_v25()
-       <> '0:6934453003f86c2db9e84835d77a5261df6410fc93b24e8dfc78a332c815d265' THEN
+       <> '0:3c2a6854c73a6e9c9704fabed38dac85b56eb26076add20c00ee97bed5bdc527' THEN
         v_failures := array_append(v_failures, 'live_billing_v3_manifest_v25');
     END IF;
     IF private.koaryu_release_payment_adjustment_manifest_v26()
        <> '0:b63f010f0b0111f38b72fc43009f77722d824d96c3775a9dc3d34e6c58a63657' THEN
         v_failures := array_append(v_failures, 'payment_adjustment_manifest_v26');
     END IF;
+    IF private.koaryu_release_schedule_window_manifest_v1()
+       IS DISTINCT FROM '0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7' THEN
+        v_failures := array_append(v_failures, 'schedule_window_manifest_v1');
+    END IF;
     RETURN QUERY SELECT cardinality(v_failures) = 0,
         v_count, v_head, COALESCE(v_pending, ARRAY[]::TEXT[]), v_failures,
         'release-db-attestation-v30'::TEXT;
 END;
 $$;
-ALTER FUNCTION public.koaryu_release_schema_preflight_v10() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v10()
+ALTER FUNCTION public.koaryu_release_schema_preflight_v11() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v11()
     FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v10()
+GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v11()
     TO service_role;
 
-CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v9()
+CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v10()
 RETURNS TABLE(ready BOOLEAN,migration_count INTEGER,migration_head TEXT,
     pending_versions TEXT[],security_failures TEXT[],manifest_version TEXT)
 LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path=pg_catalog AS $$
@@ -1199,7 +1206,7 @@ DECLARE
     v_failures TEXT[] := ARRAY[]::TEXT[];
     v_expected TEXT;
 BEGIN
-    SELECT * INTO v_current FROM public.koaryu_release_schema_preflight_v10();
+    SELECT * INTO v_current FROM public.koaryu_release_schema_preflight_v11();
     SELECT expected_sha256 INTO v_expected
     FROM private.koaryu_release_v29_expectations
     WHERE expectation_key = 'operational_contract_v29';
@@ -1209,9 +1216,9 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_contract_v29');
     END IF;
     IF v_current.ready AND cardinality(v_failures) = 0
-       AND v_current.migration_count = 123
+       AND v_current.migration_count = 125
        AND v_current.migration_head = '20260826155911' THEN
-        RETURN QUERY SELECT true, 122, '20260826102840'::TEXT,
+        RETURN QUERY SELECT true, 124, '20260826102840'::TEXT,
             v_current.pending_versions[1:cardinality(v_current.pending_versions)-1],
             ARRAY[]::TEXT[], 'release-db-attestation-v29'::TEXT;
         RETURN;
@@ -1222,10 +1229,10 @@ BEGIN
         'release-db-attestation-v29'::TEXT;
 END;
 $$;
-ALTER FUNCTION public.koaryu_release_schema_preflight_v9() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v9()
+ALTER FUNCTION public.koaryu_release_schema_preflight_v10() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v10()
     FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v9() TO service_role;
+GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v10() TO service_role;
 
 DO $v30_observation$
 BEGIN

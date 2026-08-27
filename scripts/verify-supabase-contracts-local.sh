@@ -211,6 +211,18 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
+if [[ ${#migration_files[@]} -ne 126 ]]; then
+  echo "ERROR: Expected the canonical 126-migration chain, found ${#migration_files[@]}." >&2
+  exit 1
+fi
+if [[ ${#verification_files[@]} -ne 44 ]]; then
+  echo "ERROR: Expected the canonical 44-contract inventory, found ${#verification_files[@]}." >&2
+  exit 1
+fi
+if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
+  echo "ERROR: The schedule-window contract is missing from the verified inventory." >&2
+  exit 1
+fi
 
 # PostgreSQL rejects long Unix socket paths, so this must not inherit a long
 # workspace-specific TMPDIR.
@@ -415,16 +427,16 @@ for migration_file in "${migration_files[@]}"; do
   migration_version="${BASH_REMATCH[1]}"
   migration_name="${BASH_REMATCH[2]}"
 
-  if [[ "$migration_filename" == "20260826030234_live_billing_reconciliation_v3.sql" ]]; then
-    echo "[restored V25] RUN V24 dump/restore then migration 118"
+  if [[ "$migration_filename" == "20260825042838_schedule_window_read_rpc.sql" ]]; then
+    echo "[restored Payments V25] RUN V24 dump/restore then schedule migrations 118-119 and Payments migration 120"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v24-v25-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V25] PASS V24 dump/restore then migration 118"
+      echo "[restored Payments V25] PASS exact V24, schedule V25, and Payments V25 compatibility chain"
     else
       status=$?
-      echo "[restored V25] FAIL V24 dump/restore then migration 118 (exit $status)" >&2
+      echo "[restored Payments V25] FAIL V24 through Payments V25 combined restore chain (exit $status)" >&2
       exit "$status"
     fi
   fi
@@ -554,85 +566,85 @@ SQL
       exit "$status"
     fi
 
-    echo "[restored V26] RUN V25 dump/restore then migration 119"
+    echo "[restored V26] RUN V25 dump/restore then migration 121"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v25-v26-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V26] PASS V25 dump/restore then migration 119"
+      echo "[restored V26] PASS V25 dump/restore then migration 121"
     else
       status=$?
-      echo "[restored V26] FAIL V25 dump/restore then migration 119 (exit $status)" >&2
+      echo "[restored V26] FAIL V25 dump/restore then migration 121 (exit $status)" >&2
       exit "$status"
     fi
   fi
 
   if [[ "$migration_filename" == "20260826051527_billing_provider_operations_and_payer_consent.sql" ]]; then
-    echo "[restored V27] RUN V26 dump/restore then migration 120"
+    echo "[restored V27] RUN V26 dump/restore then migration 122"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v26-v27-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V27] PASS V26 dump/restore then migration 120"
+      echo "[restored V27] PASS V26 dump/restore then migration 122"
     else
       status=$?
-      echo "[restored V27] FAIL V26 dump/restore then migration 120 (exit $status)" >&2
+      echo "[restored V27] FAIL V26 dump/restore then migration 122 (exit $status)" >&2
       exit "$status"
     fi
   fi
 
   if [[ "$migration_filename" == "20260826073728_billing_provider_operation_steps.sql" ]]; then
-    echo "[restored V28] RUN V27 dump/restore then migration 121"
+    echo "[restored V28] RUN V27 dump/restore then migration 123"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v27-v28-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V28] PASS V27 dump/restore then migration 121"
+      echo "[restored V28] PASS V27 dump/restore then migration 123"
     else
       status=$?
-      echo "[restored V28] FAIL V27 dump/restore then migration 121 (exit $status)" >&2
+      echo "[restored V28] FAIL V27 dump/restore then migration 123 (exit $status)" >&2
       exit "$status"
     fi
   fi
 
   if [[ "$migration_filename" == "20260826102840_enrollment_period_safe_transitions.sql" ]]; then
-    echo "[restored V29] RUN V28 dump/restore then migration 122"
+    echo "[restored V29] RUN V28 dump/restore then migration 124"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v28-v29-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V29] PASS V28 dump/restore then migration 122"
+      echo "[restored V29] PASS V28 dump/restore then migration 124"
     else
       status=$?
-      echo "[restored V29] FAIL V28 dump/restore then migration 122 (exit $status)" >&2
+      echo "[restored V29] FAIL V28 dump/restore then migration 124 (exit $status)" >&2
       exit "$status"
     fi
   fi
 
   if [[ "$migration_filename" == "20260826155911_payments_workflow_catalog_and_replay_repairs.sql" ]]; then
-    echo "[restored V30] RUN V29 dump/restore then migration 123"
+    echo "[restored V30] RUN V29 dump/restore then migration 125"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v29-v30-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V30] PASS V29 dump/restore then migration 123"
+      echo "[restored V30] PASS V29 dump/restore then migration 125"
     else
       status=$?
-      echo "[restored V30] FAIL V29 dump/restore then migration 123 (exit $status)" >&2
+      echo "[restored V30] FAIL V29 dump/restore then migration 125 (exit $status)" >&2
       exit "$status"
     fi
   fi
 
   if [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
-    echo "[restored V31] RUN V30 dump/restore then migration 124"
+    echo "[restored V31] RUN V30 dump/restore then migration 126"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v30-v31-restore-contract.sh" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V31] PASS V30 dump/restore then migration 124"
+      echo "[restored V31] PASS V30 dump/restore then migration 126"
     else
       status=$?
-      echo "[restored V31] FAIL V30 dump/restore then migration 124 (exit $status)" >&2
+      echo "[restored V31] FAIL V30 dump/restore then migration 126 (exit $status)" >&2
       exit "$status"
     fi
   fi
@@ -662,12 +674,12 @@ SQL
     v30_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
 SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
        cardinality(security_failures)::TEXT || '|' || manifest_version
-FROM public.koaryu_release_schema_preflight_v10();
+FROM public.koaryu_release_schema_preflight_v11();
 " | tr -d '\r\n')"
-    if [[ "$v30_readiness" != "true|123|20260826155911|0|release-db-attestation-v30" ]]; then
+    if [[ "$v30_readiness" != "true|125|20260826155911|0|release-db-attestation-v30" ]]; then
       v30_failures="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
 SELECT COALESCE(array_to_string(security_failures, ','), '')
-FROM public.koaryu_release_schema_preflight_v10();
+FROM public.koaryu_release_schema_preflight_v11();
 " | tr -d '\r\n')"
       echo "[V30 readiness] FAIL exact release state: $v30_readiness failures=$v30_failures" >&2
       exit 1
@@ -675,9 +687,9 @@ FROM public.koaryu_release_schema_preflight_v10();
     v29_compat_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
 SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
        cardinality(security_failures)::TEXT || '|' || manifest_version
-FROM public.koaryu_release_schema_preflight_v9();
+FROM public.koaryu_release_schema_preflight_v10();
 " | tr -d '\r\n')"
-    if [[ "$v29_compat_readiness" != "true|122|20260826102840|0|release-db-attestation-v29" ]]; then
+    if [[ "$v29_compat_readiness" != "true|124|20260826102840|0|release-db-attestation-v29" ]]; then
       echo "[V29 compatibility] FAIL exact predecessor state: $v29_compat_readiness" >&2
       exit 1
     fi
@@ -688,12 +700,12 @@ FROM public.koaryu_release_schema_preflight_v9();
     v31_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
 SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
        cardinality(security_failures)::TEXT || '|' || manifest_version
-FROM public.koaryu_release_schema_preflight_v11();
+FROM public.koaryu_release_schema_preflight_v12();
 " | tr -d '\r\n')"
-    if [[ "$v31_readiness" != "true|124|20260826185651|0|release-db-attestation-v31" ]]; then
+    if [[ "$v31_readiness" != "true|126|20260826185651|0|release-db-attestation-v31" ]]; then
       v31_failures="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
 SELECT COALESCE(array_to_string(security_failures, ','), '')
-FROM public.koaryu_release_schema_preflight_v11();
+FROM public.koaryu_release_schema_preflight_v12();
 " | tr -d '\r\n')"
       echo "[V31 readiness] FAIL exact release state: $v31_readiness failures=$v31_failures" >&2
       exit 1
@@ -701,9 +713,9 @@ FROM public.koaryu_release_schema_preflight_v11();
     v30_compat_readiness="$("$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
 SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' ||
        cardinality(security_failures)::TEXT || '|' || manifest_version
-FROM public.koaryu_release_schema_preflight_v10();
+FROM public.koaryu_release_schema_preflight_v11();
 " | tr -d '\r\n')"
-    if [[ "$v30_compat_readiness" != "true|123|20260826155911|0|release-db-attestation-v30" ]]; then
+    if [[ "$v30_compat_readiness" != "true|125|20260826155911|0|release-db-attestation-v30" ]]; then
       echo "[V30 compatibility] FAIL exact predecessor state: $v30_compat_readiness" >&2
       exit 1
     fi
@@ -895,6 +907,7 @@ if (
   echo "[catalog] PASS deterministic raw catalog security fingerprint"
 else
   status=$?
+  echo "[catalog] actual=$catalog_state" >&2
   echo "[catalog] FAIL deterministic raw catalog security fingerprint (exit $status)" >&2
   exit "$status"
 fi
@@ -997,10 +1010,10 @@ fi
 assert_attestation_rejects() {
   local label="$1"
   local mutation_sql="$2"
-  local expected_v2_ready="$3"
+  local expected_v31_ready="$3"
   local result=""
   local drifted_catalog_state=""
-  local actual_v2_ready=""
+  local actual_v31_ready=""
 
   echo "[attestation negative] RUN $label"
   result="$({
@@ -1010,10 +1023,10 @@ assert_attestation_rejects() {
       node --input-type=module --eval \
         "import { CATALOG_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v5();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v12();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
-  actual_v2_ready="$(printf '%s\n' "$result" | sed -n '2p')"
+  actual_v31_ready="$(printf '%s\n' "$result" | sed -n '2p')"
 
   if (
     cd "$ROOT_DIR"
@@ -1024,8 +1037,8 @@ assert_attestation_rejects() {
     echo "[attestation negative] FAIL raw catalog accepted $label" >&2
     exit 1
   fi
-  if [[ "$actual_v2_ready" != "$expected_v2_ready" ]]; then
-    echo "[attestation negative] FAIL V2 readiness result for $label" >&2
+  if [[ "$actual_v31_ready" != "$expected_v31_ready" ]]; then
+    echo "[attestation negative] FAIL V31 readiness result for $label: $actual_v31_ready" >&2
     exit 1
   fi
   echo "[attestation negative] PASS $label"
@@ -1034,15 +1047,15 @@ assert_attestation_rejects() {
 assert_preflight_rejects() {
   local label="$1"
   local mutation_sql="$2"
-  local actual_v2_ready=""
+  local actual_v31_ready=""
 
   echo "[attestation negative] RUN $label"
-  actual_v2_ready="$({
+  actual_v31_ready="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v5();\nROLLBACK;\n'
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v12();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
-  if [[ "$actual_v2_ready" != "f" ]]; then
-    echo "[attestation negative] FAIL V2 readiness result for $label: $actual_v2_ready" >&2
+  if [[ "$actual_v31_ready" != "f" ]]; then
+    echo "[attestation negative] FAIL V31 readiness result for $label: $actual_v31_ready" >&2
     exit 1
   fi
   echo "[attestation negative] PASS $label"
@@ -1056,7 +1069,7 @@ assert_v29_preflight_rejects() {
   echo "[V29 attestation negative] RUN $label"
   actual_v29_ready="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v9();\nROLLBACK;\n'
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v10();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   if [[ "$actual_v29_ready" != "f" ]]; then
     echo "[V29 attestation negative] FAIL $label: $actual_v29_ready" >&2
@@ -1073,7 +1086,7 @@ assert_v30_preflight_rejects() {
   echo "[V30 attestation negative] RUN $label"
   actual_v30_ready="$({
     printf 'BEGIN;\n%s\n' "$mutation_sql"
-    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v10();\nROLLBACK;\n'
+    printf 'SELECT ready FROM public.koaryu_release_schema_preflight_v11();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   if [[ "$actual_v30_ready" != "f" ]]; then
     echo "[V30 attestation negative] FAIL $label: $actual_v30_ready" >&2
@@ -1106,7 +1119,7 @@ assert_v27_compat_v26_release_rejects() {
       node --input-type=module --eval \
         "import { V26_EXPECTATION_STATE_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V26_EXPECTATION_STATE_SQL);"
     )
-    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v6();\nROLLBACK;\n'
+    printf ';\nSELECT ready FROM public.koaryu_release_schema_preflight_v7();\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   drifted_catalog_state="$(printf '%s\n' "$result" | sed -n '1p')"
   drifted_expectation_state="$(printf '%s\n' "$result" | sed -n '2p')"
@@ -1152,9 +1165,53 @@ assert_v27_compat_v26_release_rejects \
 assert_v27_compat_v26_release_rejects \
   "V26 expectation ACL broadening" \
   "GRANT SELECT ON private.koaryu_release_v26_expectations TO service_role;"
-assert_v27_compat_v26_release_rejects \
-  "V6 preflight body tamper" \
-  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v6()'::regprocedure;"
+assert_preflight_rejects \
+  "V7 preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v7()'::regprocedure;"
+assert_preflight_rejects \
+  "V8 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v8()'::regprocedure;"
+assert_preflight_rejects \
+  "V9 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v9()'::regprocedure;"
+assert_preflight_rejects \
+  "V10 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v10()'::regprocedure;"
+assert_preflight_rejects \
+  "V11 compatibility preflight body tamper" \
+  "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'public.koaryu_release_schema_preflight_v11()'::regprocedure;"
+
+assert_preflight_rejects \
+  "V27 expectation service-role ACL broadening" \
+  "GRANT SELECT ON private.koaryu_release_v27_expectations TO service_role;"
+assert_preflight_rejects \
+  "V28 expectation browser-role ACL broadening" \
+  "GRANT UPDATE ON private.koaryu_release_v28_expectations TO authenticated;"
+assert_preflight_rejects \
+  "V29 expectation custom-role ACL broadening" \
+  "CREATE ROLE koaryu_v29_expectation_acl_probe NOLOGIN; GRANT SELECT ON private.koaryu_release_v29_expectations TO koaryu_v29_expectation_acl_probe;"
+assert_preflight_rejects \
+  "V30 expectation service-role GRANT OPTION drift" \
+  "GRANT UPDATE ON private.koaryu_release_v30_expectations TO service_role WITH GRANT OPTION;"
+
+assert_preflight_rejects \
+  "due-transition claim custom-role EXECUTE drift" \
+  "CREATE ROLE koaryu_due_claim_acl_probe NOLOGIN; GRANT EXECUTE ON FUNCTION public.claim_due_billing_enrollment_transitions_v1(uuid,integer,integer) TO koaryu_due_claim_acl_probe;"
+assert_preflight_rejects \
+  "due-transition claim service-role GRANT OPTION drift" \
+  "GRANT EXECUTE ON FUNCTION public.claim_due_billing_enrollment_transitions_v1(uuid,integer,integer) TO service_role WITH GRANT OPTION;"
+assert_preflight_rejects \
+  "payer-autopay disable custom-role EXECUTE drift" \
+  "CREATE ROLE koaryu_disable_autopay_acl_probe NOLOGIN; GRANT EXECUTE ON FUNCTION public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text) TO koaryu_disable_autopay_acl_probe;"
+assert_preflight_rejects \
+  "payer-autopay disable service-role GRANT OPTION drift" \
+  "GRANT EXECUTE ON FUNCTION public.disable_billing_payer_autopay_v1(uuid,uuid,uuid,timestamp with time zone,text) TO service_role WITH GRANT OPTION;"
+assert_preflight_rejects \
+  "payer-setup projection custom-role EXECUTE drift" \
+  "CREATE ROLE koaryu_finalize_payer_acl_probe NOLOGIN; GRANT EXECUTE ON FUNCTION public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer) TO koaryu_finalize_payer_acl_probe;"
+assert_preflight_rejects \
+  "payer-setup projection service-role GRANT OPTION drift" \
+  "GRANT EXECUTE ON FUNCTION public.finalize_billing_payer_setup_projection_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,integer) TO service_role WITH GRANT OPTION;"
 
 assert_attestation_rejects \
   "stored function-body drift" \
@@ -1253,9 +1310,9 @@ assert_attestation_rejects \
   "REVOKE EXECUTE ON FUNCTION public.schedule_window_read(uuid,date,date,text) FROM service_role;" \
   "f"
 assert_attestation_rejects \
-  "schedule-window manifest helper self-body drift (external authority only)" \
+  "schedule-window manifest helper self-body drift" \
   "UPDATE pg_proc SET prosrc = prosrc || chr(10) || '-- injected drift' WHERE oid = 'private.koaryu_release_schedule_window_manifest_v1()'::regprocedure;" \
-  "t"
+  "f"
 assert_attestation_rejects \
   "promotion operation receipt column drift" \
   "ALTER TABLE public.promotions ALTER COLUMN operation_id TYPE text USING operation_id::text;" \

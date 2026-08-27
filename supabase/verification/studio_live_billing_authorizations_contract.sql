@@ -54,7 +54,7 @@ BEGIN
         END IF;
         IF has_function_privilege(
             v_role,
-            'public.koaryu_release_schema_preflight_v6()',
+            'public.koaryu_release_schema_preflight_v7()',
             'EXECUTE'
         ) THEN
             RAISE EXCEPTION '% can execute the V26 schema preflight.', v_role;
@@ -89,7 +89,7 @@ BEGIN
     )
        OR NOT has_function_privilege(
            'service_role',
-           'public.koaryu_release_schema_preflight_v6()',
+           'public.koaryu_release_schema_preflight_v7()',
            'EXECUTE'
        ) THEN
         RAISE EXCEPTION 'service_role cannot call the v3 writer or V26 preflight.';
@@ -117,13 +117,13 @@ BEGIN
     -- The V25-to-V26 restore harness retains the historical V26 anchor. This
     -- final-chain assertion is the separately approved V31 compatibility pin.
     IF private.koaryu_release_operational_contract_v26()
-       <> '0:e8feb5956d506eb70db13babfc58a98ee9186bd85e3ee2e11d7a86fbb17c7ff4' THEN
+       <> '0:c16c9c7c4dea83db72d774d29fbc785178b8c53b1df51549b27057849ff852ec' THEN
         RAISE EXCEPTION 'V26 operational contract has failures: %',
             private.koaryu_release_operational_contract_v26();
     END IF;
 
     IF private.koaryu_release_live_billing_v3_manifest_v25()
-       <> '0:6934453003f86c2db9e84835d77a5261df6410fc93b24e8dfc78a332c815d265' THEN
+       <> '0:3c2a6854c73a6e9c9704fabed38dac85b56eb26076add20c00ee97bed5bdc527' THEN
         RAISE EXCEPTION 'Schema-v3 release manifest drifted: %',
             private.koaryu_release_live_billing_v3_manifest_v25();
     END IF;

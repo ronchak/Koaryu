@@ -7,14 +7,16 @@ DECLARE
     v_preflight RECORD;
 BEGIN
     SELECT * INTO v_preflight
-    FROM public.koaryu_release_schema_preflight_v6();
+    FROM public.koaryu_release_schema_preflight_v7();
 
     IF v_preflight.ready IS DISTINCT FROM true
-       OR v_preflight.migration_count IS DISTINCT FROM 119
+       OR v_preflight.migration_count IS DISTINCT FROM 121
        OR v_preflight.migration_head IS DISTINCT FROM '20260826030249'
        OR v_preflight.manifest_version IS DISTINCT FROM 'release-db-attestation-v26'
+       OR private.koaryu_release_schedule_window_manifest_v1()
+          IS DISTINCT FROM '0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7'
        OR COALESCE(v_preflight.security_failures, ARRAY[]::TEXT[]) <> ARRAY[]::TEXT[] THEN
-        RAISE EXCEPTION 'Billing provider operations require the exact ready 119/V26 predecessor.';
+        RAISE EXCEPTION 'Billing provider operations require the exact ready 121/V26 predecessor.';
     END IF;
 END;
 $v26_preflight_guard$;
@@ -2073,9 +2075,9 @@ ALTER TABLE private.koaryu_release_v27_expectations OWNER TO postgres;
 ALTER TABLE private.koaryu_release_v27_expectations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE private.koaryu_release_v27_expectations FROM PUBLIC, anon, authenticated, service_role;
 INSERT INTO private.koaryu_release_v27_expectations(expectation_key, expected_sha256)
-VALUES ('operational_contract_v27', '8c4c13d6ca202e3e670ba9ae5ededabbe31dbca8652c264dc71d86d859299ab8');
+VALUES ('operational_contract_v27', '4941584e8e00ddcd4aab5c8f9020d9972b1b349e164696c6f0120f25fcfbbd66');
 
-CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v7()
+CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v8()
 RETURNS TABLE (
     ready BOOLEAN, migration_count INTEGER, migration_head TEXT,
     pending_versions TEXT[], security_failures TEXT[], manifest_version TEXT
@@ -2092,7 +2094,7 @@ BEGIN
     SELECT count(*)::INTEGER, max(version),
            array_agg(version ORDER BY version COLLATE "C") FILTER (WHERE version >= '20260727100000')
     INTO v_count, v_head, v_pending FROM supabase_migrations.schema_migrations;
-    IF v_count <> 120 OR v_head <> '20260826051527' THEN
+    IF v_count <> 122 OR v_head <> '20260826051527' THEN
         v_failures := array_append(v_failures, 'migration_history_v27');
     END IF;
     IF COALESCE(v_pending, ARRAY[]::TEXT[]) IS DISTINCT FROM ARRAY[
@@ -2104,7 +2106,8 @@ BEGIN
         '20260814152000','20260814170000','20260814183000','20260814200000',
         '20260814213000','20260815220402','20260816012723','20260820012533',
         '20260820025759','20260820060216','20260822193000','20260823193155',
-        '20260824190500','20260826030234','20260826030249','20260826051527'
+        '20260824190500','20260825042838','20260825043911','20260826030234',
+        '20260826030249','20260826051527'
     ]::TEXT[] THEN
         v_failures := array_append(v_failures, 'migration_history_sequence_v27');
     END IF;
@@ -2124,12 +2127,16 @@ BEGIN
         v_failures := array_append(v_failures, 'critical_surface_manifest_v18');
     END IF;
     IF private.koaryu_release_live_billing_v3_manifest_v25()
-       <> '0:a873ce36f6623c9f574a0875bde6f887957bdbfdb4c8add796979b019f1a724a' THEN
+       <> '0:f810f40507fd5be476a90be7915be9f926ea15aafca7588cbca76233cda8adfb' THEN
         v_failures := array_append(v_failures, 'live_billing_v3_manifest_v25');
     END IF;
     IF private.koaryu_release_payment_adjustment_manifest_v26()
        <> '0:b63f010f0b0111f38b72fc43009f77722d824d96c3775a9dc3d34e6c58a63657' THEN
         v_failures := array_append(v_failures, 'payment_adjustment_manifest_v26');
+    END IF;
+    IF private.koaryu_release_schedule_window_manifest_v1()
+       <> '0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7' THEN
+        v_failures := array_append(v_failures, 'schedule_window_manifest_v1');
     END IF;
     SELECT expected_sha256 INTO v_expected_v26
     FROM private.koaryu_release_v26_expectations
@@ -2148,11 +2155,11 @@ BEGIN
         COALESCE(v_pending, ARRAY[]::TEXT[]), v_failures, 'release-db-attestation-v27'::TEXT;
 END;
 $$;
-ALTER FUNCTION public.koaryu_release_schema_preflight_v7() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v7() FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v7() TO service_role;
+ALTER FUNCTION public.koaryu_release_schema_preflight_v8() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v8() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v8() TO service_role;
 
-CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v6()
+CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v7()
 RETURNS TABLE (
     ready BOOLEAN, migration_count INTEGER, migration_head TEXT,
     pending_versions TEXT[], security_failures TEXT[], manifest_version TEXT
@@ -2160,12 +2167,12 @@ RETURNS TABLE (
 LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = pg_catalog AS $$
 DECLARE v_current RECORD;
 BEGIN
-    SELECT * INTO v_current FROM public.koaryu_release_schema_preflight_v7();
-    IF v_current.ready IS TRUE AND v_current.migration_count = 120
+    SELECT * INTO v_current FROM public.koaryu_release_schema_preflight_v8();
+    IF v_current.ready IS TRUE AND v_current.migration_count = 122
        AND v_current.migration_head = '20260826051527'
        AND v_current.manifest_version = 'release-db-attestation-v27'
        AND cardinality(v_current.security_failures) = 0 THEN
-        RETURN QUERY SELECT true, 119, '20260826030249'::TEXT,
+        RETURN QUERY SELECT true, 121, '20260826030249'::TEXT,
             ARRAY[
                 '20260727100000','20260727110000','20260801050957','20260801060000',
                 '20260801070000','20260801080000','20260801090000','20260801091000',
@@ -2175,7 +2182,8 @@ BEGIN
                 '20260814152000','20260814170000','20260814183000','20260814200000',
                 '20260814213000','20260815220402','20260816012723','20260820012533',
                 '20260820025759','20260820060216','20260822193000','20260823193155',
-                '20260824190500','20260826030234','20260826030249'
+                '20260824190500','20260825042838','20260825043911',
+                '20260826030234','20260826030249'
             ]::TEXT[], ARRAY[]::TEXT[], 'release-db-attestation-v26'::TEXT;
         RETURN;
     END IF;
@@ -2185,16 +2193,16 @@ BEGIN
         'release-db-attestation-v26'::TEXT;
 END;
 $$;
-ALTER FUNCTION public.koaryu_release_schema_preflight_v6() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v6() FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v6() TO service_role;
+ALTER FUNCTION public.koaryu_release_schema_preflight_v7() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v7() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v7() TO service_role;
 
--- V6 is intentionally replaced above so the already-deployed V26 backend can
+-- V7 is intentionally replaced above so the already-deployed V26 backend can
 -- survive the database-first V27 cutover. Re-pin the private V26 expectation to
 -- that exact compatibility definition; the V25-to-V26 restored proof runs
 -- before this migration and retains the predecessor pin.
 UPDATE private.koaryu_release_v26_expectations
-SET expected_sha256 = '93e39079f091240daaeca393fd5b4587de6cd6d4104fc943b47c97347d1961dc'
+SET expected_sha256 = 'dedde884fbb24696f5d8006417fd0de4cf292c6e1ed9ffe38afc04e514196e10'
 WHERE expectation_key = 'operational_contract_v26';
 
 CREATE FUNCTION private.koaryu_release_operational_manifest_v8()

@@ -4,17 +4,17 @@
 -- v2 recorder loses service-role execution and every future enabled
 -- authorization must bind to a v3 sidecar row.
 
-DO $v24_preflight_guard$
+DO $schedule_v25_preflight_guard$
 DECLARE
     v_preflight RECORD;
 BEGIN
     SELECT *
       INTO v_preflight
-      FROM public.koaryu_release_schema_preflight_v4();
+      FROM public.koaryu_release_schema_preflight_v5();
 
     IF v_preflight.ready IS DISTINCT FROM true
-       OR v_preflight.migration_count IS DISTINCT FROM 117
-       OR v_preflight.migration_head IS DISTINCT FROM '20260824190500'
+       OR v_preflight.migration_count IS DISTINCT FROM 119
+       OR v_preflight.migration_head IS DISTINCT FROM '20260825043911'
        OR v_preflight.pending_versions IS DISTINCT FROM ARRAY[
             '20260727100000','20260727110000','20260801050957','20260801060000',
             '20260801070000','20260801080000','20260801090000','20260801091000',
@@ -24,17 +24,17 @@ BEGIN
             '20260814152000','20260814170000','20260814183000','20260814200000',
             '20260814213000','20260815220402','20260816012723','20260820012533',
             '20260820025759','20260820060216','20260822193000','20260823193155',
-            '20260824190500'
+            '20260824190500','20260825042838','20260825043911'
        ]::TEXT[]
        OR COALESCE(v_preflight.security_failures, ARRAY[]::TEXT[])
             <> ARRAY[]::TEXT[]
        OR v_preflight.manifest_version IS DISTINCT FROM
-            'release-db-attestation-v24' THEN
+            'release-db-attestation-v25' THEN
         RAISE EXCEPTION
-            'Schema-v3 reconciliation requires the exact ready 117/V24 predecessor.';
+            'Schema-v3 reconciliation requires the exact ready 119/schedule-V25 predecessor.';
     END IF;
 END;
-$v24_preflight_guard$;
+$schedule_v25_preflight_guard$;
 
 CREATE TABLE public.stripe_live_billing_reconciliation_checkpoints_v3 (
     checkpoint_id UUID PRIMARY KEY
@@ -1753,7 +1753,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.record_operational_alert_heartbeat(text, text, text)', 'search_path=public, pg_temp', false, true),
     ('public.operational_alert_heartbeats(text)', 'search_path=public, pg_temp', false, true),
     ('public.koaryu_release_schema_preflight()', 'search_path=pg_catalog', true, true),
-    ('public.koaryu_release_schema_preflight_v6()', 'search_path=pg_catalog', true, false),
+    ('public.koaryu_release_schema_preflight_v5()', 'search_path=pg_catalog', true, true),
     ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_manifest_v4()', 'search_path=pg_catalog', false, false),
@@ -2410,7 +2410,7 @@ REVOKE ALL ON FUNCTION
     private.koaryu_release_live_billing_v3_manifest_v25()
     FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION public.koaryu_release_schema_preflight_v5()
+CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v6()
 RETURNS TABLE (
     ready BOOLEAN,
     migration_count INTEGER,
@@ -2438,7 +2438,7 @@ BEGIN
       INTO v_count, v_head, v_pending
       FROM supabase_migrations.schema_migrations;
 
-    IF v_count <> 118
+    IF v_count <> 120
        OR v_head <> '20260826030234' THEN
         v_failures :=
             array_append(v_failures, 'migration_history_v25');
@@ -2453,14 +2453,14 @@ BEGIN
         '20260814152000','20260814170000','20260814183000','20260814200000',
         '20260814213000','20260815220402','20260816012723','20260820012533',
         '20260820025759','20260820060216','20260822193000','20260823193155',
-        '20260824190500','20260826030234'
+        '20260824190500','20260825042838','20260825043911','20260826030234'
     ]::TEXT[] THEN
         v_failures :=
             array_append(v_failures, 'migration_history_sequence_v25');
     END IF;
 
     IF private.koaryu_release_operational_contract_v25()
-       <> '0:a6142da2d83ec38483a696cecb4669d2ab8239314db4ca19308d4d619f729f32' THEN
+       <> '0:bde4877c461840d0f1e42fe3faccaddad8ae8c97ca7cde1a7a2ba1cee1fda0c4' THEN
         v_failures :=
             array_append(
                 v_failures,
@@ -2487,9 +2487,15 @@ BEGIN
     END IF;
 
     IF private.koaryu_release_live_billing_v3_manifest_v25()
-       <> '0:a873ce36f6623c9f574a0875bde6f887957bdbfdb4c8add796979b019f1a724a' THEN
+       <> '0:f810f40507fd5be476a90be7915be9f926ea15aafca7588cbca76233cda8adfb' THEN
         v_failures :=
             array_append(v_failures, 'live_billing_v3_manifest_v25');
+    END IF;
+
+    IF private.koaryu_release_schedule_window_manifest_v1()
+       <> '0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7' THEN
+        v_failures :=
+            array_append(v_failures, 'schedule_window_manifest_v1');
     END IF;
 
     RETURN QUERY
@@ -2503,17 +2509,17 @@ BEGIN
 END;
 $preflight$;
 
-ALTER FUNCTION public.koaryu_release_schema_preflight_v5()
+ALTER FUNCTION public.koaryu_release_schema_preflight_v6()
     OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v5()
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v6()
     FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v5()
+GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v6()
     TO service_role;
 
--- Preserve the deployed V24 backend during a database-first cutover. New
--- backends call V5; V4 returns its exact old shape only when V5 proves the
--- complete V25 state.
-CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v4()
+-- Preserve the schedule-V25 backend during the database-first Payments cutover.
+-- The Payments backend calls V6; V5 returns the exact schedule release shape
+-- only when V6 proves the complete Payments V25 state.
+CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v5()
 RETURNS TABLE (
     ready BOOLEAN,
     migration_count INTEGER,
@@ -2532,12 +2538,100 @@ DECLARE
 BEGIN
     SELECT *
       INTO v_current
+      FROM public.koaryu_release_schema_preflight_v6();
+
+    IF v_current.ready IS TRUE
+       AND v_current.migration_count = 120
+       AND v_current.migration_head = '20260826030234'
+       AND v_current.manifest_version = 'release-db-attestation-v25'
+       AND private.koaryu_release_schedule_window_manifest_v1() =
+            '0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7'
+       AND cardinality(v_current.security_failures) = 0 THEN
+        RETURN QUERY
+        SELECT
+            true,
+            119,
+            '20260825043911'::TEXT,
+            ARRAY[
+                '20260727100000','20260727110000','20260801050957',
+                '20260801060000','20260801070000','20260801080000',
+                '20260801090000','20260801091000','20260801092000',
+                '20260801093000','20260801094000','20260801105313',
+                '20260801112153','20260801115044','20260801123112',
+                '20260801131844','20260814043325','20260814103046',
+                '20260814105424','20260814114500','20260814152000',
+                '20260814170000','20260814183000','20260814200000',
+                '20260814213000','20260815220402','20260816012723',
+                '20260820012533','20260820025759','20260820060216',
+                '20260822193000','20260823193155','20260824190500',
+                '20260825042838','20260825043911'
+            ]::TEXT[],
+            ARRAY[]::TEXT[],
+            'release-db-attestation-v25'::TEXT;
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        false,
+        v_current.migration_count,
+        v_current.migration_head,
+        v_current.pending_versions,
+        COALESCE(
+            v_current.security_failures,
+            ARRAY['payments_v25_schedule_compatibility_preflight']::TEXT[]
+        ),
+        'release-db-attestation-v25'::TEXT;
+END;
+$compatibility$;
+
+ALTER FUNCTION public.koaryu_release_schema_preflight_v5()
+    OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.koaryu_release_schema_preflight_v5()
+    FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.koaryu_release_schema_preflight_v5()
+    TO service_role;
+
+-- Preserve the V24 backend transitively. V4 accepts the historical V24 shape
+-- only when the V5 schedule bridge proves its exact 119-migration state.
+CREATE OR REPLACE FUNCTION public.koaryu_release_schema_preflight_v4()
+RETURNS TABLE (
+    ready BOOLEAN,
+    migration_count INTEGER,
+    migration_head TEXT,
+    pending_versions TEXT[],
+    security_failures TEXT[],
+    manifest_version TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = pg_catalog
+AS $v24_compatibility$
+DECLARE
+    v_current RECORD;
+BEGIN
+    SELECT *
+      INTO v_current
       FROM public.koaryu_release_schema_preflight_v5();
 
     IF v_current.ready IS TRUE
-       AND v_current.migration_count = 118
-       AND v_current.migration_head = '20260826030234'
+       AND v_current.migration_count = 119
+       AND v_current.migration_head = '20260825043911'
+       AND v_current.pending_versions IS NOT DISTINCT FROM ARRAY[
+            '20260727100000','20260727110000','20260801050957','20260801060000',
+            '20260801070000','20260801080000','20260801090000','20260801091000',
+            '20260801092000','20260801093000','20260801094000','20260801105313',
+            '20260801112153','20260801115044','20260801123112','20260801131844',
+            '20260814043325','20260814103046','20260814105424','20260814114500',
+            '20260814152000','20260814170000','20260814183000','20260814200000',
+            '20260814213000','20260815220402','20260816012723','20260820012533',
+            '20260820025759','20260820060216','20260822193000','20260823193155',
+            '20260824190500','20260825042838','20260825043911'
+       ]::TEXT[]
        AND v_current.manifest_version = 'release-db-attestation-v25'
+       AND private.koaryu_release_schedule_window_manifest_v1() =
+            '0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7'
        AND cardinality(v_current.security_failures) = 0 THEN
         RETURN QUERY
         SELECT
@@ -2570,11 +2664,11 @@ BEGIN
         v_current.pending_versions,
         COALESCE(
             v_current.security_failures,
-            ARRAY['v25_compatibility_preflight']::TEXT[]
+            ARRAY['payments_v25_v24_compatibility_preflight']::TEXT[]
         ),
         'release-db-attestation-v24'::TEXT;
 END;
-$compatibility$;
+$v24_compatibility$;
 
 ALTER FUNCTION public.koaryu_release_schema_preflight_v4()
     OWNER TO postgres;

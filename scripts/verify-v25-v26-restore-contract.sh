@@ -117,7 +117,7 @@ SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '
        cardinality(security_failures)::TEXT || '|' ||
        COALESCE(array_to_string(security_failures, ','), '') || '|' ||
        manifest_version
-FROM public.koaryu_release_schema_preflight_v6();
+FROM public.koaryu_release_schema_preflight_v7();
 SQL
 )"
 restored_readiness="$(printf '%s' "$restored_readiness" | tr -d '\r\n')"
@@ -164,4 +164,4 @@ fi
     "$restored_readiness"
 )
 
-echo "PASS: V25 dump/restore then migration 119 produced the exact accepted V26 post-state."
+echo "PASS: V25 dump/restore then migration 121 produced the exact accepted V26 post-state."

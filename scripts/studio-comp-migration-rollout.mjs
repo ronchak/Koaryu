@@ -32,13 +32,14 @@ export const ROLLOUT = Object.freeze({
   restoredV22MigrationCount: 115,
   canonicalV23MigrationCount: 116,
   v24MigrationCount: 117,
-  v25MigrationCount: 118,
-  v26MigrationCount: 119,
-  v27MigrationCount: 120,
-  v28MigrationCount: 121,
-  v29MigrationCount: 122,
-  v30MigrationCount: 123,
-  finalMigrationCount: 124,
+  scheduleV25MigrationCount: 119,
+  v25MigrationCount: 120,
+  v26MigrationCount: 121,
+  v27MigrationCount: 122,
+  v28MigrationCount: 123,
+  v29MigrationCount: 124,
+  v30MigrationCount: 125,
+  finalMigrationCount: 126,
   finalMigrationVersion: "20260826185651",
   releasePendingVersions: Object.freeze([
     "20260814043325",
@@ -58,6 +59,8 @@ export const ROLLOUT = Object.freeze({
     "20260822193000",
     "20260823193155",
     "20260824190500",
+    "20260825042838",
+    "20260825043911",
     "20260826030234",
     "20260826030249",
     "20260826051527",
@@ -100,6 +103,8 @@ export const ROLLOUT = Object.freeze({
     "20260822193000",
     "20260823193155",
     "20260824190500",
+    "20260825042838",
+    "20260825043911",
     "20260826030234",
     "20260826030249",
     "20260826051527",
@@ -127,6 +132,16 @@ export const ROLLOUT = Object.freeze({
       sha256: "22faa79522ba2018780fb260401cd23830df553ee3faf0546b2af689eb51bfc0",
     }),
   ]),
+  scheduleMigrations: Object.freeze([
+    Object.freeze({
+      filename: "20260825042838_schedule_window_read_rpc.sql",
+      sha256: "6e36b37902564eeb4eb54c9284615e80bbf44582cce864514db2060565092313",
+    }),
+    Object.freeze({
+      filename: "20260825043911_attest_schedule_window_release.sql",
+      sha256: "22637698a5af2043b74ed344c16ab111a27d83b54b1621a82deb091f436174f5",
+    }),
+  ]),
 });
 
 export const EXPECTED_OPERATIONAL_MANIFEST =
@@ -137,88 +152,112 @@ export const EXPECTED_V27_OPERATIONAL_MANIFEST =
   "8694f564fc8a94a6230e54fe70e12e376502b0372b629339acad38c3a90178c1";
 export const EXPECTED_RESTORED_V27_OPERATIONAL_MANIFEST =
   "988cbdeb2e5ee2e022484b15c8483bec215c5c5dbb32aaf0342b54ec33d677d9";
+export const EXPECTED_COMBINED_RESTORED_V27_OPERATIONAL_MANIFEST =
+  "a39c7435974be19b4a5f41d5a536402a16b429ec6d5ae1f9b8df81d95921ac91";
+export const EXPECTED_COMBINED_RESTORED_V26_OPERATIONAL_MANIFEST =
+  "56427ffe9f6a644af9c2b7100ee7060d93b84b3f1548d74cf3346a92be26c6bc";
 export const EXPECTED_V29_TRANSITION_MANIFEST =
   "0:118b8031e9393f0114f486d0704e71475099d326f7fba9ad5d7518ad5a6a2c60";
 export const EXPECTED_V29_OPERATIONAL_CONTRACT =
-  "0:acb02796bef50ae55a9201315769fec5702de102fb251747f57d6a46cba71407";
+  "0:e2c4f27b967c5bff881a00e51416691ef752cc51e8298fb2142c96f607e4e1d0";
 export const EXPECTED_V29_OPERATIONAL_MANIFEST =
-  "cf3ce387638a39bb70488a2bfd2c1e3b419df373d3f00dc28a4d371864e76abb";
+  "e9034c1e146f58baea795e16ea93c6eca75fa463e0ee057eada0e09a784248c6";
 export const EXPECTED_V30_REPLAY_REPAIRS_MANIFEST =
   "0:bf7208ee6b49620e3ef146812c6e69fa8bc73058086d6d7df12c91ec41888f55";
 export const EXPECTED_V30_OPERATIONAL_CONTRACT =
-  "0:7d3b98ad5301ac1eb04eb1131f16f58158e37c3d4c7e01afbe427d46294ccd2a";
+  "0:6396d71a8da8966ca50d412e6d5caccb7dc624775e69aef993b61e303f5d0400";
 export const EXPECTED_V30_OPERATIONAL_MANIFEST =
-  "1449e613ab87fea18e9f7678f96215d528b80b5d0c44c5da0f29323bdc392198";
+  "f0fcffe6a705b1d66df0e1c87ae04fb92070b2ed4308da354979a46e47087460";
 export const EXPECTED_V30_COMPAT_V29_OPERATIONAL_CONTRACT =
-  "0:929c7edaca033aac1485896f7d55531c16cedf753c8be8343d41bb12906c382f";
+  "0:982fdf3857f160204c92badb9d7cd5269eadef78238fbe9e2cd6f8cd7729a692";
 export const EXPECTED_V30_PREDECESSOR_OPERATIONAL_MANIFEST =
-  "689cf757117638efbf23579f77a2ba10638d710350e7dfd18d99f061503ef27b";
+  "32107329f69000537b2e8167d12674a90f46a7a7c8978149b70b8dac5edc7e17";
 export const EXPECTED_V30_LEGACY_OPERATIONAL_MANIFEST =
-  "1da6e581a0b5a89587bc6d3f561bd84fae2ef776739a1a352ecd11f7a929277f";
+  "86c290c86aa2eaf480d0f98ff58ac16bdf257d0d38e25cf273e05f3d0e05f830";
 export const EXPECTED_V30_RESTORED_LEGACY_OPERATIONAL_MANIFEST =
-  "c6264c0dda886238244c85aa75e182d2b5eee14f4f9255a42849a3871a3b5a8a";
+  "b1b7b4d041878aaa9a2a33ee530376ac906f5e6f4cea0a5d001516c99273e91b";
 export const EXPECTED_V31_RESOURCE_OWNERSHIP_MANIFEST =
-  "0:2338b921f8ae442e304e6ba964ef1af2120dfb25ab9f3d17cb42a59048d180b2";
+  "0:fb34bb3fb5e77d686b72e2bb413d6502d75b6042a437caa03344e4d2f5fa5be0";
 export const EXPECTED_V31_OPERATIONAL_CONTRACT =
-  "0:100b9908bafdd63bffaf7a92a2de2a54816dd6fb4aafe26fec0b853f0f65c49d";
+  "0:0fafb4fe07bb2eb83d770efeb2acde63925b4185c23eac669c06783eb8f41a4e";
 export const EXPECTED_V31_OPERATIONAL_MANIFEST =
-  "9f8d37dbe6f761baa42518aaa4debdad9715d83c0733c73665acb37e322e916e";
+  "601e0bfa142286b2cbe13d9536f981e873d7e9359cf59a2dc2d055abde549293";
 export const EXPECTED_V31_PREDECESSOR_OPERATIONAL_MANIFEST =
-  "b4a027577eafe29feb731803721ae7d07f42e5aeec0b2fb9c2cd021856d75140";
+  "330d873570885be3aee2109ce2b492fbc494bf47addd3bdcd573b9829453b264";
+
+export const EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS =
+  "true|119|20260825043911|" +
+  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
+  "|0||release-db-attestation-v25";
+export const EXPECTED_SCHEDULE_WINDOW_MANIFEST =
+  "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed74b210e84ec773cb1d8e854a7";
+export const EXPECTED_SCHEDULE_V25_CATALOG_STATE =
+  "column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;" +
+  "columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;" +
+  "constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;" +
+  "functions=71:b2538a24f0a41982b21eeaaef6202f7df1809e46513d051ccb1c8e1301dc04a2:0;" +
+  "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
+  "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
+  "scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;" +
+  "scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;" +
+  "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
+  "table_acls=14:d71f968d375333515659bd0220224c127cee6e7b3878f9ae36427f7c1561c92c:0;" +
+  "tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;" +
+  "triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0";
 
 export const EXPECTED_OPERATIONAL_READINESS =
-  "true|124|20260826185651|" +
+  "true|126|20260826185651|" +
   ROLLOUT.finalPendingVersions.join(",") +
   "|0||release-db-attestation-v31";
 
 export const EXPECTED_V30_OPERATIONAL_READINESS =
-  "true|123|20260826155911|" +
+  "true|125|20260826155911|" +
   ROLLOUT.finalPendingVersions.slice(0, -1).join(",") +
   "|0||release-db-attestation-v30";
 
 export const EXPECTED_V29_OPERATIONAL_READINESS =
-  "true|122|20260826102840|" +
+  "true|124|20260826102840|" +
   ROLLOUT.finalPendingVersions.slice(0, -2).join(",") +
   "|0||release-db-attestation-v29";
 
 export const EXPECTED_V28_OPERATIONAL_READINESS =
-  "true|121|20260826073728|" +
+  "true|123|20260826073728|" +
   ROLLOUT.finalPendingVersions.slice(0, -3).join(",") +
   "|0||release-db-attestation-v28";
 
 export const EXPECTED_V27_OPERATIONAL_READINESS =
-  "true|120|20260826051527|" +
+  "true|122|20260826051527|" +
   ROLLOUT.finalPendingVersions.slice(0, -4).join(",") +
   "|0||release-db-attestation-v27";
 
 export const EXPECTED_V26_OPERATIONAL_READINESS =
-  "true|119|20260826030249|" +
+  "true|121|20260826030249|" +
   ROLLOUT.finalPendingVersions.slice(0, -5).join(",") +
   "|0||release-db-attestation-v26";
 
 export const EXPECTED_V25_OPERATIONAL_READINESS =
-  "true|118|20260826030234|" +
+  "true|120|20260826030234|" +
   ROLLOUT.finalPendingVersions.slice(0, -6).join(",") +
   "|0||release-db-attestation-v25";
 
 export const EXPECTED_V24_OPERATIONAL_READINESS =
   "true|117|20260824190500|" +
-  ROLLOUT.finalPendingVersions.slice(0, -7).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -9).join(",") +
   "|0||release-db-attestation-v24";
 
 export const EXPECTED_RESTORED_V22_OPERATIONAL_READINESS =
   "true|115|20260822193000|" +
-  ROLLOUT.finalPendingVersions.slice(0, -9).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -11).join(",") +
   "|0||release-db-attestation-v22";
 
 export const EXPECTED_CANONICAL_V23_OPERATIONAL_READINESS =
   "true|116|20260823193155|" +
-  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -10).join(",") +
   "|0||release-db-attestation-v23";
 
 export const EXPECTED_RESTORED_V23_PENDING_V24_OPERATIONAL_READINESS =
   "false|116|20260823193155|" +
-  ROLLOUT.finalPendingVersions.slice(0, -8).join(",") +
+  ROLLOUT.finalPendingVersions.slice(0, -10).join(",") +
   "|1|operational_semantic_acl_manifest_v7|release-db-attestation-v23";
 
 // Generated by the final migration against the actual PostgreSQL catalog and
@@ -328,11 +367,24 @@ export const EXPECTED_V27_RESTORED_CATALOG_STATE =
   );
 export const EXPECTED_V29_RESTORED_CATALOG_STATE =
   EXPECTED_V27_RESTORED_CATALOG_STATE;
+export const EXPECTED_COMBINED_RESTORED_V26_CATALOG_STATE =
+  "column_acls=207:3aaaef1edbaee272791f8562946c774eba3d4623fdea1389b28576e15eff6ba7:0;" +
+  "columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;" +
+  "constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;" +
+  "functions=80:f6797e4022792d03bb7b71e6acb4f01622fac893da52e77366cda21fead79aa1:0;" +
+  "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
+  "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
+  "scoped_constraints=152:5d62445fa4493ddc15012262489509aa07b49f17c244e7aa693b32aad3f02f64:0;" +
+  "scoped_indexes=34:752cd3247779f6123aa1fdfa4b57cb8188b5ee037677188b76d337b95488fef1:0;" +
+  "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
+  "table_acls=15:833a397e5d1468003a459b22bf0852bee16a4a2624523ace30d16acfa3a75e2f:0;" +
+  "tables=13:384ba5461ea17ff6c15c8a1fe97fb091508744399cc3fb812253fc85fbcf5246:0;" +
+  "triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0";
 export const EXPECTED_V30_CATALOG_STATE =
   "column_acls=208:fc90b7848ec06d8f1ac9c95f8d13043d36e93d47f2266a5eb9b9fa08071ca875:0;" +
   "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
   "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
-  "functions=79:89c2ffb4780db920d6fd3e40a7fe59fe910697c57a649638467963f62f2df88f:0;" +
+  "functions=81:82f48404c2b73635d04d13c6fe4d7b2d0cf41f3366ead2ede72946fe04b33eec:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
   "scoped_constraints=153:b8a326a221f6c416a99b59216f328a32185e9d5a692d72517e82ffc2dbcaf31a:0;" +
@@ -346,59 +398,59 @@ export const EXPECTED_V30_RESTORED_CATALOG_STATE =
     "scoped_constraints=153:b8a326a221f6c416a99b59216f328a32185e9d5a692d72517e82ffc2dbcaf31a:0",
     "scoped_constraints=153:6f28d831e7c6194512c7180bcf8bf566c772b2f76c093ed3957f0422d2aca916:0",
   );
-// Observed independently from the canonical 124-chain and V30-dump/V31-restore
-// paths. The restored path has a separately pinned scoped-constraint digest.
+// Final V31 catalogs are pinned separately for canonical and V30-dump restore
+// paths because PostgreSQL preserves different historical constraint identities.
 export const EXPECTED_V31_CATALOG_STATE =
-  "column_acls=218:2a1c3ae33c2a3a712b9c0a6db801c6d4bf932d6f14aa7c1870882c7a4639552e:0;" +
+  "column_acls=228:44119eb2d0f6a6f4d130b4353519eb478e6e830791ccef778e4c261e705269fc:0;" +
   "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
   "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
-  "functions=92:2bfde0c6e34a283998df85149ec53957b56250ef9ef2594e21597d2da5d17c48:0;" +
+  "functions=103:e05304ae385e4018bd9dbaeb8cdd232047f5697de7ecedd9b5515a69165d2b53:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
-  "scoped_constraints=161:6bf62e4a5766d1e686fe1103a3190f221840d07b4956f291fb0a7d45c57319f1:0;" +
-  "scoped_indexes=35:cb91478ce34eb73950c758b2a16e613d8141954bbe7cbaa93d2bf5757b57049f:0;" +
+  "scoped_constraints=176:f71ef6881d9692d2f8d59c7a55753aa7c637f72473fca97c8293ee6c640f7fdf:0;" +
+  "scoped_indexes=40:2812d942667fd385ad0a409da343a92be4627c2c8efca3b251fd4fddeeb3244c:0;" +
   "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
-  "table_acls=16:2a7630b9ac026cc02b20a84417a2f51ab9d8fbf173eec23542e2dde6af4aff7b:0;" +
-  "tables=13:384ba5461ea17ff6c15c8a1fe97fb091508744399cc3fb812253fc85fbcf5246:0;" +
+  "table_acls=21:fa3823b514d8c4a3cf0500cb2572da389655797ad781bd6c51b2eb169cfbf472:0;" +
+  "tables=18:1d850078f0f5785becf0be5be1e3b0b0810551c89af5feda2d11a5d25c48058d:0;" +
   "triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
 export const EXPECTED_V31_RESTORED_CATALOG_STATE =
-  "column_acls=218:2a1c3ae33c2a3a712b9c0a6db801c6d4bf932d6f14aa7c1870882c7a4639552e:0;" +
+  "column_acls=228:44119eb2d0f6a6f4d130b4353519eb478e6e830791ccef778e4c261e705269fc:0;" +
   "columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;" +
   "constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;" +
-  "functions=92:2bfde0c6e34a283998df85149ec53957b56250ef9ef2594e21597d2da5d17c48:0;" +
+  "functions=103:e05304ae385e4018bd9dbaeb8cdd232047f5697de7ecedd9b5515a69165d2b53:0;" +
   "indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;" +
   "policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;" +
-  "scoped_constraints=161:2ef44e55e6042feee3b2bdc8b3cf099fd3ae5a0547a21e7736309dce399c5b72:0;" +
-  "scoped_indexes=35:cb91478ce34eb73950c758b2a16e613d8141954bbe7cbaa93d2bf5757b57049f:0;" +
+  "scoped_constraints=176:66315b7b7d9fc49b9b0ab73171fcf0dbfa0c1c279c8668269cf637e5d2aa53b5:0;" +
+  "scoped_indexes=40:2812d942667fd385ad0a409da343a92be4627c2c8efca3b251fd4fddeeb3244c:0;" +
   "sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;" +
-  "table_acls=16:2a7630b9ac026cc02b20a84417a2f51ab9d8fbf173eec23542e2dde6af4aff7b:0;" +
-  "tables=13:384ba5461ea17ff6c15c8a1fe97fb091508744399cc3fb812253fc85fbcf5246:0;" +
+  "table_acls=21:fa3823b514d8c4a3cf0500cb2572da389655797ad781bd6c51b2eb169cfbf472:0;" +
+  "tables=18:1d850078f0f5785becf0be5be1e3b0b0810551c89af5feda2d11a5d25c48058d:0;" +
   "triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
 
 export const EXPECTED_V26_EXPECTATION_STATE =
-  "1:7c763bfdc859d071ff40377e95de029924cc8a0d44a3b86478113182ece20dbb";
+  "1:fb5e52ebe1cf068e8ac0e195852f12d7af2c2226883b37d49e1ddac670e9f66b";
 export const EXPECTED_V27_COMPAT_V26_EXPECTATION_STATE =
-  "1:eefc28c1233de39b28184ebfc5ace2f8e1acde20fd8cbbdcd917e7724f1ca9a6";
+  "1:266f6a74c45a44175d6224a85226a2ce903b0b0c1b53d2d7b8bc1f34959aa7a8";
 export const EXPECTED_V27_EXPECTATION_STATE =
-  "1:50a1e3144f5929a8888337f134e42f9fd5df00b61971ad09b8a823c74fc83560";
+  "1:046ff943b7298d5ef3b624119ac7cf8e3a9402471c05c5385068b0954fa18008";
 export const EXPECTED_V28_COMPAT_V27_EXPECTATION_STATE =
-  "1:60918ae6ec16fdc78fe22e76b9751c48b413b641cd1063f137aac6a863c48b9a";
+  "1:74da7c7a75b048163e208473d28cf32366ace36108e99abe21947d89449d7ce6";
 export const EXPECTED_V28_EXPECTATION_STATE =
-  "1:4b7bbc8c6a4a7bd183b952a8a08f5fd2b4e23369a3fe463874b609a21b31fc1b";
+  "1:ffde05a120e904a830fb9a61cd610ca474522dadf933408b410c1985e836d202";
 export const EXPECTED_V29_EXPECTATION_STATE =
-  "1:d42018ef129f0f7efcf405f5c77936172a31afd09ba6d94cae31398192cd8505";
+  "1:7e003460a485f8125432d1c2c7087bc04f1a4037728aa4f16b22640daf2eb7c7";
 export const EXPECTED_V30_COMPAT_V26_EXPECTATION_STATE =
-  "1:e3d7fe73b649f6dbf2093db550583566a355d91d8c374e531b3fa62f13daae6a";
+  "1:000ddde23152ab5d5eb830fb5958ef1aa931acfa95a866acda6325bd3d6a273c";
 export const EXPECTED_V30_COMPAT_V27_EXPECTATION_STATE =
-  "1:1f6d6583c68566afbb480b2bca981b0518acef013cfd4da357e883a51787487d";
+  "1:6e4238353d10a453e3a4581ff8f63a8a0310b33d404be1c6d4e0a04d5c67aa4f";
 export const EXPECTED_V30_COMPAT_V28_EXPECTATION_STATE =
-  "1:f16befce89a165126c7fd1d9c1336e6b6615b26e41ac5bd170d42abd62cea9c0";
+  "1:e57560e15d366056bd249ecf52225162403b0866c4fea4929b34c8ef84c3df11";
 export const EXPECTED_V30_COMPAT_V29_EXPECTATION_STATE =
-  "1:277f19009ebb5642d90b8e1c2a6607a63d1898d5016310099680b6a41811fcf1";
+  "1:b0e1d3777d1686ff48b9f5d73a255cc1f6d6fea974736215c7c21a621dbaa1a5";
 export const EXPECTED_V30_EXPECTATION_STATE =
-  "1:984763230ce64ea45bbd3a101b8264551e5d1dff0c19667b38c262ec3e7280ee";
+  "1:64daabcda5df9823fa4b32e7320e715d1d96dd0d0acc697ebed4570256655643";
 export const EXPECTED_V31_EXPECTATION_STATE =
-  "1:8994fd34dffbb0db5c1531a4f83f299881e0a2277b5b6c685858efc481ce02e8";
+  "1:ab1432b9cca6636e233729f30be7ead648596cc23b95e65cd800c611c6a39ea8";
 
 export function validateOperationalManifest(value) {
   if (
@@ -406,6 +458,8 @@ export function validateOperationalManifest(value) {
     value !== EXPECTED_RESTORED_OPERATIONAL_MANIFEST &&
     value !== EXPECTED_V27_OPERATIONAL_MANIFEST &&
     value !== EXPECTED_RESTORED_V27_OPERATIONAL_MANIFEST &&
+    value !== EXPECTED_COMBINED_RESTORED_V27_OPERATIONAL_MANIFEST &&
+    value !== EXPECTED_COMBINED_RESTORED_V26_OPERATIONAL_MANIFEST &&
     value !== EXPECTED_V30_LEGACY_OPERATIONAL_MANIFEST &&
     value !== EXPECTED_V30_RESTORED_LEGACY_OPERATIONAL_MANIFEST
   ) {
@@ -655,7 +709,7 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
-from public.koaryu_release_schema_preflight_v11()
+from public.koaryu_release_schema_preflight_v12()
 `;
 
 export const V30_OPERATIONAL_READINESS_SQL = `
@@ -663,7 +717,7 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
-from public.koaryu_release_schema_preflight_v10()
+from public.koaryu_release_schema_preflight_v11()
 `;
 
 export const V31_OPERATIONAL_READINESS_SQL = FINAL_OPERATIONAL_READINESS_SQL;
@@ -673,7 +727,7 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
-from public.koaryu_release_schema_preflight_v9()
+from public.koaryu_release_schema_preflight_v10()
 `;
 
 export const V28_OPERATIONAL_READINESS_SQL = `
@@ -681,7 +735,7 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
-from public.koaryu_release_schema_preflight_v8()
+from public.koaryu_release_schema_preflight_v9()
 `;
 
 export const V27_OPERATIONAL_READINESS_SQL = `
@@ -689,10 +743,10 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
   as operational_readiness
-from public.koaryu_release_schema_preflight_v7()
+from public.koaryu_release_schema_preflight_v8()
 `;
 
-export const V25_OPERATIONAL_READINESS_SQL = `
+export const SCHEDULE_V25_OPERATIONAL_READINESS_SQL = `
 select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
@@ -700,7 +754,7 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
 from public.koaryu_release_schema_preflight_v5()
 `;
 
-export const V26_OPERATIONAL_READINESS_SQL = `
+export const V25_OPERATIONAL_READINESS_SQL = `
 select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
        array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
        coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
@@ -708,9 +762,22 @@ select ready::text || '|' || migration_count::text || '|' || migration_head || '
 from public.koaryu_release_schema_preflight_v6()
 `;
 
+export const V26_OPERATIONAL_READINESS_SQL = `
+select ready::text || '|' || migration_count::text || '|' || migration_head || '|' ||
+       array_to_string(pending_versions, ',') || '|' || cardinality(security_failures)::text || '|' ||
+       coalesce(array_to_string(security_failures, ','), '') || '|' || manifest_version
+  as operational_readiness
+from public.koaryu_release_schema_preflight_v7()
+`;
+
 export const CRITICAL_SURFACE_MANIFEST_SQL = `
 select private.koaryu_release_critical_surface_manifest_v18()
   as critical_surface_manifest
+`;
+
+export const SCHEDULE_WINDOW_MANIFEST_SQL = `
+select private.koaryu_release_schedule_window_manifest_v1()
+  as schedule_window_manifest
 `;
 
 export const V26_EXPECTATION_STATE_SQL = `
@@ -1285,7 +1352,7 @@ with runtime_settings as materialized (
   select set_config('TimeZone', 'UTC', true)
 ),
 required_tables(schema_name, table_name, rls_enabled, service_privileges) as (
-  values
+  select * from (values
     ('public', 'studio_live_billing_authorizations', true, 'SELECT'),
     ('public', 'stripe_live_billing_reconciliation_checkpoints', true, 'SELECT'),
     ('public', 'stripe_connect_account_dispositions', true, 'SELECT'),
@@ -1299,6 +1366,16 @@ required_tables(schema_name, table_name, rls_enabled, service_privileges) as (
     ('public', 'operational_alert_heartbeats', true, 'INSERT,SELECT,UPDATE'),
     ('private', 'stripe_connect_account_identity_guards', false, ''),
     ('private', 'koaryu_release_v26_expectations', true, '')
+  ) as base(schema_name, table_name, rls_enabled, service_privileges)
+  union all
+  select * from (values
+    ('private', 'koaryu_release_v27_expectations', true, ''),
+    ('private', 'koaryu_release_v28_expectations', true, ''),
+    ('private', 'koaryu_release_v29_expectations', true, ''),
+    ('private', 'koaryu_release_v30_expectations', true, ''),
+    ('private', 'koaryu_release_v31_expectations', true, '')
+  ) as final_expectations(schema_name, table_name, rls_enabled, service_privileges)
+   where to_regprocedure('public.koaryu_release_schema_preflight_v12()') is not null
 ),
 acl_scope_tables(schema_name, table_name) as (
   select schema_name, table_name from required_tables
@@ -1308,7 +1385,7 @@ acl_scope_tables(schema_name, table_name) as (
     ('public', 'stripe_events')
   union all
   select 'public', 'billing_invoice_mutation_owners'
-   where to_regprocedure('public.koaryu_release_schema_preflight_v11()') is not null
+   where to_regprocedure('public.koaryu_release_schema_preflight_v12()') is not null
 ),
 scoped_definition_tables(schema_name, table_name) as (
   select schema_name, table_name from required_tables
@@ -1316,7 +1393,7 @@ scoped_definition_tables(schema_name, table_name) as (
   select 'public', 'studio_payment_accounts'
   union all
   select 'public', 'billing_invoice_mutation_owners'
-   where to_regprocedure('public.koaryu_release_schema_preflight_v11()') is not null
+   where to_regprocedure('public.koaryu_release_schema_preflight_v12()') is not null
 ),
 table_actual as (
   select
@@ -1529,6 +1606,8 @@ base_required_functions(signature, search_path_config, security_definer, service
     ('private.koaryu_release_student_rank_writer_manifest_v13()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_critical_surface_manifest_v15()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_critical_surface_manifest_v16()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_schedule_window_manifest_v1()', 'search_path=pg_catalog', false, false),
+    ('public.schedule_window_read(uuid, date, date, text)', 'search_path=pg_catalog', false, true),
     ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
     ('public.write_student_profile_v2_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public', false, true),
     ('public.reserve_core_checkout_v2_atomic(uuid)', 'search_path=pg_catalog, public', false, true),
@@ -1562,7 +1641,7 @@ required_functions(signature, search_path_config, security_definer, service_exec
   union all
   select 'public.set_studio_live_billing_authorization_operations_v1(uuid, text, boolean, timestamp with time zone, text, uuid, text[], text, text)',
          'search_path=""', true, true
-   where to_regprocedure('public.koaryu_release_schema_preflight_v10()') is not null
+   where to_regprocedure('public.koaryu_release_schema_preflight_v11()') is not null
   union all
   select * from (values
     ('private.billing_operation_resource_version_v31(text, billing_payments, billing_payers, text, integer)', 'search_path=pg_catalog', false, false),
@@ -1575,11 +1654,20 @@ required_functions(signature, search_path_config, security_definer, service_exec
     ('public.claim_billing_invoice_closeout_operation_v30(uuid, uuid, text, text, uuid, uuid, text, text, text, integer, uuid, integer)', 'search_path=""', true, false),
     ('public.claim_billing_provider_operation_resource_v1(uuid, uuid, text, text, uuid, uuid, text, text, text, integer, uuid, integer)', 'search_path=""', true, true),
     ('public.claim_billing_provider_operation_resource_v30(uuid, uuid, text, text, uuid, uuid, text, text, text, integer, uuid, integer)', 'search_path=""', true, false),
+    ('public.claim_due_billing_enrollment_transitions_v1(uuid, integer, integer)', 'search_path=""', true, true),
+    ('public.disable_billing_payer_autopay_v1(uuid, uuid, uuid, timestamp with time zone, text)', 'search_path=""', true, true),
+    ('public.finalize_billing_payer_setup_projection_v1(uuid, uuid, uuid, uuid, uuid, text, text, text, integer)', 'search_path=""', true, true),
     ('private.koaryu_release_resource_ownership_manifest_v31()', 'search_path=pg_catalog', false, false),
     ('private.koaryu_release_operational_contract_v31()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
-    ('private.koaryu_release_operational_manifest_v12()', 'search_path=pg_catalog,TimeZone=UTC', false, false)
+    ('private.koaryu_release_operational_manifest_v12()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
+    ('public.koaryu_release_schema_preflight_v7()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v8()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v9()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v10()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v11()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v12()', 'search_path=pg_catalog', true, true)
   ) as v31(signature, search_path_config, security_definer, service_execute)
-   where to_regprocedure('public.koaryu_release_schema_preflight_v11()') is not null
+   where to_regprocedure('public.koaryu_release_schema_preflight_v12()') is not null
 ),
 required_writer_results(signature, expected_result_contract) as (
   values
@@ -1662,7 +1750,7 @@ required_triggers(table_name, trigger_name, function_schema, function_name, trig
     ('billing_invoice_mutation_owners', 'preserve_billing_invoice_mutation_owner_v31', 'private', 'preserve_billing_invoice_mutation_owner_v31', 19),
     ('billing_provider_operation_resources', 'maintain_billing_invoice_mutation_owner_v31', 'private', 'maintain_billing_invoice_mutation_owner_v31', 21)
   ) as v31(table_name, trigger_name, function_schema, function_name, trigger_type)
-   where to_regprocedure('public.koaryu_release_schema_preflight_v11()') is not null
+   where to_regprocedure('public.koaryu_release_schema_preflight_v12()') is not null
 ),
 trigger_actual as (
   select relation.relname as table_name, trigger.tgname as trigger_name,
@@ -1817,7 +1905,7 @@ required_columns(table_name, column_name, data_type, nullable, identity_column) 
   select * from base_required_columns
   union all
   select 'studio_live_billing_authorizations', 'allowed_operations', 'ARRAY', false, false
-   where to_regprocedure('public.koaryu_release_schema_preflight_v10()') is not null
+   where to_regprocedure('public.koaryu_release_schema_preflight_v11()') is not null
 ),
 column_compared as (
   select required.*,
@@ -1862,7 +1950,7 @@ required_constraints(table_name, constraint_identity, constraint_type) as (
   union all
   select 'studio_live_billing_authorizations',
          'studio_live_billing_authorizations_operation_set_exact', 'c'
-   where to_regprocedure('public.koaryu_release_schema_preflight_v10()') is not null
+   where to_regprocedure('public.koaryu_release_schema_preflight_v11()') is not null
 ),
 constraint_actual as (
   select relation.relname as table_name,
@@ -2008,6 +2096,652 @@ function assertPlainText(name, value) {
   return value;
 }
 
+export const SCHEDULE_V25_CATALOG_STATE_SQL = `
+with runtime_settings as materialized (
+  select set_config('TimeZone', 'UTC', true)
+),
+required_tables(schema_name, table_name, rls_enabled, service_privileges) as (
+  values
+    ('public', 'studio_live_billing_authorizations', true, 'SELECT'),
+    ('public', 'stripe_live_billing_reconciliation_checkpoints', true, 'SELECT'),
+    ('public', 'stripe_connect_account_dispositions', true, 'SELECT'),
+    ('public', 'stripe_live_billing_reconciliation_account_evidence', true, 'SELECT'),
+    ('public', 'stripe_connect_onboarding_bootstraps', true, ''),
+    ('public', 'operational_alert_episodes', true, 'INSERT,SELECT,UPDATE'),
+    ('public', 'operational_alert_outbox', true, 'INSERT,SELECT,UPDATE'),
+    ('public', 'operational_alert_delivery_attempts', true, 'INSERT,SELECT'),
+    ('public', 'operational_alert_delivery_outcomes', true, 'INSERT,SELECT'),
+    ('public', 'operational_alert_audit_events', true, 'INSERT,SELECT'),
+    ('public', 'operational_alert_heartbeats', true, 'INSERT,SELECT,UPDATE'),
+    ('private', 'stripe_connect_account_identity_guards', false, '')
+),
+acl_scope_tables(schema_name, table_name) as (
+  select schema_name, table_name from required_tables
+  union all
+  values
+    ('public', 'studio_payment_accounts'),
+    ('public', 'stripe_events')
+),
+scoped_definition_tables(schema_name, table_name) as (
+  select schema_name, table_name from required_tables
+  union all
+  select 'public', 'studio_payment_accounts'
+),
+table_actual as (
+  select
+    namespace.nspname as schema_name,
+    relation.relname as table_name,
+    owner.rolname as owner_name,
+    relation.relrowsecurity,
+    coalesce((
+      select string_agg(
+               coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+               coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+               ',' order by coalesce(grantor.rolname, 'PUBLIC') collate "C", coalesce(grantee.rolname, 'PUBLIC') collate "C", acl.privilege_type collate "C", acl.is_grantable
+             )
+        from aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner))) acl
+        left join pg_roles grantor on grantor.oid = acl.grantor
+        left join pg_roles grantee on grantee.oid = acl.grantee
+    ), '') as acl_state,
+    exists (
+      select 1
+        from aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner))) acl
+       where acl.grantee = 0
+    ) as public_access,
+    has_table_privilege('anon', relation.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') as anon_access,
+    has_table_privilege('authenticated', relation.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') as authenticated_access,
+    concat_ws(',',
+      case when has_table_privilege('service_role', relation.oid, 'INSERT') then 'INSERT' end,
+      case when has_table_privilege('service_role', relation.oid, 'SELECT') then 'SELECT' end,
+      case when has_table_privilege('service_role', relation.oid, 'UPDATE') then 'UPDATE' end,
+      case when has_table_privilege('service_role', relation.oid, 'DELETE') then 'DELETE' end,
+      case when has_table_privilege('service_role', relation.oid, 'TRUNCATE') then 'TRUNCATE' end,
+      case when has_table_privilege('service_role', relation.oid, 'REFERENCES') then 'REFERENCES' end,
+      case when has_table_privilege('service_role', relation.oid, 'TRIGGER') then 'TRIGGER' end
+    ) as service_privileges
+  from pg_class relation
+  join pg_namespace namespace on namespace.oid = relation.relnamespace
+  join pg_roles owner on owner.oid = relation.relowner
+  join required_tables required
+    on required.schema_name = namespace.nspname and required.table_name = relation.relname
+  where relation.relkind = 'r'
+),
+table_compared as (
+  select required.*, actual.owner_name, actual.relrowsecurity,
+         actual.public_access, actual.anon_access, actual.authenticated_access,
+         actual.service_privileges as actual_service_privileges,
+         actual.acl_state
+    from required_tables required
+    left join table_actual actual using (schema_name, table_name)
+),
+table_acl_definitions as (
+  select namespace.nspname as schema_name, relation.relname as table_name,
+         owner.rolname as owner_name,
+         coalesce((
+           select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC') collate "C", coalesce(grantee.rolname, 'PUBLIC') collate "C", acl.privilege_type collate "C", acl.is_grantable
+                  )
+             from aclexplode(coalesce(relation.relacl, acldefault('r', relation.relowner))) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state
+    from pg_class relation
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join pg_roles owner on owner.oid = relation.relowner
+    join acl_scope_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
+   where relation.relkind = 'r'
+),
+column_acl_definitions as (
+  select namespace.nspname as schema_name,
+         relation.relname as table_name,
+         attribute.attnum,
+         attribute.attname as column_name,
+         coalesce((
+           select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' ||
+                    acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC') collate "C",
+                                 coalesce(grantee.rolname, 'PUBLIC') collate "C",
+                                 acl.privilege_type collate "C", acl.is_grantable
+                  )
+             from aclexplode(attribute.attacl) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state
+    from pg_class relation
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join acl_scope_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
+    join pg_attribute attribute
+      on attribute.attrelid = relation.oid
+     and attribute.attnum > 0
+     and not attribute.attisdropped
+   where relation.relkind = 'r'
+),
+required_policies(table_name, policy_name, permissive, command_name, role_names, predicate_kind) as (
+  values
+    ('studio_live_billing_authorizations', 'studio_live_billing_authorizations_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+    ('studio_live_billing_authorizations', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_billing_reconciliation_checkpoints_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('stripe_connect_account_dispositions', 'stripe_connect_account_dispositions_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+    ('stripe_connect_account_dispositions', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'stripe_live_billing_account_evidence_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_no_client_access', false, '*', 'anon,authenticated', 'deny_all'),
+    ('stripe_connect_onboarding_bootstraps', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('operational_alert_episodes', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('operational_alert_outbox', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('operational_alert_delivery_attempts', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('operational_alert_delivery_outcomes', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('operational_alert_audit_events', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard'),
+    ('operational_alert_heartbeats', 'reject_ambiguous_staff_membership_access', false, '*', 'authenticated', 'membership_guard')
+),
+policy_actual as (
+  select relation.relname as table_name, policy.polname as policy_name,
+         policy.polpermissive as permissive, policy.polcmd::text as command_name,
+         (select string_agg(role.rolname, ',' order by role.rolname collate "C")
+            from unnest(policy.polroles) role_oid
+            join pg_roles role on role.oid = role_oid) as role_names,
+         case
+           when regexp_replace(pg_get_expr(policy.polqual, policy.polrelid), '[[:space:]()]', '', 'g') = 'false'
+            and regexp_replace(pg_get_expr(policy.polwithcheck, policy.polrelid), '[[:space:]()]', '', 'g') = 'false'
+             then 'deny_all'
+           when regexp_replace(
+                  regexp_replace(pg_get_expr(policy.polqual, policy.polrelid), '[[:space:]()]', '', 'g'),
+                  'AShas_unambiguous_studio_membership$', ''
+                ) = 'SELECTprivate.has_unambiguous_studio_membership'
+            and regexp_replace(
+                  regexp_replace(pg_get_expr(policy.polwithcheck, policy.polrelid), '[[:space:]()]', '', 'g'),
+                  'AShas_unambiguous_studio_membership$', ''
+                ) = 'SELECTprivate.has_unambiguous_studio_membership'
+             then 'membership_guard'
+           else 'unexpected'
+         end as predicate_kind
+    from pg_policy policy
+    join pg_class relation on relation.oid = policy.polrelid
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join required_tables covered
+      on covered.schema_name = 'public' and covered.table_name = relation.relname
+   where namespace.nspname = 'public'
+),
+policy_compared as (
+  select coalesce(required.table_name, actual.table_name) as table_name,
+         coalesce(required.policy_name, actual.policy_name) as policy_name,
+         required.permissive, required.command_name, required.role_names,
+         required.predicate_kind,
+         actual.permissive as actual_permissive,
+         actual.command_name as actual_command_name,
+         actual.role_names as actual_role_names,
+         actual.predicate_kind as actual_predicate_kind,
+         required.table_name is not null as expected_policy,
+         actual.table_name is not null as actual_policy
+    from required_policies required
+    full join policy_actual actual using (table_name, policy_name)
+),
+required_functions(signature, search_path_config, security_definer, service_execute) as (
+  values
+    ('public.preserve_studio_comp_provenance()', 'search_path=pg_catalog', false, false),
+    ('public.set_studio_comp_atomic(uuid, boolean, text, uuid, text, boolean)', 'search_path=public, pg_temp', false, true),
+    ('public.clear_studio_comp_for_billing_event(uuid, bigint)', 'search_path=public, pg_temp', false, true),
+    ('public.record_stripe_live_billing_reconciliation_checkpoint(text, integer, integer, integer, integer, integer, integer, timestamp with time zone, timestamp with time zone, integer, integer, boolean, boolean, timestamp with time zone, text, text, uuid, text)', 'search_path=public, pg_temp', true, false),
+    ('public.record_stripe_live_billing_reconciliation_checkpoint_v2(jsonb, timestamp with time zone, text, text, uuid, text)', 'search_path=""', true, true),
+    ('public.authorize_studio_live_billing_mutation_atomic(uuid, text, text, text, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_account_create(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, false),
+    ('public.bind_connect_onboarding_bootstrap_account(uuid, text, integer, text, text, text)', 'search_path=""', true, false),
+    ('public.authorize_connect_onboarding_bootstrap_initial_link(uuid, text, integer, text, text, text, text, text)', 'search_path=""', true, false),
+    ('private.connect_onboarding_bootstrap_link_checkpoint(uuid, text)', 'search_path=""', true, false),
+    ('public.preflight_connect_onboarding_bootstrap_begin(uuid, text)', 'search_path=""', true, true),
+    ('public.preflight_connect_onboarding_bootstrap_resume(uuid, text)', 'search_path=""', true, true),
+    ('public.prepare_connect_onboarding_bootstrap_atomic(uuid, text, integer, jsonb, text, text, text, text)', 'search_path=""', true, true),
+    ('public.load_connect_onboarding_bootstrap_recovery_context(uuid, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_account_create_v2(uuid, uuid, text, integer, text, text)', 'search_path=""', true, true),
+    ('public.bind_connect_onboarding_bootstrap_account_v2(uuid, uuid, text, integer, text, text)', 'search_path=""', true, true),
+    ('public.authorize_connect_onboarding_bootstrap_initial_link_v2(uuid, uuid, text, integer, text, text, text, text)', 'search_path=""', true, true),
+    ('public.record_connect_onboarding_bootstrap_initial_link_response(uuid, uuid, text, integer, text, text, text, text, text, text)', 'search_path=""', true, true),
+    ('public.acknowledge_connect_onboarding_bootstrap_initial_link_delivery(uuid, text, text)', 'search_path=""', true, true),
+    ('private.live_billing_event_is_in_scope(text, text)', 'search_path=""', true, false),
+    ('private.enforce_live_billing_checkpoint_processed_events()', 'search_path=""', true, false),
+    ('private.current_connect_account_generation(jsonb)', 'search_path=""', false, true),
+    ('private.bind_live_billing_authorization_checkpoint()', 'search_path=""', true, false),
+    ('public.set_studio_live_billing_authorization_atomic(uuid, text, boolean, timestamp with time zone, text, uuid, text, text)', 'search_path=public, pg_temp', true, true),
+    ('public.set_stripe_connect_account_exclusion_atomic(text, boolean, text, uuid, text)', 'search_path=public, pg_temp', true, true),
+    ('public.finish_stripe_event_processing_v2(uuid, text, text, text, text)', 'search_path=public, pg_temp', false, true),
+    ('public.prevent_operational_alert_append_only_mutation()', 'search_path=""', false, false),
+    ('public.enforce_operational_alert_sent_receipt()', 'search_path=""', false, false),
+    ('public.operational_alert_metric_counts()', 'search_path=public, pg_temp', false, true),
+    ('public.evaluate_operational_alert(text, text, bigint, integer, integer, text, text, text, text)', 'search_path=public, pg_temp', false, false),
+    ('public.evaluate_operational_alert(text, text, bigint, integer, integer, text, text, integer, text, text, text)', 'search_path=public, pg_temp', false, true),
+    ('public.acknowledge_operational_alert(text, uuid, text, text)', 'search_path=public, pg_temp', false, true),
+    ('public.claim_operational_alert_delivery(text, text, uuid, integer)', 'search_path=public, pg_temp', false, true),
+    ('public.complete_operational_alert_delivery(uuid, text, text)', 'search_path=public, pg_temp', false, true),
+    ('public.fail_operational_alert_delivery(uuid, text, text, integer)', 'search_path=public, pg_temp', false, true),
+    ('public.record_operational_alert_heartbeat(text, text, text)', 'search_path=public, pg_temp', false, true),
+    ('public.operational_alert_heartbeats(text)', 'search_path=public, pg_temp', false, true),
+    ('public.koaryu_release_schema_preflight()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v2()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v3()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v5()', 'search_path=pg_catalog', true, true),
+    ('public.koaryu_release_schema_preflight_v6()', 'search_path=pg_catalog', true, false),
+    ('private.koaryu_release_operational_manifest_v2()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v2_base()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v4()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v5()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v6()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_operational_manifest_v7()', 'search_path=pg_catalog,TimeZone=UTC', false, false),
+    ('private.koaryu_release_starting_belt_manifest_v9()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_student_rank_writer_manifest_v11()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_student_rank_writer_manifest_v13()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_critical_surface_manifest_v15()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_critical_surface_manifest_v16()', 'search_path=pg_catalog', false, false),
+    ('private.koaryu_release_schedule_window_manifest_v1()', 'search_path=pg_catalog', false, false),
+    ('public.schedule_window_read(uuid, date, date, text)', 'search_path=pg_catalog', false, true),
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public, private', false, true),
+    ('public.write_student_profile_v2_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=pg_catalog, public', false, true),
+    ('public.reserve_core_checkout_v2_atomic(uuid)', 'search_path=pg_catalog, public', false, true),
+    ('public.set_studio_comp_v2_atomic(uuid, boolean, text, uuid, text, boolean)', 'search_path=pg_catalog, public', false, true),
+    ('public.sync_belt_ladder_ranks_v2(uuid, uuid, uuid, uuid, text, jsonb)', 'search_path=pg_catalog, public', false, true),
+    ('public.record_core_checkout_compensation_required_atomic(uuid, text, text, bigint, text, boolean)', 'search_path=pg_catalog, public', false, true),
+    ('private.record_student_rank_transition_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, text, uuid)', 'search_path=public, pg_temp', false, true),
+    ('public.record_student_promotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_demotion(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_promotion_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, uuid)', 'search_path=pg_catalog', false, true),
+    ('public.record_student_demotion_v2(uuid, uuid, uuid, uuid, uuid, uuid, uuid, text, uuid)', 'search_path=pg_catalog', false, true),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'search_path=public, pg_temp', false, true),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=pg_catalog, public, private', false, true),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'search_path=public, pg_temp', false, true),
+    ('private.sync_connect_identity_mapping_guard()', 'search_path=pg_catalog', true, false),
+    ('private.sync_connect_identity_exclusion_guard()', 'search_path=pg_catalog', true, false)
+),
+required_writer_results(signature, expected_result_contract) as (
+  values
+    ('public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)', 'students'),
+    ('public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)'),
+    ('private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])', 'TABLE(student_id uuid, guardian_imported boolean)')
+),
+function_actual as (
+  select format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes)) as signature,
+         owner.rolname as owner_name, language.lanname as language_name,
+         function.prosecdef as security_definer,
+         coalesce(array_to_string(function.proconfig, ','), '') as search_path_config,
+         replace(pg_get_function_result(function.oid), 'public.', '') as result_contract,
+         exists (select 1 from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl where acl.grantee = 0 and acl.privilege_type = 'EXECUTE') as public_execute,
+         has_function_privilege('anon', function.oid, 'EXECUTE') as anon_execute,
+         has_function_privilege('authenticated', function.oid, 'EXECUTE') as authenticated_execute,
+         has_function_privilege('service_role', function.oid, 'EXECUTE') as service_execute,
+         encode(extensions.digest(convert_to(function.prosrc, 'UTF8'), 'sha256'), 'hex') as body_sha256,
+         coalesce((
+           select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC') collate "C", coalesce(grantee.rolname, 'PUBLIC') collate "C", acl.privilege_type collate "C", acl.is_grantable
+                  )
+             from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state,
+         exists (
+           select 1
+             from aclexplode(coalesce(function.proacl, acldefault('f', function.proowner))) acl
+             left join pg_roles grantee on grantee.oid = acl.grantee
+            where acl.privilege_type = 'EXECUTE'
+              and acl.grantee <> function.proowner
+              and not (
+                grantee.rolname = 'service_role'
+                and required.service_execute
+                and not acl.is_grantable
+              )
+         ) as unexpected_execute_grant
+    from pg_proc function
+    join pg_namespace namespace on namespace.oid = function.pronamespace
+    join pg_roles owner on owner.oid = function.proowner
+    join pg_language language on language.oid = function.prolang
+    join required_functions required
+      on required.signature = format('%I.%I(%s)', namespace.nspname, function.proname, oidvectortypes(function.proargtypes))
+),
+function_compared as (
+  select required.*, actual.owner_name, actual.language_name,
+         actual.security_definer as actual_security_definer,
+         actual.search_path_config as actual_search_path_config,
+         actual.public_execute, actual.anon_execute, actual.authenticated_execute,
+         actual.service_execute as actual_service_execute,
+         actual.result_contract, writer_result.expected_result_contract,
+         actual.body_sha256, actual.acl_state, actual.unexpected_execute_grant
+    from required_functions required
+    left join function_actual actual using (signature)
+    left join required_writer_results writer_result using (signature)
+),
+required_triggers(table_name, trigger_name, function_schema, function_name, trigger_type) as (
+  values
+    ('studio_subscriptions', 'preserve_studio_comp_provenance_on_metadata_update', 'public', 'preserve_studio_comp_provenance', 19),
+    ('studio_live_billing_authorizations', 'set_studio_live_billing_authorizations_updated_at', 'public', 'update_updated_at_column', 19),
+    ('stripe_connect_account_dispositions', 'set_stripe_connect_account_dispositions_updated_at', 'public', 'update_updated_at_column', 19),
+    ('studio_live_billing_authorizations', 'bind_live_billing_authorization_checkpoint', 'private', 'bind_live_billing_authorization_checkpoint', 23),
+    ('stripe_connect_onboarding_bootstraps', 'set_stripe_connect_onboarding_bootstraps_updated_at', 'public', 'update_updated_at_column', 19),
+    ('stripe_live_billing_reconciliation_checkpoints', 'enforce_live_billing_checkpoint_processed_events', 'private', 'enforce_live_billing_checkpoint_processed_events', 7),
+    ('operational_alert_delivery_attempts', 'prevent_operational_alert_attempt_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
+    ('operational_alert_delivery_outcomes', 'prevent_operational_alert_outcome_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
+    ('operational_alert_audit_events', 'prevent_operational_alert_audit_mutation', 'public', 'prevent_operational_alert_append_only_mutation', 27),
+    ('operational_alert_outbox', 'enforce_operational_alert_sent_receipt', 'public', 'enforce_operational_alert_sent_receipt', 23),
+    ('studio_payment_accounts', 'sync_connect_identity_mapping_guard', 'private', 'sync_connect_identity_mapping_guard', 29),
+    ('stripe_connect_account_dispositions', 'sync_connect_identity_exclusion_guard', 'private', 'sync_connect_identity_exclusion_guard', 29)
+),
+trigger_actual as (
+  select relation.relname as table_name, trigger.tgname as trigger_name,
+         function_namespace.nspname as function_schema, function.proname as function_name,
+         trigger.tgtype::integer as trigger_type, trigger.tgenabled, trigger.tgisinternal,
+         encode(extensions.digest(convert_to(pg_get_triggerdef(trigger.oid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
+    from pg_trigger trigger
+    join pg_class relation on relation.oid = trigger.tgrelid
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join pg_proc function on function.oid = trigger.tgfoid
+    join pg_namespace function_namespace on function_namespace.oid = function.pronamespace
+    join required_triggers required
+      on required.table_name = relation.relname and required.trigger_name = trigger.tgname
+    cross join runtime_settings
+   where namespace.nspname = 'public'
+),
+trigger_compared as (
+  select required.*, actual.function_schema as actual_function_schema,
+         actual.function_name as actual_function_name,
+         actual.trigger_type as actual_trigger_type,
+         actual.tgenabled, actual.tgisinternal, actual.definition_sha256
+    from required_triggers required
+    left join trigger_actual actual using (table_name, trigger_name)
+),
+required_indexes(index_name, table_name, unique_index, partial_index) as (
+  values
+    ('idx_studio_live_billing_authorizations_enabled', 'studio_live_billing_authorizations', false, true),
+    ('idx_stripe_live_billing_reconciliation_checkpoints_latest', 'stripe_live_billing_reconciliation_checkpoints', false, false),
+    ('idx_stripe_events_error_reference', 'stripe_events', true, true),
+    ('idx_stripe_events_live_billing_ingest_sequence', 'stripe_events', true, false),
+    ('idx_stripe_connect_onboarding_bootstraps_generation_once', 'stripe_connect_onboarding_bootstraps', true, false),
+    ('idx_stripe_connect_onboarding_bootstraps_delivery_receipt', 'stripe_connect_onboarding_bootstraps', true, true),
+    ('operational_alert_episodes_one_unresolved', 'operational_alert_episodes', true, true),
+    ('operational_alert_episodes_recent', 'operational_alert_episodes', false, false),
+    ('operational_alert_outbox_claim', 'operational_alert_outbox', false, true),
+    ('operational_alert_delivery_attempts_delivery', 'operational_alert_delivery_attempts', false, false),
+    ('operational_alert_audit_events_episode', 'operational_alert_audit_events', false, false),
+    ('promotions_studio_operation_once', 'promotions', true, true)
+),
+index_actual as (
+  select index_relation.relname as index_name, table_relation.relname as table_name,
+         index.indisunique as unique_index, index.indpred is not null as partial_index,
+         index.indisvalid, index.indisready,
+         encode(extensions.digest(convert_to(pg_get_indexdef(index.indexrelid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
+    from pg_index index
+    join pg_class index_relation on index_relation.oid = index.indexrelid
+    join pg_class table_relation on table_relation.oid = index.indrelid
+    join pg_namespace namespace on namespace.oid = table_relation.relnamespace
+    join required_indexes required on required.index_name = index_relation.relname
+    cross join runtime_settings
+   where namespace.nspname = 'public'
+),
+index_compared as (
+  select required.*, actual.table_name as actual_table_name,
+         actual.unique_index as actual_unique_index,
+         actual.partial_index as actual_partial_index,
+         actual.indisvalid, actual.indisready, actual.definition_sha256
+    from required_indexes required
+    left join index_actual actual using (index_name)
+),
+required_sequences(table_name, column_name, service_usage, service_select, service_update) as (
+  values
+    ('stripe_live_billing_reconciliation_checkpoints', 'checkpoint_sequence', true, true, false),
+    ('stripe_events', 'live_billing_ingest_sequence', true, true, false),
+    ('operational_alert_audit_events', 'id', true, true, false)
+),
+sequence_actual as (
+  select table_relation.relname as table_name, attribute.attname as column_name,
+         owner.rolname as owner_name,
+         coalesce((
+           select string_agg(
+                    coalesce(grantor.rolname, 'PUBLIC') || '>' ||
+                    coalesce(grantee.rolname, 'PUBLIC') || ':' || acl.privilege_type || ':' || acl.is_grantable::text,
+                    ',' order by coalesce(grantor.rolname, 'PUBLIC') collate "C", coalesce(grantee.rolname, 'PUBLIC') collate "C", acl.privilege_type collate "C", acl.is_grantable
+                  )
+             from aclexplode(coalesce(sequence.relacl, acldefault('S', sequence.relowner))) acl
+             left join pg_roles grantor on grantor.oid = acl.grantor
+             left join pg_roles grantee on grantee.oid = acl.grantee
+         ), '') as acl_state,
+         exists (select 1 from aclexplode(coalesce(sequence.relacl, acldefault('S', sequence.relowner))) acl where acl.grantee = 0) as public_access,
+         has_sequence_privilege('anon', sequence.oid, 'USAGE,SELECT,UPDATE') as anon_access,
+         has_sequence_privilege('authenticated', sequence.oid, 'USAGE,SELECT,UPDATE') as authenticated_access,
+         has_sequence_privilege('service_role', sequence.oid, 'USAGE') as service_usage,
+         has_sequence_privilege('service_role', sequence.oid, 'SELECT') as service_select,
+         has_sequence_privilege('service_role', sequence.oid, 'UPDATE') as service_update
+    from pg_class sequence
+    join pg_depend dependency on dependency.objid = sequence.oid and dependency.deptype in ('a', 'i')
+    join pg_class table_relation on table_relation.oid = dependency.refobjid
+    join pg_attribute attribute on attribute.attrelid = table_relation.oid and attribute.attnum = dependency.refobjsubid
+    join pg_namespace namespace on namespace.oid = table_relation.relnamespace
+    join pg_roles owner on owner.oid = sequence.relowner
+    join required_sequences required on required.table_name = table_relation.relname and required.column_name = attribute.attname
+   where namespace.nspname = 'public' and sequence.relkind = 'S'
+),
+sequence_compared as (
+  select required.*, actual.owner_name, actual.public_access,
+         actual.anon_access, actual.authenticated_access,
+         actual.service_usage as actual_service_usage,
+         actual.service_select as actual_service_select,
+         actual.service_update as actual_service_update,
+         actual.acl_state
+    from required_sequences required
+    left join sequence_actual actual using (table_name, column_name)
+),
+required_columns(table_name, column_name, data_type, nullable, identity_column) as (
+  values
+    ('stripe_events', 'error_reference', 'text', true, false),
+    ('stripe_events', 'live_billing_ingest_sequence', 'bigint', false, true),
+    ('stripe_live_billing_reconciliation_checkpoints', 'evidence_source', 'text', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_url', 'text', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_sha', 'text', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'deployment_ready_verified_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'event_window_started_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'event_window_ended_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'local_event_ingest_watermark', 'bigint', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'bounded_provider_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'bounded_local_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'provider_only_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'local_only_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'platform_provider_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'platform_local_event_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'platform_delivery_verified_at', 'timestamp with time zone', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'unexpected_enabled_endpoint_count', 'integer', true, false),
+    ('stripe_live_billing_reconciliation_checkpoints', 'account_evidence_count', 'integer', true, false),
+    ('studio_live_billing_authorizations', 'reconciliation_checkpoint_id', 'uuid', true, false),
+    ('studio_live_billing_authorizations', 'local_event_ingest_watermark', 'bigint', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'bootstrap_token_sha256', 'text', false, false),
+    ('stripe_connect_onboarding_bootstraps', 'connect_account_generation', 'integer', false, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_payload_sha256', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connected_account_id', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'expires_at', 'timestamp with time zone', false, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_claimed_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'recovery_context', 'jsonb', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'recovery_expires_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_response_sha256', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_response_recorded_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_delivery_receipt_sha256', 'text', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_delivery_receipt_expires_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_delivered_at', 'timestamp with time zone', true, false),
+    ('stripe_connect_onboarding_bootstraps', 'initial_link_support_required_at', 'timestamp with time zone', true, false),
+    ('operational_alert_episodes', 'backup_destination_id', 'text', false, false),
+    ('operational_alert_episodes', 'escalation_after_minutes', 'integer', false, false),
+    ('operational_alert_episodes', 'acknowledged_at', 'timestamp with time zone', true, false),
+    ('operational_alert_episodes', 'acknowledged_by_role', 'text', true, false),
+    ('operational_alert_episodes', 'acknowledged_actor_ref', 'text', true, false),
+    ('operational_alert_outbox', 'event_kind', 'text', false, false),
+    ('operational_alert_outbox', 'destination_role', 'text', false, false),
+    ('promotions', 'operation_id', 'uuid', true, false),
+    ('promotions', 'transition_kind', 'text', true, false)
+),
+column_compared as (
+  select required.*,
+         actual.data_type as actual_data_type,
+         actual.is_nullable = 'YES' as actual_nullable,
+         actual.is_identity = 'YES' as actual_identity_column
+    from required_columns required
+    left join information_schema.columns actual
+      on actual.table_schema = 'public'
+     and actual.table_name = required.table_name
+     and actual.column_name = required.column_name
+),
+required_constraints(table_name, constraint_identity, constraint_type) as (
+  values
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_source_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_ready_url_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_ready_sha_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_window_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_watermark_contract', 'c'),
+    ('stripe_live_billing_reconciliation_checkpoints', 'stripe_live_checkpoint_gap_contract', 'c'),
+    ('studio_live_billing_authorizations', 'studio_live_billing_checkpoint_binding', 'c'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'primary:checkpoint_id,stripe_connected_account_id', 'p'),
+    ('stripe_live_billing_reconciliation_account_evidence', 'unique:checkpoint_id,studio_id', 'u'),
+    ('operational_alert_episodes', 'operational_alert_episode_ack_complete', 'c'),
+    ('promotions', 'promotions_transition_kind_check', 'c'),
+    ('operational_alert_outbox', 'operational_alert_outbox_episode_event_role_key', 'u'),
+    ('operational_alert_audit_events', 'operational_alert_audit_events_event_type_check', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_pair', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_context_object', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_recovery_expiry', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_response_hash', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_receipt_hash', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_response_pair', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_receipt_pair', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_delivery_order', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_receipt_expiry', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_delivered_state', 'c'),
+    ('stripe_connect_onboarding_bootstraps', 'stripe_connect_onboarding_bootstraps_terminal_state', 'c')
+),
+constraint_actual as (
+  select relation.relname as table_name,
+         case
+           when relation.relname = 'stripe_live_billing_reconciliation_account_evidence'
+            and constraint_state.contype = 'p'
+             then 'primary:' || columns.column_names
+           when relation.relname = 'stripe_live_billing_reconciliation_account_evidence'
+            and constraint_state.contype = 'u'
+             then 'unique:' || columns.column_names
+           else constraint_state.conname
+         end as constraint_identity,
+         constraint_state.contype::text as constraint_type,
+         constraint_state.convalidated,
+         encode(extensions.digest(convert_to(pg_get_constraintdef(constraint_state.oid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
+    from pg_constraint constraint_state
+    join pg_class relation on relation.oid = constraint_state.conrelid
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    left join lateral (
+      select string_agg(attribute.attname, ',' order by key_position.ordinality) as column_names
+        from unnest(constraint_state.conkey) with ordinality key_position(attnum, ordinality)
+        join pg_attribute attribute
+          on attribute.attrelid = constraint_state.conrelid
+         and attribute.attnum = key_position.attnum
+    ) columns on true
+    cross join runtime_settings
+   where namespace.nspname = 'public'
+),
+constraint_compared as (
+  select required.*,
+         actual.constraint_type as actual_constraint_type,
+         actual.convalidated, actual.definition_sha256
+    from required_constraints required
+    left join constraint_actual actual using (table_name, constraint_identity)
+),
+scoped_index_definitions as (
+  select namespace.nspname as schema_name, table_relation.relname as table_name,
+         index_relation.relname as index_name,
+         encode(extensions.digest(convert_to(pg_get_indexdef(index_state.indexrelid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
+    from pg_index index_state
+    join pg_class index_relation on index_relation.oid = index_state.indexrelid
+    join pg_class table_relation on table_relation.oid = index_state.indrelid
+    join pg_namespace namespace on namespace.oid = table_relation.relnamespace
+    join scoped_definition_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = table_relation.relname
+    cross join runtime_settings
+),
+scoped_constraint_definitions as (
+  select namespace.nspname as schema_name, relation.relname as table_name,
+         constraint_state.conname as constraint_name,
+         constraint_state.contype::text as constraint_type,
+         constraint_state.convalidated,
+         encode(extensions.digest(convert_to(pg_get_constraintdef(constraint_state.oid), 'UTF8'), 'sha256'), 'hex') as definition_sha256
+    from pg_constraint constraint_state
+    join pg_class relation on relation.oid = constraint_state.conrelid
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    join scoped_definition_tables covered
+      on covered.schema_name = namespace.nspname and covered.table_name = relation.relname
+    cross join runtime_settings
+),
+states as (
+  select 'tables' as category, count(*)::integer as object_count,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || coalesce(owner_name, '') || ':' || coalesce(relrowsecurity::text, '') || ':' || coalesce(actual_service_privileges, '') || ':' || coalesce(acl_state, ''), '|' order by schema_name collate "C", table_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex') as state_digest,
+         count(*) filter (where owner_name is null or owner_name <> 'postgres' or relrowsecurity is distinct from rls_enabled or public_access or anon_access or authenticated_access or actual_service_privileges is distinct from service_privileges)::integer as failures
+    from table_compared
+  union all
+  select 'table_acls', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || owner_name || ':' || acl_state, '|' order by schema_name collate "C", table_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         0::integer
+    from table_acl_definitions
+  union all
+  select 'column_acls', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || attnum::text || ':' || column_name || ':' || acl_state, '|' order by schema_name collate "C", table_name collate "C", attnum), ''), 'UTF8'), 'sha256'), 'hex'),
+         0::integer
+    from column_acl_definitions
+  union all
+  select 'policies', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || policy_name || ':' || coalesce(actual_permissive::text, '') || ':' || coalesce(actual_command_name, '') || ':' || coalesce(actual_role_names, '') || ':' || coalesce(actual_predicate_kind, ''), '|' order by table_name collate "C", policy_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where not expected_policy or not actual_policy or actual_permissive is distinct from permissive or actual_command_name is distinct from command_name or actual_role_names is distinct from role_names or actual_predicate_kind is distinct from predicate_kind)::integer
+    from policy_compared
+  union all
+  select 'functions', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(signature || ':' || coalesce(owner_name, '') || ':' || coalesce(language_name, '') || ':' || coalesce(actual_security_definer::text, '') || ':' || coalesce(actual_search_path_config, '') || ':' || coalesce(actual_service_execute::text, '') || ':' || coalesce(result_contract, '') || ':' || coalesce(body_sha256, '') || ':' || coalesce(acl_state, ''), '|' order by signature collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where owner_name is null or owner_name <> 'postgres' or language_name not in ('sql', 'plpgsql') or actual_security_definer is distinct from security_definer or actual_search_path_config is distinct from search_path_config or public_execute or anon_execute or authenticated_execute or actual_service_execute is distinct from service_execute or unexpected_execute_grant or (expected_result_contract is not null and result_contract is distinct from expected_result_contract))::integer
+    from function_compared
+  union all
+  select 'triggers', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || trigger_name || ':' || coalesce(actual_function_schema, '') || '.' || coalesce(actual_function_name, '') || ':' || coalesce(actual_trigger_type::text, '') || ':' || coalesce(tgenabled::text, '') || ':' || coalesce(definition_sha256, ''), '|' order by table_name collate "C", trigger_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where actual_function_schema is distinct from function_schema or actual_function_name is distinct from function_name or actual_trigger_type is distinct from trigger_type or tgenabled is distinct from 'O' or tgisinternal is distinct from false)::integer
+    from trigger_compared
+  union all
+  select 'indexes', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(index_name || ':' || coalesce(actual_table_name, '') || ':' || coalesce(actual_unique_index::text, '') || ':' || coalesce(actual_partial_index::text, '') || ':' || coalesce(indisvalid::text, '') || ':' || coalesce(indisready::text, '') || ':' || coalesce(definition_sha256, ''), '|' order by index_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where actual_table_name is distinct from table_name or actual_unique_index is distinct from unique_index or actual_partial_index is distinct from partial_index or indisvalid is distinct from true or indisready is distinct from true)::integer
+    from index_compared
+  union all
+  select 'sequences', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || '.' || column_name || ':' || coalesce(owner_name, '') || ':' || coalesce(actual_service_usage::text, '') || ':' || coalesce(actual_service_select::text, '') || ':' || coalesce(actual_service_update::text, '') || ':' || coalesce(acl_state, ''), '|' order by table_name collate "C", column_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where owner_name is null or owner_name <> 'postgres' or public_access or anon_access or authenticated_access or actual_service_usage is distinct from service_usage or actual_service_select is distinct from service_select or actual_service_update is distinct from service_update)::integer
+    from sequence_compared
+  union all
+  select 'columns', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || '.' || column_name || ':' || coalesce(actual_data_type, '') || ':' || coalesce(actual_nullable::text, '') || ':' || coalesce(actual_identity_column::text, ''), '|' order by table_name collate "C", column_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where actual_data_type is distinct from data_type or actual_nullable is distinct from nullable or actual_identity_column is distinct from identity_column)::integer
+    from column_compared
+  union all
+  select 'constraints', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(table_name || ':' || constraint_identity || ':' || coalesce(actual_constraint_type, '') || ':' || coalesce(convalidated::text, '') || ':' || coalesce(definition_sha256, ''), '|' order by table_name collate "C", constraint_identity collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where actual_constraint_type is distinct from constraint_type or convalidated is distinct from true)::integer
+    from constraint_compared
+  union all
+  select 'scoped_indexes', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || index_name || ':' || definition_sha256, '|' order by schema_name collate "C", table_name collate "C", index_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         0::integer
+    from scoped_index_definitions
+  union all
+  select 'scoped_constraints', count(*)::integer,
+         encode(extensions.digest(convert_to(coalesce(string_agg(schema_name || '.' || table_name || ':' || constraint_name || ':' || constraint_type || ':' || convalidated::text || ':' || definition_sha256, '|' order by schema_name collate "C", table_name collate "C", constraint_name collate "C"), ''), 'UTF8'), 'sha256'), 'hex'),
+         count(*) filter (where not convalidated)::integer
+    from scoped_constraint_definitions
+)
+select string_agg(category || '=' || object_count::text || ':' || state_digest || ':' || failures::text, ';' order by category collate "C") as catalog_state
+from states
+`;
+
 export function assertSafeCredentialedTransport(env) {
   const trustOverrideNames = new Set([
     "CURL_CA_BUNDLE",
@@ -2151,6 +2885,11 @@ export function validateApplyAuthorization(config) {
     throw new RolloutError(`--confirm-project must exactly equal the pinned ${config.target} ref.`);
   }
   assertPlainText("--approval-record", config.approvalRecord);
+  if (!/^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/134#issuecomment-[1-9][0-9]*$/.test(config.approvalRecord)) {
+    throw new RolloutError(
+      "--approval-record must be an exact PR #134 GitHub issue-comment URL.",
+    );
+  }
   if (config.target === "staging") {
     if (
       !config.approveStagingApply ||
@@ -2177,6 +2916,50 @@ export function validateApplyAuthorization(config) {
   assertPlainText("--restore-decision-authority", config.restoreDecisionAuthority);
 }
 
+export function buildApplyApprovalRecordBody(packet, target, state) {
+  const projectRef = target === "staging" ? ROLLOUT.stagingRef : ROLLOUT.productionRef;
+  return [
+    "Koaryu guarded database apply approval v1",
+    "approval=approved",
+    `target=${target}`,
+    `project_ref=${projectRef}`,
+    `candidate_sha=${packet.candidateSha}`,
+    `inspection_state=${state}`,
+    `remaining_migration_count=${packet.pendingMigrations.length}`,
+    `remaining_manifest_sha256=${packet.sourceManifestSha256}`,
+    `remaining_migrations=${packet.pendingMigrations.join(",")}`,
+  ].join("\n");
+}
+
+export function validateApplyApprovalRecord(
+  config,
+  packet,
+  state,
+  commandRunner = runCommand,
+  env = process.env,
+) {
+  if (config.mode !== "apply") return;
+  const match = config.approvalRecord.match(
+    /^https:\/\/github\.com\/ronchak\/Koaryu\/pull\/134#issuecomment-([1-9][0-9]*)$/,
+  );
+  if (!match) {
+    throw new RolloutError(
+      "--approval-record must be an exact PR #134 GitHub issue-comment URL.",
+    );
+  }
+  const body = commandRunner(
+    "gh",
+    ["api", `repos/ronchak/Koaryu/issues/comments/${match[1]}`, "--jq", ".body"],
+    { env, label: "durable apply approval read" },
+  ).replace(/\r?\n$/, "");
+  const expected = buildApplyApprovalRecordBody(packet, config.target, state);
+  if (body !== expected) {
+    throw new RolloutError(
+      "Durable approval record does not exactly bind this candidate, target, inspected state, and remaining migration manifest.",
+    );
+  }
+}
+
 export function buildInspectionToken(packet, target, state) {
   return digest(
     "sha256",
@@ -2201,6 +2984,7 @@ export function formatNonSuccessProbeState(result) {
     result?.state === "canonical-v23" ||
     result?.state === "restored-v23-pending-v24" ||
     result?.state === "v24" ||
+    result?.state === "schedule-v25" ||
     result?.state === "v25" ||
     result?.state === "v26" ||
     result?.state === "v27" ||
@@ -2238,6 +3022,7 @@ export function buildInspectionTokenForAcceptedState(packet, target, result) {
     result?.state !== "canonical-v23" &&
     result?.state !== "restored-v23-pending-v24" &&
     result?.state !== "v24" &&
+    result?.state !== "schedule-v25" &&
     result?.state !== "v25" &&
     result?.state !== "v26" &&
     result?.state !== "v27" &&
@@ -2246,7 +3031,7 @@ export function buildInspectionTokenForAcceptedState(packet, target, result) {
     result?.state !== "v30" &&
     result?.state !== "post"
   ) {
-    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, v25, v26, v27, v28, v29, v30, or post probe state.");
+    throw new RolloutError("Inspection tokens require an accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, or post probe state.");
   }
   return buildInspectionToken(packet, target, result.state);
 }
@@ -2425,6 +3210,15 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
       })
       .join("|"),
   )}`;
+  const scheduleV25History = `${ROLLOUT.scheduleV25MigrationCount}:${digest(
+    "md5",
+    filenames.slice(0, ROLLOUT.scheduleV25MigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
+  )}`;
   const v25History = `${ROLLOUT.v25MigrationCount}:${digest(
     "md5",
     filenames.slice(0, ROLLOUT.v25MigrationCount)
@@ -2488,8 +3282,20 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   if (JSON.stringify(filenames.slice(84, 86)) !== JSON.stringify(expectedTail)) {
     throw new RolloutError("The July studio-comp pair must be the first two migrations after baseline 84.");
   }
+  const expectedScheduleMigrations = ROLLOUT.scheduleMigrations.map(
+    ({ filename }) => filename,
+  );
+  if (
+    JSON.stringify(
+      filenames.slice(ROLLOUT.v24MigrationCount, ROLLOUT.scheduleV25MigrationCount),
+    ) !== JSON.stringify(expectedScheduleMigrations)
+  ) {
+    throw new RolloutError(
+      "The reviewed PR #133 schedule pair must immediately follow the V24 migration.",
+    );
+  }
 
-  for (const migration of ROLLOUT.migrations) {
+  for (const migration of [...ROLLOUT.migrations, ...ROLLOUT.scheduleMigrations]) {
     const actualHash = hashFile(path.join(migrationsDirectory, migration.filename));
     if (actualHash !== migration.sha256) {
       throw new RolloutError(`Source hash mismatch for ${migration.filename}.`);
@@ -2519,6 +3325,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     restoredV22History,
     canonicalV23History,
     v24History,
+    scheduleV25History,
     v25History,
     v26History,
     v27History,
@@ -2615,6 +3422,12 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
         return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
       })
       .join("|"),
+    scheduleV25TargetHistory: filenames.slice(84, ROLLOUT.scheduleV25MigrationCount)
+      .map((filename) => {
+        const separator = filename.indexOf("_");
+        return `${filename.slice(0, separator)}:${filename.slice(separator + 1, -4)}`;
+      })
+      .join("|"),
     v25TargetHistory: filenames.slice(84, ROLLOUT.v25MigrationCount)
       .map((filename) => {
         const separator = filename.indexOf("_");
@@ -2694,6 +3507,8 @@ export function packetForAcceptedState(packet, state) {
                           ? ROLLOUT.canonicalV23MigrationCount - ROLLOUT.baselineMigrationCount
                         : state === "v24"
                           ? ROLLOUT.v24MigrationCount - ROLLOUT.baselineMigrationCount
+                        : state === "schedule-v25"
+                          ? ROLLOUT.scheduleV25MigrationCount - ROLLOUT.baselineMigrationCount
                         : state === "v25"
                           ? ROLLOUT.v25MigrationCount - ROLLOUT.baselineMigrationCount
                         : state === "v26"
@@ -2708,7 +3523,7 @@ export function packetForAcceptedState(packet, state) {
                           ? ROLLOUT.v30MigrationCount - ROLLOUT.baselineMigrationCount
                           : null;
   if (consumedMigrations === null) {
-    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, v25, v26, v27, v28, v29, or v30 state.");
+    throw new RolloutError("A migration packet can only be selected from pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, or v30 state.");
   }
   const pendingMigrations = packet.pendingMigrations.slice(consumedMigrations);
   const pendingManifest = packet.pendingManifest.slice(consumedMigrations);
@@ -2741,6 +3556,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     functionState,
     triggerState,
     catalogState,
+    scheduleWindowManifest,
     criticalSurfaceManifest,
     v26ExpectationState,
     v27ExpectationState,
@@ -2923,6 +3739,32 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     }
     return { state: "v24", providerFingerprint: null };
   }
+  if (history === packet.scheduleV25History) {
+    if (
+      targetHistory !== packet.scheduleV25TargetHistory ||
+      objectCounts !== "3:1"
+    ) {
+      throw new RolloutError(
+        "Migration history is schedule V25 but its exact target history is missing.",
+      );
+    }
+    if (operationalReadiness !== EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS) {
+      throw new RolloutError(
+        "Schedule V25 operational readiness did not match the exact PR #133 release state.",
+      );
+    }
+    if (scheduleWindowManifest !== EXPECTED_SCHEDULE_WINDOW_MANIFEST) {
+      throw new RolloutError(
+        "Schedule V25 window manifest did not match the exact PR #133 release state.",
+      );
+    }
+    if (catalogState !== EXPECTED_SCHEDULE_V25_CATALOG_STATE) {
+      throw new RolloutError(
+        "Schedule V25 raw catalog did not match the exact canonical PR #133 state.",
+      );
+    }
+    return { state: "schedule-v25", providerFingerprint: null };
+  }
   if (history === packet.v25History) {
     if (targetHistory !== packet.v25TargetHistory || objectCounts !== "3:1") {
       throw new RolloutError("Migration history is V25 but its exact target history is missing.");
@@ -3021,7 +3863,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     return { state: "post", providerFingerprint };
   }
   throw new RolloutError(
-    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, v25-, v26-, v27-, v28-, v29-, v30-, or post-state.`,
+    `Unexpected migration history ${history}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, or post-state.`,
   );
 }
 
@@ -3029,6 +3871,7 @@ export function validateCatalogState(catalogState) {
   if (
     catalogState !== EXPECTED_CATALOG_STATE &&
     catalogState !== EXPECTED_RESTORED_CATALOG_STATE &&
+    catalogState !== EXPECTED_COMBINED_RESTORED_V26_CATALOG_STATE &&
     catalogState !== EXPECTED_V29_RESTORED_CATALOG_STATE &&
     catalogState !== EXPECTED_V30_CATALOG_STATE &&
     catalogState !== EXPECTED_V30_RESTORED_CATALOG_STATE &&
@@ -3045,6 +3888,7 @@ export function validateCatalogState(catalogState) {
 export function validateV27CatalogState(catalogState) {
   if (
     catalogState !== EXPECTED_CATALOG_STATE &&
+    catalogState !== EXPECTED_COMBINED_RESTORED_V26_CATALOG_STATE &&
     catalogState !== EXPECTED_V27_RESTORED_CATALOG_STATE
   ) {
     throw new RolloutError(`V27 raw catalog manifest mismatch: ${catalogState}.`);
@@ -3276,6 +4120,7 @@ export function readRemoteState(
       functionState: null,
       triggerState: null,
       catalogState: null,
+      scheduleWindowManifest: null,
       criticalSurfaceManifest: null,
       v26ExpectationState: null,
       v27ExpectationState: null,
@@ -3412,6 +4257,23 @@ export function readRemoteState(
       );
     }
     if (
+      snapshot.history === packet.scheduleV25History &&
+      snapshot.objectCounts === "3:1"
+    ) {
+      snapshot.catalogState = query(
+        sourceRoot,
+        SCHEDULE_V25_CATALOG_STATE_SQL,
+        "catalog_state",
+        env,
+      );
+      snapshot.scheduleWindowManifest = query(
+        sourceRoot,
+        SCHEDULE_WINDOW_MANIFEST_SQL,
+        "schedule_window_manifest",
+        env,
+      );
+    }
+    if (
       snapshot.objectCounts === "3:1" &&
       (
         snapshot.history === ROLLOUT.preHistory ||
@@ -3428,6 +4290,7 @@ export function readRemoteState(
         snapshot.history === packet.restoredV22History ||
         snapshot.history === packet.canonicalV23History ||
         snapshot.history === packet.v24History ||
+        snapshot.history === packet.scheduleV25History ||
         snapshot.history === packet.v25History ||
         snapshot.history === packet.v26History ||
         snapshot.history === packet.v27History ||
@@ -3453,6 +4316,8 @@ export function readRemoteState(
             ? V26_OPERATIONAL_READINESS_SQL
           : snapshot.history === packet.v25History
             ? V25_OPERATIONAL_READINESS_SQL
+          : snapshot.history === packet.scheduleV25History
+            ? SCHEDULE_V25_OPERATIONAL_READINESS_SQL
           : snapshot.history === packet.trialLockedHistory ||
         snapshot.history === packet.staffIdentityHistory ||
         snapshot.history === packet.restoredV22History ||
@@ -3661,7 +4526,7 @@ function usage() {
 
 diagnose performs linked, read-only SELECT diagnosis and needs no inspection token.
 Dry-run and apply require the inspection_token from a preceding inspect. Apply additionally requires:
-  --confirm-project <exact-ref> --approval-record <durable-id-or-url>
+  --confirm-project <exact-ref> --approval-record <exact-PR-134-issue-comment-url>
   staging:    --approve-staging-apply
   production: --human-production-operator --expected-provider-fingerprint <staging-fingerprint>
               --confirmed-restore-window <window-or-record>
@@ -3776,6 +4641,9 @@ export async function main(
         const remainingPacket = packetForAcceptedState(packet, before.state);
         console.log(`remaining_migrations=${remainingPacket.pendingMigrations.join(",")}`);
         console.log(`remaining_manifest_sha256=${remainingPacket.sourceManifestSha256}`);
+        console.log("approval_record_body_begin");
+        console.log(buildApplyApprovalRecordBody(remainingPacket, config.target, before.state));
+        console.log("approval_record_body_end");
       }
       if (before.providerFingerprint) {
         console.log(`provider_fingerprint=${before.providerFingerprint}`);
@@ -3803,15 +4671,23 @@ export async function main(
       before.state !== "restored-v22" &&
       before.state !== "canonical-v23" &&
       before.state !== "restored-v23-pending-v24" &&
-      before.state !== "v24"
+      before.state !== "v24" &&
+      before.state !== "schedule-v25" &&
+      before.state !== "v25" &&
+      before.state !== "v26" &&
+      before.state !== "v27" &&
+      before.state !== "v28" &&
+      before.state !== "v29" &&
+      before.state !== "v30"
     ) {
       throw new RolloutError(
-        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, or v24 state.`,
+        `${config.mode} requires an exact accepted pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, or v30 state.`,
       );
     }
     assertInspectionToken(packet, config.target, before, config.inspectionToken);
 
     const remainingPacket = packetForAcceptedState(packet, before.state);
+    validateApplyApprovalRecord(config, remainingPacket, before.state, commandRunner, env);
     const pending = runDryRun(sourceRoot, remainingPacket, env);
     console.log(`dry_run_migrations=${pending.join(",")}`);
     if (config.mode === "dry-run") return;

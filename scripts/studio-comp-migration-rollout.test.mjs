@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import {
   ROLLOUT,
   CATALOG_STATE_SQL,
+  SCHEDULE_V25_CATALOG_STATE_SQL,
   EXPECTED_CATALOG_STATE,
   EXPECTED_RESTORED_CATALOG_STATE,
   EXPECTED_V29_RESTORED_CATALOG_STATE,
@@ -16,6 +17,9 @@ import {
   EXPECTED_V30_RESTORED_CATALOG_STATE,
   EXPECTED_V31_CATALOG_STATE,
   EXPECTED_V31_RESTORED_CATALOG_STATE,
+  EXPECTED_SCHEDULE_V25_CATALOG_STATE,
+  EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS,
+  EXPECTED_SCHEDULE_WINDOW_MANIFEST,
   TOLERATED_HISTORY_COLUMNS,
   EXPECTED_OPERATIONAL_MANIFEST,
   EXPECTED_RESTORED_OPERATIONAL_MANIFEST,
@@ -73,11 +77,13 @@ import {
   V27_OPERATIONAL_READINESS_SQL,
   V29_OPERATIONAL_READINESS_SQL,
   V30_OPERATIONAL_READINESS_SQL,
+  SCHEDULE_V25_OPERATIONAL_READINESS_SQL,
   assertApplyableState,
   approvedProviderFingerprintVariants,
   assertExactPendingMigrations,
   assertInspectionToken,
   assertSafeCredentialedTransport,
+  buildApplyApprovalRecordBody,
   buildInspectionToken,
   buildInspectionTokenForAcceptedState,
   buildProductionConfirmationPhrase,
@@ -94,6 +100,7 @@ import {
   runCommand,
   runDryRun,
   validateApplyAuthorization,
+  validateApplyApprovalRecord,
   validateCatalogState,
   validateHistoryColumnMetadata,
   validateOperationalManifest,
@@ -420,6 +427,23 @@ function v24Snapshot(packet, overrides = {}) {
   };
 }
 
+function scheduleV25Snapshot(packet, overrides = {}) {
+  return {
+    historyColumns: minimalHistoryColumns,
+    history: packet.scheduleV25History,
+    targetHistory: packet.scheduleV25TargetHistory,
+    objectCounts: "3:1",
+    functionState: null,
+    triggerState: null,
+    catalogState: EXPECTED_SCHEDULE_V25_CATALOG_STATE,
+    scheduleWindowManifest: EXPECTED_SCHEDULE_WINDOW_MANIFEST,
+    criticalSurfaceManifest: null,
+    operationalReadiness: EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS,
+    writerReturnContractState: null,
+    ...overrides,
+  };
+}
+
 function v25Snapshot(packet, overrides = {}) {
   return {
     historyColumns: minimalHistoryColumns,
@@ -647,6 +671,10 @@ describe("studio-comp migration rollout guard", () => {
     }
 
     assert.match(CATALOG_STATE_SQL, /koaryu_release_schema_preflight_v6/);
+    assert.match(CATALOG_STATE_SQL, /private\.koaryu_release_schedule_window_manifest_v1\(\)/);
+    assert.match(CATALOG_STATE_SQL, /public\.schedule_window_read\(uuid, date, date, text\)/);
+    assert.match(CATALOG_STATE_SQL, /koaryu_release_schema_preflight_v12/);
+    assertReadOnlySql(SCHEDULE_V25_CATALOG_STATE_SQL);
     assert.match(CATALOG_STATE_SQL, /body_sha256/);
     const v6BodyDriftedCatalog = EXPECTED_CATALOG_STATE.replace(
       /(functions=[0-9]+:)[0-9a-f]{64}/,
@@ -680,7 +708,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|124\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|126\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -717,11 +745,25 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-124 packet while retaining the V26 through V30 predecessors", () => {
+  it("derives an exact 100-to-126 packet through schedule V25 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
-    assert.equal(ROLLOUT.v26MigrationCount, 119);
-    assert.equal(packet.migrationCount, 124);
+    assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
+    assert.deepEqual(
+      ROLLOUT.scheduleMigrations.map(({ filename, sha256 }) => [filename, sha256]),
+      [
+        [
+          "20260825042838_schedule_window_read_rpc.sql",
+          "6e36b37902564eeb4eb54c9284615e80bbf44582cce864514db2060565092313",
+        ],
+        [
+          "20260825043911_attest_schedule_window_release.sql",
+          "22637698a5af2043b74ed344c16ab111a27d83b54b1621a82deb091f436174f5",
+        ],
+      ],
+    );
+    assert.equal(ROLLOUT.v26MigrationCount, 121);
+    assert.equal(packet.migrationCount, 126);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -736,17 +778,19 @@ describe("studio-comp migration rollout guard", () => {
     assert.match(packet.restoredV22History, /^115:[0-9a-f]{32}$/);
     assert.match(packet.restoredV22TargetHistory, /20260822193000:revoke_client_read_access$/);
     assert.match(packet.canonicalV23History, /^116:[0-9a-f]{32}$/);
-    assert.match(packet.v25History, /^118:[0-9a-f]{32}$/);
+    assert.match(packet.scheduleV25History, /^119:[0-9a-f]{32}$/);
+    assert.match(packet.scheduleV25TargetHistory, /20260825043911:attest_schedule_window_release$/);
+    assert.match(packet.v25History, /^120:[0-9a-f]{32}$/);
     assert.match(packet.v25TargetHistory, /20260826030234:live_billing_reconciliation_v3$/);
-    assert.match(packet.v26History, /^119:[0-9a-f]{32}$/);
+    assert.match(packet.v26History, /^121:[0-9a-f]{32}$/);
     assert.match(packet.v26TargetHistory, /20260826030249:payments_adjustment_convergence$/);
-    assert.match(packet.v27History, /^120:[0-9a-f]{32}$/);
+    assert.match(packet.v27History, /^122:[0-9a-f]{32}$/);
     assert.match(packet.v27TargetHistory, /20260826051527:billing_provider_operations_and_payer_consent$/);
-    assert.match(packet.v28History, /^121:[0-9a-f]{32}$/);
+    assert.match(packet.v28History, /^123:[0-9a-f]{32}$/);
     assert.match(packet.v28TargetHistory, /20260826073728:billing_provider_operation_steps$/);
-    assert.match(packet.v29History, /^122:[0-9a-f]{32}$/);
+    assert.match(packet.v29History, /^124:[0-9a-f]{32}$/);
     assert.match(packet.v29TargetHistory, /20260826102840:enrollment_period_safe_transitions$/);
-    assert.match(packet.v30History, /^123:[0-9a-f]{32}$/);
+    assert.match(packet.v30History, /^125:[0-9a-f]{32}$/);
     assert.match(packet.v30TargetHistory, /20260826155911:payments_workflow_catalog_and_replay_repairs$/);
     assert.match(packet.canonicalV23TargetHistory, /20260823193155:revoke_public_function_execute$/);
     assert.match(packet.v24History, /^117:[0-9a-f]{32}$/);
@@ -758,7 +802,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.match(packet.sourceManifestSha256, /^[0-9a-f]{64}$/);
     assert.equal(packet.integrationComplete, true);
-    assert.equal(packet.pendingMigrations.length, 24);
+    assert.equal(packet.pendingMigrations.length, 26);
     assert.deepEqual(
       packet.pendingMigrations.map((filename) => filename.slice(0, 14)),
       ROLLOUT.releasePendingVersions,
@@ -1130,6 +1174,21 @@ describe("studio-comp migration rollout guard", () => {
       state: "v24",
       providerFingerprint: null,
     });
+    assert.deepEqual(classifyStateSnapshot(scheduleV25Snapshot(packet), packet), {
+      state: "schedule-v25",
+      providerFingerprint: null,
+    });
+    for (const [overrides, message] of [
+      [{ targetHistory: packet.v25TargetHistory }, /exact target history/],
+      [{ operationalReadiness: EXPECTED_V25_OPERATIONAL_READINESS }, /operational readiness/],
+      [{ scheduleWindowManifest: "0:" + "0".repeat(64) }, /window manifest/],
+      [{ catalogState: EXPECTED_SCHEDULE_V25_CATALOG_STATE.replace("functions=71", "functions=72") }, /raw catalog/],
+    ]) {
+      assert.throws(
+        () => classifyStateSnapshot(scheduleV25Snapshot(packet, overrides), packet),
+        message,
+      );
+    }
     assert.throws(
       () => classifyStateSnapshot(
         attestedSnapshot(packet, { writerReturnContractState: "4:bad:1" }),
@@ -1223,7 +1282,7 @@ describe("studio-comp migration rollout guard", () => {
       null,
       "",
       EXPECTED_V26_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_V26_OPERATIONAL_READINESS.replace("|119|", "|109|"),
+      EXPECTED_V26_OPERATIONAL_READINESS.replace("|121|", "|109|"),
       EXPECTED_V26_OPERATIONAL_READINESS.replace("|20260826030249|", "|20260814213000|"),
       EXPECTED_V26_OPERATIONAL_READINESS.replace(",20260826030249|", "|"),
       EXPECTED_V26_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
@@ -1242,7 +1301,7 @@ describe("studio-comp migration rollout guard", () => {
       null,
       "",
       EXPECTED_V27_OPERATIONAL_READINESS.replace(/^true/, "false"),
-      EXPECTED_V27_OPERATIONAL_READINESS.replace("|120|", "|109|"),
+      EXPECTED_V27_OPERATIONAL_READINESS.replace("|122|", "|109|"),
       EXPECTED_V27_OPERATIONAL_READINESS.replace("|20260826051527|", "|20260814213000|"),
       EXPECTED_V27_OPERATIONAL_READINESS.replace(",20260826051527|", "|"),
       EXPECTED_V27_OPERATIONAL_READINESS.replace("|0||", "|1|table_acl|"),
@@ -1403,13 +1462,40 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("retains exact V26 predecessor classification and V6 readiness SQL", () => {
+  it("reads the exact canonical schedule V25 state with its dedicated raw catalog", () => {
+    const packet = candidatePacket();
+    const values = new Map([
+      ["history_columns", JSON.stringify(minimalHistoryColumns)],
+      ["history_state", packet.scheduleV25History],
+      ["target_history", packet.scheduleV25TargetHistory],
+      ["object_counts", "3:1"],
+      ["catalog_state", EXPECTED_SCHEDULE_V25_CATALOG_STATE],
+      ["schedule_window_manifest", EXPECTED_SCHEDULE_WINDOW_MANIFEST],
+      ["operational_readiness", EXPECTED_SCHEDULE_V25_OPERATIONAL_READINESS],
+    ]);
+    const sqlSeen = [];
+    const result = readRemoteState(
+      repositoryRoot,
+      packet,
+      {},
+      null,
+      (_root, sql, header) => {
+        sqlSeen.push(sql);
+        return values.get(header);
+      },
+    );
+    assert.deepEqual(result, { state: "schedule-v25", providerFingerprint: null });
+    assert.ok(sqlSeen.includes(SCHEDULE_V25_CATALOG_STATE_SQL));
+    assert.match(sqlSeen.at(-1), /koaryu_release_schema_preflight_v5/);
+  });
+
+  it("retains exact V26 predecessor classification and V7 readiness SQL", () => {
     const packet = candidatePacket();
     assert.deepEqual(
       classifyStateSnapshot(v26Snapshot(packet), packet),
       { state: "v26", providerFingerprint: null },
     );
-    assert.match(V26_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v6/);
+    assert.match(V26_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v7/);
   });
 
   it("validates the exact V27 remote predecessor state independently", () => {
@@ -1433,8 +1519,8 @@ describe("studio-comp migration rollout guard", () => {
       },
     );
     assert.deepEqual(result, { state: "v27", providerFingerprint: null });
-    assert.ok(sqlSeen.some((sql) => /koaryu_release_schema_preflight_v7/.test(sql)));
-    assert.match(V27_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v7/);
+    assert.ok(sqlSeen.some((sql) => /koaryu_release_schema_preflight_v8/.test(sql)));
+    assert.match(V27_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v8/);
   });
 
   it("validates the exact V29 and V30 predecessors and V31 post-state independently", () => {
@@ -1443,7 +1529,7 @@ describe("studio-comp migration rollout guard", () => {
       state: "v29",
       providerFingerprint: null,
     });
-    assert.match(V29_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v9/);
+    assert.match(V29_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v10/);
     const postValues = new Map([
       ["history_columns", extendedHistoryColumns],
       ["history_state", packet.postHistory],
@@ -1485,7 +1571,7 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
     assert.equal(postHeaders.at(-1), "operational_readiness");
-    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v11/);
+    assert.match(postSql.at(-1), /koaryu_release_schema_preflight_v12/);
 
     const v30Values = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -1502,8 +1588,8 @@ describe("studio-comp migration rollout guard", () => {
       }),
       { state: "v30", providerFingerprint: null },
     );
-    assert.match(v30Sql.at(-1), /koaryu_release_schema_preflight_v10/);
-    assert.match(V30_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v10/);
+    assert.match(v30Sql.at(-1), /koaryu_release_schema_preflight_v11/);
+    assert.match(V30_OPERATIONAL_READINESS_SQL, /koaryu_release_schema_preflight_v11/);
 
     const trialLockedValues = new Map([
       ["history_columns", extendedHistoryColumns],
@@ -1720,7 +1806,7 @@ describe("studio-comp migration rollout guard", () => {
 
     assert.deepEqual(result, {
       state: "diverged",
-      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, v25-, v26-, v27-, v28-, v29-, v30-, or post-state.`,
+      detail: `Unexpected migration history ${observedHistory}; expected exact pre-, intermediate-, recovery-, convergence-, attested-, return-attested-, retained-, critical-, column-attested-, trial-locked-, staff-identity-, restored-v22-, canonical-v23-, restored-v23-pending-v24-, v24-, schedule-v25, v25, v26, v27, v28, v29, v30, or post-state.`,
     });
   });
 
@@ -2179,6 +2265,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(formatNonSuccessProbeState({ state: "canonical-v23", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "restored-v23-pending-v24", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "v24", providerFingerprint: null }), null);
+    assert.equal(formatNonSuccessProbeState({ state: "schedule-v25", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "v25", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "v26", providerFingerprint: null }), null);
     assert.equal(formatNonSuccessProbeState({ state: "v27", providerFingerprint: null }), null);
@@ -2192,12 +2279,25 @@ describe("studio-comp migration rollout guard", () => {
 
   it("makes an inspection token available only for accepted probe states", () => {
     const packet = candidatePacket();
-    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "v25", "v26", "v27", "v28", "v29", "post"]) {
+    for (const state of ["pre", "intermediate", "recovery", "convergence", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "post"]) {
       assert.equal(
         buildInspectionTokenForAcceptedState(packet, "staging", { state }),
         buildInspectionToken(packet, "staging", state),
       );
     }
+    const scheduleToken = buildInspectionTokenForAcceptedState(
+      packet,
+      "staging",
+      { state: "schedule-v25" },
+    );
+    assert.notEqual(
+      scheduleToken,
+      buildInspectionTokenForAcceptedState(packet, "staging", { state: "v25" }),
+    );
+    assert.notEqual(
+      scheduleToken,
+      buildInspectionTokenForAcceptedState(packet, "production", { state: "schedule-v25" }),
+    );
     for (const result of [
       { state: "unknown", reason: "timeout" },
       { state: "unknown", reason: "connectivity" },
@@ -2205,7 +2305,7 @@ describe("studio-comp migration rollout guard", () => {
     ]) {
       assert.throws(
         () => buildInspectionTokenForAcceptedState(packet, "staging", result),
-        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, v25, v26, v27, v28, v29, v30, or post probe state/,
+        /accepted pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, v30, or post probe state/,
       );
     }
   });
@@ -2222,19 +2322,19 @@ describe("studio-comp migration rollout guard", () => {
     );
   });
 
-  it("retains the exact V26 119-migration predecessor boundary", () => {
+  it("retains the exact V26 121-migration predecessor boundary", () => {
     const packet = candidatePacket();
-    assert.equal(ROLLOUT.v26MigrationCount, 119);
-    assert.match(packet.v26History, /^119:[0-9a-f]{32}$/);
+    assert.equal(ROLLOUT.v26MigrationCount, 121);
+    assert.match(packet.v26History, /^121:[0-9a-f]{32}$/);
     assert.match(packet.v26TargetHistory, /20260826030249:payments_adjustment_convergence$/);
   });
 
-  it("refuses to certify post-state before the exact 124-migration integration", () => {
+  it("refuses to certify post-state before the exact 126-migration integration", () => {
     const packet = { ...candidatePacket(), integrationComplete: false };
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /exact final 124-migration sequence/,
+      /exact final 126-migration sequence/,
     );
   });
 
@@ -2274,6 +2374,8 @@ describe("studio-comp migration rollout guard", () => {
         "20260822193000_revoke_client_read_access.sql",
         "20260823193155_revoke_public_function_execute.sql",
         "20260824190500_attest_verified_restore_manifest.sql",
+        "20260825042838_schedule_window_read_rpc.sql",
+        "20260825043911_attest_schedule_window_release.sql",
         "20260826030234_live_billing_reconciliation_v3.sql",
         "20260826030249_payments_adjustment_convergence.sql",
         "20260826051527_billing_provider_operations_and_payer_consent.sql",
@@ -2298,6 +2400,8 @@ describe("studio-comp migration rollout guard", () => {
         "20260822193000_revoke_client_read_access.sql",
         "20260823193155_revoke_public_function_execute.sql",
         "20260824190500_attest_verified_restore_manifest.sql",
+        "20260825042838_schedule_window_read_rpc.sql",
+        "20260825043911_attest_schedule_window_release.sql",
         "20260826030234_live_billing_reconciliation_v3.sql",
         "20260826030249_payments_adjustment_convergence.sql",
         "20260826051527_billing_provider_operations_and_payer_consent.sql",
@@ -2317,6 +2421,8 @@ describe("studio-comp migration rollout guard", () => {
     assert.deepEqual(restoredV22Remaining.pendingMigrations, [
       "20260823193155_revoke_public_function_execute.sql",
       "20260824190500_attest_verified_restore_manifest.sql",
+      "20260825042838_schedule_window_read_rpc.sql",
+      "20260825043911_attest_schedule_window_release.sql",
       "20260826030234_live_billing_reconciliation_v3.sql",
       "20260826030249_payments_adjustment_convergence.sql",
       "20260826051527_billing_provider_operations_and_payer_consent.sql",
@@ -2328,6 +2434,8 @@ describe("studio-comp migration rollout guard", () => {
     const canonicalV23Remaining = packetForAcceptedState(packet, "canonical-v23");
     assert.deepEqual(canonicalV23Remaining.pendingMigrations, [
       "20260824190500_attest_verified_restore_manifest.sql",
+      "20260825042838_schedule_window_read_rpc.sql",
+      "20260825043911_attest_schedule_window_release.sql",
       "20260826030234_live_billing_reconciliation_v3.sql",
       "20260826030249_payments_adjustment_convergence.sql",
       "20260826051527_billing_provider_operations_and_payer_consent.sql",
@@ -2354,6 +2462,18 @@ describe("studio-comp migration rollout guard", () => {
     );
     const v24Remaining = packetForAcceptedState(packet, "v24");
     assert.deepEqual(v24Remaining.pendingMigrations, [
+      "20260825042838_schedule_window_read_rpc.sql",
+      "20260825043911_attest_schedule_window_release.sql",
+      "20260826030234_live_billing_reconciliation_v3.sql",
+      "20260826030249_payments_adjustment_convergence.sql",
+      "20260826051527_billing_provider_operations_and_payer_consent.sql",
+      "20260826073728_billing_provider_operation_steps.sql",
+      "20260826102840_enrollment_period_safe_transitions.sql",
+      "20260826155911_payments_workflow_catalog_and_replay_repairs.sql",
+      "20260826185651_payment_refund_payer_sync_resource_ownership.sql",
+    ]);
+    const scheduleV25Remaining = packetForAcceptedState(packet, "schedule-v25");
+    assert.deepEqual(scheduleV25Remaining.pendingMigrations, [
       "20260826030234_live_billing_reconciliation_v3.sql",
       "20260826030249_payments_adjustment_convergence.sql",
       "20260826051527_billing_provider_operations_and_payer_consent.sql",
@@ -2404,7 +2524,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(packetForAcceptedState(packet, "pre"), packet);
     assert.throws(
       () => packetForAcceptedState(packet, "post"),
-        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, v25, v26, v27, v28, v29, or v30 state/,
+        /pre, intermediate, recovery, convergence, attested, return-attested, retained, critical, column-attested, trial-locked, staff-identity, restored-v22, canonical-v23, restored-v23-pending-v24, v24, schedule-v25, v25, v26, v27, v28, v29, or v30 state/,
     );
   });
 
@@ -2416,7 +2536,7 @@ describe("studio-comp migration rollout guard", () => {
         new RegExp(`Apply is disabled from ${state} state`),
       );
     }
-    for (const state of ["pre", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24"]) {
+    for (const state of ["pre", "attested", "return-attested", "retained", "critical", "column-attested", "trial-locked", "staff-identity", "restored-v22", "canonical-v23", "restored-v23-pending-v24", "v24", "schedule-v25", "v25", "v26", "v27", "v28", "v29", "v30"]) {
       assert.doesNotThrow(() => assertApplyableState("apply", state));
     }
   });
@@ -2499,6 +2619,8 @@ describe("studio-comp migration rollout guard", () => {
       "20260822193000_revoke_client_read_access.sql",
       "20260823193155_revoke_public_function_execute.sql",
       "20260824190500_attest_verified_restore_manifest.sql",
+      "20260825042838_schedule_window_read_rpc.sql",
+      "20260825043911_attest_schedule_window_release.sql",
       "20260826030234_live_billing_reconciliation_v3.sql",
       "20260826030249_payments_adjustment_convergence.sql",
       "20260826051527_billing_provider_operations_and_payer_consent.sql",
@@ -2555,7 +2677,8 @@ describe("studio-comp migration rollout guard", () => {
       "--target", "staging", "--candidate-sha", candidateSha, "--mode", "apply",
       "--inspection-token", buildInspectionToken(packet, "staging", "pre"),
       "--confirm-project", ROLLOUT.stagingRef,
-      "--approval-record", "director-phase-b-approval", "--approve-staging-apply",
+      "--approval-record", "https://github.com/ronchak/Koaryu/pull/134#issuecomment-123456789",
+      "--approve-staging-apply",
     ]);
     assert.doesNotThrow(() => validateApplyAuthorization(config));
     assert.throws(
@@ -2566,6 +2689,45 @@ describe("studio-comp migration rollout guard", () => {
       () => validateApplyAuthorization({ ...config, expectedProviderFingerprint: validFingerprint }),
       /production-only authorization fields/,
     );
+    assert.throws(
+      () => validateApplyAuthorization({ ...config, approvalRecord: "director-phase-b-approval" }),
+      /exact PR #134 GitHub issue-comment URL/,
+    );
+  });
+
+  it("binds the durable apply approval to the exact remaining packet and inspected state", () => {
+    const packet = packetForAcceptedState(candidatePacket(), "schedule-v25");
+    const config = parseArguments([
+      "--target", "staging", "--candidate-sha", candidateSha, "--mode", "apply",
+      "--inspection-token", buildInspectionToken(candidatePacket(), "staging", "schedule-v25"),
+      "--confirm-project", ROLLOUT.stagingRef,
+      "--approval-record", "https://github.com/ronchak/Koaryu/pull/134#issuecomment-123456789",
+      "--approve-staging-apply",
+    ]);
+    const expectedBody = buildApplyApprovalRecordBody(packet, "staging", "schedule-v25");
+    const approvedRunner = (command, args) => {
+      assert.equal(command, "gh");
+      assert.deepEqual(args, [
+        "api", "repos/ronchak/Koaryu/issues/comments/123456789", "--jq", ".body",
+      ]);
+      return `${expectedBody}\n`;
+    };
+    assert.doesNotThrow(() =>
+      validateApplyApprovalRecord(config, packet, "schedule-v25", approvedRunner, {}));
+    for (const stalePacket of [
+      { ...packet, candidateSha: "0".repeat(40) },
+      { ...packet, sourceManifestSha256: "0".repeat(64) },
+      { ...packet, pendingMigrations: packet.pendingMigrations.slice(1) },
+    ]) {
+      assert.throws(
+        () => validateApplyApprovalRecord(config, stalePacket, "schedule-v25", approvedRunner, {}),
+        /does not exactly bind/,
+      );
+    }
+    assert.throws(
+      () => validateApplyApprovalRecord(config, packet, "v25", approvedRunner, {}),
+      /does not exactly bind/,
+    );
   });
 
   it("reserves production apply for a human with staging and restore evidence", () => {
@@ -2574,7 +2736,7 @@ describe("studio-comp migration rollout guard", () => {
       "--target", "production", "--candidate-sha", candidateSha, "--mode", "apply",
       "--inspection-token", buildInspectionToken(packet, "production", "pre"),
       "--confirm-project", ROLLOUT.productionRef,
-      "--approval-record", "https://github.com/ronchak/Koaryu/issues/launch-approval",
+      "--approval-record", "https://github.com/ronchak/Koaryu/pull/134#issuecomment-987654321",
       "--human-production-operator", "--expected-provider-fingerprint", validFingerprint,
       "--confirmed-restore-window", "2026-07-31T18:00:00Z/PITR-confirmed",
       "--restore-decision-authority", "Ronak Chakraborty",
@@ -2624,6 +2786,8 @@ describe("studio-comp migration rollout guard", () => {
         "20260822193000_revoke_client_read_access.sql",
         "20260823193155_revoke_public_function_execute.sql",
         "20260824190500_attest_verified_restore_manifest.sql",
+        "20260825042838_schedule_window_read_rpc.sql",
+        "20260825043911_attest_schedule_window_release.sql",
         "20260826030234_live_billing_reconciliation_v3.sql",
         "20260826030249_payments_adjustment_convergence.sql",
         "20260826051527_billing_provider_operations_and_payer_consent.sql",
@@ -2637,7 +2801,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(
       buildProductionConfirmationPhrase(staffIdentityPacket),
       [
-        "APPLY 14 MIGRATIONS FROM",
+        "APPLY 16 MIGRATIONS FROM",
         candidateSha,
         "MANIFEST",
         staffIdentityPacket.sourceManifestSha256,

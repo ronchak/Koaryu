@@ -49,8 +49,8 @@ apply_migration "20260826051527" "billing_provider_operations_and_payer_consent"
 apply_migration "20260826073728" "billing_provider_operation_steps"
 apply_migration "20260826102840" "enrollment_period_safe_transitions"
 
-predecessor_readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v9();" | tr -d '\r\n')"
-if [[ "$predecessor_readiness" != "true|122|20260826102840|0||release-db-attestation-v29" ]]; then
+predecessor_readiness="$("$psql_bin" "${restored_args[@]}" --tuples-only --no-align --command="SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v10();" | tr -d '\r\n')"
+if [[ "$predecessor_readiness" != "true|124|20260826102840|0||release-db-attestation-v29" ]]; then
   echo "Restored V29 predecessor readiness mismatch: $predecessor_readiness" >&2
   exit 1
 fi
@@ -66,8 +66,8 @@ operational_contract="$(read_value 'SELECT private.koaryu_release_operational_co
 operational_manifest="$(read_value 'SELECT private.koaryu_release_operational_manifest_v11();')"
 predecessor_manifest="$(read_value 'SELECT private.koaryu_release_operational_manifest_v10();')"
 transition_manifest="$(read_value 'SELECT private.koaryu_release_enrollment_transition_manifest_v29();')"
-readiness="$(read_value "SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v10();")"
-compat_readiness="$(read_value "SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v9();")"
+readiness="$(read_value "SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v11();")"
+compat_readiness="$(read_value "SELECT ready::TEXT || '|' || migration_count::TEXT || '|' || migration_head || '|' || cardinality(security_failures)::TEXT || '|' || COALESCE(array_to_string(security_failures,','),'') || '|' || manifest_version FROM public.koaryu_release_schema_preflight_v10();")"
 catalog_sql="$(cd "$repository_root" && node --input-type=module --eval "import {CATALOG_STATE_SQL} from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(CATALOG_STATE_SQL);")"
 catalog_state="$(read_value "$catalog_sql")"
 v28_expectation="$(read_value "SELECT count(*)::TEXT || ':' || encode(extensions.digest(convert_to(COALESCE(string_agg(expectation_key || ':' || expected_sha256, '|' ORDER BY expectation_key COLLATE \"C\"),''),'UTF8'),'sha256'),'hex') FROM private.koaryu_release_v28_expectations;")"
@@ -93,15 +93,15 @@ echo "RESTORED_V30_ALLOWLIST_COLUMN=$allowlist_column"
 echo "RESTORED_V30_ALLOWLIST_CONSTRAINT=$allowlist_constraint"
 
 if [[ "$replay_manifest" != "0:bf7208ee6b49620e3ef146812c6e69fa8bc73058086d6d7df12c91ec41888f55" ]]; then echo "Restored V30 replay manifest mismatch." >&2; exit 1; fi
-if [[ "$operational_contract" != "0:7d3b98ad5301ac1eb04eb1131f16f58158e37c3d4c7e01afbe427d46294ccd2a" ]]; then echo "Restored V30 operational contract mismatch." >&2; exit 1; fi
-if [[ "$operational_manifest" != "1449e613ab87fea18e9f7678f96215d528b80b5d0c44c5da0f29323bdc392198" ]]; then echo "Restored V30 operational manifest mismatch." >&2; exit 1; fi
-if [[ "$predecessor_manifest" != "689cf757117638efbf23579f77a2ba10638d710350e7dfd18d99f061503ef27b" ]]; then echo "Restored V30 predecessor manifest mismatch." >&2; exit 1; fi
+if [[ "$operational_contract" != "0:6396d71a8da8966ca50d412e6d5caccb7dc624775e69aef993b61e303f5d0400" ]]; then echo "Restored V30 operational contract mismatch." >&2; exit 1; fi
+if [[ "$operational_manifest" != "f0fcffe6a705b1d66df0e1c87ae04fb92070b2ed4308da354979a46e47087460" ]]; then echo "Restored V30 operational manifest mismatch." >&2; exit 1; fi
+if [[ "$predecessor_manifest" != "32107329f69000537b2e8167d12674a90f46a7a7c8978149b70b8dac5edc7e17" ]]; then echo "Restored V30 predecessor manifest mismatch." >&2; exit 1; fi
 if [[ "$transition_manifest" != "0:118b8031e9393f0114f486d0704e71475099d326f7fba9ad5d7518ad5a6a2c60" ]]; then echo "Restored V30 transition manifest mismatch." >&2; exit 1; fi
-if [[ "$readiness" != "true|123|20260826155911|0||release-db-attestation-v30" ]]; then echo "Restored V30 readiness mismatch: $readiness" >&2; exit 1; fi
-if [[ "$compat_readiness" != "true|122|20260826102840|0||release-db-attestation-v29" ]]; then echo "Restored V29 compatibility readiness mismatch: $compat_readiness" >&2; exit 1; fi
-if [[ "$v28_expectation" != "1:f16befce89a165126c7fd1d9c1336e6b6615b26e41ac5bd170d42abd62cea9c0" ]]; then echo "Restored V30 V28 expectation mismatch." >&2; exit 1; fi
-if [[ "$v29_expectation" != "1:277f19009ebb5642d90b8e1c2a6607a63d1898d5016310099680b6a41811fcf1" ]]; then echo "Restored V30 V29 expectation mismatch." >&2; exit 1; fi
-if [[ "$v30_expectation" != "1:984763230ce64ea45bbd3a101b8264551e5d1dff0c19667b38c262ec3e7280ee" ]]; then echo "Restored V30 expectation mismatch." >&2; exit 1; fi
+if [[ "$readiness" != "true|125|20260826155911|0||release-db-attestation-v30" ]]; then echo "Restored V30 readiness mismatch: $readiness" >&2; exit 1; fi
+if [[ "$compat_readiness" != "true|124|20260826102840|0||release-db-attestation-v29" ]]; then echo "Restored V29 compatibility readiness mismatch: $compat_readiness" >&2; exit 1; fi
+if [[ "$v28_expectation" != "1:e57560e15d366056bd249ecf52225162403b0866c4fea4929b34c8ef84c3df11" ]]; then echo "Restored V30 V28 expectation mismatch." >&2; exit 1; fi
+if [[ "$v29_expectation" != "1:b0e1d3777d1686ff48b9f5d73a255cc1f6d6fea974736215c7c21a621dbaa1a5" ]]; then echo "Restored V30 V29 expectation mismatch." >&2; exit 1; fi
+if [[ "$v30_expectation" != "1:64daabcda5df9823fa4b32e7320e715d1d96dd0d0acc697ebed4570256655643" ]]; then echo "Restored V30 expectation mismatch." >&2; exit 1; fi
 if [[ "$authorization_surface" != "true:false:true:false:true" ]]; then echo "Restored V30 authorization ACL mismatch: $authorization_surface" >&2; exit 1; fi
 if [[ "$allowlist_column" != "text[]:true:ARRAY[]::text[]" ]]; then echo "Restored V30 allowlist column mismatch: $allowlist_column" >&2; exit 1; fi
 if [[ "$allowlist_constraint" != "c:true" ]]; then echo "Restored V30 allowlist constraint mismatch: $allowlist_constraint" >&2; exit 1; fi
@@ -113,9 +113,9 @@ if [[ "$allowlist_constraint" != "c:true" ]]; then echo "Restored V30 allowlist 
     "$catalog_state"
 )
 
-acl_drift_ready="$(read_value "BEGIN; GRANT EXECUTE ON FUNCTION public.authorize_studio_live_billing_scope_v3(uuid,text,text,text,text) TO service_role; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v10(); ROLLBACK;")"
+acl_drift_ready="$(read_value "BEGIN; GRANT EXECUTE ON FUNCTION public.authorize_studio_live_billing_scope_v3(uuid,text,text,text,text) TO service_role; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
 if [[ "$acl_drift_ready" != "false" ]]; then echo "Restored V30 preflight accepted legacy scope authorization." >&2; exit 1; fi
-constraint_drift_ready="$(read_value "BEGIN; ALTER TABLE public.studio_live_billing_authorizations DROP CONSTRAINT studio_live_billing_authorizations_operation_set_exact; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v10(); ROLLBACK;")"
+constraint_drift_ready="$(read_value "BEGIN; ALTER TABLE public.studio_live_billing_authorizations DROP CONSTRAINT studio_live_billing_authorizations_operation_set_exact; SELECT ready::TEXT FROM public.koaryu_release_schema_preflight_v11(); ROLLBACK;")"
 if [[ "$constraint_drift_ready" != "false" ]]; then echo "Restored V30 preflight accepted allowlist-constraint drift." >&2; exit 1; fi
 
-echo "PASS: V29 dump/restore predecessor plus migration 123 produced the exact V30 operation-bound contract."
+echo "PASS: V29 dump/restore predecessor plus migration 125 produced the exact V30 operation-bound contract."

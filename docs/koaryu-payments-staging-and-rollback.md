@@ -15,9 +15,9 @@ Stripe live-mode change, production webhook change, or real-money transaction.
 - Staging frontend: the branch-scoped Vercel staging deployment
 - Provider mode: Stripe test (`sk_test_`, `rk_test_`, `pk_test_`)
 
-PR #133 is a separate schedule-read change with two competing release-attestation
-migrations. Do not merge it into this candidate or apply both migration tails. Rebase and
-re-attest #133 after the Payments release ordering is decided.
+This candidate includes the complete schedule-window read change from PR #133 before
+the seven Payments migrations. PR #133 must remain unmerged and is superseded by this
+single release candidate; do not create or deploy a second migration tail.
 
 ## Local release gate
 
@@ -63,11 +63,13 @@ node scripts/studio-comp-migration-rollout.mjs \
 ```
 
 Confirm the exact project ref, inspected state, pending set, and inspection token. Then
-use the guarded staging apply with its exact generated arguments and durable approval
-record. Do not use direct SQL, `db reset`, or a production link. After apply, require
+use the guarded staging apply with its exact generated arguments and a PR #134 issue
+comment whose exact body binds the candidate SHA, staging ref, inspected state, seven
+migrations, and remaining manifest emitted by inspect. Do not use direct SQL, `db reset`,
+or a production link. After apply, require
 the exact candidate readiness version, migration count, migration head, and zero security
-failures recorded by the guarded packet. Do not reuse the older V30/123 expectation after
-the additive V31 correction. The required post-state is V31, 124 migrations, head
+failures recorded by the guarded packet. Do not reuse the older V30/125 expectation after
+the additive V31 correction. The required post-state is V31, 126 migrations, head
 `20260826185651`, and zero security failures.
 
 ## Exact-SHA application deploy

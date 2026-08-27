@@ -600,7 +600,7 @@ export function validateBillingTransitionCron(renderSource) {
   for (const [key, expected] of [
     ["runtime", "docker"],
     ["plan", "starter"],
-    ["region", "ohio"],
+    ["region", "oregon"],
     ["branch", "staging"],
     ["rootDir", "backend"],
     ["dockerfilePath", "./Dockerfile"],
