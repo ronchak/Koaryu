@@ -3,11 +3,25 @@ import { describe, it } from "node:test";
 
 import {
   getBillingInitialLoadAction,
+  getBillingTabFromSearch,
   getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
   shouldShowBillingLoading,
 } from "../src/lib/billing-page-state.ts";
+
+describe("getBillingTabFromSearch", () => {
+  it("selects a directly linked billing tab", () => {
+    assert.equal(getBillingTabFromSearch("?tab=invoices"), "invoices");
+    assert.equal(getBillingTabFromSearch("?connect=return&tab=reports"), "reports");
+  });
+
+  it("uses the existing overview default for absent or invalid tabs", () => {
+    assert.equal(getBillingTabFromSearch(""), "overview");
+    assert.equal(getBillingTabFromSearch("?tab=unknown"), "overview");
+    assert.equal(getBillingTabFromSearch("?tab=Invoices"), "overview");
+  });
+});
 
 describe("getBillingInitialLoadAction", () => {
   it("routes Stripe Connect returns directly to status synchronization", () => {

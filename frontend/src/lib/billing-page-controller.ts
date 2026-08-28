@@ -16,6 +16,7 @@ import {
 import { buildBillingPageModel } from "@/lib/billing-page-model";
 import {
   getBillingInitialLoadAction,
+  getBillingTabFromSearch,
   getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
@@ -94,7 +95,9 @@ export function useBillingPageController({
     billingInitialLoadAction === "connect-return"
   );
   const skipNextNormalBillingRefreshRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<BillingTab>("overview");
+  const [activeTab, setActiveTab] = useState<BillingTab>(() =>
+    getBillingTabFromSearch(searchParams.toString())
+  );
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 

@@ -10,8 +10,10 @@ import {
   acknowledgeConnectOnboardingBeforeNavigation,
   createConnectOnboardingRequestKey,
 } from "@/lib/billing-connect-delivery";
+import { hasConnectOnboardingCapability } from "@/lib/billing-route-access";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  BillingSystemStatus,
   ConnectOnboardingDeliveryAckResponse,
   ConnectOnboardingLinkResponse,
 } from "@/types";
@@ -36,6 +38,14 @@ export default function StripeConnectRefreshPage() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           throw new Error("Sign in again to continue Stripe onboarding.");
+        }
+
+        const status = await api.get<BillingSystemStatus>(
+          "/billing/system/status",
+          session.access_token,
+        );
+        if (!hasConnectOnboardingCapability(status)) {
+          throw new Error("Stripe onboarding is not available for the current studio and role.");
         }
 
         const link = await api.post<ConnectOnboardingLinkResponse>(

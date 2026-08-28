@@ -23,18 +23,22 @@ import {
   type SetupStep,
 } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
+import {
+  BILLING_TABS,
+  type BillingTab,
+} from "@/lib/billing-page-state";
 
-export type BillingTab = "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
+export type { BillingTab } from "@/lib/billing-page-state";
 export type BillingSetupStep = SetupStep;
 
-const BILLING_TABS = [
-  { id: "overview", label: "Setup", icon: ListChecks },
-  { id: "plans", label: "Tuition Plans", icon: Receipt },
-  { id: "families", label: "Families", icon: Users },
-  { id: "enrollments", label: "Student Billing", icon: CreditCard },
-  { id: "invoices", label: "Invoices", icon: FileText },
-  { id: "reports", label: "Advanced", icon: Download },
-] as const;
+const BILLING_TAB_PRESENTATION = {
+  overview: { label: "Setup", icon: ListChecks },
+  plans: { label: "Tuition Plans", icon: Receipt },
+  families: { label: "Families", icon: Users },
+  enrollments: { label: "Student Billing", icon: CreditCard },
+  invoices: { label: "Invoices", icon: FileText },
+  reports: { label: "Advanced", icon: Download },
+} as const;
 
 export function BillingPageFrame({
   activeTab,
@@ -163,17 +167,17 @@ export function BillingSetupNavigation({
       <nav className="rounded-[14px] bg-surface p-2 shadow-[var(--product-shadow-card)]" aria-label="Billing views" data-billing-book-index="six-views" data-print-hide="true">
         <ol className="grid list-none grid-cols-2 gap-1 p-0 sm:grid-cols-3 xl:grid-cols-6">
           {BILLING_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const { icon: Icon, label } = BILLING_TAB_PRESENTATION[tab];
+            const isActive = activeTab === tab;
             return (
-              <li key={tab.id}>
+              <li key={tab}>
                 <button
                   type="button"
-                  onClick={() => onChangeTab(tab.id)}
+                  onClick={() => onChangeTab(tab)}
                   aria-pressed={isActive}
                   className={`grid min-h-14 w-full grid-cols-[1fr_auto] items-center gap-x-2 rounded-[10px] px-3 py-2 text-left ${isActive ? "bg-accent/10 text-text-primary" : "text-text-secondary hover:bg-surface-raised"}`}
                 >
-                  <strong className="text-xs font-semibold">{tab.label}</strong>
+                  <strong className="text-xs font-semibold">{label}</strong>
                   <Icon aria-hidden="true" className="h-3.5 w-3.5 text-muted" />
                 </button>
               </li>
