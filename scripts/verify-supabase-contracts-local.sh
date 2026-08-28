@@ -514,6 +514,26 @@ INSERT INTO public.billing_payments (
     now()
 );
 
+INSERT INTO public.billing_payments (
+    id,
+    studio_id,
+    payer_id,
+    status,
+    amount_cents,
+    currency,
+    idempotency_key,
+    processed_at
+) VALUES (
+    '00000000-0000-4000-8000-000000009507'::UUID,
+    '00000000-0000-4000-8000-000000009502'::UUID,
+    '00000000-0000-4000-8000-000000009503'::UUID,
+    'externally_recorded',
+    100,
+    'usd',
+    'historical-ordinary-null-reason',
+    now()
+);
+
 INSERT INTO public.billing_refunds (
     id,
     studio_id,
@@ -748,6 +768,25 @@ WHERE payment.id = '00000000-0000-4000-8000-000000009504'::UUID;
     expected_historical_generation_state=":true:historical_connect_generation_unknown::true:historical_connect_generation_unknown::true:historical_connect_generation_unknown"
     if [[ "$historical_generation_state" != "$expected_historical_generation_state" ]]; then
       echo "[historical generation backfill] FAIL fail-closed result: $historical_generation_state" >&2
+      exit 1
+    fi
+    ordinary_payment_state="$(
+      "$PSQL" "${psql_args[@]}" --tuples-only --no-align --command="
+SELECT
+    gross_paid_amount_cents::TEXT || ':' ||
+    refunded_amount_cents::TEXT || ':' ||
+    disputed_amount_cents::TEXT || ':' ||
+    net_collected_amount_cents::TEXT || ':' ||
+    refundable_amount_cents::TEXT || ':' ||
+    adjustment_reconciliation_required::TEXT || ':' ||
+    COALESCE(adjustment_reconciliation_reason_code, '')
+FROM public.billing_payments
+WHERE id = '00000000-0000-4000-8000-000000009507'::UUID;
+"
+    )"
+    ordinary_payment_state="$(printf '%s' "$ordinary_payment_state" | tr -d '\r\n')"
+    if [[ "$ordinary_payment_state" != "100:0:0:100:0:false:" ]]; then
+      echo "[historical generation backfill] FAIL ordinary null-reason result: $ordinary_payment_state" >&2
       exit 1
     fi
     "$PSQL" "${psql_args[@]}" --quiet --command="

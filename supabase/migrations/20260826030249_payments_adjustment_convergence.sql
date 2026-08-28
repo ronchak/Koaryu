@@ -729,7 +729,10 @@ SET status = CASE
         ELSE 0
     END,
     adjustment_reconciliation_required = (
-        calculated.existing_reason = 'historical_connect_generation_unknown'
+        COALESCE(
+            calculated.existing_reason = 'historical_connect_generation_unknown',
+            false
+        )
         OR calculated.raw_refunded > calculated.gross_paid
         OR calculated.has_unknown_dispute
     ),
